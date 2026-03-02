@@ -31,6 +31,7 @@ export default defineConfig({
     __BUILD_VERSION__: JSON.stringify(getBuildVersion()),
   },
   test: {
+    exclude: ['app/db/__tests__/integration/**', 'node_modules/**'],
     coverage: {
       provider: 'v8',
       include: ['app/lib/**/*.ts'],

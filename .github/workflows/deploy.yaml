@@ -6,8 +6,34 @@ on:
       - main
 
 jobs:
+  test:
+    name: Lint, typecheck and test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint and typecheck
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Integration tests
+        run: npm run test:integration
+
   build-and-deploy:
     name: Build, push and deploy
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
