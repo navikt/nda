@@ -126,7 +126,7 @@ export async function sendReminderForApp(
 /**
  * Check if current time matches configured time (±2 minute window)
  */
-function isTimeMatch(configured: string, current: string): boolean {
+export function isTimeMatch(configured: string, current: string): boolean {
   const [confH, confM] = configured.split(':').map(Number)
   const [curH, curM] = current.split(':').map(Number)
   const confMinutes = confH * 60 + confM

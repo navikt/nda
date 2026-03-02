@@ -38,7 +38,7 @@ const STATUS_EQUIVALENCES: Record<string, string> = {
   pending_approval: 'pending',
 }
 
-function normalizeStatus(status: string | null): string | null {
+export function normalizeStatus(status: string | null): string | null {
   if (!status) return status
   return STATUS_EQUIVALENCES[status] || status
 }

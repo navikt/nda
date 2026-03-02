@@ -269,4 +269,80 @@ describe('Base branch merge detection', () => {
       expect(isBaseBranchMergeCommit("Merge branch 'main' into feature/kravArsakKodeENDR")).toBe(true)
     })
   })
+
+  /**
+   * Edge cases for missing date fields in merge commits and regular commits.
+   *
+   * WHY: Squash-merge and legacy commits from GitHub sometimes lack the 'date' field.
+   * When this happens, canExplainUnverifiedByBaseMerge falls back to position-based
+   * checking (commit index in the PR commit list). These tests cover lines 74-89
+   * (merge commit without date) and 107-116 (regular commit without date).
+   * Without these, a refactor could break the fallback logic silently.
+   */
+  describe('canExplainUnverifiedByBaseMerge — no-date fallback (position-based)', () => {
+    it('explains commits when merge commit has no date and unverified appear before it', () => {
+      const prCommits = [
+        { sha: 'aaa', message: 'Feature commit', author: 'alice', date: '2025-01-01' },
+        { sha: 'bbb', message: 'From main', author: 'bob' }, // no date
+        { sha: 'merge1', message: "Merge branch 'main' into feature/x", author: 'alice' }, // no date
+      ]
+      const unverified = [
+        { sha: 'bbb', message: 'From main', author: 'bob' },
+        { sha: 'merge1', message: "Merge branch 'main' into feature/x", author: 'alice' },
+      ]
+
+      const result = canExplainUnverifiedByBaseMerge(unverified, prCommits)
+      expect(result.canExplain).toBe(true)
+      expect(result.reason).toBe('all_unverified_from_base_branch')
+      expect(result.mergeCommitSha).toBe('merge1')
+    })
+
+    it('rejects when merge commit has no date and unverified appears AFTER merge in list', () => {
+      const prCommits = [
+        { sha: 'aaa', message: 'Feature commit', author: 'alice' },
+        { sha: 'merge1', message: "Merge branch 'main' into feature/x", author: 'alice' }, // no date
+        { sha: 'suspicious', message: 'Added after merge', author: 'mallory' }, // after merge
+      ]
+      const unverified = [{ sha: 'suspicious', message: 'Added after merge', author: 'mallory' }]
+
+      const result = canExplainUnverifiedByBaseMerge(unverified, prCommits)
+      expect(result.canExplain).toBe(false)
+      expect(result.reason).toContain('suspici')
+      expect(result.reason).toContain('after_merge_in_list')
+    })
+
+    it('handles regular commit without date that appears before merge (position check)', () => {
+      const prCommits = [
+        { sha: 'no-date', message: 'Old commit', author: 'bob' }, // no date, index 0
+        { sha: 'merge1', message: "Merge branch 'main' into feature/x", author: 'alice', date: '2025-02-01' },
+      ]
+      const unverified = [{ sha: 'no-date', message: 'Old commit', author: 'bob' }]
+
+      const result = canExplainUnverifiedByBaseMerge(unverified, prCommits)
+      expect(result.canExplain).toBe(true)
+    })
+
+    it('rejects regular commit without date that appears after merge (position check)', () => {
+      const prCommits = [
+        { sha: 'merge1', message: "Merge branch 'main' into feature/x", author: 'alice', date: '2025-02-01' },
+        { sha: 'no-date', message: 'Snuck in', author: 'mallory' }, // no date, after merge
+      ]
+      const unverified = [{ sha: 'no-date', message: 'Snuck in', author: 'mallory' }]
+
+      const result = canExplainUnverifiedByBaseMerge(unverified, prCommits)
+      expect(result.canExplain).toBe(false)
+      expect(result.reason).toContain('position_unknown')
+    })
+
+    it('rejects regular commit without date that is not found in PR commits at all', () => {
+      const prCommits = [
+        { sha: 'merge1', message: "Merge branch 'main' into feature/x", author: 'alice', date: '2025-02-01' },
+      ]
+      const unverified = [{ sha: 'unknown', message: 'Not in PR', author: 'ghost' }]
+
+      const result = canExplainUnverifiedByBaseMerge(unverified, prCommits)
+      expect(result.canExplain).toBe(false)
+      expect(result.reason).toContain('position_unknown')
+    })
+  })
 })
