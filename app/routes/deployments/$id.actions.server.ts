@@ -1,4 +1,5 @@
 import { createComment, deleteComment, deleteLegacyInfo, getLegacyInfo } from '~/db/comments.server'
+import { addDeploymentGoalLink, removeDeploymentGoalLink } from '~/db/deployment-goal-links.server'
 import { getDeploymentById, updateDeploymentFourEyes, updateDeploymentLegacyData } from '~/db/deployments.server'
 import { createDeviation } from '~/db/deviations.server'
 import { getDeviationSlackChannel } from '~/db/global-settings.server'
@@ -582,6 +583,45 @@ export async function action({ request, params }: { request: Request; params: Re
     } catch (error) {
       logger.error('Slack notification error:', error)
       return { error: 'Feil ved sending av Slack-varsel' }
+    }
+  }
+
+  if (intent === 'link_goal') {
+    const identity = await getUserIdentity(request)
+    const objectiveId = formData.get('objective_id') ? Number(formData.get('objective_id')) : undefined
+    const keyResultId = formData.get('key_result_id') ? Number(formData.get('key_result_id')) : undefined
+    const externalUrl = (formData.get('external_url') as string)?.trim() || undefined
+    const externalUrlTitle = (formData.get('external_url_title') as string)?.trim() || undefined
+
+    if (!objectiveId && !keyResultId && !externalUrl) {
+      return { error: 'Velg et mål, nøkkelresultat, eller legg til en ekstern lenke.' }
+    }
+
+    try {
+      await addDeploymentGoalLink({
+        deployment_id: deploymentId,
+        objective_id: objectiveId,
+        key_result_id: keyResultId,
+        external_url: externalUrl,
+        external_url_title: externalUrlTitle,
+        link_method: 'manual',
+        linked_by: identity?.navIdent,
+      })
+      return { success: 'Kobling lagt til' }
+    } catch (error) {
+      logger.error('Error linking goal:', error)
+      return { error: 'Kunne ikke legge til kobling' }
+    }
+  }
+
+  if (intent === 'unlink_goal') {
+    const linkId = Number(formData.get('link_id'))
+    try {
+      await removeDeploymentGoalLink(linkId)
+      return { success: 'Kobling fjernet' }
+    } catch (error) {
+      logger.error('Error removing goal link:', error)
+      return { error: 'Kunne ikke fjerne kobling' }
     }
   }
 

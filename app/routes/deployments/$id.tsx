@@ -37,7 +37,9 @@ import { Form, Link, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { CheckAnnotations } from '~/components/CheckAnnotations'
 import { CheckLogViewer } from '~/components/CheckLogViewer'
+import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { getCommentsByDeploymentId, getLegacyInfo, getManualApproval } from '~/db/comments.server'
+import { getLinksForDeployment } from '~/db/deployment-goal-links.server'
 import {
   type DeploymentNavFilters,
   getDeploymentById,
@@ -110,6 +112,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const legacyInfo = await getLegacyInfo(deploymentId)
   const statusHistory = await getStatusHistory(deploymentId)
   const deviations = await getDeviationsByDeploymentId(deploymentId)
+  const goalLinks = await getLinksForDeployment(deploymentId)
 
   // Get previous and next deployments for navigation (respecting filters)
   const previousDeployment = await getPreviousDeploymentForNav(deploymentId, deployment.monitored_app_id, navFilters)
@@ -208,6 +211,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     legacyInfo,
     statusHistory,
     deviations,
+    goalLinks,
     previousDeployment,
     nextDeployment,
     userMappings: serializeUserMappings(userMappings),
@@ -238,6 +242,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
     legacyInfo,
     statusHistory,
     deviations,
+    goalLinks,
     previousDeployment,
     nextDeployment,
     userMappings,
@@ -1617,6 +1622,9 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           </VStack>
         </VStack>
       )}
+      {/* Goal links / origin of change section */}
+      <GoalLinksSection goalLinks={goalLinks} />
+
       {/* Deviations section */}
       <VStack gap="space-16">
         <HStack justify="space-between" align="center">
