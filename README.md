@@ -101,23 +101,20 @@ Database migrations kjøres automatisk ved oppstart.
    - Søk etter team (f.eks. "pensjon-q2")
    - Velg hvilke apps som skal overvåkes
 
-2. **Hent deployments fra Nais**:
-   - Gå til "Overvåkede applikasjoner"
-   - Klikk "Hent" for å synkronisere fra Nais (ingen GitHub-kall)
-   - Deployments lagres med status "pending"
+2. **Automatisk synkronisering**:
+   - Appen synkroniserer deployments fra Nais og verifiserer mot GitHub automatisk hvert 5. minutt
+   - Nye deployments hentes, lagres, og verifiseres uten manuell inngripen
+   - Se status under "Admin" → "Sync Jobs"
 
-3. **Verifiser four-eyes med GitHub**:
-   - Gå til "Verifiser deployments" 
-   - Kjør batch-verifisering (bruker GitHub rate limit)
-   - Max 50-100 deployments per batch anbefales
-
-4. **Håndter varsler**: 
+3. **Håndter varsler**: 
    - Se repository-mismatch varsler
    - Løs varsler med notater
 
-### To-stegs synkronisering
+> **Admin-verktøy**: Under "Admin" finnes også manuell batch-verifisering for å tvinge re-verifisering av deployments, f.eks. etter rate-limit-problemer eller ved feilsøking.
 
-Applikasjonen deler opp Nais og GitHub-kall for å unngå rate limits:
+### Synkroniseringsprosessen
+
+Appen deler opp Nais- og GitHub-kall i to steg for å håndtere rate limits:
 
 **Steg 1: Hent fra Nais** (ingen rate limit)
 - Henter alle deployments fra Nais GraphQL API
@@ -134,13 +131,7 @@ Applikasjonen deler opp Nais og GitHub-kall for å unngå rate limits:
   - CI/CD status (checks passed/failed)
   - Draft status og base branch
 - Oppdaterer four-eyes status
-- Kan kjøres senere/i batch
 - 3-4 GitHub requests per deployment
-
-Dette gir fleksibilitet til å:
-- Hente alle deployments raskt
-- Verifisere i batch når rate limit tillater
-- Re-kjøre verifisering uten ny Nais-henting
 
 ### PR-informasjon
 
