@@ -47,9 +47,9 @@ export async function getSectionOverallStats(
   const result = await pool.query(
     `SELECT
        COUNT(d.id)::int AS total_deployments,
-       COUNT(d.id)::int FILTER (WHERE d.has_four_eyes = true) AS with_four_eyes,
-       COUNT(d.id)::int FILTER (WHERE d.four_eyes_status IN ('direct_push', 'unverified_commits', 'approved_pr_with_unreviewed', 'unauthorized_repository', 'unauthorized_branch')) AS without_four_eyes,
-       COUNT(d.id)::int FILTER (WHERE d.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown')) AS pending_verification,
+       COUNT(d.id) FILTER (WHERE d.has_four_eyes = true)::int AS with_four_eyes,
+       COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('direct_push', 'unverified_commits', 'approved_pr_with_unreviewed', 'unauthorized_repository', 'unauthorized_branch'))::int AS without_four_eyes,
+       COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown'))::int AS pending_verification,
        COUNT(DISTINCT dgl.deployment_id)::int AS linked_to_goal
      FROM section_teams st
      JOIN deployments d ON d.team_slug = st.team_slug
