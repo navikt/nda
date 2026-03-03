@@ -154,7 +154,7 @@ async function updateDeploymentVerification(
           )
         : null,
       githubPrDataJson,
-      result.deployedPr?.title || null,
+      result.deployedPr?.title || result.unverifiedCommits[0]?.message || null,
     ],
   )
 
