@@ -92,7 +92,7 @@ describe('application-repositories', () => {
   it('setting one repo active deactivates others for same app', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
-    const { rows: repo1 } = await pool.query(
+    const { rows: _repo1 } = await pool.query(
       `INSERT INTO application_repositories (monitored_app_id, github_owner, github_repo_name, status)
        VALUES ($1, 'navikt', 'old-repo', 'active') RETURNING *`,
       [appId],

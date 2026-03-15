@@ -97,7 +97,7 @@ describe('deployment-goal-links', () => {
       environment: 'prod',
       createdAt: now,
     })
-    const d2 = await seedDeployment(pool, {
+    const _d2 = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
       environment: 'prod',
