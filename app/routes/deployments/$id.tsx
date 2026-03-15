@@ -514,7 +514,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                       <li>
                         Gå til{' '}
                         <a
-                          href={`https://github.com/organizations/${deployment.detected_github_owner}/settings/installations`}
+                          href={`https://github.com/organizations/${deployment.detected_github_owner}/settings/apps`}
                           target="_blank"
                           rel="noopener noreferrer"
                         >
