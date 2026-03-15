@@ -161,8 +161,8 @@ describe('getPreviousDeployment query', () => {
 
     const prev = await getPreviousDeployment(currentId, 'prod', owner, repo)
     expect(prev).not.toBeNull()
-    expect(prev!.id).toBe(validId)
-    expect(prev!.commitSha).toBe('aaa111')
+    expect(prev?.id).toBe(validId)
+    expect(prev?.commitSha).toBe('aaa111')
   })
 
   it('should skip legacy_pending deployments', async () => {
