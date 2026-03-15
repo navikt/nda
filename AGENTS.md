@@ -59,6 +59,22 @@ The verification system checks that all deployments follow the four-eyes princip
 - `app/lib/__tests__/verify-coverage-gaps.test.ts` — All 7 decision steps in `verifyDeployment`, security gap tests
 - `app/lib/__tests__/v1-unverified-reasons.test.ts` — Complex multi-commit scenarios
 
+### Integration Tests
+
+- `app/db/__tests__/integration/previous-deployment.test.ts` — Tests the `getPreviousDeployment` query (legacy filtering, invalid refs)
+
+### Testing Requirement
+
+When modifying verification logic (any file in `app/lib/verification/`, or verification-related queries in `app/lib/verification/fetch-data.server.ts`), always add or update tests that cover the change:
+
+- **Pure logic changes** (`verify.ts`): Add unit tests in `app/lib/__tests__/`
+- **Query/data-fetching changes** (`fetch-data.server.ts`): Add integration tests in `app/db/__tests__/integration/`
+- **New verification statuses or reasons**: Add test cases covering the new paths
+
+### Change Approval Requirement
+
+**Always ask the user for confirmation before modifying the verification algorithm.** The verification system is critical for audit compliance — changes to decision logic in `verify.ts`, status handling, or how previous deployments are selected can have wide-reaching consequences. Present the proposed change and rationale, and wait for explicit approval before implementing.
+
 ### Documentation Requirement
 
 When modifying verification logic in `app/lib/verification/verify.ts`, always update [`docs/verification.md`](docs/verification.md) to reflect the changes. This documentation is used by developers, managers, and auditors to understand the verification system.
