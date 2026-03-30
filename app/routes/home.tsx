@@ -189,15 +189,6 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       {/* Teams selected — show combined overview */}
       {selectedDevTeams.length > 0 && teamStats && (
         <VStack gap="space-24">
-          {/* Team names */}
-          <HStack gap="space-8" align="center" wrap>
-            {selectedDevTeams.map((team) => (
-              <Tag key={team.id} variant="moderate" size="small">
-                {team.name}
-              </Tag>
-            ))}
-          </HStack>
-
           {/* Combined stats */}
           <TeamStatsCard stats={teamStats} />
 
@@ -205,19 +196,19 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           <HStack gap="space-8" wrap>
             {selectedDevTeams.map((team) => (
               <HStack key={team.id} gap="space-8">
-                {team.nais_team_slugs.map((slug) => (
-                  <Button key={slug} as={Link} to={`/team/${slug}`} size="small" variant="secondary">
-                    Alle apper ({slug})
-                  </Button>
-                ))}
                 <Button
                   as={Link}
                   to={`/sections/${team.section_slug}/teams/${team.slug}`}
                   size="small"
                   variant="secondary"
                 >
-                  {team.name} — Tavler
+                  {team.name}
                 </Button>
+                {team.nais_team_slugs.map((slug) => (
+                  <Button key={slug} as={Link} to={`/team/${slug}`} size="small" variant="secondary">
+                    Alle apper ({slug})
+                  </Button>
+                ))}
               </HStack>
             ))}
           </HStack>
