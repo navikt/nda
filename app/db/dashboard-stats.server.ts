@@ -155,7 +155,7 @@ export async function getDevTeamSummaryStats(
 
   const result = await pool.query(
     `WITH team_apps AS (
-       SELECT ma.id
+       SELECT ma.id, ma.audit_start_year
        FROM monitored_applications ma
        WHERE ma.is_active = true
          AND (
@@ -164,24 +164,34 @@ export async function getDevTeamSummaryStats(
              ELSE ma.team_slug = ANY($1::text[])
            END
          )
+     ),
+     app_stats AS (
+       SELECT d.monitored_app_id,
+              COUNT(d.id) AS total_deployments,
+              COUNT(d.id) FILTER (WHERE d.has_four_eyes = true) AS with_four_eyes,
+              COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('direct_push', 'unverified_commits', 'approved_pr_with_unreviewed', 'unauthorized_repository', 'unauthorized_branch')) AS without_four_eyes,
+              COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown')) AS pending_verification
+       FROM team_apps ta
+       JOIN deployments d ON d.monitored_app_id = ta.id
+         AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
+       GROUP BY d.monitored_app_id
+     ),
+     app_alerts AS (
+       SELECT ra.monitored_app_id, COUNT(*) AS alert_count
+       FROM team_apps ta
+       JOIN repository_alerts ra ON ra.monitored_app_id = ta.id AND ra.resolved_at IS NULL
+       GROUP BY ra.monitored_app_id
      )
      SELECT
        (SELECT COUNT(*) FROM team_apps)::int AS total_apps,
-       COUNT(d.id)::int AS total_deployments,
-       COUNT(d.id) FILTER (WHERE d.has_four_eyes = true)::int AS with_four_eyes,
-       COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('direct_push', 'unverified_commits', 'approved_pr_with_unreviewed', 'unauthorized_repository', 'unauthorized_branch'))::int AS without_four_eyes,
-       COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown'))::int AS pending_verification,
-       COUNT(DISTINCT CASE
-         WHEN (
-           COALESCE((SELECT SUM(CASE WHEN d2.four_eyes_status IN ('direct_push', 'unverified_commits', 'approved_pr_with_unreviewed', 'unauthorized_repository', 'unauthorized_branch') THEN 1 ELSE 0 END) FROM deployments d2 WHERE d2.monitored_app_id = ta.id AND (ma2.audit_start_year IS NULL OR d2.created_at >= make_date(ma2.audit_start_year, 1, 1))), 0) > 0
-           OR COALESCE((SELECT SUM(CASE WHEN d2.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown') THEN 1 ELSE 0 END) FROM deployments d2 WHERE d2.monitored_app_id = ta.id AND (ma2.audit_start_year IS NULL OR d2.created_at >= make_date(ma2.audit_start_year, 1, 1))), 0) > 0
-           OR COALESCE((SELECT COUNT(*) FROM repository_alerts ra WHERE ra.monitored_app_id = ta.id AND ra.resolved_at IS NULL), 0) > 0
-         ) THEN ta.id
-       END)::int AS apps_with_issues
+       COALESCE(SUM(s.total_deployments), 0)::int AS total_deployments,
+       COALESCE(SUM(s.with_four_eyes), 0)::int AS with_four_eyes,
+       COALESCE(SUM(s.without_four_eyes), 0)::int AS without_four_eyes,
+       COALESCE(SUM(s.pending_verification), 0)::int AS pending_verification,
+       COUNT(*) FILTER (WHERE COALESCE(s.without_four_eyes, 0) > 0 OR COALESCE(s.pending_verification, 0) > 0 OR COALESCE(a.alert_count, 0) > 0)::int AS apps_with_issues
      FROM team_apps ta
-     JOIN monitored_applications ma2 ON ma2.id = ta.id
-     LEFT JOIN deployments d ON d.monitored_app_id = ta.id
-       AND (ma2.audit_start_year IS NULL OR d.created_at >= make_date(ma2.audit_start_year, 1, 1))`,
+     LEFT JOIN app_stats s ON s.monitored_app_id = ta.id
+     LEFT JOIN app_alerts a ON a.monitored_app_id = ta.id`,
     [naisTeamSlugs, useDirectApps ?? false, directAppIds ?? []],
   )
 
