@@ -160,7 +160,7 @@ export async function getDevTeamSummaryStats(
        WHERE ma.is_active = true
          AND (
            CASE
-             WHEN $3::boolean THEN ma.id = ANY($4::int[])
+             WHEN $2::boolean THEN ma.id = ANY($3::int[])
              ELSE ma.team_slug = ANY($1::text[])
            END
          )
@@ -182,7 +182,7 @@ export async function getDevTeamSummaryStats(
      JOIN monitored_applications ma2 ON ma2.id = ta.id
      LEFT JOIN deployments d ON d.monitored_app_id = ta.id
        AND (ma2.audit_start_year IS NULL OR d.created_at >= make_date(ma2.audit_start_year, 1, 1))`,
-    [naisTeamSlugs, [], useDirectApps ?? false, directAppIds ?? []],
+    [naisTeamSlugs, useDirectApps ?? false, directAppIds ?? []],
   )
 
   const row = result.rows[0]
