@@ -1,4 +1,4 @@
-import { ChevronDownIcon, MenuHamburgerIcon, MoonIcon, SunIcon } from '@navikt/aksel-icons'
+import { ChevronDownIcon, MenuHamburgerIcon, MoonIcon, PersonIcon, SunIcon } from '@navikt/aksel-icons'
 import {
   ActionMenu,
   Alert,
@@ -39,6 +39,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       navIdent: identity.navIdent,
       displayName: userMapping?.display_name || identity.name || identity.navIdent,
       email: userMapping?.nav_email || identity.email || null,
+      githubUsername: userMapping?.github_username || null,
       role: identity.role,
       sections,
     },
@@ -156,6 +157,14 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
                   </Detail>
                 </dl>
               </ActionMenu.Label>
+              {user.githubUsername && (
+                <ActionMenu.Item
+                  onSelect={() => navigate(`/users/${user.githubUsername}`)}
+                  icon={<PersonIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
+                >
+                  Min profil
+                </ActionMenu.Item>
+              )}
               <ActionMenu.Divider />
               {user.sections.length > 0 && (
                 <>

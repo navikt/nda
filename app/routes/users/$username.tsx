@@ -5,6 +5,8 @@ import {
   BodyShort,
   Box,
   Button,
+  Checkbox,
+  CheckboxGroup,
   Detail,
   Heading,
   HGrid,
@@ -17,8 +19,10 @@ import {
 import { useEffect, useRef } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { getDeploymentCountByDeployer, getDeploymentsByDeployer } from '~/db/deployments.server'
-import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
+import { getAllDevTeams } from '~/db/dev-teams.server'
+import { addUserDevTeam, getUserDevTeams, removeUserDevTeam } from '~/db/user-dev-team-preference.server'
 import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
+import { requireUser } from '~/lib/auth.server'
 import { isValidEmail, isValidNavIdent } from '~/lib/form-validators'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import styles from '~/styles/common.module.css'
@@ -28,7 +32,8 @@ export function meta({ data }: { data: { username: string } }) {
   return [{ title: `${data?.username || 'Bruker'} - Deployment Audit` }]
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const identity = await requireUser(request)
   const username = params.username
   if (!username) {
     throw new Response('Username required', { status: 400 })
@@ -44,6 +49,9 @@ export async function loader({ params }: Route.LoaderArgs) {
     getDeploymentsByDeployer(username, 5),
   ])
 
+  // Check if this is the logged-in user's own profile
+  const isOwnProfile = !isBot && mapping?.nav_ident === identity.navIdent
+
   // Fetch dev teams if user has a nav_ident
   let devTeams: Awaited<ReturnType<typeof getUserDevTeams>> = []
   if (mapping?.nav_ident) {
@@ -52,6 +60,12 @@ export async function loader({ params }: Route.LoaderArgs) {
     } catch {
       // Table may not exist yet
     }
+  }
+
+  // Fetch all available teams if viewing own profile
+  let availableDevTeams: Awaited<ReturnType<typeof getAllDevTeams>> = []
+  if (isOwnProfile) {
+    availableDevTeams = await getAllDevTeams()
   }
 
   return {
@@ -63,12 +77,41 @@ export async function loader({ params }: Route.LoaderArgs) {
     botDisplayName,
     botDescription,
     devTeams,
+    isOwnProfile,
+    availableDevTeams,
   }
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  const identity = await requireUser(request)
   const formData = await request.formData()
   const intent = formData.get('intent')
+
+  if (intent === 'add-dev-team') {
+    const devTeamId = Number(formData.get('devTeamId'))
+    if (!devTeamId || Number.isNaN(devTeamId)) {
+      return { error: 'Ugyldig team-valg' }
+    }
+    try {
+      await addUserDevTeam(identity.navIdent, devTeamId)
+    } catch {
+      return { error: 'Kunne ikke legge til team.' }
+    }
+    return { success: true }
+  }
+
+  if (intent === 'remove-dev-team') {
+    const devTeamId = Number(formData.get('devTeamId'))
+    if (!devTeamId || Number.isNaN(devTeamId)) {
+      return { error: 'Ugyldig team-valg' }
+    }
+    try {
+      await removeUserDevTeam(identity.navIdent, devTeamId)
+    } catch {
+      return { error: 'Kunne ikke fjerne team.' }
+    }
+    return { success: true }
+  }
 
   if (intent === 'create-mapping') {
     const githubUsername = formData.get('github_username') as string
@@ -113,8 +156,18 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function UserPage() {
-  const { username, mapping, deploymentCount, recentDeployments, isBot, botDisplayName, botDescription, devTeams } =
-    useLoaderData<typeof loader>()
+  const {
+    username,
+    mapping,
+    deploymentCount,
+    recentDeployments,
+    isBot,
+    botDisplayName,
+    botDescription,
+    devTeams,
+    isOwnProfile,
+    availableDevTeams,
+  } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
@@ -199,22 +252,52 @@ export default function UserPage() {
       </HGrid>
 
       {/* Dev team memberships */}
-      {devTeams.length > 0 && (
-        <VStack gap="space-8">
-          <Detail textColor="subtle">Utviklingsteam</Detail>
-          <HStack gap="space-8" wrap>
-            {devTeams.map((team) => (
-              <Tag key={team.id} variant="moderate" size="small">
-                <Link
-                  to={`/sections/${team.section_slug}/teams/${team.slug}`}
-                  style={{ textDecoration: 'none', color: 'inherit' }}
-                >
-                  {team.name}
-                </Link>
-              </Tag>
-            ))}
-          </HStack>
+      {isOwnProfile && availableDevTeams.length > 0 ? (
+        <VStack gap="space-12">
+          <Heading level="2" size="small">
+            Mine utviklingsteam
+          </Heading>
+          <Box background="raised" padding="space-16" borderRadius="4">
+            <CheckboxGroup legend="Velg team du tilhører" hideLegend>
+              <HStack gap="space-16" wrap>
+                {availableDevTeams.map((team) => {
+                  const isSelected = devTeams.some((t) => t.id === team.id)
+                  return (
+                    <Form method="post" key={team.id}>
+                      <input type="hidden" name="intent" value={isSelected ? 'remove-dev-team' : 'add-dev-team'} />
+                      <input type="hidden" name="devTeamId" value={team.id} />
+                      <Checkbox
+                        value={String(team.id)}
+                        checked={isSelected}
+                        onChange={(e) => e.currentTarget.form?.requestSubmit()}
+                      >
+                        {team.name}
+                      </Checkbox>
+                    </Form>
+                  )
+                })}
+              </HStack>
+            </CheckboxGroup>
+          </Box>
         </VStack>
+      ) : (
+        devTeams.length > 0 && (
+          <VStack gap="space-8">
+            <Detail textColor="subtle">Utviklingsteam</Detail>
+            <HStack gap="space-8" wrap>
+              {devTeams.map((team) => (
+                <Tag key={team.id} variant="moderate" size="small">
+                  <Link
+                    to={`/sections/${team.section_slug}/teams/${team.slug}`}
+                    style={{ textDecoration: 'none', color: 'inherit' }}
+                  >
+                    {team.name}
+                  </Link>
+                </Tag>
+              ))}
+            </HStack>
+          </VStack>
+        )
       )}
 
       {/* No mapping warning - only for non-bots */}

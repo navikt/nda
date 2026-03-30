@@ -1,16 +1,4 @@
-import {
-  Alert,
-  BodyShort,
-  Box,
-  Button,
-  Checkbox,
-  CheckboxGroup,
-  Heading,
-  HGrid,
-  HStack,
-  Tag,
-  VStack,
-} from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { Link } from 'react-router'
 import { AppCard, type AppCardData } from '~/components/AppCard'
@@ -90,19 +78,17 @@ function TeamStatsCard({ stats }: { stats: DevTeamSummaryStats }) {
 
 function HomePage({
   selectedDevTeams = [],
-  availableDevTeams = [],
   teamStats = null,
   issueApps = [],
   isAdmin = false,
+  githubUsername = 'pcmoen',
 }: {
   selectedDevTeams?: DevTeamInfo[]
-  availableDevTeams?: DevTeamInfo[]
   teamStats?: DevTeamSummaryStats | null
   issueApps?: AppCardData[]
   isAdmin?: boolean
+  githubUsername?: string | null
 }) {
-  const selectedIds = new Set(selectedDevTeams.map((t) => t.id))
-
   return (
     <VStack gap="space-32">
       {isAdmin && (
@@ -113,27 +99,21 @@ function HomePage({
         </HStack>
       )}
 
-      {availableDevTeams.length > 0 && (
-        <Box background="raised" padding="space-16" borderRadius="4">
-          <VStack gap="space-12">
-            <Heading level="2" size="small">
-              Mine utviklingsteam
-            </Heading>
-            <CheckboxGroup legend="Velg team du tilhører" hideLegend>
-              <HStack gap="space-16" wrap>
-                {availableDevTeams.map((team) => (
-                  <Checkbox key={team.id} value={String(team.id)} checked={selectedIds.has(team.id)} readOnly>
-                    {team.name}
-                  </Checkbox>
-                ))}
-              </HStack>
-            </CheckboxGroup>
+      {selectedDevTeams.length === 0 && (
+        <Alert variant="info">
+          <VStack gap="space-8">
+            <BodyShort>
+              Du har ikke valgt noen utviklingsteam ennå. Gå til profilen din for å velge hvilke team du tilhører.
+            </BodyShort>
+            {githubUsername && (
+              <div>
+                <Button as={Link} to={`/users/${githubUsername}`} size="small" variant="secondary">
+                  Min profil
+                </Button>
+              </div>
+            )}
           </VStack>
-        </Box>
-      )}
-
-      {selectedDevTeams.length === 0 && availableDevTeams.length > 0 && (
-        <Alert variant="info">Velg ett eller flere utviklingsteam over for å se en personalisert oversikt.</Alert>
+        </Alert>
       )}
 
       {selectedDevTeams.length > 0 && teamStats && (
@@ -248,7 +228,6 @@ export const WithTeamsSelected: Story = {
   name: 'Med valgte team',
   args: {
     selectedDevTeams: mockDevTeams,
-    availableDevTeams: mockAvailableTeams,
     teamStats: mockTeamStats,
     issueApps: mockIssueApps,
   },
@@ -258,7 +237,6 @@ export const MultipleTeams: Story = {
   name: 'Flere team valgt',
   args: {
     selectedDevTeams: mockAvailableTeams.slice(0, 2),
-    availableDevTeams: mockAvailableTeams,
     teamStats: { ...mockTeamStats, total_apps: 12, total_deployments: 98 },
     issueApps: mockIssueApps,
   },
@@ -268,7 +246,6 @@ export const NoTeamSelected: Story = {
   name: 'Ingen team valgt',
   args: {
     selectedDevTeams: [],
-    availableDevTeams: mockAvailableTeams,
     teamStats: null,
     issueApps: [],
   },
@@ -278,7 +255,6 @@ export const AllAppsOk: Story = {
   name: 'Alle apper i orden',
   args: {
     selectedDevTeams: mockDevTeams,
-    availableDevTeams: mockAvailableTeams,
     teamStats: { ...mockTeamStats, apps_with_issues: 0, without_four_eyes: 0 },
     issueApps: [],
   },
@@ -288,7 +264,6 @@ export const HighCoverage: Story = {
   name: 'Høy dekning (95%+)',
   args: {
     selectedDevTeams: mockDevTeams,
-    availableDevTeams: mockAvailableTeams,
     teamStats: { ...mockTeamStats, four_eyes_percentage: 98, apps_with_issues: 0 },
     issueApps: [],
   },
@@ -298,7 +273,6 @@ export const LowCoverage: Story = {
   name: 'Lav dekning (<80%)',
   args: {
     selectedDevTeams: mockDevTeams,
-    availableDevTeams: mockAvailableTeams,
     teamStats: { ...mockTeamStats, four_eyes_percentage: 65, apps_with_issues: 3 },
     issueApps: mockApps.slice(0, 3),
   },
@@ -308,7 +282,6 @@ export const AdminView: Story = {
   name: 'Som admin',
   args: {
     selectedDevTeams: mockDevTeams,
-    availableDevTeams: mockAvailableTeams,
     teamStats: mockTeamStats,
     issueApps: mockIssueApps,
     isAdmin: true,

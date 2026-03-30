@@ -1,26 +1,13 @@
-import {
-  Alert,
-  BodyShort,
-  Box,
-  Button,
-  Checkbox,
-  CheckboxGroup,
-  Heading,
-  HGrid,
-  HStack,
-  Tag,
-  VStack,
-} from '@navikt/ds-react'
-import { Form, Link, useRouteLoaderData } from 'react-router'
+import { Alert, BodyShort, Box, Button, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
+import { Link, useRouteLoaderData } from 'react-router'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { type DevTeamSummaryStats, getDevTeamSummaryStats } from '~/db/dashboard-stats.server'
 import { getDevTeamAppsWithIssues } from '~/db/deployments/home.server'
-import { getAllDevTeams, getDevTeamApplications } from '~/db/dev-teams.server'
-import { addUserDevTeam, getUserDevTeams, removeUserDevTeam } from '~/db/user-dev-team-preference.server'
+import { getDevTeamApplications } from '~/db/dev-teams.server'
+import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
 import { getAppDeploymentStatsBatch } from '../db/deployments.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '../db/monitored-applications.server'
-import { ok } from '../lib/action-result'
 import { requireUser } from '../lib/auth.server'
 import type { Route } from './+types/home'
 import type { loader as layoutLoader } from './layout'
@@ -32,43 +19,8 @@ export function meta(_args: Route.MetaArgs) {
   ]
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  const identity = await requireUser(request)
-  const formData = await request.formData()
-  const intent = formData.get('intent')
-
-  if (intent === 'add-dev-team') {
-    const devTeamId = Number(formData.get('devTeamId'))
-    if (!devTeamId || Number.isNaN(devTeamId)) {
-      return { error: 'Ugyldig team-valg' }
-    }
-    try {
-      await addUserDevTeam(identity.navIdent, devTeamId)
-    } catch {
-      return { error: 'Kunne ikke legge til team. Migrering av database kan mangle.' }
-    }
-    return ok('Team lagt til')
-  }
-
-  if (intent === 'remove-dev-team') {
-    const devTeamId = Number(formData.get('devTeamId'))
-    if (!devTeamId || Number.isNaN(devTeamId)) {
-      return { error: 'Ugyldig team-valg' }
-    }
-    try {
-      await removeUserDevTeam(identity.navIdent, devTeamId)
-    } catch {
-      return { error: 'Kunne ikke fjerne team.' }
-    }
-    return ok('Team fjernet')
-  }
-
-  return { error: 'Ukjent handling' }
-}
-
 export async function loader({ request }: Route.LoaderArgs) {
   const identity = await requireUser(request)
-  const availableDevTeams = await getAllDevTeams()
 
   // getUserDevTeams may fail if migration hasn't run yet
   let selectedDevTeams: Awaited<ReturnType<typeof getUserDevTeams>> = []
@@ -78,11 +30,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     // user_dev_team_preference table may not exist yet
   }
 
-  // If no dev teams selected, return just the selector data
+  // If no dev teams selected, return minimal data
   if (selectedDevTeams.length === 0) {
     return {
       selectedDevTeams: [],
-      availableDevTeams,
       teamStats: null,
       issueApps: [] as AppCardData[],
     }
@@ -138,7 +89,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     selectedDevTeams,
-    availableDevTeams,
     teamStats,
     issueApps: issueAppCards,
   }
@@ -202,10 +152,10 @@ function TeamStatsCard({ stats }: { stats: DevTeamSummaryStats }) {
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { selectedDevTeams, availableDevTeams, teamStats, issueApps } = loaderData
+  const { selectedDevTeams, teamStats, issueApps } = loaderData
   const layoutData = useRouteLoaderData<typeof layoutLoader>('routes/layout')
   const isAdmin = layoutData?.user?.role === 'admin'
-  const selectedIds = new Set(selectedDevTeams.map((t) => t.id))
+  const githubUsername = layoutData?.user?.githubUsername
 
   return (
     <VStack gap="space-32">
@@ -218,43 +168,22 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         </HStack>
       )}
 
-      {/* Team selector — always visible */}
-      {availableDevTeams.length > 0 ? (
-        <Box background="raised" padding="space-16" borderRadius="4">
-          <VStack gap="space-12">
-            <Heading level="2" size="small">
-              Mine utviklingsteam
-            </Heading>
-            <CheckboxGroup legend="Velg team du tilhører" hideLegend>
-              <HStack gap="space-16" wrap>
-                {availableDevTeams.map((team) => (
-                  <Form method="post" key={team.id}>
-                    <input
-                      type="hidden"
-                      name="intent"
-                      value={selectedIds.has(team.id) ? 'remove-dev-team' : 'add-dev-team'}
-                    />
-                    <input type="hidden" name="devTeamId" value={team.id} />
-                    <Checkbox
-                      value={String(team.id)}
-                      checked={selectedIds.has(team.id)}
-                      onChange={(e) => e.currentTarget.form?.requestSubmit()}
-                    >
-                      {team.name}
-                    </Checkbox>
-                  </Form>
-                ))}
-              </HStack>
-            </CheckboxGroup>
+      {/* No teams — prompt to set up profile */}
+      {selectedDevTeams.length === 0 && (
+        <Alert variant="info">
+          <VStack gap="space-8">
+            <BodyShort>
+              Du har ikke valgt noen utviklingsteam ennå. Gå til profilen din for å velge hvilke team du tilhører.
+            </BodyShort>
+            {githubUsername && (
+              <div>
+                <Button as={Link} to={`/users/${githubUsername}`} size="small" variant="secondary">
+                  Min profil
+                </Button>
+              </div>
+            )}
           </VStack>
-        </Box>
-      ) : (
-        <Alert variant="warning">Ingen utviklingsteam er tilgjengelige.</Alert>
-      )}
-
-      {/* No teams selected — prompt */}
-      {selectedDevTeams.length === 0 && availableDevTeams.length > 0 && (
-        <Alert variant="info">Velg ett eller flere utviklingsteam over for å se en personalisert oversikt.</Alert>
+        </Alert>
       )}
 
       {/* Teams selected — show combined overview */}
