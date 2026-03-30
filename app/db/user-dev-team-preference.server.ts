@@ -20,6 +20,47 @@ export async function getUserDevTeams(navIdent: string): Promise<DevTeamWithNais
 }
 
 /**
+ * Get dev team IDs for all users (for admin listing).
+ * Returns a map of nav_ident → array of dev_team_id.
+ */
+export async function getAllUserDevTeamMappings(): Promise<Map<string, number[]>> {
+  const result = await pool.query(
+    `SELECT p.nav_ident, array_agg(p.dev_team_id ORDER BY dt.name) as dev_team_ids
+     FROM user_dev_team_preference p
+     JOIN dev_teams dt ON dt.id = p.dev_team_id AND dt.is_active = true
+     GROUP BY p.nav_ident`,
+  )
+  const map = new Map<string, number[]>()
+  for (const row of result.rows) {
+    map.set(row.nav_ident, row.dev_team_ids)
+  }
+  return map
+}
+
+/**
+ * Set the dev teams for a user (replaces all existing).
+ */
+export async function setUserDevTeams(navIdent: string, devTeamIds: number[]): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('DELETE FROM user_dev_team_preference WHERE nav_ident = $1', [navIdent])
+    for (const id of devTeamIds) {
+      await client.query(
+        'INSERT INTO user_dev_team_preference (nav_ident, dev_team_id, updated_at) VALUES ($1, $2, NOW())',
+        [navIdent, id],
+      )
+    }
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
+/**
  * Add a dev team to the user's team list.
  */
 export async function addUserDevTeam(navIdent: string, devTeamId: number): Promise<void> {

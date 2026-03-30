@@ -17,6 +17,7 @@ import {
 import { useEffect, useRef } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { getDeploymentCountByDeployer, getDeploymentsByDeployer } from '~/db/deployments.server'
+import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
 import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
 import { isValidEmail, isValidNavIdent } from '~/lib/form-validators'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
@@ -43,6 +44,16 @@ export async function loader({ params }: Route.LoaderArgs) {
     getDeploymentsByDeployer(username, 5),
   ])
 
+  // Fetch dev teams if user has a nav_ident
+  let devTeams: Awaited<ReturnType<typeof getUserDevTeams>> = []
+  if (mapping?.nav_ident) {
+    try {
+      devTeams = await getUserDevTeams(mapping.nav_ident)
+    } catch {
+      // Table may not exist yet
+    }
+  }
+
   return {
     username,
     mapping,
@@ -51,6 +62,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     isBot,
     botDisplayName,
     botDescription,
+    devTeams,
   }
 }
 
@@ -101,7 +113,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function UserPage() {
-  const { username, mapping, deploymentCount, recentDeployments, isBot, botDisplayName, botDescription } =
+  const { username, mapping, deploymentCount, recentDeployments, isBot, botDisplayName, botDescription, devTeams } =
     useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
@@ -185,6 +197,22 @@ export default function UserPage() {
           </Box>
         )}
       </HGrid>
+
+      {/* Dev team memberships */}
+      {devTeams.length > 0 && (
+        <VStack gap="space-8">
+          <Detail textColor="subtle">Utviklingsteam</Detail>
+          <HStack gap="space-8" wrap>
+            {devTeams.map((team) => (
+              <Tag key={team.id} variant="moderate" size="small">
+                <Link to={`/boards/${team.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                  {team.name}
+                </Link>
+              </Tag>
+            ))}
+          </HStack>
+        </VStack>
+      )}
 
       {/* No mapping warning - only for non-bots */}
       {!mapping && !isBot && (
