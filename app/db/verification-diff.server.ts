@@ -1,6 +1,6 @@
 import { pool } from '~/db/connection.server'
 
-export interface VerificationDiffDeployment {
+interface VerificationDiffDeployment {
   id: number
   commit_sha: string
   four_eyes_status: string

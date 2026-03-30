@@ -1,6 +1,6 @@
 import { pool } from './connection.server'
 
-export interface ApplicationRepository {
+interface ApplicationRepository {
   id: number
   monitored_app_id: number
   github_owner: string

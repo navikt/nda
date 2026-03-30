@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["server.ts", "scripts/*.ts", ".storybook/vite.config.ts"],
+  "ignoreDependencies": [
+    "@fontsource/source-sans-pro",
+    "@storybook/react",
+    "@storybook/builder-vite",
+    "@slack/types",
+    "testcontainers",
+    "express"
+  ]
+}

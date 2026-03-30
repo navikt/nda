@@ -59,8 +59,6 @@ export {
   buildHomeTabBlocks,
   buildNewDeploymentBlocks,
   buildReminderBlocks,
-  getStatusEmoji,
-  getStatusText,
 } from './blocks'
 
 // Singleton Slack app instance
@@ -77,7 +75,7 @@ export function isSlackConfigured(): boolean {
 /**
  * Get or initialize the Slack app instance
  */
-export function getSlackApp(): App | null {
+function getSlackApp(): App | null {
   if (!isSlackConfigured()) {
     logger.info('[Slack] Not configured (missing SLACK_BOT_TOKEN or SLACK_APP_TOKEN)')
     return null
@@ -128,7 +126,7 @@ export async function startSlackConnection(): Promise<void> {
 /**
  * Stop the Slack connection
  */
-export async function stopSlackConnection(): Promise<void> {
+async function stopSlackConnection(): Promise<void> {
   if (!isConnected || !slackApp) return
 
   try {
@@ -260,7 +258,7 @@ export async function sendReminder(notification: ReminderNotification, channelId
 /**
  * Update an existing deployment notification
  */
-export async function updateDeploymentNotification(
+async function updateDeploymentNotification(
   messageTs: string,
   notification: DeploymentNotification,
   channelId?: string,
@@ -479,7 +477,7 @@ export async function notifyDeploymentIfNeeded(
  * Send a new deployment notification to Slack (informational, for ALL deployments).
  * Uses atomic claim pattern to prevent duplicates across pods.
  */
-export async function notifyNewDeploymentIfNeeded(
+async function notifyNewDeploymentIfNeeded(
   deployment: {
     id: number
     monitored_app_id: number

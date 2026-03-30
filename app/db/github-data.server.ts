@@ -29,7 +29,7 @@ import {
 /**
  * Save a PR data snapshot to the database
  */
-export async function savePrSnapshot(
+async function savePrSnapshot(
   owner: string,
   repo: string,
   prNumber: number,
@@ -63,7 +63,7 @@ export async function savePrSnapshot(
  * Get the latest snapshot for a PR data type
  * Returns null if no snapshot exists or if schema version is outdated
  */
-export async function getLatestPrSnapshot(
+async function getLatestPrSnapshot(
   owner: string,
   repo: string,
   prNumber: number,
@@ -107,7 +107,7 @@ export async function getLatestPrSnapshot(
 /**
  * Get all snapshots for a PR data type (history)
  */
-export async function getPrSnapshotHistory(
+async function getPrSnapshotHistory(
   owner: string,
   repo: string,
   prNumber: number,
@@ -317,7 +317,7 @@ export async function getLatestCommitSnapshot(
 /**
  * Get all latest snapshots for a commit (all data types)
  */
-export async function getAllLatestCommitSnapshots(
+async function getAllLatestCommitSnapshots(
   owner: string,
   repo: string,
   sha: string,
@@ -354,7 +354,7 @@ export async function getAllLatestCommitSnapshots(
 /**
  * Save multiple commit snapshots in a batch
  */
-export async function saveCommitSnapshotsBatch(
+async function saveCommitSnapshotsBatch(
   snapshots: Array<{
     owner: string
     repo: string
@@ -426,7 +426,7 @@ export async function markPrDataUnavailable(
 /**
  * Mark commit data as unavailable from GitHub
  */
-export async function markCommitDataUnavailable(
+async function markCommitDataUnavailable(
   owner: string,
   repo: string,
   sha: string,
@@ -524,7 +524,7 @@ export async function getLatestVerificationRun(deploymentId: number): Promise<{
 /**
  * Get verification run history for a deployment
  */
-export async function getVerificationRunHistory(
+async function getVerificationRunHistory(
   deploymentId: number,
   options?: { limit?: number },
 ): Promise<
@@ -566,7 +566,7 @@ export async function getVerificationRunHistory(
  * Delete old snapshots (keep only the latest N per PR/commit + data type)
  * Used for periodic maintenance to control database size
  */
-export async function cleanupOldSnapshots(options?: {
+async function cleanupOldSnapshots(options?: {
   keepCount?: number
   olderThanDays?: number
 }): Promise<{ prSnapshotsDeleted: number; commitSnapshotsDeleted: number }> {
@@ -698,7 +698,7 @@ export async function getLatestCompareSnapshot(
 // Statistics
 // =============================================================================
 
-export interface GitHubDataStats {
+interface GitHubDataStats {
   total: number
   withCurrentData: number
   withOutdatedData: number

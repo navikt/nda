@@ -115,7 +115,7 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
  * Verify four-eyes for a single deployment using the modular verification system.
  * Uses database caching and versioned snapshots.
  */
-export async function verifySingleDeployment(
+async function verifySingleDeployment(
   deploymentId: number,
   commitSha: string,
   repository: string,

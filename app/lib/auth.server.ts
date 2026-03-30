@@ -16,9 +16,9 @@ import { logger } from './logger.server'
 const FALLBACK_GROUP_ADMIN = '1e97cbc6-0687-4d23-aebd-c611035279c1' // pensjon-revisjon
 const FALLBACK_GROUP_USER = '415d3817-c83d-44c9-a52b-5116757f8fa8' // teampensjon
 
-export type UserRole = 'admin' | 'user'
+type UserRole = 'admin' | 'user'
 
-export interface UserSection {
+interface UserSection {
   id: number
   slug: string
   name: string
@@ -33,7 +33,7 @@ function isInNaisCluster(): boolean {
   return !!process.env.NAIS_CLUSTER_NAME
 }
 
-export interface UserIdentity {
+interface UserIdentity {
   navIdent: string
   name?: string
   email?: string

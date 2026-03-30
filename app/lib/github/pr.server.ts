@@ -5,11 +5,11 @@ import { getGitHubClient } from './client.server'
 // Cache for PR commits to avoid repeated API calls for same PR
 const prCommitsCache = new Map<string, string[]>()
 
-export function clearPrCommitsCache(): void {
+function clearPrCommitsCache(): void {
   prCommitsCache.clear()
 }
 
-export interface PullRequest {
+interface PullRequest {
   number: number
   title: string
   html_url: string
@@ -234,7 +234,7 @@ export async function getPullRequestForCommit(
 }
 
 // Extended PR type that includes rebase match info
-export interface PullRequestWithMatchInfo extends PullRequest {
+interface PullRequestWithMatchInfo extends PullRequest {
   _rebase_matched?: boolean
   _matched_original_sha?: string
 }
@@ -257,7 +257,7 @@ const prCommitsMetadataCache = new Map<string, PRCommitMetadata[]>()
  *
  * This function searches recently merged PRs for commits with matching metadata.
  */
-export async function findPRForRebasedCommit(
+async function findPRForRebasedCommit(
   owner: string,
   repo: string,
   commitSha: string,
@@ -398,11 +398,11 @@ export async function findPRForRebasedCommit(
 /**
  * Clear the PR commits metadata cache (for testing)
  */
-export function clearPrCommitsMetadataCache(): void {
+function clearPrCommitsMetadataCache(): void {
   prCommitsMetadataCache.clear()
 }
 
-export interface PullRequestReview {
+interface PullRequestReview {
   id: number
   user: {
     login: string
@@ -429,7 +429,7 @@ export async function getPullRequestReviews(
   return allReviews as PullRequestReview[]
 }
 
-export interface PullRequestCommit {
+interface PullRequestCommit {
   sha: string
   commit: {
     author: {
@@ -446,11 +446,7 @@ export interface PullRequestCommit {
   }>
 }
 
-export async function getPullRequestCommits(
-  owner: string,
-  repo: string,
-  pull_number: number,
-): Promise<PullRequestCommit[]> {
+async function getPullRequestCommits(owner: string, repo: string, pull_number: number): Promise<PullRequestCommit[]> {
   const client = getGitHubClient()
 
   logger.info(`   📄 Fetching commits for PR #${pull_number}...`)
@@ -503,7 +499,7 @@ function isMergeFromMainBranch(commit: PullRequestCommit): boolean {
  * - The approval came before the last commit, but all commits after approval are merges from main/master, OR
  * - Special case for Dependabot: commits by dependabot[bot] after approval are allowed
  */
-export async function verifyPullRequestFourEyes(
+async function verifyPullRequestFourEyes(
   owner: string,
   repo: string,
   pull_number: number,

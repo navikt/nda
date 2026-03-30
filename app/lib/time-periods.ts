@@ -12,7 +12,7 @@ export type TimePeriod =
   | 'last-year'
   | 'all'
 
-export interface TimePeriodOption {
+interface TimePeriodOption {
   value: TimePeriod
   label: string
 }

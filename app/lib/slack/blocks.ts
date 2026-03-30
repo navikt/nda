@@ -110,7 +110,7 @@ export function getStatusEmoji(status: DeploymentNotification['status']): string
   }
 }
 
-export function getStatusText(status: DeploymentNotification['status']): string {
+function getStatusText(status: DeploymentNotification['status']): string {
   switch (status) {
     case 'unverified':
       return 'Uverifisert'

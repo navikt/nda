@@ -1,7 +1,7 @@
 import { pool } from '~/db/connection.server'
 import type { ReportPeriodType } from '~/lib/report-periods'
 
-export interface ReportJob {
+interface ReportJob {
   job_id: string
   status: 'pending' | 'processing' | 'completed' | 'failed'
   error: string | null

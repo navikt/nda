@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useState } from 'react'
 import { useFetcher } from 'react-router'
 
-export type ThemeValue = 'light' | 'dark'
+type ThemeValue = 'light' | 'dark'
 
 interface ThemeContextType {
   theme: ThemeValue

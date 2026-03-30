@@ -18,21 +18,19 @@ let jwksCache: jose.JWTVerifyGetKey | null = null
 let jwksCacheCreatedAt = 0
 const JWKS_CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 
-export interface ValidatedTokenPayload {
+interface ValidatedTokenPayload {
   navIdent: string
   name?: string
   email?: string
   groups: string[]
 }
 
-export interface ValidationError {
+interface ValidationError {
   code: 'missing_config' | 'invalid_token' | 'expired' | 'invalid_signature' | 'invalid_claims'
   message: string
 }
 
-export type ValidationResult =
-  | { success: true; payload: ValidatedTokenPayload }
-  | { success: false; error: ValidationError }
+type ValidationResult = { success: true; payload: ValidatedTokenPayload } | { success: false; error: ValidationError }
 
 /**
  * Check if JWT validation is configured (running in Nais with Azure sidecar)
@@ -174,7 +172,7 @@ export async function validateToken(token: string): Promise<ValidationResult> {
 /**
  * Clear the JWKS cache (useful for testing or key rotation)
  */
-export function clearJwksCache(): void {
+function clearJwksCache(): void {
   jwksCache = null
   jwksCacheCreatedAt = 0
 }

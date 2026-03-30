@@ -1,6 +1,6 @@
 import { pool } from './connection.server'
 
-export interface Commit {
+interface Commit {
   sha: string
   repo_owner: string
   repo_name: string
@@ -20,7 +20,7 @@ export interface Commit {
   updated_at: Date
 }
 
-export interface UpsertCommitParams {
+interface UpsertCommitParams {
   sha: string
   repoOwner: string
   repoName: string
@@ -41,7 +41,7 @@ export interface UpsertCommitParams {
 /**
  * Batch upsert multiple commits
  */
-export async function upsertCommits(commits: UpsertCommitParams[]): Promise<number> {
+async function upsertCommits(commits: UpsertCommitParams[]): Promise<number> {
   if (commits.length === 0) return 0
 
   // Use a transaction for batch insert
@@ -103,7 +103,7 @@ export async function upsertCommits(commits: UpsertCommitParams[]): Promise<numb
 /**
  * Get a commit by SHA
  */
-export async function getCommit(repoOwner: string, repoName: string, sha: string): Promise<Commit | null> {
+async function getCommit(repoOwner: string, repoName: string, sha: string): Promise<Commit | null> {
   const result = await pool.query(`SELECT * FROM commits WHERE repo_owner = $1 AND repo_name = $2 AND sha = $3`, [
     repoOwner,
     repoName,
@@ -141,7 +141,7 @@ export async function updateCommitPrVerification(
 /**
  * Check if we have commits cached for a range
  */
-export async function hasCommitsCached(repoOwner: string, repoName: string, sha: string): Promise<boolean> {
+async function hasCommitsCached(repoOwner: string, repoName: string, sha: string): Promise<boolean> {
   const result = await pool.query(
     `SELECT 1 FROM commits WHERE repo_owner = $1 AND repo_name = $2 AND sha = $3 LIMIT 1`,
     [repoOwner, repoName, sha],

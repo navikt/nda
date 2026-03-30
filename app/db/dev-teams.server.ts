@@ -47,7 +47,7 @@ export async function getDevTeamBySlug(slug: string): Promise<DevTeamWithNaisTea
   return result.rows[0] ?? null
 }
 
-export async function getDevTeamById(id: number): Promise<DevTeamWithNaisTeams | null> {
+async function getDevTeamById(id: number): Promise<DevTeamWithNaisTeams | null> {
   const result = await pool.query(
     `SELECT dt.*,
        COALESCE(array_agg(dn.nais_team_slug ORDER BY dn.nais_team_slug) FILTER (WHERE dn.nais_team_slug IS NOT NULL), '{}') as nais_team_slugs
@@ -61,7 +61,7 @@ export async function getDevTeamById(id: number): Promise<DevTeamWithNaisTeams |
 }
 
 /** Find the dev team that a Nais team belongs to */
-export async function getDevTeamForNaisTeam(naisTeamSlug: string): Promise<DevTeam | null> {
+async function getDevTeamForNaisTeam(naisTeamSlug: string): Promise<DevTeam | null> {
   const result = await pool.query(
     `SELECT dt.* FROM dev_teams dt
      JOIN dev_team_nais_teams dn ON dn.dev_team_id = dt.id

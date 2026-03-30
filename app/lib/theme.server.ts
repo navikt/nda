@@ -2,7 +2,7 @@ import { createCookie } from 'react-router'
 
 export type ThemeValue = 'light' | 'dark'
 
-export const themeCookie = createCookie('theme', {
+const themeCookie = createCookie('theme', {
   maxAge: 60 * 60 * 24 * 365, // 1 year
   sameSite: 'lax',
   path: '/',

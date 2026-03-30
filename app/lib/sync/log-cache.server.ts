@@ -11,7 +11,7 @@ interface CheckToCache {
   check_name: string
 }
 
-export interface CacheCheckLogsResult {
+interface CacheCheckLogsResult {
   cached: number
   diagnostics: {
     gcsConfigured: boolean

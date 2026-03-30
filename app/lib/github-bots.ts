@@ -5,7 +5,7 @@
  * Bot users should not have user mappings created for them.
  */
 
-export interface GitHubBot {
+interface GitHubBot {
   displayName: string
   description: string
 }

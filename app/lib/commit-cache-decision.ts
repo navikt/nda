@@ -5,7 +5,7 @@
  * Determines whether to skip a commit (cached as verified), add it as unverified,
  * or recheck via GitHub API.
  */
-export type CacheDecision = 'skip_verified' | 'add_unverified' | 'recheck'
+type CacheDecision = 'skip_verified' | 'add_unverified' | 'recheck'
 
 export function shouldUseCachedCommitResult(
   cachedCommit: {

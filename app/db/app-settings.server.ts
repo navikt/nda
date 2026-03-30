@@ -6,7 +6,7 @@ import { pool } from './connection.server'
 // Types
 // ============================================================================
 
-export interface AppSetting {
+interface AppSetting {
   id: number
   monitored_app_id: number
   setting_key: string
@@ -14,7 +14,7 @@ export interface AppSetting {
   updated_at: Date
 }
 
-export interface AppConfigAuditLogEntry {
+interface AppConfigAuditLogEntry {
   id: number
   monitored_app_id: number
   changed_by_nav_ident: string
@@ -37,12 +37,12 @@ export const DEFAULT_IMPLICIT_APPROVAL_SETTINGS: ImplicitApprovalSettings = {
 }
 
 // Setting keys
-export const SETTING_KEYS = {
+const SETTING_KEYS = {
   IMPLICIT_APPROVAL: 'implicit_approval',
 } as const
 
 // Re-export for convenience
-export { IMPLICIT_APPROVAL_MODES, type ImplicitApprovalMode }
+export type { ImplicitApprovalMode }
 
 // ============================================================================
 // Settings CRUD
@@ -51,7 +51,7 @@ export { IMPLICIT_APPROVAL_MODES, type ImplicitApprovalMode }
 /**
  * Get a setting for an application
  */
-export async function getAppSetting<T extends Record<string, unknown>>(
+async function getAppSetting<T extends Record<string, unknown>>(
   monitoredAppId: number,
   settingKey: string,
   defaultValue: T,
@@ -78,7 +78,7 @@ export async function getImplicitApprovalSettings(monitoredAppId: number): Promi
 /**
  * Update a setting for an application with audit logging
  */
-export async function updateAppSetting<T extends Record<string, unknown>>(params: {
+async function updateAppSetting<T extends Record<string, unknown>>(params: {
   monitoredAppId: number
   settingKey: string
   newValue: T
@@ -191,7 +191,7 @@ export async function getAppConfigAuditLog(
 /**
  * Get audit log entries for a time period (for audit reports)
  */
-export async function getAppConfigAuditLogForPeriod(
+async function getAppConfigAuditLogForPeriod(
   monitoredAppId: number,
   startDate: Date,
   endDate: Date,
@@ -208,7 +208,7 @@ export async function getAppConfigAuditLogForPeriod(
 /**
  * Get all settings for an application
  */
-export async function getAllAppSettings(monitoredAppId: number): Promise<AppSetting[]> {
+async function getAllAppSettings(monitoredAppId: number): Promise<AppSetting[]> {
   const result = await pool.query<AppSetting>(
     'SELECT * FROM app_settings WHERE monitored_app_id = $1 ORDER BY setting_key',
     [monitoredAppId],

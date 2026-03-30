@@ -5,7 +5,7 @@ import type { AppWithIssues, DeploymentWithApp, IssueDeployment } from '../deplo
 /**
  * Get recent deployments for Slack Home Tab
  */
-export async function getRecentDeploymentsForHomeTab(limit = 10): Promise<DeploymentWithApp[]> {
+async function getRecentDeploymentsForHomeTab(limit = 10): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*, 
             ma.team_slug, ma.environment_name, ma.app_name

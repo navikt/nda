@@ -3,7 +3,7 @@ import { Alert, BodyShort, Button, Detail, HStack, Loader, Tag, VStack } from '@
 import { useState } from 'react'
 import { useFetcher } from 'react-router'
 
-export type Annotation = {
+type Annotation = {
   path: string | null
   start_line: number
   end_line: number

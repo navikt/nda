@@ -53,7 +53,7 @@ export type ImplicitApprovalMode = (typeof IMPLICIT_APPROVAL_MODES)[number]
 /**
  * Human-readable labels for implicit approval modes
  */
-export const IMPLICIT_APPROVAL_MODE_LABELS: Record<ImplicitApprovalMode, string> = {
+const IMPLICIT_APPROVAL_MODE_LABELS: Record<ImplicitApprovalMode, string> = {
   off: 'Av',
   dependabot_only: 'Kun Dependabot',
   all: 'Alle PRer',
@@ -62,7 +62,7 @@ export const IMPLICIT_APPROVAL_MODE_LABELS: Record<ImplicitApprovalMode, string>
 /**
  * Descriptions for implicit approval modes
  */
-export const IMPLICIT_APPROVAL_MODE_DESCRIPTIONS: Record<ImplicitApprovalMode, string> = {
+const IMPLICIT_APPROVAL_MODE_DESCRIPTIONS: Record<ImplicitApprovalMode, string> = {
   off: 'Ingen implisitt godkjenning - krever eksplisitt review-godkjenning',
   dependabot_only: 'Dependabot-PRer med kun Dependabot-commits godkjennes når merget av annen bruker',
   all: 'PRer godkjennes når merger er forskjellig fra PR-forfatter og siste commit-forfatter',
@@ -93,7 +93,7 @@ export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number]
 /**
  * Human-readable labels for verification statuses
  */
-export const VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
+const VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   approved: 'Godkjent',
   implicitly_approved: 'Implisitt godkjent',
   unverified_commits: 'Ikke verifisert',
@@ -138,7 +138,7 @@ export type UnverifiedReason = (typeof UNVERIFIED_REASONS)[number]
 /**
  * Human-readable labels for unverified reasons
  */
-export const UNVERIFIED_REASON_LABELS: Record<UnverifiedReason, string> = {
+const UNVERIFIED_REASON_LABELS: Record<UnverifiedReason, string> = {
   no_pr: 'Ingen PR funnet',
   no_approved_reviews: 'Ingen godkjent review',
   approval_before_last_commit: 'Godkjenning før siste commit',
@@ -383,7 +383,7 @@ export interface PrChecks {
 /**
  * Commit metadata (stored in 'metadata' snapshot)
  */
-export interface CommitMetadata {
+interface CommitMetadata {
   sha: string
   message: string
   authorUsername: string
@@ -398,7 +398,7 @@ export interface CommitMetadata {
 /**
  * Commit status (stored in 'status' snapshot)
  */
-export interface CommitStatus {
+interface CommitStatus {
   state: 'pending' | 'success' | 'failure' | 'error'
   totalCount: number
   statuses: Array<{
@@ -412,7 +412,7 @@ export interface CommitStatus {
 /**
  * Associated PRs for a commit (stored in 'prs' snapshot)
  */
-export interface CommitPrs {
+interface CommitPrs {
   prs: Array<{
     number: number
     title: string
@@ -562,7 +562,7 @@ export interface UnverifiedCommit {
 /**
  * A verification run record from the database
  */
-export interface VerificationRun {
+interface VerificationRun {
   id: number
   deploymentId: number
   schemaVersion: number

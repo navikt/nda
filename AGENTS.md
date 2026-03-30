@@ -5,7 +5,7 @@
 Run all checks before committing changes:
 
 ```bash
-npm run lint && npm run check && npm test && npm run build && npm run build-storybook
+npm run lint && npm run check && npm test && npm run knip && npm run build && npm run build-storybook
 ```
 
 This runs:
@@ -13,8 +13,9 @@ This runs:
 1. **Lint** (`biome check .`) — code formatting and linting
 2. **Check** (`npm run lint && npm run typecheck`) — lint + TypeScript type checking
 3. **Test** (`vitest run`) — unit and integration tests
-4. **Build** (`react-router build`) — production build
-5. **Build Storybook** (`storybook build`) — Storybook build
+4. **Knip** (`knip`) — detect unused files, dependencies, and exports
+5. **Build** (`react-router build`) — production build
+6. **Build Storybook** (`storybook build`) — Storybook build
 
 All must pass before committing.
 

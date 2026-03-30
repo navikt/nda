@@ -205,7 +205,7 @@ export interface DeploymentFilters {
   audit_start_year?: number | null
 }
 
-export interface PaginatedDeployments {
+interface PaginatedDeployments {
   deployments: DeploymentWithApp[]
   total: number
   page: number
@@ -602,7 +602,7 @@ export async function updateDeploymentLegacyData(
  * Get the deployment that happened before this one for the same repo/environment
  * Uses created_at for ordering (not id, which isn't guaranteed chronological)
  */
-export async function getPreviousDeployment(
+async function getPreviousDeployment(
   currentDeploymentId: number,
   repoOwner: string,
   repoName: string,
@@ -1012,7 +1012,6 @@ export {
   getAppsWithIssues,
   getHomeTabSummaryStats,
   getIssueDeploymentsPerApp,
-  getRecentDeploymentsForHomeTab,
 } from './deployments/home.server'
 export {
   claimDeploymentForDeployNotify,
@@ -1020,7 +1019,6 @@ export {
   claimReminderSend,
   getAppsWithRemindersEnabled,
   getDeploymentsNeedingDeployNotify,
-  getDeploymentsNeedingSlackNotification,
   getUnapprovedDeployments,
 } from './deployments/notifications.server'
 // Re-exports from submodules

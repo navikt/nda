@@ -11,7 +11,7 @@ import { getDeviationsForPeriod } from './deviations.server'
 /**
  * Slim deployment row for audit reports - excludes large github_pr_data blob
  */
-export interface AuditDeploymentRow {
+interface AuditDeploymentRow {
   id: number
   nais_deployment_id: string | null
   title: string | null
@@ -34,7 +34,7 @@ export interface AuditDeploymentRow {
   unverified_commits: UnverifiedCommitEntry[] | null
 }
 
-export interface AuditReport {
+interface AuditReport {
   id: number
   report_id: string
   monitored_app_id: number
@@ -157,7 +157,7 @@ export interface UnverifiedCommitDeploymentEntry {
   commits: UnverifiedCommitEntry[]
 }
 
-export interface AuditReportSummary {
+interface AuditReportSummary {
   id: number
   report_id: string
   app_name: string
@@ -172,7 +172,7 @@ export interface AuditReportSummary {
   generated_at: Date
 }
 
-export interface AuditReadinessCheck {
+interface AuditReadinessCheck {
   is_ready: boolean
   total_deployments: number
   approved_count: number

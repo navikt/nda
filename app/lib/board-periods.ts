@@ -4,7 +4,7 @@
 
 export type BoardPeriodType = 'tertiary' | 'quarterly'
 
-export interface BoardPeriod {
+interface BoardPeriod {
   type: BoardPeriodType
   label: string
   start: string // ISO date (YYYY-MM-DD)

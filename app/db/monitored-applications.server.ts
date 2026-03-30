@@ -1,6 +1,6 @@
 import { pool } from './connection.server'
 
-export interface MonitoredApplication {
+interface MonitoredApplication {
   id: number
   team_slug: string
   environment_name: string
@@ -82,9 +82,6 @@ export async function getMonitoredApplicationByIdentity(
   )
   return result.rows[0] || null
 }
-
-// Alias for consistency with sync code
-export const getMonitoredApplication = getMonitoredApplicationByIdentity
 
 export async function createMonitoredApplication(data: {
   team_slug: string

@@ -14,7 +14,7 @@ export interface SectionWithTeams extends Section {
   team_slugs: string[]
 }
 
-export async function getAllSections(): Promise<Section[]> {
+async function getAllSections(): Promise<Section[]> {
   const result = await pool.query('SELECT * FROM sections WHERE is_active = true ORDER BY name')
   return result.rows
 }
@@ -24,12 +24,12 @@ export async function getSectionBySlug(slug: string): Promise<Section | null> {
   return result.rows[0] ?? null
 }
 
-export async function getSectionById(id: number): Promise<Section | null> {
+async function getSectionById(id: number): Promise<Section | null> {
   const result = await pool.query('SELECT * FROM sections WHERE id = $1', [id])
   return result.rows[0] ?? null
 }
 
-export async function getSectionWithTeams(id: number): Promise<SectionWithTeams | null> {
+async function getSectionWithTeams(id: number): Promise<SectionWithTeams | null> {
   const result = await pool.query(
     `SELECT s.*, COALESCE(array_agg(st.team_slug ORDER BY st.team_slug) FILTER (WHERE st.team_slug IS NOT NULL), '{}') as team_slugs
      FROM sections s

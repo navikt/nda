@@ -42,7 +42,7 @@ import {
 // Main Fetch Function
 // =============================================================================
 
-export interface FetchOptions {
+interface FetchOptions {
   forceRefresh?: boolean
   dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[]
 }
@@ -615,7 +615,7 @@ export async function buildCommitsBetweenFromCache(
  * They handle the actual GitHub API calls and error handling.
  */
 
-export async function refreshPrData(
+async function refreshPrData(
   owner: string,
   repo: string,
   prNumber: number,
@@ -666,7 +666,7 @@ export async function refreshPrData(
 // Bulk Data Fetching for All Deployments
 // =============================================================================
 
-export interface BulkFetchProgress {
+interface BulkFetchProgress {
   total: number
   processed: number
   skipped: number
@@ -674,7 +674,7 @@ export interface BulkFetchProgress {
   errors: number
 }
 
-export interface BulkFetchResult extends BulkFetchProgress {
+interface BulkFetchResult extends BulkFetchProgress {
   errorDetails: Array<{ deploymentId: number; error: string }>
 }
 

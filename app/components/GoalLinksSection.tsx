@@ -23,7 +23,7 @@ const LINK_METHOD_LABELS: Record<string, string> = {
   pr_title: 'PR-tittel',
 }
 
-export interface AvailableBoard {
+interface AvailableBoard {
   id: number
   title: string
   period_label: string

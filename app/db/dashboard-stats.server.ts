@@ -1,6 +1,6 @@
 import { pool } from './connection.server'
 
-export interface SectionOverallStats {
+interface SectionOverallStats {
   total_deployments: number
   with_four_eyes: number
   without_four_eyes: number

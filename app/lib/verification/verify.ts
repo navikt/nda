@@ -433,7 +433,7 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
 /**
  * Detect if a commit message indicates a merge of base branch into feature branch.
  */
-export function isBaseBranchMergeCommit(message: string, baseBranch = 'main'): boolean {
+function isBaseBranchMergeCommit(message: string, baseBranch = 'main'): boolean {
   const patterns = [
     new RegExp(`^Merge branch '${baseBranch}' into`, 'i'),
     new RegExp(`^Merge branch '${baseBranch === 'main' ? 'master' : 'main'}' into`, 'i'),
@@ -450,7 +450,7 @@ interface BaseMergeCheckResult {
 /**
  * Check if unverified commits can be explained by base branch merge.
  */
-export function shouldApproveWithBaseMerge(
+function shouldApproveWithBaseMerge(
   reviews: PrReview[],
   unverifiedCommits: UnverifiedCommit[],
   prCommits: PrCommit[],

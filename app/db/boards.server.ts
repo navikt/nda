@@ -50,7 +50,7 @@ export interface BoardKeyResultWithRefs extends BoardKeyResult {
   external_references: ExternalReference[]
 }
 
-export interface BoardWithObjectives extends Board {
+interface BoardWithObjectives extends Board {
   objectives: ObjectiveWithKeyResults[]
 }
 
@@ -94,7 +94,7 @@ export async function getBoardsWithGoalsForDevTeam(devTeamId: number): Promise<
   return result
 }
 
-export async function getBoardById(id: number): Promise<Board | null> {
+async function getBoardById(id: number): Promise<Board | null> {
   const result = await pool.query('SELECT * FROM boards WHERE id = $1', [id])
   return result.rows[0] ?? null
 }
@@ -158,7 +158,7 @@ export async function createBoard(data: {
   return result.rows[0]
 }
 
-export async function updateBoard(id: number, data: { title?: string; is_active?: boolean }): Promise<Board | null> {
+async function updateBoard(id: number, data: { title?: string; is_active?: boolean }): Promise<Board | null> {
   const sets: string[] = []
   const values: unknown[] = []
   let idx = 1

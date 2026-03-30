@@ -10,7 +10,7 @@ import {
   getDeploymentByNaisId,
   getLatestDeploymentForApp,
 } from '~/db/deployments.server'
-import { getMonitoredApplication } from '~/db/monitored-applications.server'
+import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { logger } from '~/lib/logger.server'
 import { fetchApplicationDeployments, fetchNewDeployments } from '~/lib/nais.server'
 
@@ -18,7 +18,7 @@ import { fetchApplicationDeployments, fetchNewDeployments } from '~/lib/nais.ser
  * Step 1: Sync deployments from Nais API to database
  * This ONLY fetches from Nais and stores to DB - no GitHub calls
  */
-export async function syncDeploymentsFromNais(
+async function syncDeploymentsFromNais(
   teamSlug: string,
   environmentName: string,
   appName: string,
@@ -35,7 +35,7 @@ export async function syncDeploymentsFromNais(
   })
 
   // Get the monitored application
-  const monitoredApp = await getMonitoredApplication(teamSlug, environmentName, appName)
+  const monitoredApp = await getMonitoredApplicationByIdentity(teamSlug, environmentName, appName)
   if (!monitoredApp) {
     throw new Error(`Application not found in monitored applications: ${teamSlug}/${environmentName}/${appName}`)
   }

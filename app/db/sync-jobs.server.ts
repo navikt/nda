@@ -3,9 +3,7 @@ import { pool } from './connection.server'
 
 export {
   SYNC_JOB_STATUS_LABELS,
-  SYNC_JOB_STATUSES,
   SYNC_JOB_TYPE_LABELS,
-  SYNC_JOB_TYPES,
   type SyncJobStatus,
   type SyncJobType,
 } from './sync-job-types'
@@ -137,7 +135,7 @@ export async function cleanupOldSyncJobs(keepPerApp: number = 50): Promise<numbe
   return result.rowCount || 0
 }
 
-export interface SyncJobWithApp extends SyncJob {
+interface SyncJobWithApp extends SyncJob {
   app_name: string
   team_slug: string
   environment_name: string

@@ -1,17 +1,17 @@
 import { pool } from './connection.server'
 
-export interface GlobalSetting {
+interface GlobalSetting {
   id: number
   setting_key: string
   setting_value: Record<string, unknown>
   updated_at: Date
 }
 
-export const GLOBAL_SETTING_KEYS = {
+const GLOBAL_SETTING_KEYS = {
   DEVIATION_SLACK_CHANNEL: 'deviation_slack_channel',
 } as const
 
-export interface DeviationSlackChannelSettings {
+interface DeviationSlackChannelSettings {
   channel_id: string
   [key: string]: unknown
 }
@@ -20,10 +20,7 @@ const DEFAULT_DEVIATION_SLACK_CHANNEL: DeviationSlackChannelSettings = {
   channel_id: '',
 }
 
-export async function getGlobalSetting<T extends Record<string, unknown>>(
-  settingKey: string,
-  defaultValue: T,
-): Promise<T> {
+async function getGlobalSetting<T extends Record<string, unknown>>(settingKey: string, defaultValue: T): Promise<T> {
   const result = await pool.query<GlobalSetting>('SELECT * FROM global_settings WHERE setting_key = $1', [settingKey])
   if (result.rows.length === 0) {
     return defaultValue
@@ -31,7 +28,7 @@ export async function getGlobalSetting<T extends Record<string, unknown>>(
   return { ...defaultValue, ...result.rows[0].setting_value } as T
 }
 
-export async function updateGlobalSetting<T extends Record<string, unknown>>(params: {
+async function updateGlobalSetting<T extends Record<string, unknown>>(params: {
   settingKey: string
   newValue: T
 }): Promise<GlobalSetting> {

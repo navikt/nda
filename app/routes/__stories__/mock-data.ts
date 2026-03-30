@@ -81,7 +81,7 @@ export const mockPendingRepository = {
   status: 'pending_approval' as const,
 }
 
-export const mockHistoricalRepository = {
+const mockHistoricalRepository = {
   ...mockRepository,
   id: 3,
   github_repo_name: 'pensjon-pen-legacy',
@@ -118,7 +118,7 @@ export const mockAuditReport = {
   created_at: '2026-02-01T12:00:00Z',
 }
 
-export const mockDeployment = {
+const mockDeployment = {
   id: 1,
   commit_sha: 'abc123def456',
   commit_message: 'feat: Add new feature',
@@ -192,7 +192,7 @@ export const mockNaisApps = [
   { teamSlug: 'pensjonsamhandling', appName: 'pensjon-samhandling-api', environmentName: 'prod-fss' },
 ]
 
-export const mockSyncJobs = [
+const mockSyncJobs = [
   {
     id: 1,
     app_id: 1,

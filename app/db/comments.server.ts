@@ -1,6 +1,6 @@
 import { query } from './connection.server'
 
-export interface DeploymentComment {
+interface DeploymentComment {
   id: number
   deployment_id: number
   comment_text: string
@@ -12,7 +12,7 @@ export interface DeploymentComment {
   created_at: Date
 }
 
-export interface CreateCommentParams {
+interface CreateCommentParams {
   deployment_id: number
   comment_text: string
   slack_link?: string

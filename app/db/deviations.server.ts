@@ -1,15 +1,7 @@
+import type { DeviationFollowUpRole, DeviationIntent, DeviationSeverity } from '~/lib/deviation-constants'
 import { query } from './connection.server'
 
-export type { DeviationFollowUpRole, DeviationIntent, DeviationSeverity } from '~/lib/deviation-constants'
-export {
-  DEVIATION_FOLLOW_UP_ROLE_LABELS,
-  DEVIATION_INTENT_LABELS,
-  DEVIATION_SEVERITY_LABELS,
-} from '~/lib/deviation-constants'
-
-import type { DeviationFollowUpRole, DeviationIntent, DeviationSeverity } from '~/lib/deviation-constants'
-
-export interface DeploymentDeviation {
+interface DeploymentDeviation {
   id: number
   deployment_id: number
   reason: string
@@ -26,7 +18,7 @@ export interface DeploymentDeviation {
   created_at: Date
 }
 
-export interface DeploymentDeviationWithContext extends DeploymentDeviation {
+interface DeploymentDeviationWithContext extends DeploymentDeviation {
   app_name?: string
   environment_name?: string
   team_slug?: string
@@ -35,7 +27,7 @@ export interface DeploymentDeviationWithContext extends DeploymentDeviation {
   deploy_started_at?: Date
 }
 
-export interface CreateDeviationParams {
+interface CreateDeviationParams {
   deployment_id: number
   reason: string
   breach_type?: string
@@ -126,7 +118,7 @@ export async function getDeviationsForPeriod(
   return result.rows
 }
 
-export async function resolveDeviation(params: {
+async function resolveDeviation(params: {
   id: number
   resolved_by: string
   resolved_by_name?: string
@@ -142,7 +134,7 @@ export async function resolveDeviation(params: {
   return result.rows[0] || null
 }
 
-export async function getDeviationCountByAppId(monitoredAppId: number): Promise<{ open: number; total: number }> {
+async function getDeviationCountByAppId(monitoredAppId: number): Promise<{ open: number; total: number }> {
   const result = await query<{ open: string; total: string }>(
     `SELECT 
        COUNT(*) FILTER (WHERE dd.resolved_at IS NULL) AS open,

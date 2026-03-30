@@ -1,6 +1,6 @@
 import { pool } from './connection.server'
 
-export interface RepositoryAlert {
+interface RepositoryAlert {
   id: number
   monitored_app_id: number
   deployment_id: number
@@ -16,7 +16,7 @@ export interface RepositoryAlert {
   created_at: Date
 }
 
-export interface RepositoryAlertWithContext extends RepositoryAlert {
+interface RepositoryAlertWithContext extends RepositoryAlert {
   team_slug: string
   environment_name: string
   app_name: string

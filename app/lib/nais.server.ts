@@ -33,13 +33,13 @@ function getNaisClient(): GraphQLClient {
 }
 
 // Types based on Nais API structure
-export interface NaisResource {
+interface NaisResource {
   id: string
   kind: string
   name: string
 }
 
-export interface NaisDeployment {
+interface NaisDeployment {
   id: string
   createdAt: string
   environmentName: string
@@ -53,7 +53,7 @@ export interface NaisDeployment {
   }
 }
 
-export interface NaisApplication {
+interface NaisApplication {
   name: string
   team: {
     slug: string
@@ -77,20 +77,20 @@ export interface NaisApplication {
   }
 }
 
-export interface TeamEnvironment {
+interface TeamEnvironment {
   environment: {
     name: string
   }
   application: NaisApplication
 }
 
-export interface TeamEnvironmentResponse {
+interface TeamEnvironmentResponse {
   team: {
     environment: TeamEnvironment
   }
 }
 
-export interface ApplicationWithEnv {
+interface ApplicationWithEnv {
   name: string
   teamEnvironment: {
     environment: {
@@ -99,7 +99,7 @@ export interface ApplicationWithEnv {
   }
 }
 
-export interface TeamApplicationsResponse {
+interface TeamApplicationsResponse {
   team: {
     applications: {
       pageInfo: {
@@ -469,7 +469,7 @@ const TEAMS_AND_APPLICATIONS_QUERY = `
   }
 `
 
-export interface TeamWithApps {
+interface TeamWithApps {
   slug: string
   applications: {
     nodes: Array<{

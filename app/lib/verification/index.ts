@@ -32,32 +32,13 @@ import type { CompareData, PrCommit, PrMetadata, PrReview, VerificationInput, Ve
 import { verifyDeployment } from './verify'
 
 // Re-export individual modules
-export {
-  type BulkFetchProgress,
-  type BulkFetchResult,
-  fetchVerificationData,
-  fetchVerificationDataForAllDeployments,
-} from './fetch-data.server'
-export { storeVerificationResult } from './store-data.server'
+export { fetchVerificationDataForAllDeployments } from './fetch-data.server'
+
 // Re-export types and constants for convenience
 export type {
-  ImplicitApprovalMode,
-  UnverifiedReason,
   VerificationInput,
   VerificationResult,
-  VerificationStatus,
 } from './types'
-export {
-  assertNever,
-  IMPLICIT_APPROVAL_MODE_DESCRIPTIONS,
-  IMPLICIT_APPROVAL_MODE_LABELS,
-  IMPLICIT_APPROVAL_MODES,
-  UNVERIFIED_REASON_LABELS,
-  UNVERIFIED_REASONS,
-  VERIFICATION_STATUS_LABELS,
-  VERIFICATION_STATUSES,
-} from './types'
-export { verifyDeployment } from './verify'
 
 // =============================================================================
 // Debug Mode
@@ -73,7 +54,7 @@ export const isVerificationDebugMode = process.env.VERIFICATION_DEBUG === 'true'
 // Main Verification Function
 // =============================================================================
 
-export interface RunVerificationOptions {
+interface RunVerificationOptions {
   commitSha: string
   repository: string
   environmentName: string

@@ -29,7 +29,7 @@ export function startReminderScheduler(): void {
 /**
  * Stop the reminder scheduler.
  */
-export function stopReminderScheduler(): void {
+function stopReminderScheduler(): void {
   if (schedulerInterval) {
     clearInterval(schedulerInterval)
     schedulerInterval = null
@@ -40,7 +40,7 @@ export function stopReminderScheduler(): void {
 /**
  * Check all apps and send reminders where needed.
  */
-export async function checkAndSendReminders(): Promise<void> {
+async function checkAndSendReminders(): Promise<void> {
   try {
     const now = new Date()
 

@@ -5,7 +5,7 @@ import { getPullRequestForCommit, getPullRequestReviews } from './pr.server'
 /**
  * Result of looking up GitHub data for a legacy deployment
  */
-export interface LegacyLookupResult {
+interface LegacyLookupResult {
   success: boolean
   error?: string
   data?: {
