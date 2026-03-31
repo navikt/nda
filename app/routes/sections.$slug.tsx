@@ -200,14 +200,12 @@ function DevTeamCard({ stats, sectionSlug }: { stats: DevTeamDashboardStats; sec
               {goalPct}
             </Tag>
           </VStack>
-          {stats.without_four_eyes > 0 && (
-            <VStack gap="space-4" align="center">
-              <Detail textColor="subtle">Uten 4-øyne</Detail>
-              <Tag variant="warning" size="small">
-                {stats.without_four_eyes}
-              </Tag>
-            </VStack>
-          )}
+          <VStack gap="space-4" align="center">
+            <Detail textColor="subtle">Uten 4-øyne</Detail>
+            <Tag variant={stats.without_four_eyes > 0 ? 'warning' : 'neutral'} size="small">
+              {stats.without_four_eyes}
+            </Tag>
+          </VStack>
         </HStack>
       </HStack>
     </Box>
