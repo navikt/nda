@@ -200,6 +200,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   const layoutData = useRouteLoaderData<typeof layoutLoader>('routes/layout')
   const isAdmin = layoutData?.user?.role === 'admin'
   const githubUsername = layoutData?.user?.githubUsername
+  const navIdent = layoutData?.user?.navIdent
+  const profileId = githubUsername || navIdent
 
   return (
     <VStack gap="space-32">
@@ -219,9 +221,9 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <BodyShort>
               Du har ikke valgt noen utviklingsteam ennå. Gå til profilen din for å velge hvilke team du tilhører.
             </BodyShort>
-            {githubUsername && (
+            {profileId && (
               <div>
-                <Button as={Link} to={`/users/${githubUsername}`} size="small" variant="secondary">
+                <Button as={Link} to={`/users/${profileId}`} size="small" variant="secondary">
                   Min profil
                 </Button>
               </div>

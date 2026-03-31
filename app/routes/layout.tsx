@@ -157,14 +157,12 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
                   </Detail>
                 </dl>
               </ActionMenu.Label>
-              {user.githubUsername && (
-                <ActionMenu.Item
-                  onSelect={() => navigate(`/users/${user.githubUsername}`)}
-                  icon={<PersonIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
-                >
-                  Min profil
-                </ActionMenu.Item>
-              )}
+              <ActionMenu.Item
+                onSelect={() => navigate(`/users/${user.githubUsername || user.navIdent}`)}
+                icon={<PersonIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
+              >
+                Min profil
+              </ActionMenu.Item>
               <ActionMenu.Divider />
               {user.sections.length > 0 && (
                 <>
