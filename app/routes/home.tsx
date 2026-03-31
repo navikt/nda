@@ -241,21 +241,15 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           {/* Navigation links per team */}
           <HStack gap="space-8" wrap>
             {selectedDevTeams.map((team) => (
-              <HStack key={team.id} gap="space-8">
-                <Button
-                  as={Link}
-                  to={`/sections/${team.section_slug}/teams/${team.slug}`}
-                  size="small"
-                  variant="secondary"
-                >
-                  {team.name}
-                </Button>
-                {team.nais_team_slugs.map((slug) => (
-                  <Button key={slug} as={Link} to={`/team/${slug}`} size="small" variant="secondary">
-                    Alle apper ({slug})
-                  </Button>
-                ))}
-              </HStack>
+              <Button
+                key={team.id}
+                as={Link}
+                to={`/sections/${team.section_slug}/teams/${team.slug}`}
+                size="small"
+                variant="secondary"
+              >
+                {team.name}
+              </Button>
             ))}
           </HStack>
 
