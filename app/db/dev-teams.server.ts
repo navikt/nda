@@ -78,7 +78,7 @@ async function getDevTeamById(id: number): Promise<DevTeamWithNaisTeams | null> 
 }
 
 /** Find the dev team that a Nais team belongs to */
-async function getDevTeamForNaisTeam(naisTeamSlug: string): Promise<DevTeam | null> {
+async function _getDevTeamForNaisTeam(naisTeamSlug: string): Promise<DevTeam | null> {
   const result = await pool.query(
     `SELECT dt.* FROM dev_teams dt
      JOIN dev_team_nais_teams dn ON dn.dev_team_id = dt.id

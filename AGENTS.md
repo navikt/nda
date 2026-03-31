@@ -17,7 +17,7 @@ This runs:
 5. **Build** (`react-router build`) — production build
 6. **Build Storybook** (`storybook build`) — Storybook build
 
-All must pass before committing.
+All must pass before committing. Lint warnings must also be resolved — the codebase should have zero warnings.
 
 ## Commit Message Format
 

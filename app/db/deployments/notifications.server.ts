@@ -33,7 +33,7 @@ export async function claimDeploymentForSlackNotification(
  * Get deployments that need Slack notification (no slack_message_ts set)
  * for apps that have Slack notifications enabled
  */
-async function getDeploymentsNeedingSlackNotification(limit = 50): Promise<DeploymentWithApp[]> {
+async function _getDeploymentsNeedingSlackNotification(limit = 50): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*, 
             ma.team_slug, ma.environment_name, ma.app_name, ma.default_branch,

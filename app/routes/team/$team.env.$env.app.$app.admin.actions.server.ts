@@ -381,7 +381,7 @@ export async function action({ request }: { request: Request; params: Record<str
       formData.get('environment_name') as string,
       formData.get('app_name') as string,
     )
-    if (!app || !app.slack_channel_id) {
+    if (!app?.slack_channel_id) {
       return { error: 'Slack-kanal er ikke konfigurert for denne appen' }
     }
 

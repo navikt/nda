@@ -118,7 +118,7 @@ export async function getDeviationsForPeriod(
   return result.rows
 }
 
-async function resolveDeviation(params: {
+async function _resolveDeviation(params: {
   id: number
   resolved_by: string
   resolved_by_name?: string
@@ -134,7 +134,7 @@ async function resolveDeviation(params: {
   return result.rows[0] || null
 }
 
-async function getDeviationCountByAppId(monitoredAppId: number): Promise<{ open: number; total: number }> {
+async function _getDeviationCountByAppId(monitoredAppId: number): Promise<{ open: number; total: number }> {
   const result = await query<{ open: string; total: string }>(
     `SELECT 
        COUNT(*) FILTER (WHERE dd.resolved_at IS NULL) AS open,

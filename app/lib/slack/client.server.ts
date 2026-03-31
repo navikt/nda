@@ -126,7 +126,7 @@ export async function startSlackConnection(): Promise<void> {
 /**
  * Stop the Slack connection
  */
-async function stopSlackConnection(): Promise<void> {
+async function _stopSlackConnection(): Promise<void> {
   if (!isConnected || !slackApp) return
 
   try {
@@ -258,7 +258,7 @@ export async function sendReminder(notification: ReminderNotification, channelId
 /**
  * Update an existing deployment notification
  */
-async function updateDeploymentNotification(
+async function _updateDeploymentNotification(
   messageTs: string,
   notification: DeploymentNotification,
   channelId?: string,

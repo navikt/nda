@@ -158,7 +158,7 @@ export async function createBoard(data: {
   return result.rows[0]
 }
 
-async function updateBoard(id: number, data: { title?: string; is_active?: boolean }): Promise<Board | null> {
+async function _updateBoard(id: number, data: { title?: string; is_active?: boolean }): Promise<Board | null> {
   const sets: string[] = []
   const values: unknown[] = []
   let idx = 1

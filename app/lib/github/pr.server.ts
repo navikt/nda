@@ -5,7 +5,7 @@ import { getGitHubClient } from './client.server'
 // Cache for PR commits to avoid repeated API calls for same PR
 const prCommitsCache = new Map<string, string[]>()
 
-function clearPrCommitsCache(): void {
+function _clearPrCommitsCache(): void {
   prCommitsCache.clear()
 }
 
@@ -257,7 +257,7 @@ const prCommitsMetadataCache = new Map<string, PRCommitMetadata[]>()
  *
  * This function searches recently merged PRs for commits with matching metadata.
  */
-async function findPRForRebasedCommit(
+async function _findPRForRebasedCommit(
   owner: string,
   repo: string,
   commitSha: string,
@@ -398,7 +398,7 @@ async function findPRForRebasedCommit(
 /**
  * Clear the PR commits metadata cache (for testing)
  */
-function clearPrCommitsMetadataCache(): void {
+function _clearPrCommitsMetadataCache(): void {
   prCommitsMetadataCache.clear()
 }
 
@@ -499,7 +499,7 @@ function isMergeFromMainBranch(commit: PullRequestCommit): boolean {
  * - The approval came before the last commit, but all commits after approval are merges from main/master, OR
  * - Special case for Dependabot: commits by dependabot[bot] after approval are allowed
  */
-async function verifyPullRequestFourEyes(
+async function _verifyPullRequestFourEyes(
   owner: string,
   repo: string,
   pull_number: number,

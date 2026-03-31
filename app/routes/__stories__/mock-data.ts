@@ -81,7 +81,7 @@ export const mockPendingRepository = {
   status: 'pending_approval' as const,
 }
 
-const mockHistoricalRepository = {
+const _mockHistoricalRepository = {
   ...mockRepository,
   id: 3,
   github_repo_name: 'pensjon-pen-legacy',
@@ -192,7 +192,7 @@ export const mockNaisApps = [
   { teamSlug: 'pensjonsamhandling', appName: 'pensjon-samhandling-api', environmentName: 'prod-fss' },
 ]
 
-const mockSyncJobs = [
+const _mockSyncJobs = [
   {
     id: 1,
     app_id: 1,

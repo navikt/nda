@@ -14,7 +14,7 @@ export interface SectionWithTeams extends Section {
   team_slugs: string[]
 }
 
-async function getAllSections(): Promise<Section[]> {
+async function _getAllSections(): Promise<Section[]> {
   const result = await pool.query('SELECT * FROM sections WHERE is_active = true ORDER BY name')
   return result.rows
 }
@@ -29,7 +29,7 @@ async function getSectionById(id: number): Promise<Section | null> {
   return result.rows[0] ?? null
 }
 
-async function getSectionWithTeams(id: number): Promise<SectionWithTeams | null> {
+async function _getSectionWithTeams(id: number): Promise<SectionWithTeams | null> {
   const result = await pool.query(
     `SELECT s.*, COALESCE(array_agg(st.team_slug ORDER BY st.team_slug) FILTER (WHERE st.team_slug IS NOT NULL), '{}') as team_slugs
      FROM sections s
@@ -80,7 +80,7 @@ export async function getSectionsForEntraGroups(
 /**
  * Get all team_slugs that belong to the given sections.
  */
-async function getTeamSlugsForSections(sectionIds: number[]): Promise<string[]> {
+async function _getTeamSlugsForSections(sectionIds: number[]): Promise<string[]> {
   if (sectionIds.length === 0) return []
 
   const result = await pool.query(

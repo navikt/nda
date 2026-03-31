@@ -615,7 +615,7 @@ export async function buildCommitsBetweenFromCache(
  * They handle the actual GitHub API calls and error handling.
  */
 
-async function refreshPrData(
+async function _refreshPrData(
   owner: string,
   repo: string,
   prNumber: number,

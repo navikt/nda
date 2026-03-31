@@ -41,7 +41,7 @@ interface UpsertCommitParams {
 /**
  * Batch upsert multiple commits
  */
-async function upsertCommits(commits: UpsertCommitParams[]): Promise<number> {
+async function _upsertCommits(commits: UpsertCommitParams[]): Promise<number> {
   if (commits.length === 0) return 0
 
   // Use a transaction for batch insert
@@ -103,7 +103,7 @@ async function upsertCommits(commits: UpsertCommitParams[]): Promise<number> {
 /**
  * Get a commit by SHA
  */
-async function getCommit(repoOwner: string, repoName: string, sha: string): Promise<Commit | null> {
+async function _getCommit(repoOwner: string, repoName: string, sha: string): Promise<Commit | null> {
   const result = await pool.query(`SELECT * FROM commits WHERE repo_owner = $1 AND repo_name = $2 AND sha = $3`, [
     repoOwner,
     repoName,
@@ -141,7 +141,7 @@ export async function updateCommitPrVerification(
 /**
  * Check if we have commits cached for a range
  */
-async function hasCommitsCached(repoOwner: string, repoName: string, sha: string): Promise<boolean> {
+async function _hasCommitsCached(repoOwner: string, repoName: string, sha: string): Promise<boolean> {
   const result = await pool.query(
     `SELECT 1 FROM commits WHERE repo_owner = $1 AND repo_name = $2 AND sha = $3 LIMIT 1`,
     [repoOwner, repoName, sha],

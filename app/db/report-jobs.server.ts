@@ -1,15 +1,6 @@
 import { pool } from '~/db/connection.server'
 import type { ReportPeriodType } from '~/lib/report-periods'
 
-interface ReportJob {
-  job_id: string
-  status: 'pending' | 'processing' | 'completed' | 'failed'
-  error: string | null
-  created_at: Date
-  completed_at: Date | null
-  pdf_data: Buffer | null
-}
-
 export async function createReportJob(
   monitoredAppId: number,
   year: number,

@@ -172,7 +172,7 @@ export async function validateToken(token: string): Promise<ValidationResult> {
 /**
  * Clear the JWKS cache (useful for testing or key rotation)
  */
-function clearJwksCache(): void {
+function _clearJwksCache(): void {
   jwksCache = null
   jwksCacheCreatedAt = 0
 }

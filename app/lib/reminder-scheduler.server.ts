@@ -29,7 +29,7 @@ export function startReminderScheduler(): void {
 /**
  * Stop the reminder scheduler.
  */
-function stopReminderScheduler(): void {
+function _stopReminderScheduler(): void {
   if (schedulerInterval) {
     clearInterval(schedulerInterval)
     schedulerInterval = null

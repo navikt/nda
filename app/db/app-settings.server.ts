@@ -1,5 +1,5 @@
 import { logger } from '~/lib/logger.server'
-import { IMPLICIT_APPROVAL_MODES, type ImplicitApprovalMode } from '~/lib/verification/types'
+import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool } from './connection.server'
 
 // ============================================================================
@@ -191,7 +191,7 @@ export async function getAppConfigAuditLog(
 /**
  * Get audit log entries for a time period (for audit reports)
  */
-async function getAppConfigAuditLogForPeriod(
+async function _getAppConfigAuditLogForPeriod(
   monitoredAppId: number,
   startDate: Date,
   endDate: Date,
@@ -208,7 +208,7 @@ async function getAppConfigAuditLogForPeriod(
 /**
  * Get all settings for an application
  */
-async function getAllAppSettings(monitoredAppId: number): Promise<AppSetting[]> {
+async function _getAllAppSettings(monitoredAppId: number): Promise<AppSetting[]> {
   const result = await pool.query<AppSetting>(
     'SELECT * FROM app_settings WHERE monitored_app_id = $1 ORDER BY setting_key',
     [monitoredAppId],

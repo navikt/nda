@@ -107,7 +107,7 @@ async function getLatestPrSnapshot(
 /**
  * Get all snapshots for a PR data type (history)
  */
-async function getPrSnapshotHistory(
+async function _getPrSnapshotHistory(
   owner: string,
   repo: string,
   prNumber: number,
@@ -317,7 +317,7 @@ export async function getLatestCommitSnapshot(
 /**
  * Get all latest snapshots for a commit (all data types)
  */
-async function getAllLatestCommitSnapshots(
+async function _getAllLatestCommitSnapshots(
   owner: string,
   repo: string,
   sha: string,
@@ -354,7 +354,7 @@ async function getAllLatestCommitSnapshots(
 /**
  * Save multiple commit snapshots in a batch
  */
-async function saveCommitSnapshotsBatch(
+async function _saveCommitSnapshotsBatch(
   snapshots: Array<{
     owner: string
     repo: string
@@ -426,7 +426,7 @@ export async function markPrDataUnavailable(
 /**
  * Mark commit data as unavailable from GitHub
  */
-async function markCommitDataUnavailable(
+async function _markCommitDataUnavailable(
   owner: string,
   repo: string,
   sha: string,
@@ -524,7 +524,7 @@ export async function getLatestVerificationRun(deploymentId: number): Promise<{
 /**
  * Get verification run history for a deployment
  */
-async function getVerificationRunHistory(
+async function _getVerificationRunHistory(
   deploymentId: number,
   options?: { limit?: number },
 ): Promise<
@@ -566,7 +566,7 @@ async function getVerificationRunHistory(
  * Delete old snapshots (keep only the latest N per PR/commit + data type)
  * Used for periodic maintenance to control database size
  */
-async function cleanupOldSnapshots(options?: {
+async function _cleanupOldSnapshots(options?: {
   keepCount?: number
   olderThanDays?: number
 }): Promise<{ prSnapshotsDeleted: number; commitSnapshotsDeleted: number }> {

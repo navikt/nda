@@ -78,7 +78,7 @@ export async function createSlackNotification(data: {
 /**
  * Get notification by deployment ID
  */
-async function getSlackNotificationByDeployment(deploymentId: number): Promise<SlackNotification | null> {
+async function _getSlackNotificationByDeployment(deploymentId: number): Promise<SlackNotification | null> {
   const result = await pool.query('SELECT * FROM slack_notifications WHERE deployment_id = $1', [deploymentId])
   return result.rows[0] || null
 }
@@ -135,7 +135,7 @@ export async function updateSlackNotification(
 /**
  * Log a message deletion
  */
-async function logSlackNotificationDeleted(notificationId: number, triggeredBy?: string): Promise<void> {
+async function _logSlackNotificationDeleted(notificationId: number, triggeredBy?: string): Promise<void> {
   const current = await pool.query('SELECT message_blocks FROM slack_notifications WHERE id = $1', [notificationId])
   const oldBlocks = current.rows[0]?.message_blocks
 
@@ -192,7 +192,7 @@ export async function getSlackInteractions(notificationId: number): Promise<Slac
 /**
  * Get recent notifications with optional filters
  */
-async function getRecentSlackNotifications(options?: {
+async function _getRecentSlackNotifications(options?: {
   limit?: number
   deploymentId?: number
 }): Promise<SlackNotification[]> {

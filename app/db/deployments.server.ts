@@ -602,7 +602,7 @@ export async function updateDeploymentLegacyData(
  * Get the deployment that happened before this one for the same repo/environment
  * Uses created_at for ordering (not id, which isn't guaranteed chronological)
  */
-async function getPreviousDeployment(
+async function _getPreviousDeployment(
   currentDeploymentId: number,
   repoOwner: string,
   repoName: string,

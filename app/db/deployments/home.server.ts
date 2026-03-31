@@ -55,7 +55,7 @@ export async function getDevTeamAppsWithIssues(
 /**
  * Get recent deployments for Slack Home Tab
  */
-async function getRecentDeploymentsForHomeTab(limit = 10): Promise<DeploymentWithApp[]> {
+async function _getRecentDeploymentsForHomeTab(limit = 10): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*, 
             ma.team_slug, ma.environment_name, ma.app_name
