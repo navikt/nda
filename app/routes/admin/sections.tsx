@@ -1,7 +1,7 @@
 import { PlusIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Heading, HStack, LinkPanel, TextField, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, Heading, HStack, TextField, VStack } from '@navikt/ds-react'
 import { useState } from 'react'
-import { Form, useLoaderData } from 'react-router'
+import { Form, Link, useLoaderData } from 'react-router'
 import { createSection, getAllSectionsWithTeams } from '~/db/sections.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/sections'
@@ -111,11 +111,20 @@ export default function AdminSections() {
       {sections.length === 0 ? (
         <Alert variant="info">Ingen seksjoner er opprettet ennå.</Alert>
       ) : (
-        <VStack gap="space-16">
+        <VStack gap="space-12">
           {sections.map((section) => (
-            <LinkPanel key={section.id} href={`/sections/${section.slug}`}>
-              <LinkPanel.Title>{section.name}</LinkPanel.Title>
-            </LinkPanel>
+            <Box
+              key={section.id}
+              padding="space-20"
+              borderRadius="8"
+              background="raised"
+              borderColor="neutral-subtle"
+              borderWidth="1"
+            >
+              <Heading level="2" size="medium">
+                <Link to={`/sections/${section.slug}`}>{section.name}</Link>
+              </Heading>
+            </Box>
           ))}
         </VStack>
       )}
