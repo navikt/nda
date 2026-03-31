@@ -143,13 +143,6 @@ function DevTeamCard({ stats, sectionSlug }: { stats: DevTeamDashboardStats; sec
           <Heading level="3" size="medium">
             <Link to={`/sections/${sectionSlug}/teams/${stats.dev_team_slug}`}>{stats.dev_team_name}</Link>
           </Heading>
-          <HStack gap="space-8" wrap>
-            {stats.nais_team_slugs.map((slug) => (
-              <Tag key={slug} variant="neutral" size="xsmall">
-                {slug}
-              </Tag>
-            ))}
-          </HStack>
         </VStack>
 
         <HStack gap="space-24" wrap>
