@@ -1,16 +1,29 @@
-import { BarChartIcon, PlusIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Heading, HStack, Select, Table, Tag, TextField, VStack } from '@navikt/ds-react'
+import { BarChartIcon, ClockIcon, PlusIcon } from '@navikt/aksel-icons'
+import {
+  Alert,
+  BodyShort,
+  Box,
+  Button,
+  Detail,
+  Heading,
+  HStack,
+  Select,
+  Tag,
+  TextField,
+  VStack,
+} from '@navikt/ds-react'
 import { useState } from 'react'
 import { Form, Link, useLoaderData } from 'react-router'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { type Board, createBoard, getBoardsByDevTeam } from '~/db/boards.server'
+import { type BoardObjectiveProgress, getBoardObjectiveProgress } from '~/db/dashboard-stats.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
 import { getDevTeamApplications, getDevTeamBySlug } from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { type DevTeamMember, getDevTeamMembers } from '~/db/user-dev-team-preference.server'
 import { requireUser } from '~/lib/auth.server'
-import { type BoardPeriodType, getCurrentPeriod, getPeriodsForYear } from '~/lib/board-periods'
+import { type BoardPeriodType, getPeriodsForYear } from '~/lib/board-periods'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug'
 
 export function meta({ data }: Route.MetaArgs) {
@@ -31,6 +44,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     getAllAlertCounts(),
     getAllActiveRepositories(),
   ])
+
+  const activeBoard = boards.find((b) => b.is_active) ?? null
+  const activeBoardProgress = activeBoard ? await getBoardObjectiveProgress(activeBoard.id) : []
 
   // Build app cards: direct links + nais team matches
   const directAppIds = new Set(directApps.map((a) => a.monitored_app_id))
@@ -61,9 +77,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }))
     .sort((a, b) => a.app_name.localeCompare(b.app_name, 'nb'))
 
-  const currentTertial = getCurrentPeriod('tertiary')
-  const currentQuarter = getCurrentPeriod('quarterly')
-  return { devTeam, boards, members, appCards, currentTertial, currentQuarter, sectionSlug: params.sectionSlug }
+  return {
+    devTeam,
+    boards,
+    activeBoard,
+    activeBoardProgress,
+    members,
+    appCards,
+    sectionSlug: params.sectionSlug,
+  }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -107,9 +129,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function DevTeamPage() {
-  const { devTeam, boards, members, appCards, sectionSlug } = useLoaderData<typeof loader>()
+  const { devTeam, boards, activeBoard, activeBoardProgress, members, appCards, sectionSlug } =
+    useLoaderData<typeof loader>()
   const [showCreate, setShowCreate] = useState(false)
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
+  const inactiveBoards = boards.filter((b) => !b.is_active)
 
   return (
     <VStack gap="space-24">
@@ -119,6 +143,44 @@ export default function DevTeamPage() {
         </Heading>
         <BodyShort textColor="subtle">Teamside med mål- og commitmentstavler.</BodyShort>
       </div>
+
+      {/* Active board */}
+      {activeBoard ? (
+        <ActiveBoardSection board={activeBoard} progress={activeBoardProgress} teamBasePath={teamBasePath} />
+      ) : (
+        <Alert variant="info">Ingen aktiv tavle. Opprett en ny tavle for å komme i gang.</Alert>
+      )}
+
+      {/* Board actions */}
+      {!showCreate ? (
+        <HStack gap="space-8">
+          <Button variant="secondary" size="small" icon={<PlusIcon aria-hidden />} onClick={() => setShowCreate(true)}>
+            Ny tavle
+          </Button>
+          <Button
+            as={Link}
+            to={`${teamBasePath}/dashboard`}
+            variant="tertiary"
+            size="small"
+            icon={<BarChartIcon aria-hidden />}
+          >
+            Dashboard
+          </Button>
+          {inactiveBoards.length > 0 && (
+            <Button
+              as={Link}
+              to={`${teamBasePath}/boards`}
+              variant="tertiary"
+              size="small"
+              icon={<ClockIcon aria-hidden />}
+            >
+              Tidligere tavler ({inactiveBoards.length})
+            </Button>
+          )}
+        </HStack>
+      ) : (
+        <CreateBoardForm onCancel={() => setShowCreate(false)} />
+      )}
 
       {/* Members */}
       {members.length > 0 && (
@@ -155,74 +217,72 @@ export default function DevTeamPage() {
           </VStack>
         </VStack>
       )}
-
-      {/* Board actions */}
-      {!showCreate ? (
-        <HStack gap="space-8">
-          <Button variant="secondary" size="small" icon={<PlusIcon aria-hidden />} onClick={() => setShowCreate(true)}>
-            Ny tavle
-          </Button>
-          <Button
-            as={Link}
-            to={`${teamBasePath}/dashboard`}
-            variant="tertiary"
-            size="small"
-            icon={<BarChartIcon aria-hidden />}
-          >
-            Dashboard
-          </Button>
-        </HStack>
-      ) : (
-        <CreateBoardForm onCancel={() => setShowCreate(false)} />
-      )}
-
-      {boards.length === 0 ? (
-        <Alert variant="info">Ingen tavler er opprettet for dette utviklingsteamet.</Alert>
-      ) : (
-        <Table>
-          <Table.Header>
-            <Table.Row>
-              <Table.HeaderCell>Tavle</Table.HeaderCell>
-              <Table.HeaderCell>Periode</Table.HeaderCell>
-              <Table.HeaderCell>Type</Table.HeaderCell>
-              <Table.HeaderCell>Status</Table.HeaderCell>
-              <Table.HeaderCell />
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {boards.map((board) => (
-              <BoardRow key={board.id} board={board} teamBasePath={teamBasePath} />
-            ))}
-          </Table.Body>
-        </Table>
-      )}
     </VStack>
   )
 }
 
-function BoardRow({ board, teamBasePath }: { board: Board; teamBasePath: string }) {
+function ActiveBoardSection({
+  board,
+  progress,
+  teamBasePath,
+}: {
+  board: Board
+  progress: BoardObjectiveProgress[]
+  teamBasePath: string
+}) {
   return (
-    <Table.Row>
-      <Table.DataCell>
-        <Link to={`${teamBasePath}/${board.id}`}>{board.title}</Link>
-      </Table.DataCell>
-      <Table.DataCell>{board.period_label}</Table.DataCell>
-      <Table.DataCell>
-        <Tag variant="neutral" size="small">
-          {board.period_type === 'tertiary' ? 'Tertial' : 'Kvartal'}
-        </Tag>
-      </Table.DataCell>
-      <Table.DataCell>
-        <Tag variant={board.is_active ? 'success' : 'neutral'} size="small">
-          {board.is_active ? 'Aktiv' : 'Avsluttet'}
-        </Tag>
-      </Table.DataCell>
-      <Table.DataCell>
-        <Button as={Link} to={`${teamBasePath}/${board.id}`} variant="tertiary" size="xsmall">
-          Vis
-        </Button>
-      </Table.DataCell>
-    </Table.Row>
+    <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
+      <VStack gap="space-16">
+        <HStack justify="space-between" align="center" wrap>
+          <VStack gap="space-4">
+            <Heading level="2" size="medium">
+              <Link to={`${teamBasePath}/${board.id}`}>{board.title}</Link>
+            </Heading>
+            <HStack gap="space-8">
+              <Tag variant="success" size="xsmall">
+                Aktiv
+              </Tag>
+              <Detail textColor="subtle">{board.period_label}</Detail>
+            </HStack>
+          </VStack>
+          <Button as={Link} to={`${teamBasePath}/${board.id}`} variant="tertiary" size="small">
+            Åpne tavle
+          </Button>
+        </HStack>
+
+        {progress.length > 0 ? (
+          <VStack gap="space-8">
+            {progress.map((obj) => (
+              <Box key={obj.objective_id} padding="space-12" borderRadius="4" background="neutral-soft">
+                <VStack gap="space-4">
+                  <HStack justify="space-between" align="center">
+                    <BodyShort weight="semibold" size="small">
+                      {obj.objective_title}
+                    </BodyShort>
+                    <Tag variant="neutral" size="xsmall">
+                      {obj.total_linked_deployments} deployments
+                    </Tag>
+                  </HStack>
+                  {obj.key_results.length > 0 && (
+                    <HStack gap="space-8" wrap>
+                      {obj.key_results.map((kr) => (
+                        <Detail key={kr.id} textColor="subtle">
+                          {kr.title}: {kr.linked_deployments}
+                        </Detail>
+                      ))}
+                    </HStack>
+                  )}
+                </VStack>
+              </Box>
+            ))}
+          </VStack>
+        ) : (
+          <BodyShort size="small" textColor="subtle">
+            Ingen mål er opprettet for denne tavlen ennå.
+          </BodyShort>
+        )}
+      </VStack>
+    </Box>
   )
 }
 

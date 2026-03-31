@@ -64,6 +64,10 @@ export default [
     route('admin/sections/:slug/dev-teams', 'routes/admin/sections.$slug.dev-teams.tsx'),
     route('sections/:sectionSlug/teams/:devTeamSlug', 'routes/sections.$sectionSlug.teams.$devTeamSlug.tsx'),
     route(
+      'sections/:sectionSlug/teams/:devTeamSlug/boards',
+      'routes/sections.$sectionSlug.teams.$devTeamSlug.boards.tsx',
+    ),
+    route(
       'sections/:sectionSlug/teams/:devTeamSlug/dashboard',
       'routes/sections.$sectionSlug.teams.$devTeamSlug.dashboard.tsx',
     ),
