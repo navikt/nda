@@ -49,13 +49,13 @@ export default function SectionOverview() {
         <SummaryCard title="Deployments i år" value={ytdDeployments} icon={<BarChartIcon aria-hidden />} />
         <SummaryCard
           title="4-øyne dekning"
-          value={`${Math.round(overallFourEyes * 100)}%`}
+          value={formatCoverage(overallFourEyes)}
           icon={<CheckmarkCircleIcon aria-hidden />}
           variant={getHealthVariant(overallFourEyes)}
         />
         <SummaryCard
           title="Endringsopphav"
-          value={`${Math.round(overallGoalCoverage * 100)}%`}
+          value={formatCoverage(overallGoalCoverage)}
           icon={<LinkIcon aria-hidden />}
           variant={getHealthVariant(overallGoalCoverage)}
         />
@@ -89,6 +89,14 @@ export default function SectionOverview() {
       </VStack>
     </VStack>
   )
+}
+
+/** Format coverage percentage — never shows 100% if there are violations */
+function formatCoverage(ratio: number): string {
+  const pct = ratio * 100
+  if (pct > 0 && pct < 1) return '<1%'
+  if (pct > 99 && pct < 100) return '99%'
+  return `${Math.round(pct)}%`
 }
 
 function SummaryCard({
@@ -125,8 +133,8 @@ function SummaryCard({
 }
 
 function DevTeamCard({ stats, sectionSlug }: { stats: DevTeamDashboardStats; sectionSlug: string }) {
-  const fourEyesPct = Math.round(stats.four_eyes_coverage * 100)
-  const goalPct = Math.round(stats.goal_coverage * 100)
+  const fourEyesPct = formatCoverage(stats.four_eyes_coverage)
+  const goalPct = formatCoverage(stats.goal_coverage)
 
   return (
     <Box padding="space-20" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
@@ -152,18 +160,18 @@ function DevTeamCard({ stats, sectionSlug }: { stats: DevTeamDashboardStats; sec
           <VStack gap="space-4" align="center">
             <Detail textColor="subtle">4-øyne</Detail>
             <Tag variant={getHealthVariant(stats.four_eyes_coverage)} size="small">
-              {fourEyesPct}%
+              {fourEyesPct}
             </Tag>
           </VStack>
           <VStack gap="space-4" align="center">
             <Detail textColor="subtle">Endringsopphav</Detail>
             <Tag variant={getHealthVariant(stats.goal_coverage)} size="small">
-              {goalPct}%
+              {goalPct}
             </Tag>
           </VStack>
           {stats.without_four_eyes > 0 && (
             <VStack gap="space-4" align="center">
-              <Detail textColor="subtle">Avvist</Detail>
+              <Detail textColor="subtle">Uten 4-øyne</Detail>
               <Tag variant="warning" size="small">
                 {stats.without_four_eyes}
               </Tag>
