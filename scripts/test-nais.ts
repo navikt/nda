@@ -4,12 +4,12 @@
  * Test script for Nais API client
  *
  * Usage:
- *   npm run test:nais-discovery -- <team-slug>
- *   npm run test:nais-fetch -- <team> <env> <app>
+ *   pnpm run test:nais-discovery -- <team-slug>
+ *   pnpm run test:nais-fetch -- <team> <env> <app>
  *
  * Example:
- *   npm run test:nais-discovery -- pensjon-q2
- *   npm run test:nais-fetch -- pensjon-q2 dev-fss pensjon-pen-q2
+ *   pnpm run test:nais-discovery -- pensjon-q2
+ *   pnpm run test:nais-fetch -- pensjon-q2 dev-fss pensjon-pen-q2
  */
 
 import {
@@ -99,13 +99,13 @@ async function testFetch(teamSlug: string, envName: string, appName: string) {
 async function main() {
   if (command === 'discovery') {
     if (args.length < 1) {
-      console.error('Usage: npm run test:nais-discovery -- <team-slug>');
+      console.error('Usage: pnpm run test:nais-discovery -- <team-slug>');
       process.exit(1);
     }
     await testDiscovery(args[0]);
   } else if (command === 'fetch') {
     if (args.length < 3) {
-      console.error('Usage: npm run test:nais-fetch -- <team> <env> <app>');
+      console.error('Usage: pnpm run test:nais-fetch -- <team> <env> <app>');
       process.exit(1);
     }
     await testFetch(args[0], args[1], args[2]);

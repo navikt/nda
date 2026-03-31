@@ -12,7 +12,7 @@ Storybook gir oss et isolert miljø for å utvikle og dokumentere UI-komponenter
 ## Kjøring
 
 ```bash
-npm run storybook
+pnpm run storybook
 ```
 
 Åpner på http://localhost:6006

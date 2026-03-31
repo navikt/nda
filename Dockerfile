@@ -1,26 +1,28 @@
 # Build stage with full Node.js
 FROM node:24-bookworm-slim AS builder
 
+RUN npm install -g pnpm@10
+
 WORKDIR /app
 
 ARG GITHUB_SHA
 ENV GITHUB_SHA=${GITHUB_SHA}
 
 # Copy package files
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml ./
 
 # Install all dependencies (including dev for build), skip prepare script
-RUN npm ci --ignore-scripts
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # Copy source code
 COPY . .
 
 # Build the application
-RUN npm run build
+RUN pnpm run build
 
 # Compile TypeScript startup script and custom server to JavaScript
-RUN npx tsc scripts/start-prod.ts --outDir scripts --module nodenext --moduleResolution nodenext --target es2022
-RUN npx tsc server.ts --module nodenext --moduleResolution nodenext --target es2022 --esModuleInterop
+RUN pnpm exec tsc scripts/start-prod.ts --outDir scripts --module nodenext --moduleResolution nodenext --target es2022
+RUN pnpm exec tsc server.ts --module nodenext --moduleResolution nodenext --target es2022 --esModuleInterop
 
 # Download fonts for PDF generation (react-pdf requires TTF format)
 RUN mkdir -p /app/fonts && \
@@ -33,10 +35,12 @@ RUN mkdir -p /app/fonts && \
 # Production dependencies only
 FROM node:24-bookworm-slim AS prod-deps
 
+RUN npm install -g pnpm@10
+
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 
 # Final stage with distroless
 FROM gcr.io/distroless/nodejs24-debian12:nonroot
@@ -44,7 +48,7 @@ FROM gcr.io/distroless/nodejs24-debian12:nonroot
 WORKDIR /app
 
 # Copy package files
-COPY --from=builder /app/package.json /app/package-lock.json ./
+COPY --from=builder /app/package.json ./
 
 # Copy production node_modules
 COPY --from=prod-deps /app/node_modules ./node_modules

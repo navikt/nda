@@ -11,16 +11,16 @@ pre-commit:
     
     typecheck:
       glob: "*.{ts,tsx}"
-      run: npm run typecheck
+      run: pnpm run typecheck
 
 pre-push:
   parallel: true
   commands:
     lint:
-      run: npm run lint
+      run: pnpm run lint
     
     typecheck:
-      run: npm run typecheck
+      run: pnpm run typecheck
 
 commit-msg:
   commands:

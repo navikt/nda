@@ -6,7 +6,7 @@ This project uses [node-pg-migrate](https://salsita.github.io/node-pg-migrate/) 
 
 ### Run all pending migrations
 ```bash
-npm run db:migrate
+pnpm run db:migrate
 ```
 
 ### Check migration status
@@ -18,14 +18,14 @@ psql $DATABASE_URL -c "SELECT * FROM pgmigrations ORDER BY run_on;"
 
 ### Create a new migration
 ```bash
-npm run db:migrate:create my-new-migration
+pnpm run db:migrate:create my-new-migration
 ```
 
 This creates a file: `app/db/migrations/TIMESTAMP_my-new-migration.sql`
 
 ### Rollback last migration
 ```bash
-npm run db:migrate:down
+pnpm run db:migrate:down
 ```
 
 ## Migration Files
@@ -104,7 +104,7 @@ See `.node-pg-migrate.json` for configuration:
 
 In production, run migrations before starting the app:
 ```bash
-npm run db:migrate && npm start
+pnpm run db:migrate && pnpm start
 ```
 
 Or add to Dockerfile/startup script.

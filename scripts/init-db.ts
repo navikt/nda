@@ -6,7 +6,7 @@
  * This will DROP all existing tables and create new tables.
  * Use this for a fresh database setup.
  *
- * Usage: npm run db:init
+ * Usage: pnpm run db:init
  */
 
 import 'dotenv/config';
@@ -68,7 +68,7 @@ initDatabase()
   .then(() => {
     console.log('✨ Database initialization complete!\n');
     console.log('Next steps:');
-    console.log('  1. Start the app: npm run dev');
+    console.log('  1. Start the app: pnpm run dev');
     console.log('  2. Add monitored applications via UI');
     console.log('  3. Sync deployments\n');
     process.exit(0);

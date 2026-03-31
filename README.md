@@ -29,7 +29,7 @@ Appen bruker en applikasjon-sentrisk tilnærming hvor Team + Environment + Appli
 ### 1. Installer dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 2. Konfigurer environment
@@ -64,19 +64,19 @@ NAIS_GRAPHQL_URL=http://localhost:4242/graphql
 
 **Med migrations (anbefalt):**
 ```bash
-npm run db:migrate
+pnpm run db:migrate
 ```
 
 **Eller med legacy init script (dropper alle tabeller først):**
 ```bash
-npm run db:init
+pnpm run db:init
 ```
 
 ### 4. Start appen
 
 **Lokalt (med auto-migrations):**
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Åpne [http://localhost:5173](http://localhost:5173)
@@ -180,19 +180,19 @@ Dette gjør det enkelt å se hele reviewprosessen og CI/CD-status for hvert depl
 
 ```bash
 # Test API
-npm run test:nais-discovery -- pensjon-q2
-npm run test:nais-fetch -- pensjon-q2 dev-fss pensjon-pen-q2
+pnpm run test:nais-discovery -- pensjon-q2
+pnpm run test:nais-fetch -- pensjon-q2 dev-fss pensjon-pen-q2
 
 # Type-sjekk
-npm run typecheck
+pnpm run typecheck
 
 # Lint
-npm run lint
+pnpm run lint
 
 # Database migrations
-npm run db:migrate              # Run pending migrations  
-npm run db:migrate:create my-migration  # Create new migration
-npm run db:migrate:down         # Rollback last migration
+pnpm run db:migrate              # Run pending migrations  
+pnpm run db:migrate:create my-migration  # Create new migration
+pnpm run db:migrate:down         # Rollback last migration
 ```
 
 ## 📚 Database Schema
