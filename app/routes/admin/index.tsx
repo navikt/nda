@@ -6,6 +6,7 @@ import {
   CogIcon,
   FileTextIcon,
   LaptopIcon,
+  LayersIcon,
   PersonGroupIcon,
 } from '@navikt/aksel-icons'
 import { BodyShort, Box, Heading, HGrid, VStack } from '@navikt/ds-react'
@@ -200,6 +201,30 @@ export default function AdminIndex() {
                   Miljøvariabler
                 </Heading>
                 <BodyShort textColor="subtle">Se alle miljøvariabler tilgjengelig for appen.</BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
+        <Link to="/admin/application-groups" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <LayersIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Applikasjonsgrupper
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Grupper applikasjoner på tvers av NAIS-clustre for felles verifikasjon.
+                </BodyShort>
               </div>
             </VStack>
           </Box>
