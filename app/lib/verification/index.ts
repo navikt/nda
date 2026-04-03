@@ -19,6 +19,7 @@
  */
 
 import { getImplicitApprovalSettings } from '~/db/app-settings.server'
+import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { pool } from '~/db/connection.server'
 import {
   getCompareSnapshotForCommit,
@@ -122,6 +123,17 @@ export async function runVerification(
     repository: options.repository,
     commitsBetween: input.commitsBetween,
   })
+
+  // Step 4: Propagate to sibling deployments in the same application group
+  const propagated = await propagateVerificationToSiblings(
+    deploymentId,
+    result.status,
+    options.commitSha,
+    options.monitoredAppId,
+  )
+  if (propagated > 0) {
+    logger.info(`   🔗 Propagated verification to ${propagated} sibling deployment(s)`)
+  }
 
   logger.info(`   ✅ Stored as verification run #${verificationRunId}`)
   logger.info(`🎉 Verification complete for deployment ${deploymentId}`)
@@ -390,6 +402,9 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   if (changed) {
     await storeVerificationResult(dep.id, newResult, { prSnapshotIds: [], commitSnapshotIds: [] }, 'reverification')
+
+    // Propagate to sibling deployments in the same application group
+    await propagateVerificationToSiblings(dep.id, newResult.status, dep.commit_sha, dep.monitored_app_id)
   }
 
   return {

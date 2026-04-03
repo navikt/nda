@@ -1,3 +1,4 @@
+import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { createComment, deleteComment, deleteLegacyInfo, getLegacyInfo } from '~/db/comments.server'
 import { addDeploymentGoalLink, removeDeploymentGoalLink } from '~/db/deployment-goal-links.server'
 import { getDeploymentById, updateDeploymentFourEyes, updateDeploymentLegacyData } from '~/db/deployments.server'
@@ -112,6 +113,16 @@ export async function action({ request, params }: { request: Request; params: Re
         },
         { changeSource: 'manual_approval', changedBy: identity.navIdent },
       )
+
+      // Propagate to sibling deployments in the same application group
+      if (deployment.commit_sha) {
+        await propagateVerificationToSiblings(
+          deploymentId,
+          'manually_approved',
+          deployment.commit_sha,
+          deployment.monitored_app_id,
+        )
+      }
 
       return { success: 'Deployment manuelt godkjent' }
     } catch (_error) {
@@ -424,6 +435,16 @@ export async function action({ request, params }: { request: Request; params: Re
         },
         { changeSource: 'legacy', changedBy: navIdent },
       )
+
+      // Propagate to sibling deployments in the same application group
+      if (currentDeployment?.commit_sha) {
+        await propagateVerificationToSiblings(
+          deploymentId,
+          'manually_approved',
+          currentDeployment.commit_sha,
+          currentDeployment.monitored_app_id,
+        )
+      }
 
       return { success: 'Legacy deployment godkjent' }
     } catch (_error) {

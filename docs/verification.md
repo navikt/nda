@@ -379,3 +379,38 @@ Før verifisering sjekkes om deploymentets repository er registrert og godkjent 
 | **SHA** | Unik identifikator (hash) for en commit |
 | **Snapshot** | Lagret kopi av GitHub-data i databasen for caching og sporbarhet |
 | **Implisitt godkjenning** | Automatisk godkjenning basert på regler (f.eks. at merger er en annen person enn forfatter) |
+| **Applikasjonsgruppe** | Kobling mellom monitored_applications som representerer samme logiske app på tvers av NAIS-clustre |
+| **Verifikasjonspropagering** | Automatisk spredning av positiv verifiseringsstatus til søsken-deployments med samme commit SHA |
+
+---
+
+## Applikasjonsgrupper og verifikasjonspropagering
+
+### Bakgrunn
+
+Noen applikasjoner deployes til flere NAIS-clustre (f.eks. `prod-gcp` og `prod-fss`) eller NAIS-team. Hver av disse er en separat `monitored_applications`-rad med uavhengig verifikasjonshistorikk. Uten gruppering kreves det separate gjennomganger for identiske kodeendringer.
+
+### Mekanisme
+
+En **applikasjonsgruppe** (`application_groups`-tabellen) kobler `monitored_applications`-rader som representerer samme logiske applikasjon. Apper i samme gruppe deler verifiseringsstatus for identiske kodeendringer.
+
+**Propagering skjer når:**
+1. En deployment verifiseres (automatisk eller manuelt)
+2. Appen tilhører en applikasjonsgruppe (`application_group_id IS NOT NULL`)
+3. Statussen er positiv: `approved`, `approved_pr_with_unreviewed`, `implicitly_approved`, `no_changes`, eller `manually_approved`
+4. Søsken-deployments i gruppen har **samme `commit_sha`** og status `pending` eller `error`
+
+**Propagering skjer IKKE når:**
+- Statussen er negativ (`unverified_commits`, `unauthorized_repository`, `unauthorized_branch`)
+- Søsken-deployment har annen `commit_sha`
+- Søsken-deployment allerede er verifisert
+- Appen ikke tilhører en gruppe
+
+### Propageringspunkter
+
+Propagering utløses fra:
+1. **Automatisk verifikasjon** — `runVerification()` i [`index.ts`](../app/lib/verification/index.ts)
+2. **Reverifikasjon** — `reverifyDeployment()` i [`index.ts`](../app/lib/verification/index.ts)
+3. **Manuell godkjenning** — action handlers i [`$id.actions.server.ts`](../app/routes/deployments/$id.actions.server.ts)
+
+> 📁 Se `propagateVerificationToSiblings` i [`application-groups.server.ts`](../app/db/application-groups.server.ts)
