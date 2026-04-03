@@ -845,6 +845,89 @@ export async function getDeploymentsByDeployer(deployerUsername: string, limit =
   return result.rows
 }
 
+export interface DeployerMonthlyStats {
+  month: string
+  total: number
+  with_goal: number
+  without_goal: number
+}
+
+/**
+ * Get monthly deployment counts for a deployer, grouped by goal linkage
+ */
+export async function getDeployerMonthlyStats(deployerUsername: string, months = 24): Promise<DeployerMonthlyStats[]> {
+  const result = await pool.query(
+    `SELECT
+       TO_CHAR(DATE_TRUNC('month', d.created_at), 'YYYY-MM') AS month,
+       COUNT(DISTINCT d.id)::int AS total,
+       COUNT(DISTINCT dgl.deployment_id)::int AS with_goal
+     FROM deployments d
+     LEFT JOIN deployment_goal_links dgl ON dgl.deployment_id = d.id
+     WHERE d.deployer_username = $1
+       AND d.created_at >= DATE_TRUNC('month', NOW()) - ($2 || ' months')::interval
+     GROUP BY DATE_TRUNC('month', d.created_at)
+     ORDER BY month`,
+    [deployerUsername, months],
+  )
+  return result.rows.map((row: { month: string; total: number; with_goal: number }) => ({
+    month: row.month,
+    total: row.total,
+    with_goal: row.with_goal,
+    without_goal: row.total - row.with_goal,
+  }))
+}
+
+export interface DeployerDeploymentRow extends DeploymentWithApp {
+  has_goal_link: boolean
+}
+
+export interface PaginatedDeployerDeployments {
+  deployments: DeployerDeploymentRow[]
+  total: number
+  page: number
+  per_page: number
+  total_pages: number
+}
+
+/**
+ * Get paginated deployments for a deployer with goal-link indicator
+ */
+export async function getDeployerDeploymentsPaginated(
+  deployerUsername: string,
+  page = 1,
+  perPage = 20,
+): Promise<PaginatedDeployerDeployments> {
+  const offset = (page - 1) * perPage
+
+  const [countResult, dataResult] = await Promise.all([
+    pool.query('SELECT COUNT(*)::int AS total FROM deployments WHERE deployer_username = $1', [deployerUsername]),
+    pool.query(
+      `SELECT
+         d.*,
+         ma.team_slug,
+         ma.environment_name,
+         ma.app_name,
+         EXISTS (SELECT 1 FROM deployment_goal_links dgl WHERE dgl.deployment_id = d.id) AS has_goal_link
+       FROM deployments d
+       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+       WHERE d.deployer_username = $1
+       ORDER BY d.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [deployerUsername, perPage, offset],
+    ),
+  ])
+
+  const total = countResult.rows[0]?.total ?? 0
+
+  return {
+    deployments: dataResult.rows,
+    total,
+    page,
+    per_page: perPage,
+    total_pages: Math.ceil(total / perPage),
+  }
+}
+
 /**
  * Search result types for global search
  */

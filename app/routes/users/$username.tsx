@@ -1,4 +1,4 @@
-import { ExternalLinkIcon, PlusIcon } from '@navikt/aksel-icons'
+import { ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon, LinkIcon, PlusIcon } from '@navikt/aksel-icons'
 import {
   Link as AkselLink,
   Alert,
@@ -19,8 +19,14 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { useEffect, useRef } from 'react'
-import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router'
-import { getDeploymentCountByDeployer, getDeploymentsByDeployer } from '~/db/deployments.server'
+import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router'
+import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
+import { MethodTag, StatusTag } from '~/components/deployment-tags'
+import {
+  getDeployerDeploymentsPaginated,
+  getDeployerMonthlyStats,
+  getDeploymentCountByDeployer,
+} from '~/db/deployments.server'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionsWithTeams } from '~/db/sections.server'
 import { addUserDevTeam, getUserDevTeams, removeUserDevTeam } from '~/db/user-dev-team-preference.server'
@@ -28,6 +34,7 @@ import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
 import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
 import { isValidEmail, isValidNavIdent } from '~/lib/form-validators'
+import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/$username'
@@ -43,14 +50,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('Username required', { status: 400 })
   }
 
+  const url = new URL(request.url)
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') || '1', 10))
+
   const isBot = isGitHubBot(username)
   const botDisplayName = getBotDisplayName(username)
   const botDescription = getBotDescription(username)
 
-  const [mapping, deploymentCount, recentDeployments] = await Promise.all([
+  const [mapping, deploymentCount, paginatedDeployments, monthlyStats] = await Promise.all([
     isBot ? Promise.resolve(null) : getUserMapping(username),
     getDeploymentCountByDeployer(username),
-    getDeploymentsByDeployer(username, 5),
+    getDeployerDeploymentsPaginated(username, page, 20),
+    getDeployerMonthlyStats(username, 24),
   ])
 
   // Check if this is the logged-in user's own profile
@@ -85,7 +96,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     username,
     mapping,
     deploymentCount,
-    recentDeployments,
+    paginatedDeployments,
+    monthlyStats,
     isBot,
     botDisplayName,
     botDescription,
@@ -188,7 +200,8 @@ export default function UserPage() {
     username,
     mapping,
     deploymentCount,
-    recentDeployments,
+    paginatedDeployments,
+    monthlyStats,
     isBot,
     botDisplayName,
     botDescription,
@@ -202,6 +215,7 @@ export default function UserPage() {
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
   const modalRef = useRef<HTMLDialogElement>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // Close modal when action succeeds
   useEffect(() => {
@@ -383,36 +397,102 @@ export default function UserPage() {
         </Alert>
       )}
 
-      {/* Recent deployments */}
+      {/* Deployment activity chart */}
+      {monthlyStats.length > 0 && (
+        <VStack gap="space-12">
+          <Heading level="2" size="small">
+            Leveranser over tid
+          </Heading>
+          <Box background="raised" padding="space-16" borderRadius="4">
+            <DeploymentActivityChart data={monthlyStats} />
+          </Box>
+        </VStack>
+      )}
+
+      {/* Deployments (paginated) */}
       <VStack gap="space-16">
         <Heading level="2" size="small">
-          Siste deployments ({deploymentCount})
+          Leveranser ({deploymentCount})
         </Heading>
 
-        {recentDeployments.length === 0 ? (
+        {paginatedDeployments.deployments.length === 0 ? (
           <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-            <BodyShort>Ingen deployments funnet for denne brukeren.</BodyShort>
+            <BodyShort>Ingen leveranser funnet for denne brukeren.</BodyShort>
           </Box>
         ) : (
-          <div>
-            {recentDeployments.map((deployment) => (
-              <Box key={deployment.id} padding="space-16" background="raised" className={styles.stackedListItem}>
-                <HStack gap="space-16" align="center" justify="space-between" wrap>
-                  <HStack gap="space-12" align="center">
-                    <BodyShort weight="semibold" style={{ whiteSpace: 'nowrap' }}>
-                      {formatDate(deployment.created_at)}
-                    </BodyShort>
-                    <Link
-                      to={`/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}`}
-                    >
-                      <BodyShort>{deployment.app_name}</BodyShort>
-                    </Link>
+          <>
+            <div>
+              {paginatedDeployments.deployments.map((deployment) => (
+                <Box key={deployment.id} padding="space-16" background="raised" className={styles.stackedListItem}>
+                  <HStack gap="space-12" align="center" justify="space-between" wrap>
+                    <HStack gap="space-12" align="center" wrap>
+                      <BodyShort weight="semibold" style={{ whiteSpace: 'nowrap' }}>
+                        {formatDate(deployment.created_at)}
+                      </BodyShort>
+                      <Link
+                        to={`/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}`}
+                      >
+                        <BodyShort>{deployment.app_name}</BodyShort>
+                      </Link>
+                      <StatusTag
+                        four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
+                        has_four_eyes={deployment.has_four_eyes}
+                      />
+                      <MethodTag
+                        github_pr_number={deployment.github_pr_number}
+                        four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
+                      />
+                      {deployment.has_goal_link && (
+                        <Tag variant="moderate" size="xsmall" data-color="success">
+                          <HStack gap="space-4" align="center">
+                            <LinkIcon aria-hidden style={{ fontSize: '0.75rem' }} />
+                            Endringsopphav
+                          </HStack>
+                        </Tag>
+                      )}
+                    </HStack>
+                    <Detail textColor="subtle">{deployment.environment_name}</Detail>
                   </HStack>
-                  <Detail textColor="subtle">{deployment.environment_name}</Detail>
-                </HStack>
-              </Box>
-            ))}
-          </div>
+                </Box>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {paginatedDeployments.total_pages > 1 && (
+              <HStack gap="space-16" justify="center" align="center">
+                <Button
+                  variant="tertiary"
+                  size="small"
+                  icon={<ChevronLeftIcon aria-hidden />}
+                  disabled={paginatedDeployments.page <= 1}
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams)
+                    params.set('page', String(paginatedDeployments.page - 1))
+                    setSearchParams(params)
+                  }}
+                >
+                  Forrige
+                </Button>
+                <BodyShort>
+                  Side {paginatedDeployments.page} av {paginatedDeployments.total_pages}
+                </BodyShort>
+                <Button
+                  variant="tertiary"
+                  size="small"
+                  icon={<ChevronRightIcon aria-hidden />}
+                  iconPosition="right"
+                  disabled={paginatedDeployments.page >= paginatedDeployments.total_pages}
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams)
+                    params.set('page', String(paginatedDeployments.page + 1))
+                    setSearchParams(params)
+                  }}
+                >
+                  Neste
+                </Button>
+              </HStack>
+            )}
+          </>
         )}
       </VStack>
 
