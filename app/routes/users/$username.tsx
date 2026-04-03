@@ -12,6 +12,8 @@ import {
   HGrid,
   HStack,
   Modal,
+  Radio,
+  RadioGroup,
   Tag,
   TextField,
   VStack,
@@ -20,8 +22,10 @@ import { useEffect, useRef } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { getDeploymentCountByDeployer, getDeploymentsByDeployer } from '~/db/deployments.server'
 import { getAllDevTeams } from '~/db/dev-teams.server'
+import { getAllSectionsWithTeams } from '~/db/sections.server'
 import { addUserDevTeam, getUserDevTeams, removeUserDevTeam } from '~/db/user-dev-team-preference.server'
 import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
+import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
 import { isValidEmail, isValidNavIdent } from '~/lib/form-validators'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
@@ -64,8 +68,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Fetch all available teams if viewing own profile
   let availableDevTeams: Awaited<ReturnType<typeof getAllDevTeams>> = []
+  let landingPage = 'my-teams'
+  let allSections: { slug: string; name: string }[] = []
   if (isOwnProfile) {
     availableDevTeams = await getAllDevTeams()
+    try {
+      const [lp, sections] = await Promise.all([getUserLandingPage(identity.navIdent), getAllSectionsWithTeams()])
+      landingPage = lp
+      allSections = sections.map((s) => ({ slug: s.slug, name: s.name }))
+    } catch {
+      // user_settings table may not exist yet
+    }
   }
 
   return {
@@ -79,6 +92,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     devTeams,
     isOwnProfile,
     availableDevTeams,
+    landingPage,
+    allSections,
   }
 }
 
@@ -109,6 +124,19 @@ export async function action({ request }: Route.ActionArgs) {
       await removeUserDevTeam(identity.navIdent, devTeamId)
     } catch {
       return { error: 'Kunne ikke fjerne team.' }
+    }
+    return { success: true }
+  }
+
+  if (intent === 'set-landing-page') {
+    const landingPage = formData.get('landingPage') as string
+    if (!landingPage) {
+      return { error: 'Landingsside er påkrevd' }
+    }
+    try {
+      await setUserLandingPage(identity.navIdent, landingPage as Parameters<typeof setUserLandingPage>[1])
+    } catch {
+      return { error: 'Kunne ikke lagre landingsside.' }
     }
     return { success: true }
   }
@@ -167,6 +195,8 @@ export default function UserPage() {
     devTeams,
     isOwnProfile,
     availableDevTeams,
+    landingPage,
+    allSections,
   } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
@@ -298,6 +328,42 @@ export default function UserPage() {
             </HStack>
           </VStack>
         )
+      )}
+
+      {/* Landing page preference — only for own profile */}
+      {isOwnProfile && (
+        <VStack gap="space-12">
+          <Heading level="2" size="small">
+            Landingsside
+          </Heading>
+          <Box background="raised" padding="space-16" borderRadius="4">
+            <RadioGroup
+              legend="Velg hvilken side som vises når du åpner Deployment Audit"
+              hideLegend
+              value={landingPage}
+              onChange={(value) => {
+                const form = document.getElementById('landing-page-form') as HTMLFormElement | null
+                const input = form?.querySelector<HTMLInputElement>('input[name="landingPage"]')
+                if (input && form) {
+                  input.value = value
+                  form.requestSubmit()
+                }
+              }}
+            >
+              <Radio value="my-teams">Mine team</Radio>
+              <Radio value="sections">Alle seksjoner</Radio>
+              {allSections.map((section) => (
+                <Radio key={section.slug} value={`sections/${section.slug}`}>
+                  {section.name}
+                </Radio>
+              ))}
+            </RadioGroup>
+            <Form method="post" id="landing-page-form" style={{ display: 'none' }}>
+              <input type="hidden" name="intent" value="set-landing-page" />
+              <input type="hidden" name="landingPage" value={landingPage} />
+            </Form>
+          </Box>
+        </VStack>
       )}
 
       {/* No mapping warning - only for non-bots */}

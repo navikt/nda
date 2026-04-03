@@ -168,7 +168,7 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
                 <>
                   <ActionMenu.Group label="Seksjoner">
                     {user.sections.map((section) => (
-                      <ActionMenu.Item key={section.slug} onSelect={() => navigate(`/?section=${section.slug}`)}>
+                      <ActionMenu.Item key={section.slug} onSelect={() => navigate(`/sections/${section.slug}`)}>
                         {section.name}
                         {section.role === 'admin' && (
                           <Detail as="span" textColor="subtle" style={{ marginLeft: 'var(--ax-space-8)' }}>
