@@ -1,7 +1,8 @@
 import { ChevronLeftIcon, ChevronRightIcon } from '@navikt/aksel-icons'
-import { BodyShort, Box, Button, Detail, Hide, HStack, Select, Show, TextField, VStack } from '@navikt/ds-react'
+import { BodyShort, Box, Button, Detail, Hide, HStack, Select, Show, Tag, TextField, VStack } from '@navikt/ds-react'
 import { Form, Link, redirect, useLoaderData, useSearchParams } from 'react-router'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
+import { getSiblingApps } from '~/db/application-groups.server'
 import { type DeploymentFilters, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getUserMappings } from '~/db/user-mappings.server'
@@ -31,11 +32,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const deployer = url.searchParams.get('deployer') || undefined
   const sha = url.searchParams.get('sha') || undefined
   const period = (url.searchParams.get('period') || 'last-week') as TimePeriod
+  const showGroup = url.searchParams.get('group') === 'true'
 
   const range = getDateRangeForPeriod(period)
 
+  // If group mode, fetch siblings and include all app IDs
+  const siblings = showGroup ? await getSiblingApps(app.id) : []
+  const hasGroup = siblings.length > 0
+
   const filters: DeploymentFilters = {
-    monitored_app_id: app.id,
+    ...(showGroup && hasGroup
+      ? { monitored_app_ids: [app.id, ...siblings.map((s) => s.id)] }
+      : { monitored_app_id: app.id }),
     page,
     per_page: 20,
     four_eyes_status: status,
@@ -62,16 +70,16 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   return {
     app,
     userMappings: serializeUserMappings(userMappings),
+    hasGroup,
+    showGroup: showGroup && hasGroup,
     ...result,
   }
 }
 
 export default function AppDeployments() {
-  const { app, deployments, total, page, total_pages, userMappings } = useLoaderData<typeof loader>()
+  const { app, deployments, total, page, total_pages, userMappings, hasGroup, showGroup } =
+    useLoaderData<typeof loader>()
   const [searchParams, setSearchParams] = useSearchParams()
-
-  // Helper to generate app URLs with the new structure
-  const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 
   const currentStatus = searchParams.get('status') || ''
   const currentMethod = searchParams.get('method') || ''
@@ -167,9 +175,21 @@ export default function AppDeployments() {
         </Form>
       </Box>
 
-      <BodyShort textColor="subtle">
-        {total} deployment{total !== 1 ? 's' : ''} funnet
-      </BodyShort>
+      <HStack justify="space-between" align="center" wrap>
+        <BodyShort textColor="subtle">
+          {total} deployment{total !== 1 ? 's' : ''} funnet
+          {showGroup && ' (alle miljøer)'}
+        </BodyShort>
+        {hasGroup && (
+          <Button
+            variant={showGroup ? 'secondary' : 'tertiary'}
+            size="small"
+            onClick={() => updateFilter('group', showGroup ? '' : 'true')}
+          >
+            {showGroup ? 'Vis kun dette miljøet' : 'Vis alle miljøer'}
+          </Button>
+        )}
+      </HStack>
 
       {/* Deployments list */}
       <div>
@@ -190,6 +210,11 @@ export default function AppDeployments() {
                         timeStyle: 'short',
                       })}
                     </BodyShort>
+                    {showGroup && deployment.environment_name !== app.environment_name && (
+                      <Tag variant="neutral" size="xsmall">
+                        {deployment.environment_name}
+                      </Tag>
+                    )}
                     {/* Title on desktop - inline with time */}
                     <Show above="md">
                       {deployment.title && (
@@ -252,7 +277,7 @@ export default function AppDeployments() {
                   </HStack>
                   <Button
                     as={Link}
-                    to={`${appUrl}/deployments/${deployment.id}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`}
+                    to={`/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}/deployments/${deployment.id}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`}
                     variant="tertiary"
                     size="small"
                   >

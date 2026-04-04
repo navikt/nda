@@ -190,6 +190,7 @@ export interface CreateDeploymentParams {
 
 export interface DeploymentFilters {
   monitored_app_id?: number
+  monitored_app_ids?: number[]
   team_slug?: string
   environment_name?: string
   start_date?: Date
@@ -226,6 +227,12 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   if (filters?.monitored_app_id) {
     whereSql += ` AND d.monitored_app_id = $${paramIndex}`
     params.push(filters.monitored_app_id)
+    paramIndex++
+  }
+
+  if (filters?.monitored_app_ids && filters.monitored_app_ids.length > 0) {
+    whereSql += ` AND d.monitored_app_id = ANY($${paramIndex})`
+    params.push(filters.monitored_app_ids)
     paramIndex++
   }
 

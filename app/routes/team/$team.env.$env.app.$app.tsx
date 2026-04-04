@@ -7,6 +7,7 @@ import {
   ExternalLinkIcon,
   EyeIcon,
   FileTextIcon,
+  LayersIcon,
   PackageIcon,
   XMarkIcon,
 } from '@navikt/aksel-icons'
@@ -33,6 +34,7 @@ import { ActionAlert } from '~/components/ActionAlert'
 import { StatCard } from '~/components/StatCard'
 import { getUnresolvedAlertsByApp, resolveRepositoryAlert } from '~/db/alerts.server'
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
+import { getGroupByAppId, getSiblingApps } from '~/db/application-groups.server'
 import {
   approveRepository,
   getRepositoriesByAppId,
@@ -64,11 +66,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  const [repositories, deploymentStats, alerts, auditReports] = await Promise.all([
+  const [repositories, deploymentStats, alerts, auditReports, group, siblings] = await Promise.all([
     getRepositoriesByAppId(app.id),
     getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
     getUnresolvedAlertsByApp(app.id),
     getAuditReportsForApp(app.id),
+    getGroupByAppId(app.id),
+    getSiblingApps(app.id),
   ])
 
   const activeRepo = repositories.find((r) => r.status === 'active')
@@ -84,6 +88,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     deploymentStats,
     alerts,
     auditReports,
+    group,
+    siblings,
   }
 }
 
@@ -187,8 +193,18 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function AppDetail() {
-  const { app, repositories, activeRepo, pendingRepos, historicalRepos, deploymentStats, alerts, auditReports } =
-    useLoaderData<typeof loader>()
+  const {
+    app,
+    repositories,
+    activeRepo,
+    pendingRepos,
+    historicalRepos,
+    deploymentStats,
+    alerts,
+    auditReports,
+    group,
+    siblings,
+  } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const [searchParams] = useSearchParams()
   const layoutData = useRouteLoaderData<typeof layoutLoader>('routes/layout')
@@ -242,6 +258,32 @@ export default function AppDetail() {
       </HStack>
 
       <ActionAlert data={actionData} />
+
+      {/* Application Group Banner */}
+      {group && siblings.length > 0 && (
+        <Box padding="space-16" borderRadius="8" background="neutral-soft">
+          <HStack gap="space-12" align="center" wrap>
+            <LayersIcon aria-hidden />
+            <BodyShort size="small" weight="semibold">
+              {group.name}
+            </BodyShort>
+            <Tag variant="neutral" size="xsmall">
+              {app.environment_name}
+            </Tag>
+            {siblings.map((s) => (
+              <Link
+                key={s.id}
+                to={`/team/${s.team_slug}/env/${s.environment_name}/app/${s.app_name}`}
+                style={{ textDecoration: 'none' }}
+              >
+                <Tag variant="neutral" size="xsmall">
+                  {s.environment_name}
+                </Tag>
+              </Link>
+            ))}
+          </HStack>
+        </Box>
+      )}
 
       {/* Statistics Section */}
       <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
