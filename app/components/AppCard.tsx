@@ -17,6 +17,7 @@ export interface AppCardData {
   active_repo: string | null
   stats: AppStats
   alertCount: number
+  siblingEnvironments?: string[]
 }
 
 function getStatusTag(appStats: AppStats) {
@@ -60,6 +61,9 @@ interface AppCardProps {
 
 export function AppCard({ app, showEnvironment = true }: AppCardProps) {
   const appUrl = getAppUrl(app)
+  const environments = app.siblingEnvironments
+    ? [app.environment_name, ...app.siblingEnvironments]
+    : [app.environment_name]
 
   return (
     <Box padding="space-16" background="raised" className={styles.stackedListItem}>
@@ -72,7 +76,13 @@ export function AppCard({ app, showEnvironment = true }: AppCardProps) {
             </Link>
             {showEnvironment && (
               <Show above="md">
-                <Detail textColor="subtle">{app.environment_name}</Detail>
+                <HStack gap="space-4">
+                  {environments.map((env) => (
+                    <Tag key={env} variant="neutral" size="xsmall">
+                      {env}
+                    </Tag>
+                  ))}
+                </HStack>
               </Show>
             )}
           </HStack>
@@ -97,7 +107,13 @@ export function AppCard({ app, showEnvironment = true }: AppCardProps) {
         {/* Environment on mobile */}
         {showEnvironment && (
           <Hide above="md">
-            <Detail textColor="subtle">{app.environment_name}</Detail>
+            <HStack gap="space-4">
+              {environments.map((env) => (
+                <Tag key={env} variant="neutral" size="xsmall">
+                  {env}
+                </Tag>
+              ))}
+            </HStack>
           </Hide>
         )}
 

@@ -12,6 +12,7 @@ import {
 import { getDevTeamAppsWithIssues } from '~/db/deployments/home.server'
 import { getDevTeamApplications } from '~/db/dev-teams.server'
 import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
+import { groupAppCards } from '~/lib/group-app-cards'
 import { getAppDeploymentStatsBatch } from '../db/deployments.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '../db/monitored-applications.server'
 import { requireUser } from '../lib/auth.server'
@@ -84,20 +85,22 @@ export async function loader({ request }: Route.LoaderArgs) {
       ? await getAppDeploymentStatsBatch(matchingApps.map((a) => ({ id: a.id, audit_start_year: a.audit_start_year })))
       : new Map()
 
-  const issueAppCards: AppCardData[] = matchingApps.map((app) => ({
-    ...app,
-    active_repo: activeReposByApp.get(app.id) || null,
-    stats: statsByApp.get(app.id) || {
-      total: 0,
-      with_four_eyes: 0,
-      without_four_eyes: 0,
-      pending_verification: 0,
-      last_deployment: null,
-      last_deployment_id: null,
-      four_eyes_percentage: 0,
-    },
-    alertCount: alertCounts.get(app.id) || 0,
-  }))
+  const issueAppCards = groupAppCards(
+    matchingApps.map((app) => ({
+      ...app,
+      active_repo: activeReposByApp.get(app.id) || null,
+      stats: statsByApp.get(app.id) || {
+        total: 0,
+        with_four_eyes: 0,
+        without_four_eyes: 0,
+        pending_verification: 0,
+        last_deployment: null,
+        last_deployment_id: null,
+        four_eyes_percentage: 0,
+      },
+      alertCount: alertCounts.get(app.id) || 0,
+    })),
+  )
 
   issueAppCards.sort((a, b) => {
     const aIssues = a.stats.without_four_eyes + a.alertCount

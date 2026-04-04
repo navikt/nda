@@ -25,6 +25,7 @@ import { getSectionBySlug } from '~/db/sections.server'
 import { type DevTeamMember, getDevTeamMembers } from '~/db/user-dev-team-preference.server'
 import { requireUser } from '~/lib/auth.server'
 import { type BoardPeriodType, getPeriodsForYear } from '~/lib/board-periods'
+import { groupAppCards } from '~/lib/group-app-cards'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug'
 import type { loader as layoutLoader } from './layout'
 
@@ -62,8 +63,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? await getAppDeploymentStatsBatch(teamApps.map((a) => ({ id: a.id, audit_start_year: a.audit_start_year })))
       : new Map()
 
-  const appCards: AppCardData[] = teamApps
-    .map((app) => ({
+  const appCards: AppCardData[] = groupAppCards(
+    teamApps.map((app) => ({
       ...app,
       active_repo: activeRepos.get(app.id) || null,
       stats: statsByApp.get(app.id) || {
@@ -76,8 +77,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         four_eyes_percentage: 0,
       },
       alertCount: alertCounts.get(app.id) || 0,
-    }))
-    .sort((a, b) => a.app_name.localeCompare(b.app_name, 'nb'))
+    })),
+  ).sort((a, b) => a.app_name.localeCompare(b.app_name, 'nb'))
 
   const section = await getSectionBySlug(params.sectionSlug)
 
