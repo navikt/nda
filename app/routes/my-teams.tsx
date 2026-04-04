@@ -1,4 +1,4 @@
-import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
 import { Link, useRouteLoaderData } from 'react-router'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
@@ -246,51 +246,35 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             ))}
           </HStack>
 
-          <Tabs defaultValue="oversikt" size="small">
-            <Tabs.List>
-              <Tabs.Tab value="oversikt" label="Oversikt" />
-              <Tabs.Tab
-                value="oppfolging"
-                label={`Trenger oppfølging${issueApps.length > 0 ? ` (${issueApps.length})` : ''}`}
-              />
-            </Tabs.List>
+          {/* Active boards summary */}
+          {boardSummaries.length > 0 && (
+            <VStack gap="space-16">
+              <Heading level="3" size="small">
+                Aktive måltavler
+              </Heading>
+              <HGrid gap="space-16" columns={{ xs: 1, md: boardSummaries.length === 1 ? 1 : 2 }}>
+                {boardSummaries.map((board) => (
+                  <BoardSummaryCard key={board.boardId} board={board} />
+                ))}
+              </HGrid>
+            </VStack>
+          )}
 
-            <Tabs.Panel value="oversikt">
-              <VStack gap="space-24" paddingBlock="space-16 space-0">
-                {/* Active boards summary */}
-                {boardSummaries.length > 0 && (
-                  <VStack gap="space-16">
-                    <Heading level="3" size="small">
-                      Aktive måltavler
-                    </Heading>
-                    <HGrid gap="space-16" columns={{ xs: 1, md: boardSummaries.length === 1 ? 1 : 2 }}>
-                      {boardSummaries.map((board) => (
-                        <BoardSummaryCard key={board.boardId} board={board} />
-                      ))}
-                    </HGrid>
-                  </VStack>
-                )}
-
-                {issueApps.length === 0 && (
-                  <Alert variant="success">Alle applikasjoner er i orden — ingen krever oppfølging.</Alert>
-                )}
-              </VStack>
-            </Tabs.Panel>
-
-            <Tabs.Panel value="oppfolging">
-              <VStack gap="space-16" paddingBlock="space-16 space-0">
-                {issueApps.length > 0 ? (
-                  <div>
-                    {issueApps.map((app) => (
-                      <AppCard key={app.id} app={app} />
-                    ))}
-                  </div>
-                ) : (
-                  <Alert variant="success">Alle applikasjoner er i orden — ingen krever oppfølging.</Alert>
-                )}
-              </VStack>
-            </Tabs.Panel>
-          </Tabs>
+          {/* Issue apps */}
+          {issueApps.length > 0 ? (
+            <VStack gap="space-16">
+              <Heading level="3" size="small">
+                Applikasjoner som trenger oppfølging ({issueApps.length})
+              </Heading>
+              <div>
+                {issueApps.map((app) => (
+                  <AppCard key={app.id} app={app} />
+                ))}
+              </div>
+            </VStack>
+          ) : (
+            <Alert variant="success">Alle applikasjoner er i orden — ingen krever oppfølging.</Alert>
+          )}
         </VStack>
       )}
     </VStack>
