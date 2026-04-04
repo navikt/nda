@@ -400,7 +400,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
       data.detectedGithubOwner,
       data.detectedGithubRepoName,
       data.resources ? JSON.stringify(data.resources) : null,
-      isLegacyDeployment, // has_four_eyes = true for legacy
+      false, // has_four_eyes starts as false — set to true only by verification
       isLegacyDeployment ? 'legacy' : 'pending', // four_eyes_status
     ],
   )
