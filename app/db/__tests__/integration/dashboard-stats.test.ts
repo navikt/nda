@@ -34,15 +34,15 @@ describe('getSectionOverallStats SQL', () => {
     const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
 
     // Create deployments with various statuses
-    await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'approved_pr', true)
-    await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'approved_pr', true)
-    await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'direct_push', false)
-    await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'pending', false)
+    await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'approved_pr')
+    await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'approved_pr')
+    await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'direct_push')
+    await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'pending')
 
     const result = await pool.query(
       `SELECT
          COUNT(d.id)::int AS total_deployments,
-         COUNT(d.id) FILTER (WHERE d.has_four_eyes = true)::int AS with_four_eyes,
+         COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes'))::int AS with_four_eyes,
          COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('direct_push', 'unverified_commits', 'approved_pr_with_unreviewed', 'unauthorized_repository', 'unauthorized_branch'))::int AS without_four_eyes,
          COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown'))::int AS pending_verification,
          COUNT(DISTINCT dgl.deployment_id)::int AS linked_to_goal
@@ -70,9 +70,9 @@ describe('getSectionOverallStats SQL', () => {
     const startDate = new Date(now.getFullYear(), now.getMonth(), 1)
     const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
 
-    const depId1 = await seedDeploymentWithStatus(pool, appId, 'team-b', now, 'approved_pr', true)
-    const depId2 = await seedDeploymentWithStatus(pool, appId, 'team-b', now, 'approved_pr', true)
-    await seedDeploymentWithStatus(pool, appId, 'team-b', now, 'approved_pr', true)
+    const depId1 = await seedDeploymentWithStatus(pool, appId, 'team-b', now, 'approved_pr')
+    const depId2 = await seedDeploymentWithStatus(pool, appId, 'team-b', now, 'approved_pr')
+    await seedDeploymentWithStatus(pool, appId, 'team-b', now, 'approved_pr')
 
     // Create a board + objective to link to
     const {
@@ -128,7 +128,7 @@ describe('getSectionOverallStats SQL', () => {
     const result = await pool.query(
       `SELECT
          COUNT(d.id)::int AS total_deployments,
-         COUNT(d.id) FILTER (WHERE d.has_four_eyes = true)::int AS with_four_eyes,
+         COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes'))::int AS with_four_eyes,
          COUNT(DISTINCT dgl.deployment_id)::int AS linked_to_goal
        FROM section_teams st
        JOIN deployments d ON d.team_slug = st.team_slug
@@ -151,16 +151,15 @@ async function seedDeploymentWithStatus(
   teamSlug: string,
   createdAt: Date,
   fourEyesStatus: string,
-  hasFourEyes: boolean,
 ): Promise<number> {
   const naisId = `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO deployments (
       monitored_app_id, nais_deployment_id, team_slug, app_name, environment_name,
-      commit_sha, created_at, four_eyes_status, has_four_eyes
-    ) VALUES ($1, $2, $3, 'test-app', 'prod', $4, $5, $6, $7)
+      commit_sha, created_at, four_eyes_status
+    ) VALUES ($1, $2, $3, 'test-app', 'prod', $4, $5, $6)
     RETURNING id`,
-    [monitoredAppId, naisId, teamSlug, `sha-${naisId}`, createdAt, fourEyesStatus, hasFourEyes],
+    [monitoredAppId, naisId, teamSlug, `sha-${naisId}`, createdAt, fourEyesStatus],
   )
   return rows[0].id
 }

@@ -66,7 +66,6 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
         await updateDeploymentFourEyes(
           deployment.id,
           {
-            hasFourEyes: false,
             fourEyesStatus: 'legacy',
             githubPrNumber: null,
             githubPrUrl: null,

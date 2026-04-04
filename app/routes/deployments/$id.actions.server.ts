@@ -106,7 +106,6 @@ export async function action({ request, params }: { request: Request; params: Re
       await updateDeploymentFourEyes(
         deploymentId,
         {
-          hasFourEyes: true,
           fourEyesStatus: 'manually_approved',
           githubPrNumber: null,
           githubPrUrl: null,
@@ -325,7 +324,6 @@ export async function action({ request, params }: { request: Request; params: Re
       await updateDeploymentFourEyes(
         deploymentId,
         {
-          hasFourEyes: false,
           fourEyesStatus: 'legacy_pending',
           githubPrNumber: updatedDeployment?.github_pr_number || (prNumber ? parseInt(prNumber, 10) : null),
           githubPrUrl: updatedDeployment?.github_pr_url || prUrl || null,
@@ -379,7 +377,6 @@ export async function action({ request, params }: { request: Request; params: Re
       await updateDeploymentFourEyes(
         deploymentId,
         {
-          hasFourEyes: false,
           fourEyesStatus: 'pending_approval',
           githubPrNumber: prNumber ? parseInt(prNumber, 10) : null,
           githubPrUrl: null,
@@ -426,7 +423,6 @@ export async function action({ request, params }: { request: Request; params: Re
       await updateDeploymentFourEyes(
         deploymentId,
         {
-          hasFourEyes: true,
           fourEyesStatus: 'manually_approved',
           githubPrNumber: currentDeployment?.github_pr_number || null,
           githubPrUrl: currentDeployment?.github_pr_url || null,
@@ -475,7 +471,6 @@ export async function action({ request, params }: { request: Request; params: Re
       await updateDeploymentFourEyes(
         deploymentId,
         {
-          hasFourEyes: false,
           fourEyesStatus: 'legacy',
           githubPrNumber: null,
           githubPrUrl: null,
@@ -548,7 +543,6 @@ export async function action({ request, params }: { request: Request; params: Re
       await updateDeploymentFourEyes(
         deploymentId,
         {
-          hasFourEyes: true,
           fourEyesStatus: 'baseline',
           githubPrNumber: null,
           githubPrUrl: null,

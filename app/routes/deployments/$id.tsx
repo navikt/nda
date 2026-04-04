@@ -1665,7 +1665,6 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                   const data = {
                     deploymentId: deployment.id,
                     status: verificationRun.status,
-                    hasFourEyes: verificationRun.hasFourEyes,
                     runAt: verificationRun.runAt,
                     schemaVersion: verificationRun.schemaVersion,
                     result: verificationRun.result,

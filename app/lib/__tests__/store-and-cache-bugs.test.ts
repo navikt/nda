@@ -71,7 +71,6 @@ describe('Bug A: github_pr_data preservation', () => {
 
   it('storeVerificationResult should not write github_pr_data at all', () => {
     // The fix: storeVerificationResult should only update:
-    // - has_four_eyes
     // - four_eyes_status
     // - github_pr_number
     // - unverified_commits

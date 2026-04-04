@@ -454,7 +454,6 @@ async function _markCommitDataUnavailable(
 export async function saveVerificationRun(
   deploymentId: number,
   result: {
-    hasFourEyes: boolean
     status: string
     result: unknown
   },
@@ -465,8 +464,8 @@ export async function saveVerificationRun(
 ): Promise<number> {
   const queryResult = await pool.query(
     `INSERT INTO verification_runs 
-       (deployment_id, schema_version, pr_snapshot_ids, commit_snapshot_ids, result, status, has_four_eyes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (deployment_id, schema_version, pr_snapshot_ids, commit_snapshot_ids, result, status)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id`,
     [
       deploymentId,
@@ -475,7 +474,6 @@ export async function saveVerificationRun(
       snapshotIds.commitSnapshotIds,
       JSON.stringify(result.result),
       result.status,
-      result.hasFourEyes,
     ],
   )
   return queryResult.rows[0].id
@@ -492,11 +490,10 @@ export async function getLatestVerificationRun(deploymentId: number): Promise<{
   commitSnapshotIds: number[]
   result: unknown
   status: string
-  hasFourEyes: boolean
 } | null> {
   const result = await pool.query(
     `SELECT id, schema_version, run_at, pr_snapshot_ids, commit_snapshot_ids, 
-            result, status, has_four_eyes
+            result, status
      FROM verification_runs
      WHERE deployment_id = $1
      ORDER BY run_at DESC
@@ -517,7 +514,6 @@ export async function getLatestVerificationRun(deploymentId: number): Promise<{
     commitSnapshotIds: row.commit_snapshot_ids,
     result: row.result,
     status: row.status,
-    hasFourEyes: row.has_four_eyes,
   }
 }
 
@@ -533,13 +529,12 @@ async function _getVerificationRunHistory(
     schemaVersion: number
     runAt: Date
     status: string
-    hasFourEyes: boolean
   }>
 > {
   const limit = options?.limit ?? 10
 
   const result = await pool.query(
-    `SELECT id, schema_version, run_at, status, has_four_eyes
+    `SELECT id, schema_version, run_at, status
      FROM verification_runs
      WHERE deployment_id = $1
      ORDER BY run_at DESC
@@ -547,15 +542,12 @@ async function _getVerificationRunHistory(
     [deploymentId, limit],
   )
 
-  return result.rows.map(
-    (row: { id: number; schema_version: number; run_at: Date; status: string; has_four_eyes: boolean }) => ({
-      id: row.id,
-      schemaVersion: row.schema_version,
-      runAt: row.run_at,
-      status: row.status,
-      hasFourEyes: row.has_four_eyes,
-    }),
-  )
+  return result.rows.map((row: { id: number; schema_version: number; run_at: Date; status: string }) => ({
+    id: row.id,
+    schemaVersion: row.schema_version,
+    runAt: row.run_at,
+    status: row.status,
+  }))
 }
 
 // =============================================================================

@@ -22,7 +22,6 @@ export interface Deployment {
   trigger_url: string | null
   detected_github_owner: string
   detected_github_repo_name: string
-  has_four_eyes: boolean
   four_eyes_status: string
   github_pr_number: number | null
   github_pr_url: string | null
@@ -380,8 +379,8 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
     `INSERT INTO deployments 
       (monitored_app_id, nais_deployment_id, created_at, team_slug, environment_name, app_name,
        deployer_username, commit_sha, trigger_url,
-       detected_github_owner, detected_github_repo_name, resources, has_four_eyes, four_eyes_status)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       detected_github_owner, detected_github_repo_name, resources, four_eyes_status)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     ON CONFLICT (nais_deployment_id) 
     DO UPDATE SET
       resources = EXCLUDED.resources,
@@ -400,8 +399,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
       data.detectedGithubOwner,
       data.detectedGithubRepoName,
       data.resources ? JSON.stringify(data.resources) : null,
-      false, // has_four_eyes starts as false — set to true only by verification
-      isLegacyDeployment ? 'legacy' : 'pending', // four_eyes_status
+      isLegacyDeployment ? 'legacy' : 'pending',
     ],
   )
   return result.rows[0]
@@ -460,7 +458,6 @@ export async function getVerificationStats(monitoredAppId?: number): Promise<{
 export async function updateDeploymentFourEyes(
   deploymentId: number,
   data: {
-    hasFourEyes: boolean
     fourEyesStatus: string
     githubPrNumber: number | null
     githubPrUrl: string | null
@@ -477,25 +474,21 @@ export async function updateDeploymentFourEyes(
   },
 ): Promise<Deployment> {
   // Get current status before update for history logging
-  const current = await pool.query(`SELECT four_eyes_status, has_four_eyes FROM deployments WHERE id = $1`, [
-    deploymentId,
-  ])
+  const current = await pool.query(`SELECT four_eyes_status FROM deployments WHERE id = $1`, [deploymentId])
 
   const result = await pool.query(
     `UPDATE deployments 
-     SET has_four_eyes = $1,
-         four_eyes_status = $2,
-         github_pr_number = $3,
-         github_pr_url = $4,
-         github_pr_data = $5,
-         branch_name = $6,
-         parent_commits = $7,
-         unverified_commits = $8,
-         title = $9
-     WHERE id = $10
+     SET four_eyes_status = $1,
+         github_pr_number = $2,
+         github_pr_url = $3,
+         github_pr_data = $4,
+         branch_name = $5,
+         parent_commits = $6,
+         unverified_commits = $7,
+         title = $8
+     WHERE id = $9
      RETURNING *`,
     [
-      data.hasFourEyes,
       data.fourEyesStatus,
       data.githubPrNumber,
       data.githubPrUrl,
@@ -515,13 +508,11 @@ export async function updateDeploymentFourEyes(
   // Log status transition if status actually changed
   if (current.rows.length > 0) {
     const prev = current.rows[0]
-    if (prev.four_eyes_status !== data.fourEyesStatus || prev.has_four_eyes !== data.hasFourEyes) {
+    if (prev.four_eyes_status !== data.fourEyesStatus) {
       const source = statusChangeOptions?.changeSource || 'unknown'
       await logStatusTransition(deploymentId, {
         fromStatus: prev.four_eyes_status,
         toStatus: data.fourEyesStatus,
-        fromHasFourEyes: prev.has_four_eyes,
-        toHasFourEyes: data.hasFourEyes,
         changeSource: source,
         changedBy: statusChangeOptions?.changedBy,
         details: statusChangeOptions?.details,
@@ -1198,8 +1189,6 @@ export interface StatusTransition {
   deployment_id: number
   from_status: string | null
   to_status: string
-  from_has_four_eyes: boolean | null
-  to_has_four_eyes: boolean
   changed_by: string | null
   change_source: string
   details: Record<string, unknown> | null

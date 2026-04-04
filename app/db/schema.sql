@@ -71,9 +71,7 @@ CREATE TABLE IF NOT EXISTS deployments (
   detected_github_repo_name VARCHAR(255) NOT NULL,
   
   -- Four-eyes status
-  has_four_eyes BOOLEAN DEFAULT FALSE,
   four_eyes_status VARCHAR(50) DEFAULT 'unknown',
-  -- Possible values: 'approved_pr', 'approved_pr_with_unreviewed', 'pr_not_approved', 'direct_push', 'error', 'legacy', 'pending', 'unknown'
   
   github_pr_number INTEGER,
   github_pr_url TEXT,

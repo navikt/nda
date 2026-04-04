@@ -145,7 +145,6 @@ describe('verifyDeploymentsFourEyes', () => {
     expect(mockUpdateFourEyes).toHaveBeenCalledWith(
       1,
       {
-        hasFourEyes: false,
         fourEyesStatus: 'legacy',
         githubPrNumber: null,
         githubPrUrl: null,

@@ -6,8 +6,6 @@ export async function logStatusTransition(
   data: {
     fromStatus: string | null
     toStatus: string
-    fromHasFourEyes: boolean | null
-    toHasFourEyes: boolean
     changeSource: string
     changedBy?: string
     details?: Record<string, unknown>
@@ -15,15 +13,13 @@ export async function logStatusTransition(
 ): Promise<void> {
   await pool.query(
     `INSERT INTO deployment_status_history 
-       (deployment_id, from_status, to_status, from_has_four_eyes, to_has_four_eyes, 
+       (deployment_id, from_status, to_status, 
         changed_by, change_source, details)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+     VALUES ($1, $2, $3, $4, $5, $6)`,
     [
       deploymentId,
       data.fromStatus,
       data.toStatus,
-      data.fromHasFourEyes,
-      data.toHasFourEyes,
       data.changedBy || null,
       data.changeSource,
       data.details ? JSON.stringify(data.details) : null,
@@ -47,7 +43,6 @@ export async function getDeploymentsWithStatusChanges(monitoredAppId: number): P
     created_at: Date
     commit_sha: string | null
     four_eyes_status: string
-    has_four_eyes: boolean
     github_pr_number: number | null
     title: string | null
     transition_count: number
@@ -63,7 +58,6 @@ export async function getDeploymentsWithStatusChanges(monitoredAppId: number): P
        d.created_at,
        d.commit_sha,
        d.four_eyes_status,
-       d.has_four_eyes,
        d.github_pr_number,
        d.title,
        COUNT(h.id)::int as transition_count,

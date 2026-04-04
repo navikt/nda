@@ -155,24 +155,21 @@ export async function propagateVerificationToSiblings(
   // propagation attempts targeting the same row are serialized by
   // row-level locking, and the WHERE clause ensures only pending/error
   // deployments are updated.
-  const hasFourEyes = true
-
   const result = await pool.query(
     `UPDATE deployments
-     SET has_four_eyes = $1,
-         four_eyes_status = $2
-     WHERE commit_sha = $3
-       AND four_eyes_status = ANY($4::text[])
-       AND id != $5
+     SET four_eyes_status = $1
+     WHERE commit_sha = $2
+       AND four_eyes_status = ANY($3::text[])
+       AND id != $4
        AND monitored_app_id IN (
          SELECT ma.id FROM monitored_applications ma
          WHERE ma.application_group_id = (
-           SELECT application_group_id FROM monitored_applications WHERE id = $6
+           SELECT application_group_id FROM monitored_applications WHERE id = $5
          )
          AND ma.application_group_id IS NOT NULL
-         AND ma.id != $6
+         AND ma.id != $5
        )`,
-    [hasFourEyes, status, commitSha, PENDING_STATUSES, deploymentId, monitoredAppId],
+    [status, commitSha, PENDING_STATUSES, deploymentId, monitoredAppId],
   )
 
   return result.rowCount ?? 0

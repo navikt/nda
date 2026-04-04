@@ -109,17 +109,17 @@ describe('deployment queries', () => {
     for (const status of ['approved_pr', 'approved_pr', 'direct_push', 'pending']) {
       const naisId = `dep-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       await pool.query(
-        `INSERT INTO deployments (monitored_app_id, nais_deployment_id, team_slug, app_name, environment_name, created_at, four_eyes_status, has_four_eyes)
-         VALUES ($1, $2, 'team-x', 'app-x', 'prod', NOW(), $3, $4)`,
-        [appId, naisId, status, status === 'approved_pr'],
+        `INSERT INTO deployments (monitored_app_id, nais_deployment_id, team_slug, app_name, environment_name, created_at, four_eyes_status)
+         VALUES ($1, $2, 'team-x', 'app-x', 'prod', NOW(), $3)`,
+        [appId, naisId, status],
       )
     }
 
-    // This is the exact pattern from getSectionOverallStats that previously had the ::int FILTER bug
+    // This is the exact pattern from getSectionOverallStats that uses four_eyes_status
     const { rows } = await pool.query(`
       SELECT
         COUNT(id)::int AS total,
-        COUNT(id) FILTER (WHERE has_four_eyes = true)::int AS with_four_eyes,
+        COUNT(id) FILTER (WHERE four_eyes_status IN ('approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes'))::int AS with_four_eyes,
         COUNT(id) FILTER (WHERE four_eyes_status IN ('direct_push', 'unverified_commits'))::int AS without_four_eyes,
         COUNT(id) FILTER (WHERE four_eyes_status IN ('pending', 'pending_baseline', 'unknown'))::int AS pending
       FROM deployments

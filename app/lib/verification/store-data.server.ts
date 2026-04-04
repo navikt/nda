@@ -10,7 +10,6 @@ import { updateCommitPrVerification } from '~/db/commits.server'
 import { pool } from '~/db/connection.server'
 import { logStatusTransition } from '~/db/deployments.server'
 import { getAllLatestPrSnapshots, saveVerificationRun } from '~/db/github-data.server'
-import { type FourEyesStatus, isApprovedStatus } from '~/lib/four-eyes-status'
 import { buildGithubPrDataFromSnapshots } from './build-github-pr-data'
 import type {
   PrChecks,
@@ -47,7 +46,6 @@ export async function storeVerificationResult(
   const verificationRunId = await saveVerificationRun(
     deploymentId,
     {
-      hasFourEyes: result.hasFourEyes,
       status: result.status,
       result: result,
     },
@@ -74,11 +72,8 @@ async function updateDeploymentVerification(
   result: VerificationResult,
   changeSource?: string,
 ): Promise<void> {
-  // Derive has_four_eyes from status (kept in sync for backward compatibility)
   if (result.status === 'manually_approved') return // Don't overwrite manual approval
   if (result.status === 'legacy') return // Don't update legacy deployments
-
-  const fourEyesValue = !!isApprovedStatus(result.status as FourEyesStatus)
 
   // Build github_pr_data from snapshots if a PR was found
   let githubPrDataJson: string | null = null
@@ -90,24 +85,20 @@ async function updateDeploymentVerification(
   }
 
   // Get current status before update for history logging
-  const current = await pool.query(`SELECT four_eyes_status, has_four_eyes FROM deployments WHERE id = $1`, [
-    deploymentId,
-  ])
+  const current = await pool.query(`SELECT four_eyes_status FROM deployments WHERE id = $1`, [deploymentId])
 
   // Update deployment record
   await pool.query(
     `UPDATE deployments
      SET 
-       has_four_eyes = COALESCE($1, has_four_eyes),
-       four_eyes_status = $2,
-       github_pr_number = COALESCE($3, github_pr_number),
-       unverified_commits = $5::jsonb,
-       github_pr_data = COALESCE($6::jsonb, github_pr_data),
-       title = COALESCE($7, title)
-     WHERE id = $4
+       four_eyes_status = $1,
+       github_pr_number = COALESCE($2, github_pr_number),
+       unverified_commits = $4::jsonb,
+       github_pr_data = COALESCE($5::jsonb, github_pr_data),
+       title = COALESCE($6, title)
+     WHERE id = $3
        AND four_eyes_status NOT IN ('manually_approved', 'legacy')`,
     [
-      fourEyesValue,
       result.status,
       result.deployedPr?.number || null,
       deploymentId,
@@ -137,8 +128,6 @@ async function updateDeploymentVerification(
       await logStatusTransition(deploymentId, {
         fromStatus: prev.four_eyes_status,
         toStatus: newStatus,
-        fromHasFourEyes: prev.has_four_eyes,
-        toHasFourEyes: fourEyesValue,
         changeSource: changeSource || 'verification',
       })
     }

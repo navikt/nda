@@ -6,7 +6,6 @@
 -- ============================================================
 UPDATE deployments 
 SET 
-  has_four_eyes = FALSE,
   four_eyes_status = 'pending',
   github_pr_number = NULL,
   github_pr_url = NULL,
@@ -20,7 +19,6 @@ WHERE commit_sha IS NOT NULL;
 -- ============================================================
 -- UPDATE deployments 
 -- SET 
---   has_four_eyes = FALSE,
 --   four_eyes_status = 'pending',
 --   github_pr_number = NULL,
 --   github_pr_url = NULL,
@@ -34,7 +32,6 @@ WHERE commit_sha IS NOT NULL;
 -- ============================================================
 -- UPDATE deployments 
 -- SET 
---   has_four_eyes = FALSE,
 --   four_eyes_status = 'pending',
 --   github_pr_number = NULL,
 --   github_pr_url = NULL,
@@ -48,7 +45,6 @@ WHERE commit_sha IS NOT NULL;
 -- ============================================================
 -- UPDATE deployments 
 -- SET 
---   has_four_eyes = FALSE,
 --   four_eyes_status = 'pending',
 --   github_pr_number = NULL,
 --   github_pr_url = NULL,
@@ -63,7 +59,6 @@ WHERE commit_sha IS NOT NULL;
 -- ============================================================
 -- UPDATE deployments 
 -- SET 
---   has_four_eyes = FALSE,
 --   four_eyes_status = 'pending',
 --   github_pr_data = NULL  -- Behold PR nummer/URL for raskere lookup
 -- WHERE four_eyes_status = 'approved_pr'
@@ -74,7 +69,6 @@ WHERE commit_sha IS NOT NULL;
 -- ============================================================
 -- UPDATE deployments 
 -- SET 
---   has_four_eyes = FALSE,
 --   four_eyes_status = 'pending',
 --   github_pr_number = NULL,
 --   github_pr_url = NULL,

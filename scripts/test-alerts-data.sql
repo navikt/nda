@@ -24,7 +24,6 @@ INSERT INTO deployments (
   trigger_url,
   detected_github_owner,
   detected_github_repo_name,
-  has_four_eyes,
   four_eyes_status
 )
 SELECT 
@@ -46,7 +45,6 @@ SELECT
     WHEN i = 4 THEN 'pensjon-another-wrong'
     ELSE 'pensjon-testapp'
   END,
-  FALSE,
   'pending'
 FROM monitored_applications ma
 CROSS JOIN generate_series(1, 5) AS i

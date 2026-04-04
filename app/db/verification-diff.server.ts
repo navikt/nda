@@ -4,7 +4,6 @@ interface VerificationDiffDeployment {
   id: number
   commit_sha: string
   four_eyes_status: string
-  has_four_eyes: boolean
   github_pr_number: number | null
   environment_name: string
   created_at: Date
@@ -27,7 +26,6 @@ export async function getDeploymentsWithCompareData(
         d.id,
         d.commit_sha,
         d.four_eyes_status,
-        d.has_four_eyes,
         d.github_pr_number,
         d.environment_name,
         d.created_at,

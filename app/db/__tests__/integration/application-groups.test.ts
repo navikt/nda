@@ -241,7 +241,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha,
       fourEyesStatus: 'approved',
-      hasFourEyes: true,
     })
     const dep2 = await seedDeployment(pool, {
       monitoredAppId: app2,
@@ -249,14 +248,12 @@ describe('verification propagation', () => {
       environment: 'prod-fss',
       commitSha,
       fourEyesStatus: 'pending',
-      hasFourEyes: false,
     })
 
     const propagated = await propagateVerificationToSiblings(dep1, 'approved', commitSha, app1)
     expect(propagated).toBe(1)
 
-    const { rows } = await pool.query('SELECT has_four_eyes, four_eyes_status FROM deployments WHERE id = $1', [dep2])
-    expect(rows[0].has_four_eyes).toBe(true)
+    const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [dep2])
     expect(rows[0].four_eyes_status).toBe('approved')
   })
 
@@ -278,7 +275,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha,
       fourEyesStatus: 'unverified_commits',
-      hasFourEyes: false,
     })
     await seedDeployment(pool, {
       monitoredAppId: app2,
@@ -286,7 +282,6 @@ describe('verification propagation', () => {
       environment: 'prod-fss',
       commitSha,
       fourEyesStatus: 'pending',
-      hasFourEyes: false,
     })
 
     const propagated = await propagateVerificationToSiblings(dep1, 'unverified_commits', commitSha, app1)
@@ -310,7 +305,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha: 'sha-one',
       fourEyesStatus: 'approved',
-      hasFourEyes: true,
     })
     const dep2 = await seedDeployment(pool, {
       monitoredAppId: app2,
@@ -318,7 +312,6 @@ describe('verification propagation', () => {
       environment: 'prod-fss',
       commitSha: 'sha-two',
       fourEyesStatus: 'pending',
-      hasFourEyes: false,
     })
 
     const propagated = await propagateVerificationToSiblings(dep1, 'approved', 'sha-one', app1)
@@ -346,7 +339,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha,
       fourEyesStatus: 'approved',
-      hasFourEyes: true,
     })
     await seedDeployment(pool, {
       monitoredAppId: app2,
@@ -354,7 +346,6 @@ describe('verification propagation', () => {
       environment: 'prod-fss',
       commitSha,
       fourEyesStatus: 'manually_approved',
-      hasFourEyes: true,
     })
 
     const propagated = await propagateVerificationToSiblings(dep1, 'approved', commitSha, app1)
@@ -371,7 +362,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha: 'abc123',
       fourEyesStatus: 'approved',
-      hasFourEyes: true,
     })
 
     const propagated = await propagateVerificationToSiblings(dep, 'approved', 'abc123', appId)
@@ -396,7 +386,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha,
       fourEyesStatus: 'manually_approved',
-      hasFourEyes: true,
     })
     const dep2 = await seedDeployment(pool, {
       monitoredAppId: app2,
@@ -404,7 +393,6 @@ describe('verification propagation', () => {
       environment: 'prod-fss',
       commitSha,
       fourEyesStatus: 'pending',
-      hasFourEyes: false,
     })
 
     const propagated = await propagateVerificationToSiblings(dep1, 'manually_approved', commitSha, app1)
@@ -434,7 +422,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha,
       fourEyesStatus: 'approved',
-      hasFourEyes: true,
     })
     await seedDeployment(pool, {
       monitoredAppId: app2,
@@ -442,7 +429,6 @@ describe('verification propagation', () => {
       environment: 'prod-fss',
       commitSha,
       fourEyesStatus: 'pending',
-      hasFourEyes: false,
     })
     await seedDeployment(pool, {
       monitoredAppId: app3,
@@ -450,14 +436,13 @@ describe('verification propagation', () => {
       environment: 'dev-gcp',
       commitSha,
       fourEyesStatus: 'pending',
-      hasFourEyes: false,
     })
 
     const propagated = await propagateVerificationToSiblings(dep1, 'approved', commitSha, app1)
     expect(propagated).toBe(2)
 
     const { rows } = await pool.query(
-      "SELECT id, four_eyes_status, has_four_eyes FROM deployments WHERE four_eyes_status = 'approved' ORDER BY id",
+      "SELECT id, four_eyes_status FROM deployments WHERE four_eyes_status = 'approved' ORDER BY id",
     )
     expect(rows).toHaveLength(3)
   })
@@ -484,7 +469,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha,
       fourEyesStatus: status,
-      hasFourEyes: true,
     })
     const dep2 = await seedDeployment(pool, {
       monitoredAppId: app2,
@@ -492,14 +476,12 @@ describe('verification propagation', () => {
       environment: 'prod-fss',
       commitSha,
       fourEyesStatus: 'pending',
-      hasFourEyes: false,
     })
 
     const propagated = await propagateVerificationToSiblings(dep1, status, commitSha, app1)
     expect(propagated).toBe(1)
 
-    const { rows } = await pool.query('SELECT has_four_eyes, four_eyes_status FROM deployments WHERE id = $1', [dep2])
-    expect(rows[0].has_four_eyes).toBe(true)
+    const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [dep2])
     expect(rows[0].four_eyes_status).toBe(status)
   })
 
@@ -527,7 +509,6 @@ describe('verification propagation', () => {
       environment: 'prod-gcp',
       commitSha,
       fourEyesStatus: status,
-      hasFourEyes: false,
     })
     await seedDeployment(pool, {
       monitoredAppId: app2,
@@ -535,7 +516,6 @@ describe('verification propagation', () => {
       environment: 'prod-fss',
       commitSha,
       fourEyesStatus: 'pending',
-      hasFourEyes: false,
     })
 
     const propagated = await propagateVerificationToSiblings(dep1, status, commitSha, app1)
