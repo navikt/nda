@@ -11,6 +11,7 @@ import {
   BodyShort,
   Box,
   Button,
+  Checkbox,
   Detail,
   Heading,
   HStack,
@@ -223,6 +224,24 @@ export default function VerificationDiffPage() {
 
   const isComputing = !!activeJobId || triggerFetcher.state !== 'idle'
 
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const toggleId = (id: number) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+  const toggleAll = () => {
+    setSelectedIds((prev) => (prev.length === diffs.length ? [] : diffs.map((d) => d.id)))
+  }
+
+  // Clear selection when diffs change (after revalidation)
+  const prevDiffCount = useRef(diffs.length)
+  useEffect(() => {
+    if (diffs.length !== prevDiffCount.current) {
+      setSelectedIds([])
+      prevDiffCount.current = diffs.length
+    }
+  })
+
   return (
     <Box paddingBlock="space-8" paddingInline={{ xs: 'space-4', md: 'space-8' }}>
       <VStack gap="space-6">
@@ -286,17 +305,41 @@ export default function VerificationDiffPage() {
           <VStack gap="space-4">
             <Form method="post">
               <input type="hidden" name="action" value="apply_all" />
-              {diffs.map((diff) => (
-                <input key={diff.id} type="hidden" name="deployment_ids" value={diff.id} />
+              {selectedIds.map((id) => (
+                <input key={id} type="hidden" name="deployment_ids" value={id} />
               ))}
-              <Button type="submit" size="small" variant="secondary" loading={isApplyingAll}>
-                Oppdater alle ({diffs.length})
-              </Button>
+              <HStack gap="space-4" align="center">
+                <Button
+                  type="submit"
+                  size="small"
+                  variant="secondary"
+                  loading={isApplyingAll}
+                  disabled={selectedIds.length === 0}
+                >
+                  Oppdater valgte ({selectedIds.length})
+                </Button>
+                {selectedIds.length > 0 && selectedIds.length < diffs.length && (
+                  <Detail>
+                    {selectedIds.length} av {diffs.length} valgt
+                  </Detail>
+                )}
+              </HStack>
             </Form>
 
             <Table>
               <Table.Header>
                 <Table.Row>
+                  <Table.HeaderCell style={{ width: '1%' }}>
+                    <Checkbox
+                      checked={selectedIds.length === diffs.length}
+                      indeterminate={selectedIds.length > 0 && selectedIds.length < diffs.length}
+                      onChange={toggleAll}
+                      hideLabel
+                      size="small"
+                    >
+                      Velg alle
+                    </Checkbox>
+                  </Table.HeaderCell>
                   <Table.HeaderCell>Deployment</Table.HeaderCell>
                   <Table.HeaderCell>Miljø</Table.HeaderCell>
                   <Table.HeaderCell>Dato</Table.HeaderCell>
@@ -308,7 +351,17 @@ export default function VerificationDiffPage() {
               </Table.Header>
               <Table.Body>
                 {diffs.map((diff) => (
-                  <Table.Row key={diff.id}>
+                  <Table.Row key={diff.id} selected={selectedIds.includes(diff.id)}>
+                    <Table.DataCell>
+                      <Checkbox
+                        checked={selectedIds.includes(diff.id)}
+                        onChange={() => toggleId(diff.id)}
+                        hideLabel
+                        size="small"
+                      >
+                        Velg {diff.id}
+                      </Checkbox>
+                    </Table.DataCell>
                     <Table.DataCell>
                       <AkselLink
                         as={Link}
