@@ -12,12 +12,12 @@ import { getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { pool } from '~/db/connection.server'
 import {
   getCompareSnapshotForCommit,
-  getDeploymentsWithCompareData,
+  getDeploymentsForDiffComputation,
   getPreviousDeploymentForDiff,
   getPrSnapshotsForDiff,
 } from '~/db/verification-diff.server'
 import { logger } from '~/lib/logger.server'
-import { buildCommitsBetweenFromCache } from './fetch-data.server'
+import { buildCommitsBetweenFromCache, fetchVerificationData } from './fetch-data.server'
 import type { CompareData, PrCommit, PrMetadata, PrReview, VerificationInput } from './types'
 import { verifyDeployment } from './verify'
 
@@ -51,7 +51,7 @@ export async function computeVerificationDiffs(
   monitoredAppId: number,
   options: ComputeDiffsOptions = {},
 ): Promise<ComputeDiffsResult> {
-  const deployments = await getDeploymentsWithCompareData(monitoredAppId)
+  const deployments = await getDeploymentsForDiffComputation(monitoredAppId)
   const implicitApprovalSettings = await getImplicitApprovalSettings(monitoredAppId)
 
   const result: ComputeDiffsResult = {
@@ -77,55 +77,65 @@ export async function computeVerificationDiffs(
         continue
       }
 
-      const prevRow = await getPreviousDeploymentForDiff(row.id, row.environment_name)
-      const previousDeployment = prevRow
-        ? { id: prevRow.id, commitSha: prevRow.commit_sha, createdAt: prevRow.created_at.toISOString() }
-        : null
-
-      const compareSnapshot = await getCompareSnapshotForCommit(row.commit_sha)
-      if (!compareSnapshot) {
-        result.skipped++
-        result.deploymentsChecked++
-        continue
-      }
-
-      const compareData = compareSnapshot.data as CompareData
       const owner = row.detected_github_owner as string
       const repo = row.detected_github_repo_name as string
       const baseBranch = row.default_branch || 'main'
 
-      const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
-        cacheOnly: true,
-      })
+      let input: VerificationInput
 
-      let deployedPr: VerificationInput['deployedPr'] = null
-      if (row.github_pr_number) {
-        const snapshotMap = await getPrSnapshotsForDiff(row.github_pr_number)
-        if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
-          deployedPr = {
-            number: row.github_pr_number,
-            url: `https://github.com/${owner}/${repo}/pull/${row.github_pr_number}`,
-            metadata: snapshotMap.get('metadata') as PrMetadata,
-            reviews: snapshotMap.get('reviews') as PrReview[],
-            commits: snapshotMap.get('commits') as PrCommit[],
+      const compareSnapshot = await getCompareSnapshotForCommit(row.commit_sha)
+      if (compareSnapshot) {
+        // Build input from cached data
+        const prevRow = await getPreviousDeploymentForDiff(row.id, row.environment_name)
+        const previousDeployment = prevRow
+          ? { id: prevRow.id, commitSha: prevRow.commit_sha, createdAt: prevRow.created_at.toISOString() }
+          : null
+
+        const compareData = compareSnapshot.data as CompareData
+        const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
+          cacheOnly: true,
+        })
+
+        let deployedPr: VerificationInput['deployedPr'] = null
+        if (row.github_pr_number) {
+          const snapshotMap = await getPrSnapshotsForDiff(row.github_pr_number)
+          if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
+            deployedPr = {
+              number: row.github_pr_number,
+              url: `https://github.com/${owner}/${repo}/pull/${row.github_pr_number}`,
+              metadata: snapshotMap.get('metadata') as PrMetadata,
+              reviews: snapshotMap.get('reviews') as PrReview[],
+              commits: snapshotMap.get('commits') as PrCommit[],
+            }
           }
         }
-      }
 
-      const input: VerificationInput = {
-        deploymentId: row.id,
-        commitSha: row.commit_sha,
-        repository: `${owner}/${repo}`,
-        environmentName: row.environment_name,
-        baseBranch,
-        repositoryStatus: 'active',
-        commitOnBaseBranch: true,
-        auditStartYear: row.audit_start_year,
-        implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
-        previousDeployment,
-        deployedPr,
-        commitsBetween,
-        dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
+        input = {
+          deploymentId: row.id,
+          commitSha: row.commit_sha,
+          repository: `${owner}/${repo}`,
+          environmentName: row.environment_name,
+          baseBranch,
+          repositoryStatus: 'active',
+          commitOnBaseBranch: true,
+          auditStartYear: row.audit_start_year,
+          implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
+          previousDeployment,
+          deployedPr,
+          commitsBetween,
+          dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
+        }
+      } else {
+        // No compare snapshot — fetch fresh data from GitHub (will be cached for future use)
+        logger.info(`   🌐 Fetching fresh data for deployment ${row.id} (no compare snapshot)`)
+        input = await fetchVerificationData(
+          row.id,
+          row.commit_sha,
+          `${owner}/${repo}`,
+          row.environment_name,
+          baseBranch,
+          monitoredAppId,
+        )
       }
 
       const newResult = verifyDeployment(input)

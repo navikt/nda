@@ -14,15 +14,15 @@ interface VerificationDiffDeployment {
 }
 
 /**
- * Get deployments with compare snapshots for verification diff analysis
+ * Get deployments eligible for verification diff analysis.
+ * Includes all valid deployments regardless of whether they have compare snapshots.
  */
-export async function getDeploymentsWithCompareData(
+export async function getDeploymentsForDiffComputation(
   monitoredAppId: number,
   limit = 500,
 ): Promise<VerificationDiffDeployment[]> {
   const result = await pool.query(
-    `WITH valid_deployments AS (
-      SELECT 
+    `SELECT 
         d.id,
         d.commit_sha,
         d.four_eyes_status,
@@ -42,18 +42,8 @@ export async function getDeploymentsWithCompareData(
         AND d.commit_sha !~ '^refs/'
         AND LENGTH(d.commit_sha) >= 7
         AND (ma.audit_start_year IS NULL OR d.created_at >= (ma.audit_start_year || '-01-01')::date)
-    ),
-    deployments_with_data AS (
-      SELECT DISTINCT vd.*
-      FROM valid_deployments vd
-      WHERE EXISTS (
-        SELECT 1 FROM github_compare_snapshots gcs
-        WHERE gcs.head_sha = vd.commit_sha
-      )
-    )
-    SELECT * FROM deployments_with_data
-    ORDER BY created_at DESC
-    LIMIT $2`,
+      ORDER BY created_at DESC
+      LIMIT $2`,
     [monitoredAppId, limit],
   )
   return result.rows
