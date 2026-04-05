@@ -60,8 +60,10 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
     return location.pathname.startsWith(path)
   }
 
-  // Only show admin nav item for admin users
-  const navItems = user.role === 'admin' ? [{ path: '/admin', label: 'Admin' }] : []
+  const navItems = [
+    { path: '/sections', label: 'Seksjoner' },
+    ...(user.role === 'admin' ? [{ path: '/admin', label: 'Admin' }] : []),
+  ]
 
   // Clear search on navigation
   const prevPathRef = useRef(location.pathname)
