@@ -97,7 +97,7 @@ const _VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   approved: 'Godkjent',
   implicitly_approved: 'Implisitt godkjent',
   unverified_commits: 'Ikke verifisert',
-  pending_baseline: 'Første deploy — venter',
+  pending_baseline: 'Første deployment - venter',
   no_changes: 'Ingen endringer',
   manually_approved: 'Manuelt godkjent',
   unauthorized_repository: 'Ikke godkjent repo',
