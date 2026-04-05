@@ -25,6 +25,7 @@ import { getGitHubDataStatsForApp } from '~/db/github-data.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getLatestSyncJob, type SyncJob } from '~/db/sync-jobs.server'
 import { requireAdmin } from '~/lib/auth.server'
+import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import { getCompletedPeriods, REPORT_PERIOD_TYPE_LABELS, type ReportPeriodType } from '~/lib/report-periods'
 import type { Route } from './+types/$team.env.$env.app.$app.admin'
 
@@ -372,7 +373,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                                 </AkselLink>
                                 <BodyShort size="small">
                                   {new Date(d.created_at).toLocaleDateString('no-NO')} • {d.deployer_username} •{' '}
-                                  {d.four_eyes_status}
+                                  {getFourEyesStatusLabel(d.four_eyes_status)}
                                 </BodyShort>
                               </HStack>
                             ))}

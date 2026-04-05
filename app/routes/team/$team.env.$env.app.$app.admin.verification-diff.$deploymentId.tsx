@@ -9,6 +9,7 @@ import { Alert, BodyShort, Box, Button, Heading, HStack, Switch, Tag, VStack } f
 import { Link, useSearchParams } from 'react-router'
 import { getDeploymentById } from '~/db/deployments.server'
 import { getUserIdentity } from '~/lib/auth.server'
+import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { type DebugVerificationResult, isVerificationDebugMode, runDebugVerification } from '~/lib/verification'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.verification-diff.$deploymentId'
@@ -186,7 +187,8 @@ function DebugResultView({ result }: { result: DebugVerificationResult }) {
               <>
                 <Tag variant="warning">Endring oppdaget</Tag>
                 <BodyShort>
-                  Status: {comparison.oldStatus || 'null'} → {comparison.newStatus}
+                  Status: {getFourEyesStatusLabel(comparison.oldStatus || 'null')} →{' '}
+                  {getFourEyesStatusLabel(comparison.newStatus)}
                 </BodyShort>
               </>
             ) : (

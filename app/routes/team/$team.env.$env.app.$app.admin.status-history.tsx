@@ -10,6 +10,7 @@ import { Link } from 'react-router'
 import { getDeploymentsWithStatusChanges } from '~/db/deployments.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { requireAdmin } from '~/lib/auth.server'
+import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.status-history'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -97,20 +98,20 @@ export default function StatusHistoryPage({ loaderData }: Route.ComponentProps) 
                 </Table.DataCell>
                 <Table.DataCell>
                   <Tag variant={getStatusVariant(dep.four_eyes_status)} size="xsmall">
-                    {dep.four_eyes_status}
+                    {getFourEyesStatusLabel(dep.four_eyes_status)}
                   </Tag>
                 </Table.DataCell>
                 <Table.DataCell>
                   {dep.latest_from_status && (
                     <>
                       <Tag variant={getStatusVariant(dep.latest_from_status)} size="xsmall">
-                        {dep.latest_from_status}
+                        {getFourEyesStatusLabel(dep.latest_from_status)}
                       </Tag>
                       {' → '}
                     </>
                   )}
                   <Tag variant={getStatusVariant(dep.latest_to_status)} size="xsmall">
-                    {dep.latest_to_status}
+                    {getFourEyesStatusLabel(dep.latest_to_status)}
                   </Tag>
                 </Table.DataCell>
                 <Table.DataCell>

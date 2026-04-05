@@ -26,7 +26,7 @@ import { pool } from '~/db/connection.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { getSyncJobById } from '~/db/sync-jobs.server'
 import { requireAdmin } from '~/lib/auth.server'
-import { type FourEyesStatus, isApprovedStatus } from '~/lib/four-eyes-status'
+import { type FourEyesStatus, getFourEyesStatusLabel, isApprovedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { reverifyDeployment } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
@@ -441,12 +441,12 @@ export default function GlobalVerificationDiffsPage() {
                   <Table.DataCell>{new Date(diff.createdAt).toLocaleDateString('no-NO')}</Table.DataCell>
                   <Table.DataCell>
                     <Tag variant="neutral" size="xsmall">
-                      {diff.oldStatus || 'null'}
+                      {getFourEyesStatusLabel(diff.oldStatus || 'null')}
                     </Tag>
                   </Table.DataCell>
                   <Table.DataCell>
                     <Tag variant={diff.newStatus === 'error' ? 'warning' : 'info'} size="xsmall">
-                      {diff.newStatus}
+                      {getFourEyesStatusLabel(diff.newStatus)}
                     </Tag>
                     {diff.errorReason && (
                       <Detail textColor="subtle" className="mt-1">
