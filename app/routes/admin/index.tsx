@@ -4,6 +4,7 @@ import {
   ChatIcon,
   CheckmarkCircleIcon,
   CogIcon,
+  ExclamationmarkTriangleIcon,
   FileTextIcon,
   LaptopIcon,
   LayersIcon,
@@ -11,6 +12,7 @@ import {
 } from '@navikt/aksel-icons'
 import { BodyShort, Box, Heading, HGrid, VStack } from '@navikt/ds-react'
 import { Link, useLoaderData } from 'react-router'
+import { pool } from '~/db/connection.server'
 import { getAllDeployments } from '~/db/deployments.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/index'
@@ -26,11 +28,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   const pendingCount = allDeployments.filter(
     (d) => d.four_eyes_status === 'pending' || d.four_eyes_status === 'error',
   ).length
-  return { pendingCount }
+
+  // Count verification diffs across all apps
+  const diffResult = await pool.query('SELECT COUNT(*) as count FROM verification_diffs')
+  const diffCount = parseInt(diffResult.rows[0].count, 10)
+
+  return { pendingCount, diffCount }
 }
 
 export default function AdminIndex() {
-  const { pendingCount } = useLoaderData<typeof loader>()
+  const { pendingCount, diffCount } = useLoaderData<typeof loader>()
   return (
     <VStack gap="space-24">
       <div>
@@ -224,6 +231,33 @@ export default function AdminIndex() {
                 </Heading>
                 <BodyShort textColor="subtle">
                   Grupper applikasjoner på tvers av NAIS-clustre for felles verifikasjon.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
+        <Link to="/admin/verification-diffs" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor={diffCount > 0 ? 'warning-subtle' : 'neutral-subtle'}
+            borderWidth="1"
+            data-color={diffCount > 0 ? 'warning' : undefined}
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <ExclamationmarkTriangleIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Verifiseringsavvik
+                </Heading>
+                <BodyShort textColor="subtle">
+                  {diffCount > 0
+                    ? `${diffCount} avvik funnet på tvers av applikasjoner.`
+                    : 'Sjekk verifiseringsavvik på tvers av alle applikasjoner.'}
                 </BodyShort>
               </div>
             </VStack>
