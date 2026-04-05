@@ -38,6 +38,7 @@ interface DeploymentDiff {
   createdAt: string
   oldStatus: string | null
   newStatus: string
+  errorReason: string | null
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -59,7 +60,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Read pre-computed diffs from database
   const result = await pool.query(
-    `SELECT vd.deployment_id, vd.old_status, vd.new_status,
+    `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.error_reason,
             vd.computed_at,
             d.commit_sha, d.environment_name, d.created_at
      FROM verification_diffs vd
@@ -76,6 +77,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     createdAt: row.created_at.toISOString(),
     oldStatus: row.old_status,
     newStatus: row.new_status,
+    errorReason: row.error_reason,
   }))
 
   // Get last computation time from the latest completed job, not from diffs
@@ -382,9 +384,14 @@ export default function VerificationDiffPage() {
                       </Tag>
                     </Table.DataCell>
                     <Table.DataCell>
-                      <Tag variant="info" size="small">
+                      <Tag variant={diff.newStatus === 'error' ? 'warning' : 'info'} size="small">
                         {diff.newStatus}
                       </Tag>
+                      {diff.errorReason && (
+                        <Detail textColor="subtle" className="mt-1">
+                          {diff.errorReason}
+                        </Detail>
+                      )}
                     </Table.DataCell>
                     <Table.DataCell>
                       {(() => {

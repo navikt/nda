@@ -66,6 +66,7 @@ export async function computeVerificationDiffs(
     deploymentId: number
     oldStatus: string | null
     newStatus: string
+    errorReason: string | null
   }> = []
 
   for (const row of deployments) {
@@ -149,6 +150,7 @@ export async function computeVerificationDiffs(
           deploymentId: row.id,
           oldStatus: row.four_eyes_status,
           newStatus: newResult.status,
+          errorReason: newResult.status === 'error' ? newResult.approvalDetails.reason : null,
         })
       }
 
@@ -170,9 +172,9 @@ export async function computeVerificationDiffs(
     for (const diff of diffs) {
       await client.query(
         `INSERT INTO verification_diffs 
-           (monitored_app_id, deployment_id, old_status, new_status, computed_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [monitoredAppId, diff.deploymentId, diff.oldStatus, diff.newStatus],
+           (monitored_app_id, deployment_id, old_status, new_status, error_reason, computed_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [monitoredAppId, diff.deploymentId, diff.oldStatus, diff.newStatus, diff.errorReason],
       )
     }
 

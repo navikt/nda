@@ -39,6 +39,7 @@ interface DiffWithApp {
   createdAt: string
   oldStatus: string | null
   newStatus: string
+  errorReason: string | null
   teamSlug: string
   appName: string
   monitoredAppId: number
@@ -53,7 +54,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Get all diffs across all apps
   const result = await pool.query(
-    `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.monitored_app_id,
+    `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.error_reason, vd.monitored_app_id,
             d.commit_sha, d.environment_name, d.created_at,
             d.team_slug, d.app_name
      FROM verification_diffs vd
@@ -69,6 +70,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       created_at: Date
       old_status: string | null
       new_status: string
+      error_reason: string | null
       team_slug: string
       app_name: string
       monitored_app_id: number
@@ -79,6 +81,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       createdAt: row.created_at.toISOString(),
       oldStatus: row.old_status,
       newStatus: row.new_status,
+      errorReason: row.error_reason,
       teamSlug: row.team_slug,
       appName: row.app_name,
       monitoredAppId: row.monitored_app_id,
@@ -442,9 +445,14 @@ export default function GlobalVerificationDiffsPage() {
                     </Tag>
                   </Table.DataCell>
                   <Table.DataCell>
-                    <Tag variant="info" size="xsmall">
+                    <Tag variant={diff.newStatus === 'error' ? 'warning' : 'info'} size="xsmall">
                       {diff.newStatus}
                     </Tag>
+                    {diff.errorReason && (
+                      <Detail textColor="subtle" className="mt-1">
+                        {diff.errorReason}
+                      </Detail>
+                    )}
                   </Table.DataCell>
                   <Table.DataCell>
                     {(() => {
