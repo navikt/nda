@@ -596,7 +596,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                 </VStack>
               </ReadMore>
               {nearbyDeployments.length > 0 && (
-                <ReadMore header={`Nærliggende deploys (±30 min, ${nearbyDeployments.length + 1} stk)`}>
+                <ReadMore header={`Nærliggende deploys (±30 min, ${nearbyDeployments.length} stk)`}>
                   <VStack gap="space-8">
                     <BodyLong>
                       Følgende deploys til samme app skjedde innenfor 30 minutter. Hvis denne feilen skyldes en
