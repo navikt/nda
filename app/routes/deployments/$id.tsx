@@ -498,13 +498,32 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           </BodyShort>
           {deployment.four_eyes_status === 'error' && (
             <VStack gap="space-8" marginBlock="space-8 space-0">
-              {isAdmin && verificationRun?.result && (
-                <BodyShort>
-                  <strong>Årsak:</strong>{' '}
-                  {(verificationRun.result as { approvalDetails?: { reason?: string } })?.approvalDetails?.reason ??
-                    'Ukjent'}
-                </BodyShort>
-              )}
+              {isAdmin &&
+                verificationRun?.result &&
+                (() => {
+                  const reason =
+                    (verificationRun.result as { approvalDetails?: { reason?: string } })?.approvalDetails?.reason ??
+                    'Ukjent'
+                  const shaMatch = reason.match(/Commit SHAs differ \(([a-f0-9]+)→([a-f0-9]+)\)/)
+                  const compareUrl =
+                    shaMatch && deployment.detected_github_owner && deployment.detected_github_repo_name
+                      ? `https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${shaMatch[1]}...${shaMatch[2]}`
+                      : null
+
+                  return (
+                    <BodyShort>
+                      <strong>Årsak:</strong> {reason}
+                      {compareUrl && (
+                        <>
+                          {' '}
+                          <a href={compareUrl} target="_blank" rel="noopener noreferrer">
+                            Se compare på GitHub <ExternalLinkIcon title="Åpnes i ny fane" fontSize="1em" />
+                          </a>
+                        </>
+                      )}
+                    </BodyShort>
+                  )
+                })()}
               <ReadMore header="Kan dette skyldes manglende GitHub App-tilgang?">
                 <VStack gap="space-8">
                   <BodyLong>
