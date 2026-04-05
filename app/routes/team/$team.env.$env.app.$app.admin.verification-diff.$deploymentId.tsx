@@ -8,9 +8,11 @@
 import { Alert, BodyShort, Box, Button, Heading, HStack, Switch, Tag, VStack } from '@navikt/ds-react'
 import { Link, useSearchParams } from 'react-router'
 import { getDeploymentById } from '~/db/deployments.server'
+import { getUserMappings } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
+import { getUserDisplayName, serializeUserMappings } from '~/lib/user-display'
 import { type DebugVerificationResult, isVerificationDebugMode, runDebugVerification } from '~/lib/verification'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.verification-diff.$deploymentId'
 
@@ -63,12 +65,27 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       forceRefresh: !useCache,
     })
 
+    // Collect usernames for display name resolution
+    const usernames: string[] = []
+    const fetchedData = debugResult.fetchedData
+    if (fetchedData?.deployedPr) {
+      if (fetchedData.deployedPr.metadata.author?.username)
+        usernames.push(fetchedData.deployedPr.metadata.author.username)
+      if (fetchedData.deployedPr.metadata.mergedBy?.username)
+        usernames.push(fetchedData.deployedPr.metadata.mergedBy.username)
+      for (const review of fetchedData.deployedPr.reviews) {
+        if (review.username) usernames.push(review.username)
+      }
+    }
+    const mappings = usernames.length > 0 ? await getUserMappings(usernames) : new Map()
+
     return {
       deployment,
       debugResult,
       error: null,
       useCache,
       params,
+      userMappings: serializeUserMappings(mappings),
     }
   } catch (error) {
     logger.error('Debug verification failed:', error)
@@ -98,6 +115,10 @@ function downloadJson(data: unknown, filename: string) {
 
 export default function VerificationDiffDeploymentPage({ loaderData }: Route.ComponentProps) {
   const { deployment, debugResult, error, useCache, params } = loaderData
+  const userMappings =
+    'userMappings' in loaderData
+      ? (loaderData.userMappings as Record<string, { display_name: string | null; nav_email: string | null }>)
+      : {}
   const [searchParams, setSearchParams] = useSearchParams()
 
   const handleCacheToggle = (checked: boolean) => {
@@ -166,14 +187,22 @@ export default function VerificationDiffDeploymentPage({ loaderData }: Route.Com
           </Alert>
         )}
 
-        {debugResult && <DebugResultView result={debugResult} />}
+        {debugResult && <DebugResultView result={debugResult} userMappings={userMappings} />}
       </VStack>
     </Box>
   )
 }
 
-function DebugResultView({ result }: { result: DebugVerificationResult }) {
+function DebugResultView({
+  result,
+  userMappings,
+}: {
+  result: DebugVerificationResult
+  userMappings: Record<string, { display_name: string | null; nav_email: string | null }>
+}) {
   const { existingStatus, fetchedData, newResult, comparison } = result
+  const resolveUsername = (username: string | undefined | null) =>
+    getUserDisplayName(username, userMappings) ?? username ?? 'ukjent'
 
   const hasRealChange = comparison.statusChanged
   const onlyNameChange = comparison.statusEquivalent
@@ -257,8 +286,11 @@ function DebugResultView({ result }: { result: DebugVerificationResult }) {
               <>
                 <DataRow label="PR nummer" value={`#${fetchedData.deployedPr.number}`} />
                 <DataRow label="Tittel" value={fetchedData.deployedPr.metadata.title} />
-                <DataRow label="Forfatter" value={fetchedData.deployedPr.metadata.author?.username || 'ukjent'} />
-                <DataRow label="Merged by" value={fetchedData.deployedPr.metadata.mergedBy?.username || 'null'} />
+                <DataRow label="Forfatter" value={resolveUsername(fetchedData.deployedPr.metadata.author?.username)} />
+                <DataRow
+                  label="Merged by"
+                  value={resolveUsername(fetchedData.deployedPr.metadata.mergedBy?.username)}
+                />
                 <DataRow label="Reviews" value={fetchedData.deployedPr.reviews.length.toString()} />
                 <DataRow label="Commits" value={fetchedData.deployedPr.commits.length.toString()} />
               </>
@@ -301,7 +333,7 @@ function DebugResultView({ result }: { result: DebugVerificationResult }) {
                     <Tag variant={review.state === 'APPROVED' ? 'success' : 'neutral'} size="small">
                       {review.state}
                     </Tag>
-                    <BodyShort size="small">{review.username}</BodyShort>
+                    <BodyShort size="small">{resolveUsername(review.username)}</BodyShort>
                   </HStack>
                 </Box>
               ))}
