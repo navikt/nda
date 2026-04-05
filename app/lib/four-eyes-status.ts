@@ -89,7 +89,7 @@ export const FOUR_EYES_STATUS_LABELS: Record<FourEyesStatus, string> = {
   manually_approved: 'Manuelt godkjent',
   no_changes: 'Ingen endringer',
   pending: 'Venter',
-  pending_baseline: 'Første deployment',
+  pending_baseline: 'Første deploy — venter',
   pending_approval: 'Venter godkjenning',
   unverified_commits: 'Uverifiserte commits',
   approved_pr_with_unreviewed: 'PR godkjent med uverifiserte commits',
