@@ -93,38 +93,55 @@ export async function computeVerificationDiffs(
           : null
 
         const compareData = compareSnapshot.data as CompareData
-        const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
-          cacheOnly: true,
-        })
 
-        let deployedPr: VerificationInput['deployedPr'] = null
-        if (row.github_pr_number) {
-          const snapshotMap = await getPrSnapshotsForDiff(row.github_pr_number)
-          if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
-            deployedPr = {
-              number: row.github_pr_number,
-              url: `https://github.com/${owner}/${repo}/pull/${row.github_pr_number}`,
-              metadata: snapshotMap.get('metadata') as PrMetadata,
-              reviews: snapshotMap.get('reviews') as PrReview[],
-              commits: snapshotMap.get('commits') as PrCommit[],
+        // Detect likely invalid cache: 0 commits between different SHAs
+        const hasSuspiciousCache =
+          compareData.commits.length === 0 && previousDeployment && previousDeployment.commitSha !== row.commit_sha
+
+        if (hasSuspiciousCache) {
+          logger.info(`   🔄 Cached compare has 0 commits between different SHAs for deployment ${row.id} — refetching`)
+          input = await fetchVerificationData(
+            row.id,
+            row.commit_sha,
+            `${owner}/${repo}`,
+            row.environment_name,
+            baseBranch,
+            monitoredAppId,
+          )
+        } else {
+          const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
+            cacheOnly: true,
+          })
+
+          let deployedPr: VerificationInput['deployedPr'] = null
+          if (row.github_pr_number) {
+            const snapshotMap = await getPrSnapshotsForDiff(row.github_pr_number)
+            if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
+              deployedPr = {
+                number: row.github_pr_number,
+                url: `https://github.com/${owner}/${repo}/pull/${row.github_pr_number}`,
+                metadata: snapshotMap.get('metadata') as PrMetadata,
+                reviews: snapshotMap.get('reviews') as PrReview[],
+                commits: snapshotMap.get('commits') as PrCommit[],
+              }
             }
           }
-        }
 
-        input = {
-          deploymentId: row.id,
-          commitSha: row.commit_sha,
-          repository: `${owner}/${repo}`,
-          environmentName: row.environment_name,
-          baseBranch,
-          repositoryStatus: 'active',
-          commitOnBaseBranch: true,
-          auditStartYear: row.audit_start_year,
-          implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
-          previousDeployment,
-          deployedPr,
-          commitsBetween,
-          dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
+          input = {
+            deploymentId: row.id,
+            commitSha: row.commit_sha,
+            repository: `${owner}/${repo}`,
+            environmentName: row.environment_name,
+            baseBranch,
+            repositoryStatus: 'active',
+            commitOnBaseBranch: true,
+            auditStartYear: row.audit_start_year,
+            implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
+            previousDeployment,
+            deployedPr,
+            commitsBetween,
+            dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
+          }
         }
       } else {
         // No compare snapshot — fetch fresh data from GitHub (will be cached for future use)
