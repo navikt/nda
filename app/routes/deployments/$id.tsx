@@ -1764,10 +1764,28 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                 onClick={() => {
                   const data = {
                     deploymentId: deployment.id,
-                    status: verificationRun.status,
-                    runAt: verificationRun.runAt,
-                    schemaVersion: verificationRun.schemaVersion,
-                    result: verificationRun.result,
+                    commitSha: deployment.commit_sha,
+                    previousDeployment: previousDeployment
+                      ? {
+                          id: previousDeployment.id,
+                          commitSha: previousDeployment.commit_sha,
+                          createdAt: previousDeployment.created_at,
+                          fourEyesStatus: previousDeployment.four_eyes_status,
+                        }
+                      : null,
+                    nearbyDeployments: nearbyDeployments.map((nd) => ({
+                      id: nd.id,
+                      commitSha: nd.commit_sha,
+                      createdAt: nd.created_at,
+                      fourEyesStatus: nd.four_eyes_status,
+                      deployerUsername: nd.deployer_username,
+                    })),
+                    verification: {
+                      status: verificationRun.status,
+                      runAt: verificationRun.runAt,
+                      schemaVersion: verificationRun.schemaVersion,
+                      result: verificationRun.result,
+                    },
                   }
                   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
                   const url = URL.createObjectURL(blob)
