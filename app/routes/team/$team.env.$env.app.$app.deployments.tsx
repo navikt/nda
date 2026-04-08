@@ -1,4 +1,4 @@
-import { ChevronLeftIcon, ChevronRightIcon } from '@navikt/aksel-icons'
+import { ChevronLeftIcon, ChevronRightIcon, LinkBrokenIcon, LinkIcon } from '@navikt/aksel-icons'
 import { BodyShort, Box, Button, Detail, Hide, HStack, Select, Show, Tag, TextField, VStack } from '@navikt/ds-react'
 import { Form, Link, redirect, useLoaderData, useSearchParams } from 'react-router'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
@@ -32,6 +32,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const page = parseInt(url.searchParams.get('page') || '1', 10)
   const status = url.searchParams.get('status') || undefined
   const method = url.searchParams.get('method') as 'pr' | 'direct_push' | 'legacy' | undefined
+  const goal = url.searchParams.get('goal') as 'missing' | 'linked' | undefined
   const deployer = url.searchParams.get('deployer') || undefined
   const sha = url.searchParams.get('sha') || undefined
   const period = (url.searchParams.get('period') || 'last-week') as TimePeriod
@@ -51,6 +52,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     per_page: 20,
     four_eyes_status: status,
     method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
+    goal_filter: goal && ['missing', 'linked'].includes(goal) ? goal : undefined,
     deployer_username: deployer,
     commit_sha: sha,
     start_date: range?.startDate,
@@ -106,6 +108,7 @@ export default function AppDeployments() {
 
   const currentStatus = searchParams.get('status') || ''
   const currentMethod = searchParams.get('method') || ''
+  const currentGoal = searchParams.get('goal') || ''
   const currentDeployer = searchParams.get('deployer') || ''
   const currentSha = searchParams.get('sha') || ''
   const currentPeriod = searchParams.get('period') || 'last-week'
@@ -176,6 +179,17 @@ export default function AppDeployments() {
                 <option value="pr">Pull Request</option>
                 <option value="direct_push">Direct Push</option>
                 <option value="legacy">Legacy</option>
+              </Select>
+
+              <Select
+                label="Endringsopphav"
+                size="small"
+                value={currentGoal}
+                onChange={(e) => updateFilter('goal', e.target.value)}
+              >
+                <option value="">Alle</option>
+                <option value="missing">Mangler</option>
+                <option value="linked">Koblet</option>
               </Select>
 
               <TextField
@@ -253,6 +267,15 @@ export default function AppDeployments() {
                       four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
                     />
                     <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
+                    {deployment.has_goal_link ? (
+                      <Tag variant="info" size="xsmall" icon={<LinkIcon aria-hidden />}>
+                        Koblet
+                      </Tag>
+                    ) : (
+                      <Tag variant="neutral" size="xsmall" icon={<LinkBrokenIcon aria-hidden />}>
+                        Mangler
+                      </Tag>
+                    )}
                   </HStack>
                 </HStack>
 

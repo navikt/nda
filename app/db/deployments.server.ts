@@ -170,6 +170,7 @@ export interface DeploymentWithApp extends Deployment {
   environment_name: string
   app_name: string
   default_branch: string
+  has_goal_link?: boolean
 }
 
 export interface CreateDeploymentParams {
@@ -200,6 +201,7 @@ export interface DeploymentFilters {
   deployer_username?: string
   commit_sha?: string
   method?: 'pr' | 'direct_push' | 'legacy'
+  goal_filter?: 'missing' | 'linked'
   page?: number
   per_page?: number
   audit_start_year?: number | null
@@ -306,11 +308,23 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     whereSql += ` AND d.four_eyes_status = 'legacy'`
   }
 
+  const needsGoalJoin = filters?.goal_filter != null
+  const goalJoinSql = needsGoalJoin
+    ? 'LEFT JOIN (SELECT DISTINCT deployment_id FROM deployment_goal_links) dgl ON dgl.deployment_id = d.id'
+    : ''
+
+  if (filters?.goal_filter === 'missing') {
+    whereSql += ' AND dgl.deployment_id IS NULL'
+  } else if (filters?.goal_filter === 'linked') {
+    whereSql += ' AND dgl.deployment_id IS NOT NULL'
+  }
+
   // Count total
   const countSql = `
     SELECT COUNT(*) as total
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+    ${goalJoinSql}
     ${whereSql}
   `
   const countResult = await pool.query(countSql, params)
@@ -327,9 +341,11 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
       ma.team_slug,
       ma.environment_name,
       ma.app_name,
-      ma.default_branch
+      ma.default_branch,
+      EXISTS (SELECT 1 FROM deployment_goal_links WHERE deployment_id = d.id) AS has_goal_link
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+    ${goalJoinSql}
     ${whereSql}
     ORDER BY d.created_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
