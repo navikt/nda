@@ -119,7 +119,23 @@ Background sync job infrastructure:
 - `scheduler.server.ts` — Cron-based job scheduling
 - `log-cache.server.ts` — GitHub check log caching
 - `log-cache-job.server.ts` — Locking wrapper for log cache operations
+- `goal-keyword-sync.server.ts` — Auto-links deployments to goals via commit message keywords
 - `index.ts` — Re-exports
+
+### Goal Keyword Auto-Linking
+
+Commit messages are scanned for keywords defined on board objectives and key results. The system:
+
+1. Extracts commit messages from deployment data (PR title, unverified commits, PR commits)
+2. Loads keywords from active boards belonging to the deployment's team
+3. Matches keywords case-insensitively against commit messages
+4. Rejects ambiguous matches (keyword appears in 2+ boards)
+5. Creates `deployment_goal_links` with `link_method = 'commit_keyword'`
+
+Key files:
+- `app/lib/goal-keyword-matcher.ts` — Pure matching function (no DB/network)
+- `app/lib/sync/goal-keyword-sync.server.ts` — Orchestration (DB queries + matcher)
+- `app/lib/__tests__/goal-keyword-matcher.test.ts` — 14 unit tests
 
 ### Verification (`app/lib/verification/`)
 

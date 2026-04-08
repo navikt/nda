@@ -5,6 +5,7 @@ import {
   BodyShort,
   Box,
   Button,
+  Detail,
   Heading,
   HStack,
   Select,
@@ -13,7 +14,7 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { useState } from 'react'
-import { Form, Link, useLoaderData } from 'react-router'
+import { Form, Link, useLoaderData, useSubmit } from 'react-router'
 import {
   addExternalReference,
   createKeyResult,
@@ -25,7 +26,9 @@ import {
   getBoardWithObjectives,
   type ObjectiveWithKeyResults,
   updateKeyResult,
+  updateKeyResultKeywords,
   updateObjective,
+  updateObjectiveKeywords,
 } from '~/db/boards.server'
 import { getDevTeamBySlug } from '~/db/dev-teams.server'
 import { getSectionBySlug } from '~/db/sections.server'
@@ -111,6 +114,26 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       case 'delete-reference': {
         await deleteExternalReference(Number(formData.get('id')))
+        return { success: true }
+      }
+      case 'update-objective-keywords': {
+        const id = Number(formData.get('id'))
+        const raw = (formData.get('keywords') as string) ?? ''
+        const keywords = raw
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean)
+        await updateObjectiveKeywords(id, keywords)
+        return { success: true }
+      }
+      case 'update-kr-keywords': {
+        const id = Number(formData.get('id'))
+        const raw = (formData.get('keywords') as string) ?? ''
+        const keywords = raw
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean)
+        await updateKeyResultKeywords(id, keywords)
         return { success: true }
       }
       default:
@@ -220,6 +243,8 @@ function ObjectiveCard({ objective }: { objective: ObjectiveWithKeyResults }) {
 
         {objective.external_references.length > 0 && <ReferenceList refs={objective.external_references} />}
 
+        <KeywordEditor id={objective.id} keywords={objective.keywords ?? []} intent="update-objective-keywords" />
+
         {objective.key_results.length > 0 && (
           <VStack gap="space-8">
             <Heading level="3" size="xsmall">
@@ -236,6 +261,7 @@ function ObjectiveCard({ objective }: { objective: ObjectiveWithKeyResults }) {
                       </BodyShort>
                     )}
                     {kr.external_references.length > 0 && <ReferenceList refs={kr.external_references} />}
+                    <KeywordEditor id={kr.id} keywords={kr.keywords ?? []} intent="update-kr-keywords" />
                   </div>
                   <Form method="post" style={{ display: 'inline' }}>
                     <input type="hidden" name="intent" value="delete-key-result" />
@@ -359,5 +385,104 @@ function AddReferenceForm({
         </HStack>
       </VStack>
     </Form>
+  )
+}
+
+function KeywordEditor({ id, keywords, intent }: { id: number; keywords: string[]; intent: string }) {
+  const [adding, setAdding] = useState(false)
+  const [newKeyword, setNewKeyword] = useState('')
+  const submit = useSubmit()
+
+  function handleAdd() {
+    const trimmed = newKeyword.trim()
+    if (!trimmed || keywords.includes(trimmed)) return
+    const updated = [...keywords, trimmed]
+    const formData = new FormData()
+    formData.set('intent', intent)
+    formData.set('id', String(id))
+    formData.set('keywords', updated.join(','))
+    submit(formData, { method: 'post' })
+    setNewKeyword('')
+    setAdding(false)
+  }
+
+  function handleRemove(keyword: string) {
+    const updated = keywords.filter((k) => k !== keyword)
+    const formData = new FormData()
+    formData.set('intent', intent)
+    formData.set('id', String(id))
+    formData.set('keywords', updated.join(','))
+    submit(formData, { method: 'post' })
+  }
+
+  return (
+    <VStack gap="space-4">
+      <HStack gap="space-4" align="center" wrap>
+        <Detail textColor="subtle">Kode-ord:</Detail>
+        {keywords.length === 0 && !adding && (
+          <Detail textColor="subtle" style={{ fontStyle: 'italic' }}>
+            Ingen
+          </Detail>
+        )}
+        {keywords.map((kw) => (
+          <Tag key={kw} variant="neutral" size="xsmall">
+            <HStack gap="space-4" align="center">
+              {kw}
+              <button
+                type="button"
+                onClick={() => handleRemove(kw)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+                aria-label={`Fjern kode-ord ${kw}`}
+              >
+                ×
+              </button>
+            </HStack>
+          </Tag>
+        ))}
+        {!adding && (
+          <Button
+            variant="tertiary-neutral"
+            size="xsmall"
+            icon={<PlusIcon aria-hidden />}
+            onClick={() => setAdding(true)}
+          >
+            Legg til
+          </Button>
+        )}
+      </HStack>
+      {adding && (
+        <HStack gap="space-4" align="end">
+          <TextField
+            label="Kode-ord"
+            hideLabel
+            size="small"
+            value={newKeyword}
+            onChange={(e) => setNewKeyword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleAdd()
+              }
+            }}
+            placeholder="f.eks. PEN-123"
+            autoFocus
+            style={{ width: '160px' }}
+          />
+          <Button size="xsmall" onClick={handleAdd}>
+            Legg til
+          </Button>
+          <Button
+            variant="tertiary"
+            size="xsmall"
+            onClick={() => {
+              setAdding(false)
+              setNewKeyword('')
+            }}
+          >
+            Avbryt
+          </Button>
+        </HStack>
+      )}
+    </VStack>
   )
 }

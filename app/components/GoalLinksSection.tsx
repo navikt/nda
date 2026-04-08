@@ -103,7 +103,7 @@ function GoalLinkItem({ link }: { link: DeploymentGoalLinkWithDetails }) {
                   {link.board_period_label}
                 </Tag>
               )}
-              <Tag variant="info" size="xsmall">
+              <Tag variant={link.link_method === 'commit_keyword' ? 'alt3' : 'info'} size="xsmall">
                 {LINK_METHOD_LABELS[link.link_method] ?? link.link_method}
               </Tag>
             </HStack>

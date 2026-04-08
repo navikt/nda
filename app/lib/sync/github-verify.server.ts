@@ -2,6 +2,7 @@ import { type DeploymentFilters, getAllDeployments, updateDeploymentFourEyes } f
 import { isApprovedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { runVerification } from '~/lib/verification'
+import { autoLinkGoalKeywords } from './goal-keyword-sync.server'
 
 /**
  * Verify four-eyes status for deployments by checking GitHub.
@@ -89,6 +90,16 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
 
       if (success) {
         verified++
+
+        // Auto-link to board goals via commit message keywords
+        try {
+          const commitInfos = extractCommitInfos(deployment as Parameters<typeof extractCommitInfos>[0])
+          if (commitInfos.length > 0) {
+            await autoLinkGoalKeywords(deployment.id, deployment.team_slug, commitInfos)
+          }
+        } catch (e) {
+          logger.warn(`⚠️  Goal keyword auto-linking failed for deployment ${deployment.id}: ${e}`)
+        }
       } else {
         skipped++
       }
@@ -153,4 +164,43 @@ async function verifySingleDeployment(
 
     return false
   }
+}
+
+/**
+ * Extract commit messages and dates from a deployment for keyword matching.
+ * Uses PR title + unverified_commits JSONB data.
+ */
+function extractCommitInfos(deployment: {
+  title?: string | null
+  created_at: string | Date
+  unverified_commits?: Array<{ message?: string; date?: string }> | null
+  github_pr_data?: { title?: string; commits?: Array<{ commit?: { message?: string }; sha?: string }> } | null
+}): Array<{ message: string; date: Date }> {
+  const infos: Array<{ message: string; date: Date }> = []
+  const deployDate = new Date(deployment.created_at)
+
+  // Include PR title as a commit message source
+  if (deployment.title) {
+    infos.push({ message: deployment.title, date: deployDate })
+  }
+
+  // Include unverified commits
+  if (Array.isArray(deployment.unverified_commits)) {
+    for (const c of deployment.unverified_commits) {
+      if (c.message) {
+        infos.push({ message: c.message, date: c.date ? new Date(c.date) : deployDate })
+      }
+    }
+  }
+
+  // Include PR commits from github_pr_data
+  if (deployment.github_pr_data?.commits) {
+    for (const c of deployment.github_pr_data.commits) {
+      if (c.commit?.message) {
+        infos.push({ message: c.commit.message, date: deployDate })
+      }
+    }
+  }
+
+  return infos
 }

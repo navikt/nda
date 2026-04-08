@@ -19,6 +19,7 @@ export interface BoardObjective {
   title: string
   description: string | null
   sort_order: number
+  keywords: string[]
   created_at: string
 }
 
@@ -28,6 +29,7 @@ export interface BoardKeyResult {
   title: string
   description: string | null
   sort_order: number
+  keywords: string[]
   created_at: string
 }
 
@@ -271,6 +273,16 @@ export async function updateKeyResult(
 
 export async function deleteKeyResult(id: number): Promise<void> {
   await pool.query('DELETE FROM board_key_results WHERE id = $1', [id])
+}
+
+// --- Keyword queries ---
+
+export async function updateObjectiveKeywords(id: number, keywords: string[]): Promise<void> {
+  await pool.query('UPDATE board_objectives SET keywords = $1 WHERE id = $2', [keywords, id])
+}
+
+export async function updateKeyResultKeywords(id: number, keywords: string[]): Promise<void> {
+  await pool.query('UPDATE board_key_results SET keywords = $1 WHERE id = $2', [keywords, id])
 }
 
 // --- External Reference queries ---
