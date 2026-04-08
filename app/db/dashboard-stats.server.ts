@@ -42,7 +42,9 @@ export interface DevTeamSummaryStats {
   with_four_eyes: number
   without_four_eyes: number
   pending_verification: number
+  linked_to_goal: number
   four_eyes_percentage: number
+  goal_percentage: number
   apps_with_issues: number
 }
 
@@ -149,10 +151,12 @@ export async function getSectionDashboardStats(
 /**
  * Get summary stats for a single dev team.
  * Uses direct app links when available, otherwise falls back to nais team slugs.
+ * Optional startDate filters deployments to a date range (e.g. YTD).
  */
 export async function getDevTeamSummaryStats(
   naisTeamSlugs: string[],
   directAppIds?: number[],
+  startDate?: Date,
 ): Promise<DevTeamSummaryStats> {
   const useDirectApps = directAppIds && directAppIds.length > 0
 
@@ -173,10 +177,13 @@ export async function getDevTeamSummaryStats(
               COUNT(d.id) AS total_deployments,
               COUNT(d.id) FILTER (WHERE d.four_eyes_status IN (${APPROVED_STATUSES_SQL})) AS with_four_eyes,
               COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('direct_push', 'unverified_commits', 'approved_pr_with_unreviewed', 'unauthorized_repository', 'unauthorized_branch')) AS without_four_eyes,
-              COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown')) AS pending_verification
+              COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown')) AS pending_verification,
+              COUNT(DISTINCT dgl.deployment_id) AS linked_to_goal
        FROM team_apps ta
        JOIN deployments d ON d.monitored_app_id = ta.id
-         AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
+         AND ($4::timestamptz IS NULL OR d.created_at >= $4)
+         AND ($4::timestamptz IS NOT NULL OR ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
+       LEFT JOIN deployment_goal_links dgl ON dgl.deployment_id = d.id
        GROUP BY d.monitored_app_id
      ),
      app_alerts AS (
@@ -191,16 +198,18 @@ export async function getDevTeamSummaryStats(
        COALESCE(SUM(s.with_four_eyes), 0)::int AS with_four_eyes,
        COALESCE(SUM(s.without_four_eyes), 0)::int AS without_four_eyes,
        COALESCE(SUM(s.pending_verification), 0)::int AS pending_verification,
+       COALESCE(SUM(s.linked_to_goal), 0)::int AS linked_to_goal,
        COUNT(*) FILTER (WHERE COALESCE(s.without_four_eyes, 0) > 0 OR COALESCE(s.pending_verification, 0) > 0 OR COALESCE(a.alert_count, 0) > 0)::int AS apps_with_issues
      FROM team_apps ta
      LEFT JOIN app_stats s ON s.monitored_app_id = ta.id
      LEFT JOIN app_alerts a ON a.monitored_app_id = ta.id`,
-    [naisTeamSlugs, useDirectApps ?? false, directAppIds ?? []],
+    [naisTeamSlugs, useDirectApps ?? false, directAppIds ?? [], startDate ?? null],
   )
 
   const row = result.rows[0]
   const total = row?.total_deployments ?? 0
   const withFourEyes = row?.with_four_eyes ?? 0
+  const linkedToGoal = row?.linked_to_goal ?? 0
 
   return {
     total_apps: row?.total_apps ?? 0,
@@ -208,7 +217,9 @@ export async function getDevTeamSummaryStats(
     with_four_eyes: withFourEyes,
     without_four_eyes: row?.without_four_eyes ?? 0,
     pending_verification: row?.pending_verification ?? 0,
+    linked_to_goal: linkedToGoal,
     four_eyes_percentage: total > 0 ? Math.round((withFourEyes / total) * 100) : 0,
+    goal_percentage: total > 0 ? Math.round((linkedToGoal / total) * 100) : 0,
     apps_with_issues: row?.apps_with_issues ?? 0,
   }
 }

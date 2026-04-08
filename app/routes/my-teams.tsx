@@ -1,11 +1,12 @@
+import { BarChartIcon, CheckmarkCircleIcon, ExclamationmarkTriangleIcon, LinkIcon } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
+import type { ReactNode } from 'react'
 import { Link, useRouteLoaderData } from 'react-router'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getBoardsByDevTeam } from '~/db/boards.server'
 import {
   type BoardObjectiveProgress,
-  type DevTeamSummaryStats,
   getBoardObjectiveProgress,
   getDevTeamSummaryStats,
 } from '~/db/dashboard-stats.server'
@@ -59,10 +60,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const directAppsResults = await Promise.all(selectedDevTeams.map((t) => getDevTeamApplications(t.id)))
   const allDirectAppIds = [...new Set(directAppsResults.flat().map((a) => a.monitored_app_id))]
   const directAppIds = allDirectAppIds.length > 0 ? allDirectAppIds : undefined
+  const ytdStart = new Date(new Date().getFullYear(), 0, 1)
 
   // Fetch stats, issue apps, and boards in parallel
   const [teamStats, issueApps, alertCounts, activeReposByApp, ...boardsByTeam] = await Promise.all([
-    getDevTeamSummaryStats(allNaisTeamSlugs, directAppIds),
+    getDevTeamSummaryStats(allNaisTeamSlugs, directAppIds, ytdStart),
     getDevTeamAppsWithIssues(allNaisTeamSlugs, directAppIds),
     getAllAlertCounts(),
     getAllActiveRepositories(),
@@ -138,61 +140,64 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 }
 
-function TeamStatsCard({ stats }: { stats: DevTeamSummaryStats }) {
-  const coverageVariant =
-    stats.four_eyes_percentage >= 95 ? 'success' : stats.four_eyes_percentage >= 80 ? 'warning' : 'danger'
+function SummaryCard({
+  title,
+  value,
+  icon,
+  variant = 'neutral',
+}: {
+  title: string
+  value: string | number
+  icon: ReactNode
+  variant?: 'success' | 'warning' | 'error' | 'neutral'
+}) {
+  const bgMap = {
+    success: 'success-soft' as const,
+    warning: 'warning-soft' as const,
+    error: 'danger-soft' as const,
+    neutral: 'neutral-soft' as const,
+  }
 
   return (
-    <HGrid gap="space-16" columns={{ xs: 2, md: 4 }}>
-      <Box padding="space-16" background="raised" borderRadius="4">
-        <VStack gap="space-4">
-          <BodyShort size="small" textColor="subtle">
-            Fireøyne-dekning
-          </BodyShort>
-          <HStack align="center" gap="space-8">
-            <Heading size="large">{stats.four_eyes_percentage}%</Heading>
-            <Tag data-color={coverageVariant} variant="moderate" size="xsmall">
-              {coverageVariant === 'success' ? 'OK' : coverageVariant === 'warning' ? 'Bør forbedres' : 'Kritisk'}
-            </Tag>
-          </HStack>
-        </VStack>
-      </Box>
-
-      <Box padding="space-16" background="raised" borderRadius="4">
-        <VStack gap="space-4">
-          <BodyShort size="small" textColor="subtle">
-            Totalt deployments
-          </BodyShort>
-          <Heading size="large">{stats.total_deployments}</Heading>
-        </VStack>
-      </Box>
-
-      <Box padding="space-16" background="raised" borderRadius="4">
-        <VStack gap="space-4">
-          <BodyShort size="small" textColor="subtle">
-            Applikasjoner
-          </BodyShort>
-          <Heading size="large">{stats.total_apps}</Heading>
-        </VStack>
-      </Box>
-
-      <Box padding="space-16" background="raised" borderRadius="4">
-        <VStack gap="space-4">
-          <BodyShort size="small" textColor="subtle">
-            Applikasjoner med problemer
-          </BodyShort>
-          <HStack align="center" gap="space-8">
-            <Heading size="large">{stats.apps_with_issues}</Heading>
-            {stats.apps_with_issues > 0 && (
-              <Tag data-color="danger" variant="moderate" size="xsmall">
-                Krever oppfølging
-              </Tag>
-            )}
-          </HStack>
-        </VStack>
-      </Box>
-    </HGrid>
+    <Box padding="space-20" borderRadius="8" background={bgMap[variant]}>
+      <VStack gap="space-4">
+        <HStack gap="space-8" align="center">
+          {icon}
+          <Detail textColor="subtle">{title}</Detail>
+        </HStack>
+        <Heading size="large" level="3">
+          {value}
+        </Heading>
+      </VStack>
+    </Box>
   )
+}
+
+function formatCoverage(percentage: number): string {
+  if (percentage > 0 && percentage < 1) return '<1%'
+  if (percentage > 99 && percentage < 100) return '99%'
+  return `${percentage}%`
+}
+
+function getHealthVariant(percentage: number): 'success' | 'warning' | 'error' | 'neutral' {
+  if (percentage >= 90) return 'success'
+  if (percentage >= 70) return 'warning'
+  if (percentage > 0) return 'error'
+  return 'neutral'
+}
+
+function getHealthLabel(fourEyesPct: number, goalPct: number): string {
+  const min = Math.min(fourEyesPct, goalPct)
+  if (min >= 90) return 'God'
+  if (min >= 70) return 'Akseptabel'
+  if (min > 0) return 'Trenger oppfølging'
+  return 'Ingen data'
+}
+
+function getHealthIcon(fourEyesPct: number, goalPct: number): ReactNode {
+  const min = Math.min(fourEyesPct, goalPct)
+  if (min >= 70) return <CheckmarkCircleIcon aria-hidden />
+  return <ExclamationmarkTriangleIcon aria-hidden />
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
@@ -204,6 +209,13 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 
   return (
     <VStack gap="space-32">
+      <div>
+        <Heading level="1" size="xlarge" spacing>
+          Mine team
+        </Heading>
+        <BodyShort textColor="subtle">Helsetilstand for dine utviklingsteam</BodyShort>
+      </div>
+
       {/* No teams — prompt to set up profile */}
       {selectedDevTeams.length === 0 && (
         <Alert variant="info">
@@ -225,8 +237,32 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       {/* Teams selected — show combined overview */}
       {selectedDevTeams.length > 0 && teamStats && (
         <VStack gap="space-24">
-          {/* Combined stats */}
-          <TeamStatsCard stats={teamStats} />
+          {/* Summary cards */}
+          <HGrid gap="space-16" columns={{ xs: 1, sm: 2, lg: 4 }}>
+            <SummaryCard
+              title="Deployments i år"
+              value={teamStats.total_deployments}
+              icon={<BarChartIcon aria-hidden />}
+            />
+            <SummaryCard
+              title="4-øyne dekning"
+              value={formatCoverage(teamStats.four_eyes_percentage)}
+              icon={<CheckmarkCircleIcon aria-hidden />}
+              variant={getHealthVariant(teamStats.four_eyes_percentage)}
+            />
+            <SummaryCard
+              title="Endringsopphav"
+              value={formatCoverage(teamStats.goal_percentage)}
+              icon={<LinkIcon aria-hidden />}
+              variant={getHealthVariant(teamStats.goal_percentage)}
+            />
+            <SummaryCard
+              title="Samlet helsetilstand"
+              value={getHealthLabel(teamStats.four_eyes_percentage, teamStats.goal_percentage)}
+              icon={getHealthIcon(teamStats.four_eyes_percentage, teamStats.goal_percentage)}
+              variant={getHealthVariant(Math.min(teamStats.four_eyes_percentage, teamStats.goal_percentage))}
+            />
+          </HGrid>
 
           {/* Navigation links per team */}
           <HStack gap="space-8" wrap>
