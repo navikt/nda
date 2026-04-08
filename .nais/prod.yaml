@@ -11,6 +11,7 @@ spec:
 
   ingresses:
     - https://pensjon-deployment-audit.ansatt.nav.no
+    - https://nda.ansatt.nav.no
 
   liveness:
     path: /api/isalive
