@@ -87,13 +87,31 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     )
   }
 
-  // Get display names for deployers
+  // Get display names for deployers (current page + all distinct deployers for filter)
   const deployerUsernames = [...new Set(result.deployments.map((d) => d.deployer_username).filter(Boolean))] as string[]
-  const userMappings = await getUserMappings(deployerUsernames)
+
+  const allDeployersResult = await pool.query(
+    `SELECT DISTINCT deployer_username FROM deployments
+     WHERE monitored_app_id = $1 AND deployer_username IS NOT NULL
+     ORDER BY deployer_username`,
+    [app.id],
+  )
+  const allDeployers = allDeployersResult.rows.map((r) => r.deployer_username as string)
+
+  const allUsernamesForMapping = [...new Set([...deployerUsernames, ...allDeployers])]
+  const userMappings = await getUserMappings(allUsernamesForMapping)
+
+  // Build deployer options with display names
+  const deployerOptions = allDeployers.map((username) => {
+    const mapping = userMappings.get(username)
+    return { value: username, label: mapping?.display_name || username }
+  })
+  deployerOptions.sort((a, b) => a.label.localeCompare(b.label, 'no'))
 
   return {
     app,
     userMappings: serializeUserMappings(userMappings),
+    deployerOptions,
     hasGroup,
     showGroup: showGroup && hasGroup,
     errorReasons,
@@ -102,8 +120,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 }
 
 export default function AppDeployments() {
-  const { app, deployments, total, page, total_pages, userMappings, hasGroup, showGroup, errorReasons } =
-    useLoaderData<typeof loader>()
+  const {
+    app,
+    deployments,
+    total,
+    page,
+    total_pages,
+    userMappings,
+    deployerOptions,
+    hasGroup,
+    showGroup,
+    errorReasons,
+  } = useLoaderData<typeof loader>()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const currentStatus = searchParams.get('status') || ''
@@ -192,13 +220,19 @@ export default function AppDeployments() {
                 <option value="linked">Koblet</option>
               </Select>
 
-              <TextField
+              <Select
                 label="Deployer"
                 size="small"
                 value={currentDeployer}
                 onChange={(e) => updateFilter('deployer', e.target.value)}
-                placeholder="Søk..."
-              />
+              >
+                <option value="">Alle</option>
+                {deployerOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </Select>
 
               <TextField
                 label="Commit SHA"

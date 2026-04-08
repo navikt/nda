@@ -289,8 +289,8 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   }
 
   if (filters?.deployer_username) {
-    whereSql += ` AND d.deployer_username ILIKE $${paramIndex}`
-    params.push(`%${filters.deployer_username}%`)
+    whereSql += ` AND d.deployer_username = $${paramIndex}`
+    params.push(filters.deployer_username)
     paramIndex++
   }
 
