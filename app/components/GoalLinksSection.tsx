@@ -199,12 +199,12 @@ function AddGoalLinkForm({ onCancel, availableBoards }: { onCancel: () => void; 
                   </Select>
                 )}
 
-                <HStack gap="space-8">
-                  <Button type="submit" size="small" disabled={!selectedObjectiveId}>
-                    Legg til
-                  </Button>
+                <HStack gap="space-8" justify="end">
                   <Button variant="tertiary" size="small" onClick={onCancel}>
                     Avbryt
+                  </Button>
+                  <Button type="submit" size="small" disabled={!selectedObjectiveId}>
+                    Legg til
                   </Button>
                 </HStack>
               </VStack>
@@ -226,12 +226,12 @@ function AddGoalLinkForm({ onCancel, availableBoards }: { onCancel: () => void; 
                 />
                 <TextField label="Tittel (valgfritt)" name="external_url_title" size="small" autoComplete="off" />
               </HStack>
-              <HStack gap="space-8">
-                <Button type="submit" size="small">
-                  Legg til
-                </Button>
+              <HStack gap="space-8" justify="end">
                 <Button variant="tertiary" size="small" onClick={onCancel}>
                   Avbryt
+                </Button>
+                <Button type="submit" size="small">
+                  Legg til
                 </Button>
               </HStack>
             </VStack>
