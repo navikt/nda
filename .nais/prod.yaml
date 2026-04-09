@@ -45,6 +45,7 @@ spec:
         groups:
           - id: 1e97cbc6-0687-4d23-aebd-c611035279c1  # pensjon-revisjon (admin)
           - id: 415d3817-c83d-44c9-a52b-5116757f8fa8  # teampensjon (user)
+          - id: a63f130e-cbe2-4f6b-a09d-04d3652d6ec3  # nais-team-pensjon-regler (user)
         extra:
           - "NAVident"
       replyURLs:
