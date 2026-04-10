@@ -22,7 +22,7 @@ RUN pnpm run build
 
 # Compile TypeScript startup script and custom server to JavaScript
 RUN pnpm exec tsc scripts/start-prod.ts --outDir scripts --module nodenext --moduleResolution nodenext --target es2022
-RUN pnpm exec tsc server.ts --module nodenext --moduleResolution nodenext --target es2022 --esModuleInterop
+RUN pnpm exec tsc server.ts auth-middleware.ts --module nodenext --moduleResolution nodenext --target es2022 --esModuleInterop
 
 # Download fonts for PDF generation (react-pdf requires TTF format)
 RUN mkdir -p /app/fonts && \
@@ -66,6 +66,7 @@ COPY --from=builder /app/.node-pg-migrate.json ./
 # Copy compiled startup script and custom server
 COPY --from=builder /app/scripts/start-prod.js ./scripts/
 COPY --from=builder /app/server.js ./
+COPY --from=builder /app/auth-middleware.js ./
 
 # Expose port (adjust based on your app)
 EXPOSE 3000
