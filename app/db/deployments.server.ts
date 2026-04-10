@@ -1227,6 +1227,8 @@ export interface AppReminderConfig {
   reminder_last_sent_at: Date | null
 }
 
+// Re-exports from submodules
+export { getAppChangeOriginCoverage, getLastDeploymentSummary } from './deployments/api.server'
 export {
   getAppsWithIssues,
   getHomeTabSummaryStats,
@@ -1240,7 +1242,6 @@ export {
   getDeploymentsNeedingDeployNotify,
   getUnapprovedDeployments,
 } from './deployments/notifications.server'
-// Re-exports from submodules
 export { getAppDeploymentStats, getAppDeploymentStatsBatch } from './deployments/stats.server'
 export {
   getDeploymentsWithStatusChanges,

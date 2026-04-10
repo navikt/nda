@@ -10,6 +10,10 @@ export default [
   route('api/search', 'routes/api/search.ts'),
   route('api/checks/logs', 'routes/api/checks.logs.ts'),
   route('api/checks/annotations', 'routes/api/checks.annotations.ts'),
+  route(
+    'api/v1/apps/:team/:env/:app/verification-summary',
+    'routes/api/v1.apps.$team.$env.$app.verification-summary.ts',
+  ),
 
   layout('routes/layout.tsx', [
     index('routes/home.tsx'),

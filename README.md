@@ -220,6 +220,40 @@ For detaljert dokumentasjon av hvordan fire-øyne-prinsippet verifiseres, se [do
 
 Internt Nav-verktøy. Bidrag velkomne!
 
+## 🔌 API
+
+### Verification Summary (M2M)
+
+Sikret API-endepunkt for maskin-til-maskin (M2M) konsumering. Brukes av KISS for å hente fire-øyne-dekning og endringsopphav-data.
+
+```
+GET /api/v1/apps/:team/:env/:app/verification-summary
+```
+
+**Autentisering**: Entra ID M2M-token (client_credentials) med audience lik denne appens `AZURE_APP_CLIENT_ID`. Token valideres via NAIS token introspection.
+
+**Query-parametre**:
+| Parameter | Type | Default | Beskrivelse |
+|-----------|------|---------|-------------|
+| `from` | ISO 8601 | Årets start | Periodens startdato |
+| `to` | ISO 8601 | Nå | Periodens sluttdato |
+
+**Respons (200)**:
+```json
+{
+  "app": { "team": "my-team", "environment": "prod-gcp", "name": "my-app", "isActive": true },
+  "period": { "from": "2026-01-01T00:00:00Z", "to": "2026-06-01T00:00:00Z" },
+  "fourEyesCoverage": { "total": 100, "approved": 85, "unapproved": 10, "pending": 5, "coveragePercent": 85.0 },
+  "changeOriginCoverage": { "total": 85, "linked": 60, "dependabot": 15, "coveragePercent": 70.6 },
+  "lastDeployment": {
+    "createdAt": "2026-04-09T12:00:00Z", "deployer": "user123",
+    "commitSha": "abc123def", "fourEyesStatus": "approved", "hasChangeOrigin": true
+  }
+}
+```
+
+**Feilkoder**: 400 (ugyldig dato), 401 (manglende/ugyldig token), 403 (mangler rolle), 404 (app ikke funnet)
+
 ## 📋 Installasjonsguide for produksjon
 
 ### GitHub App
