@@ -19,10 +19,11 @@ import {
   TextField,
   VStack,
 } from '@navikt/ds-react'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router'
 import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
+import { ALL_DEPLOYMENT_CATEGORIES, type DeploymentCategory } from '~/db/deployment-categories'
 import {
   getDeployerDeploymentsPaginated,
   getDeployerMonthlyStats,
@@ -57,6 +58,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const period = (url.searchParams.get('period') || 'all') as TimePeriod
   const dateRange = getDateRangeForPeriod(period)
 
+  const categoriesParam = url.searchParams.get('categories')
+  const categories: DeploymentCategory[] | null = categoriesParam
+    ? (categoriesParam
+        .split(',')
+        .filter((c) => ALL_DEPLOYMENT_CATEGORIES.includes(c as DeploymentCategory)) as DeploymentCategory[])
+    : null
+
   const isBot = isGitHubBot(username)
   const botDisplayName = getBotDisplayName(username)
   const botDescription = getBotDescription(username)
@@ -64,7 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [mapping, deploymentCount, paginatedDeployments, monthlyStats] = await Promise.all([
     isBot ? Promise.resolve(null) : getUserMapping(username),
     getDeploymentCountByDeployer(username),
-    getDeployerDeploymentsPaginated(username, page, 20, dateRange?.startDate, dateRange?.endDate),
+    getDeployerDeploymentsPaginated(username, page, 20, dateRange?.startDate, dateRange?.endDate, categories),
     getDeployerMonthlyStats(username, dateRange?.startDate, dateRange?.endDate),
   ])
 
@@ -103,6 +111,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     paginatedDeployments,
     monthlyStats,
     period,
+    categories: categories ?? ALL_DEPLOYMENT_CATEGORIES,
     isBot,
     botDisplayName,
     botDescription,
@@ -208,6 +217,7 @@ export default function UserPage() {
     paginatedDeployments,
     monthlyStats,
     period,
+    categories,
     isBot,
     botDisplayName,
     botDescription,
@@ -222,6 +232,33 @@ export default function UserPage() {
   const isSubmitting = navigation.state === 'submitting'
   const modalRef = useRef<HTMLDialogElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
+
+  const isFiltered = categories.length < ALL_DEPLOYMENT_CATEGORIES.length
+
+  const handleToggleCategory = useCallback(
+    (category: DeploymentCategory) => {
+      const params = new URLSearchParams(searchParams)
+      const currentCategories = params.get('categories')
+        ? (params.get('categories')?.split(',') as DeploymentCategory[])
+        : [...ALL_DEPLOYMENT_CATEGORIES]
+
+      let newCategories: DeploymentCategory[]
+      if (currentCategories.includes(category)) {
+        newCategories = currentCategories.filter((c) => c !== category)
+      } else {
+        newCategories = [...currentCategories, category]
+      }
+
+      if (newCategories.length === ALL_DEPLOYMENT_CATEGORIES.length) {
+        params.delete('categories')
+      } else {
+        params.set('categories', newCategories.join(','))
+      }
+      params.delete('page')
+      setSearchParams(params)
+    },
+    [searchParams, setSearchParams],
+  )
 
   // Close modal when action succeeds
   useEffect(() => {
@@ -407,7 +444,7 @@ export default function UserPage() {
       <VStack gap="space-24">
         <HStack justify="space-between" align="end" wrap>
           <Heading level="2" size="small">
-            Leveranser ({deploymentCount})
+            Leveranser {isFiltered ? `(${paginatedDeployments.total} av ${deploymentCount})` : `(${deploymentCount})`}
           </Heading>
           <Select
             label="Tidsperiode"
@@ -432,7 +469,11 @@ export default function UserPage() {
         {/* Deployment activity chart */}
         {monthlyStats.length > 0 && (
           <Box background="raised" padding="space-16" borderRadius="4">
-            <DeploymentActivityChart data={monthlyStats} />
+            <DeploymentActivityChart
+              data={monthlyStats}
+              visibleCategories={categories}
+              onToggleCategory={handleToggleCategory}
+            />
           </Box>
         )}
 

@@ -1,5 +1,6 @@
 import { NOT_APPROVED_STATUSES, PENDING_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
+import { ALL_DEPLOYMENT_CATEGORIES, type DeploymentCategory } from './deployment-categories'
 import { logStatusTransition } from './deployments/status-history.server'
 
 export interface UnverifiedCommit {
@@ -917,6 +918,8 @@ export async function getDeployerMonthlyStats(
   }))
 }
 
+export { ALL_DEPLOYMENT_CATEGORIES, type DeploymentCategory } from './deployment-categories'
+
 export interface DeployerDeploymentRow extends DeploymentWithApp {
   has_goal_link: boolean
   is_dependabot: boolean
@@ -931,7 +934,8 @@ export interface PaginatedDeployerDeployments {
 }
 
 /**
- * Get paginated deployments for a deployer with goal-link indicator
+ * Get paginated deployments for a deployer with goal-link indicator.
+ * Optionally filter by deployment categories (with_goal, without_goal, dependabot).
  */
 export async function getDeployerDeploymentsPaginated(
   deployerUsername: string,
@@ -939,6 +943,7 @@ export async function getDeployerDeploymentsPaginated(
   perPage = 20,
   startDate?: Date | null,
   endDate?: Date | null,
+  categories?: DeploymentCategory[] | null,
 ): Promise<PaginatedDeployerDeployments> {
   const offset = (page - 1) * perPage
 
@@ -955,6 +960,27 @@ export async function getDeployerDeploymentsPaginated(
     whereSql += ` AND d.created_at <= $${paramIndex}`
     countParams.push(endDate)
     paramIndex++
+  }
+
+  if (categories && categories.length < ALL_DEPLOYMENT_CATEGORIES.length) {
+    if (categories.length === 0) {
+      whereSql += ' AND FALSE'
+    } else {
+      const conditions: string[] = []
+      const isDependabotExpr = `LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]'`
+      const isNotDependabotExpr = `LOWER(d.github_pr_data->'creator'->>'username') IS DISTINCT FROM 'dependabot[bot]'`
+      const hasGoalExpr = 'EXISTS (SELECT 1 FROM deployment_goal_links dgl WHERE dgl.deployment_id = d.id)'
+      if (categories.includes('dependabot')) {
+        conditions.push(`(${isDependabotExpr})`)
+      }
+      if (categories.includes('with_goal')) {
+        conditions.push(`(${isNotDependabotExpr} AND ${hasGoalExpr})`)
+      }
+      if (categories.includes('without_goal')) {
+        conditions.push(`(${isNotDependabotExpr} AND NOT ${hasGoalExpr})`)
+      }
+      whereSql += ` AND (${conditions.join(' OR ')})`
+    }
   }
 
   const dataParams = [...countParams, perPage, offset]
