@@ -4,22 +4,31 @@ import {
   BodyShort,
   Box,
   Button,
+  Checkbox,
+  CheckboxGroup,
   Detail,
   Heading,
   HStack,
+  Modal,
   Select,
   Tag,
   TextField,
   VStack,
 } from '@navikt/ds-react'
-import { useState } from 'react'
-import { Form, Link, useLoaderData, useRouteLoaderData } from 'react-router'
+import { useRef, useState } from 'react'
+import { Form, Link, useActionData, useLoaderData, useNavigation, useRouteLoaderData } from 'react-router'
+import { ActionAlert } from '~/components/ActionAlert'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { type Board, createBoard, getBoardsByDevTeam } from '~/db/boards.server'
 import { type BoardObjectiveProgress, getBoardObjectiveProgress } from '~/db/dashboard-stats.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
-import { getDevTeamApplications, getDevTeamBySlug } from '~/db/dev-teams.server'
+import {
+  getAvailableAppsForDevTeam,
+  getDevTeamApplications,
+  getDevTeamBySlug,
+  setDevTeamApplications,
+} from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { getSectionBySlug } from '~/db/sections.server'
 import { type DevTeamMember, getDevTeamMembers } from '~/db/user-dev-team-preference.server'
@@ -39,13 +48,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!devTeam) {
     throw new Response('Utviklingsteam ikke funnet', { status: 404 })
   }
-  const [boards, members, directApps, allApps, alertCounts, activeRepos] = await Promise.all([
+  const [boards, members, directApps, allApps, alertCounts, activeRepos, availableApps] = await Promise.all([
     getBoardsByDevTeam(devTeam.id),
     getDevTeamMembers(devTeam.id).catch(() => [] as DevTeamMember[]),
     getDevTeamApplications(devTeam.id),
     getAllMonitoredApplications(),
     getAllAlertCounts(),
     getAllActiveRepositories(),
+    getAvailableAppsForDevTeam(devTeam.id),
   ])
 
   const activeBoard = boards.find((b) => b.is_active) ?? null
@@ -89,6 +99,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     activeBoardProgress,
     members,
     appCards,
+    availableApps,
     sectionSlug: params.sectionSlug,
     sectionName: section?.name ?? params.sectionSlug,
   }
@@ -103,6 +114,19 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const formData = await request.formData()
   const intent = formData.get('intent') as string
+
+  if (intent === 'update_apps') {
+    const appIds = formData
+      .getAll('app_ids')
+      .map(Number)
+      .filter((n) => !Number.isNaN(n) && n > 0)
+    try {
+      await setDevTeamApplications(devTeam.id, appIds)
+      return { success: 'Applikasjoner oppdatert.' }
+    } catch (error) {
+      return { error: `Kunne ikke oppdatere applikasjoner: ${error}` }
+    }
+  }
 
   if (intent === 'create') {
     const title = (formData.get('title') as string)?.trim()
@@ -135,13 +159,16 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function DevTeamPage() {
-  const { devTeam, boards, activeBoard, activeBoardProgress, members, appCards, sectionSlug } =
+  const { devTeam, boards, activeBoard, activeBoardProgress, members, appCards, availableApps, sectionSlug } =
     useLoaderData<typeof loader>()
+  const actionData = useActionData<typeof action>()
+  const navigation = useNavigation()
   const layoutData = useRouteLoaderData<typeof layoutLoader>('routes/layout')
   const isAdmin = layoutData?.user?.role === 'admin'
   const [showCreate, setShowCreate] = useState(false)
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
   const inactiveBoards = boards.filter((b) => !b.is_active)
+  const addAppsRef = useRef<HTMLDialogElement>(null)
 
   return (
     <VStack gap="space-24">
@@ -219,11 +246,17 @@ export default function DevTeamPage() {
             Applikasjoner ({appCards.length})
           </Heading>
           {isAdmin && (
-            <Button as={Link} to="/apps/add" size="small" variant="tertiary">
+            <Button
+              size="small"
+              variant="tertiary"
+              icon={<PlusIcon aria-hidden />}
+              onClick={() => addAppsRef.current?.showModal()}
+            >
               Legg til applikasjon
             </Button>
           )}
         </HStack>
+        <ActionAlert data={actionData} />
         {appCards.length > 0 ? (
           <VStack gap="space-4">
             {appCards.map((app) => (
@@ -234,6 +267,14 @@ export default function DevTeamPage() {
           <BodyShort textColor="subtle">Ingen applikasjoner er lagt til ennå.</BodyShort>
         )}
       </VStack>
+
+      {/* Add apps dialog */}
+      <AddAppsDialog
+        ref={addAppsRef}
+        devTeamId={devTeam.id}
+        availableApps={availableApps}
+        isSubmitting={navigation.state === 'submitting'}
+      />
     </VStack>
   )
 }
@@ -302,6 +343,73 @@ function ActiveBoardSection({
     </Box>
   )
 }
+
+import { forwardRef } from 'react'
+
+type AvailableApp = { id: number; team_slug: string; environment_name: string; app_name: string; is_linked: boolean }
+
+const AddAppsDialog = forwardRef<
+  HTMLDialogElement,
+  { devTeamId: number; availableApps: AvailableApp[]; isSubmitting: boolean }
+>(function AddAppsDialog({ devTeamId, availableApps, isSubmitting }, ref) {
+  const appsByNaisTeam = new Map<string, AvailableApp[]>()
+  for (const app of availableApps) {
+    const group = appsByNaisTeam.get(app.team_slug) ?? []
+    group.push(app)
+    appsByNaisTeam.set(app.team_slug, group)
+  }
+
+  return (
+    <Modal ref={ref} header={{ heading: 'Legg til applikasjoner' }} closeOnBackdropClick width="600px">
+      <Form
+        method="post"
+        onSubmit={() => {
+          if (typeof ref === 'object' && ref?.current) ref.current.close()
+        }}
+      >
+        <input type="hidden" name="intent" value="update_apps" />
+        <input type="hidden" name="id" value={devTeamId} />
+        <Modal.Body>
+          {availableApps.length === 0 ? (
+            <Alert variant="info" size="small">
+              Ingen overvåkede applikasjoner funnet.
+            </Alert>
+          ) : (
+            <VStack gap="space-16">
+              {[...appsByNaisTeam.entries()].map(([naisTeam, apps]) => (
+                <CheckboxGroup key={naisTeam} legend={naisTeam} size="small">
+                  {apps.map((app) => (
+                    <Checkbox key={app.id} name="app_ids" value={String(app.id)} defaultChecked={app.is_linked}>
+                      {app.app_name}{' '}
+                      <BodyShort as="span" size="small" textColor="subtle">
+                        ({app.environment_name})
+                      </BodyShort>
+                    </Checkbox>
+                  ))}
+                </CheckboxGroup>
+              ))}
+            </VStack>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button type="submit" size="small" loading={isSubmitting}>
+            Lagre
+          </Button>
+          <Button
+            variant="tertiary"
+            size="small"
+            type="button"
+            onClick={() => {
+              if (typeof ref === 'object' && ref?.current) ref.current.close()
+            }}
+          >
+            Avbryt
+          </Button>
+        </Modal.Footer>
+      </Form>
+    </Modal>
+  )
+})
 
 function CreateBoardForm({ onCancel }: { onCancel: () => void }) {
   const [periodType, setPeriodType] = useState<BoardPeriodType>('tertiary')
