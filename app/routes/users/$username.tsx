@@ -19,10 +19,12 @@ import {
   TextField,
   VStack,
 } from '@navikt/ds-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router'
 import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
+import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
+import { bulkAddDeploymentGoalLinks, getUnlinkedDependabotDeploymentIds } from '~/db/deployment-goal-links.server'
 import {
   type DeployerTableFilters,
   getDeployerApps,
@@ -95,6 +97,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
+  // Load available boards for bulk goal linking
+  type BoardWithGoals = Awaited<ReturnType<typeof getBoardsWithGoalsForDevTeam>>[number] & { dev_team_name: string }
+  let availableBoards: BoardWithGoals[] = []
+  if (devTeams.length > 0) {
+    const boardsPerTeam = await Promise.all(devTeams.map((dt) => getBoardsWithGoalsForDevTeam(dt.id)))
+    availableBoards = boardsPerTeam.flatMap((boards, i) =>
+      boards.map((b) => ({ ...b, dev_team_name: devTeams[i].name })),
+    )
+  }
+
   // Fetch all available teams if viewing own profile
   let availableDevTeams: Awaited<ReturnType<typeof getAllDevTeams>> = []
   let landingPage = 'my-teams'
@@ -126,6 +138,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     botDisplayName,
     botDescription,
     devTeams,
+    availableBoards,
     isOwnProfile,
     availableDevTeams,
     landingPage,
@@ -175,6 +188,40 @@ export async function action({ request }: Route.ActionArgs) {
       return { error: 'Kunne ikke lagre landingsside.' }
     }
     return { success: true }
+  }
+
+  if (intent === 'bulk_link_goal') {
+    const username = formData.get('username') as string
+    const objectiveId = formData.get('objective_id') ? Number(formData.get('objective_id')) : undefined
+    const keyResultId = formData.get('key_result_id') ? Number(formData.get('key_result_id')) : undefined
+    const periodValue = (formData.get('period') || 'all') as TimePeriod
+    const appName = (formData.get('app_name') as string) || undefined
+
+    if (!username) return { error: 'Brukernavn mangler.' }
+    if (!objectiveId && !keyResultId) return { error: 'Velg et mål eller nøkkelresultat.' }
+
+    const dateRange = getDateRangeForPeriod(periodValue)
+    const deploymentIds = await getUnlinkedDependabotDeploymentIds(
+      username,
+      dateRange?.startDate,
+      dateRange?.endDate,
+      appName,
+    )
+
+    if (deploymentIds.length === 0) {
+      return { error: 'Ingen Dependabot-leveranser uten endringsopphav funnet.' }
+    }
+
+    try {
+      const linked = await bulkAddDeploymentGoalLinks(
+        deploymentIds,
+        { objective_id: objectiveId, key_result_id: keyResultId },
+        identity.navIdent,
+      )
+      return { success: `Koblet ${linked} Dependabot-leveranser til endringsopphav.` }
+    } catch {
+      return { error: 'Kunne ikke koble leveranser.' }
+    }
   }
 
   if (intent === 'create-mapping') {
@@ -236,6 +283,7 @@ export default function UserPage() {
     botDisplayName,
     botDescription,
     devTeams,
+    availableBoards,
     isOwnProfile,
     availableDevTeams,
     landingPage,
@@ -245,6 +293,7 @@ export default function UserPage() {
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
   const modalRef = useRef<HTMLDialogElement>(null)
+  const bulkLinkRef = useRef<HTMLDialogElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   const updateFilter = (key: string, value: string, defaultValue: string) => {
@@ -258,10 +307,11 @@ export default function UserPage() {
     setSearchParams(params)
   }
 
-  // Close modal when action succeeds
+  // Close modals when action succeeds
   useEffect(() => {
     if (actionData?.success && navigation.state === 'idle') {
       modalRef.current?.close()
+      bulkLinkRef.current?.close()
     }
   }, [actionData, navigation.state])
 
@@ -512,6 +562,30 @@ export default function UserPage() {
           )}
         </HStack>
 
+        {/* Bulk link action + feedback */}
+        {availableBoards.length > 0 && (
+          <HStack gap="space-12" align="center">
+            <Button
+              variant="secondary"
+              size="small"
+              icon={<LinkIcon aria-hidden />}
+              onClick={() => bulkLinkRef.current?.showModal()}
+            >
+              Koble Dependabot til endringsopphav
+            </Button>
+            {actionData?.success && typeof actionData.success === 'string' && (
+              <Alert variant="success" size="small" inline>
+                {actionData.success}
+              </Alert>
+            )}
+            {actionData?.error && typeof actionData.error === 'string' && (
+              <Alert variant="error" size="small" inline>
+                {actionData.error}
+              </Alert>
+            )}
+          </HStack>
+        )}
+
         {/* Deployments (paginated) */}
         {paginatedDeployments.deployments.length === 0 ? (
           <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
@@ -629,6 +703,142 @@ export default function UserPage() {
           </Modal.Footer>
         </Modal>
       )}
+
+      {/* Bulk link dependabot to goal modal */}
+      {availableBoards.length > 0 && (
+        <BulkLinkGoalModal
+          ref={bulkLinkRef}
+          username={username}
+          period={period}
+          appFilter={appFilter}
+          availableBoards={availableBoards}
+          isSubmitting={isSubmitting}
+        />
+      )}
     </VStack>
   )
 }
+
+import { forwardRef } from 'react'
+
+type AvailableBoard = {
+  id: number
+  title: string
+  period_label: string
+  dev_team_name: string
+  objectives: Array<{ id: number; title: string; key_results: Array<{ id: number; title: string }> }>
+}
+
+const BulkLinkGoalModal = forwardRef<
+  HTMLDialogElement,
+  {
+    username: string
+    period: string
+    appFilter: string
+    availableBoards: AvailableBoard[]
+    isSubmitting: boolean
+  }
+>(function BulkLinkGoalModal({ username, period, appFilter, availableBoards, isSubmitting }, ref) {
+  const [selectedBoardId, setSelectedBoardId] = useState<string>('')
+  const [selectedObjectiveId, setSelectedObjectiveId] = useState<string>('')
+  const [selectedKeyResultId, setSelectedKeyResultId] = useState<string>('')
+
+  const selectedBoard = availableBoards.find((b) => String(b.id) === selectedBoardId)
+  const selectedObjective = selectedBoard?.objectives.find((o) => String(o.id) === selectedObjectiveId)
+
+  return (
+    <Modal ref={ref} header={{ heading: 'Koble Dependabot-leveranser til endringsopphav' }} closeOnBackdropClick>
+      <Form method="post" id="bulk-link-form">
+        <input type="hidden" name="intent" value="bulk_link_goal" />
+        <input type="hidden" name="username" value={username} />
+        <input type="hidden" name="period" value={period} />
+        {appFilter && <input type="hidden" name="app_name" value={appFilter} />}
+        <Modal.Body>
+          <VStack gap="space-16">
+            <BodyShort>
+              Kobler alle Dependabot-leveranser uten endringsopphav til det valgte målet
+              {period !== 'all' ? ' (innenfor valgt tidsperiode)' : ''}
+              {appFilter ? ` for ${appFilter}` : ''}.
+            </BodyShort>
+
+            <Select
+              label="Tavle"
+              size="small"
+              value={selectedBoardId}
+              onChange={(e) => {
+                setSelectedBoardId(e.target.value)
+                setSelectedObjectiveId('')
+                setSelectedKeyResultId('')
+              }}
+            >
+              <option value="">Velg tavle...</option>
+              {availableBoards.map((board) => (
+                <option key={board.id} value={String(board.id)}>
+                  {board.dev_team_name} – {board.title} ({board.period_label})
+                </option>
+              ))}
+            </Select>
+
+            {selectedBoard && selectedBoard.objectives.length > 0 && (
+              <Select
+                label="Mål"
+                name="objective_id"
+                size="small"
+                value={selectedObjectiveId}
+                onChange={(e) => {
+                  setSelectedObjectiveId(e.target.value)
+                  setSelectedKeyResultId('')
+                }}
+              >
+                <option value="">Velg mål...</option>
+                {selectedBoard.objectives.map((obj) => (
+                  <option key={obj.id} value={String(obj.id)}>
+                    {obj.title}
+                  </option>
+                ))}
+              </Select>
+            )}
+
+            {selectedObjective && selectedObjective.key_results.length > 0 && (
+              <Select
+                label="Nøkkelresultat (valgfritt)"
+                name="key_result_id"
+                size="small"
+                value={selectedKeyResultId}
+                onChange={(e) => setSelectedKeyResultId(e.target.value)}
+              >
+                <option value="">Ingen spesifikt nøkkelresultat</option>
+                {selectedObjective.key_results.map((kr) => (
+                  <option key={kr.id} value={String(kr.id)}>
+                    {kr.title}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </VStack>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            type="submit"
+            form="bulk-link-form"
+            size="small"
+            loading={isSubmitting}
+            disabled={!selectedObjectiveId}
+          >
+            Koble alle
+          </Button>
+          <Button
+            variant="secondary"
+            size="small"
+            type="button"
+            onClick={() => {
+              if (typeof ref === 'object' && ref?.current) ref.current.close()
+            }}
+          >
+            Avbryt
+          </Button>
+        </Modal.Footer>
+      </Form>
+    </Modal>
+  )
+})

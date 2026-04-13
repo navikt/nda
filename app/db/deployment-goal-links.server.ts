@@ -66,6 +66,82 @@ export async function removeDeploymentGoalLink(id: number): Promise<void> {
   await pool.query('DELETE FROM deployment_goal_links WHERE id = $1', [id])
 }
 
+/**
+ * Get IDs of deployments by a deployer that are Dependabot PRs without goal links.
+ * Respects time period and app name filters.
+ */
+export async function getUnlinkedDependabotDeploymentIds(
+  deployerUsername: string,
+  startDate?: Date | null,
+  endDate?: Date | null,
+  appName?: string,
+): Promise<number[]> {
+  let whereSql = `WHERE d.deployer_username = $1
+    AND LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]'
+    AND NOT EXISTS (SELECT 1 FROM deployment_goal_links dgl WHERE dgl.deployment_id = d.id)`
+  const params: (string | Date)[] = [deployerUsername]
+  let idx = 2
+
+  if (startDate) {
+    whereSql += ` AND d.created_at >= $${idx}`
+    params.push(startDate)
+    idx++
+  }
+  if (endDate) {
+    whereSql += ` AND d.created_at <= $${idx}`
+    params.push(endDate)
+    idx++
+  }
+  if (appName) {
+    whereSql += ` AND ma.app_name = $${idx}`
+    params.push(appName)
+    idx++
+  }
+
+  const result = await pool.query(
+    `SELECT d.id FROM deployments d
+     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+     ${whereSql}
+     ORDER BY d.created_at DESC`,
+    params,
+  )
+  return result.rows.map((r: { id: number }) => r.id)
+}
+
+/**
+ * Bulk-create goal links for multiple deployments.
+ * Skips deployments that already have a link to the same objective/key result.
+ */
+export async function bulkAddDeploymentGoalLinks(
+  deploymentIds: number[],
+  goal: { objective_id?: number; key_result_id?: number },
+  linkedBy?: string,
+): Promise<number> {
+  if (deploymentIds.length === 0) return 0
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    let linked = 0
+    for (const deploymentId of deploymentIds) {
+      const result = await client.query(
+        `INSERT INTO deployment_goal_links (deployment_id, objective_id, key_result_id, link_method, linked_by)
+         VALUES ($1, $2, $3, 'manual', $4)
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [deploymentId, goal.objective_id ?? null, goal.key_result_id ?? null, linkedBy ?? null],
+      )
+      if (result.rowCount && result.rowCount > 0) linked++
+    }
+    await client.query('COMMIT')
+    return linked
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
 /** Get origin-of-change coverage stats for a dev team in a date range. */
 export async function getOriginOfChangeCoverage(
   naisTeamSlugs: string[],
