@@ -21,7 +21,7 @@ import {
   TextField,
   VStack,
 } from '@navikt/ds-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router'
 import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
@@ -839,6 +839,7 @@ export default function UserPage() {
         <SelectLinkGoalModal
           ref={selectLinkRef}
           selectedIds={[...selectedIds]}
+          selectedDates={paginatedDeployments.deployments.filter((d) => selectedIds.has(d.id)).map((d) => d.created_at)}
           availableBoards={availableBoards}
           isSubmitting={isSubmitting}
         />
@@ -853,6 +854,8 @@ type AvailableBoard = {
   id: number
   title: string
   period_label: string
+  period_start: string
+  period_end: string
   dev_team_name: string
   objectives: Array<{ id: number; title: string; key_results: Array<{ id: number; title: string }> }>
 }
@@ -975,15 +978,53 @@ const SelectLinkGoalModal = forwardRef<
   HTMLDialogElement,
   {
     selectedIds: number[]
+    selectedDates: (string | Date)[]
     availableBoards: AvailableBoard[]
     isSubmitting: boolean
   }
->(function SelectLinkGoalModal({ selectedIds, availableBoards, isSubmitting }, ref) {
+>(function SelectLinkGoalModal({ selectedIds, selectedDates, availableBoards, isSubmitting }, ref) {
   const [selectedBoardId, setSelectedBoardId] = useState<string>('')
   const [selectedObjectiveId, setSelectedObjectiveId] = useState<string>('')
   const [selectedKeyResultId, setSelectedKeyResultId] = useState<string>('')
 
-  const selectedBoard = availableBoards.find((b) => String(b.id) === selectedBoardId)
+  // Filter boards to those covering any of the selected deployment dates
+  const relevantBoards = useMemo(() => {
+    if (selectedDates.length === 0) return availableBoards
+    return availableBoards.filter((board) => {
+      const boardStart = new Date(board.period_start)
+      const boardEnd = new Date(board.period_end)
+      return selectedDates.some((date) => {
+        const d = new Date(date)
+        return d >= boardStart && d <= boardEnd
+      })
+    })
+  }, [availableBoards, selectedDates])
+
+  // Check if selected deployments span multiple board periods
+  const spansMultiplePeriods = useMemo(() => {
+    if (selectedDates.length <= 1 || relevantBoards.length === 0) return false
+    const matchingBoardIds = new Set<number>()
+    for (const date of selectedDates) {
+      const d = new Date(date)
+      for (const board of relevantBoards) {
+        if (d >= new Date(board.period_start) && d <= new Date(board.period_end)) {
+          matchingBoardIds.add(board.id)
+        }
+      }
+    }
+    // If each date matches a different board, it spans multiple periods
+    // More precisely: check if all dates fit within a single board
+    return !relevantBoards.some((board) => {
+      const boardStart = new Date(board.period_start)
+      const boardEnd = new Date(board.period_end)
+      return selectedDates.every((date) => {
+        const d = new Date(date)
+        return d >= boardStart && d <= boardEnd
+      })
+    })
+  }, [relevantBoards, selectedDates])
+
+  const selectedBoard = relevantBoards.find((b) => String(b.id) === selectedBoardId)
   const selectedObjective = selectedBoard?.objectives.find((o) => String(o.id) === selectedObjectiveId)
 
   return (
@@ -1001,59 +1042,74 @@ const SelectLinkGoalModal = forwardRef<
           <VStack gap="space-16">
             <BodyShort>Kobler de {selectedIds.length} markerte leveransene til det valgte målet.</BodyShort>
 
-            <Select
-              label="Tavle"
-              size="small"
-              value={selectedBoardId}
-              onChange={(e) => {
-                setSelectedBoardId(e.target.value)
-                setSelectedObjectiveId('')
-                setSelectedKeyResultId('')
-              }}
-            >
-              <option value="">Velg tavle...</option>
-              {availableBoards.map((board) => (
-                <option key={board.id} value={String(board.id)}>
-                  {board.dev_team_name} – {board.title} ({board.period_label})
-                </option>
-              ))}
-            </Select>
+            {relevantBoards.length === 0 ? (
+              <Alert variant="warning" size="small">
+                Ingen måltavler dekker perioden til de valgte leveransene.
+              </Alert>
+            ) : (
+              <>
+                {spansMultiplePeriods && (
+                  <Alert variant="warning" size="small">
+                    De valgte leveransene spenner over flere måltavleperioder. Velg leveranser innenfor samme periode
+                    for å sikre riktig kobling.
+                  </Alert>
+                )}
 
-            {selectedBoard && selectedBoard.objectives.length > 0 && (
-              <Select
-                label="Mål"
-                name="objective_id"
-                size="small"
-                value={selectedObjectiveId}
-                onChange={(e) => {
-                  setSelectedObjectiveId(e.target.value)
-                  setSelectedKeyResultId('')
-                }}
-              >
-                <option value="">Velg mål...</option>
-                {selectedBoard.objectives.map((obj) => (
-                  <option key={obj.id} value={String(obj.id)}>
-                    {obj.title}
-                  </option>
-                ))}
-              </Select>
-            )}
+                <Select
+                  label="Tavle"
+                  size="small"
+                  value={selectedBoardId}
+                  onChange={(e) => {
+                    setSelectedBoardId(e.target.value)
+                    setSelectedObjectiveId('')
+                    setSelectedKeyResultId('')
+                  }}
+                >
+                  <option value="">Velg tavle...</option>
+                  {relevantBoards.map((board) => (
+                    <option key={board.id} value={String(board.id)}>
+                      {board.dev_team_name} – {board.title} ({board.period_label})
+                    </option>
+                  ))}
+                </Select>
 
-            {selectedObjective && selectedObjective.key_results.length > 0 && (
-              <Select
-                label="Nøkkelresultat (valgfritt)"
-                name="key_result_id"
-                size="small"
-                value={selectedKeyResultId}
-                onChange={(e) => setSelectedKeyResultId(e.target.value)}
-              >
-                <option value="">Ingen spesifikt nøkkelresultat</option>
-                {selectedObjective.key_results.map((kr) => (
-                  <option key={kr.id} value={String(kr.id)}>
-                    {kr.title}
-                  </option>
-                ))}
-              </Select>
+                {selectedBoard && selectedBoard.objectives.length > 0 && (
+                  <Select
+                    label="Mål"
+                    name="objective_id"
+                    size="small"
+                    value={selectedObjectiveId}
+                    onChange={(e) => {
+                      setSelectedObjectiveId(e.target.value)
+                      setSelectedKeyResultId('')
+                    }}
+                  >
+                    <option value="">Velg mål...</option>
+                    {selectedBoard.objectives.map((obj) => (
+                      <option key={obj.id} value={String(obj.id)}>
+                        {obj.title}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+
+                {selectedObjective && selectedObjective.key_results.length > 0 && (
+                  <Select
+                    label="Nøkkelresultat (valgfritt)"
+                    name="key_result_id"
+                    size="small"
+                    value={selectedKeyResultId}
+                    onChange={(e) => setSelectedKeyResultId(e.target.value)}
+                  >
+                    <option value="">Ingen spesifikt nøkkelresultat</option>
+                    {selectedObjective.key_results.map((kr) => (
+                      <option key={kr.id} value={String(kr.id)}>
+                        {kr.title}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </>
             )}
           </VStack>
         </Modal.Body>
