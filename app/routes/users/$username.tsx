@@ -10,11 +10,13 @@ import {
   Detail,
   Heading,
   HGrid,
+  Hide,
   HStack,
   Modal,
   Radio,
   RadioGroup,
   Select,
+  Show,
   Tag,
   TextField,
   VStack,
@@ -611,40 +613,60 @@ export default function UserPage() {
           <>
             <div>
               {paginatedDeployments.deployments.map((deployment) => (
-                <Box key={deployment.id} padding="space-16" background="raised" className={styles.stackedListItem}>
-                  <HStack gap="space-12" align="center" justify="space-between" wrap>
-                    <HStack gap="space-12" align="center" wrap>
-                      <Link to={`/deployments/${deployment.id}`}>
-                        <BodyShort weight="semibold" style={{ whiteSpace: 'nowrap' }}>
-                          {formatDate(deployment.created_at)}
-                        </BodyShort>
-                      </Link>
-                      <Link
-                        to={`/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}`}
-                      >
-                        <BodyShort>{deployment.app_name}</BodyShort>
-                      </Link>
-                      <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
-                      <MethodTag
-                        github_pr_number={deployment.github_pr_number}
-                        four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
-                      />
-                      {deployment.has_goal_link && (
-                        <Tag variant="moderate" size="xsmall" data-color="success">
-                          <HStack gap="space-4" align="center">
-                            <LinkIcon aria-hidden style={{ fontSize: '0.75rem' }} />
-                            Endringsopphav
-                          </HStack>
-                        </Tag>
-                      )}
-                      {deployment.is_dependabot && (
-                        <Tag variant="moderate" size="xsmall" data-color="neutral">
-                          Dependabot
-                        </Tag>
-                      )}
+                <Box key={deployment.id} padding="space-20" background="raised" className={styles.stackedListItem}>
+                  <VStack gap="space-12">
+                    <HStack gap="space-8" align="center" justify="space-between">
+                      <HStack gap="space-8" align="center" style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                        <Link to={`/deployments/${deployment.id}`}>
+                          <BodyShort weight="semibold" style={{ whiteSpace: 'nowrap' }}>
+                            {formatDate(deployment.created_at)}
+                          </BodyShort>
+                        </Link>
+                        <Show above="md">
+                          {deployment.title && (
+                            <BodyShort className={styles.truncateText} style={{ flex: 1, minWidth: 0 }}>
+                              {deployment.title}
+                            </BodyShort>
+                          )}
+                        </Show>
+                      </HStack>
+                      <HStack gap="space-8" style={{ flexShrink: 0 }}>
+                        <MethodTag
+                          github_pr_number={deployment.github_pr_number}
+                          four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
+                        />
+                        <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
+                        {deployment.has_goal_link && (
+                          <Tag variant="moderate" size="xsmall" data-color="success">
+                            <HStack gap="space-4" align="center">
+                              <LinkIcon aria-hidden style={{ fontSize: '0.75rem' }} />
+                              Endringsopphav
+                            </HStack>
+                          </Tag>
+                        )}
+                        {deployment.is_dependabot && (
+                          <Tag variant="moderate" size="xsmall" data-color="neutral">
+                            Dependabot
+                          </Tag>
+                        )}
+                      </HStack>
                     </HStack>
-                    <Detail textColor="subtle">{deployment.environment_name}</Detail>
-                  </HStack>
+
+                    <Hide above="md">
+                      {deployment.title && <BodyShort className={styles.truncateText}>{deployment.title}</BodyShort>}
+                    </Hide>
+
+                    <HStack gap="space-16" align="center" wrap>
+                      <Detail textColor="subtle">
+                        <Link
+                          to={`/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}`}
+                        >
+                          {deployment.app_name}
+                        </Link>
+                      </Detail>
+                      <Detail textColor="subtle">{deployment.environment_name}</Detail>
+                    </HStack>
+                  </VStack>
                 </Box>
               ))}
             </div>
