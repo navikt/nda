@@ -229,6 +229,26 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
+  if (intent === 'link_selected_goal') {
+    const deploymentIds = formData.getAll('deployment_ids').map(Number).filter(Number.isFinite)
+    const objectiveId = formData.get('objective_id') ? Number(formData.get('objective_id')) : undefined
+    const keyResultId = formData.get('key_result_id') ? Number(formData.get('key_result_id')) : undefined
+
+    if (deploymentIds.length === 0) return { error: 'Ingen leveranser valgt.' }
+    if (!objectiveId && !keyResultId) return { error: 'Velg et mål eller nøkkelresultat.' }
+
+    try {
+      const linked = await bulkAddDeploymentGoalLinks(
+        deploymentIds,
+        { objective_id: objectiveId, key_result_id: keyResultId },
+        identity.navIdent,
+      )
+      return { success: `Koblet ${linked} leveranser til endringsopphav.` }
+    } catch {
+      return { error: 'Kunne ikke koble leveranser.' }
+    }
+  }
+
   if (intent === 'create-mapping') {
     const githubUsername = formData.get('github_username') as string
     const navEmail = (formData.get('nav_email') as string) || null
@@ -300,7 +320,9 @@ export default function UserPage() {
   const isSubmitting = navigation.state === 'submitting'
   const modalRef = useRef<HTMLDialogElement>(null)
   const bulkLinkRef = useRef<HTMLDialogElement>(null)
+  const selectLinkRef = useRef<HTMLDialogElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   const updateFilter = (key: string, value: string, defaultValue: string) => {
     const params = new URLSearchParams(searchParams)
@@ -318,6 +340,8 @@ export default function UserPage() {
     if (actionData?.success && navigation.state === 'idle') {
       modalRef.current?.close()
       bulkLinkRef.current?.close()
+      selectLinkRef.current?.close()
+      setSelectedIds(new Set())
     }
   }, [actionData, navigation.state])
 
@@ -330,6 +354,34 @@ export default function UserPage() {
       hour: '2-digit',
       minute: '2-digit',
     })
+  }
+
+  const unlinkableOnPage = paginatedDeployments.deployments.filter((d) => !d.has_goal_link)
+  const allOnPageSelected = unlinkableOnPage.length > 0 && unlinkableOnPage.every((d) => selectedIds.has(d.id))
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (allOnPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (const d of unlinkableOnPage) next.delete(d.id)
+        return next
+      })
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (const d of unlinkableOnPage) next.add(d.id)
+        return next
+      })
+    }
   }
 
   return (
@@ -580,9 +632,9 @@ export default function UserPage() {
           )}
         </HStack>
 
-        {/* Bulk link action + feedback */}
+        {/* Bulk link actions + feedback */}
         {availableBoards.length > 0 && (
-          <HStack gap="space-12" align="center">
+          <HStack gap="space-12" align="center" wrap>
             <Button
               variant="secondary"
               size="small"
@@ -591,6 +643,21 @@ export default function UserPage() {
             >
               Koble Dependabot til endringsopphav
             </Button>
+            {unlinkableOnPage.length > 0 && (
+              <Checkbox size="small" checked={allOnPageSelected} onChange={toggleSelectAll}>
+                Velg alle uten endringsopphav på siden
+              </Checkbox>
+            )}
+            {selectedIds.size > 0 && (
+              <Button
+                variant="primary"
+                size="small"
+                icon={<LinkIcon aria-hidden />}
+                onClick={() => selectLinkRef.current?.showModal()}
+              >
+                Koble {selectedIds.size} markerte
+              </Button>
+            )}
             {actionData?.success && typeof actionData.success === 'string' && (
               <Alert variant="success" size="small" inline>
                 {actionData.success}
@@ -614,59 +681,72 @@ export default function UserPage() {
             <div>
               {paginatedDeployments.deployments.map((deployment) => (
                 <Box key={deployment.id} padding="space-20" background="raised" className={styles.stackedListItem}>
-                  <VStack gap="space-12">
-                    <HStack gap="space-8" align="center" justify="space-between">
-                      <HStack gap="space-8" align="center" style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                        <Link to={`/deployments/${deployment.id}`}>
-                          <BodyShort weight="semibold" style={{ whiteSpace: 'nowrap' }}>
-                            {formatDate(deployment.created_at)}
-                          </BodyShort>
-                        </Link>
-                        <Show above="md">
-                          {deployment.title && (
-                            <BodyShort className={styles.truncateText} style={{ flex: 1, minWidth: 0 }}>
-                              {deployment.title}
+                  <HStack gap="space-12" align="start">
+                    {availableBoards.length > 0 && !deployment.has_goal_link && (
+                      <Checkbox
+                        size="small"
+                        checked={selectedIds.has(deployment.id)}
+                        onChange={() => toggleSelect(deployment.id)}
+                        hideLabel
+                        style={{ flexShrink: 0, marginTop: '2px' }}
+                      >
+                        Velg leveranse {deployment.id}
+                      </Checkbox>
+                    )}
+                    <VStack gap="space-12" style={{ flex: 1, minWidth: 0 }}>
+                      <HStack gap="space-8" align="center" justify="space-between">
+                        <HStack gap="space-8" align="center" style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                          <Link to={`/deployments/${deployment.id}`}>
+                            <BodyShort weight="semibold" style={{ whiteSpace: 'nowrap' }}>
+                              {formatDate(deployment.created_at)}
                             </BodyShort>
+                          </Link>
+                          <Show above="md">
+                            {deployment.title && (
+                              <BodyShort className={styles.truncateText} style={{ flex: 1, minWidth: 0 }}>
+                                {deployment.title}
+                              </BodyShort>
+                            )}
+                          </Show>
+                        </HStack>
+                        <HStack gap="space-8" style={{ flexShrink: 0 }}>
+                          <MethodTag
+                            github_pr_number={deployment.github_pr_number}
+                            four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
+                          />
+                          <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
+                          {deployment.has_goal_link && (
+                            <Tag variant="moderate" size="xsmall" data-color="success">
+                              <HStack gap="space-4" align="center">
+                                <LinkIcon aria-hidden style={{ fontSize: '0.75rem' }} />
+                                Endringsopphav
+                              </HStack>
+                            </Tag>
                           )}
-                        </Show>
+                          {deployment.is_dependabot && (
+                            <Tag variant="moderate" size="xsmall" data-color="neutral">
+                              Dependabot
+                            </Tag>
+                          )}
+                        </HStack>
                       </HStack>
-                      <HStack gap="space-8" style={{ flexShrink: 0 }}>
-                        <MethodTag
-                          github_pr_number={deployment.github_pr_number}
-                          four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
-                        />
-                        <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
-                        {deployment.has_goal_link && (
-                          <Tag variant="moderate" size="xsmall" data-color="success">
-                            <HStack gap="space-4" align="center">
-                              <LinkIcon aria-hidden style={{ fontSize: '0.75rem' }} />
-                              Endringsopphav
-                            </HStack>
-                          </Tag>
-                        )}
-                        {deployment.is_dependabot && (
-                          <Tag variant="moderate" size="xsmall" data-color="neutral">
-                            Dependabot
-                          </Tag>
-                        )}
+
+                      <Hide above="md">
+                        {deployment.title && <BodyShort className={styles.truncateText}>{deployment.title}</BodyShort>}
+                      </Hide>
+
+                      <HStack gap="space-16" align="center" wrap>
+                        <Detail textColor="subtle">
+                          <Link
+                            to={`/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}`}
+                          >
+                            {deployment.app_name}
+                          </Link>
+                        </Detail>
+                        <Detail textColor="subtle">{deployment.environment_name}</Detail>
                       </HStack>
-                    </HStack>
-
-                    <Hide above="md">
-                      {deployment.title && <BodyShort className={styles.truncateText}>{deployment.title}</BodyShort>}
-                    </Hide>
-
-                    <HStack gap="space-16" align="center" wrap>
-                      <Detail textColor="subtle">
-                        <Link
-                          to={`/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}`}
-                        >
-                          {deployment.app_name}
-                        </Link>
-                      </Detail>
-                      <Detail textColor="subtle">{deployment.environment_name}</Detail>
-                    </HStack>
-                  </VStack>
+                    </VStack>
+                  </HStack>
                 </Box>
               ))}
             </div>
@@ -749,6 +829,16 @@ export default function UserPage() {
           username={username}
           period={period}
           appFilter={appFilter}
+          availableBoards={availableBoards}
+          isSubmitting={isSubmitting}
+        />
+      )}
+
+      {/* Link selected deployments to goal modal */}
+      {availableBoards.length > 0 && selectedIds.size > 0 && (
+        <SelectLinkGoalModal
+          ref={selectLinkRef}
+          selectedIds={[...selectedIds]}
           availableBoards={availableBoards}
           isSubmitting={isSubmitting}
         />
@@ -864,6 +954,118 @@ const BulkLinkGoalModal = forwardRef<
             disabled={!selectedObjectiveId}
           >
             Koble alle
+          </Button>
+          <Button
+            variant="secondary"
+            size="small"
+            type="button"
+            onClick={() => {
+              if (typeof ref === 'object' && ref?.current) ref.current.close()
+            }}
+          >
+            Avbryt
+          </Button>
+        </Modal.Footer>
+      </Form>
+    </Modal>
+  )
+})
+
+const SelectLinkGoalModal = forwardRef<
+  HTMLDialogElement,
+  {
+    selectedIds: number[]
+    availableBoards: AvailableBoard[]
+    isSubmitting: boolean
+  }
+>(function SelectLinkGoalModal({ selectedIds, availableBoards, isSubmitting }, ref) {
+  const [selectedBoardId, setSelectedBoardId] = useState<string>('')
+  const [selectedObjectiveId, setSelectedObjectiveId] = useState<string>('')
+  const [selectedKeyResultId, setSelectedKeyResultId] = useState<string>('')
+
+  const selectedBoard = availableBoards.find((b) => String(b.id) === selectedBoardId)
+  const selectedObjective = selectedBoard?.objectives.find((o) => String(o.id) === selectedObjectiveId)
+
+  return (
+    <Modal
+      ref={ref}
+      header={{ heading: `Koble ${selectedIds.length} leveranser til endringsopphav` }}
+      closeOnBackdropClick
+    >
+      <Form method="post" id="select-link-form">
+        <input type="hidden" name="intent" value="link_selected_goal" />
+        {selectedIds.map((id) => (
+          <input key={id} type="hidden" name="deployment_ids" value={String(id)} />
+        ))}
+        <Modal.Body>
+          <VStack gap="space-16">
+            <BodyShort>Kobler de {selectedIds.length} markerte leveransene til det valgte målet.</BodyShort>
+
+            <Select
+              label="Tavle"
+              size="small"
+              value={selectedBoardId}
+              onChange={(e) => {
+                setSelectedBoardId(e.target.value)
+                setSelectedObjectiveId('')
+                setSelectedKeyResultId('')
+              }}
+            >
+              <option value="">Velg tavle...</option>
+              {availableBoards.map((board) => (
+                <option key={board.id} value={String(board.id)}>
+                  {board.dev_team_name} – {board.title} ({board.period_label})
+                </option>
+              ))}
+            </Select>
+
+            {selectedBoard && selectedBoard.objectives.length > 0 && (
+              <Select
+                label="Mål"
+                name="objective_id"
+                size="small"
+                value={selectedObjectiveId}
+                onChange={(e) => {
+                  setSelectedObjectiveId(e.target.value)
+                  setSelectedKeyResultId('')
+                }}
+              >
+                <option value="">Velg mål...</option>
+                {selectedBoard.objectives.map((obj) => (
+                  <option key={obj.id} value={String(obj.id)}>
+                    {obj.title}
+                  </option>
+                ))}
+              </Select>
+            )}
+
+            {selectedObjective && selectedObjective.key_results.length > 0 && (
+              <Select
+                label="Nøkkelresultat (valgfritt)"
+                name="key_result_id"
+                size="small"
+                value={selectedKeyResultId}
+                onChange={(e) => setSelectedKeyResultId(e.target.value)}
+              >
+                <option value="">Ingen spesifikt nøkkelresultat</option>
+                {selectedObjective.key_results.map((kr) => (
+                  <option key={kr.id} value={String(kr.id)}>
+                    {kr.title}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </VStack>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            type="submit"
+            form="select-link-form"
+            size="small"
+            loading={isSubmitting}
+            disabled={!selectedObjectiveId}
+          >
+            Koble {selectedIds.length} leveranser
           </Button>
           <Button
             variant="secondary"
