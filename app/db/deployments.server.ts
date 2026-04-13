@@ -338,6 +338,7 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   const dataSql = `
     SELECT 
       d.*,
+      COALESCE(d.title, c.message) AS title,
       ma.team_slug,
       ma.environment_name,
       ma.app_name,
@@ -345,6 +346,9 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
       EXISTS (SELECT 1 FROM deployment_goal_links WHERE deployment_id = d.id) AS has_goal_link
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+    LEFT JOIN commits c ON c.sha = d.commit_sha
+      AND c.repo_owner = d.detected_github_owner
+      AND c.repo_name = d.detected_github_repo_name
     ${goalJoinSql}
     ${whereSql}
     ORDER BY d.created_at DESC
@@ -367,12 +371,16 @@ export async function getDeploymentById(id: number): Promise<DeploymentWithApp |
   const result = await pool.query(
     `SELECT 
       d.*,
+      COALESCE(d.title, c.message) AS title,
       ma.team_slug,
       ma.environment_name,
       ma.app_name,
       ma.default_branch
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+    LEFT JOIN commits c ON c.sha = d.commit_sha
+      AND c.repo_owner = d.detected_github_owner
+      AND c.repo_name = d.detected_github_repo_name
     WHERE d.id = $1`,
     [id],
   )
@@ -1004,6 +1012,7 @@ export async function getDeployerDeploymentsPaginated(
     pool.query(
       `SELECT
          d.*,
+         COALESCE(d.title, c.message) AS title,
          ma.team_slug,
          ma.environment_name,
          ma.app_name,
@@ -1011,6 +1020,9 @@ export async function getDeployerDeploymentsPaginated(
          LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]' AS is_dependabot
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+       LEFT JOIN commits c ON c.sha = d.commit_sha
+         AND c.repo_owner = d.detected_github_owner
+         AND c.repo_name = d.detected_github_repo_name
        ${whereSql}
        ORDER BY d.created_at DESC
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
