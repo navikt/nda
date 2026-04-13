@@ -63,14 +63,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const goalFilter = (url.searchParams.get('goal') || 'all') as DeployerTableFilters['goal']
   const dependabotFilter = (url.searchParams.get('dependabot') || 'all') as DeployerTableFilters['dependabot']
+  const approvalFilter = (url.searchParams.get('approval') || 'all') as DeployerTableFilters['approval']
   const appFilter = url.searchParams.get('app') || ''
 
   const filters: DeployerTableFilters = {
     goal: goalFilter,
     dependabot: dependabotFilter,
+    approval: approvalFilter,
     appName: appFilter || undefined,
   }
-  const hasFilters = goalFilter !== 'all' || dependabotFilter !== 'all' || !!appFilter
+  const hasFilters = goalFilter !== 'all' || dependabotFilter !== 'all' || approvalFilter !== 'all' || !!appFilter
 
   const isBot = isGitHubBot(username)
   const botDisplayName = getBotDisplayName(username)
@@ -131,6 +133,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     period,
     goalFilter: goalFilter ?? 'all',
     dependabotFilter: dependabotFilter ?? 'all',
+    approvalFilter: approvalFilter ?? 'all',
     appFilter,
     hasFilters,
     deployerApps,
@@ -276,6 +279,7 @@ export default function UserPage() {
     period,
     goalFilter,
     dependabotFilter,
+    approvalFilter,
     appFilter,
     hasFilters,
     deployerApps,
@@ -543,6 +547,18 @@ export default function UserPage() {
           >
             <option value="all">Alle</option>
             <option value="only">Kun Dependabot</option>
+          </Select>
+          <Select
+            label="Godkjenning"
+            size="small"
+            value={approvalFilter}
+            onChange={(e) => updateFilter('approval', e.target.value, 'all')}
+            style={{ width: '12rem' }}
+          >
+            <option value="all">Alle</option>
+            <option value="approved">Godkjent</option>
+            <option value="not_approved">Ikke godkjent</option>
+            <option value="pending">Venter</option>
           </Select>
           {deployerApps.length > 1 && (
             <Select

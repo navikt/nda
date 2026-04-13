@@ -1,4 +1,4 @@
-import { NOT_APPROVED_STATUSES, PENDING_STATUSES } from '~/lib/four-eyes-status'
+import { APPROVED_STATUSES_SQL, NOT_APPROVED_STATUSES, PENDING_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
 import { logStatusTransition } from './deployments/status-history.server'
 
@@ -933,6 +933,7 @@ export interface PaginatedDeployerDeployments {
 export interface DeployerTableFilters {
   goal?: 'all' | 'with_goal' | 'without_goal'
   dependabot?: 'all' | 'only'
+  approval?: 'all' | 'approved' | 'not_approved' | 'pending'
   appName?: string
 }
 
@@ -973,6 +974,16 @@ export async function getDeployerDeploymentsPaginated(
 
   if (filters?.dependabot === 'only') {
     whereSql += ` AND LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]'`
+  }
+
+  if (filters?.approval === 'approved') {
+    whereSql += ` AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})`
+  } else if (filters?.approval === 'not_approved') {
+    const notApprovedSql = NOT_APPROVED_STATUSES.map((s) => `'${s}'`).join(', ')
+    whereSql += ` AND d.four_eyes_status IN (${notApprovedSql})`
+  } else if (filters?.approval === 'pending') {
+    const pendingSql = PENDING_STATUSES.map((s) => `'${s}'`).join(', ')
+    whereSql += ` AND d.four_eyes_status IN (${pendingSql})`
   }
 
   if (filters?.appName) {
