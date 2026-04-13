@@ -19,12 +19,13 @@ import {
   TextField,
   VStack,
 } from '@navikt/ds-react'
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router'
 import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
-import { ALL_DEPLOYMENT_CATEGORIES, type DeploymentCategory } from '~/db/deployment-categories'
 import {
+  type DeployerTableFilters,
+  getDeployerApps,
   getDeployerDeploymentsPaginated,
   getDeployerMonthlyStats,
   getDeploymentCountByDeployer,
@@ -58,22 +59,27 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const period = (url.searchParams.get('period') || 'all') as TimePeriod
   const dateRange = getDateRangeForPeriod(period)
 
-  const categoriesParam = url.searchParams.get('categories')
-  const categories: DeploymentCategory[] | null = categoriesParam
-    ? (categoriesParam
-        .split(',')
-        .filter((c) => ALL_DEPLOYMENT_CATEGORIES.includes(c as DeploymentCategory)) as DeploymentCategory[])
-    : null
+  const goalFilter = (url.searchParams.get('goal') || 'all') as DeployerTableFilters['goal']
+  const dependabotFilter = (url.searchParams.get('dependabot') || 'all') as DeployerTableFilters['dependabot']
+  const appFilter = url.searchParams.get('app') || ''
+
+  const filters: DeployerTableFilters = {
+    goal: goalFilter,
+    dependabot: dependabotFilter,
+    appName: appFilter || undefined,
+  }
+  const hasFilters = goalFilter !== 'all' || dependabotFilter !== 'all' || !!appFilter
 
   const isBot = isGitHubBot(username)
   const botDisplayName = getBotDisplayName(username)
   const botDescription = getBotDescription(username)
 
-  const [mapping, deploymentCount, paginatedDeployments, monthlyStats] = await Promise.all([
+  const [mapping, deploymentCount, paginatedDeployments, monthlyStats, deployerApps] = await Promise.all([
     isBot ? Promise.resolve(null) : getUserMapping(username),
     getDeploymentCountByDeployer(username),
-    getDeployerDeploymentsPaginated(username, page, 20, dateRange?.startDate, dateRange?.endDate, categories),
+    getDeployerDeploymentsPaginated(username, page, 20, dateRange?.startDate, dateRange?.endDate, filters),
     getDeployerMonthlyStats(username, dateRange?.startDate, dateRange?.endDate),
+    getDeployerApps(username),
   ])
 
   // Check if this is the logged-in user's own profile
@@ -111,7 +117,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     paginatedDeployments,
     monthlyStats,
     period,
-    categories: categories ?? ALL_DEPLOYMENT_CATEGORIES,
+    goalFilter: goalFilter ?? 'all',
+    dependabotFilter: dependabotFilter ?? 'all',
+    appFilter,
+    hasFilters,
+    deployerApps,
     isBot,
     botDisplayName,
     botDescription,
@@ -217,7 +227,11 @@ export default function UserPage() {
     paginatedDeployments,
     monthlyStats,
     period,
-    categories,
+    goalFilter,
+    dependabotFilter,
+    appFilter,
+    hasFilters,
+    deployerApps,
     isBot,
     botDisplayName,
     botDescription,
@@ -233,32 +247,16 @@ export default function UserPage() {
   const modalRef = useRef<HTMLDialogElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const isFiltered = categories.length < ALL_DEPLOYMENT_CATEGORIES.length
-
-  const handleToggleCategory = useCallback(
-    (category: DeploymentCategory) => {
-      const params = new URLSearchParams(searchParams)
-      const currentCategories = params.get('categories')
-        ? (params.get('categories')?.split(',') as DeploymentCategory[])
-        : [...ALL_DEPLOYMENT_CATEGORIES]
-
-      let newCategories: DeploymentCategory[]
-      if (currentCategories.includes(category)) {
-        newCategories = currentCategories.filter((c) => c !== category)
-      } else {
-        newCategories = [...currentCategories, category]
-      }
-
-      if (newCategories.length === ALL_DEPLOYMENT_CATEGORIES.length) {
-        params.delete('categories')
-      } else {
-        params.set('categories', newCategories.join(','))
-      }
-      params.delete('page')
-      setSearchParams(params)
-    },
-    [searchParams, setSearchParams],
-  )
+  const updateFilter = (key: string, value: string, defaultValue: string) => {
+    const params = new URLSearchParams(searchParams)
+    if (value === defaultValue) {
+      params.delete(key)
+    } else {
+      params.set(key, value)
+    }
+    params.delete('page')
+    setSearchParams(params)
+  }
 
   // Close modal when action succeeds
   useEffect(() => {
@@ -444,7 +442,7 @@ export default function UserPage() {
       <VStack gap="space-24">
         <HStack justify="space-between" align="end" wrap>
           <Heading level="2" size="small">
-            Leveranser {isFiltered ? `(${paginatedDeployments.total} av ${deploymentCount})` : `(${deploymentCount})`}
+            Leveranser {hasFilters ? `(${paginatedDeployments.total} av ${deploymentCount})` : `(${deploymentCount})`}
           </Heading>
           <Select
             label="Tidsperiode"
@@ -469,13 +467,50 @@ export default function UserPage() {
         {/* Deployment activity chart */}
         {monthlyStats.length > 0 && (
           <Box background="raised" padding="space-16" borderRadius="4">
-            <DeploymentActivityChart
-              data={monthlyStats}
-              visibleCategories={categories}
-              onToggleCategory={handleToggleCategory}
-            />
+            <DeploymentActivityChart data={monthlyStats} />
           </Box>
         )}
+
+        {/* Table filters */}
+        <HStack gap="space-12" align="end" wrap>
+          <Select
+            label="Endringsopphav"
+            size="small"
+            value={goalFilter}
+            onChange={(e) => updateFilter('goal', e.target.value, 'all')}
+            style={{ width: '14rem' }}
+          >
+            <option value="all">Alle</option>
+            <option value="with_goal">Med endringsopphav</option>
+            <option value="without_goal">Uten endringsopphav</option>
+          </Select>
+          <Select
+            label="Dependabot"
+            size="small"
+            value={dependabotFilter}
+            onChange={(e) => updateFilter('dependabot', e.target.value, 'all')}
+            style={{ width: '10rem' }}
+          >
+            <option value="all">Alle</option>
+            <option value="only">Kun Dependabot</option>
+          </Select>
+          {deployerApps.length > 1 && (
+            <Select
+              label="Applikasjon"
+              size="small"
+              value={appFilter}
+              onChange={(e) => updateFilter('app', e.target.value, '')}
+              style={{ width: '16rem' }}
+            >
+              <option value="">Alle applikasjoner</option>
+              {deployerApps.map((app) => (
+                <option key={app} value={app}>
+                  {app}
+                </option>
+              ))}
+            </Select>
+          )}
+        </HStack>
 
         {/* Deployments (paginated) */}
         {paginatedDeployments.deployments.length === 0 ? (
