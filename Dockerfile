@@ -9,7 +9,7 @@ ARG GITHUB_SHA
 ENV GITHUB_SHA=${GITHUB_SHA}
 
 # Copy package files
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # Install all dependencies (including dev for build), skip prepare script
 RUN pnpm install --frozen-lockfile --ignore-scripts
@@ -39,7 +39,7 @@ RUN npm install -g pnpm@10
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 
 # Final stage with distroless
