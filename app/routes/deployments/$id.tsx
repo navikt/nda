@@ -182,8 +182,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }> = []
   if (deployment.four_eyes_status === 'error') {
     const nearbyResult = await pool.query(
-      `SELECT d.id, d.commit_sha, d.created_at, d.four_eyes_status, d.deployer_username, d.title
+      `SELECT d.id, d.commit_sha, d.created_at, d.four_eyes_status, d.deployer_username,
+              COALESCE(d.title, c.message) AS title
        FROM deployments d
+       LEFT JOIN commits c ON c.sha = d.commit_sha
+         AND c.repo_owner = d.detected_github_owner
+         AND c.repo_name = d.detected_github_repo_name
        WHERE d.monitored_app_id = $1
          AND d.id != $2
          AND d.created_at BETWEEN ($3::timestamptz - interval '30 minutes') AND ($3::timestamptz + interval '30 minutes')
@@ -458,7 +462,9 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
       <div>
         <HStack align="center" gap="space-12" wrap>
           <Heading size="large" level="1" style={{ flex: 1 }}>
-            {deployment.github_pr_data?.title || `${deployment.app_name} @ ${deployment.environment_name}`}
+            {deployment.title ||
+              deployment.github_pr_data?.title ||
+              `${deployment.app_name} @ ${deployment.environment_name}`}
           </Heading>
           <HStack gap="space-8" align="center">
             {/* Godkjenning status tag (only shown for OK/approved states) */}
