@@ -89,9 +89,13 @@ async function _getDevTeamForNaisTeam(naisTeamSlug: string): Promise<DevTeam | n
 }
 
 /** Find all dev teams for a monitored app (via direct app link and nais team) */
-export async function getDevTeamsForApp(monitoredAppId: number, teamSlug: string): Promise<DevTeam[]> {
+export async function getDevTeamsForApp(
+  monitoredAppId: number,
+  teamSlug: string,
+): Promise<(DevTeam & { section_slug: string })[]> {
   const result = await pool.query(
-    `SELECT DISTINCT dt.* FROM dev_teams dt
+    `SELECT DISTINCT dt.*, s.slug AS section_slug FROM dev_teams dt
+     JOIN sections s ON s.id = dt.section_id
      LEFT JOIN dev_team_applications dta ON dta.dev_team_id = dt.id AND dta.monitored_app_id = $1
      LEFT JOIN dev_team_nais_teams dnt ON dnt.dev_team_id = dt.id AND dnt.nais_team_slug = $2
      WHERE dt.is_active = true AND (dta.monitored_app_id IS NOT NULL OR dnt.nais_team_slug IS NOT NULL)

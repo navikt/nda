@@ -9,6 +9,7 @@ import {
   FileTextIcon,
   LayersIcon,
   PackageIcon,
+  PersonGroupIcon,
   XMarkIcon,
 } from '@navikt/aksel-icons'
 import {
@@ -43,6 +44,7 @@ import {
 } from '~/db/application-repositories.server'
 import { getAuditReportsForApp } from '~/db/audit-reports.server'
 import { getAppDeploymentStats } from '~/db/deployments.server'
+import { getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
@@ -66,13 +68,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  const [repositories, deploymentStats, alerts, auditReports, group, siblings] = await Promise.all([
+  const [repositories, deploymentStats, alerts, auditReports, group, siblings, devTeams] = await Promise.all([
     getRepositoriesByAppId(app.id),
     getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
     getUnresolvedAlertsByApp(app.id),
     getAuditReportsForApp(app.id),
     getGroupByAppId(app.id),
     getSiblingApps(app.id),
+    getDevTeamsForApp(app.id, team),
   ])
 
   const activeRepo = repositories.find((r) => r.status === 'active')
@@ -90,6 +93,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     auditReports,
     group,
     siblings,
+    devTeams,
   }
 }
 
@@ -204,6 +208,7 @@ export default function AppDetail() {
     auditReports,
     group,
     siblings,
+    devTeams,
   } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const [searchParams] = useSearchParams()
@@ -283,6 +288,21 @@ export default function AppDetail() {
             ))}
           </HStack>
         </Box>
+      )}
+
+      {/* Dev Teams */}
+      {devTeams.length > 0 && (
+        <HStack gap="space-8" align="center" wrap>
+          <PersonGroupIcon aria-hidden />
+          <Detail textColor="subtle">Utviklingsteam:</Detail>
+          {devTeams.map((dt) => (
+            <Link key={dt.id} to={`/sections/${dt.section_slug}/teams/${dt.slug}`} style={{ textDecoration: 'none' }}>
+              <Tag variant="moderate" size="small" data-color="neutral">
+                {dt.name}
+              </Tag>
+            </Link>
+          ))}
+        </HStack>
       )}
 
       {/* Statistics Section */}
