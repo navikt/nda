@@ -121,6 +121,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData()
   const intent = formData.get('intent') as string
 
+  // App management requires admin or team membership
+  const appIntents = ['update_apps', 'add_app']
+  if (appIntents.includes(intent) && user.role !== 'admin') {
+    const teamMembers = await getDevTeamMembers(devTeam.id)
+    const isMember = teamMembers.some((m) => m.nav_ident.toUpperCase() === user.navIdent.toUpperCase())
+    if (!isMember) {
+      return { error: 'Du må være medlem av teamet for å endre applikasjoner.' }
+    }
+  }
+
   if (intent === 'update_apps') {
     const appIds = formData
       .getAll('app_ids')
@@ -193,6 +203,8 @@ export default function DevTeamPage() {
   const navigation = useNavigation()
   const layoutData = useRouteLoaderData<typeof layoutLoader>('routes/layout')
   const isAdmin = layoutData?.user?.role === 'admin'
+  const isMember = members.some((m) => m.nav_ident.toUpperCase() === layoutData?.user?.navIdent?.toUpperCase())
+  const canEditApps = isAdmin || isMember
   const [showCreate, setShowCreate] = useState(false)
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
   const inactiveBoards = boards.filter((b) => !b.is_active)
@@ -273,7 +285,7 @@ export default function DevTeamPage() {
           <Heading level="2" size="small">
             Applikasjoner ({appCards.length})
           </Heading>
-          {isAdmin && (
+          {canEditApps && (
             <Button
               size="small"
               variant="tertiary"
