@@ -66,10 +66,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const scope = await resolveDevTeamScope(selectedDevTeams)
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
 
+  // Use board-based team stats with deduplication across all selected teams
+  const devTeamIds = selectedDevTeams.map((t) => t.id)
+
   // Fetch stats, issue apps, unmapped deployers, and boards in parallel
   const [teamStats, issueApps, unmappedContributors, alertCounts, activeReposByApp, ...boardsByTeam] =
     await Promise.all([
-      getDevTeamSummaryStats(scope.naisTeamSlugs, scope.directAppIds, ytdStart, scope.deployerUsernames),
+      getDevTeamSummaryStats(scope.naisTeamSlugs, scope.directAppIds, ytdStart, scope.deployerUsernames, devTeamIds),
       getDevTeamAppsWithIssues(scope.naisTeamSlugs, scope.directAppIds, scope.deployerUsernames),
       scope.deployerUsernames !== undefined
         ? getUnmappedContributors(scope.naisTeamSlugs, scope.directAppIds, ytdStart)
@@ -164,7 +167,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       teamName: team.name,
       teamSlug: team.slug,
       sectionSlug: team.section_slug ?? '',
-      objectives: (await getBoardObjectiveProgress(board.id, scope.deployerUsernames)).objectives,
+      objectives: (await getBoardObjectiveProgress(board.id, undefined)).objectives,
     })),
   )
 

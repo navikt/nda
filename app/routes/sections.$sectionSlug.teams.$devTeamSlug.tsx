@@ -19,7 +19,12 @@ import { BoardSummaryCard } from '~/components/BoardSummaryCard'
 import { getGroupNamesByIds } from '~/db/application-groups.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { type Board, getBoardsByDevTeam } from '~/db/boards.server'
-import { type BoardProgressResult, getBoardObjectiveProgress, getContributedBoards } from '~/db/dashboard-stats.server'
+import {
+  type BoardProgressResult,
+  getBoardObjectiveProgress,
+  getContributedBoards,
+  getDevTeamStats,
+} from '~/db/dashboard-stats.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
 import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
@@ -63,11 +68,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const showAllBoards = url.searchParams.get('allBoards') === 'true'
 
   const activeBoard = boards.find((b) => b.is_active) ?? null
-  const [activeBoardProgress, contributedBoards] = await Promise.all([
-    activeBoard
-      ? getBoardObjectiveProgress(activeBoard.id, deployerUsernames, { startDate: ytdStart })
-      : Promise.resolve(null),
+  const [activeBoardProgress, contributedBoards, teamStats] = await Promise.all([
+    activeBoard ? getBoardObjectiveProgress(activeBoard.id, undefined, { startDate: ytdStart }) : Promise.resolve(null),
     showAllBoards ? getContributedBoards(devTeam.id, deployerUsernames) : Promise.resolve([]),
+    getDevTeamStats(devTeam.id, ytdStart),
   ])
 
   // Build app cards: direct links + group-owned apps + nais team matches
@@ -95,26 +99,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         )
       : new Map()
 
-  // Derive top-card stats by summing per-app stats. This guarantees the top cards
-  // are always consistent with the app cards (same query, same data source).
-  let totalDeployments = 0
-  let totalWithFourEyes = 0
-  let totalMissingGoalLinks = 0
-  for (const stats of statsByApp.values()) {
-    totalDeployments += stats.total
-    totalWithFourEyes += stats.with_four_eyes
-    totalMissingGoalLinks += stats.missing_goal_links
-  }
-  const linkedToGoal = totalDeployments - totalMissingGoalLinks
-
-  // Use linkedToGoal which counts deployments linked to ANY board (own + contributed)
-  const withOrigin = linkedToGoal
+  // Derive top-card stats from the board-based team stats function.
+  // This guarantees consistency with the section page (same counting logic).
+  // Note: total = member deployments (shown per-app below) + non-member board-linked ("Fra andre" card).
   const teamCoverage = {
-    total: totalDeployments,
-    with_four_eyes: totalWithFourEyes,
-    four_eyes_percentage: totalDeployments > 0 ? floorUnlessPerfect((totalWithFourEyes / totalDeployments) * 100) : 0,
-    with_origin: withOrigin,
-    origin_percentage: totalDeployments > 0 ? floorUnlessPerfect((withOrigin / totalDeployments) * 100) : 0,
+    total: teamStats.total_deployments,
+    with_four_eyes: teamStats.with_four_eyes,
+    four_eyes_percentage:
+      teamStats.total_deployments > 0
+        ? floorUnlessPerfect((teamStats.with_four_eyes / teamStats.total_deployments) * 100)
+        : 0,
+    with_origin: teamStats.linked_to_goal,
+    origin_percentage:
+      teamStats.total_deployments > 0
+        ? floorUnlessPerfect((teamStats.linked_to_goal / teamStats.total_deployments) * 100)
+        : 0,
+    non_member_deployments: teamStats.non_member_deployments,
   }
 
   // Resolve group names for grouped app cards
@@ -346,13 +346,14 @@ function TeamCoverageCards({
     four_eyes_percentage: number
     with_origin: number
     origin_percentage: number
+    non_member_deployments: number
   }
   hasMappedMembers: boolean
   unmappedMemberCount: number
   totalMembers: number
   deploymentsPath: string
 }) {
-  if (totalMembers === 0) {
+  if (totalMembers === 0 && coverage.total === 0) {
     return (
       <Alert variant="info">
         Ingen medlemmer er registrert for dette teamet enda. Statistikk på team-medlemmenes deploys vises når medlemmer
@@ -361,26 +362,34 @@ function TeamCoverageCards({
     )
   }
 
-  if (!hasMappedMembers) {
-    return (
-      <Alert variant="warning">
-        Ingen av de {totalMembers} medlemmene har et GitHub-brukernavn registrert. Statistikk vises når brukerkoblinger
-        er på plass.
-      </Alert>
-    )
-  }
-
   return (
     <VStack gap="space-8">
-      {unmappedMemberCount > 0 && (
+      {totalMembers === 0 && coverage.total > 0 && (
+        <Alert variant="info" size="small">
+          Ingen medlemmer er registrert — kun leveranser koblet til måltavlen vises.
+        </Alert>
+      )}
+      {!hasMappedMembers && totalMembers > 0 && coverage.total > 0 && (
+        <Alert variant="warning" size="small">
+          Ingen av de {totalMembers} medlemmene har et GitHub-brukernavn registrert — kun leveranser koblet til
+          måltavlen vises.
+        </Alert>
+      )}
+      {!hasMappedMembers && totalMembers > 0 && coverage.total === 0 && (
+        <Alert variant="warning">
+          Ingen av de {totalMembers} medlemmene har et GitHub-brukernavn registrert. Statistikk vises når
+          brukerkoblinger er på plass.
+        </Alert>
+      )}
+      {hasMappedMembers && unmappedMemberCount > 0 && (
         <Alert variant="warning" size="small">
           {unmappedMemberCount} av {totalMembers} medlemmer mangler GitHub-brukernavn — statistikken kan være
           ufullstendig.
         </Alert>
       )}
-      <HGrid gap="space-12" columns={{ xs: 1, sm: 3 }}>
+      <HGrid gap="space-12" columns={{ xs: 1, sm: 2, md: 4 }}>
         <CoverageCard
-          label="Deployments i år"
+          label="Leveranser i år"
           value={coverage.total.toString()}
           href={`${deploymentsPath}?period=ytd`}
         />
@@ -396,8 +405,13 @@ function TeamCoverageCards({
           sub={`${coverage.with_origin} av ${coverage.total}`}
           href={`${deploymentsPath}?period=ytd&goal=missing`}
         />
+        <CoverageCard label="Fra andre" value={coverage.non_member_deployments.toString()} sub="Koblet via måltavle" />
       </HGrid>
-      <Detail textColor="subtle">Basert på deploys utført av team-medlemmer (år til dato).</Detail>
+      <Detail textColor="subtle">
+        {hasMappedMembers
+          ? 'Inkluderer leveranser koblet til teamets måltavle og ukoblede leveranser fra teammedlemmer (år til dato).'
+          : 'Viser leveranser koblet til teamets måltavle (år til dato).'}
+      </Detail>
     </VStack>
   )
 }

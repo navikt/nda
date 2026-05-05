@@ -169,35 +169,154 @@ export async function getSectionDashboardStats(
 }
 
 /**
- * Get summary stats for a single dev team.
+ * Get summary stats for dev team(s).
  *
- * The scope is the **union** of `naisTeamSlugs` (apps owned via the team's
- * nais team slugs) and `directAppIds` (apps explicitly attached to the dev
- * team in NDA). An app is included if it matches either side — matches
- * `getDevTeamAppsWithIssues` so that summary stats and issue lists agree.
+ * Operates in two modes depending on whether `devTeamId` is provided:
  *
- * Optional `startDate` filters deployments to a date range (e.g. YTD).
+ * ## Board-based mode (when `devTeamId` is set)
+ * A deployment belongs to the team if:
+ * 1. It is linked (via deployment_goal_links) to an active objective/KR on one
+ *    of the team's active boards, OR
+ * 2. It is NOT linked to any active board and the deployer/PR-creator is a team
+ *    member (identified via `deployerUsernames`)
  *
- * Optional `deployerUsernames` switches deployment-derived counts
- * (`total_deployments`, `with_four_eyes`, `without_four_eyes`,
- * `pending_verification`, `linked_to_goal`, and the `apps_with_issues`
- * derived from these) to person-scope: only deployments whose deployer or
- * PR creator matches one of the given GitHub usernames are counted.
- * `total_apps` and the alert-driven part of `apps_with_issues` remain
- * app-scope (apps and repository alerts aren't tied to a deployer).
- * Empty array ⇒ deployment counts are 0; `undefined` ⇒ no filter.
+ * When `devTeamId` is an array, boards from ALL provided teams are considered
+ * and deployments are deduplicated (counted once even if linked to multiple
+ * teams' boards). This is used by `/my-teams`.
+ *
+ * `deployerUsernames` is optional in this mode — if undefined/empty, only
+ * board-linked deployments are counted (the unlinked-member path is skipped).
+ *
+ * ## Legacy deployer-based mode (when `devTeamId` is omitted)
+ * Falls back to counting all deployments on team apps filtered by deployer
+ * usernames. Used by the Slack home tab where board context is unavailable.
+ *
+ * @param naisTeamSlugs - NAIS team slugs that define app ownership
+ * @param directAppIds - Additional directly-linked app IDs
+ * @param startDate - Optional start date filter (e.g. YTD)
+ * @param deployerUsernames - Team member GitHub usernames (for unlinked-member path)
+ * @param devTeamId - Single or multiple dev team IDs to enable board-based counting
  */
 export async function getDevTeamSummaryStats(
   naisTeamSlugs: string[],
   directAppIds?: number[],
   startDate?: Date,
   deployerUsernames?: string[],
+  devTeamId?: number | number[],
 ): Promise<DevTeamSummaryStats> {
   const ids = directAppIds ?? []
 
   const hasDeployerFilter = deployerUsernames !== undefined
-  const deployerFilterClause = hasDeployerFilter ? ` AND ${userDeploymentMatchAnySql(4, 'd')}` : ''
   const params: unknown[] = [naisTeamSlugs, ids, startDate ?? null]
+
+  // If we have devTeamId(s), use board-based counting
+  const devTeamIds = devTeamId !== undefined ? (Array.isArray(devTeamId) ? devTeamId : [devTeamId]) : undefined
+  if (devTeamIds !== undefined) {
+    params.push(devTeamIds)
+    const devTeamIdParam = params.length
+    const effectiveDeployers = deployerUsernames ?? []
+    params.push(lowerUsernames(effectiveDeployers))
+    const deployerParam = params.length
+
+    const result = await pool.query(
+      `WITH team_apps AS (
+         SELECT ma.id, ma.audit_start_year
+         FROM monitored_applications ma
+         WHERE ma.is_active = true
+           AND (ma.team_slug = ANY($1::text[]) OR ma.id = ANY($2::int[]))
+       ),
+       -- Deployments linked to this team's board
+       board_linked AS (
+         SELECT DISTINCT d.id AS deployment_id
+         FROM boards b
+         JOIN board_objectives bo ON bo.board_id = b.id AND bo.is_active = true
+         JOIN deployment_goal_links dgl ON dgl.is_active = true
+           AND (dgl.objective_id = bo.id
+                OR dgl.key_result_id IN (SELECT bkr.id FROM board_key_results bkr WHERE bkr.objective_id = bo.id AND bkr.is_active = true))
+         JOIN deployments d ON d.id = dgl.deployment_id
+           AND ($3::timestamptz IS NULL OR d.created_at >= $3)
+         JOIN team_apps ta ON ta.id = d.monitored_app_id
+         WHERE b.dev_team_id = ANY($${devTeamIdParam}::int[]) AND b.is_active = true
+           AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
+       ),
+       -- Unlinked deployments by team members
+       unlinked_member AS (
+         SELECT DISTINCT d.id AS deployment_id
+         FROM team_apps ta
+         JOIN deployments d ON d.monitored_app_id = ta.id
+           AND ($3::timestamptz IS NULL OR d.created_at >= $3)
+           AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
+           AND (LOWER(d.deployer_username) = ANY($${deployerParam}::text[])
+                OR LOWER(d.github_pr_data->'creator'->>'username') = ANY($${deployerParam}::text[]))
+         WHERE NOT EXISTS (
+           SELECT 1 FROM deployment_goal_links dgl
+           JOIN board_objectives bo ON (dgl.objective_id = bo.id
+             OR dgl.key_result_id IN (SELECT bkr.id FROM board_key_results bkr WHERE bkr.objective_id = bo.id AND bkr.is_active = true))
+           JOIN boards b ON b.id = bo.board_id AND b.is_active = true
+           WHERE dgl.deployment_id = d.id AND dgl.is_active = true AND bo.is_active = true
+         )
+       ),
+       team_deployments AS (
+         SELECT deployment_id FROM board_linked
+         UNION
+         SELECT deployment_id FROM unlinked_member
+       ),
+       app_stats AS (
+         SELECT d.monitored_app_id,
+                COUNT(DISTINCT d.id) AS total_deployments,
+                COUNT(DISTINCT d.id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})) AS with_four_eyes,
+                COUNT(DISTINCT d.id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL})) AS pending_verification,
+                COUNT(DISTINCT d.id) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM deployment_goal_links dgl
+                  WHERE dgl.deployment_id = d.id AND dgl.is_active = true
+                    AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
+                )) AS linked_to_goal
+         FROM team_deployments td
+         JOIN deployments d ON d.id = td.deployment_id
+         GROUP BY d.monitored_app_id
+       ),
+       app_alerts AS (
+         SELECT ra.monitored_app_id, COUNT(*) AS alert_count
+         FROM team_apps ta
+         JOIN repository_alerts ra ON ra.monitored_app_id = ta.id AND ra.resolved_at IS NULL
+         GROUP BY ra.monitored_app_id
+       )
+       SELECT
+         (SELECT COUNT(*) FROM team_apps)::int AS total_apps,
+         COALESCE(SUM(s.total_deployments), 0)::int AS total_deployments,
+         COALESCE(SUM(s.with_four_eyes), 0)::int AS with_four_eyes,
+         (COALESCE(SUM(s.total_deployments), 0) - COALESCE(SUM(s.with_four_eyes), 0) - COALESCE(SUM(s.pending_verification), 0))::int AS without_four_eyes,
+         COALESCE(SUM(s.pending_verification), 0)::int AS pending_verification,
+         COALESCE(SUM(s.linked_to_goal), 0)::int AS linked_to_goal,
+         COUNT(*) FILTER (WHERE COALESCE(s.total_deployments, 0) - COALESCE(s.with_four_eyes, 0) - COALESCE(s.pending_verification, 0) > 0 OR COALESCE(s.pending_verification, 0) > 0 OR COALESCE(a.alert_count, 0) > 0 OR (COALESCE(s.total_deployments, 0) > 0 AND COALESCE(s.linked_to_goal, 0) < COALESCE(s.total_deployments, 0)))::int AS apps_with_issues
+       FROM team_apps ta
+       LEFT JOIN app_stats s ON s.monitored_app_id = ta.id
+       LEFT JOIN app_alerts a ON a.monitored_app_id = ta.id`,
+      params,
+    )
+
+    const row = result.rows[0]
+    const total = row?.total_deployments ?? 0
+    const withFourEyes = row?.with_four_eyes ?? 0
+    const linkedToGoal = row?.linked_to_goal ?? 0
+
+    return {
+      total_apps: row?.total_apps ?? 0,
+      total_deployments: total,
+      with_four_eyes: withFourEyes,
+      without_four_eyes: row?.without_four_eyes ?? 0,
+      pending_verification: row?.pending_verification ?? 0,
+      linked_to_goal: linkedToGoal,
+      four_eyes_coverage: total > 0 ? withFourEyes / total : 0,
+      goal_coverage: total > 0 ? linkedToGoal / total : 0,
+      four_eyes_percentage: total > 0 ? Math.round((withFourEyes / total) * 100) : 0,
+      goal_percentage: total > 0 ? Math.round((linkedToGoal / total) * 100) : 0,
+      apps_with_issues: row?.apps_with_issues ?? 0,
+    }
+  }
+
+  // Fallback: original deployer-based logic when no devTeamId provided
+  const deployerFilterClause = hasDeployerFilter ? ` AND ${userDeploymentMatchAnySql(4, 'd')}` : ''
   if (hasDeployerFilter) params.push(lowerUsernames(deployerUsernames))
 
   const result = await pool.query(
@@ -387,20 +506,24 @@ export interface DevTeamBatchStats {
   without_four_eyes: number
   pending_verification: number
   linked_to_goal: number
+  non_member_deployments: number
   four_eyes_coverage: number
   goal_coverage: number
 }
 
 /**
- * Batch-compute per-team deployment stats with team-member deployer filtering.
+ * Batch-compute per-team deployment stats using board-based ownership.
  *
- * This is the single source of truth for team-level stats across all pages
- * (sections list, section detail, and team page). Stats are scoped to:
- * - Apps owned by the team (via nais team slugs OR direct app links)
- * - Deployments made by team members (deployer_username or PR creator)
- * - Date range (typically YTD)
+ * A deployment belongs to a team if:
+ * 1. It is linked (via deployment_goal_links) to one of the team's boards, OR
+ * 2. It is NOT linked to ANY board and the deployer/PR-creator is a team member
  *
- * Returns a Map keyed by dev_team_id. Teams with no mapped members show 0 deployments.
+ * Deduplication: a deployment linked to multiple boards of the same team
+ * is counted only once. Cross-team: a deployment linked to boards of multiple
+ * teams counts for each team.
+ *
+ * Returns a Map keyed by dev_team_id. Also includes `non_member_deployments`
+ * (deployments counted because of board-linking but deployer is NOT a team member).
  */
 export async function getDevTeamStatsBatch(
   devTeamIds: number[],
@@ -418,6 +541,7 @@ export async function getDevTeamStatsBatch(
     without_four_eyes: number
     pending_verification: number
     linked_to_goal: number
+    non_member_deployments: number
   }>(
     `WITH team_members AS (
        SELECT p.dev_team_id, LOWER(um.github_username) AS github_username
@@ -438,12 +562,24 @@ export async function getDevTeamStatsBatch(
        WHERE dt.id = ANY($1::int[]) AND dt.is_active = true
        GROUP BY dt.id, dt.name, dt.slug, ma.id, ma.audit_start_year
      ),
-     deployment_stats AS (
-       SELECT ta.dev_team_id,
-              COUNT(DISTINCT d.id)::int AS total_deployments,
-              COUNT(DISTINCT d.id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL}))::int AS with_four_eyes,
-              COUNT(DISTINCT d.id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL}))::int AS pending_verification,
-              COUNT(DISTINCT dgl.deployment_id)::int AS linked_to_goal
+     -- Deployments linked to a team's board (via objectives or key results)
+     board_linked AS (
+       SELECT DISTINCT b.dev_team_id, d.id AS deployment_id
+       FROM boards b
+       JOIN board_objectives bo ON bo.board_id = b.id AND bo.is_active = true
+       JOIN deployment_goal_links dgl ON dgl.is_active = true
+         AND (dgl.objective_id = bo.id
+              OR dgl.key_result_id IN (SELECT bkr.id FROM board_key_results bkr WHERE bkr.objective_id = bo.id AND bkr.is_active = true))
+       JOIN deployments d ON d.id = dgl.deployment_id
+         AND d.created_at >= $2
+         AND ($3::timestamptz IS NULL OR d.created_at < $3)
+       JOIN team_apps ta ON ta.dev_team_id = b.dev_team_id AND ta.app_id = d.monitored_app_id
+       WHERE b.dev_team_id = ANY($1::int[]) AND b.is_active = true
+         AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
+     ),
+     -- Unlinked deployments by team members (not linked to ANY board)
+     unlinked_member AS (
+       SELECT ta.dev_team_id, d.id AS deployment_id
        FROM team_apps ta
        JOIN team_members tm ON tm.dev_team_id = ta.dev_team_id
        JOIN deployments d ON d.monitored_app_id = ta.app_id
@@ -452,16 +588,47 @@ export async function getDevTeamStatsBatch(
          AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
          AND (LOWER(d.deployer_username) = tm.github_username
               OR LOWER(d.github_pr_data->'creator'->>'username') = tm.github_username)
-       LEFT JOIN deployment_goal_links dgl ON dgl.deployment_id = d.id AND dgl.is_active = true
-         AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
-       GROUP BY ta.dev_team_id
+       WHERE NOT EXISTS (
+         SELECT 1 FROM deployment_goal_links dgl
+         JOIN board_objectives bo ON (dgl.objective_id = bo.id
+           OR dgl.key_result_id IN (SELECT bkr.id FROM board_key_results bkr WHERE bkr.objective_id = bo.id AND bkr.is_active = true))
+         JOIN boards b ON b.id = bo.board_id AND b.is_active = true
+         WHERE dgl.deployment_id = d.id AND dgl.is_active = true AND bo.is_active = true
+       )
+     ),
+     -- Union of both sets (deduplicated per team)
+     team_deployments AS (
+       SELECT dev_team_id, deployment_id FROM board_linked
+       UNION
+       SELECT dev_team_id, deployment_id FROM unlinked_member
+     ),
+     deployment_stats AS (
+       SELECT td.dev_team_id,
+              COUNT(DISTINCT td.deployment_id)::int AS total_deployments,
+              COUNT(DISTINCT td.deployment_id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL}))::int AS with_four_eyes,
+              COUNT(DISTINCT td.deployment_id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL}))::int AS pending_verification,
+              COUNT(DISTINCT td.deployment_id) FILTER (WHERE EXISTS (
+                SELECT 1 FROM deployment_goal_links dgl
+                WHERE dgl.deployment_id = td.deployment_id AND dgl.is_active = true
+                  AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
+              ))::int AS linked_to_goal,
+              COUNT(DISTINCT td.deployment_id) FILTER (WHERE NOT EXISTS (
+                SELECT 1 FROM team_members tm
+                WHERE tm.dev_team_id = td.dev_team_id
+                  AND (LOWER(d.deployer_username) = tm.github_username
+                       OR LOWER(d.github_pr_data->'creator'->>'username') = tm.github_username)
+              ))::int AS non_member_deployments
+       FROM team_deployments td
+       JOIN deployments d ON d.id = td.deployment_id
+       GROUP BY td.dev_team_id
      )
      SELECT ta_distinct.dev_team_id, ta_distinct.dev_team_name, ta_distinct.dev_team_slug,
             COALESCE(ds.total_deployments, 0)::int AS total_deployments,
             COALESCE(ds.with_four_eyes, 0)::int AS with_four_eyes,
             COALESCE(ds.total_deployments, 0)::int - COALESCE(ds.with_four_eyes, 0)::int - COALESCE(ds.pending_verification, 0)::int AS without_four_eyes,
             COALESCE(ds.pending_verification, 0)::int AS pending_verification,
-            COALESCE(ds.linked_to_goal, 0)::int AS linked_to_goal
+            COALESCE(ds.linked_to_goal, 0)::int AS linked_to_goal,
+            COALESCE(ds.non_member_deployments, 0)::int AS non_member_deployments
      FROM (SELECT DISTINCT dev_team_id, dev_team_name, dev_team_slug FROM team_apps
            UNION
            SELECT dt.id, dt.name, dt.slug FROM dev_teams dt WHERE dt.id = ANY($1::int[]) AND dt.is_active = true
@@ -483,6 +650,29 @@ export async function getDevTeamStatsBatch(
     })
   }
   return map
+}
+
+/**
+ * Get deployment stats for a single team using board-based ownership.
+ * Convenience wrapper around `getDevTeamStatsBatch` for use on team pages.
+ */
+export async function getDevTeamStats(devTeamId: number, startDate: Date, endDate?: Date): Promise<DevTeamBatchStats> {
+  const map = await getDevTeamStatsBatch([devTeamId], startDate, endDate)
+  return (
+    map.get(devTeamId) ?? {
+      dev_team_id: devTeamId,
+      dev_team_name: '',
+      dev_team_slug: '',
+      total_deployments: 0,
+      with_four_eyes: 0,
+      without_four_eyes: 0,
+      pending_verification: 0,
+      linked_to_goal: 0,
+      non_member_deployments: 0,
+      four_eyes_coverage: 0,
+      goal_coverage: 0,
+    }
+  )
 }
 
 interface ContributedBoard {
