@@ -231,6 +231,11 @@ export interface DeploymentFilters {
   goal_filter?: 'missing' | 'linked'
   /** Filter to deployments linked to a specific objective (directly or via key result). */
   goal_objective_id?: number
+  /**
+   * Scope goal_filter to only consider links to boards owned by this dev team.
+   * Without this, goal_filter='linked' matches links to ANY team's board.
+   */
+  goal_dev_team_id?: number
   page?: number
   per_page?: number
   audit_start_year?: number | null
@@ -382,6 +387,25 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
         AND (dgl.objective_id = $${paramIndex} OR bkr_f.objective_id = $${paramIndex})
     )`
     params.push(filters.goal_objective_id)
+    paramIndex++
+  } else if (needsGoalJoin && filters?.goal_dev_team_id) {
+    // Scope goal links to only those pointing to objectives/key-results on
+    // boards owned by the specified team. This ensures "Fra andre" (non-member
+    // linked) counts match between the team page and the deployments list.
+    goalJoinSql = `LEFT JOIN (
+      SELECT DISTINCT dgl.deployment_id
+      FROM deployment_goal_links dgl
+      LEFT JOIN board_objectives bo ON bo.id = dgl.objective_id
+      LEFT JOIN board_key_results bkr ON bkr.id = dgl.key_result_id
+      LEFT JOIN board_objectives bo_via_kr ON bo_via_kr.id = bkr.objective_id
+      LEFT JOIN boards b ON b.id = COALESCE(bo.board_id, bo_via_kr.board_id)
+      WHERE dgl.is_active = true
+        AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
+        AND b.dev_team_id = $${paramIndex}
+        AND b.is_active = true
+        AND COALESCE(bo.is_active, bo_via_kr.is_active, true) = true
+    ) dgl ON dgl.deployment_id = d.id`
+    params.push(filters.goal_dev_team_id)
     paramIndex++
   } else if (needsGoalJoin) {
     goalJoinSql =
