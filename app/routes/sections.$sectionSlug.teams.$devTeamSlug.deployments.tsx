@@ -102,6 +102,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
     goal_filter: goal && ['missing', 'linked'].includes(goal) ? goal : undefined,
     goal_objective_id: goalObjectiveId && !Number.isNaN(goalObjectiveId) ? goalObjectiveId : undefined,
+    goal_dev_team_id: devTeam.id,
     deployer_username: isUnmappedFilter || isNonMemberFilter ? undefined : deployer,
     unmapped_deployers: isUnmappedFilter || undefined,
     exclude_deployer_usernames: isNonMemberFilter ? deployerUsernames : undefined,
