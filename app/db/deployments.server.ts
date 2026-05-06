@@ -219,6 +219,11 @@ export interface DeploymentFilters {
    * (selected team has no GitHub-mapped members).
    */
   deployer_usernames?: string[]
+  /**
+   * Exclude deployments where the deployer/PR-creator is one of these usernames.
+   * Used for "Fra andre" filter — shows non-member board-linked deployments.
+   */
+  exclude_deployer_usernames?: string[]
   /** Show only deployments where the deployer has no active user_mapping. */
   unmapped_deployers?: boolean
   commit_sha?: string
@@ -342,6 +347,14 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
         SELECT 1 FROM user_mappings um
         WHERE LOWER(um.github_username) = LOWER(d.deployer_username) AND um.deleted_at IS NULL
       )`
+  }
+
+  if (filters?.exclude_deployer_usernames !== undefined && filters.exclude_deployer_usernames.length > 0) {
+    // Exclude deployments where deployer/PR-creator matches any of these usernames.
+    // COALESCE handles NULL deployer/PR-creator: treats them as non-matching (included).
+    whereSql += ` AND NOT COALESCE(${userDeploymentMatchAnySql(paramIndex)}, FALSE)`
+    params.push(lowerUsernames(filters.exclude_deployer_usernames))
+    paramIndex++
   }
 
   if (filters?.commit_sha) {

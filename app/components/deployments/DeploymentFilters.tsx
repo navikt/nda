@@ -28,6 +28,7 @@ interface DeploymentFiltersProps {
   goalOptions: GoalOption[]
   appOptions?: FilterOption[]
   hasUnmappedDeployers: boolean
+  hasNonMemberDeployers?: boolean
   currentUserGithub: string | null
   onFilterChange: (key: string, value: string) => void
 }
@@ -46,6 +47,7 @@ export function DeploymentFilters({
   goalOptions,
   appOptions,
   hasUnmappedDeployers,
+  hasNonMemberDeployers,
   currentUserGithub,
   onFilterChange,
 }: DeploymentFiltersProps) {
@@ -138,6 +140,9 @@ export function DeploymentFilters({
               {currentUserGithub && <option value={currentUserGithub}>Meg</option>}
               {(hasUnmappedDeployers || currentDeployer === '__unmapped__') && (
                 <option value="__unmapped__">Manglende mapping</option>
+              )}
+              {(hasNonMemberDeployers || currentDeployer === '__non_member__') && (
+                <option value="__non_member__">Fra andre (ikke-medlemmer)</option>
               )}
               {deployerOptions
                 .filter((opt) => opt.value !== currentUserGithub)
