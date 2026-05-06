@@ -180,6 +180,10 @@ const styles = StyleSheet.create({
   deploymentRow2: {
     flexDirection: 'row',
   },
+  deploymentRow3: {
+    flexDirection: 'row',
+    marginTop: 2,
+  },
   tableCell: {
     fontSize: 8,
   },
@@ -677,6 +681,21 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
                         {d.nais_deployment_id || ''}
                       </Text>
                     </View>
+                    {/* Row 3: Endringsopphav (conditional) */}
+                    {d.goal_links && d.goal_links.length > 0 && (
+                      <View style={styles.deploymentRow3}>
+                        <Text style={[styles.r2col1]} />
+                        <Text style={[styles.tableCell, { width: '95%', fontStyle: 'italic', color: '#595959' }]}>
+                          Endringsopphav:{' '}
+                          {d.goal_links
+                            .map(
+                              (link) =>
+                                `${link.team_name} ${link.period_label} — ${link.objective_title}${link.key_result_title ? ` → ${link.key_result_title}` : ''}`,
+                            )
+                            .join('; ')}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 ))}
               </View>

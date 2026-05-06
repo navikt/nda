@@ -85,6 +85,13 @@ export interface DeviationEntry {
   resolution_note: string | null
 }
 
+export interface AuditGoalLinkEntry {
+  objective_title: string
+  key_result_title: string | null
+  team_name: string
+  period_label: string
+}
+
 export interface AuditDeploymentEntry {
   id: number
   nais_deployment_id: string
@@ -101,6 +108,7 @@ export interface AuditDeploymentEntry {
   pr_number?: number
   pr_url?: string
   slack_link?: string
+  goal_links?: AuditGoalLinkEntry[]
 }
 
 export interface ManualApprovalEntry {
@@ -282,6 +290,7 @@ export async function getAuditReportData(
   reviewer_counts: Map<string, number>
   user_mappings: Map<string, { display_name: string | null; nav_ident: string | null; github_username: string }>
   canonical_map: Map<string, string>
+  goal_links_by_deployment: Map<number, AuditGoalLinkEntry[]>
 }> {
   const startDate = periodStart
   const endDate = periodEnd
@@ -451,6 +460,53 @@ export async function getAuditReportData(
 
   const deviations = await getDeviationsForPeriod(monitoredAppId, startDate, endDate)
 
+  // Get goal links for all deployments in the period
+  const goal_links_by_deployment = new Map<
+    number,
+    Array<{ objective_title: string; key_result_title: string | null; team_name: string; period_label: string }>
+  >()
+  if (deploymentIds.length > 0) {
+    const goalLinksResult = await pool.query<{
+      deployment_id: number
+      objective_title: string | null
+      key_result_title: string | null
+      team_name: string | null
+      period_label: string | null
+    }>(
+      `SELECT dgl.deployment_id,
+              COALESCE(bo.title, bo_via_kr.title) AS objective_title,
+              bkr.title AS key_result_title,
+              dt.name AS team_name,
+              COALESCE(b.period_label, b_via_kr.period_label) AS period_label
+       FROM deployment_goal_links dgl
+       LEFT JOIN board_objectives bo ON bo.id = dgl.objective_id
+       LEFT JOIN board_key_results bkr ON bkr.id = dgl.key_result_id
+       LEFT JOIN board_objectives bo_via_kr ON bo_via_kr.id = bkr.objective_id
+       LEFT JOIN boards b ON b.id = bo.board_id
+       LEFT JOIN boards b_via_kr ON b_via_kr.id = bo_via_kr.board_id
+       LEFT JOIN dev_teams dt ON dt.id = COALESCE(b.dev_team_id, b_via_kr.dev_team_id)
+       WHERE dgl.deployment_id = ANY($1)
+         AND dgl.is_active = true
+         AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
+       ORDER BY dgl.deployment_id, dgl.created_at ASC`,
+      [deploymentIds],
+    )
+    for (const row of goalLinksResult.rows) {
+      if (!row.objective_title || !row.team_name || !row.period_label) {
+        continue
+      }
+      if (!goal_links_by_deployment.has(row.deployment_id)) {
+        goal_links_by_deployment.set(row.deployment_id, [])
+      }
+      goal_links_by_deployment.get(row.deployment_id)?.push({
+        objective_title: row.objective_title,
+        key_result_title: row.key_result_title,
+        team_name: row.team_name,
+        period_label: row.period_label,
+      })
+    }
+  }
+
   return {
     app,
     repository,
@@ -461,6 +517,7 @@ export async function getAuditReportData(
     user_mappings,
     canonical_map,
     deviations,
+    goal_links_by_deployment,
   }
 }
 
@@ -476,6 +533,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     user_mappings,
     canonical_map,
     deviations: rawDeviations,
+    goal_links_by_deployment,
   } = rawData
   const manualApprovalMap = new Map(manual_approvals.map((a) => [a.deployment_id, a]))
   const legacyInfoMap = new Map(legacy_infos.map((l) => [l.deployment_id, l]))
@@ -542,6 +600,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
       pr_number: d.github_pr_number || undefined,
       pr_url: d.github_pr_url || undefined,
       slack_link: manualApproval?.slack_link || undefined,
+      goal_links: goal_links_by_deployment.get(d.id) || undefined,
     }
   })
 
