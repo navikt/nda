@@ -65,6 +65,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         without_four_eyes: 0,
         pending_verification: 0,
         linked_to_goal: 0,
+        non_member_deployments: 0,
         four_eyes_coverage: 0,
         goal_coverage: 0,
       })

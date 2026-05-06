@@ -2,12 +2,9 @@ import { LinkIcon } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Box, Detail, Heading, HStack, Select, Tag, VStack } from '@navikt/ds-react'
 import { Link, useLoaderData, useSearchParams } from 'react-router'
 import { getBoardsByDevTeam } from '~/db/boards.server'
-import { type BoardObjectiveProgress, getBoardObjectiveProgress } from '~/db/dashboard-stats.server'
-import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
-import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
-import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
+import { type BoardObjectiveProgress, getBoardObjectiveProgress, getDevTeamStats } from '~/db/dashboard-stats.server'
+import { getDevTeamBySlug } from '~/db/dev-teams.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import { getMembersGithubUsernamesForDevTeams } from '~/db/user-dev-team-preference.server'
 import { requireUser } from '~/lib/auth.server'
 import { type BoardPeriodType, formatBoardLabel, getCurrentPeriod, getPeriodsForYear } from '~/lib/board-periods'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.dashboard'
@@ -29,13 +26,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const periods = getPeriodsForYear(periodType, year)
   const selectedPeriod = periods.find((p) => p.label === periodLabel) ?? getCurrentPeriod(periodType)
 
-  const [boards, deployerUsernames, directApps, groupAppIds, allApps] = await Promise.all([
-    getBoardsByDevTeam(devTeam.id),
-    getMembersGithubUsernamesForDevTeams([devTeam.id]).catch(() => [] as string[]),
-    getDevTeamApplications(devTeam.id),
-    getGroupAppIdsForDevTeams([devTeam.id]),
-    getAllMonitoredApplications(),
-  ])
+  const boards = await getBoardsByDevTeam(devTeam.id)
   const currentBoard = boards.find((b) => b.period_label === selectedPeriod.label && b.period_type === periodType)
 
   // Use board's actual dates when available, otherwise fall back to calculated period.
@@ -46,41 +37,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   let objectiveProgress: BoardObjectiveProgress[] = []
   if (currentBoard) {
-    objectiveProgress = (await getBoardObjectiveProgress(currentBoard.id, deployerUsernames, { startDate })).objectives
+    objectiveProgress = (await getBoardObjectiveProgress(currentBoard.id, undefined, { startDate })).objectives
   }
 
-  // Build full set of team apps: direct links + group-owned + nais team matches
-  const directAppIdSet = new Set([...directApps.map((a) => a.monitored_app_id), ...groupAppIds])
-  const naisTeamSlugs = devTeam.nais_team_slugs ?? []
-  const teamApps = allApps.filter(
-    (app) => app.is_active && (directAppIdSet.has(app.id) || naisTeamSlugs.includes(app.team_slug)),
-  )
-
-  // Use the same query as the team page (getAppDeploymentStatsBatch) for consistent counts
-  const statsByApp =
-    teamApps.length > 0
-      ? await getAppDeploymentStatsBatch(
-          teamApps.map((a) => ({ id: a.id, audit_start_year: a.audit_start_year })),
-          deployerUsernames,
-          { startDate, endDate },
-        )
-      : new Map()
-
-  let totalDeployments = 0
-  let totalWithFourEyes = 0
-  let totalMissingGoalLinks = 0
-  for (const stats of statsByApp.values()) {
-    totalDeployments += stats.total
-    totalWithFourEyes += stats.with_four_eyes
-    totalMissingGoalLinks += stats.missing_goal_links
-  }
-  const withOrigin = totalDeployments - totalMissingGoalLinks
+  // Use board-based team stats for consistent counting with the team page and section page
+  const teamStats = await getDevTeamStats(devTeam.id, startDate, endDate)
   const coverage = {
-    total: totalDeployments,
-    with_four_eyes: totalWithFourEyes,
-    four_eyes_percentage: totalDeployments > 0 ? floorUnlessPerfect((totalWithFourEyes / totalDeployments) * 100) : 0,
-    with_origin: withOrigin,
-    origin_percentage: totalDeployments > 0 ? floorUnlessPerfect((withOrigin / totalDeployments) * 100) : 0,
+    total: teamStats.total_deployments,
+    with_four_eyes: teamStats.with_four_eyes,
+    four_eyes_percentage:
+      teamStats.total_deployments > 0
+        ? floorUnlessPerfect((teamStats.with_four_eyes / teamStats.total_deployments) * 100)
+        : 0,
+    with_origin: teamStats.linked_to_goal,
+    origin_percentage:
+      teamStats.total_deployments > 0
+        ? floorUnlessPerfect((teamStats.linked_to_goal / teamStats.total_deployments) * 100)
+        : 0,
   }
 
   const section = await getSectionBySlug(params.sectionSlug)
@@ -171,7 +144,7 @@ export default function DevTeamDashboard() {
           </VStack>
         </HStack>
         <Detail textColor="subtle" spacing>
-          Basert på deploys utført av team-medlemmer.
+          Inkluderer leveranser koblet til teamets måltavle og ukoblede leveranser fra teammedlemmer med GitHub-kobling.
         </Detail>
       </Box>
 
