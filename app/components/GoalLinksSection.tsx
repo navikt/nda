@@ -1,7 +1,7 @@
 import { LinkIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
 import { BodyShort, Box, Button, Heading, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
 import { useState } from 'react'
-import { Form } from 'react-router'
+import { Form, Link } from 'react-router'
 import type { DeploymentGoalLinkWithDetails } from '~/db/deployment-goal-links.server'
 import { ExternalLink } from './ExternalLink'
 import { type GoalSelectionBoard, GoalSelectionFields } from './GoalSelectionFields'
@@ -77,6 +77,11 @@ function GoalLinkItem({ link }: { link: DeploymentGoalLinkWithDetails }) {
   const isInactive = isGoalInactive || isLinkRemoved
   const isExternalOnly = link.objective_id == null && link.key_result_id == null
 
+  const dashboardUrl =
+    link.section_slug && link.dev_team_slug && link.board_period_label && link.board_period_type
+      ? `/sections/${link.section_slug}/teams/${link.dev_team_slug}/dashboard?periodType=${link.board_period_type}&period=${encodeURIComponent(link.board_period_label)}`
+      : null
+
   return (
     <Box padding="space-12" borderRadius="8" background="sunken">
       <HStack justify="space-between" align="center">
@@ -85,6 +90,12 @@ function GoalLinkItem({ link }: { link: DeploymentGoalLinkWithDetails }) {
           <div>
             {link.external_url && !link.objective_title ? (
               <ExternalLink href={link.external_url}>{label}</ExternalLink>
+            ) : dashboardUrl ? (
+              <Link to={dashboardUrl} style={{ textDecoration: 'none' }}>
+                <BodyShort weight="semibold" as="span" style={{ color: 'var(--ax-text-accent)' }}>
+                  {label}
+                </BodyShort>
+              </Link>
             ) : (
               <BodyShort weight="semibold">{label}</BodyShort>
             )}

@@ -21,6 +21,9 @@ export interface DeploymentGoalLinkWithDetails extends DeploymentGoalLink {
   objective_title: string | null
   key_result_title: string | null
   board_period_label: string | null
+  board_period_type: string | null
+  dev_team_slug: string | null
+  section_slug: string | null
   objective_is_active: boolean | null
   key_result_is_active: boolean | null
 }
@@ -31,6 +34,9 @@ export async function getLinksForDeployment(deploymentId: number): Promise<Deplo
        COALESCE(bo.title, bo_via_kr.title) AS objective_title,
        bkr.title AS key_result_title,
        COALESCE(b.period_label, b_via_kr.period_label) AS board_period_label,
+       COALESCE(b.period_type, b_via_kr.period_type) AS board_period_type,
+       dt.slug AS dev_team_slug,
+       s.slug AS section_slug,
        COALESCE(bo.is_active, bo_via_kr.is_active) AS objective_is_active,
        bkr.is_active AS key_result_is_active
      FROM deployment_goal_links dgl
@@ -39,6 +45,8 @@ export async function getLinksForDeployment(deploymentId: number): Promise<Deplo
      LEFT JOIN board_objectives bo_via_kr ON bo_via_kr.id = bkr.objective_id
      LEFT JOIN boards b ON b.id = bo.board_id
      LEFT JOIN boards b_via_kr ON b_via_kr.id = bo_via_kr.board_id
+     LEFT JOIN dev_teams dt ON dt.id = COALESCE(b.dev_team_id, b_via_kr.dev_team_id)
+     LEFT JOIN sections s ON s.id = dt.section_id
      WHERE dgl.deployment_id = $1
      ORDER BY dgl.created_at DESC`,
     [deploymentId],

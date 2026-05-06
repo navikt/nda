@@ -85,6 +85,9 @@ const goalLinkWithObjective: DeploymentGoalLinkWithDetails = {
   objective_title: 'Forbedre brukeropplevelse for selvbetjening',
   key_result_title: null,
   board_period_label: 'T1 2026',
+  board_period_type: 'tertiary',
+  dev_team_slug: 'starte-pensjon',
+  section_slug: 'pensjon',
   objective_is_active: true,
   key_result_is_active: null,
 }
@@ -104,6 +107,9 @@ const goalLinkWithKeyResult: DeploymentGoalLinkWithDetails = {
   objective_title: 'Forbedre brukeropplevelse for selvbetjening',
   key_result_title: 'Øke andel digitale søknader til 80%',
   board_period_label: 'T1 2026',
+  board_period_type: 'tertiary',
+  dev_team_slug: 'starte-pensjon',
+  section_slug: 'pensjon',
   objective_is_active: true,
   key_result_is_active: true,
 }
@@ -123,6 +129,9 @@ const autoLinkedFromCommit: DeploymentGoalLinkWithDetails = {
   objective_title: 'Modernisere teknisk plattform',
   key_result_title: 'Migrere 3 applikasjoner til Nais',
   board_period_label: 'T1 2026',
+  board_period_type: 'tertiary',
+  dev_team_slug: 'starte-pensjon',
+  section_slug: 'pensjon',
   objective_is_active: true,
   key_result_is_active: true,
 }
@@ -142,6 +151,9 @@ const externalOnlyLink: DeploymentGoalLinkWithDetails = {
   objective_title: null,
   key_result_title: null,
   board_period_label: null,
+  board_period_type: null,
+  dev_team_slug: null,
+  section_slug: null,
   objective_is_active: null,
   key_result_is_active: null,
 }
@@ -161,6 +173,9 @@ const deactivatedGoalLink: DeploymentGoalLinkWithDetails = {
   objective_title: 'Forbedre brukeropplevelse for selvbetjening',
   key_result_title: null,
   board_period_label: 'T1 2026',
+  board_period_type: 'tertiary',
+  dev_team_slug: 'starte-pensjon',
+  section_slug: 'pensjon',
   objective_is_active: false,
   key_result_is_active: null,
 }
