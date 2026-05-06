@@ -91,6 +91,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   const isUnmappedFilter = deployer === '__unmapped__'
+  const isNonMemberFilter = deployer === '__non_member__'
 
   const filters: DeploymentFiltersType = {
     monitored_app_ids: filteredAppIds,
@@ -101,8 +102,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
     goal_filter: goal && ['missing', 'linked'].includes(goal) ? goal : undefined,
     goal_objective_id: goalObjectiveId && !Number.isNaN(goalObjectiveId) ? goalObjectiveId : undefined,
-    deployer_username: isUnmappedFilter ? undefined : deployer,
+    deployer_username: isUnmappedFilter || isNonMemberFilter ? undefined : deployer,
     unmapped_deployers: isUnmappedFilter || undefined,
+    exclude_deployer_usernames: isNonMemberFilter ? deployerUsernames : undefined,
     deployer_usernames: deployer ? undefined : deployerUsernamesFilter,
     commit_sha: sha,
     start_date: range?.startDate,
@@ -177,6 +179,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     (u) => !userMappingsMap.has(u) || !userMappingsMap.get(u)?.display_name,
   )
 
+  // Check for non-member deployers (deployers not in the team member list)
+  const lowerMembers = new Set(deployerUsernames.map((u) => u.toLowerCase()))
+  const hasNonMemberDeployers =
+    deployerUsernames.length > 0 && allDeployerUsernames.some((u) => !lowerMembers.has(u.toLowerCase()))
+
   // App filter options
   const appOptions = teamApps
     .map((a) => ({
@@ -198,6 +205,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     errorReasons,
     teamFilterEmptyReason,
     hasUnmappedDeployers,
+    hasNonMemberDeployers,
     goalOptions,
     appOptions,
   }
@@ -217,6 +225,7 @@ export default function TeamDeployments() {
     errorReasons,
     teamFilterEmptyReason,
     hasUnmappedDeployers,
+    hasNonMemberDeployers,
     goalOptions,
     appOptions,
   } = useLoaderData<typeof loader>()
@@ -272,6 +281,7 @@ export default function TeamDeployments() {
         goalOptions={goalOptions}
         appOptions={appOptions}
         hasUnmappedDeployers={hasUnmappedDeployers}
+        hasNonMemberDeployers={hasNonMemberDeployers}
         currentUserGithub={currentUserGithub}
         onFilterChange={updateFilter}
       />

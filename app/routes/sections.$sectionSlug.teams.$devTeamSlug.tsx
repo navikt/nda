@@ -405,7 +405,12 @@ function TeamCoverageCards({
           sub={`${coverage.with_origin} av ${coverage.total}`}
           href={`${deploymentsPath}?period=ytd&goal=missing`}
         />
-        <CoverageCard label="Fra andre" value={coverage.non_member_deployments.toString()} sub="Koblet via måltavle" />
+        <CoverageCard
+          label="Fra andre"
+          value={coverage.non_member_deployments.toString()}
+          sub="Koblet via måltavle"
+          href={`${deploymentsPath}?period=ytd&deployer=__non_member__&goal=linked`}
+        />
       </HGrid>
       <Detail textColor="subtle">
         {hasMappedMembers

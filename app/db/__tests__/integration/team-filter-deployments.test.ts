@@ -245,3 +245,83 @@ describe('unmapped_deployers filter', () => {
     expect(result.deployments[0].deployer_username).toBe('unmapped-deployer')
   })
 })
+
+describe('exclude_deployer_usernames filter', () => {
+  it('excludes deployments by the given usernames', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'app-1', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      deployerUsername: 'alice',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      deployerUsername: 'bob',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      deployerUsername: 'carol',
+    })
+
+    const result = await getDeploymentsPaginated({
+      monitored_app_id: appId,
+      exclude_deployer_usernames: ['alice', 'bob'],
+    })
+    expect(result.total).toBe(1)
+    expect(result.deployments[0].deployer_username).toBe('carol')
+  })
+
+  it('includes deployments with NULL deployer (not excluded)', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'app-1', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      deployerUsername: 'alice',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      deployerUsername: null,
+    })
+
+    const result = await getDeploymentsPaginated({
+      monitored_app_id: appId,
+      exclude_deployer_usernames: ['alice'],
+    })
+    expect(result.total).toBe(1)
+    expect(result.deployments[0].deployer_username).toBeNull()
+  })
+
+  it('excludes PR-creator matches too', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'app-1', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      deployerUsername: 'deploy-bot',
+      githubPrData: { creator: { username: 'alice' } },
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      deployerUsername: 'deploy-bot',
+      githubPrData: { creator: { username: 'external-dev' } },
+    })
+
+    const result = await getDeploymentsPaginated({
+      monitored_app_id: appId,
+      exclude_deployer_usernames: ['alice', 'deploy-bot'],
+    })
+    // First deployment: deploy-bot is excluded (deployer match)
+    // Second deployment: deploy-bot is excluded (deployer match)
+    expect(result.total).toBe(0)
+  })
+})
