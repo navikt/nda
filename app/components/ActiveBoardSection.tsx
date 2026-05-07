@@ -1,5 +1,4 @@
-import { BarChartIcon } from '@navikt/aksel-icons'
-import { BodyShort, Box, Button, Detail, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
+import { BodyShort, Box, Detail, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import type { BoardObjectiveProgress } from '~/db/dashboard-stats.server'
 
@@ -15,41 +14,46 @@ export interface ActiveBoardSectionProps {
   board: ActiveBoardData
   objectives: BoardObjectiveProgress[]
   teamBasePath: string
+  /** Optional team name prepended to the board title (e.g. «Teamnavn — T1 2026») */
+  teamName?: string
+  /** Heading level for the board title. Defaults to "3". */
+  headingLevel?: '2' | '3' | '4'
 }
 
-export function ActiveBoardSection({ board, objectives, teamBasePath }: ActiveBoardSectionProps) {
-  const dashboardUrl = `${teamBasePath}/dashboard?periodType=${board.period_type}&period=${encodeURIComponent(board.period_label)}`
+export function ActiveBoardSection({
+  board,
+  objectives,
+  teamBasePath,
+  teamName,
+  headingLevel = '3',
+}: ActiveBoardSectionProps) {
+  const title = teamName ? `${teamName} — ${board.period_label}` : board.period_label
   return (
     <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
       <VStack gap="space-16">
-        <HStack justify="space-between" align="center" wrap>
-          <VStack gap="space-4">
-            <Heading level="2" size="medium">
-              <Link to={`${teamBasePath}/${board.id}`}>{board.period_label}</Link>
-            </Heading>
-            <HStack gap="space-8" align="center">
-              <Tag variant="success" size="xsmall">
-                Aktiv
-              </Tag>
-              <Detail textColor="subtle">
-                {new Date(board.period_start).toLocaleDateString('nb-NO', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-                {' – '}
-                {new Date(board.period_end).toLocaleDateString('nb-NO', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </Detail>
-            </HStack>
-          </VStack>
-          <Button as={Link} to={dashboardUrl} variant="tertiary" size="small" icon={<BarChartIcon aria-hidden />}>
-            Dashboard
-          </Button>
-        </HStack>
+        <VStack gap="space-4">
+          <Heading level={headingLevel} size="medium">
+            <Link to={`${teamBasePath}/${board.id}`}>{title}</Link>
+          </Heading>
+          <HStack gap="space-8" align="center">
+            <Tag variant="success" size="xsmall">
+              Aktiv
+            </Tag>
+            <Detail textColor="subtle">
+              {new Date(board.period_start).toLocaleDateString('nb-NO', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+              {' – '}
+              {new Date(board.period_end).toLocaleDateString('nb-NO', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </Detail>
+          </HStack>
+        </VStack>
 
         {objectives.length > 0 ? (
           <VStack gap="space-8">

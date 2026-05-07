@@ -241,6 +241,7 @@ export default function DevTeamPage() {
             board={activeBoard}
             objectives={activeBoardProgress?.objectives ?? []}
             teamBasePath={teamBasePath}
+            headingLevel="2"
           />
         ) : (
           <Alert variant="info">Ingen aktiv tavle. Opprett en ny tavle via Administrer-knappen.</Alert>

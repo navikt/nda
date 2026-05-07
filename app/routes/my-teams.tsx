@@ -2,12 +2,16 @@ import { BarChartIcon, CheckmarkCircleIcon, ExclamationmarkTriangleIcon, LinkIco
 import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, VStack } from '@navikt/ds-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
+import { type ActiveBoardData, ActiveBoardSection } from '~/components/ActiveBoardSection'
 import { AppCard, type AppCardData } from '~/components/AppCard'
-import { type BoardSummary, BoardSummaryCard } from '~/components/BoardSummaryCard'
 import { getGroupNamesByIds } from '~/db/application-groups.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getBoardsByDevTeam } from '~/db/boards.server'
-import { getBoardObjectiveProgress, getDevTeamSummaryStats } from '~/db/dashboard-stats.server'
+import {
+  type BoardObjectiveProgress,
+  getBoardObjectiveProgress,
+  getDevTeamSummaryStats,
+} from '~/db/dashboard-stats.server'
 import {
   getDevTeamAppsWithIssues,
   getPersonalDeploymentsMissingGoalLinks,
@@ -18,6 +22,7 @@ import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
 import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
 import { endOfDay } from '~/lib/date-utils'
 import { groupAppCards } from '~/lib/group-app-cards'
+import { logger } from '~/lib/logger.server'
 import { getAppDeploymentStatsBatch } from '../db/deployments.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '../db/monitored-applications.server'
 import { requireUser } from '../lib/auth.server'
@@ -52,7 +57,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       selectedDevTeams: [],
       teamStats: null,
       issueApps: [] as AppCardData[],
-      boardSummaries: [] as BoardSummary[],
+      boardSummaries: [] as {
+        board: ActiveBoardData
+        objectives: BoardObjectiveProgress[]
+        teamBasePath: string
+        teamName: string
+      }[],
       noTeamMembersMapped: false,
       unmappedContributors: [] as string[],
       personalMissingGoalLinks,
@@ -159,16 +169,30 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  const boardSummaries: BoardSummary[] = await Promise.all(
-    activeBoards.map(async ({ board, team }) => ({
-      boardId: board.id,
-      periodLabel: board.period_label,
-      periodType: board.period_type,
-      teamName: team.name,
-      teamSlug: team.slug,
-      sectionSlug: team.section_slug ?? '',
-      objectives: (await getBoardObjectiveProgress(board.id, undefined)).objectives,
-    })),
+  const boardSummaries = await Promise.all(
+    activeBoards
+      .filter(({ team }) => {
+        if (!team.section_slug) {
+          logger.warn('Dev team has no section — skipping board display', { teamId: team.id, teamName: team.name })
+          return false
+        }
+        return true
+      })
+      .map(async ({ board, team }) => {
+        const teamBasePath = `/sections/${team.section_slug}/teams/${team.slug}`
+        return {
+          board: {
+            id: board.id,
+            period_label: board.period_label,
+            period_type: board.period_type,
+            period_start: board.period_start,
+            period_end: board.period_end,
+          } satisfies ActiveBoardData,
+          objectives: (await getBoardObjectiveProgress(board.id, undefined)).objectives,
+          teamBasePath,
+          teamName: team.name,
+        }
+      }),
   )
 
   return {
@@ -415,17 +439,24 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               </Button>
             ))}
           </HStack>
-          {/* Active boards summary */}
+          {/* Active boards */}
           {boardSummaries.length > 0 && (
             <VStack gap="space-16">
               <Heading level="3" size="small">
                 Aktive måltavler
               </Heading>
-              <HGrid gap="space-16" columns={{ xs: 1, md: boardSummaries.length === 1 ? 1 : 2 }}>
-                {boardSummaries.map((board) => (
-                  <BoardSummaryCard key={board.boardId} board={board} />
+              <VStack gap="space-16">
+                {boardSummaries.map((bs) => (
+                  <ActiveBoardSection
+                    key={bs.board.id}
+                    board={bs.board}
+                    objectives={bs.objectives}
+                    teamBasePath={bs.teamBasePath}
+                    teamName={bs.teamName}
+                    headingLevel="4"
+                  />
                 ))}
-              </HGrid>
+              </VStack>
             </VStack>
           )}
           {/* Combined personal goal + issue apps status */}

@@ -3,8 +3,8 @@ import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, VStack }
 import type { Meta, StoryObj } from '@storybook/react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
+import { type ActiveBoardData, ActiveBoardSection, type ActiveBoardSectionProps } from '~/components/ActiveBoardSection'
 import { AppCard, type AppCardData } from '~/components/AppCard'
-import { type BoardSummary, BoardSummaryCard } from '~/components/BoardSummaryCard'
 
 interface DevTeamInfo {
   id: number
@@ -32,7 +32,12 @@ interface MyTeamsPageProps {
   selectedDevTeams: DevTeamInfo[]
   teamStats: DevTeamSummaryStats | null
   issueApps: AppCardData[]
-  boardSummaries: BoardSummary[]
+  boardSummaries: {
+    board: ActiveBoardData
+    objectives: ActiveBoardSectionProps['objectives']
+    teamBasePath: string
+    teamName: string
+  }[]
   profileId?: string
   personalMissingGoalLinks?: number | null
 }
@@ -244,11 +249,18 @@ function MyTeamsPage({
               <Heading level="3" size="small">
                 Aktive måltavler
               </Heading>
-              <HGrid gap="space-16" columns={{ xs: 1, md: boardSummaries.length === 1 ? 1 : 2 }}>
-                {boardSummaries.map((board) => (
-                  <BoardSummaryCard key={board.boardId} board={board} />
+              <VStack gap="space-16">
+                {boardSummaries.map((bs) => (
+                  <ActiveBoardSection
+                    key={bs.board.id}
+                    board={bs.board}
+                    objectives={bs.objectives}
+                    teamBasePath={bs.teamBasePath}
+                    teamName={bs.teamName}
+                    headingLevel="4"
+                  />
                 ))}
-              </HGrid>
+              </VStack>
             </VStack>
           )}
 
@@ -299,33 +311,83 @@ const mockTeams: DevTeamInfo[] = [
   },
 ]
 
-const mockBoards: BoardSummary[] = [
+const mockBoards: MyTeamsPageProps['boardSummaries'] = [
   {
-    boardId: 1,
-    periodLabel: 'T1 2026',
-    periodType: 'tertiary',
+    board: {
+      id: 1,
+      period_label: 'T1 2026',
+      period_type: 'tertiary',
+      period_start: '2026-01-01',
+      period_end: '2026-04-30',
+    },
+    teamBasePath: '/sections/pensjon/teams/skjermbildemodernisering',
     teamName: 'Skjermbildemodernisering',
-    teamSlug: 'skjermbildemodernisering',
-    sectionSlug: 'pensjon',
     objectives: [
       {
         objective_id: 1,
         objective_title: 'Forbedre brukeropplevelse i saksbehandlerverktøy',
+        keywords: ['ux-sak'],
+        dependabot_target: false,
         total_linked_deployments: 12,
+        key_results: [
+          { id: 10, title: 'Redusere lastetid', linked_deployments: 8, keywords: [], dependabot_target: false },
+          { id: 11, title: 'Ny navigasjon', linked_deployments: 4, keywords: ['nav-ui'], dependabot_target: false },
+        ],
       },
-      { objective_id: 2, objective_title: 'Modernisere komponentbibliotek', total_linked_deployments: 7 },
+      {
+        objective_id: 2,
+        objective_title: 'Modernisere komponentbibliotek',
+        keywords: [],
+        dependabot_target: false,
+        total_linked_deployments: 7,
+        key_results: [
+          {
+            id: 20,
+            title: 'Migrere til Aksel v8',
+            linked_deployments: 7,
+            keywords: ['aksel'],
+            dependabot_target: false,
+          },
+        ],
+      },
     ],
   },
   {
-    boardId: 2,
-    periodLabel: 'T1 2026',
-    periodType: 'tertiary',
+    board: {
+      id: 2,
+      period_label: 'T1 2026',
+      period_type: 'tertiary',
+      period_start: '2026-01-01',
+      period_end: '2026-04-30',
+    },
+    teamBasePath: '/sections/pensjon/teams/starte-pensjon',
     teamName: 'Starte pensjon',
-    teamSlug: 'starte-pensjon',
-    sectionSlug: 'pensjon',
     objectives: [
-      { objective_id: 10, objective_title: 'Lansere ny pensjonskalkulator', total_linked_deployments: 5 },
-      { objective_id: 11, objective_title: 'Forenkle søknadsflyt', total_linked_deployments: 0 },
+      {
+        objective_id: 10,
+        objective_title: 'Lansere ny pensjonskalkulator',
+        keywords: ['kalk-101'],
+        dependabot_target: false,
+        total_linked_deployments: 5,
+        key_results: [{ id: 100, title: 'MVP ferdig', linked_deployments: 5, keywords: [], dependabot_target: false }],
+      },
+      {
+        objective_id: 11,
+        objective_title: 'Nødvendig forvaltning',
+        keywords: [],
+        dependabot_target: false,
+        total_linked_deployments: 120,
+        key_results: [
+          {
+            id: 110,
+            title: 'Oppgradere avhengigheter',
+            linked_deployments: 30,
+            keywords: ['deps'],
+            dependabot_target: false,
+          },
+          { id: 111, title: 'Dependabot-oppdatering', linked_deployments: 90, keywords: [], dependabot_target: true },
+        ],
+      },
     ],
   },
 ]
