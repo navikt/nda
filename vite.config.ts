@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { reactRouter } from '@react-router/dev/vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
@@ -25,8 +26,11 @@ function getBuildVersion(): string {
   return `${time}-${sha}`;
 }
 
+const isTest = process.env.VITEST === 'true';
+
 export default defineConfig({
-  plugins: [reactRouter(), tsconfigPaths()],
+  plugins: [...(isTest ? [] : [reactRouter()]), tsconfigPaths()],
+  envDir: isTest ? tmpdir() : undefined,
   define: {
     __BUILD_VERSION__: JSON.stringify(getBuildVersion()),
   },
