@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { ActiveBoardSection, type ActiveBoardSectionProps } from '~/components/ActiveBoardSection'
 
 const meta = {
-  title: 'components/ActiveBoardSection',
+  title: 'Components/ActiveBoardSection',
   component: ActiveBoardSection,
   parameters: { layout: 'padded' },
 } satisfies Meta<typeof ActiveBoardSection>
