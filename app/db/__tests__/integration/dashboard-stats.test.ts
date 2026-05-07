@@ -347,6 +347,93 @@ describe('getBoardObjectiveProgress', () => {
     // Total distinct deployments linked to this board = d1 (KR1), d2 (KR1+KR2), d3 (O1) = 3
     expect(totalDistinctDeployments).toBe(3)
   })
+
+  it('returns key results with zero deployments when startDate filter is active', async () => {
+    // Regression: the deployment INNER JOIN filtered out KRs with no linked deployments
+    const sectionId = await seedSection(pool, 'sec-bop-kr0')
+    const devTeamId = await seedDevTeam(pool, 'team-bop-kr0', 'KR0', sectionId)
+    const { rows: br } = await pool.query(
+      `INSERT INTO boards (dev_team_id, title, period_type, period_start, period_end, period_label)
+       VALUES ($1, 'B', 'tertiary', '2026-01-01', '2026-04-30', 'T1') RETURNING id`,
+      [devTeamId],
+    )
+    const boardId = br[0].id
+
+    const { rows: o1 } = await pool.query(
+      "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Forvaltning', 0) RETURNING id",
+      [boardId],
+    )
+    // KR with linked deployment
+    const { rows: kr1 } = await pool.query(
+      "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'KR-med-leveranse', 0) RETURNING id",
+      [o1[0].id],
+    )
+    // KR with NO linked deployments (should still be returned)
+    const { rows: kr2 } = await pool.query(
+      "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'Dependabot-oppdatering', 1) RETURNING id",
+      [o1[0].id],
+    )
+
+    const appId = await seedApp(pool, { teamSlug: 'team-bop-kr0', appName: 'app-kr0', environment: 'prod' })
+    const d1 = await seedDeploymentWithStatus(pool, appId, 'team-bop-kr0', new Date('2026-02-01'), 'approved_pr')
+    await pool.query(
+      "INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method) VALUES ($1, $2, 'manual')",
+      [d1, kr1[0].id],
+    )
+    // kr2 deliberately has NO links
+
+    // Call with startDate (this triggers the deployment join)
+    const { objectives } = await getBoardObjectiveProgress(boardId, undefined, {
+      startDate: new Date('2026-01-01'),
+    })
+
+    expect(objectives).toHaveLength(1)
+    const obj = objectives[0]
+    expect(obj.key_results).toHaveLength(2)
+    expect(obj.key_results.find((kr) => kr.id === kr1[0].id)?.linked_deployments).toBe(1)
+    expect(obj.key_results.find((kr) => kr.id === kr2[0].id)?.linked_deployments).toBe(0)
+  })
+
+  it('returns key results with zero deployments when deployerUsernames filter is active', async () => {
+    // Regression: deployer filter also triggers the deployment join
+    const sectionId = await seedSection(pool, 'sec-bop-kr0-dep')
+    const devTeamId = await seedDevTeam(pool, 'team-bop-kr0-dep', 'KR0D', sectionId)
+    const { rows: br } = await pool.query(
+      `INSERT INTO boards (dev_team_id, title, period_type, period_start, period_end, period_label)
+       VALUES ($1, 'B', 'tertiary', '2026-01-01', '2026-04-30', 'T1') RETURNING id`,
+      [devTeamId],
+    )
+    const boardId = br[0].id
+
+    const { rows: o1 } = await pool.query(
+      "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Obj', 0) RETURNING id",
+      [boardId],
+    )
+    const { rows: kr1 } = await pool.query(
+      "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'KR-linked', 0) RETURNING id",
+      [o1[0].id],
+    )
+    const { rows: kr2 } = await pool.query(
+      "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'KR-empty', 1) RETURNING id",
+      [o1[0].id],
+    )
+
+    const appId = await seedApp(pool, { teamSlug: 'team-bop-kr0-dep', appName: 'app-kr0d', environment: 'prod' })
+    const d1 = await seedDeploymentWithStatus(pool, appId, 'team-bop-kr0-dep', new Date(), 'approved_pr', 'alice')
+    await pool.query(
+      "INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method) VALUES ($1, $2, 'manual')",
+      [d1, kr1[0].id],
+    )
+
+    // Call with deployerUsernames filter (triggers deployment join)
+    const { objectives } = await getBoardObjectiveProgress(boardId, ['alice'])
+
+    expect(objectives).toHaveLength(1)
+    const obj = objectives[0]
+    expect(obj.key_results).toHaveLength(2)
+    expect(obj.key_results.find((kr) => kr.id === kr1[0].id)?.linked_deployments).toBe(1)
+    expect(obj.key_results.find((kr) => kr.id === kr2[0].id)?.linked_deployments).toBe(0)
+  })
 })
 
 describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () => {
