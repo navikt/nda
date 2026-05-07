@@ -113,7 +113,7 @@ describe('non-member goal filter should be scoped to team board', () => {
       environment: 'prod',
       deployerUsername: 'outsider',
     })
-    const d3 = await seedDeployment(pool, {
+    await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'nais-team',
       environment: 'prod',
