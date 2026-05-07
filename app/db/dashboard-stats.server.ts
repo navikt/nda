@@ -30,15 +30,19 @@ interface DevTeamDashboardStats {
 export interface BoardObjectiveProgress {
   objective_id: number
   objective_title: string
+  keywords: string[]
+  dependabot_target: boolean
   key_results: {
     id: number
     title: string
     linked_deployments: number
+    keywords: string[]
+    dependabot_target: boolean
   }[]
   total_linked_deployments: number
 }
 
-export interface BoardProgressResult {
+interface BoardProgressResult {
   objectives: BoardObjectiveProgress[]
   /** Total distinct deployments linked to any objective/KR on the board (no double-counting) */
   totalDistinctDeployments: number
@@ -397,7 +401,8 @@ export async function getBoardObjectiveProgress(
   options?: { startDate?: Date },
 ): Promise<BoardProgressResult> {
   const objectivesResult = await pool.query(
-    'SELECT id, title FROM board_objectives WHERE board_id = $1 AND is_active = true ORDER BY sort_order, id',
+    `SELECT id, title, COALESCE(keywords, '{}'::text[]) AS keywords, dependabot_target
+     FROM board_objectives WHERE board_id = $1 AND is_active = true ORDER BY sort_order, id`,
     [boardId],
   )
   const objectiveIds = objectivesResult.rows.map((o) => o.id as number)
@@ -434,11 +439,12 @@ export async function getBoardObjectiveProgress(
 
   const krResult = await pool.query(
     `SELECT bkr.id, bkr.objective_id, bkr.title, bkr.sort_order,
+            COALESCE(bkr.keywords, '{}'::text[]) AS keywords, bkr.dependabot_target,
             COUNT(DISTINCT dgl.deployment_id) AS linked_deployments
      FROM board_key_results bkr
      ${krLeftJoin}
      WHERE bkr.objective_id = ANY($1::int[]) AND bkr.is_active = true
-     GROUP BY bkr.id, bkr.objective_id, bkr.title, bkr.sort_order
+     GROUP BY bkr.id, bkr.objective_id, bkr.title, bkr.sort_order, bkr.keywords, bkr.dependabot_target
      ORDER BY bkr.sort_order, bkr.id`,
     baseParams,
   )
@@ -463,11 +469,20 @@ export async function getBoardObjectiveProgress(
     baseParams,
   )
 
-  const krsByObjective = new Map<number, Array<{ id: number; title: string; linked_deployments: number }>>()
+  const krsByObjective = new Map<
+    number,
+    Array<{ id: number; title: string; linked_deployments: number; keywords: string[]; dependabot_target: boolean }>
+  >()
   for (const kr of krResult.rows) {
     const linked = Number(kr.linked_deployments)
     const list = krsByObjective.get(kr.objective_id) ?? []
-    list.push({ id: kr.id, title: kr.title, linked_deployments: linked })
+    list.push({
+      id: kr.id,
+      title: kr.title,
+      linked_deployments: linked,
+      keywords: kr.keywords,
+      dependabot_target: kr.dependabot_target,
+    })
     krsByObjective.set(kr.objective_id, list)
   }
 
@@ -499,6 +514,8 @@ export async function getBoardObjectiveProgress(
     objectives: objectivesResult.rows.map((obj) => ({
       objective_id: obj.id,
       objective_title: obj.title,
+      keywords: obj.keywords as string[],
+      dependabot_target: obj.dependabot_target as boolean,
       key_results: krsByObjective.get(obj.id) ?? [],
       total_linked_deployments: (objLinksByObjective.get(obj.id) ?? 0) + (krDistinctByObjective.get(obj.id) ?? 0),
     })),

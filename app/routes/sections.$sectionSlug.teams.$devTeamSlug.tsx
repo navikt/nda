@@ -1,4 +1,4 @@
-import { BarChartIcon, CogIcon } from '@navikt/aksel-icons'
+import { CogIcon } from '@navikt/aksel-icons'
 import {
   Alert,
   BodyShort,
@@ -14,17 +14,13 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { Link, useLoaderData, useRouteLoaderData, useSearchParams } from 'react-router'
+import { ActiveBoardSection } from '~/components/ActiveBoardSection'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { BoardSummaryCard } from '~/components/BoardSummaryCard'
 import { getGroupNamesByIds } from '~/db/application-groups.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
-import { type Board, getBoardsByDevTeam } from '~/db/boards.server'
-import {
-  type BoardProgressResult,
-  getBoardObjectiveProgress,
-  getContributedBoards,
-  getDevTeamStats,
-} from '~/db/dashboard-stats.server'
+import { getBoardsByDevTeam } from '~/db/boards.server'
+import { getBoardObjectiveProgress, getContributedBoards, getDevTeamStats } from '~/db/dashboard-stats.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
 import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
@@ -241,7 +237,11 @@ export default function DevTeamPage() {
           </Switch>
         </HStack>
         {activeBoard ? (
-          <ActiveBoardSection board={activeBoard} progress={activeBoardProgress} teamBasePath={teamBasePath} />
+          <ActiveBoardSection
+            board={activeBoard}
+            objectives={activeBoardProgress?.objectives ?? []}
+            teamBasePath={teamBasePath}
+          />
         ) : (
           <Alert variant="info">Ingen aktiv tavle. Opprett en ny tavle via Administrer-knappen.</Alert>
         )}
@@ -455,90 +455,6 @@ function CoverageCard({ label, value, sub, href }: { label: string; value: strin
   return (
     <Box padding="space-16" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
       {content}
-    </Box>
-  )
-}
-
-function ActiveBoardSection({
-  board,
-  progress,
-  teamBasePath,
-}: {
-  board: Board
-  progress: BoardProgressResult | null
-  teamBasePath: string
-}) {
-  const objectives = progress?.objectives ?? []
-  return (
-    <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-      <VStack gap="space-16">
-        <HStack justify="space-between" align="center" wrap>
-          <VStack gap="space-4">
-            <Heading level="2" size="medium">
-              <Link to={`${teamBasePath}/${board.id}`}>{board.period_label}</Link>
-            </Heading>
-            <HStack gap="space-8" align="center">
-              <Tag variant="success" size="xsmall">
-                Aktiv
-              </Tag>
-              <Detail textColor="subtle">
-                {new Date(board.period_start).toLocaleDateString('nb-NO', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-                {' – '}
-                {new Date(board.period_end).toLocaleDateString('nb-NO', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </Detail>
-            </HStack>
-          </VStack>
-          <Button
-            as={Link}
-            to={`${teamBasePath}/dashboard?periodType=${board.period_type}&period=${encodeURIComponent(board.period_label)}`}
-            variant="tertiary"
-            size="small"
-            icon={<BarChartIcon aria-hidden />}
-          >
-            Dashboard
-          </Button>
-        </HStack>
-
-        {objectives.length > 0 ? (
-          <VStack gap="space-8">
-            {objectives.map((obj) => (
-              <Box key={obj.objective_id} padding="space-12" borderRadius="4" background="neutral-soft">
-                <VStack gap="space-4">
-                  <HStack justify="space-between" align="center">
-                    <BodyShort weight="semibold" size="small">
-                      {obj.objective_title}
-                    </BodyShort>
-                    <Tag variant="neutral" size="xsmall">
-                      {obj.total_linked_deployments} deployments
-                    </Tag>
-                  </HStack>
-                  {obj.key_results.length > 0 && (
-                    <HStack gap="space-8" wrap>
-                      {obj.key_results.map((kr) => (
-                        <Detail key={kr.id} textColor="subtle">
-                          {kr.title}: {kr.linked_deployments}
-                        </Detail>
-                      ))}
-                    </HStack>
-                  )}
-                </VStack>
-              </Box>
-            ))}
-          </VStack>
-        ) : (
-          <BodyShort size="small" textColor="subtle">
-            Ingen mål er opprettet for denne tavlen ennå.
-          </BodyShort>
-        )}
-      </VStack>
     </Box>
   )
 }
