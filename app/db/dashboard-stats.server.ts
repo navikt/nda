@@ -423,11 +423,20 @@ export async function getBoardObjectiveProgress(
     paramIndex++
   }
 
+  // For the KR query we need all key results (even those with 0 links).
+  // When filtering by deployer or date, the deployment join and filters
+  // must be inside the LEFT JOIN condition — otherwise the INNER JOIN on
+  // deployments converts the LEFT JOIN into an effective INNER JOIN,
+  // hiding KRs with no matching deployments.
+  const krLeftJoin = needsDeploymentJoin
+    ? `LEFT JOIN (deployment_goal_links dgl JOIN deployments d ON d.id = dgl.deployment_id) ON dgl.key_result_id = bkr.id AND dgl.is_active = true${filterWhere}`
+    : 'LEFT JOIN deployment_goal_links dgl ON dgl.key_result_id = bkr.id AND dgl.is_active = true'
+
   const krResult = await pool.query(
     `SELECT bkr.id, bkr.objective_id, bkr.title, bkr.sort_order,
             COUNT(DISTINCT dgl.deployment_id) AS linked_deployments
      FROM board_key_results bkr
-     LEFT JOIN deployment_goal_links dgl ON dgl.key_result_id = bkr.id AND dgl.is_active = true${deployerJoin}${filterWhere}
+     ${krLeftJoin}
      WHERE bkr.objective_id = ANY($1::int[]) AND bkr.is_active = true
      GROUP BY bkr.id, bkr.objective_id, bkr.title, bkr.sort_order
      ORDER BY bkr.sort_order, bkr.id`,
