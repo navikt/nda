@@ -33,7 +33,7 @@ function isInNaisCluster(): boolean {
   return !!process.env.NAIS_CLUSTER_NAME
 }
 
-interface UserIdentity {
+export interface UserIdentity {
   navIdent: string
   name?: string
   email?: string

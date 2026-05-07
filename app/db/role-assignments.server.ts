@@ -1,0 +1,246 @@
+import type {
+  SectionRole,
+  SectionRoleAssignment,
+  TeamRole,
+  TeamRoleAssignment,
+  UserRoles,
+} from '~/lib/authorization-types'
+import { pool } from './connection.server'
+
+// ─── Section role assignments ────────────────────────────────────────────────
+
+export async function assignSectionRole(
+  navIdent: string,
+  sectionId: number,
+  role: SectionRole,
+  assignedBy: string,
+): Promise<SectionRoleAssignment | null> {
+  const { rows } = await pool.query<SectionRoleAssignment>(
+    `INSERT INTO section_role_assignments (nav_ident, section_id, role, assigned_by)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (nav_ident, section_id, role) WHERE deleted_at IS NULL DO NOTHING
+     RETURNING *`,
+    [navIdent, sectionId, role, assignedBy],
+  )
+  return rows[0] ?? null
+}
+
+export async function removeSectionRole(assignmentId: number, deletedBy: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE section_role_assignments
+     SET deleted_at = NOW(), deleted_by = $2
+     WHERE id = $1 AND deleted_at IS NULL`,
+    [assignmentId, deletedBy],
+  )
+  return (rowCount ?? 0) > 0
+}
+
+/** @public Used by section-roles admin page (Branch 2) */
+export async function getSectionRoleAssignments(sectionId: number): Promise<SectionRoleAssignment[]> {
+  const { rows } = await pool.query<SectionRoleAssignment>(
+    `SELECT r.id, r.nav_ident, r.section_id, r.role, r.assigned_by, r.assigned_at
+     FROM section_role_assignments r
+     JOIN sections s ON s.id = r.section_id AND s.is_active = true
+     WHERE r.section_id = $1 AND r.deleted_at IS NULL
+     ORDER BY r.role, r.nav_ident`,
+    [sectionId],
+  )
+  return rows
+}
+
+// ─── Team role assignments ───────────────────────────────────────────────────
+
+export async function assignTeamRole(
+  navIdent: string,
+  devTeamId: number,
+  role: TeamRole,
+  assignedBy: string,
+): Promise<TeamRoleAssignment | null> {
+  const { rows } = await pool.query<TeamRoleAssignment>(
+    `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (nav_ident, dev_team_id, role) WHERE deleted_at IS NULL DO NOTHING
+     RETURNING *`,
+    [navIdent, devTeamId, role, assignedBy],
+  )
+  return rows[0] ?? null
+}
+
+export async function removeTeamRole(assignmentId: number, deletedBy: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE dev_team_role_assignments
+     SET deleted_at = NOW(), deleted_by = $2
+     WHERE id = $1 AND deleted_at IS NULL`,
+    [assignmentId, deletedBy],
+  )
+  return (rowCount ?? 0) > 0
+}
+
+export async function getTeamRoleAssignments(devTeamId: number): Promise<TeamRoleAssignment[]> {
+  const { rows } = await pool.query<TeamRoleAssignment>(
+    `SELECT r.id, r.nav_ident, r.dev_team_id, r.role, r.assigned_by, r.assigned_at
+     FROM dev_team_role_assignments r
+     JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
+     WHERE r.dev_team_id = $1 AND r.deleted_at IS NULL
+     ORDER BY r.role, r.nav_ident`,
+    [devTeamId],
+  )
+  return rows
+}
+
+// ─── User role queries ───────────────────────────────────────────────────────
+
+export async function getUserRoles(navIdent: string): Promise<UserRoles> {
+  const [sectionResult, teamResult] = await Promise.all([
+    pool.query<SectionRoleAssignment>(
+      `SELECT r.id, r.nav_ident, r.section_id, r.role, r.assigned_by, r.assigned_at
+       FROM section_role_assignments r
+       JOIN sections s ON s.id = r.section_id AND s.is_active = true
+       WHERE r.nav_ident = $1 AND r.deleted_at IS NULL
+       ORDER BY r.section_id, r.role`,
+      [navIdent],
+    ),
+    pool.query<TeamRoleAssignment>(
+      `SELECT r.id, r.nav_ident, r.dev_team_id, r.role, r.assigned_by, r.assigned_at
+       FROM dev_team_role_assignments r
+       JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
+       WHERE r.nav_ident = $1 AND r.deleted_at IS NULL
+       ORDER BY r.dev_team_id, r.role`,
+      [navIdent],
+    ),
+  ])
+  return {
+    sectionRoles: sectionResult.rows,
+    teamRoles: teamResult.rows,
+  }
+}
+
+/** @public Used by team admin page (Branch 2) */
+export interface DevTeamMemberWithRole {
+  nav_ident: string
+  role: TeamRole
+  github_username: string | null
+  display_name: string | null
+  assigned_at: Date
+}
+
+/**
+ * Get all members of a dev team with their roles.
+ * Uses UPPER() for case-insensitive join against user_mappings.
+ */
+export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<DevTeamMemberWithRole[]> {
+  const { rows } = await pool.query<DevTeamMemberWithRole>(
+    `SELECT r.nav_ident, r.role, um.github_username, um.display_name, r.assigned_at
+     FROM dev_team_role_assignments r
+     JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
+     LEFT JOIN user_mappings um
+       ON UPPER(um.nav_ident) = UPPER(r.nav_ident) AND um.deleted_at IS NULL
+     WHERE r.dev_team_id = $1 AND r.deleted_at IS NULL
+     ORDER BY r.role, COALESCE(um.display_name, r.nav_ident)`,
+    [devTeamId],
+  )
+  return rows
+}
+
+/**
+ * Get the unique GitHub usernames of all role-assigned members across the given dev teams.
+ * Replacement for getMembersGithubUsernamesForDevTeams in user-dev-team-preference.
+ * @public Used by deployment team filter (Branch 3)
+ */
+export async function getMembersGithubUsernamesForDevTeamRoles(devTeamIds: number[]): Promise<string[]> {
+  if (devTeamIds.length === 0) return []
+  const { rows } = await pool.query<{ github_username: string }>(
+    `SELECT DISTINCT um.github_username
+     FROM dev_team_role_assignments r
+     JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
+     JOIN user_mappings um
+       ON UPPER(um.nav_ident) = UPPER(r.nav_ident) AND um.deleted_at IS NULL
+     WHERE r.dev_team_id = ANY($1::int[])
+       AND r.deleted_at IS NULL
+       AND um.github_username IS NOT NULL`,
+    [devTeamIds],
+  )
+  return rows.map((r) => r.github_username)
+}
+
+/**
+ * Find active dev teams that have at least one role-assigned member whose GitHub username
+ * is in the given set. Replacement for getDevTeamsForGithubUsernames in user-dev-team-preference.
+ * @public Used by deployment team filter (Branch 3)
+ */
+export async function getDevTeamsForGithubUsernamesByRole(
+  githubUsernames: string[],
+): Promise<Array<{ id: number; slug: string; name: string }>> {
+  if (githubUsernames.length === 0) return []
+  const { rows } = await pool.query<{ id: number; slug: string; name: string }>(
+    `SELECT DISTINCT dt.id, dt.slug, dt.name
+     FROM dev_team_role_assignments r
+     JOIN user_mappings um
+       ON UPPER(um.nav_ident) = UPPER(r.nav_ident) AND um.deleted_at IS NULL
+     JOIN dev_teams dt
+       ON dt.id = r.dev_team_id AND dt.is_active = true
+     WHERE r.deleted_at IS NULL
+       AND LOWER(um.github_username) = ANY($1)`,
+    [githubUsernames.map((u) => u.toLowerCase())],
+  )
+  return rows
+}
+
+/**
+ * Get all role assignments for admin user listing.
+ * Returns a map of nav_ident → array of { dev_team_id, role }.
+ * @public Used by admin user listing (Branch 2)
+ */
+export async function getAllUserRoleAssignments(): Promise<
+  Map<string, Array<{ dev_team_id: number; role: TeamRole }>>
+> {
+  const { rows } = await pool.query<{ nav_ident: string; dev_team_id: number; role: TeamRole }>(
+    `SELECT r.nav_ident, r.dev_team_id, r.role
+     FROM dev_team_role_assignments r
+     JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
+     WHERE r.deleted_at IS NULL
+     ORDER BY r.nav_ident, dt.name`,
+  )
+  const map = new Map<string, Array<{ dev_team_id: number; role: TeamRole }>>()
+  for (const row of rows) {
+    const existing = map.get(row.nav_ident) ?? []
+    existing.push({ dev_team_id: row.dev_team_id, role: row.role })
+    map.set(row.nav_ident, existing)
+  }
+  return map
+}
+
+/**
+ * Get dev teams the user has any active role in (with nais_team_slugs).
+ * Replacement for getUserDevTeams in user-dev-team-preference.
+ * Returns one row per team with all roles aggregated.
+ * @public Used by my-teams and my-apps (Branch 3)
+ */
+export async function getUserDevTeamsByRole(navIdent: string): Promise<
+  Array<{
+    id: number
+    section_id: number
+    slug: string
+    name: string
+    is_active: boolean
+    created_at: Date
+    nais_team_slugs: string[]
+    section_slug: string | null
+    roles: TeamRole[]
+  }>
+> {
+  const { rows } = await pool.query(
+    `SELECT dt.*, s.slug as section_slug,
+       COALESCE(array_agg(DISTINCT dn.nais_team_slug ORDER BY dn.nais_team_slug) FILTER (WHERE dn.nais_team_slug IS NOT NULL), '{}') as nais_team_slugs,
+       array_agg(DISTINCT r.role ORDER BY r.role) as roles
+     FROM dev_team_role_assignments r
+     JOIN dev_teams dt ON dt.id = r.dev_team_id
+     LEFT JOIN sections s ON s.id = dt.section_id AND s.is_active = true
+     LEFT JOIN dev_team_nais_teams dn ON dn.dev_team_id = dt.id AND dn.deleted_at IS NULL
+     WHERE r.nav_ident = $1 AND r.deleted_at IS NULL AND dt.is_active = true
+     GROUP BY dt.id, s.slug
+     ORDER BY dt.name`,
+    [navIdent],
+  )
+  return rows
+}
