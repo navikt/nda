@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type BoardKeywordSource, type CommitInfo, matchCommitKeywords } from '../goal-keyword-matcher'
+import { type BoardKeywordSource, type CommitInfo, matchCommitKeywords, pickLatestBoard } from '../goal-keyword-matcher'
 
 const board1Start = new Date('2026-01-01')
 const board1End = new Date('2026-03-31')
@@ -183,5 +183,35 @@ describe('matchCommitKeywords', () => {
       // Deduplicated by (objectiveId, keyResultId)
       expect(result).toHaveLength(1)
     })
+  })
+})
+
+describe('pickLatestBoard', () => {
+  it('returns null for empty array', () => {
+    expect(pickLatestBoard([])).toBeNull()
+  })
+
+  it('returns the single item for a one-element array', () => {
+    const item = { boardId: 1, periodStart: new Date('2026-01-01') }
+    expect(pickLatestBoard([item])).toBe(item)
+  })
+
+  it('picks the item with latest periodStart', () => {
+    const older = { boardId: 1, periodStart: new Date('2026-01-01'), name: 'older' }
+    const newer = { boardId: 2, periodStart: new Date('2026-04-01'), name: 'newer' }
+    expect(pickLatestBoard([older, newer])).toBe(newer)
+    expect(pickLatestBoard([newer, older])).toBe(newer)
+  })
+
+  it('tiebreaks by highest boardId when periodStart is equal', () => {
+    const a = { boardId: 5, periodStart: new Date('2026-01-01') }
+    const b = { boardId: 10, periodStart: new Date('2026-01-01') }
+    expect(pickLatestBoard([a, b])).toBe(b)
+    expect(pickLatestBoard([b, a])).toBe(b)
+  })
+
+  it('preserves extra properties on the returned item', () => {
+    const item = { boardId: 1, periodStart: new Date('2026-01-01'), objectiveId: 42, keyResultId: 7 }
+    expect(pickLatestBoard([item])).toEqual(item)
   })
 })

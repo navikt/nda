@@ -9,7 +9,10 @@ vi.mock('~/db/deployments.server', () => ({
 }))
 vi.mock('~/lib/verification', () => ({ runVerification: vi.fn() }))
 vi.mock('~/lib/logger.server', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
-vi.mock('~/lib/sync/goal-keyword-sync.server', () => ({ autoLinkGoalKeywords: vi.fn() }))
+vi.mock('~/lib/sync/goal-keyword-sync.server', () => ({
+  autoLinkGoalKeywords: vi.fn(),
+  autoLinkDependabotGoal: vi.fn(),
+}))
 
 describe('extractCommitInfos', () => {
   it('includes PR title as commit info', () => {

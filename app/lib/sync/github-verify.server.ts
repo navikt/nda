@@ -5,10 +5,11 @@ import {
   getDeploymentById,
   updateDeploymentFourEyes,
 } from '~/db/deployments.server'
+import { isDependabotUser } from '~/lib/dependabot'
 import { isApprovedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { runVerification } from '~/lib/verification'
-import { autoLinkGoalKeywords } from './goal-keyword-sync.server'
+import { autoLinkDependabotGoal, autoLinkGoalKeywords } from './goal-keyword-sync.server'
 
 /**
  * Verify four-eyes status for deployments by checking GitHub.
@@ -127,9 +128,21 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
                 commitInfos,
               )
             }
+
+            // Auto-link Dependabot deployments to marked goal target
+            const prCreator = (freshDeployment as { github_pr_data?: { creator?: { username?: string } } | null })
+              .github_pr_data?.creator?.username
+            if (isDependabotUser(prCreator)) {
+              await autoLinkDependabotGoal(
+                freshDeployment.id,
+                freshDeployment.team_slug,
+                freshDeployment.monitored_app_id,
+                new Date(freshDeployment.created_at),
+              )
+            }
           }
         } catch (e) {
-          logger.warn(`⚠️  Goal keyword auto-linking failed for deployment ${deployment.id}`, {
+          logger.warn(`⚠️  Goal auto-linking failed for deployment ${deployment.id}`, {
             error: e instanceof Error ? e.message : String(e),
             stack: e instanceof Error ? e.stack : undefined,
           })

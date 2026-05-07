@@ -11,6 +11,7 @@ const LINK_METHOD_LABELS: Record<string, string> = {
   slack: 'Slack',
   commit_keyword: 'Commit-nøkkelord',
   pr_title: 'PR-tittel',
+  dependabot_auto: 'Dependabot (auto)',
 }
 
 export type AvailableBoard = GoalSelectionBoard

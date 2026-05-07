@@ -1,4 +1,5 @@
 import type { GitHubPRData } from '~/db/deployments.server'
+import { isDependabotUser } from '~/lib/dependabot'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
 
@@ -547,7 +548,7 @@ async function _verifyPullRequestFourEyes(
     })
 
     const prCreator = prResponse.data.user?.login || ''
-    const isDependabotPR = prCreator === 'dependabot[bot]' || prCreator.includes('dependabot')
+    const isDependabotPR = isDependabotUser(prCreator)
 
     logger.info(`   🤖 PR creator: ${prCreator} (Dependabot: ${isDependabotPR})`)
 
@@ -641,7 +642,7 @@ async function _verifyPullRequestFourEyes(
     if (isDependabotPR) {
       const allCommitsAreBotOrMainMerge = commitsAfterApproval.every((commit) => {
         const commitAuthor = commit.author?.login || commit.commit.author?.name || ''
-        const isDependabotCommit = commitAuthor === 'dependabot[bot]' || commitAuthor.includes('dependabot')
+        const isDependabotCommit = isDependabotUser(commitAuthor)
         const isMainMerge = isMergeFromMainBranch(commit)
         return isDependabotCommit || isMainMerge
       })

@@ -20,11 +20,12 @@ vi.mock('~/lib/logger.server', () => ({
 // Mock goal keyword sync
 vi.mock('~/lib/sync/goal-keyword-sync.server', () => ({
   autoLinkGoalKeywords: vi.fn(),
+  autoLinkDependabotGoal: vi.fn(),
 }))
 
 import { getAllDeployments, getDeploymentById, updateDeploymentFourEyes } from '~/db/deployments.server'
 import { verifyDeploymentsFourEyes } from '~/lib/sync/github-verify.server'
-import { autoLinkGoalKeywords } from '~/lib/sync/goal-keyword-sync.server'
+import { autoLinkDependabotGoal, autoLinkGoalKeywords } from '~/lib/sync/goal-keyword-sync.server'
 import { runVerification } from '~/lib/verification'
 
 const mockGetAll = getAllDeployments as Mock
@@ -32,6 +33,7 @@ const mockGetById = getDeploymentById as Mock
 const mockUpdateFourEyes = updateDeploymentFourEyes as Mock
 const mockRunVerification = runVerification as Mock
 const mockAutoLink = autoLinkGoalKeywords as Mock
+const mockAutoLinkDependabot = autoLinkDependabotGoal as Mock
 
 function makeDeployment(overrides: Record<string, unknown> = {}) {
   return {
@@ -271,5 +273,61 @@ describe('verifyDeploymentsFourEyes', () => {
     expect(mockGetById).toHaveBeenCalledWith(50)
     // Should NOT call autoLinkGoalKeywords since commitInfos would be empty
     expect(mockAutoLink).not.toHaveBeenCalled()
+  })
+
+  it('calls autoLinkDependabotGoal for Dependabot PR deployments', async () => {
+    const deployment = makeDeployment({
+      id: 77,
+      team_slug: 'my-team',
+      created_at: '2026-02-15T10:00:00Z',
+    })
+
+    const freshDeployment = {
+      ...deployment,
+      title: 'Bump axios from 1.6.0 to 1.7.0',
+      github_pr_data: {
+        title: 'Bump axios from 1.6.0 to 1.7.0',
+        creator: { username: 'dependabot[bot]' },
+      },
+    }
+
+    mockGetAll.mockResolvedValue([deployment])
+    mockRunVerification.mockResolvedValue({ status: 'approved' })
+    mockGetById.mockResolvedValue(freshDeployment)
+    mockAutoLink.mockResolvedValue(0)
+    mockAutoLinkDependabot.mockResolvedValue(1)
+
+    const promise = verifyDeploymentsFourEyes()
+    await vi.advanceTimersByTimeAsync(1000)
+    await promise
+
+    expect(mockAutoLinkDependabot).toHaveBeenCalledWith(77, 'my-team', 10, expect.any(Date))
+  })
+
+  it('does NOT call autoLinkDependabotGoal for non-Dependabot PRs', async () => {
+    const deployment = makeDeployment({
+      id: 78,
+      team_slug: 'my-team',
+    })
+
+    const freshDeployment = {
+      ...deployment,
+      title: 'Add feature X',
+      github_pr_data: {
+        title: 'Add feature X',
+        creator: { username: 'some-developer' },
+      },
+    }
+
+    mockGetAll.mockResolvedValue([deployment])
+    mockRunVerification.mockResolvedValue({ status: 'approved' })
+    mockGetById.mockResolvedValue(freshDeployment)
+    mockAutoLink.mockResolvedValue(0)
+
+    const promise = verifyDeploymentsFourEyes()
+    await vi.advanceTimersByTimeAsync(1000)
+    await promise
+
+    expect(mockAutoLinkDependabot).not.toHaveBeenCalled()
   })
 })

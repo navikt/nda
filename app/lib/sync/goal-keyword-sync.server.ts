@@ -1,6 +1,7 @@
+import { loadDependabotTargets } from '~/db/boards.server'
 import { pool } from '~/db/connection.server'
 import { addDeploymentGoalLink } from '~/db/deployment-goal-links.server'
-import { type CommitInfo, matchCommitKeywords } from '~/lib/goal-keyword-matcher'
+import { type CommitInfo, matchCommitKeywords, pickLatestBoard } from '~/lib/goal-keyword-matcher'
 import { logger } from '~/lib/logger.server'
 import { findDevTeamsForDeployment, loadBoardKeywords } from './goal-keyword-helpers.server'
 
@@ -48,12 +49,13 @@ export async function autoLinkGoalKeywords(
     const key = `${match.objectiveId}:${match.keyResultId ?? ''}`
     if (existingKeys.has(key)) continue
 
-    await addDeploymentGoalLink({
+    const result = await addDeploymentGoalLink({
       deployment_id: deploymentId,
       objective_id: match.objectiveId,
       key_result_id: match.keyResultId ?? undefined,
       link_method: 'commit_keyword',
     })
+    if (!result) continue
 
     existingKeys.add(key)
     linked++
@@ -63,4 +65,44 @@ export async function autoLinkGoalKeywords(
   }
 
   return linked
+}
+
+/**
+ * Auto-link a Dependabot deployment to a board goal marked as the Dependabot target.
+ *
+ * Follows the same rules as keyword linking:
+ * - Finds dev teams for the deployment
+ * - Loads Dependabot targets from active boards covering the deployment date
+ * - If multiple boards have targets, the one with the latest periodStart wins
+ * - Skips if the same link (same objective/KR) already exists
+ */
+export async function autoLinkDependabotGoal(
+  deploymentId: number,
+  teamSlug: string,
+  monitoredAppId: number,
+  deploymentDate: Date,
+): Promise<number> {
+  const devTeams = await findDevTeamsForDeployment(teamSlug, monitoredAppId)
+  if (devTeams.length === 0) return 0
+  const devTeamIds = devTeams.map((r) => r.id)
+
+  const targets = await loadDependabotTargets(devTeamIds, deploymentDate)
+  if (targets.length === 0) return 0
+
+  const target = pickLatestBoard(targets)
+  if (!target) return 0
+
+  const link = await addDeploymentGoalLink({
+    deployment_id: deploymentId,
+    objective_id: target.objectiveId,
+    key_result_id: target.keyResultId ?? undefined,
+    link_method: 'dependabot_auto',
+  })
+  if (!link) return 0
+
+  logger.info(
+    `🤖 Auto-linked Dependabot deployment ${deploymentId} to objective ${target.objectiveId}${target.keyResultId ? ` / KR ${target.keyResultId}` : ''}`,
+  )
+
+  return 1
 }
