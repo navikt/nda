@@ -6,7 +6,7 @@ import { endOfDay } from '~/lib/date-utils'
  * Rules:
  * - Keywords are matched case-insensitively against commit messages
  * - Only boards whose period covers the commit date are eligible
- * - If a keyword matches in two different boards, the match is ambiguous and dropped
+ * - If a keyword matches in multiple boards, the chronologically latest board wins (by periodStart)
  * - Duplicate matches (same objective/key_result) are deduplicated
  */
 
@@ -31,15 +31,23 @@ interface KeywordMatch {
   keyword: string
 }
 
+interface RawMatch {
+  keyword: string
+  boardId: number
+  objectiveId: number
+  keyResultId: number | null
+  periodStart: Date
+}
+
 /**
  * Match commit messages against goal keywords from active boards.
- * Returns only unambiguous matches (keyword found in exactly one board per commit window).
+ * When a keyword matches in multiple boards, the board with the latest periodStart wins.
  */
 export function matchCommitKeywords(commits: CommitInfo[], boardKeywords: BoardKeywordSource[]): KeywordMatch[] {
   if (commits.length === 0 || boardKeywords.length === 0) return []
 
   // Collect all raw matches: for each commit, find keywords in active boards
-  const rawMatches: Array<{ keyword: string; boardId: number; objectiveId: number; keyResultId: number | null }> = []
+  const rawMatches: RawMatch[] = []
 
   for (const commit of commits) {
     const messageLower = commit.message.toLowerCase()
@@ -55,30 +63,33 @@ export function matchCommitKeywords(commits: CommitInfo[], boardKeywords: BoardK
           boardId: bk.boardId,
           objectiveId: bk.objectiveId,
           keyResultId: bk.keyResultId,
+          periodStart: bk.periodStart,
         })
       }
     }
   }
 
-  // Ambiguity check: group matches by keyword, discard if matched in multiple boards
-  const keywordBoards = new Map<string, Set<number>>()
+  // Resolve multi-board matches: for each keyword, keep only matches from the latest board
+  // "Latest" = highest periodStart. Ties broken by highest boardId (most recently created).
+  const latestBoardPerKeyword = new Map<string, { boardId: number; periodStart: Date }>()
   for (const m of rawMatches) {
-    const boards = keywordBoards.get(m.keyword) ?? new Set()
-    boards.add(m.boardId)
-    keywordBoards.set(m.keyword, boards)
+    const current = latestBoardPerKeyword.get(m.keyword)
+    if (
+      !current ||
+      m.periodStart > current.periodStart ||
+      (m.periodStart.getTime() === current.periodStart.getTime() && m.boardId > current.boardId)
+    ) {
+      latestBoardPerKeyword.set(m.keyword, { boardId: m.boardId, periodStart: m.periodStart })
+    }
   }
 
-  const ambiguousKeywords = new Set<string>()
-  for (const [keyword, boards] of keywordBoards) {
-    if (boards.size > 1) ambiguousKeywords.add(keyword)
-  }
-
-  // Filter out ambiguous matches and deduplicate by (objectiveId, keyResultId)
+  // Filter to only matches from the winning board, deduplicate by (objectiveId, keyResultId)
   const seen = new Set<string>()
   const results: KeywordMatch[] = []
 
   for (const m of rawMatches) {
-    if (ambiguousKeywords.has(m.keyword)) continue
+    const winner = latestBoardPerKeyword.get(m.keyword)
+    if (winner?.boardId !== m.boardId) continue
 
     const dedupeKey = `${m.objectiveId}:${m.keyResultId ?? 'obj'}`
     if (seen.has(dedupeKey)) continue

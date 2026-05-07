@@ -211,6 +211,7 @@ export function extractCommitInfos(deployment: {
   unverified_commits?: Array<{ message?: string; date?: string }> | null
   github_pr_data?: {
     title?: string
+    head_branch?: string
     commits?: Array<{ commit?: { message?: string }; message?: string; sha?: string; date?: string }>
   } | null
 }): Array<{ message: string; date: Date }> {
@@ -220,6 +221,11 @@ export function extractCommitInfos(deployment: {
   // Include PR title as a commit message source
   if (deployment.title) {
     infos.push({ message: deployment.title, date: deployDate })
+  }
+
+  // Include branch name so keywords used as branch prefixes (e.g. "sp-bau/feature") are matched
+  if (deployment.github_pr_data?.head_branch) {
+    infos.push({ message: deployment.github_pr_data.head_branch, date: deployDate })
   }
 
   // Include unverified commits
