@@ -113,19 +113,29 @@ const progressData: BoardObjectiveProgress[] = [
   {
     objective_id: 1,
     objective_title: 'Forbedre brukeropplevelse',
+    keywords: ['ux-101'],
+    dependabot_target: false,
     total_linked_deployments: 5,
     key_results: [
-      { id: 100, title: 'Øke andel digitale søknader', linked_deployments: 3 },
-      { id: 101, title: 'Redusere henvendelser', linked_deployments: 2 },
+      { id: 100, title: 'Øke andel digitale søknader', linked_deployments: 3, keywords: [], dependabot_target: false },
+      {
+        id: 101,
+        title: 'Redusere henvendelser',
+        linked_deployments: 2,
+        keywords: ['hen-42'],
+        dependabot_target: false,
+      },
     ],
   },
   {
     objective_id: 2,
-    objective_title: 'Modernisere teknisk plattform',
+    objective_title: 'Nødvendig forvaltning',
+    keywords: ['sp-bau'],
+    dependabot_target: false,
     total_linked_deployments: 12,
     key_results: [
-      { id: 201, title: 'Oppgradere avhengigheter', linked_deployments: 7 },
-      { id: 202, title: 'Redusere teknisk gjeld', linked_deployments: 5 },
+      { id: 201, title: 'Oppgradere avhengigheter', linked_deployments: 7, keywords: [], dependabot_target: false },
+      { id: 202, title: 'Dependabot-oppdatering', linked_deployments: 5, keywords: [], dependabot_target: true },
     ],
   },
 ]
