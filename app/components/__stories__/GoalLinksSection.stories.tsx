@@ -260,3 +260,43 @@ export const IngenTilgjengeligeTavler: Story = {
     sectionBoards: [],
   },
 }
+
+const dependabotAutoLink: DeploymentGoalLinkWithDetails = {
+  id: 6,
+  deployment_id: 42,
+  objective_id: 11,
+  key_result_id: 110,
+  external_url: null,
+  external_url_title: null,
+  comment: null,
+  link_method: 'dependabot_auto',
+  linked_by: null,
+  is_active: true,
+  created_at: '2026-04-05T08:00:00Z',
+  objective_title: 'Modernisere teknisk plattform',
+  key_result_title: 'Migrere 3 applikasjoner til Nais',
+  board_period_label: 'T1 2026',
+  board_period_type: 'tertiary',
+  dev_team_slug: 'starte-pensjon',
+  section_slug: 'pensjon',
+  objective_is_active: true,
+  key_result_is_active: true,
+}
+
+export const AutoKobletFraDependabot: Story = {
+  name: 'Auto-koblet via Dependabot',
+  args: {
+    goalLinks: [dependabotAutoLink],
+    availableBoards: mockBoards,
+    sectionBoards: [],
+  },
+}
+
+export const BlandingMedDependabot: Story = {
+  name: 'Blanding med Dependabot og commit-nøkkelord',
+  args: {
+    goalLinks: [goalLinkWithKeyResult, autoLinkedFromCommit, dependabotAutoLink],
+    availableBoards: mockBoards,
+    sectionBoards: [],
+  },
+}

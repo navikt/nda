@@ -11,7 +11,7 @@ export interface DeploymentGoalLink {
   external_url: string | null
   external_url_title: string | null
   comment: string | null
-  link_method: 'manual' | 'slack' | 'commit_keyword' | 'pr_title'
+  link_method: 'manual' | 'slack' | 'commit_keyword' | 'pr_title' | 'dependabot_auto'
   linked_by: string | null
   is_active: boolean
   created_at: string
@@ -99,7 +99,7 @@ export async function addDeploymentGoalLink(data: {
   comment?: string
   link_method: DeploymentGoalLink['link_method']
   linked_by?: string
-}): Promise<DeploymentGoalLink> {
+}): Promise<DeploymentGoalLink | null> {
   if (!data.objective_id && !data.key_result_id) {
     throw new Error('Må angi objective_id eller key_result_id.')
   }
@@ -163,7 +163,7 @@ export async function addDeploymentGoalLink(data: {
     ])
     if (result.rowCount === 0) {
       await client.query('ROLLBACK')
-      throw new Error('Koblingen finnes allerede.')
+      return null
     }
     await client.query('COMMIT')
     return result.rows[0]

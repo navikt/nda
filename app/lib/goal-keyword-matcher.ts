@@ -1,6 +1,19 @@
 import { endOfDay } from '~/lib/date-utils'
 
 /**
+ * Select the winning board item: latest periodStart wins, tiebreak by highest boardId.
+ * Used by both keyword matching and Dependabot target resolution.
+ */
+export function pickLatestBoard<T extends { boardId: number; periodStart: Date }>(items: T[]): T | null {
+  if (items.length === 0) return null
+  return items.reduce((best, item) => {
+    if (item.periodStart > best.periodStart) return item
+    if (item.periodStart.getTime() === best.periodStart.getTime() && item.boardId > best.boardId) return item
+    return best
+  })
+}
+
+/**
  * Pure keyword matching logic for auto-linking deployments to board goals.
  *
  * Rules:
@@ -70,17 +83,17 @@ export function matchCommitKeywords(commits: CommitInfo[], boardKeywords: BoardK
   }
 
   // Resolve multi-board matches: for each keyword, keep only matches from the latest board
-  // "Latest" = highest periodStart. Ties broken by highest boardId (most recently created).
-  const latestBoardPerKeyword = new Map<string, { boardId: number; periodStart: Date }>()
+  const matchesByKeyword = new Map<string, RawMatch[]>()
   for (const m of rawMatches) {
-    const current = latestBoardPerKeyword.get(m.keyword)
-    if (
-      !current ||
-      m.periodStart > current.periodStart ||
-      (m.periodStart.getTime() === current.periodStart.getTime() && m.boardId > current.boardId)
-    ) {
-      latestBoardPerKeyword.set(m.keyword, { boardId: m.boardId, periodStart: m.periodStart })
-    }
+    const group = matchesByKeyword.get(m.keyword) ?? []
+    group.push(m)
+    matchesByKeyword.set(m.keyword, group)
+  }
+
+  const winnerPerKeyword = new Map<string, number>()
+  for (const [keyword, group] of matchesByKeyword) {
+    const winner = pickLatestBoard(group)
+    if (winner) winnerPerKeyword.set(keyword, winner.boardId)
   }
 
   // Filter to only matches from the winning board, deduplicate by (objectiveId, keyResultId)
@@ -88,8 +101,7 @@ export function matchCommitKeywords(commits: CommitInfo[], boardKeywords: BoardK
   const results: KeywordMatch[] = []
 
   for (const m of rawMatches) {
-    const winner = latestBoardPerKeyword.get(m.keyword)
-    if (winner?.boardId !== m.boardId) continue
+    if (winnerPerKeyword.get(m.keyword) !== m.boardId) continue
 
     const dedupeKey = `${m.objectiveId}:${m.keyResultId ?? 'obj'}`
     if (seen.has(dedupeKey)) continue

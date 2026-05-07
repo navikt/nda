@@ -621,7 +621,7 @@ export async function action({ request, params }: { request: Request; params: Re
     }
 
     try {
-      await addDeploymentGoalLink({
+      const link = await addDeploymentGoalLink({
         deployment_id: deploymentId,
         objective_id: objectiveId,
         key_result_id: keyResultId,
@@ -631,6 +631,7 @@ export async function action({ request, params }: { request: Request; params: Re
         link_method: 'manual',
         linked_by: identity?.navIdent,
       })
+      if (!link) return { error: 'Koblingen finnes allerede.' }
       return { success: 'Kobling lagt til' }
     } catch (error) {
       logger.error('Error linking goal:', error)

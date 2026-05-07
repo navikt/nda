@@ -20,6 +20,7 @@ export interface BoardObjective {
   description: string | null
   sort_order: number
   keywords: string[]
+  dependabot_target: boolean
   is_active: boolean
   created_at: string
 }
@@ -31,6 +32,7 @@ export interface BoardKeyResult {
   description: string | null
   sort_order: number
   keywords: string[]
+  dependabot_target: boolean
   is_active: boolean
   created_at: string
 }
@@ -59,6 +61,11 @@ interface BoardWithObjectives extends Board {
 }
 
 // --- Board queries ---
+
+export async function getBoardDevTeamId(boardId: number): Promise<number | null> {
+  const result = await pool.query('SELECT dev_team_id FROM boards WHERE id = $1', [boardId])
+  return result.rows[0]?.dev_team_id ?? null
+}
 
 export async function getBoardsByDevTeam(devTeamId: number): Promise<Board[]> {
   const result = await pool.query('SELECT * FROM boards WHERE dev_team_id = $1 ORDER BY period_start DESC', [devTeamId])
@@ -627,4 +634,144 @@ export async function deleteExternalReference(id: number, deletedBy: string): Pr
   if (rows.length === 0) return
   if (rows[0].deleted_at !== null) return
   throw new Error('Kan ikke slette ekstern lenke fra et deaktivert mål eller nøkkelresultat.')
+}
+
+// --- Dependabot target ---
+
+interface DependabotTarget {
+  boardId: number
+  objectiveId: number
+  keyResultId: number | null
+  periodStart: Date
+  periodEnd: Date
+}
+
+/**
+ * Set a single objective or key result as the Dependabot target for its board.
+ * Clears any other Dependabot targets on the same board (max one per board).
+ */
+export async function setDependabotTarget(boardId: number, objectiveId?: number, keyResultId?: number): Promise<void> {
+  if (!objectiveId && !keyResultId) {
+    throw new Error('Må angi objectiveId eller keyResultId.')
+  }
+  if (objectiveId && keyResultId) {
+    throw new Error('Kan ikke angi både objectiveId og keyResultId.')
+  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    // Lock the board row to serialize concurrent setDependabotTarget calls
+    const boardLock = await client.query('SELECT 1 FROM boards WHERE id = $1 FOR UPDATE', [boardId])
+    if (boardLock.rowCount === 0) throw new Error('Tavlen finnes ikke.')
+
+    // Validate that the objective/key result belongs to this board and is active
+    if (keyResultId) {
+      const check = await client.query(
+        `SELECT 1 FROM board_key_results bkr JOIN board_objectives bo ON bkr.objective_id = bo.id WHERE bkr.id = $1 AND bo.board_id = $2 AND bkr.is_active = true AND bo.is_active = true FOR UPDATE OF bkr, bo`,
+        [keyResultId, boardId],
+      )
+      if (check.rowCount === 0) throw new Error('Nøkkelresultatet tilhører ikke denne tavlen eller er deaktivert.')
+    } else if (objectiveId) {
+      const check = await client.query(
+        'SELECT 1 FROM board_objectives WHERE id = $1 AND board_id = $2 AND is_active = true FOR UPDATE',
+        [objectiveId, boardId],
+      )
+      if (check.rowCount === 0) throw new Error('Målet tilhører ikke denne tavlen eller er deaktivert.')
+    }
+
+    // Clear all existing targets on this board
+    await client.query(
+      `UPDATE board_objectives SET dependabot_target = false WHERE board_id = $1 AND dependabot_target = true`,
+      [boardId],
+    )
+    await client.query(
+      `UPDATE board_key_results SET dependabot_target = false
+       WHERE objective_id IN (SELECT id FROM board_objectives WHERE board_id = $1)
+       AND dependabot_target = true`,
+      [boardId],
+    )
+
+    // Set the new target
+    if (keyResultId) {
+      await client.query('UPDATE board_key_results SET dependabot_target = true WHERE id = $1', [keyResultId])
+    } else if (objectiveId) {
+      await client.query('UPDATE board_objectives SET dependabot_target = true WHERE id = $1', [objectiveId])
+    }
+
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
+/**
+ * Clear the Dependabot target for a board.
+ */
+export async function clearDependabotTarget(boardId: number): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    // Lock the board row to serialize with setDependabotTarget
+    const boardLock = await client.query('SELECT 1 FROM boards WHERE id = $1 FOR UPDATE', [boardId])
+    if (boardLock.rowCount === 0) throw new Error('Tavlen finnes ikke.')
+    await client.query(`UPDATE board_objectives SET dependabot_target = false WHERE board_id = $1`, [boardId])
+    await client.query(
+      `UPDATE board_key_results SET dependabot_target = false
+       WHERE objective_id IN (SELECT id FROM board_objectives WHERE board_id = $1)`,
+      [boardId],
+    )
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
+/**
+ * Load Dependabot targets from active boards for the given dev team IDs.
+ * Returns targets where the board period covers the given date.
+ */
+export async function loadDependabotTargets(devTeamIds: number[], asOfDate: Date): Promise<DependabotTarget[]> {
+  if (devTeamIds.length === 0) return []
+
+  const result = await pool.query(
+    `SELECT b.id AS board_id, bo.id AS objective_id, NULL::int AS key_result_id, b.period_start, b.period_end
+     FROM boards b
+     JOIN board_objectives bo ON bo.board_id = b.id
+     WHERE b.dev_team_id = ANY($1) AND b.is_active = true AND bo.is_active = true
+       AND bo.dependabot_target = true
+       AND b.period_start <= $2::date AND b.period_end >= $2::date
+     UNION ALL
+     SELECT b.id AS board_id, bo.id AS objective_id, bkr.id AS key_result_id, b.period_start, b.period_end
+     FROM boards b
+     JOIN board_objectives bo ON bo.board_id = b.id
+     JOIN board_key_results bkr ON bkr.objective_id = bo.id
+     WHERE b.dev_team_id = ANY($1) AND b.is_active = true AND bo.is_active = true AND bkr.is_active = true
+       AND bkr.dependabot_target = true
+       AND b.period_start <= $2::date AND b.period_end >= $2::date`,
+    [devTeamIds, asOfDate],
+  )
+
+  return result.rows.map(
+    (r: {
+      board_id: number
+      objective_id: number
+      key_result_id: number | null
+      period_start: string
+      period_end: string
+    }) => ({
+      boardId: r.board_id,
+      objectiveId: r.objective_id,
+      keyResultId: r.key_result_id,
+      periodStart: new Date(r.period_start),
+      periodEnd: new Date(r.period_end),
+    }),
+  )
 }
