@@ -106,6 +106,19 @@ export async function removeTeamRole(assignmentId: number, deletedBy: string, de
   return (rowCount ?? 0) > 0
 }
 
+export async function getTeamRoleAssignmentById(
+  assignmentId: number,
+  devTeamId: number,
+): Promise<TeamRoleAssignment | null> {
+  const { rows } = await pool.query<TeamRoleAssignment>(
+    `SELECT id, nav_ident, dev_team_id, role, assigned_by, assigned_at
+     FROM dev_team_role_assignments
+     WHERE id = $1 AND dev_team_id = $2 AND deleted_at IS NULL`,
+    [assignmentId, devTeamId],
+  )
+  return rows[0] ?? null
+}
+
 export async function getTeamRoleAssignments(devTeamId: number): Promise<TeamRoleAssignment[]> {
   const { rows } = await pool.query<TeamRoleAssignment>(
     `SELECT r.id, r.nav_ident, r.dev_team_id, r.role, r.assigned_by, r.assigned_at

@@ -148,6 +148,60 @@ export async function canAdministerTeam(actor: UserIdentity, devTeamId: number):
 }
 
 /**
+ * Check if the actor can access the team admin page.
+ * Allowed for: admin, produktleder in the team, or section leaders in the team's section.
+ */
+export async function canAccessTeamAdmin(actor: UserIdentity, devTeamId: number): Promise<boolean> {
+  if (isEntraAdmin(actor)) return true
+
+  const { rows: teamRows } = await pool.query<{ section_id: number }>(
+    'SELECT section_id FROM dev_teams WHERE id = $1 AND is_active = true',
+    [devTeamId],
+  )
+  if (teamRows.length === 0) return false
+  const teamSectionId = teamRows[0].section_id
+
+  const { sectionRoles, teamRoles } = await getUserRoles(actor.navIdent)
+
+  if (sectionRoles.some((r) => r.section_id === teamSectionId)) return true
+
+  return teamRoles.some((r) => r.dev_team_id === devTeamId && r.role === 'produktleder')
+}
+
+interface TeamAdminCapabilities {
+  canAccess: boolean
+  canAdmin: boolean
+}
+
+/**
+ * Resolve team admin capabilities in a single pass (one getUserRoles call).
+ * Returns { canAccess, canAdmin } to avoid redundant DB queries.
+ */
+export async function resolveTeamAdminCapabilities(
+  actor: UserIdentity,
+  devTeamId: number,
+): Promise<TeamAdminCapabilities> {
+  if (isEntraAdmin(actor)) return { canAccess: true, canAdmin: true }
+
+  const { rows: teamRows } = await pool.query<{ section_id: number }>(
+    'SELECT section_id FROM dev_teams WHERE id = $1 AND is_active = true',
+    [devTeamId],
+  )
+  if (teamRows.length === 0) return { canAccess: false, canAdmin: false }
+  const teamSectionId = teamRows[0].section_id
+
+  const { sectionRoles, teamRoles } = await getUserRoles(actor.navIdent)
+
+  const isProduktleder = teamRoles.some((r) => r.dev_team_id === devTeamId && r.role === 'produktleder')
+  const isSectionLeader = sectionRoles.some((r) => r.section_id === teamSectionId)
+
+  return {
+    canAccess: isProduktleder || isSectionLeader,
+    canAdmin: isProduktleder,
+  }
+}
+
+/**
  * Check if the actor has any active role in the given team.
  */
 export async function isTeamMember(navIdent: string, devTeamId: number): Promise<boolean> {
