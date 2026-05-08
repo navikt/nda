@@ -175,7 +175,7 @@ export async function addDeploymentGoalLink(data: {
   }
 }
 
-export async function removeDeploymentGoalLink(id: number): Promise<void> {
+export async function removeDeploymentGoalLink(id: number, deploymentId: number): Promise<boolean> {
   // First check if the link exists and its current state
   const link = await pool.query(
     `SELECT dgl.id, dgl.is_active,
@@ -185,20 +185,24 @@ export async function removeDeploymentGoalLink(id: number): Promise<void> {
      LEFT JOIN board_objectives bo ON bo.id = dgl.objective_id
      LEFT JOIN board_key_results bkr ON bkr.id = dgl.key_result_id
      LEFT JOIN board_objectives bo_via_kr ON bo_via_kr.id = bkr.objective_id
-     WHERE dgl.id = $1`,
-    [id],
+     WHERE dgl.id = $1 AND dgl.deployment_id = $2`,
+    [id, deploymentId],
   )
 
-  if (link.rowCount === 0) return
+  if (link.rowCount === 0) return false
   const row = link.rows[0]
 
-  if (!row.is_active) return // Already deactivated — idempotent
+  if (!row.is_active) return false // Already deactivated
 
   if (!row.objective_is_active || !row.kr_is_active) {
     throw new Error('Kan ikke fjerne kobling til et deaktivert mål eller nøkkelresultat.')
   }
 
-  await pool.query('UPDATE deployment_goal_links SET is_active = false WHERE id = $1', [id])
+  await pool.query(
+    'UPDATE deployment_goal_links SET is_active = false WHERE id = $1 AND deployment_id = $2',
+    [id, deploymentId],
+  )
+  return true
 }
 
 /**

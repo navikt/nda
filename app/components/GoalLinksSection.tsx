@@ -20,9 +20,15 @@ interface GoalLinksSectionProps {
   goalLinks: DeploymentGoalLinkWithDetails[]
   availableBoards?: AvailableBoard[]
   sectionBoards?: AvailableBoard[]
+  canLinkGoal?: boolean
 }
 
-export function GoalLinksSection({ goalLinks, availableBoards = [], sectionBoards = [] }: GoalLinksSectionProps) {
+export function GoalLinksSection({
+  goalLinks,
+  availableBoards = [],
+  sectionBoards = [],
+  canLinkGoal = false,
+}: GoalLinksSectionProps) {
   const [showAddLink, setShowAddLink] = useState(false)
 
   return (
@@ -31,14 +37,16 @@ export function GoalLinksSection({ goalLinks, availableBoards = [], sectionBoard
         <Heading size="medium" level="2">
           Endringsopphav
         </Heading>
-        <Button
-          variant="tertiary"
-          size="small"
-          icon={<PlusIcon aria-hidden />}
-          onClick={() => setShowAddLink(!showAddLink)}
-        >
-          Knytt til mål
-        </Button>
+        {canLinkGoal && (
+          <Button
+            variant="tertiary"
+            size="small"
+            icon={<PlusIcon aria-hidden />}
+            onClick={() => setShowAddLink(!showAddLink)}
+          >
+            Knytt til mål
+          </Button>
+        )}
       </HStack>
 
       {goalLinks.length === 0 && !showAddLink && (
@@ -50,12 +58,12 @@ export function GoalLinksSection({ goalLinks, availableBoards = [], sectionBoard
       {goalLinks.length > 0 && (
         <VStack gap="space-8">
           {goalLinks.map((link) => (
-            <GoalLinkItem key={link.id} link={link} />
+            <GoalLinkItem key={link.id} link={link} canUnlink={canLinkGoal} />
           ))}
         </VStack>
       )}
 
-      {showAddLink && (
+      {showAddLink && canLinkGoal && (
         <AddGoalLinkForm
           onCancel={() => setShowAddLink(false)}
           availableBoards={availableBoards}
@@ -66,7 +74,7 @@ export function GoalLinksSection({ goalLinks, availableBoards = [], sectionBoard
   )
 }
 
-function GoalLinkItem({ link }: { link: DeploymentGoalLinkWithDetails }) {
+function GoalLinkItem({ link, canUnlink }: { link: DeploymentGoalLinkWithDetails; canUnlink: boolean }) {
   const label = link.key_result_title
     ? `${link.objective_title} → ${link.key_result_title}`
     : link.objective_title
@@ -135,17 +143,19 @@ function GoalLinkItem({ link }: { link: DeploymentGoalLinkWithDetails }) {
             </HStack>
           </div>
         </HStack>
-        <Form method="post" style={{ display: 'inline' }}>
-          <input type="hidden" name="intent" value="unlink_goal" />
-          <input type="hidden" name="link_id" value={link.id} />
-          <Button
-            variant="tertiary-neutral"
-            size="xsmall"
-            icon={<TrashIcon aria-hidden />}
-            type="submit"
-            disabled={isInactive}
-          />
-        </Form>
+        {canUnlink && (
+          <Form method="post" style={{ display: 'inline' }}>
+            <input type="hidden" name="intent" value="unlink_goal" />
+            <input type="hidden" name="link_id" value={link.id} />
+            <Button
+              variant="tertiary-neutral"
+              size="xsmall"
+              icon={<TrashIcon aria-hidden />}
+              type="submit"
+              disabled={isInactive}
+            />
+          </Form>
+        )}
       </HStack>
     </Box>
   )
