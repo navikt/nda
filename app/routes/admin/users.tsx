@@ -20,6 +20,7 @@ import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-r
 import { ActionAlert } from '~/components/ActionAlert'
 import { ExternalLink } from '~/components/ExternalLink'
 import { getAllDevTeams } from '~/db/dev-teams.server'
+import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
 import { getAllUserDevTeamMappings, setUserDevTeams } from '~/db/user-dev-team-preference.server'
 import {
   deleteUserMapping,
@@ -37,13 +38,25 @@ import type { Route } from './+types/users'
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const [mappings, unmappedUsers, allDevTeams, userDevTeamMap] = await Promise.all([
-    getAllUserMappings(),
-    getUnmappedUsers(),
-    getAllDevTeams(),
-    getAllUserDevTeamMappings().catch(() => new Map<string, number[]>()),
-  ])
-  return { mappings, unmappedUsers, allDevTeams, userDevTeamMap: Object.fromEntries(userDevTeamMap) }
+  const [mappings, unmappedUsers, allDevTeams, userDevTeamMap, userRoleAssignments, userSectionRoleAssignments] =
+    await Promise.all([
+      getAllUserMappings(),
+      getUnmappedUsers(),
+      getAllDevTeams(),
+      getAllUserDevTeamMappings().catch(() => new Map<string, number[]>()),
+      getAllUserRoleAssignments().catch(() => new Map<string, Array<{ dev_team_id: number; role: string }>>()),
+      getAllSectionRoleAssignments().catch(
+        () => new Map<string, Array<{ section_id: number; section_name: string; role: string }>>(),
+      ),
+    ])
+  return {
+    mappings,
+    unmappedUsers,
+    allDevTeams,
+    userDevTeamMap: Object.fromEntries(userDevTeamMap),
+    userRoleAssignments: Object.fromEntries(userRoleAssignments),
+    userSectionRoleAssignments: Object.fromEntries(userSectionRoleAssignments),
+  }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -152,7 +165,8 @@ export function meta() {
 }
 
 export default function AdminUsers() {
-  const { mappings, unmappedUsers, allDevTeams, userDevTeamMap } = useLoaderData<typeof loader>()
+  const { mappings, unmappedUsers, allDevTeams, userDevTeamMap, userRoleAssignments, userSectionRoleAssignments } =
+    useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
@@ -361,6 +375,37 @@ export default function AdminUsers() {
                       </Button>
                     </HStack>
                   )}
+
+                  {/* Role assignments row */}
+                  {mapping.nav_ident &&
+                    ((userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).length > 0 ||
+                      (userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).length > 0) && (
+                      <HStack gap="space-8" align="center" wrap>
+                        <Detail textColor="subtle">Roller:</Detail>
+                        {(userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).map((ra) => (
+                          <Tag key={`s-${ra.section_id}-${ra.role}`} variant="warning" size="xsmall">
+                            {ra.role === 'teknologileder'
+                              ? 'Teknologileder'
+                              : ra.role === 'seksjonsleder'
+                                ? 'Seksjonsleder'
+                                : 'Leveranseleder'}{' '}
+                            – {ra.section_name}
+                          </Tag>
+                        ))}
+                        {(userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).map((ra) => {
+                          const team = devTeamById.get(ra.dev_team_id)
+                          return team ? (
+                            <Tag
+                              key={`t-${ra.dev_team_id}-${ra.role}`}
+                              variant={ra.role === 'produktleder' ? 'warning' : 'info'}
+                              size="xsmall"
+                            >
+                              {ra.role === 'produktleder' ? 'Produktleder' : 'Utvikler'} – {team.name}
+                            </Tag>
+                          ) : null
+                        })}
+                      </HStack>
+                    )}
                 </VStack>
               </Box>
             ))}

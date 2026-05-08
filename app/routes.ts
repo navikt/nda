@@ -69,6 +69,7 @@ export default [
     route('admin/audit-reports/:id/pdf', 'routes/admin/audit-reports.$id.pdf.ts'),
     route('admin/audit-reports/:id/view', 'routes/admin/audit-reports.$id.view.ts'),
     route('admin/global-settings', 'routes/admin/global-settings.tsx'),
+    route('admin/section-roles', 'routes/admin/section-roles.tsx'),
     route('admin/application-groups', 'routes/admin/application-groups.tsx'),
     route('admin/soft-deleted', 'routes/admin/soft-deleted.tsx'),
     route('admin/verification-diffs', 'routes/admin/verification-diffs.tsx'),

@@ -19,6 +19,7 @@ import {
 import { useMemo, useRef, useState } from 'react'
 import { Form, Link, useLoaderData, useNavigation } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
+import { RoleMembersSection, type UserOption } from '~/components/RoleMembersSection'
 import { type Board, createBoard, getBoardsByDevTeam } from '~/db/boards.server'
 import { pool } from '~/db/connection.server'
 import {
@@ -31,6 +32,7 @@ import {
   updateDevTeam,
 } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
+import { assignTeamRole, getDevTeamMembersWithRoles, removeTeamRole } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
 import {
   addUserDevTeam,
@@ -41,6 +43,7 @@ import {
 import { getAllUserMappings, getUserMappingByNavIdent } from '~/db/user-mappings.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireAdmin } from '~/lib/auth.server'
+import { TEAM_ROLES, type TeamRole } from '~/lib/authorization-types'
 import { type BoardPeriodType, formatBoardLabel, getPeriodsForYear } from '~/lib/board-periods'
 import { getFormString, isValidNavIdent } from '~/lib/form-validators'
 import { logger } from '~/lib/logger.server'
@@ -68,8 +71,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('Utviklingsteamet tilhører ikke denne seksjonen', { status: 404 })
   }
 
-  const [members, linkedApps, allApps, allUsers, naisCatalogResult, boards] = await Promise.all([
+  const [members, roleMembers, linkedApps, allApps, allUsers, naisCatalogResult, boards] = await Promise.all([
     getDevTeamMembers(devTeam.id),
+    getDevTeamMembersWithRoles(devTeam.id),
     getDevTeamApplications(devTeam.id),
     getAllMonitoredApplications(),
     getAllUserMappings(),
@@ -119,6 +123,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     devTeam,
     members,
+    roleMembers,
     linkedApps,
     addableApps,
     naisCatalogFailed,
@@ -140,6 +145,10 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (devTeam.section_slug !== params.sectionSlug) {
     throw new Response('Utviklingsteamet tilhører ikke denne seksjonen', { status: 404 })
+  }
+
+  if (!devTeam.is_active) {
+    throw new Response('Utviklingsteamet er deaktivert', { status: 403 })
   }
 
   const formData = await request.formData()
@@ -178,6 +187,46 @@ export async function action({ request, params }: Route.ActionArgs) {
     } catch {
       return fail('Kunne ikke fjerne medlem.')
     }
+  }
+
+  if (intent === 'assign_role') {
+    const navIdent = getFormString(formData, 'nav_ident')?.toUpperCase()
+    const role = getFormString(formData, 'role') as TeamRole
+
+    if (!navIdent || !isValidNavIdent(navIdent)) {
+      return fail('Ugyldig NAV-ident. Forventet format: én bokstav etterfulgt av 6 siffer (f.eks. A123456).')
+    }
+
+    const userMapping = await getUserMappingByNavIdent(navIdent)
+    if (!userMapping) {
+      return fail(
+        `Brukeren ${navIdent} er ikke kjent i systemet. Opprett en brukerkobling først under Admin → Brukermappinger.`,
+      )
+    }
+
+    if (!role || !TEAM_ROLES.includes(role)) {
+      return fail('Velg en gyldig rolle (produktleder eller utvikler).')
+    }
+
+    const result = await assignTeamRole(navIdent, devTeam.id, role, user.navIdent)
+    if (!result) {
+      return fail(
+        `${navIdent} har allerede rollen ${role === 'produktleder' ? 'Produktleder' : 'Utvikler'} i dette teamet.`,
+      )
+    }
+    return ok(`${navIdent} ble tildelt rollen ${role === 'produktleder' ? 'Produktleder' : 'Utvikler'}.`)
+  }
+
+  if (intent === 'remove_role') {
+    const assignmentId = Number(getFormString(formData, 'assignment_id'))
+    if (!assignmentId || Number.isNaN(assignmentId)) {
+      return fail('Ugyldig rolletildeling.')
+    }
+    const removed = await removeTeamRole(assignmentId, user.navIdent, devTeam.id)
+    if (!removed) {
+      return fail('Kunne ikke fjerne rollen. Den kan allerede være fjernet.')
+    }
+    return ok('Rollen ble fjernet.')
   }
 
   if (intent === 'update_name') {
@@ -340,7 +389,7 @@ type AddableApp = {
 }
 
 export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
-  const { devTeam, members, linkedApps, addableApps, naisCatalogFailed, allUsers, boards, sectionSlug } =
+  const { devTeam, members, roleMembers, linkedApps, addableApps, naisCatalogFailed, allUsers, boards, sectionSlug } =
     useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
@@ -358,6 +407,7 @@ export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
 
       <BoardsSection teamName={devTeam.name} boards={boards} teamBasePath={teamBasePath} />
       <TeamNameSection name={devTeam.name} />
+      <RoleMembersSection roleMembers={roleMembers} allUsers={allUsers} />
       <MembersSection members={members} allUsers={allUsers} />
       <NaisTeamsSection naisTeamSlugs={devTeam.nais_team_slugs} />
       <ApplicationsSection
@@ -554,12 +604,6 @@ function TeamNameSection({ name }: { name: string }) {
       )}
     </VStack>
   )
-}
-
-interface UserOption {
-  navIdent: string
-  displayName: string | null
-  githubUsername: string
 }
 
 function MembersSection({ members, allUsers }: { members: DevTeamMember[]; allUsers: UserOption[] }) {
