@@ -108,7 +108,7 @@ const admin = await canAdministerTeam(user, devTeamId)
 
 **Capability flags for UI gating**: Loaders should compute capability booleans and pass them to the client. Do NOT render buttons or actions that will return 403 — gate them with capability flags.
 
-**Data minimization**: When a route is accessible to multiple roles with different privileges, only fetch data relevant to the user's actual capabilities. Do NOT load admin-only data for non-admin users.
+**Data minimization**: When a route is accessible to multiple roles with different privileges, only fetch data relevant to the user's actual capabilities. Do NOT load admin-only data for non-admin users. When returning data to the client, strip internal metadata (e.g., database IDs, role assignment timestamps) that the UI doesn't need — map to a minimal shape in the loader before returning.
 
 **Named Promise.all results**: When using `Promise.all` for parallel data fetching, always use named destructuring or named variables. Never use positional index casting.
 
