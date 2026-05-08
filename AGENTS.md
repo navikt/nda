@@ -108,7 +108,7 @@ const admin = await canAdministerTeam(user, devTeamId)
 
 **Capability flags for UI gating**: Loaders should compute capability booleans and pass them to the client. Do NOT render buttons or actions that will return 403 — gate them with capability flags.
 
-**Data minimization**: When a route is accessible to multiple roles with different privileges, only fetch data relevant to the user's actual capabilities. Do NOT load admin-only data for non-admin users. When returning data to the client, strip internal metadata (e.g., database IDs, role assignment timestamps) that the UI doesn't need — map to a minimal shape in the loader before returning.
+**Data minimization**: When a route is accessible to multiple roles with different privileges, only fetch data relevant to the user's actual capabilities. Do NOT load admin-only data for non-admin users. Resolve capabilities *before* running queries that depend on them — skip the queries entirely when the user lacks the required capability, rather than running the queries and discarding the results. When returning data to the client, strip internal metadata (e.g., database IDs, role assignment timestamps) that the UI doesn't need — map to a minimal shape in the loader before returning.
 
 **Named Promise.all results**: When using `Promise.all` for parallel data fetching, always use named destructuring or named variables. Never use positional index casting.
 
@@ -120,6 +120,26 @@ const [members, apps, boards] = await Promise.all([getMembers(), getApps(), getB
 const data = await Promise.all([getMembers(), getApps(), getBoards()])
 const members = data[0] as MemberType[]
 ```
+
+**Route parameter validation**: Always validate parsed route parameters early in loaders and actions. Use `Number.isFinite()` after `parseInt()` and throw a 400 Response for invalid values. Do NOT pass NaN to database queries.
+
+```typescript
+// ✅ Good: validate early
+const deploymentId = parseInt(params.id ?? '', 10)
+if (!Number.isFinite(deploymentId)) {
+  throw new Response('Ugyldig deployment-ID', { status: 400 })
+}
+
+// ❌ Bad: pass potentially NaN to DB
+const deploymentId = parseInt(params.id ?? '', 10)
+await getDeploymentById(deploymentId) // NaN → unexpected behavior
+```
+
+**IDOR scoping as required parameters**: When a DB mutation function accepts a scoping parameter for IDOR protection (e.g., `deploymentId` on `deleteComment`), make it **required**, not optional. Optional scoping can be silently omitted by future callers, defeating the protection. Always add an integration test that verifies the scoping works (correct ID + wrong scope → rejected).
+
+**Mutation return values**: DB mutation functions that may no-op (e.g., soft-delete on already-deleted row, scoped update with wrong ID) should return `boolean`. Actions must check the return value and return appropriate error messages — do NOT return `{ success }` when nothing was actually modified.
+
+**Consistent action error responses**: All error paths in route actions should use `return { error: '...' }` (or the `fail()` helper), never `throw new Response(...)`. Thrown responses bypass `ActionAlert` and trigger error boundaries, giving inconsistent UX. Exception: input validation errors (e.g., missing/invalid route params) may throw `new Response(..., { status: 400 })` since they indicate a bug, not a user error.
 
 ## Module Structure
 
@@ -198,7 +218,7 @@ Role-based access control for the application:
 
 Large route files split their action handlers into `*.actions.server.ts` files:
 
-- `routes/deployments/$id.actions.server.ts` — 12 deployment detail actions
+- `routes/deployments/$id.actions.server.ts` — 14 deployment detail actions (with fail-closed auth gate)
 - `routes/team/$team.env.$env.app.$app.admin.actions.server.ts` — App admin actions
 
 The route re-exports: `export { action } from './$id.actions.server'`
