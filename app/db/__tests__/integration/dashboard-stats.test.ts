@@ -458,10 +458,10 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
         m.githubUsername,
         m.navIdent,
       ])
-      await pool.query(`INSERT INTO user_dev_team_preference (dev_team_id, nav_ident) VALUES ($1, $2)`, [
-        devTeamId,
-        m.navIdent,
-      ])
+      await pool.query(
+        `INSERT INTO dev_team_role_assignments (dev_team_id, nav_ident, role, assigned_by) VALUES ($1, $2, 'utvikler', 'test')`,
+        [devTeamId, m.navIdent],
+      )
     }
     return { devTeamId, githubUsernames: opts.members.map((m) => m.githubUsername) }
   }
@@ -780,16 +780,16 @@ describe('Regression: unrecognized four_eyes_status values sum correctly', () =>
       devTeamId,
       appId,
     ])
-    // Add team member via user_mappings + user_dev_team_preference
+    // Add team member via user_mappings + dev_team_role_assignments
     await pool.query(`INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ($1, $2, $3)`, [
       'A123456',
       'alice',
       'Alice',
     ])
-    await pool.query(`INSERT INTO user_dev_team_preference (nav_ident, dev_team_id) VALUES ($1, $2)`, [
-      'A123456',
-      devTeamId,
-    ])
+    await pool.query(
+      `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by) VALUES ($1, $2, 'utvikler', 'test')`,
+      ['A123456', devTeamId],
+    )
 
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
@@ -937,7 +937,7 @@ describe('getDevTeamStatsBatch board-based counting', () => {
         [m.githubUsername, m.navIdent],
       )
       await pool.query(
-        `INSERT INTO user_dev_team_preference (dev_team_id, nav_ident) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        `INSERT INTO dev_team_role_assignments (dev_team_id, nav_ident, role, assigned_by) VALUES ($1, $2, 'utvikler', 'test') ON CONFLICT DO NOTHING`,
         [devTeamId, m.navIdent],
       )
     }
@@ -1192,13 +1192,14 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       devTeamId,
       appId,
     ])
-    // Add team member via user_mappings + user_dev_team_preference
+    // Add team member via user_mappings + dev_team_role_assignments
     await pool.query(
       "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('S123456', 'sam', 'Sam')",
     )
-    await pool.query("INSERT INTO user_dev_team_preference (nav_ident, dev_team_id) VALUES ('S123456', $1)", [
-      devTeamId,
-    ])
+    await pool.query(
+      `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by) VALUES ('S123456', $1, 'utvikler', 'test')`,
+      [devTeamId],
+    )
 
     // Create board with objective
     const boardId = (
@@ -1248,12 +1249,13 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       appId,
       teamBId,
     ])
-    // Member in both teams via user_mappings + user_dev_team_preference
+    // Member in both teams via user_mappings + dev_team_role_assignments
     await pool.query(
       "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('X123456', 'xena', 'Xena')",
     )
     await pool.query(
-      "INSERT INTO user_dev_team_preference (nav_ident, dev_team_id) VALUES ('X123456', $1), ('X123456', $2)",
+      `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by)
+       VALUES ('X123456', $1, 'utvikler', 'test'), ('X123456', $2, 'utvikler', 'test')`,
       [teamAId, teamBId],
     )
 

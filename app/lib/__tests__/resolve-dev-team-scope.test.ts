@@ -5,8 +5,8 @@ vi.mock('~/db/dev-teams.server', () => ({
   getGroupAppIdsForDevTeams: vi.fn(),
 }))
 
-vi.mock('~/db/user-dev-team-preference.server', () => ({
-  getMembersGithubUsernamesForDevTeams: vi.fn(),
+vi.mock('~/db/role-assignments.server', () => ({
+  getMembersGithubUsernamesForDevTeamRoles: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -15,11 +15,11 @@ vi.mock('~/db/connection.server', () => ({
 
 import { resolveDevTeamScope } from '~/db/deployments/home.server'
 import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
-import { getMembersGithubUsernamesForDevTeams } from '~/db/user-dev-team-preference.server'
+import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
 
 const mockGetDevTeamApplications = vi.mocked(getDevTeamApplications)
 const mockGetGroupAppIds = vi.mocked(getGroupAppIdsForDevTeams)
-const mockGetMembersUsernames = vi.mocked(getMembersGithubUsernamesForDevTeams)
+const mockGetMembersUsernames = vi.mocked(getMembersGithubUsernamesForDevTeamRoles)
 
 describe('resolveDevTeamScope', () => {
   beforeEach(() => {

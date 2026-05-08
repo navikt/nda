@@ -18,7 +18,7 @@ import {
   getUnmappedContributors,
   resolveDevTeamScope,
 } from '~/db/deployments/home.server'
-import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
+import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
 import { endOfDay } from '~/lib/date-utils'
 import { groupAppCards } from '~/lib/group-app-cards'
@@ -43,12 +43,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   // null means the user hasn't mapped a GitHub username yet.
   const personalMissingGoalLinks = githubUsername ? await getPersonalDeploymentsMissingGoalLinks(githubUsername) : null
 
-  // getUserDevTeams may fail if migration hasn't run yet
-  let selectedDevTeams: Awaited<ReturnType<typeof getUserDevTeams>> = []
+  // getUserDevTeamsByRole returns teams where user has an assigned role
+  let selectedDevTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> = []
   try {
-    selectedDevTeams = await getUserDevTeams(identity.navIdent)
+    selectedDevTeams = await getUserDevTeamsByRole(identity.navIdent)
   } catch {
-    // user_dev_team_preference table may not exist yet
+    // Graceful degradation if role assignments query fails
   }
 
   // If no dev teams selected, return minimal data

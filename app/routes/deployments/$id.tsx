@@ -60,7 +60,7 @@ import { getDevTeamsBySection, getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getDeviationsByDeploymentId } from '~/db/deviations.server'
 import { getLatestVerificationRun } from '~/db/github-data.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
-import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
+import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { getUserMappings } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import {
@@ -193,14 +193,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   // ── Phase 3: Queries that depend on Phase 2 results ─────────────────────
 
-  // Filter to teams the current user belongs to (if they have team preferences)
+  // Filter to teams the current user has a role in
   let devTeams = allDevTeams
   if (currentUser?.navIdent) {
-    const userTeams = await getUserDevTeams(currentUser.navIdent)
-    const userTeamIds = new Set(userTeams.map((t) => t.id))
-    const filtered = allDevTeams.filter((dt) => userTeamIds.has(dt.id))
-    if (filtered.length > 0) {
-      devTeams = filtered
+    try {
+      const userTeams = await getUserDevTeamsByRole(currentUser.navIdent)
+      const userTeamIds = new Set(userTeams.map((t) => t.id))
+      const filtered = allDevTeams.filter((dt) => userTeamIds.has(dt.id))
+      if (filtered.length > 0) {
+        devTeams = filtered
+      }
+    } catch {
+      // Graceful degradation — show all teams if role query fails
     }
   }
 

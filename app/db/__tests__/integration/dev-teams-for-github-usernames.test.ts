@@ -1,11 +1,11 @@
 /**
- * Integration test: getDevTeamsForGithubUsernames
+ * Integration test: getDevTeamsForGithubUsernamesByRole
  * Validates reverse lookup from GitHub usernames → dev teams.
  */
 
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { getDevTeamsForGithubUsernames } from '~/db/user-dev-team-preference.server'
+import { getDevTeamsForGithubUsernamesByRole } from '~/db/role-assignments.server'
 import { seedSection, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -38,22 +38,22 @@ async function seedUserMapping(github: string, navIdent: string, opts?: { delete
   )
 }
 
-async function seedDevTeamPreference(navIdent: string, devTeamId: number): Promise<void> {
-  await pool.query(`INSERT INTO user_dev_team_preference (nav_ident, dev_team_id, updated_at) VALUES ($1, $2, NOW())`, [
-    navIdent,
-    devTeamId,
-  ])
+async function seedDevTeamRoleAssignment(navIdent: string, devTeamId: number): Promise<void> {
+  await pool.query(
+    `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by) VALUES ($1, $2, 'utvikler', 'test')`,
+    [navIdent, devTeamId],
+  )
 }
 
-describe('getDevTeamsForGithubUsernames', () => {
+describe('getDevTeamsForGithubUsernamesByRole', () => {
   it('returns dev teams for matching GitHub usernames', async () => {
     const sectionId = await seedSection(pool, 'sec1')
     const teamId = await seedDevTeam(sectionId, 'alpha', 'Team Alpha')
 
     await seedUserMapping('alice-gh', 'A123456')
-    await seedDevTeamPreference('A123456', teamId)
+    await seedDevTeamRoleAssignment('A123456', teamId)
 
-    const result = await getDevTeamsForGithubUsernames(['alice-gh'])
+    const result = await getDevTeamsForGithubUsernamesByRole(['alice-gh'])
 
     expect(result).toHaveLength(1)
     expect(result[0].slug).toBe('alpha')
@@ -65,9 +65,9 @@ describe('getDevTeamsForGithubUsernames', () => {
     const teamId = await seedDevTeam(sectionId, 'beta', 'Team Beta')
 
     await seedUserMapping('Bob-GH', 'B654321')
-    await seedDevTeamPreference('B654321', teamId)
+    await seedDevTeamRoleAssignment('B654321', teamId)
 
-    const result = await getDevTeamsForGithubUsernames(['bob-gh'])
+    const result = await getDevTeamsForGithubUsernamesByRole(['bob-gh'])
 
     expect(result).toHaveLength(1)
     expect(result[0].slug).toBe('beta')
@@ -78,9 +78,9 @@ describe('getDevTeamsForGithubUsernames', () => {
     const teamId = await seedDevTeam(sectionId, 'gamma', 'Team Gamma')
 
     await seedUserMapping('charlie-gh', 'C111111', { deletedAt: new Date() })
-    await seedDevTeamPreference('C111111', teamId)
+    await seedDevTeamRoleAssignment('C111111', teamId)
 
-    const result = await getDevTeamsForGithubUsernames(['charlie-gh'])
+    const result = await getDevTeamsForGithubUsernamesByRole(['charlie-gh'])
 
     expect(result).toHaveLength(0)
   })
@@ -94,15 +94,15 @@ describe('getDevTeamsForGithubUsernames', () => {
     const teamId = rows[0].id
 
     await seedUserMapping('dave-gh', 'D222222')
-    await seedDevTeamPreference('D222222', teamId)
+    await seedDevTeamRoleAssignment('D222222', teamId)
 
-    const result = await getDevTeamsForGithubUsernames(['dave-gh'])
+    const result = await getDevTeamsForGithubUsernamesByRole(['dave-gh'])
 
     expect(result).toHaveLength(0)
   })
 
   it('returns empty array for empty input', async () => {
-    const result = await getDevTeamsForGithubUsernames([])
+    const result = await getDevTeamsForGithubUsernamesByRole([])
     expect(result).toEqual([])
   })
 
@@ -112,10 +112,10 @@ describe('getDevTeamsForGithubUsernames', () => {
 
     await seedUserMapping('eve-gh', 'E333333')
     await seedUserMapping('frank-gh', 'F444444')
-    await seedDevTeamPreference('E333333', teamId)
-    await seedDevTeamPreference('F444444', teamId)
+    await seedDevTeamRoleAssignment('E333333', teamId)
+    await seedDevTeamRoleAssignment('F444444', teamId)
 
-    const result = await getDevTeamsForGithubUsernames(['eve-gh', 'frank-gh'])
+    const result = await getDevTeamsForGithubUsernamesByRole(['eve-gh', 'frank-gh'])
 
     expect(result).toHaveLength(1)
     expect(result[0].slug).toBe('delta')

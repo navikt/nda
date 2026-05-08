@@ -6,7 +6,7 @@ import { getLinkedObjectivesForApps } from '~/db/deployment-goal-links.server'
 import { type DeploymentFilters as DeploymentFiltersType, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { getMembersGithubUsernamesForDevTeams } from '~/db/user-dev-team-preference.server'
+import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
 import { getUserMappingByNavIdent, getUserMappings } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
@@ -43,7 +43,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     getDevTeamApplications(devTeam.id),
     getGroupAppIdsForDevTeams([devTeam.id]),
     getAllMonitoredApplications(),
-    getMembersGithubUsernamesForDevTeams([devTeam.id]).catch(() => [] as string[]),
+    getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
   ])
 
   const directAppIds = new Set([...directApps.map((a) => a.monitored_app_id), ...groupAppIds])

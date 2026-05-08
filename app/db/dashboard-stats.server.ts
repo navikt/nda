@@ -570,11 +570,12 @@ export async function getDevTeamStatsBatch(
     non_member_deployments: number
   }>(
     `WITH team_members AS (
-       SELECT p.dev_team_id, LOWER(um.github_username) AS github_username
-       FROM user_dev_team_preference p
+       SELECT DISTINCT r.dev_team_id, LOWER(um.github_username) AS github_username
+       FROM dev_team_role_assignments r
        JOIN user_mappings um
-         ON UPPER(um.nav_ident) = UPPER(p.nav_ident) AND um.deleted_at IS NULL
-       WHERE p.dev_team_id = ANY($1::int[])
+         ON UPPER(um.nav_ident) = UPPER(r.nav_ident) AND um.deleted_at IS NULL
+       WHERE r.dev_team_id = ANY($1::int[])
+         AND r.deleted_at IS NULL
          AND um.github_username IS NOT NULL
      ),
      team_apps AS (
