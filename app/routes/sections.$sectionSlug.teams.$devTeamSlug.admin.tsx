@@ -32,7 +32,7 @@ import {
   updateDevTeam,
 } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { assignTeamRole, getDevTeamMembersWithRoles, removeTeamRole } from '~/db/role-assignments.server'
+import { assignTeamRole, getDevTeamMembersWithRoles, getTeamRoleAssignmentById, removeTeamRole } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
 import {
   addUserDevTeam,
@@ -42,7 +42,8 @@ import {
 } from '~/db/user-dev-team-preference.server'
 import { getAllUserMappings, getUserMappingByNavIdent } from '~/db/user-mappings.server'
 import { fail, ok } from '~/lib/action-result'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
 import { TEAM_ROLES, type TeamRole } from '~/lib/authorization-types'
 import { type BoardPeriodType, formatBoardLabel, getPeriodsForYear } from '~/lib/board-periods'
 import { getFormString, isValidNavIdent } from '~/lib/form-validators'
@@ -55,7 +56,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
 
   const devTeam = await getDevTeamBySlug(params.devTeamSlug)
   if (!devTeam) {
@@ -71,54 +72,73 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('Utviklingsteamet tilhører ikke denne seksjonen', { status: 404 })
   }
 
-  const [members, roleMembers, linkedApps, allApps, allUsers, naisCatalogResult, boards] = await Promise.all([
-    getDevTeamMembers(devTeam.id),
-    getDevTeamMembersWithRoles(devTeam.id),
-    getDevTeamApplications(devTeam.id),
-    getAllMonitoredApplications(),
-    getAllUserMappings(),
-    fetchAllTeamsAndApplications().then(
-      (catalog) => ({ ok: true as const, catalog }),
-      (err: unknown) => {
-        logger.error('Kunne ikke hente Nais-katalog:', err)
-        return {
-          ok: false as const,
-          catalog: [] as Array<{ teamSlug: string; appName: string; environmentName: string }>,
-        }
-      },
-    ),
-    getBoardsByDevTeam(devTeam.id),
-  ])
-  const naisCatalog = naisCatalogResult.catalog
-  const naisCatalogFailed = !naisCatalogResult.ok
+  const { canAccess, canAdmin } = await resolveTeamAdminCapabilities(user, devTeam.id)
+  if (!canAccess) {
+    throw new Response('Du har ikke tilgang til å administrere dette teamet', { status: 403 })
+  }
 
-  // Build addableApps: Nais apps not already linked to this team
-  const naisTeamSlugs = devTeam.nais_team_slugs ?? []
-  const directAppIds = new Set(linkedApps.map((a) => a.monitored_app_id))
-  const teamApps = allApps.filter(
-    (app) => app.is_active && (directAppIds.has(app.id) || naisTeamSlugs.includes(app.team_slug)),
-  )
-  const linkedKeys = new Set(teamApps.map((a) => `${a.team_slug}|${a.environment_name}|${a.app_name}`))
-  const monitoredByKey = new Map(
-    allApps.filter((a) => a.is_active).map((a) => [`${a.team_slug}|${a.environment_name}|${a.app_name}`, a.id]),
-  )
-  const allowedEnvs = process.env.ALLOWED_ENVIRONMENTS?.split(',').map((e) => e.trim()) || []
-  const filteredCatalog =
-    allowedEnvs.length > 0 ? naisCatalog.filter((a) => allowedEnvs.includes(a.environmentName)) : naisCatalog
-  const addableApps: AddableApp[] = filteredCatalog
-    .filter((entry) => !linkedKeys.has(`${entry.teamSlug}|${entry.environmentName}|${entry.appName}`))
-    .map((entry) => ({
-      team_slug: entry.teamSlug,
-      environment_name: entry.environmentName,
-      app_name: entry.appName,
-      monitored_id: monitoredByKey.get(`${entry.teamSlug}|${entry.environmentName}|${entry.appName}`) ?? null,
-    }))
-    .sort(
-      (a, b) =>
-        a.team_slug.localeCompare(b.team_slug, 'nb') ||
-        a.app_name.localeCompare(b.app_name, 'nb') ||
-        a.environment_name.localeCompare(b.environment_name, 'nb'),
+  const [roleMembers, allUsers] = await Promise.all([
+    getDevTeamMembersWithRoles(devTeam.id),
+    getAllUserMappings(),
+  ])
+
+  let members: DevTeamMember[] = []
+  let linkedApps: DevTeamApplication[] = []
+  let addableApps: AddableApp[] = []
+  let naisCatalogFailed = false
+  let boards: Board[] = []
+
+  if (canAdmin) {
+    const [adminMembers, adminLinkedApps, allApps, naisCatalogResult, adminBoards] = await Promise.all([
+      getDevTeamMembers(devTeam.id),
+      getDevTeamApplications(devTeam.id),
+      getAllMonitoredApplications(),
+      fetchAllTeamsAndApplications().then(
+        (catalog) => ({ ok: true as const, catalog }),
+        (err: unknown) => {
+          logger.error('Kunne ikke hente Nais-katalog:', err)
+          return {
+            ok: false as const,
+            catalog: [] as Array<{ teamSlug: string; appName: string; environmentName: string }>,
+          }
+        },
+      ),
+      getBoardsByDevTeam(devTeam.id),
+    ])
+
+    members = adminMembers
+    linkedApps = adminLinkedApps
+    boards = adminBoards
+    naisCatalogFailed = !naisCatalogResult.ok
+
+    const naisCatalog = naisCatalogResult.catalog
+    const naisTeamSlugs = devTeam.nais_team_slugs ?? []
+    const directAppIds = new Set(linkedApps.map((a) => a.monitored_app_id))
+    const teamApps = allApps.filter(
+      (app) => app.is_active && (directAppIds.has(app.id) || naisTeamSlugs.includes(app.team_slug)),
     )
+    const linkedKeys = new Set(teamApps.map((a) => `${a.team_slug}|${a.environment_name}|${a.app_name}`))
+    const monitoredByKey = new Map(
+      allApps.filter((a) => a.is_active).map((a) => [`${a.team_slug}|${a.environment_name}|${a.app_name}`, a.id]),
+    )
+    const allowedEnvs = process.env.ALLOWED_ENVIRONMENTS?.split(',').map((e) => e.trim()) || []
+    const filteredCatalog =
+      allowedEnvs.length > 0 ? naisCatalog.filter((a) => allowedEnvs.includes(a.environmentName)) : naisCatalog
+    addableApps = filteredCatalog
+      .filter((entry) => !linkedKeys.has(`${entry.teamSlug}|${entry.environmentName}|${entry.appName}`))
+      .map((entry) => ({
+        team_slug: entry.teamSlug,
+        environment_name: entry.environmentName,
+        app_name: entry.appName,
+        monitored_id: monitoredByKey.get(`${entry.teamSlug}|${entry.environmentName}|${entry.appName}`) ?? null,
+      }))
+      .sort(
+        (a, b) =>
+          a.team_slug.localeCompare(b.team_slug, 'nb') ||
+          a.app_name.localeCompare(b.app_name, 'nb') ||
+          a.environment_name.localeCompare(b.environment_name, 'nb'),
+      )
+  }
 
   return {
     devTeam,
@@ -128,6 +148,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     addableApps,
     naisCatalogFailed,
     boards,
+    canAdmin,
     sectionSlug: section.slug,
     allUsers: allUsers.flatMap((u) =>
       u.nav_ident ? [{ navIdent: u.nav_ident, displayName: u.display_name, githubUsername: u.github_username }] : [],
@@ -136,7 +157,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const user = await requireAdmin(request)
+  const user = await requireUser(request)
 
   const devTeam = await getDevTeamBySlug(params.devTeamSlug)
   if (!devTeam) {
@@ -153,6 +174,15 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const formData = await request.formData()
   const intent = getFormString(formData, 'intent')
+
+  // Role intents use canAssignTeamRole as sole gate (avoids double DB lookup)
+  // All other intents require canAdmin via resolveTeamAdminCapabilities
+  if (intent !== 'assign_role' && intent !== 'remove_role') {
+    const { canAdmin } = await resolveTeamAdminCapabilities(user, devTeam.id)
+    if (!canAdmin) {
+      throw new Response('Du har ikke tilgang til å administrere dette teamet', { status: 403 })
+    }
+  }
 
   if (intent === 'add_member') {
     const navIdent = getFormString(formData, 'nav_ident')
@@ -197,15 +227,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       return fail('Ugyldig NAV-ident. Forventet format: én bokstav etterfulgt av 6 siffer (f.eks. A123456).')
     }
 
+    if (!role || !TEAM_ROLES.includes(role)) {
+      return fail('Velg en gyldig rolle (produktleder eller utvikler).')
+    }
+
+    if (!(await canAssignTeamRole(user, devTeam.id, role))) {
+      throw new Response('Du har ikke tilgang til å tildele denne rollen', { status: 403 })
+    }
+
     const userMapping = await getUserMappingByNavIdent(navIdent)
     if (!userMapping) {
       return fail(
         `Brukeren ${navIdent} er ikke kjent i systemet. Opprett en brukerkobling først under Admin → Brukermappinger.`,
       )
-    }
-
-    if (!role || !TEAM_ROLES.includes(role)) {
-      return fail('Velg en gyldig rolle (produktleder eller utvikler).')
     }
 
     const result = await assignTeamRole(navIdent, devTeam.id, role, user.navIdent)
@@ -222,6 +256,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!assignmentId || Number.isNaN(assignmentId)) {
       return fail('Ugyldig rolletildeling.')
     }
+
+    const assignment = await getTeamRoleAssignmentById(assignmentId, devTeam.id)
+    if (!assignment) {
+      return fail('Kunne ikke fjerne rollen. Den kan allerede være fjernet.')
+    }
+
+    if (!(await canAssignTeamRole(user, devTeam.id, assignment.role))) {
+      throw new Response('Du har ikke tilgang til å fjerne denne rollen', { status: 403 })
+    }
+
     const removed = await removeTeamRole(assignmentId, user.navIdent, devTeam.id)
     if (!removed) {
       return fail('Kunne ikke fjerne rollen. Den kan allerede være fjernet.')
@@ -389,7 +433,7 @@ type AddableApp = {
 }
 
 export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
-  const { devTeam, members, roleMembers, linkedApps, addableApps, naisCatalogFailed, allUsers, boards, sectionSlug } =
+  const { devTeam, members, roleMembers, linkedApps, addableApps, naisCatalogFailed, allUsers, boards, sectionSlug, canAdmin } =
     useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
@@ -400,22 +444,28 @@ export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
         <Heading level="1" size="large" spacing>
           Administrer {devTeam.name}
         </Heading>
-        <BodyShort textColor="subtle">Administrer medlemmer, applikasjoner og Nais-team.</BodyShort>
+        <BodyShort textColor="subtle">
+          {canAdmin
+            ? 'Administrer medlemmer, applikasjoner og Nais-team.'
+            : 'Administrer roller for teamet.'}
+        </BodyShort>
       </div>
 
       <ActionAlert data={actionData} />
 
-      <BoardsSection teamName={devTeam.name} boards={boards} teamBasePath={teamBasePath} />
-      <TeamNameSection name={devTeam.name} />
+      {canAdmin && <BoardsSection teamName={devTeam.name} boards={boards} teamBasePath={teamBasePath} />}
+      {canAdmin && <TeamNameSection name={devTeam.name} />}
       <RoleMembersSection roleMembers={roleMembers} allUsers={allUsers} />
-      <MembersSection members={members} allUsers={allUsers} />
-      <NaisTeamsSection naisTeamSlugs={devTeam.nais_team_slugs} />
-      <ApplicationsSection
-        linkedApps={linkedApps}
-        addableApps={addableApps}
-        naisCatalogFailed={naisCatalogFailed}
-        isSubmitting={navigation.state === 'submitting'}
-      />
+      {canAdmin && <MembersSection members={members} allUsers={allUsers} />}
+      {canAdmin && <NaisTeamsSection naisTeamSlugs={devTeam.nais_team_slugs} />}
+      {canAdmin && (
+        <ApplicationsSection
+          linkedApps={linkedApps}
+          addableApps={addableApps}
+          naisCatalogFailed={naisCatalogFailed}
+          isSubmitting={navigation.state === 'submitting'}
+        />
+      )}
     </VStack>
   )
 }
