@@ -26,6 +26,7 @@ import { BulkLinkGoalModal, SelectLinkGoalModal } from '~/components/BulkLinkGoa
 import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
 import { ExternalLink } from '~/components/ExternalLink'
+import { UserRolesDisplay } from '~/components/UserRolesDisplay'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import { bulkAddDeploymentGoalLinks, getUnlinkedDependabotDeploymentIds } from '~/db/deployment-goal-links.server'
 import {
@@ -36,6 +37,7 @@ import {
   getDeploymentCountByDeployer,
 } from '~/db/deployments.server'
 import { getAllDevTeams } from '~/db/dev-teams.server'
+import { getUserRolesForDisplay, type UserRoleDisplay } from '~/db/role-assignments.server'
 import { getAllSectionsWithTeams } from '~/db/sections.server'
 import { addUserDevTeam, getUserDevTeams, removeUserDevTeam } from '~/db/user-dev-team-preference.server'
 import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
@@ -108,12 +110,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Fetch dev teams if user has a nav_ident
   let devTeams: Awaited<ReturnType<typeof getUserDevTeams>> = []
+  let userRoles: UserRoleDisplay = { sectionRoles: [], teamRoles: [] }
   if (mapping?.nav_ident) {
-    try {
-      devTeams = await getUserDevTeams(mapping.nav_ident)
-    } catch {
-      // Table may not exist yet
-    }
+    const [devTeamsResult, rolesResult] = await Promise.allSettled([
+      getUserDevTeams(mapping.nav_ident),
+      getUserRolesForDisplay(mapping.nav_ident.toUpperCase()),
+    ])
+    if (devTeamsResult.status === 'fulfilled') devTeams = devTeamsResult.value
+    if (rolesResult.status === 'fulfilled') userRoles = rolesResult.value
   }
 
   // Load available boards for bulk goal linking
@@ -162,6 +166,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     botDisplayName,
     botDescription,
     devTeams,
+    userRoles,
     availableBoards,
     isOwnProfile,
     isAdmin,
@@ -354,6 +359,7 @@ export default function UserPage() {
     botDisplayName,
     botDescription,
     devTeams,
+    userRoles,
     availableBoards,
     isOwnProfile,
     isAdmin,
@@ -490,6 +496,9 @@ export default function UserPage() {
           </Box>
         )}
       </HGrid>
+
+      {/* User roles (read-only) */}
+      <UserRolesDisplay userRoles={userRoles} />
 
       {/* Dev team memberships */}
       {(isOwnProfile || isAdmin) && availableDevTeams.length > 0 ? (

@@ -264,3 +264,57 @@ the `rel` attributes.
 `/admin/audit-reports/123/pdf`) do NOT need the icon — keep using
 `<Link to=... target="_blank">` from React Router for those.
 
+## Storybook & Component Extraction
+
+**This is the standard approach for all new UI work going forward.**
+
+### Principle
+
+Route files (`app/routes/`) should be thin orchestrators — loaders, actions, and a thin component shell that composes extracted components. Non-trivial UI should live in `app/components/` so it can be:
+
+1. Imported in Storybook stories without mocking loaders/actions
+2. Reused across routes
+3. Tested in isolation
+
+### How to Extract
+
+1. **Identify non-trivial UI** in a route file (tables, modals, forms with state, complex card layouts)
+2. **Extract to `app/components/ComponentName.tsx`** — accept data via props instead of `useLoaderData()`
+3. **Keep `Form` from react-router** in extracted components — it works in Storybook via the `createMemoryRouter` wrapper in `.storybook/preview.tsx`
+4. **Export the component and its prop types** (interfaces for the data it needs)
+5. **Update the route** to import and render the component, passing loader data as props
+6. **Write Storybook stories** that import the component directly — no JSX duplication
+
+### Story Location
+
+Stories live alongside routes in `app/routes/__stories__/`. The glob pattern `../app/**/*.stories.@(ts|tsx)` picks them up.
+
+### Story Pattern
+
+```tsx
+import type { Meta, StoryObj } from '@storybook/react'
+import { MyComponent } from '~/components/MyComponent'
+
+const meta: Meta<typeof MyComponent> = {
+  title: 'Features/MyComponent',
+  component: MyComponent,
+}
+export default meta
+type Story = StoryObj<typeof MyComponent>
+
+export const Default: Story = {
+  args: {
+    // Pass mock data matching the component's props
+    items: [{ id: 1, name: 'Example' }],
+  },
+}
+```
+
+### Anti-Pattern (Do NOT Do This)
+
+Do NOT duplicate route JSX inline in stories. If you find yourself copy-pasting JSX from a route into a story, you need to extract a component first.
+
+### Test Person Names
+
+All fictional person names in stories, tests, and mock data must use the format **"Adjektiv Substantiv"** (Norwegian adjective + noun). Examples: "Glad Fjord", "Rask Elv", "Stille Skog", "Modig Bjørk". Do NOT use real-sounding Norwegian names like "Ola Nordmann" or "Kari Hansen".
+
