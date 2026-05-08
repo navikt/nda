@@ -24,12 +24,12 @@ import { getBoardObjectiveProgress, getContributedBoards, getDevTeamStats } from
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
 import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { getSectionBySlug } from '~/db/sections.server'
 import {
-  type DevTeamMember,
-  getDevTeamMembers,
-  getMembersGithubUsernamesForDevTeams,
-} from '~/db/user-dev-team-preference.server'
+  type DevTeamMemberWithRole,
+  getDevTeamMembersWithRoles,
+  getMembersGithubUsernamesForDevTeamRoles,
+} from '~/db/role-assignments.server'
+import { getSectionBySlug } from '~/db/sections.server'
 import { requireUser } from '~/lib/auth.server'
 import { groupAppCards } from '~/lib/group-app-cards'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug'
@@ -48,13 +48,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [boards, members, directApps, groupAppIds, allApps, alertCounts, activeRepos, deployerUsernames] =
     await Promise.all([
       getBoardsByDevTeam(devTeam.id),
-      getDevTeamMembers(devTeam.id).catch(() => [] as DevTeamMember[]),
+      getDevTeamMembersWithRoles(devTeam.id).catch(() => [] as DevTeamMemberWithRole[]),
       getDevTeamApplications(devTeam.id),
       getGroupAppIdsForDevTeams([devTeam.id]),
       getAllMonitoredApplications(),
       getAllAlertCounts(),
       getAllActiveRepositories(),
-      getMembersGithubUsernamesForDevTeams([devTeam.id]).catch(() => [] as string[]),
+      getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
     ])
 
   // Top-of-page coverage stats: YTD, filtered to team members' deploys.
@@ -80,7 +80,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const appsForStats = showAllApps ? allApps.filter((a) => a.is_active) : teamApps
 
   // Filter stats to deploys made by team members (their GitHub usernames).
-  // deployerUsernames is fetched in Promise.all above via getMembersGithubUsernamesForDevTeams
+  // deployerUsernames is fetched in Promise.all above via getMembersGithubUsernamesForDevTeamRoles
   // (handles soft-deletes, consistent with the deployment list page's team filter).
   // hasMappedMembers and unmappedMemberCount are derived from the members list
   // (not from deployerUsernames which is deduplicated and may not reflect 1:1 mapping).
@@ -146,12 +146,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const section = await getSectionBySlug(params.sectionSlug)
 
+  // Deduplicate members by nav_ident (a user may have multiple roles)
+  const uniqueMembers = Array.from(new Map(members.map((m) => [m.nav_ident.toUpperCase(), m])).values())
+
   return {
     devTeam,
     activeBoard,
     activeBoardProgress,
     contributedBoards,
-    members,
+    members: uniqueMembers.map(({ nav_ident, display_name, github_username }) => ({
+      nav_ident,
+      display_name,
+      github_username,
+    })),
     appCards,
     showAllApps,
     showAllBoards,
@@ -159,7 +166,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     sectionName: section?.name ?? params.sectionSlug,
     teamCoverage,
     hasMappedMembers,
-    unmappedMemberCount: members.filter((m) => !m.github_username).length,
+    unmappedMemberCount: uniqueMembers.filter((m) => !m.github_username).length,
   }
 }
 

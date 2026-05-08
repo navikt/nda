@@ -24,13 +24,13 @@ import {
   getDeploymentsNeedingDeployNotify,
   getPersonalDeploymentsMissingGoalLinks,
 } from '~/db/deployments.server'
+import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import {
   createSlackNotification,
   getSlackNotificationByMessage,
   logSlackInteraction,
   updateSlackNotification,
 } from '~/db/slack-notifications.server'
-import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
 import { getUserMappingBySlackId } from '~/db/user-mappings.server'
 import { logger } from '~/lib/logger.server'
 import {
@@ -702,7 +702,12 @@ async function buildPersonalizedHomeTabInput({
     }
   }
 
-  const devTeams = await getUserDevTeams(navIdent)
+  let devTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> = []
+  try {
+    devTeams = await getUserDevTeamsByRole(navIdent)
+  } catch {
+    // Graceful degradation — show onboarding view if role query fails
+  }
 
   // Resolve scope (nais slugs, app IDs, deployer filter) — shared with
   // /my-teams so that both views show consistent numbers.

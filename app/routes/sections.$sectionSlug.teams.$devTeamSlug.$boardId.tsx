@@ -22,8 +22,8 @@ import {
 } from '~/db/boards.server'
 import { getBoardObjectiveProgress } from '~/db/dashboard-stats.server'
 import { getDevTeamBySlug } from '~/db/dev-teams.server'
+import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import { getMembersGithubUsernamesForDevTeams } from '~/db/user-dev-team-preference.server'
 import { requireUser } from '~/lib/auth.server'
 import { formatBoardLabel } from '~/lib/board-periods'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.$boardId'
@@ -46,7 +46,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const [section, deployerUsernames] = await Promise.all([
     getSectionBySlug(params.sectionSlug),
-    getMembersGithubUsernamesForDevTeams([devTeam.id]).catch(() => [] as string[]),
+    getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
   ])
   const { objectives: objectiveProgress } = await getBoardObjectiveProgress(board.id, deployerUsernames)
 

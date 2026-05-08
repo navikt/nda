@@ -202,7 +202,7 @@ export async function getUserRolesForDisplay(navIdent: string): Promise<UserRole
   }
 }
 
-interface DevTeamMemberWithRole {
+export interface DevTeamMemberWithRole {
   id: number
   nav_ident: string
   role: TeamRole

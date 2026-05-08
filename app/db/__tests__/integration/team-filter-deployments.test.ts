@@ -1,14 +1,14 @@
 /**
  * Integration test: Team-based filtering on the deployments list.
  *
- * Covers `getMembersGithubUsernamesForDevTeams` and the
+ * Covers `getMembersGithubUsernamesForDevTeamRoles` and the
  * `deployer_usernames` filter on `getDeploymentsPaginated`.
  */
 
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDeploymentsPaginated } from '~/db/deployments.server'
-import { getMembersGithubUsernamesForDevTeams } from '~/db/user-dev-team-preference.server'
+import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
 import { seedApp, seedDeployment, seedDevTeam, seedSection, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -35,15 +35,16 @@ async function seedUser(navIdent: string, githubUsername: string) {
 
 async function joinDevTeam(navIdent: string, devTeamId: number) {
   await pool.query(
-    `INSERT INTO user_dev_team_preference (nav_ident, dev_team_id) VALUES ($1, $2)
+    `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by)
+     VALUES ($1, $2, 'utvikler', 'test')
      ON CONFLICT DO NOTHING`,
     [navIdent, devTeamId],
   )
 }
 
-describe('getMembersGithubUsernamesForDevTeams', () => {
+describe('getMembersGithubUsernamesForDevTeamRoles', () => {
   it('returns empty array for empty input', async () => {
-    expect(await getMembersGithubUsernamesForDevTeams([])).toEqual([])
+    expect(await getMembersGithubUsernamesForDevTeamRoles([])).toEqual([])
   })
 
   it('returns deduplicated github usernames across multiple teams', async () => {
@@ -59,7 +60,7 @@ describe('getMembersGithubUsernamesForDevTeams', () => {
     await joinDevTeam('B222222', teamA)
     await joinDevTeam('C333333', teamB)
 
-    const usernames = await getMembersGithubUsernamesForDevTeams([teamA, teamB])
+    const usernames = await getMembersGithubUsernamesForDevTeamRoles([teamA, teamB])
     expect(usernames.sort()).toEqual(['alice', 'bob', 'carol'])
   })
 
@@ -71,7 +72,7 @@ describe('getMembersGithubUsernamesForDevTeams', () => {
     await joinDevTeam('A111111', team)
     await joinDevTeam('B222222', team)
 
-    const usernames = await getMembersGithubUsernamesForDevTeams([team])
+    const usernames = await getMembersGithubUsernamesForDevTeamRoles([team])
     expect(usernames).toEqual(['alice'])
   })
 
@@ -84,7 +85,7 @@ describe('getMembersGithubUsernamesForDevTeams', () => {
     await joinDevTeam('A111111', team)
     await joinDevTeam('B222222', team)
 
-    const usernames = await getMembersGithubUsernamesForDevTeams([team])
+    const usernames = await getMembersGithubUsernamesForDevTeamRoles([team])
     expect(usernames).toEqual(['alice'])
   })
 })

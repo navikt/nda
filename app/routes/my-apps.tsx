@@ -6,7 +6,7 @@ import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
 import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { getUserDevTeams } from '~/db/user-dev-team-preference.server'
+import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { requireUser } from '~/lib/auth.server'
 import { groupAppCards } from '~/lib/group-app-cards'
 import type { Route } from './+types/my-apps'
@@ -18,11 +18,11 @@ export function meta(_args: Route.MetaArgs) {
 export async function loader({ request }: Route.LoaderArgs) {
   const identity = await requireUser(request)
 
-  let selectedDevTeams: Awaited<ReturnType<typeof getUserDevTeams>> = []
+  let selectedDevTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> = []
   try {
-    selectedDevTeams = await getUserDevTeams(identity.navIdent)
+    selectedDevTeams = await getUserDevTeamsByRole(identity.navIdent)
   } catch {
-    // user_dev_team_preference table may not exist yet
+    // Graceful degradation if role assignments query fails
   }
 
   if (selectedDevTeams.length === 0) {

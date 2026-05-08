@@ -3,8 +3,8 @@ import { isGitHubBot, NON_BRACKET_BOT_USERNAMES } from '~/lib/github-bots'
 import { pool } from '../connection.server'
 import type { AppWithIssues, DeploymentWithApp } from '../deployments.server'
 import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '../dev-teams.server'
+import { getMembersGithubUsernamesForDevTeamRoles } from '../role-assignments.server'
 import { lowerUsernames, userDeploymentMatchAnySql, userDeploymentMatchSql } from '../user-deployment-match'
-import { getMembersGithubUsernamesForDevTeams } from '../user-dev-team-preference.server'
 
 // ---------------------------------------------------------------------------
 // Shared dev-team scope resolution
@@ -43,7 +43,7 @@ export async function resolveDevTeamScope(
 
   let deployerUsernames: string[] | undefined
   try {
-    deployerUsernames = await getMembersGithubUsernamesForDevTeams(devTeamIds)
+    deployerUsernames = await getMembersGithubUsernamesForDevTeamRoles(devTeamIds)
   } catch {
     deployerUsernames = undefined
   }

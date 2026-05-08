@@ -32,7 +32,12 @@ import {
   updateDevTeam,
 } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { assignTeamRole, getDevTeamMembersWithRoles, getTeamRoleAssignmentById, removeTeamRole } from '~/db/role-assignments.server'
+import {
+  assignTeamRole,
+  getDevTeamMembersWithRoles,
+  getTeamRoleAssignmentById,
+  removeTeamRole,
+} from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
 import {
   addUserDevTeam,
@@ -77,10 +82,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('Du har ikke tilgang til å administrere dette teamet', { status: 403 })
   }
 
-  const [roleMembers, allUsers] = await Promise.all([
-    getDevTeamMembersWithRoles(devTeam.id),
-    getAllUserMappings(),
-  ])
+  const [roleMembers, allUsers] = await Promise.all([getDevTeamMembersWithRoles(devTeam.id), getAllUserMappings()])
 
   let members: DevTeamMember[] = []
   let linkedApps: DevTeamApplication[] = []
@@ -433,8 +435,18 @@ type AddableApp = {
 }
 
 export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
-  const { devTeam, members, roleMembers, linkedApps, addableApps, naisCatalogFailed, allUsers, boards, sectionSlug, canAdmin } =
-    useLoaderData<typeof loader>()
+  const {
+    devTeam,
+    members,
+    roleMembers,
+    linkedApps,
+    addableApps,
+    naisCatalogFailed,
+    allUsers,
+    boards,
+    sectionSlug,
+    canAdmin,
+  } = useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
 
@@ -445,9 +457,7 @@ export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
           Administrer {devTeam.name}
         </Heading>
         <BodyShort textColor="subtle">
-          {canAdmin
-            ? 'Administrer medlemmer, applikasjoner og Nais-team.'
-            : 'Administrer roller for teamet.'}
+          {canAdmin ? 'Administrer medlemmer, applikasjoner og Nais-team.' : 'Administrer roller for teamet.'}
         </BodyShort>
       </div>
 

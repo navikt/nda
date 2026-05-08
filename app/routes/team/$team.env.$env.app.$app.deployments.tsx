@@ -8,10 +8,10 @@ import { type DeploymentFilters as DeploymentFiltersType, getDeploymentsPaginate
 import { getDevTeamBySlug, getDevTeamsForApp, getDevTeamsForApps } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import {
-  getDevTeamsForGithubUsernames,
-  getMembersGithubUsernamesForDevTeams,
-  getUserDevTeams,
-} from '~/db/user-dev-team-preference.server'
+  getDevTeamsForGithubUsernamesByRole,
+  getMembersGithubUsernamesForDevTeamRoles,
+  getUserDevTeamsByRole,
+} from '~/db/role-assignments.server'
 import { getUserMappingByNavIdent, getUserMappings } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
@@ -67,22 +67,22 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         ])
       : await getDevTeamsForApp(app.id, app.team_slug)
 
-  // User's chosen dev teams — needed both to render the "Mine team" option
-  // (only shown when the user has selected at least one team) and to resolve
+  // User's assigned dev teams — needed both to render the "Mine team" option
+  // (only shown when the user has a role in at least one team) and to resolve
   // it to a list of GitHub usernames when applied.
-  let userDevTeams: Awaited<ReturnType<typeof getUserDevTeams>> = []
+  let userDevTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> | null = null
   if (currentUser?.navIdent) {
     try {
-      userDevTeams = await getUserDevTeams(currentUser.navIdent)
+      userDevTeams = await getUserDevTeamsByRole(currentUser.navIdent)
     } catch {
-      // user_dev_team_preference table may not exist yet
+      // Graceful degradation if role assignments query fails
     }
   }
 
   // Resolve the team filter to a list of GitHub usernames.
   // - "" / "all"  → no filter (undefined)
   // - "mine"      → union of all members across the user's dev teams
-  // - "<slug>"    → members of that single dev team (must own the app)
+  // - "<slug>"    → members of that single dev team (owner or contributor)
   //
   // We track *why* the resolved set is empty so the UI can give a useful
   // empty-state hint instead of generic "no deployments". `teamFilterEmpty`
@@ -90,15 +90,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let deployerUsernamesFilter: string[] | undefined
   let teamFilterEmptyReason: 'no-user-teams' | 'no-team-members' | null = null
   // Wrap helper calls in try/catch so the page still works if the
-  // user_dev_team_preference table hasn't been deployed yet (matches the
-  // graceful degradation for getUserDevTeams above) — fall back to no filter.
+  // dev_team_role_assignments table hasn't been deployed yet (matches the
+  // graceful degradation for getUserDevTeamsByRole above) — fall back to no filter.
   if (teamFilter === 'mine') {
-    if (userDevTeams.length === 0) {
+    if (userDevTeams === null) {
+      // Role query failed — fall back to no filter rather than showing 0 deployments
+      deployerUsernamesFilter = undefined
+    } else if (userDevTeams.length === 0) {
       deployerUsernamesFilter = []
       teamFilterEmptyReason = 'no-user-teams'
     } else {
       try {
-        deployerUsernamesFilter = await getMembersGithubUsernamesForDevTeams(userDevTeams.map((t) => t.id))
+        deployerUsernamesFilter = await getMembersGithubUsernamesForDevTeamRoles(userDevTeams.map((t) => t.id))
         if (deployerUsernamesFilter.length === 0) teamFilterEmptyReason = 'no-team-members'
       } catch {
         deployerUsernamesFilter = undefined
@@ -109,7 +112,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     const matched = owningDevTeams.find((t) => t.slug === teamFilter) ?? (await getDevTeamBySlug(teamFilter))
     if (matched) {
       try {
-        deployerUsernamesFilter = await getMembersGithubUsernamesForDevTeams([matched.id])
+        deployerUsernamesFilter = await getMembersGithubUsernamesForDevTeamRoles([matched.id])
         if (deployerUsernamesFilter.length === 0) teamFilterEmptyReason = 'no-team-members'
       } catch {
         deployerUsernamesFilter = undefined
@@ -243,18 +246,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   // Build dropdown options for the team filter:
-  // 1. "Mine team" (if user has dev-team preferences)
+  // 1. "Mine team" (if user has assigned dev-team roles)
   // 2. Teams owning the app + teams with contributing members (deployer/PR creator/merger)
   const allContributors = [...new Set(allContributorsResult.rows.map((r: any) => r.username as string))]
   let contributingTeams: Array<{ id: number; slug: string; name: string }> = []
   try {
-    contributingTeams = await getDevTeamsForGithubUsernames(allContributors)
+    contributingTeams = await getDevTeamsForGithubUsernamesByRole(allContributors)
   } catch (error) {
     logger.warn('Failed to fetch contributing teams for deployment list', { error })
   }
 
   const teamOptions: { value: string; label: string }[] = []
-  if (userDevTeams.length > 0) {
+  if (userDevTeams && userDevTeams.length > 0) {
     teamOptions.push({ value: 'mine', label: 'Mine team' })
   }
   const seenSlugs = new Set<string>()
@@ -312,7 +315,9 @@ export default function AppDeployments() {
   const currentDeployer = searchParams.get('deployer') || ''
   const currentSha = searchParams.get('sha') || ''
   const currentPeriod = searchParams.get('period') || 'last-week'
-  const currentTeam = searchParams.get('team') || ''
+  const teamParam = searchParams.get('team') || ''
+  // Clear 'mine' if the option isn't available (e.g. role query failed)
+  const currentTeam = teamParam === 'mine' && !teamOptions.some((o) => o.value === 'mine') ? '' : teamParam
 
   const updateFilter = (key: string, value: string) => {
     const newParams = new URLSearchParams(searchParams)
