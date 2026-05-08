@@ -80,6 +80,47 @@ When modifying verification logic (any file in `app/lib/verification/`, or verif
 
 When modifying verification logic in `app/lib/verification/verify.ts`, always update [`docs/verification.md`](docs/verification.md) to reflect the changes. This documentation is used by developers, managers, and auditors to understand the verification system.
 
+## Authorization (RBAC) Architecture
+
+The application uses role-based access control with section-level and team-level roles. Authorization helpers live in `app/lib/authorization.server.ts`.
+
+### Testing Requirement
+
+When modifying authorization logic (`app/lib/authorization.server.ts`) or role assignment queries (`app/db/role-assignments.server.ts`), always add or update integration tests in `app/db/__tests__/integration/authorization.test.ts`. Cover:
+
+- Admin access (Entra ID-based)
+- Each authorized role (e.g., produktleder, seksjonsleder)
+- Unauthorized roles (should be denied)
+- Inactive/soft-deleted resources
+
+### Loader/Action Authorization Patterns
+
+**Single-pass auth helpers**: When a route needs multiple authorization checks, use a single `resolve*Capabilities()` function that returns all booleans in one DB round-trip. Do NOT call multiple `can*()` functions that each query `getUserRoles()` separately.
+
+```typescript
+// ✅ Good: single DB pass returning all capabilities
+const { canAccess, canAdmin } = await resolveTeamAdminCapabilities(user, devTeamId)
+
+// ❌ Bad: two separate DB round-trips
+const access = await canAccessTeamAdmin(user, devTeamId)
+const admin = await canAdministerTeam(user, devTeamId)
+```
+
+**Capability flags for UI gating**: Loaders should compute capability booleans and pass them to the client. Do NOT render buttons or actions that will return 403 — gate them with capability flags.
+
+**Data minimization**: When a route is accessible to multiple roles with different privileges, only fetch data relevant to the user's actual capabilities. Do NOT load admin-only data for non-admin users.
+
+**Named Promise.all results**: When using `Promise.all` for parallel data fetching, always use named destructuring or named variables. Never use positional index casting.
+
+```typescript
+// ✅ Good: named variables
+const [members, apps, boards] = await Promise.all([getMembers(), getApps(), getBoards()])
+
+// ❌ Bad: positional casting
+const data = await Promise.all([getMembers(), getApps(), getBoards()])
+const members = data[0] as MemberType[]
+```
+
 ## Module Structure
 
 ### GitHub API (`app/lib/github/`)
@@ -144,6 +185,14 @@ Business logic for four-eyes verification:
 - `verify.ts` — Main verification engine including `checkImplicitApproval`
 - `fetch-data.server.ts` — GitHub data fetching for verification
 - `types.ts` — Shared types and constants
+
+### Authorization / RBAC (`app/lib/authorization*.ts`, `app/db/role-assignments.server.ts`)
+
+Role-based access control for the application:
+
+- `authorization-types.ts` — Role constants (`SECTION_ROLES`, `TEAM_ROLES`) and TypeScript types
+- `authorization.server.ts` — Stateless authorization helpers (`canAssignTeamRole`, `canApproveDeployment`, `resolveTeamAdminCapabilities`, etc.)
+- `role-assignments.server.ts` — CRUD for role assignments (assign, remove via soft-delete, query)
 
 ### Route Action Extraction Pattern
 
