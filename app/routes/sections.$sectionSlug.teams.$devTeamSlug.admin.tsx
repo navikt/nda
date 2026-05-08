@@ -13,7 +13,6 @@ import {
   Table,
   Tag,
   TextField,
-  UNSAFE_Combobox,
   VStack,
 } from '@navikt/ds-react'
 import { useMemo, useRef, useState } from 'react'
@@ -39,12 +38,6 @@ import {
   removeTeamRole,
 } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import {
-  addUserDevTeam,
-  type DevTeamMember,
-  getDevTeamMembers,
-  removeUserDevTeam,
-} from '~/db/user-dev-team-preference.server'
 import { getAllUserMappings, getUserMappingByNavIdent } from '~/db/user-mappings.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
@@ -84,15 +77,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const [roleMembers, allUsers] = await Promise.all([getDevTeamMembersWithRoles(devTeam.id), getAllUserMappings()])
 
-  let members: DevTeamMember[] = []
   let linkedApps: DevTeamApplication[] = []
   let addableApps: AddableApp[] = []
   let naisCatalogFailed = false
   let boards: Board[] = []
 
   if (canAdmin) {
-    const [adminMembers, adminLinkedApps, allApps, naisCatalogResult, adminBoards] = await Promise.all([
-      getDevTeamMembers(devTeam.id),
+    const [adminLinkedApps, allApps, naisCatalogResult, adminBoards] = await Promise.all([
       getDevTeamApplications(devTeam.id),
       getAllMonitoredApplications(),
       fetchAllTeamsAndApplications().then(
@@ -108,7 +99,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       getBoardsByDevTeam(devTeam.id),
     ])
 
-    members = adminMembers
     linkedApps = adminLinkedApps
     boards = adminBoards
     naisCatalogFailed = !naisCatalogResult.ok
@@ -144,7 +134,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     devTeam,
-    members,
     roleMembers,
     linkedApps,
     addableApps,
@@ -183,41 +172,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     const { canAdmin } = await resolveTeamAdminCapabilities(user, devTeam.id)
     if (!canAdmin) {
       throw new Response('Du har ikke tilgang til å administrere dette teamet', { status: 403 })
-    }
-  }
-
-  if (intent === 'add_member') {
-    const navIdent = getFormString(formData, 'nav_ident')
-    if (!navIdent) {
-      return fail('NAV-ident er påkrevd.')
-    }
-    if (!isValidNavIdent(navIdent)) {
-      return fail('Ugyldig NAV-ident. Forventet format: én bokstav etterfulgt av 6 siffer (f.eks. A123456).')
-    }
-    const userMapping = await getUserMappingByNavIdent(navIdent)
-    if (!userMapping) {
-      return fail(
-        `Brukeren ${navIdent.toUpperCase()} er ikke kjent i systemet. Opprett en brukerkobling først under Admin → Brukermappinger.`,
-      )
-    }
-    try {
-      await addUserDevTeam(navIdent.toUpperCase(), devTeam.id)
-      return ok(`${userMapping.display_name ?? navIdent.toUpperCase()} ble lagt til som medlem.`)
-    } catch {
-      return fail('Kunne ikke legge til medlem.')
-    }
-  }
-
-  if (intent === 'remove_member') {
-    const navIdent = getFormString(formData, 'nav_ident')
-    if (!navIdent) {
-      return fail('NAV-ident er påkrevd.')
-    }
-    try {
-      await removeUserDevTeam(navIdent.toUpperCase(), devTeam.id)
-      return ok(`${navIdent.toUpperCase()} ble fjernet fra teamet.`)
-    } catch {
-      return fail('Kunne ikke fjerne medlem.')
     }
   }
 
@@ -435,18 +389,8 @@ type AddableApp = {
 }
 
 export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
-  const {
-    devTeam,
-    members,
-    roleMembers,
-    linkedApps,
-    addableApps,
-    naisCatalogFailed,
-    allUsers,
-    boards,
-    sectionSlug,
-    canAdmin,
-  } = useLoaderData<typeof loader>()
+  const { devTeam, roleMembers, linkedApps, addableApps, naisCatalogFailed, allUsers, boards, sectionSlug, canAdmin } =
+    useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
 
@@ -466,7 +410,6 @@ export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
       {canAdmin && <BoardsSection teamName={devTeam.name} boards={boards} teamBasePath={teamBasePath} />}
       {canAdmin && <TeamNameSection name={devTeam.name} />}
       <RoleMembersSection roleMembers={roleMembers} allUsers={allUsers} />
-      {canAdmin && <MembersSection members={members} allUsers={allUsers} />}
       {canAdmin && <NaisTeamsSection naisTeamSlugs={devTeam.nais_team_slugs} />}
       {canAdmin && (
         <ApplicationsSection
@@ -662,121 +605,6 @@ function TeamNameSection({ name }: { name: string }) {
           </Button>
         </HStack>
       )}
-    </VStack>
-  )
-}
-
-function MembersSection({ members, allUsers }: { members: DevTeamMember[]; allUsers: UserOption[] }) {
-  const modalRef = useRef<HTMLDialogElement>(null)
-  const [selectedNavIdent, setSelectedNavIdent] = useState('')
-
-  const memberIdents = new Set(members.map((m) => m.nav_ident.toUpperCase()))
-  const availableUsers = allUsers.filter((u) => !memberIdents.has(u.navIdent.toUpperCase()))
-
-  const comboboxOptions = availableUsers.map((u) => ({
-    label: `${u.displayName ?? u.githubUsername} (${u.navIdent})`,
-    value: u.navIdent,
-  }))
-
-  return (
-    <VStack gap="space-16">
-      <HStack justify="space-between" align="center">
-        <Heading level="2" size="medium">
-          Medlemmer ({members.length})
-        </Heading>
-        <Button
-          variant="tertiary"
-          size="small"
-          icon={<PlusIcon aria-hidden />}
-          onClick={() => modalRef.current?.showModal()}
-        >
-          Legg til medlem
-        </Button>
-      </HStack>
-
-      {members.length > 0 ? (
-        <Table size="small">
-          <Table.Header>
-            <Table.Row>
-              <Table.HeaderCell>NAV-ident</Table.HeaderCell>
-              <Table.HeaderCell>Navn</Table.HeaderCell>
-              <Table.HeaderCell>GitHub</Table.HeaderCell>
-              <Table.HeaderCell />
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {members.map((member) => (
-              <Table.Row key={member.nav_ident}>
-                <Table.DataCell>
-                  <code>{member.nav_ident}</code>
-                </Table.DataCell>
-                <Table.DataCell>{member.display_name ?? '–'}</Table.DataCell>
-                <Table.DataCell>
-                  {member.github_username ? (
-                    <code>{member.github_username}</code>
-                  ) : (
-                    <BodyShort textColor="subtle">–</BodyShort>
-                  )}
-                </Table.DataCell>
-                <Table.DataCell>
-                  <Form method="post" style={{ display: 'inline' }}>
-                    <input type="hidden" name="intent" value="remove_member" />
-                    <input type="hidden" name="nav_ident" value={member.nav_ident} />
-                    <Button variant="tertiary-neutral" size="xsmall" icon={<TrashIcon aria-hidden />} type="submit">
-                      Fjern
-                    </Button>
-                  </Form>
-                </Table.DataCell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table>
-      ) : (
-        <Alert variant="info" size="small">
-          Ingen medlemmer er lagt til ennå.
-        </Alert>
-      )}
-
-      <Modal ref={modalRef} header={{ heading: 'Legg til medlem' }} closeOnBackdropClick>
-        <Modal.Body>
-          <Form
-            method="post"
-            onSubmit={() => {
-              modalRef.current?.close()
-              setSelectedNavIdent('')
-            }}
-          >
-            <input type="hidden" name="intent" value="add_member" />
-            <input type="hidden" name="nav_ident" value={selectedNavIdent} />
-            <VStack gap="space-16">
-              <UNSAFE_Combobox
-                label="Søk etter bruker"
-                options={comboboxOptions}
-                onToggleSelected={(value, isSelected) => {
-                  setSelectedNavIdent(isSelected ? value : '')
-                }}
-                shouldAutocomplete
-              />
-              <HStack gap="space-8">
-                <Button type="submit" size="small" icon={<PlusIcon aria-hidden />} disabled={!selectedNavIdent}>
-                  Legg til
-                </Button>
-                <Button
-                  variant="tertiary"
-                  size="small"
-                  type="button"
-                  onClick={() => {
-                    modalRef.current?.close()
-                    setSelectedNavIdent('')
-                  }}
-                >
-                  Avbryt
-                </Button>
-              </HStack>
-            </VStack>
-          </Form>
-        </Modal.Body>
-      </Modal>
     </VStack>
   )
 }

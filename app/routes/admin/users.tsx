@@ -4,8 +4,6 @@ import {
   BodyShort,
   Box,
   Button,
-  Checkbox,
-  CheckboxGroup,
   Detail,
   Heading,
   HStack,
@@ -21,7 +19,6 @@ import { ActionAlert } from '~/components/ActionAlert'
 import { ExternalLink } from '~/components/ExternalLink'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
-import { getAllUserDevTeamMappings, setUserDevTeams } from '~/db/user-dev-team-preference.server'
 import {
   deleteUserMapping,
   getAllUserMappings,
@@ -38,22 +35,19 @@ import type { Route } from './+types/users'
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const [mappings, unmappedUsers, allDevTeams, userDevTeamMap, userRoleAssignments, userSectionRoleAssignments] =
-    await Promise.all([
-      getAllUserMappings(),
-      getUnmappedUsers(),
-      getAllDevTeams(),
-      getAllUserDevTeamMappings().catch(() => new Map<string, number[]>()),
-      getAllUserRoleAssignments().catch(() => new Map<string, Array<{ dev_team_id: number; role: string }>>()),
-      getAllSectionRoleAssignments().catch(
-        () => new Map<string, Array<{ section_id: number; section_name: string; role: string }>>(),
-      ),
-    ])
+  const [mappings, unmappedUsers, allDevTeams, userRoleAssignments, userSectionRoleAssignments] = await Promise.all([
+    getAllUserMappings(),
+    getUnmappedUsers(),
+    getAllDevTeams(),
+    getAllUserRoleAssignments().catch(() => new Map<string, Array<{ dev_team_id: number; role: string }>>()),
+    getAllSectionRoleAssignments().catch(
+      () => new Map<string, Array<{ section_id: number; section_name: string; role: string }>>(),
+    ),
+  ])
   return {
     mappings,
     unmappedUsers,
     allDevTeams,
-    userDevTeamMap: Object.fromEntries(userDevTeamMap),
     userRoleAssignments: Object.fromEntries(userRoleAssignments),
     userSectionRoleAssignments: Object.fromEntries(userSectionRoleAssignments),
   }
@@ -112,18 +106,6 @@ export async function action({ request }: Route.ActionArgs) {
     return { success: true }
   }
 
-  if (intent === 'set-dev-teams') {
-    const navIdent = formData.get('nav_ident') as string
-    if (!navIdent) return { error: 'Nav-ident er påkrevd' }
-    const devTeamIds = formData.getAll('dev_team_ids').map(Number).filter(Boolean)
-    try {
-      await setUserDevTeams(navIdent, devTeamIds)
-    } catch {
-      return { error: 'Kunne ikke oppdatere teamtilhørighet.' }
-    }
-    return { success: true }
-  }
-
   if (intent === 'import') {
     const file = formData.get('file') as File
     if (!file || file.size === 0) {
@@ -165,7 +147,7 @@ export function meta() {
 }
 
 export default function AdminUsers() {
-  const { mappings, unmappedUsers, allDevTeams, userDevTeamMap, userRoleAssignments, userSectionRoleAssignments } =
+  const { mappings, unmappedUsers, allDevTeams, userRoleAssignments, userSectionRoleAssignments } =
     useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
@@ -175,11 +157,9 @@ export default function AdminUsers() {
   const [addFormKey, setAddFormKey] = useState(0)
   const [prefillUsername, setPrefillUsername] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<UserMapping | null>(null)
-  const [teamsTarget, setTeamsTarget] = useState<UserMapping | null>(null)
   const deleteModalRef = useRef<HTMLDialogElement>(null)
   const modalRef = useRef<HTMLDialogElement>(null)
   const addModalRef = useRef<HTMLDialogElement>(null)
-  const teamsModalRef = useRef<HTMLDialogElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const devTeamById = new Map(allDevTeams.map((t) => [t.id, t]))
@@ -191,7 +171,6 @@ export default function AdminUsers() {
       addModalRef.current?.close()
       modalRef.current?.close()
       deleteModalRef.current?.close()
-      teamsModalRef.current?.close()
     }
   }, [actionData, navigation.state])
 
@@ -345,36 +324,6 @@ export default function AdminUsers() {
                       <Detail textColor="subtle">Ingen tilleggsinformasjon</Detail>
                     )}
                   </HStack>
-
-                  {/* Dev team row */}
-                  {mapping.nav_ident && (
-                    <HStack gap="space-8" align="center" wrap>
-                      <Detail textColor="subtle">Team:</Detail>
-                      {(userDevTeamMap[mapping.nav_ident] ?? []).length > 0 ? (
-                        (userDevTeamMap[mapping.nav_ident] ?? []).map((teamId) => {
-                          const team = devTeamById.get(teamId)
-                          return team ? (
-                            <Tag key={teamId} variant="moderate" size="xsmall">
-                              {team.name}
-                            </Tag>
-                          ) : null
-                        })
-                      ) : (
-                        <Detail textColor="subtle">Ingen team</Detail>
-                      )}
-                      <Button
-                        variant="tertiary"
-                        size="xsmall"
-                        icon={<PencilIcon aria-hidden />}
-                        onClick={() => {
-                          setTeamsTarget(mapping)
-                          teamsModalRef.current?.showModal()
-                        }}
-                      >
-                        Endre
-                      </Button>
-                    </HStack>
-                  )}
 
                   {/* Role assignments row */}
                   {mapping.nav_ident &&
@@ -552,43 +501,6 @@ export default function AdminUsers() {
               </Button>
             </Form>
             <Button variant="secondary" onClick={() => deleteModalRef.current?.close()}>
-              Avbryt
-            </Button>
-          </Modal.Footer>
-        </Modal>
-
-        {/* Dev Teams Modal */}
-        <Modal
-          ref={teamsModalRef}
-          header={{ heading: `Teamtilhørighet — ${teamsTarget?.display_name || teamsTarget?.github_username || ''}` }}
-          width="medium"
-          onClose={() => setTeamsTarget(null)}
-        >
-          <Modal.Body>
-            {teamsTarget?.nav_ident && (
-              <Form method="post" id="teams-form">
-                <input type="hidden" name="intent" value="set-dev-teams" />
-                <input type="hidden" name="nav_ident" value={teamsTarget.nav_ident} />
-                <CheckboxGroup legend="Velg utviklingsteam" size="small">
-                  {allDevTeams.map((team) => (
-                    <Checkbox
-                      key={team.id}
-                      name="dev_team_ids"
-                      value={String(team.id)}
-                      defaultChecked={(userDevTeamMap[teamsTarget.nav_ident ?? ''] ?? []).includes(team.id)}
-                    >
-                      {team.name}
-                    </Checkbox>
-                  ))}
-                </CheckboxGroup>
-              </Form>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button type="submit" form="teams-form" loading={isSubmitting}>
-              Lagre
-            </Button>
-            <Button variant="secondary" onClick={() => teamsModalRef.current?.close()}>
               Avbryt
             </Button>
           </Modal.Footer>
