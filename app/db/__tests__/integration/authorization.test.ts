@@ -34,6 +34,7 @@ import {
   canAssignTeamRole,
   canDeviateDeployment,
   isTeamMember,
+  resolveDeploymentCapabilities,
   resolveTeamAdminCapabilities,
 } from '~/lib/authorization.server'
 import { seedApp, seedDevTeam, seedSection, truncateAllTables } from './helpers'
@@ -749,5 +750,108 @@ describe('resolveTeamAdminCapabilities', () => {
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [teamId])
     const result = await resolveTeamAdminCapabilities(pl, teamId)
     expect(result).toEqual({ canAccess: false, canAdmin: false })
+  })
+})
+
+// ─── Deployment capabilities (single-pass) ──────────────────────────────────
+
+describe('resolveDeploymentCapabilities', () => {
+  it('grants all capabilities to admin', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+
+    const result = await resolveDeploymentCapabilities(makeAdmin(), appId)
+    expect(result).toEqual({
+      canApprove: true,
+      canDeviate: true,
+      canLinkGoal: true,
+      canNotify: true,
+      canLookupLegacy: true,
+    })
+  })
+
+  it('grants standard capabilities to utvikler in managing team', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+
+    const dev = makeUser('D444444')
+    await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
+
+    const result = await resolveDeploymentCapabilities(dev, appId)
+    expect(result).toEqual({
+      canApprove: true,
+      canDeviate: false,
+      canLinkGoal: true,
+      canNotify: true,
+      canLookupLegacy: true,
+    })
+  })
+
+  it('grants canDeviate to produktleder in managing team', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+
+    const pl = makeUser('P222222')
+    await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
+
+    const result = await resolveDeploymentCapabilities(pl, appId)
+    expect(result).toEqual({
+      canApprove: true,
+      canDeviate: true,
+      canLinkGoal: true,
+      canNotify: true,
+      canLookupLegacy: true,
+    })
+  })
+
+  it('denies all capabilities to user without managing team role', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+
+    const result = await resolveDeploymentCapabilities(makeUser(), appId)
+    expect(result).toEqual({
+      canApprove: false,
+      canDeviate: false,
+      canLinkGoal: false,
+      canNotify: false,
+      canLookupLegacy: false,
+    })
+  })
+
+  it('denies all capabilities when team role is soft-deleted', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+
+    const dev = makeUser('D444444')
+    const assignment = await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
+
+    // Verify access before removal
+    expect((await resolveDeploymentCapabilities(dev, appId)).canApprove).toBe(true)
+
+    await removeTeamRole(assignment!.id, 'admin')
+
+    const result = await resolveDeploymentCapabilities(dev, appId)
+    expect(result).toEqual({
+      canApprove: false,
+      canDeviate: false,
+      canLinkGoal: false,
+      canNotify: false,
+      canLookupLegacy: false,
+    })
   })
 })

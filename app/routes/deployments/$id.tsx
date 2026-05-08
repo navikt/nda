@@ -41,7 +41,7 @@ import { ActionAlert } from '~/components/ActionAlert'
 import { CheckAnnotations } from '~/components/CheckAnnotations'
 import { CheckLogViewer } from '~/components/CheckLogViewer'
 import { ExternalLink } from '~/components/ExternalLink'
-import { GoalLinksSection } from '~/components/GoalLinksSection'
+import { type AvailableBoard, GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import { getCommentsByDeploymentId, getLegacyInfo, getManualApproval } from '~/db/comments.server'
@@ -63,6 +63,7 @@ import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { getUserMappings } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
+import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
 import {
   DEVIATION_FOLLOW_UP_ROLE_LABELS,
   DEVIATION_INTENT_LABELS,
@@ -193,41 +194,52 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   // ── Phase 3: Queries that depend on Phase 2 results ─────────────────────
 
-  // Filter to teams the current user has a role in
-  let devTeams = allDevTeams
-  if (currentUser?.navIdent) {
-    try {
-      const userTeams = await getUserDevTeamsByRole(currentUser.navIdent)
-      const userTeamIds = new Set(userTeams.map((t) => t.id))
-      const filtered = allDevTeams.filter((dt) => userTeamIds.has(dt.id))
-      if (filtered.length > 0) {
-        devTeams = filtered
+  // Resolve deployment capabilities for the current user (single-pass auth)
+  const capabilities: DeploymentCapabilities = currentUser
+    ? await resolveDeploymentCapabilities(currentUser, deployment.monitored_app_id)
+    : { canApprove: false, canDeviate: false, canLinkGoal: false, canNotify: false, canLookupLegacy: false }
+
+  // Fetch boards only when user can link goals (avoids unnecessary DB queries)
+  let availableBoards: AvailableBoard[] = []
+  let sectionBoards: AvailableBoard[] = []
+
+  if (capabilities.canLinkGoal) {
+    // Filter to teams the current user has a role in
+    let devTeams = allDevTeams
+    if (currentUser?.navIdent) {
+      try {
+        const userTeams = await getUserDevTeamsByRole(currentUser.navIdent)
+        const userTeamIds = new Set(userTeams.map((t) => t.id))
+        const filtered = allDevTeams.filter((dt) => userTeamIds.has(dt.id))
+        if (filtered.length > 0) {
+          devTeams = filtered
+        }
+      } catch {
+        // Graceful degradation — show all teams if role query fails
       }
-    } catch {
-      // Graceful degradation — show all teams if role query fails
     }
+
+    // Fetch boards for user's teams and other section teams in parallel
+    const devTeamIds = new Set(devTeams.map((dt) => dt.id))
+    const sectionIds = [...new Set(allDevTeams.map((dt) => dt.section_id))]
+
+    const [boardsPerTeam, sectionTeamArrays] = await Promise.all([
+      Promise.all(devTeams.map((dt) => getBoardsWithGoalsForDevTeam(dt.id, deploymentDate))),
+      Promise.all(sectionIds.map((sid) => getDevTeamsBySection(sid))),
+    ])
+
+    availableBoards = boardsPerTeam.flatMap((boards, i) =>
+      boards.map((b) => ({ ...b, dev_team_name: devTeams[i].name })),
+    )
+
+    const otherSectionTeams = sectionTeamArrays.flat().filter((dt) => !devTeamIds.has(dt.id))
+    const sectionBoardsPerTeam = await Promise.all(
+      otherSectionTeams.map((dt) => getBoardsWithGoalsForDevTeam(dt.id, deploymentDate)),
+    )
+    sectionBoards = sectionBoardsPerTeam.flatMap((boards, i) =>
+      boards.map((b) => ({ ...b, dev_team_name: otherSectionTeams[i].name })),
+    )
   }
-
-  // Fetch boards for user's teams and other section teams in parallel
-  const devTeamIds = new Set(devTeams.map((dt) => dt.id))
-  const sectionIds = [...new Set(allDevTeams.map((dt) => dt.section_id))]
-
-  const [boardsPerTeam, sectionTeamArrays] = await Promise.all([
-    Promise.all(devTeams.map((dt) => getBoardsWithGoalsForDevTeam(dt.id, deploymentDate))),
-    Promise.all(sectionIds.map((sid) => getDevTeamsBySection(sid))),
-  ])
-
-  const availableBoards = boardsPerTeam.flatMap((boards, i) =>
-    boards.map((b) => ({ ...b, dev_team_name: devTeams[i].name })),
-  )
-
-  const otherSectionTeams = sectionTeamArrays.flat().filter((dt) => !devTeamIds.has(dt.id))
-  const sectionBoardsPerTeam = await Promise.all(
-    otherSectionTeams.map((dt) => getBoardsWithGoalsForDevTeam(dt.id, deploymentDate)),
-  )
-  const sectionBoards = sectionBoardsPerTeam.flatMap((boards, i) =>
-    boards.map((b) => ({ ...b, dev_team_name: otherSectionTeams[i].name })),
-  )
 
   // Collect all GitHub usernames we need to look up
   const usernames: string[] = []
@@ -354,6 +366,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     involvementReason,
     isDebugMode: isVerificationDebugMode || isAdmin,
     isAdmin,
+    capabilities,
     verificationRun,
     nearbyDeployments,
     slackConfig: {
@@ -389,6 +402,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
     involvementReason,
     isDebugMode,
     isAdmin,
+    capabilities,
     verificationRun,
     nearbyDeployments,
     slackConfig,
@@ -537,7 +551,8 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
               </Tag>
             ) : null}
             {/* Verify button for non-OK states */}
-            {deployment.commit_sha &&
+            {capabilities.canApprove &&
+              deployment.commit_sha &&
               [
                 'pending',
                 'error',
@@ -564,7 +579,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                 </Form>
               )}
             {/* Approve baseline button */}
-            {deployment.four_eyes_status === 'pending_baseline' && (
+            {capabilities.canApprove && deployment.four_eyes_status === 'pending_baseline' && (
               <Form method="post" style={{ display: 'inline' }}>
                 <input type="hidden" name="intent" value="approve_baseline" />
                 <Button
@@ -1512,8 +1527,8 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           </VStack>
         </div>
       )}
-      {/* Admin: Send Slack notification */}
-      {isAdmin &&
+      {/* Send Slack notification */}
+      {capabilities.canNotify &&
         slackConfig?.enabled &&
         slackConfig?.channelId &&
         !slackConfig?.alreadySent &&
@@ -1565,6 +1580,10 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                   Fire-øyne-prinsippet krever at en annen person godkjenner.
                 </BodyShort>
               </Alert>
+            ) : !capabilities.canApprove ? (
+              <Alert variant="info">
+                <BodyShort>Du har ikke tilgang til å godkjenne denne deploymenten.</BodyShort>
+              </Alert>
             ) : !showApprovalForm ? (
               <Button variant="primary" onClick={() => setShowApprovalForm(true)}>
                 Godkjenn manuelt
@@ -1606,7 +1625,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
       )}
 
       {/* Legacy deployment - GitHub lookup section */}
-      {isLegacy && !legacyInfo && !manualApproval && (
+      {isLegacy && !legacyInfo && !manualApproval && capabilities.canLookupLegacy && (
         <Box background="info-moderate" padding="space-24" borderRadius="8">
           <VStack gap="space-16">
             <Heading size="small" level="3">
@@ -1801,24 +1820,30 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
               En annen person enn {legacyInfo?.registered_by} må godkjenne.
             </Alert>
 
-            <HStack gap="space-16" wrap>
-              <Form method="post">
-                <input type="hidden" name="intent" value="approve_legacy" />
-                <Button type="submit" variant="primary" size="small">
-                  Godkjenn
-                </Button>
-              </Form>
-
-              <Form method="post">
-                <input type="hidden" name="intent" value="reject_legacy" />
-                <VStack gap="space-16">
-                  <TextField label="Begrunnelse (valgfritt)" name="reason" size="small" />
-                  <Button type="submit" variant="danger" size="small">
-                    Avvis
+            {capabilities.canApprove ? (
+              <HStack gap="space-16" wrap>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="approve_legacy" />
+                  <Button type="submit" variant="primary" size="small">
+                    Godkjenn
                   </Button>
-                </VStack>
-              </Form>
-            </HStack>
+                </Form>
+
+                <Form method="post">
+                  <input type="hidden" name="intent" value="reject_legacy" />
+                  <VStack gap="space-16">
+                    <TextField label="Begrunnelse (valgfritt)" name="reason" size="small" />
+                    <Button type="submit" variant="danger" size="small">
+                      Avvis
+                    </Button>
+                  </VStack>
+                </Form>
+              </HStack>
+            ) : (
+              <Alert variant="info" size="small">
+                Du har ikke tilgang til å godkjenne eller avvise.
+              </Alert>
+            )}
           </VStack>
         </Box>
       )}
@@ -1945,7 +1970,12 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
         </VStack>
       )}
       {/* Goal links / origin of change section */}
-      <GoalLinksSection goalLinks={goalLinks} availableBoards={availableBoards} sectionBoards={sectionBoards} />
+      <GoalLinksSection
+        goalLinks={goalLinks}
+        availableBoards={availableBoards}
+        sectionBoards={sectionBoards}
+        canLinkGoal={capabilities.canLinkGoal}
+      />
 
       {/* Deviations section */}
       <VStack gap="space-16">
@@ -1953,14 +1983,16 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           <Heading size="medium" level="2">
             Avvik
           </Heading>
-          <Button
-            variant="tertiary"
-            size="small"
-            icon={<ExclamationmarkTriangleIcon aria-hidden />}
-            onClick={() => deviationDialogRef.current?.showModal()}
-          >
-            Registrer avvik
-          </Button>
+          {capabilities.canDeviate && (
+            <Button
+              variant="tertiary"
+              size="small"
+              icon={<ExclamationmarkTriangleIcon aria-hidden />}
+              onClick={() => deviationDialogRef.current?.showModal()}
+            >
+              Registrer avvik
+            </Button>
+          )}
         </HStack>
 
         {deviations.length === 0 ? (
@@ -2134,13 +2166,15 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                       </BodyShort>
                     )}
                   </VStack>
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="delete_comment" />
-                    <input type="hidden" name="comment_id" value={comment.id} />
-                    <Button type="submit" size="small" variant="tertiary" icon={<TrashIcon aria-hidden />}>
-                      Slett
-                    </Button>
-                  </Form>
+                  {capabilities.canDeviate && (
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="delete_comment" />
+                      <input type="hidden" name="comment_id" value={comment.id} />
+                      <Button type="submit" size="small" variant="tertiary" icon={<TrashIcon aria-hidden />}>
+                        Slett
+                      </Button>
+                    </Form>
+                  )}
                 </HStack>
               </Box>
             ))}

@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { removeDeploymentGoalLink } from '../../deployment-goal-links.server'
 import { seedApp, seedDeployment, seedDevTeam, seedSection, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -135,5 +136,26 @@ describe('deployment-goal-links', () => {
     )
     expect(Number(rows[0].total)).toBe(0)
     expect(Number(rows[0].linked)).toBe(0)
+  })
+
+  it('removeDeploymentGoalLink rejects wrong deploymentId (IDOR protection)', async () => {
+    const { appId, objective } = await seedGoalLinkStack(pool)
+    const depA = await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team', environment: 'prod' })
+    const depB = await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team', environment: 'prod' })
+
+    const { rows: linkRows } = await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by)
+       VALUES ($1, $2, 'manual', 'A123456') RETURNING id`,
+      [depA, objective.id],
+    )
+    const linkId = linkRows[0].id
+
+    // Attempt to remove with wrong deploymentId
+    const removed = await removeDeploymentGoalLink(linkId, depB)
+    expect(removed).toBe(false)
+
+    // Link should still be active
+    const { rows } = await pool.query('SELECT is_active FROM deployment_goal_links WHERE id = $1', [linkId])
+    expect(rows[0].is_active).toBe(true)
   })
 })

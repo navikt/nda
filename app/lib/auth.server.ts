@@ -152,16 +152,6 @@ export async function getUserIdentity(request: Request): Promise<UserIdentity | 
 }
 
 /**
- * Get NAV-ident from request (convenience function).
- *
- * @returns NAV-ident string if authenticated, null otherwise
- */
-export async function getNavIdent(request: Request): Promise<string | null> {
-  const identity = await getUserIdentity(request)
-  return identity?.navIdent || null
-}
-
-/**
  * Require user to be authenticated with at least 'user' role.
  * Throws 403 Response if not authorized.
  */

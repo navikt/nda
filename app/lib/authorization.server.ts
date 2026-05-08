@@ -229,3 +229,68 @@ export async function getUserSectionRoles(navIdent: string, sectionId: number): 
   )
   return rows.map((r) => r.role)
 }
+
+// ─── Deployment capabilities (single-pass) ──────────────────────────────────
+
+export interface DeploymentCapabilities {
+  /** Approve/reject deployments, verify four-eyes, manage legacy info, approve baseline */
+  canApprove: boolean
+  /** Register deviations, delete comments */
+  canDeviate: boolean
+  /** Link/unlink deployments to goals */
+  canLinkGoal: boolean
+  /** Send Slack notifications */
+  canNotify: boolean
+  /** Look up legacy GitHub data */
+  canLookupLegacy: boolean
+}
+
+/**
+ * Resolve all deployment capabilities for an actor in a single pass.
+ * Uses one getUserRoles() call + one getManagingTeamIds() call (in parallel).
+ *
+ * Intent → capability mapping:
+ * - canApprove:      manual_approval, confirm_legacy_lookup, register_legacy_info,
+ *                    approve_legacy, reject_legacy, verify_four_eyes, approve_baseline
+ * - canDeviate:      register_deviation, delete_comment
+ * - canLinkGoal:     link_goal, unlink_goal
+ * - canNotify:       send_slack_notification
+ * - canLookupLegacy: lookup_legacy_github
+ * - (no gate):       add_comment (any authenticated user)
+ */
+export async function resolveDeploymentCapabilities(
+  actor: UserIdentity,
+  monitoredAppId: number,
+): Promise<DeploymentCapabilities> {
+  if (isEntraAdmin(actor)) {
+    return {
+      canApprove: true,
+      canDeviate: true,
+      canLinkGoal: true,
+      canNotify: true,
+      canLookupLegacy: true,
+    }
+  }
+
+  const [managingTeamIds, { teamRoles }] = await Promise.all([
+    getManagingTeamIds(monitoredAppId),
+    getUserRoles(actor.navIdent),
+  ])
+
+  if (managingTeamIds.length === 0) {
+    return { canApprove: false, canDeviate: false, canLinkGoal: false, canNotify: false, canLookupLegacy: false }
+  }
+
+  const managingSet = new Set(managingTeamIds)
+  const rolesInManagingTeams = teamRoles.filter((r) => managingSet.has(r.dev_team_id))
+  const hasAnyRole = rolesInManagingTeams.length > 0
+  const isProduktleder = rolesInManagingTeams.some((r) => r.role === 'produktleder')
+
+  return {
+    canApprove: hasAnyRole,
+    canDeviate: isProduktleder,
+    canLinkGoal: hasAnyRole,
+    canNotify: hasAnyRole,
+    canLookupLegacy: hasAnyRole,
+  }
+}

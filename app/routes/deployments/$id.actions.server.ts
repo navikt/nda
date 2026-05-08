@@ -6,18 +6,45 @@ import { createDeviation } from '~/db/deviations.server'
 import { getDeviationSlackChannel } from '~/db/global-settings.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
 import { getUserMappings } from '~/db/user-mappings.server'
-import { getNavIdent, getUserIdentity } from '~/lib/auth.server'
+import { getUserIdentity } from '~/lib/auth.server'
+import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
 import { lookupLegacyByCommit, lookupLegacyByPR } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { notifyDeploymentIfNeeded, sendDeviationNotification } from '~/lib/slack/client.server'
 import { runVerification } from '~/lib/verification'
 
+/** Map intent to the required capability. Intents not listed here are rejected (fail-closed). Only `add_comment` is handled separately above the auth gate. */
+const INTENT_CAPABILITY: Record<string, keyof DeploymentCapabilities> = {
+  manual_approval: 'canApprove',
+  confirm_legacy_lookup: 'canApprove',
+  register_legacy_info: 'canApprove',
+  approve_legacy: 'canApprove',
+  reject_legacy: 'canApprove',
+  verify_four_eyes: 'canApprove',
+  approve_baseline: 'canApprove',
+  register_deviation: 'canDeviate',
+  delete_comment: 'canDeviate',
+  link_goal: 'canLinkGoal',
+  unlink_goal: 'canLinkGoal',
+  send_slack_notification: 'canNotify',
+  lookup_legacy_github: 'canLookupLegacy',
+}
+
 export async function action({ request, params }: { request: Request; params: Record<string, string | undefined> }) {
   const deploymentId = parseInt(params.id ?? '', 10)
+  if (!Number.isFinite(deploymentId)) {
+    throw new Response('Ugyldig deployment-ID', { status: 400 })
+  }
   const formData = await request.formData()
   const intent = formData.get('intent')
 
+  // add_comment is open to all authenticated users — no capability check needed,
+  // but we still verify the user is authenticated
   if (intent === 'add_comment') {
+    const identity = await getUserIdentity(request)
+    if (!identity) {
+      return { error: 'Ikke autentisert' }
+    }
     const commentText = formData.get('comment_text') as string
     const slackLink = formData.get('slack_link') as string
 
@@ -37,22 +64,33 @@ export async function action({ request, params }: { request: Request; params: Re
     }
   }
 
+  // ── Authorization gate ──────────────────────────────────────────────────────
+  // All intents below require a deployment lookup and capability check.
+  const identity = await getUserIdentity(request)
+  if (!identity?.navIdent) {
+    return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
+  }
+
+  const deployment = await getDeploymentById(deploymentId)
+  if (!deployment) {
+    return { error: 'Deployment ikke funnet' }
+  }
+
+  // Fail-closed: deny unknown intents by default
+  const requiredCapability = typeof intent === 'string' ? INTENT_CAPABILITY[intent] : undefined
+  if (!requiredCapability) {
+    return { error: 'Ugyldig handling' }
+  }
+  const capabilities = await resolveDeploymentCapabilities(identity, deployment.monitored_app_id)
+  if (!capabilities[requiredCapability]) {
+    return { error: 'Du har ikke tilgang til å utføre denne handlingen' }
+  }
+
   if (intent === 'manual_approval') {
-    const identity = await getUserIdentity(request)
     const reason = formData.get('reason') as string
     const slackLink = formData.get('slack_link') as string
 
-    if (!identity?.navIdent) {
-      return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
-    }
-
     // Validate four-eyes principle: user cannot approve their own work
-    const deployment = await getDeploymentById(deploymentId)
-    if (!deployment) {
-      return { error: 'Deployment ikke funnet' }
-    }
-
-    // Collect GitHub usernames to check
     const usernamesToCheck: string[] = []
     if (deployment.github_pr_data?.creator?.username) {
       usernamesToCheck.push(deployment.github_pr_data.creator.username)
@@ -133,26 +171,17 @@ export async function action({ request, params }: { request: Request; params: Re
   }
 
   if (intent === 'register_deviation') {
-    const identity = await getUserIdentity(request)
     const reason = formData.get('deviation_reason') as string
     const breachType = formData.get('deviation_breach_type') as string
     const deviationIntent = formData.get('deviation_intent') as string
     const severity = formData.get('deviation_severity') as string
     const followUpRole = formData.get('deviation_follow_up_role') as string
 
-    if (!identity?.navIdent) {
-      return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
-    }
     if (!reason || reason.trim() === '') {
       return { error: 'Beskrivelse av avvik er påkrevd' }
     }
 
     try {
-      const deployment = await getDeploymentById(deploymentId)
-      if (!deployment) {
-        return { error: 'Deployment ikke funnet' }
-      }
-
       const app = await getMonitoredApplicationById(deployment.monitored_app_id)
 
       await createDeviation({
@@ -201,11 +230,6 @@ export async function action({ request, params }: { request: Request; params: Re
     const searchType = formData.get('search_type') as string
     const searchValue = formData.get('search_value') as string
     const slackLink = formData.get('slack_link') as string
-    const navIdent = await getNavIdent(request)
-
-    if (!navIdent) {
-      return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
-    }
 
     if (!slackLink || slackLink.trim() === '') {
       return { error: 'Slack-lenke er påkrevd' }
@@ -213,11 +237,6 @@ export async function action({ request, params }: { request: Request; params: Re
 
     if (!searchValue || searchValue.trim() === '') {
       return { error: searchType === 'sha' ? 'Commit SHA må oppgis' : 'PR-nummer må oppgis' }
-    }
-
-    const deployment = await getDeploymentById(deploymentId)
-    if (!deployment) {
-      return { error: 'Deployment ikke funnet' }
     }
 
     const owner = deployment.detected_github_owner
@@ -242,7 +261,7 @@ export async function action({ request, params }: { request: Request; params: Re
         legacyLookup: {
           ...result.data,
           slackLink: slackLink.trim(),
-          registeredBy: navIdent,
+          registeredBy: identity.navIdent,
         },
       }
     } catch (error) {
@@ -264,11 +283,6 @@ export async function action({ request, params }: { request: Request; params: Re
     const prMergedAt = formData.get('pr_merged_at') as string
     const mergedBy = formData.get('merged_by') as string
     const reviewersJson = formData.get('reviewers') as string
-    const navIdent = await getNavIdent(request)
-
-    if (!navIdent) {
-      return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
-    }
 
     try {
       // Parse reviewers
@@ -288,7 +302,7 @@ export async function action({ request, params }: { request: Request; params: Re
         comment_text: infoText,
         slack_link: slackLink,
         comment_type: 'legacy_info',
-        registered_by: navIdent,
+        registered_by: identity.navIdent,
       })
 
       // Update deployment with GitHub data (mergedBy will be used as deployer)
@@ -334,7 +348,7 @@ export async function action({ request, params }: { request: Request; params: Re
           githubPrData: updatedDeployment?.github_pr_data || undefined,
           title: updatedDeployment?.title || prTitle || commitMessage || null,
         },
-        { changeSource: 'legacy', changedBy: navIdent },
+        { changeSource: 'legacy', changedBy: identity.navIdent },
       )
 
       return { success: 'GitHub-data lagret - venter på godkjenning fra annen person' }
@@ -350,11 +364,6 @@ export async function action({ request, params }: { request: Request; params: Re
     const deployer = formData.get('deployer') as string
     const commitSha = formData.get('commit_sha') as string
     const prNumber = formData.get('pr_number') as string
-    const navIdent = await getNavIdent(request)
-
-    if (!navIdent) {
-      return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
-    }
 
     if (!slackLink || slackLink.trim() === '') {
       return { error: 'Slack-lenke er påkrevd' }
@@ -373,7 +382,7 @@ export async function action({ request, params }: { request: Request; params: Re
         comment_text: infoText,
         slack_link: slackLink.trim(),
         comment_type: 'legacy_info',
-        registered_by: navIdent,
+        registered_by: identity.navIdent,
       })
 
       // Update deployment with provided info
@@ -384,7 +393,7 @@ export async function action({ request, params }: { request: Request; params: Re
           githubPrNumber: prNumber ? parseInt(prNumber, 10) : null,
           githubPrUrl: null,
         },
-        { changeSource: 'legacy', changedBy: navIdent },
+        { changeSource: 'legacy', changedBy: identity.navIdent },
       )
 
       return { success: 'Legacy info registrert - venter på godkjenning fra annen person' }
@@ -394,19 +403,14 @@ export async function action({ request, params }: { request: Request; params: Re
   }
 
   if (intent === 'approve_legacy') {
-    const navIdent = await getNavIdent(request)
     const legacyInfo = await getLegacyInfo(deploymentId)
-
-    if (!navIdent) {
-      return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
-    }
 
     if (!legacyInfo) {
       return { error: 'Ingen legacy info å godkjenne' }
     }
 
     // Check that approver is different from registerer
-    if (legacyInfo.registered_by?.toLowerCase() === navIdent.toLowerCase()) {
+    if (legacyInfo.registered_by?.toLowerCase() === identity.navIdent.toLowerCase()) {
       return { error: 'Godkjenner kan ikke være samme person som registrerte info' }
     }
 
@@ -419,7 +423,7 @@ export async function action({ request, params }: { request: Request; params: Re
         comment_text: 'Legacy deployment godkjent etter gjennomgang',
         slack_link: legacyInfo.slack_link || undefined,
         comment_type: 'manual_approval',
-        approved_by: navIdent,
+        approved_by: identity.navIdent,
       })
 
       // Preserve existing GitHub data when approving
@@ -432,7 +436,7 @@ export async function action({ request, params }: { request: Request; params: Re
           githubPrData: currentDeployment?.github_pr_data || undefined,
           title: currentDeployment?.title || null,
         },
-        { changeSource: 'legacy', changedBy: navIdent },
+        { changeSource: 'legacy', changedBy: identity.navIdent },
       )
 
       // Propagate to sibling deployments in the same application group
@@ -452,21 +456,16 @@ export async function action({ request, params }: { request: Request; params: Re
   }
 
   if (intent === 'reject_legacy') {
-    const navIdent = await getNavIdent(request)
     const reason = formData.get('reason') as string
-
-    if (!navIdent) {
-      return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
-    }
 
     try {
       // Delete the legacy_info comment
-      await deleteLegacyInfo(deploymentId, navIdent)
+      await deleteLegacyInfo(deploymentId, identity.navIdent)
 
       // Add a rejection comment
       await createComment({
         deployment_id: deploymentId,
-        comment_text: `Legacy-verifisering avvist av ${navIdent}${reason ? `: ${reason}` : ''}`,
+        comment_text: `Legacy-verifisering avvist av ${identity.navIdent}${reason ? `: ${reason}` : ''}`,
         comment_type: 'comment',
       })
 
@@ -478,7 +477,7 @@ export async function action({ request, params }: { request: Request; params: Re
           githubPrNumber: null,
           githubPrUrl: null,
         },
-        { changeSource: 'legacy', changedBy: navIdent },
+        { changeSource: 'legacy', changedBy: identity.navIdent },
       )
 
       return { success: 'Legacy-verifisering avvist - kan registreres på nytt' }
@@ -488,13 +487,12 @@ export async function action({ request, params }: { request: Request; params: Re
   }
 
   if (intent === 'delete_comment') {
-    const navIdent = await getNavIdent(request)
-    if (!navIdent) {
-      return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
-    }
     const commentId = parseInt(formData.get('comment_id') as string, 10)
     try {
-      await deleteComment(commentId, navIdent)
+      const deleted = await deleteComment(commentId, identity.navIdent, deploymentId)
+      if (!deleted) {
+        return { error: 'Kommentaren ble ikke funnet eller er allerede slettet' }
+      }
       return { success: 'Kommentar slettet' }
     } catch (_error) {
       return { error: 'Kunne ikke slette kommentar' }
@@ -502,12 +500,6 @@ export async function action({ request, params }: { request: Request; params: Re
   }
 
   if (intent === 'verify_four_eyes') {
-    const deployment = await getDeploymentById(deploymentId)
-
-    if (!deployment) {
-      return { error: 'Deployment ikke funnet' }
-    }
-
     // Check if deployment has required data
     if (!deployment.commit_sha) {
       return { error: 'Kan ikke verifisere: deployment mangler commit SHA' }
@@ -563,16 +555,6 @@ export async function action({ request, params }: { request: Request; params: Re
   }
 
   if (intent === 'send_slack_notification') {
-    const identity = await getUserIdentity(request)
-    if (!identity || identity.role !== 'admin') {
-      return { error: 'Kun administratorer kan sende Slack-varsler' }
-    }
-
-    const deployment = await getDeploymentById(deploymentId)
-    if (!deployment) {
-      return { error: 'Deployment ikke funnet' }
-    }
-
     const app = await getMonitoredApplicationById(deployment.monitored_app_id)
     if (!app) {
       return { error: 'App ikke funnet' }
@@ -609,7 +591,6 @@ export async function action({ request, params }: { request: Request; params: Re
   }
 
   if (intent === 'link_goal') {
-    const identity = await getUserIdentity(request)
     const objectiveId = formData.get('objective_id') ? Number(formData.get('objective_id')) : undefined
     const keyResultId = formData.get('key_result_id') ? Number(formData.get('key_result_id')) : undefined
     const externalUrl = (formData.get('external_url') as string)?.trim() || undefined
@@ -629,7 +610,7 @@ export async function action({ request, params }: { request: Request; params: Re
         external_url_title: externalUrlTitle,
         comment,
         link_method: 'manual',
-        linked_by: identity?.navIdent,
+        linked_by: identity.navIdent,
       })
       if (!link) return { error: 'Koblingen finnes allerede.' }
       return { success: 'Kobling lagt til' }
@@ -642,7 +623,10 @@ export async function action({ request, params }: { request: Request; params: Re
   if (intent === 'unlink_goal') {
     const linkId = Number(formData.get('link_id'))
     try {
-      await removeDeploymentGoalLink(linkId)
+      const removed = await removeDeploymentGoalLink(linkId, deploymentId)
+      if (!removed) {
+        return { error: 'Koblingen ble ikke funnet eller er allerede fjernet' }
+      }
       return { success: 'Kobling fjernet' }
     } catch (error) {
       logger.error('Error removing goal link:', error)

@@ -74,12 +74,12 @@ export async function getLegacyInfo(deployment_id: number): Promise<DeploymentCo
   return result.rows[0] || null
 }
 
-export async function deleteComment(id: number, deletedBy: string): Promise<boolean> {
+export async function deleteComment(id: number, deletedBy: string, deploymentId: number): Promise<boolean> {
   const result = await query(
     `UPDATE deployment_comments
      SET deleted_at = NOW(), deleted_by = $2
-     WHERE id = $1 AND deleted_at IS NULL`,
-    [id, deletedBy],
+     WHERE id = $1 AND deleted_at IS NULL AND deployment_id = $3`,
+    [id, deletedBy, deploymentId],
   )
   return (result.rowCount ?? 0) > 0
 }
