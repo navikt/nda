@@ -6,7 +6,7 @@ import {
   updateDeploymentFourEyes,
 } from '~/db/deployments.server'
 import { isDependabotUser } from '~/lib/dependabot'
-import { isApprovedStatus } from '~/lib/four-eyes-status'
+import { isApprovedStatus, PENDING_STATUSES } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { runVerification } from '~/lib/verification'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from './goal-keyword-sync.server'
@@ -29,11 +29,10 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
     per_page: 10000, // Get all deployments, not just first 20
   })
 
-  // Only verify deployments with these statuses — other statuses (direct_push,
+  // Only verify deployments with pending or error statuses — other statuses (direct_push,
   // unverified_commits, missing, etc.) are final results that can only be changed
-  // via manual approval. pending_baseline is included so that group-aware fallback
-  // can resolve baselines when a sibling environment gains history.
-  const statusesToVerify = ['pending', 'error', 'pending_baseline']
+  // via manual approval.
+  const statusesToVerify = [...PENDING_STATUSES, 'error']
   const needsVerification = deploymentsToVerify.filter(
     (d) =>
       !isApprovedStatus(d.four_eyes_status ?? '') &&

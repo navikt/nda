@@ -80,6 +80,36 @@ When modifying verification logic (any file in `app/lib/verification/`, or verif
 
 When modifying verification logic in `app/lib/verification/verify.ts`, always update [`docs/verification.md`](docs/verification.md) to reflect the changes. This documentation is used by developers, managers, and auditors to understand the verification system.
 
+### Status Categorization — Single Source of Truth
+
+**All status categorization MUST use the canonical helpers from `app/lib/four-eyes-status.ts`.** This file is the single source of truth for which statuses are approved, pending, not approved, or legacy. No other file may define its own lists or inline checks for status categories.
+
+**Canonical helpers for TypeScript logic:**
+- `isApprovedStatus(status)` — Is this deployment approved?
+- `isPendingStatus(status)` — Is this deployment pending verification?
+- `isNotApprovedStatus(status)` — Is this deployment explicitly not approved?
+- `isLegacyStatus(status)` — Is this a legacy deployment?
+- `isProtectedStatus(status)` — Is this status protected from re-verification?
+
+**Canonical constants for SQL queries:**
+- `APPROVED_STATUSES` / `APPROVED_STATUSES_SQL` — Use in SQL `IN` clauses
+- `PENDING_STATUSES` / `PENDING_STATUSES_SQL` — Use in SQL `IN` clauses
+
+```typescript
+// ✅ Good: uses canonical helper
+import { isApprovedStatus, isLegacyStatus } from '~/lib/four-eyes-status'
+const approved = deployments.filter((d) => isApprovedStatus(d.four_eyes_status))
+
+// ❌ Bad: defines own inline list (WILL diverge when new statuses are added)
+const approved = deployments.filter(
+  (d) => d.four_eyes_status === 'approved' || d.four_eyes_status === 'manually_approved'
+)
+```
+
+**Exception:** Checking a *specific* status for method/display categorization is fine (e.g., `=== 'manually_approved'` to determine if a deployment was manually vs PR-approved). The rule applies to *category* checks — "is this approved?", "is this pending?", etc.
+
+**Rationale:** A bug where `checkAuditReadiness()` defined its own approved-statuses list caused audit report counts to diverge from actual verification data. Audit reports are compliance evidence — this class of bug must be structurally prevented.
+
 ## Authorization (RBAC) Architecture
 
 The application uses role-based access control with section-level and team-level roles. Authorization helpers live in `app/lib/authorization.server.ts`.
