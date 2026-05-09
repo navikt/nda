@@ -172,9 +172,13 @@ describe('no inline status category definitions in source files', () => {
         cwd: safeDir,
       })
       return result.trim().split('\n').filter(Boolean)
-    } catch {
-      // grep exits with code 1 when no matches found
-      return []
+    } catch (error: unknown) {
+      // grep exits with code 1 when no matches found — that's expected
+      if (error instanceof Error && 'status' in error && (error as { status: number }).status === 1) {
+        return []
+      }
+      // Any other error (grep missing, timeout, etc.) should fail the test
+      throw error
     }
   }
 
