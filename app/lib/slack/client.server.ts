@@ -621,6 +621,7 @@ export async function sendPendingDeployNotifications(baseUrl: string): Promise<n
  */
 function mapFourEyesStatus(status: string): DeploymentNotification['status'] {
   if (isApprovedStatus(status) || status === 'legacy') return 'approved'
+  if (status === 'legacy_pending') return 'pending_approval'
   if (isNotApprovedStatus(status)) return 'unverified'
   if (isPendingStatus(status)) return 'pending_approval'
   return 'pending_approval'

@@ -31,7 +31,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const allDeployments = await getAllDeployments()
   const pendingCount = allDeployments.filter(
-    (d) => isPendingStatus(d.four_eyes_status ?? '') || d.four_eyes_status === 'error',
+    (d) => isPendingStatus(d.four_eyes_status ?? 'unknown') || d.four_eyes_status === 'error',
   ).length
 
   // Count verification diffs across all apps

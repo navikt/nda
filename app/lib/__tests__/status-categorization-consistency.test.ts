@@ -152,7 +152,6 @@ describe('status categorization semantic consistency', () => {
 // ─── Static analysis: no inline status category definitions ──────────────────
 
 describe('no inline status category definitions in source files', () => {
-  const appDir = path.resolve(__dirname, '../..')
   const excludePatterns = [
     '__tests__',
     '__stories__',
@@ -162,12 +161,16 @@ describe('no inline status category definitions in source files', () => {
   ]
 
   function grepForPattern(pattern: string): string[] {
+    // Use a validated, hardcoded relative path to avoid shell injection (CodeQL).
+    // __dirname is always inside app/lib/__tests__, so '../..' resolves to app/.
+    const safeDir = path.resolve(__dirname, '../..')
+    const excludeArgs = excludePatterns.map((p) => ` | grep -v '${p}'`).join('')
     try {
-      const result = execSync(
-        `grep -rn --include='*.ts' --include='*.tsx' -E '${pattern}' ${appDir}` +
-          excludePatterns.map((p) => ` | grep -v '${p}'`).join(''),
-        { encoding: 'utf-8', timeout: 10000 },
-      )
+      const result = execSync(`grep -rn --include='*.ts' --include='*.tsx' -E '${pattern}' .${excludeArgs}`, {
+        encoding: 'utf-8',
+        timeout: 10000,
+        cwd: safeDir,
+      })
       return result.trim().split('\n').filter(Boolean)
     } catch {
       // grep exits with code 1 when no matches found
