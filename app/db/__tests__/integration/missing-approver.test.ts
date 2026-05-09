@@ -95,8 +95,8 @@ describe('missing approver detection — checkAuditReadiness', () => {
 
     // Insert manual approval comment
     await pool.query(
-      `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, created_by, approved_by)
-       VALUES ($1, 'manual_approval', 'Godkjent manuelt', 'admin-user', 'admin-user')`,
+      `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, approved_by)
+       VALUES ($1, 'manual_approval', 'Godkjent manuelt', 'admin-user')`,
       [deploymentId],
     )
 
@@ -207,8 +207,8 @@ describe('missing approver detection — getApprovedDeploymentsMissingApprover',
 
     // Insert soft-deleted manual approval — should NOT count
     await pool.query(
-      `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, created_by, approved_by, deleted_at)
-       VALUES ($1, 'manual_approval', 'Slettet godkjenning', 'admin-user', 'admin-user', NOW())`,
+      `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, approved_by, deleted_at)
+       VALUES ($1, 'manual_approval', 'Slettet godkjenning', 'admin-user', NOW())`,
       [deploymentId],
     )
 
