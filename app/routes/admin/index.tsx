@@ -19,6 +19,7 @@ import { Link, useLoaderData } from 'react-router'
 import { pool } from '~/db/connection.server'
 import { getAllDeployments } from '~/db/deployments.server'
 import { requireAdmin } from '~/lib/auth.server'
+import { isPendingStatus } from '~/lib/four-eyes-status'
 import type { Route } from './+types/index'
 
 export function meta(_args: Route.MetaArgs) {
@@ -30,7 +31,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const allDeployments = await getAllDeployments()
   const pendingCount = allDeployments.filter(
-    (d) => d.four_eyes_status === 'pending' || d.four_eyes_status === 'error',
+    (d) => isPendingStatus(d.four_eyes_status ?? 'unknown') || d.four_eyes_status === 'error',
   ).length
 
   // Count verification diffs across all apps

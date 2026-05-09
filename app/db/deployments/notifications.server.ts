@@ -83,7 +83,7 @@ export async function claimDeploymentForDeployNotify(
 /**
  * Get deployments that need deploy notification (no slack_deploy_message_ts set)
  * for apps that have deploy notifications enabled.
- * Only includes deployments that have been verified (four_eyes_status != 'pending').
+ * Only includes deployments that have been verified (not in a pending status).
  */
 export async function getDeploymentsNeedingDeployNotify(limit = 50): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
@@ -98,11 +98,11 @@ export async function getDeploymentsNeedingDeployNotify(limit = 50): Promise<Dep
        AND ma.slack_deploy_channel_id IS NOT NULL
        AND ma.slack_deploy_notify_enabled_at IS NOT NULL
        AND d.created_at >= ma.slack_deploy_notify_enabled_at
-       AND d.four_eyes_status NOT IN ('pending', 'unknown')
+       AND COALESCE(d.four_eyes_status, 'unknown') != ALL($2::text[])
        AND d.created_at > NOW() - INTERVAL '7 days'
      ORDER BY d.created_at DESC
      LIMIT $1`,
-    [limit],
+    [limit, PENDING_STATUSES],
   )
   return result.rows
 }

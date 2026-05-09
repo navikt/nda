@@ -7,6 +7,7 @@
  * When a deployment is verified in one cluster, the verification status
  * can be propagated to sibling deployments with the same commit SHA.
  */
+import { REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -39,8 +40,8 @@ const PROPAGATABLE_STATUSES = new Set([
   'manually_approved',
 ])
 
-// Statuses that indicate a deployment is still awaiting verification
-const PENDING_STATUSES = ['pending', 'error']
+// Statuses eligible for propagation: reverifiable pending + error (verification failure, can be retried)
+const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
@@ -232,7 +233,7 @@ export async function getGroupNamesByIds(groupIds: number[]): Promise<Map<number
  * Propagate a positive verification status to sibling deployments that:
  * 1. Belong to apps in the same application group
  * 2. Have the same commit SHA
- * 3. Are still in a pending/error state
+ * 3. Are still in a pending state (any canonical pending status) or error state
  *
  * Returns the number of sibling deployments updated.
  */
@@ -263,7 +264,7 @@ export async function propagateVerificationToSiblings(
          AND ma.application_group_id IS NOT NULL
          AND ma.id != $5
        )`,
-    [status, commitSha, PENDING_STATUSES, deploymentId, monitoredAppId],
+    [status, commitSha, PROPAGATION_TARGET_STATUSES, deploymentId, monitoredAppId],
   )
 
   return result.rowCount ?? 0

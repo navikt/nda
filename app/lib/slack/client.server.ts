@@ -32,6 +32,7 @@ import {
   updateSlackNotification,
 } from '~/db/slack-notifications.server'
 import { getUserMappingBySlackId } from '~/db/user-mappings.server'
+import { isApprovedStatus, isLegacyStatus, isNotApprovedStatus, isPendingStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import {
   buildDeploymentBlocks,
@@ -511,7 +512,7 @@ async function notifyNewDeploymentIfNeeded(
   let deployMethod: NewDeploymentNotification['deployMethod'] = 'direct_push'
   if (deployment.github_pr_number) {
     deployMethod = 'pull_request'
-  } else if (deployment.four_eyes_status === 'legacy_verified' || deployment.four_eyes_status === 'implicit_verified') {
+  } else if (isLegacyStatus(deployment.four_eyes_status ?? '')) {
     deployMethod = 'legacy'
   }
 
@@ -614,22 +615,16 @@ export async function sendPendingDeployNotifications(baseUrl: string): Promise<n
 }
 
 /**
- * Map four_eyes_status to notification status
+ * Map four_eyes_status to notification status using canonical helpers.
+ * Note: legacy_pending is intentionally NOT treated as approved — it means
+ * "waiting for approval from another person".
  */
 function mapFourEyesStatus(status: string): DeploymentNotification['status'] {
-  switch (status) {
-    case 'verified':
-    case 'legacy_verified':
-    case 'implicit_verified':
-      return 'approved'
-    case 'pending':
-    case 'unverified':
-      return 'unverified'
-    case 'rejected':
-      return 'rejected'
-    default:
-      return 'pending_approval'
-  }
+  if (isApprovedStatus(status) || status === 'legacy') return 'approved'
+  if (status === 'legacy_pending') return 'pending_approval'
+  if (isNotApprovedStatus(status)) return 'unverified'
+  if (isPendingStatus(status)) return 'pending_approval'
+  return 'pending_approval'
 }
 
 /**

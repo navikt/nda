@@ -11,6 +11,7 @@ import { getDeploymentsWithStatusChanges } from '~/db/deployments.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
+import { formatChangeSource, getFourEyesStatus } from '~/lib/status-display'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.status-history'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -30,27 +31,8 @@ export function meta(_args: Route.MetaArgs) {
   return [{ title: 'Statusoverganger' }]
 }
 
-function formatChangeSource(source: string): string {
-  const labels: Record<string, string> = {
-    verification: 'Verifisering',
-    manual_approval: 'Manuell godkjenning',
-    reverification: 'Reverifisering',
-    sync: 'Synkronisering',
-    legacy: 'Legacy',
-    baseline_approval: 'Baseline godkjent',
-    unknown: 'Ukjent',
-  }
-  return labels[source] || source
-}
-
 function getStatusVariant(status: string): 'success' | 'warning' | 'error' | 'info' | 'neutral' {
-  if (
-    ['approved', 'approved_pr', 'manually_approved', 'implicitly_approved', 'baseline', 'no_changes'].includes(status)
-  )
-    return 'success'
-  if (['pending', 'pending_baseline', 'legacy_pending', 'direct_push'].includes(status)) return 'warning'
-  if (['unverified_commits', 'approved_pr_with_unreviewed', 'error', 'missing'].includes(status)) return 'error'
-  return 'neutral'
+  return getFourEyesStatus({ four_eyes_status: status }).variant
 }
 
 export default function StatusHistoryPage({ loaderData }: Route.ComponentProps) {

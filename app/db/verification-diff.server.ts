@@ -1,4 +1,5 @@
 import { AUDIT_START_YEAR_FILTER } from '~/db/audit-start-year'
+import { LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { pool } from '~/db/connection.server'
 
 interface VerificationDiffDeployment {
@@ -72,7 +73,7 @@ export async function getPreviousDeploymentForDiff(
        AND d.environment_name = $2
        AND d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
        AND d.commit_sha IS NOT NULL
-       AND d.four_eyes_status NOT IN ('legacy', 'legacy_pending')
+       AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
        AND d.commit_sha !~ '^refs/'
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY d.created_at DESC

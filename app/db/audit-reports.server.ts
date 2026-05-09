@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isApprovedStatus } from '~/lib/four-eyes-status'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import { generateReportId } from '~/lib/report-periods'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
@@ -233,26 +234,10 @@ export async function checkAuditReadiness(
   )
 
   const deployments = result.rows
-  // Approved statuses - 'approved' is the main status for PR-verified deployments
-  const approvedStatuses = [
-    'approved',
-    'approved_pr',
-    'manually_approved',
-    'implicitly_approved',
-    'legacy',
-    'baseline',
-    'no_changes',
-  ]
 
-  const approved = deployments.filter(
-    (d) =>
-      d.four_eyes_status === 'approved' ||
-      d.four_eyes_status === 'approved_pr' ||
-      d.four_eyes_status === 'manually_approved' ||
-      d.four_eyes_status === 'implicitly_approved',
-  )
+  const approved = deployments.filter((d) => isApprovedStatus(d.four_eyes_status))
   const legacy = deployments.filter((d) => d.four_eyes_status === 'legacy')
-  const pending = deployments.filter((d) => !approvedStatuses.includes(d.four_eyes_status))
+  const pending = deployments.filter((d) => !isApprovedStatus(d.four_eyes_status) && d.four_eyes_status !== 'legacy')
 
   return {
     is_ready: pending.length === 0 && deployments.length > 0,

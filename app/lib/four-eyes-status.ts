@@ -31,6 +31,7 @@ export const FOUR_EYES_STATUSES = [
   'repository_mismatch', // Repository doesn't match monitored app
   'unauthorized_repository', // Repository not approved for this app
   'unauthorized_branch', // Deployed commit not on approved branch
+  'missing', // Legacy: PR approval was missing at time of check
   'error', // Error during verification
   'unknown', // Not yet verified (DB default)
 ] as const
@@ -72,6 +73,7 @@ export const NOT_APPROVED_STATUSES: FourEyesStatus[] = [
   'unauthorized_branch',
   'legacy',
   'legacy_pending',
+  'missing',
   'error',
   'repository_mismatch',
 ]
@@ -80,6 +82,13 @@ export const NOT_APPROVED_STATUSES: FourEyesStatus[] = [
  * Statuses that indicate deployment is pending verification
  */
 export const PENDING_STATUSES: FourEyesStatus[] = ['pending', 'pending_baseline', 'pending_approval', 'unknown']
+
+/**
+ * Statuses eligible for automatic re-verification by the background verifier.
+ * Excludes `pending_approval` which represents a manual registration explicitly
+ * awaiting human review — the verifier must not overwrite that workflow.
+ */
+export const REVERIFIABLE_STATUSES: FourEyesStatus[] = ['pending', 'pending_baseline', 'unknown']
 
 /**
  * SQL fragment for filtering pending deployments.
@@ -101,6 +110,11 @@ export function notApprovedWhereClause(column: string): string {
  * Statuses that indicate legacy deployments
  */
 export const LEGACY_STATUSES: FourEyesStatus[] = ['legacy', 'legacy_pending']
+
+/**
+ * SQL fragment for filtering legacy deployments.
+ */
+export const LEGACY_STATUSES_SQL = LEGACY_STATUSES.map((s) => `'${s}'`).join(', ')
 
 /**
  * Statuses protected from re-verification overwrite.
@@ -135,6 +149,7 @@ export const FOUR_EYES_STATUS_LABELS: Record<FourEyesStatus, string> = {
   repository_mismatch: 'Repository mismatch',
   unauthorized_repository: 'Ikke godkjent repo',
   unauthorized_branch: 'Ikke på godkjent branch',
+  missing: 'Mangler godkjenning',
   error: 'Feil',
   unknown: 'Ukjent',
 }
