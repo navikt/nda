@@ -5,6 +5,7 @@
 
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import {
   getBoardObjectiveProgress,
   getContributedBoards,
@@ -49,9 +50,9 @@ describe('getSectionOverallStats SQL', () => {
     const result = await pool.query(
       `SELECT
          COUNT(d.id)::int AS total_deployments,
-         COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes'))::int AS with_four_eyes,
+         COUNT(d.id) FILTER (WHERE d.four_eyes_status IN (${APPROVED_STATUSES_SQL}))::int AS with_four_eyes,
          COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('direct_push', 'unverified_commits', 'approved_pr_with_unreviewed', 'unauthorized_repository', 'unauthorized_branch'))::int AS without_four_eyes,
-         COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('pending', 'pending_baseline', 'pending_approval', 'unknown'))::int AS pending_verification,
+         COUNT(d.id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL}))::int AS pending_verification,
          COUNT(DISTINCT dgl.deployment_id)::int AS linked_to_goal
        FROM section_teams st
        JOIN deployments d ON d.team_slug = st.team_slug
@@ -135,7 +136,7 @@ describe('getSectionOverallStats SQL', () => {
     const result = await pool.query(
       `SELECT
          COUNT(d.id)::int AS total_deployments,
-         COUNT(d.id) FILTER (WHERE d.four_eyes_status IN ('approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes'))::int AS with_four_eyes,
+         COUNT(d.id) FILTER (WHERE d.four_eyes_status IN (${APPROVED_STATUSES_SQL}))::int AS with_four_eyes,
          COUNT(DISTINCT dgl.deployment_id)::int AS linked_to_goal
        FROM section_teams st
        JOIN deployments d ON d.team_slug = st.team_slug

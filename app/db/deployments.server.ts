@@ -1,5 +1,6 @@
 import {
   APPROVED_STATUSES_SQL,
+  LEGACY_STATUSES_SQL,
   notApprovedWhereClause,
   PENDING_STATUSES,
   PENDING_STATUSES_SQL,
@@ -906,7 +907,7 @@ export async function getPreviousDeploymentForDiff(
        AND curr.id = $2
        AND prev.created_at < curr.created_at
        AND prev.commit_sha IS NOT NULL
-       AND prev.four_eyes_status NOT IN ('legacy', 'legacy_pending')
+       AND prev.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
        AND prev.commit_sha !~ '^refs/'`
 
   const params: (number | string)[] = [monitoredAppId, currentDeploymentId]

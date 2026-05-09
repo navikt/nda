@@ -23,7 +23,7 @@ import {
   savePrSnapshotsBatch,
 } from '~/db/github-data.server'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
-import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getCommitsBetween, getDetailedPullRequestInfo, getPullRequestForCommit, isCommitOnBranch } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import type { RepositoryStatus } from './types'
@@ -313,7 +313,7 @@ async function getPreviousDeployment(
       AND d.detected_github_owner = $3
       AND d.detected_github_repo_name = $4
       AND d.commit_sha IS NOT NULL
-      AND d.four_eyes_status NOT IN ('legacy', 'legacy_pending')
+      AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
       AND d.commit_sha !~ '^refs/'
   `
   const params: (number | string)[] = [currentDeploymentId, environmentName, owner, repo]
@@ -369,7 +369,7 @@ async function getPreviousDeploymentFromGroupSibling(
       AND d.detected_github_owner = $2
       AND d.detected_github_repo_name = $3
       AND d.commit_sha IS NOT NULL
-      AND d.four_eyes_status NOT IN ('legacy', 'legacy_pending')
+      AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
       AND d.commit_sha !~ '^refs/'
       AND ma.application_group_id = $4
   `

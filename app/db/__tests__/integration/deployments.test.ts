@@ -5,6 +5,7 @@
 
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -119,9 +120,9 @@ describe('deployment queries', () => {
     const { rows } = await pool.query(`
       SELECT
         COUNT(id)::int AS total,
-        COUNT(id) FILTER (WHERE four_eyes_status IN ('approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes'))::int AS with_four_eyes,
+        COUNT(id) FILTER (WHERE four_eyes_status IN (${APPROVED_STATUSES_SQL}))::int AS with_four_eyes,
         COUNT(id) FILTER (WHERE four_eyes_status IN ('direct_push', 'unverified_commits'))::int AS without_four_eyes,
-        COUNT(id) FILTER (WHERE four_eyes_status IN ('pending', 'pending_baseline', 'unknown'))::int AS pending
+        COUNT(id) FILTER (WHERE COALESCE(four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL}))::int AS pending
       FROM deployments
       WHERE team_slug = 'team-x'
     `)
@@ -344,8 +345,8 @@ describe('not_approved filter includes unrecognized statuses', () => {
       FROM deployments d
       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
       WHERE d.team_slug = 'team-filter'
-        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN ('approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes')
-        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN ('pending', 'pending_baseline', 'unknown')
+        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${APPROVED_STATUSES_SQL})
+        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${PENDING_STATUSES_SQL})
       ORDER BY d.four_eyes_status
     `)
 
@@ -369,8 +370,8 @@ describe('not_approved filter includes unrecognized statuses', () => {
       SELECT d.four_eyes_status
       FROM deployments d
       WHERE d.team_slug = 'team-null'
-        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN ('approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes')
-        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN ('pending', 'pending_baseline', 'unknown')
+        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${APPROVED_STATUSES_SQL})
+        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${PENDING_STATUSES_SQL})
     `)
 
     // NULL coalesces to 'unknown' which is in PENDING_STATUSES, so excluded from not_approved

@@ -110,6 +110,11 @@ export function notApprovedWhereClause(column: string): string {
 export const LEGACY_STATUSES: FourEyesStatus[] = ['legacy', 'legacy_pending']
 
 /**
+ * SQL fragment for filtering legacy deployments.
+ */
+export const LEGACY_STATUSES_SQL = LEGACY_STATUSES.map((s) => `'${s}'`).join(', ')
+
+/**
  * Statuses protected from re-verification overwrite.
  * These represent explicit admin decisions that automated verification must not change.
  */
