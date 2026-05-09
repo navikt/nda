@@ -8,10 +8,10 @@
 import { BodyShort, Box, Heading, Table, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { getDeploymentsWithStatusChanges } from '~/db/deployments.server'
-import { isApprovedStatus, isNotApprovedStatus, isPendingStatus } from '~/lib/four-eyes-status'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
+import { formatChangeSource, getFourEyesStatus } from '~/lib/status-display'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.status-history'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -31,24 +31,8 @@ export function meta(_args: Route.MetaArgs) {
   return [{ title: 'Statusoverganger' }]
 }
 
-function formatChangeSource(source: string): string {
-  const labels: Record<string, string> = {
-    verification: 'Verifisering',
-    manual_approval: 'Manuell godkjenning',
-    reverification: 'Reverifisering',
-    sync: 'Synkronisering',
-    legacy: 'Legacy',
-    baseline_approval: 'Baseline godkjent',
-    unknown: 'Ukjent',
-  }
-  return labels[source] || source
-}
-
 function getStatusVariant(status: string): 'success' | 'warning' | 'error' | 'info' | 'neutral' {
-  if (isApprovedStatus(status)) return 'success'
-  if (isPendingStatus(status)) return 'warning'
-  if (isNotApprovedStatus(status)) return 'error'
-  return 'neutral'
+  return getFourEyesStatus({ four_eyes_status: status }).variant
 }
 
 export default function StatusHistoryPage({ loaderData }: Route.ComponentProps) {
