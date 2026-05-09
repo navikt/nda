@@ -363,6 +363,12 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                           <Detail>Venter godkjenning</Detail>
                           <BodyShort weight="semibold">{readinessData.pending_count}</BodyShort>
                         </div>
+                        {readinessData.missing_approver_count > 0 && (
+                          <div>
+                            <Detail>Mangler godkjenner</Detail>
+                            <BodyShort weight="semibold">{readinessData.missing_approver_count}</BodyShort>
+                          </div>
+                        )}
                       </HStack>
 
                       {readinessData.pending_count > 0 && (
@@ -370,6 +376,30 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                           <Detail>Deployments som mangler godkjenning:</Detail>
                           <VStack gap="space-4">
                             {readinessData.pending_deployments.map((d) => (
+                              <HStack key={d.id} gap="space-8" align="center">
+                                <AkselLink as={Link} to={`${appUrl}/deployments/${d.id}`}>
+                                  {d.commit_sha?.substring(0, 7) || 'N/A'}
+                                </AkselLink>
+                                <BodyShort size="small">
+                                  {new Date(d.created_at).toLocaleDateString('no-NO')} •{' '}
+                                  <UserName
+                                    username={d.deployer_username}
+                                    userMappings={readinessUserMappings}
+                                    link={false}
+                                  />{' '}
+                                  • {getFourEyesStatusLabel(d.four_eyes_status)}
+                                </BodyShort>
+                              </HStack>
+                            ))}
+                          </VStack>
+                        </div>
+                      )}
+
+                      {readinessData.missing_approver_count > 0 && (
+                        <div>
+                          <Detail>Godkjente deployments som mangler godkjenner-data:</Detail>
+                          <VStack gap="space-4">
+                            {readinessData.missing_approver_deployments.map((d) => (
                               <HStack key={d.id} gap="space-8" align="center">
                                 <AkselLink as={Link} to={`${appUrl}/deployments/${d.id}`}>
                                   {d.commit_sha?.substring(0, 7) || 'N/A'}

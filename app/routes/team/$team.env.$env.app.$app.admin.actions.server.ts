@@ -213,9 +213,13 @@ export async function action({ request }: { request: Request; params: Record<str
     }
     const readiness = await checkAuditReadiness(appId, new Date(periodStart), new Date(periodEnd))
 
-    // Resolve display names for pending deployment deployers
-    const deployerUsernames = readiness.pending_deployments.map((d) => d.deployer_username).filter(Boolean) as string[]
-    const userMappings = deployerUsernames.length > 0 ? await getUserMappings(deployerUsernames) : new Map()
+    // Resolve display names for deployers in pending and missing approver lists
+    const deployerUsernames = [
+      ...readiness.pending_deployments.map((d) => d.deployer_username),
+      ...readiness.missing_approver_deployments.map((d) => d.deployer_username),
+    ].filter((u): u is string => u != null)
+    const uniqueDeployers = [...new Set(deployerUsernames)]
+    const userMappings = uniqueDeployers.length > 0 ? await getUserMappings(uniqueDeployers) : new Map()
 
     return { readiness, userMappings: serializeUserMappings(userMappings) }
   }
@@ -242,8 +246,18 @@ export async function action({ request }: { request: Request; params: Record<str
     // Check readiness first
     const readiness = await checkAuditReadiness(appId, periodStart, periodEnd)
     if (!readiness.is_ready) {
+      const reasons: string[] = []
+      if (readiness.total_deployments === 0) {
+        reasons.push('Ingen deployments funnet i perioden')
+      }
+      if (readiness.pending_count > 0) {
+        reasons.push(`${readiness.pending_count} deployments mangler godkjenning`)
+      }
+      if (readiness.missing_approver_count > 0) {
+        reasons.push(`${readiness.missing_approver_count} godkjente deployments mangler godkjenner-data`)
+      }
       return {
-        error: `Kan ikke generere rapport. ${readiness.pending_count} deployments mangler godkjenning.`,
+        error: `Kan ikke generere rapport: ${reasons.join('; ')}.`,
         readiness,
       }
     }

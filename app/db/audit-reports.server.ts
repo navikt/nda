@@ -5,6 +5,7 @@ import { generateReportId } from '~/lib/report-periods'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 import { getDeviationsForPeriod } from './deviations.server'
+import { findDeploymentIdsMissingApprover } from './verification-diff.server'
 
 // ============================================================================
 // Types
@@ -191,8 +192,16 @@ interface AuditReadinessCheck {
   pending_deployments: Array<{
     id: number
     created_at: Date
-    commit_sha: string
-    deployer_username: string
+    commit_sha: string | null
+    deployer_username: string | null
+    four_eyes_status: string
+  }>
+  missing_approver_count: number
+  missing_approver_deployments: Array<{
+    id: number
+    created_at: Date
+    commit_sha: string | null
+    deployer_username: string | null
     four_eyes_status: string
   }>
 }
@@ -216,8 +225,8 @@ export async function checkAuditReadiness(
   const result = await pool.query<{
     id: number
     created_at: Date
-    commit_sha: string
-    deployer_username: string
+    commit_sha: string | null
+    deployer_username: string | null
     four_eyes_status: string
     environment_name: string
   }>(
@@ -239,13 +248,25 @@ export async function checkAuditReadiness(
   const legacy = deployments.filter((d) => d.four_eyes_status === 'legacy')
   const pending = deployments.filter((d) => !isApprovedStatus(d.four_eyes_status) && d.four_eyes_status !== 'legacy')
 
+  // Check for approved deployments missing approver data.
+  // Uses shared helper to ensure consistent criteria with verification diff page.
+  const approvedIds = approved.map((d) => d.id)
+  let missingApprover: typeof approved = []
+
+  if (approvedIds.length > 0) {
+    const missingIds = await findDeploymentIdsMissingApprover(approvedIds)
+    missingApprover = approved.filter((d) => missingIds.has(d.id))
+  }
+
   return {
-    is_ready: pending.length === 0 && deployments.length > 0,
+    is_ready: pending.length === 0 && missingApprover.length === 0 && deployments.length > 0,
     total_deployments: deployments.length,
     approved_count: approved.length,
     legacy_count: legacy.length,
     pending_count: pending.length,
-    pending_deployments: pending.slice(0, 10), // Return first 10 for display
+    pending_deployments: pending.slice(0, 10),
+    missing_approver_count: missingApprover.length,
+    missing_approver_deployments: missingApprover.slice(0, 10),
   }
 }
 
