@@ -1,6 +1,6 @@
 import { AUDIT_START_YEAR_FILTER } from '~/db/audit-start-year'
-import { LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { pool } from '~/db/connection.server'
+import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 
 interface VerificationDiffDeployment {
   id: number
@@ -19,10 +19,7 @@ interface VerificationDiffDeployment {
  * Get deployments eligible for verification diff analysis.
  * Includes all valid deployments regardless of whether they have compare snapshots.
  */
-export async function getDeploymentsForDiffComputation(
-  monitoredAppId: number,
-  limit = 500,
-): Promise<VerificationDiffDeployment[]> {
+export async function getDeploymentsForDiffComputation(monitoredAppId: number): Promise<VerificationDiffDeployment[]> {
   const result = await pool.query(
     `SELECT 
         d.id,
@@ -44,9 +41,8 @@ export async function getDeploymentsForDiffComputation(
         AND d.commit_sha !~ '^refs/'
         AND LENGTH(d.commit_sha) >= 7
         AND ${AUDIT_START_YEAR_FILTER}
-      ORDER BY created_at DESC
-      LIMIT $2`,
-    [monitoredAppId, limit],
+      ORDER BY created_at DESC`,
+    [monitoredAppId],
   )
   return result.rows
 }
@@ -116,4 +112,75 @@ export async function getPrSnapshotsForDiff(prNumber: number): Promise<Map<strin
     }
   }
   return snapshotMap
+}
+
+interface MissingApproverDeployment {
+  id: number
+  commit_sha: string | null
+  four_eyes_status: string
+  environment_name: string
+  created_at: Date
+  deployer_username: string | null
+}
+
+/**
+ * Shared SQL conditions for detecting deployments missing approver data.
+ * A deployment is missing approver data when it has neither:
+ *   - PR reviewers with state='APPROVED' in github_pr_data, nor
+ *   - An active (non-deleted) manual_approval comment
+ *
+ * Excludes no_changes, baseline, and implicitly_approved — the first two
+ * don't require a separate approver, and implicitly_approved uses the PR merger.
+ *
+ * Requires the deployments table to be aliased as `d`.
+ */
+const MISSING_APPROVER_STATUS_EXCLUSIONS = `d.four_eyes_status NOT IN ('no_changes', 'baseline', 'implicitly_approved')`
+
+const MISSING_APPROVER_CONDITIONS = `
+  ${MISSING_APPROVER_STATUS_EXCLUSIONS}
+  AND NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(d.github_pr_data->'reviewers') AS r
+    WHERE r->>'state' = 'APPROVED'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM deployment_comments dc
+    WHERE dc.deployment_id = d.id
+      AND dc.comment_type = 'manual_approval'
+      AND dc.deleted_at IS NULL
+  )`
+
+/**
+ * Find deployment IDs from a given set that are missing approver data.
+ * Used by checkAuditReadiness to check a pre-filtered set of approved deployments.
+ */
+export async function findDeploymentIdsMissingApprover(deploymentIds: number[]): Promise<Set<number>> {
+  if (deploymentIds.length === 0) return new Set()
+  const result = await pool.query<{ id: number }>(
+    `SELECT d.id FROM deployments d
+     WHERE d.id = ANY($1) AND ${MISSING_APPROVER_CONDITIONS}`,
+    [deploymentIds],
+  )
+  return new Set(result.rows.map((r) => r.id))
+}
+
+/**
+ * Find approved deployments that have no approver data for a monitored app.
+ * Used by the verification diff page to show a warning.
+ */
+export async function getApprovedDeploymentsMissingApprover(
+  monitoredAppId: number,
+): Promise<MissingApproverDeployment[]> {
+  const result = await pool.query<MissingApproverDeployment>(
+    `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
+            d.created_at, d.deployer_username
+     FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE d.monitored_app_id = $1
+       AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+       AND ${MISSING_APPROVER_CONDITIONS}
+       AND ${AUDIT_START_YEAR_FILTER}
+     ORDER BY d.created_at DESC`,
+    [monitoredAppId],
+  )
+  return result.rows
 }

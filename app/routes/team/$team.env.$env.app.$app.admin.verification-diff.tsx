@@ -27,6 +27,7 @@ import { ErrorReasonWithLink } from '~/components/ErrorReasonWithLink'
 import { pool } from '~/db/connection.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getLatestSyncJob, getSyncJobById } from '~/db/sync-jobs.server'
+import { getApprovedDeploymentsMissingApprover } from '~/db/verification-diff.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { type FourEyesStatus, getFourEyesStatusLabel, isApprovedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
@@ -52,7 +53,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const monitoredApp = await getMonitoredApplicationByIdentity(team, env, app)
   if (!monitoredApp) {
-    return { diffs: [], appContext: null, lastComputed: null, latestJob: null }
+    return { diffs: [], missingApproverDeployments: [], appContext: null, lastComputed: null, latestJob: null }
   }
 
   const appContext = {
@@ -88,11 +89,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }))
 
   // Get last computation time from the latest completed job, not from diffs
-  const latestJob = await getLatestSyncJob(monitoredApp.id, 'reverify_app')
+  const [latestJob, missingApproverRows] = await Promise.all([
+    getLatestSyncJob(monitoredApp.id, 'reverify_app'),
+    getApprovedDeploymentsMissingApprover(monitoredApp.id),
+  ])
   const lastComputed =
     latestJob?.status === 'completed' && latestJob.completed_at ? new Date(latestJob.completed_at).toISOString() : null
 
-  return { diffs, appContext, lastComputed, latestJob }
+  const missingApproverDeployments = missingApproverRows.map((row) => ({
+    id: row.id,
+    commitSha: row.commit_sha,
+    fourEyesStatus: row.four_eyes_status,
+    environmentName: row.environment_name,
+    createdAt: row.created_at.toISOString(),
+    deployerUsername: row.deployer_username,
+  }))
+
+  return { diffs, missingApproverDeployments, appContext, lastComputed, latestJob }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -167,7 +180,7 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export default function VerificationDiffPage() {
-  const { diffs, appContext, lastComputed, latestJob } = useLoaderData<typeof loader>()
+  const { diffs, missingApproverDeployments, appContext, lastComputed, latestJob } = useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const revalidator = useRevalidator()
   const submittingId = navigation.state === 'submitting' ? navigation.formData?.get('deployment_id')?.toString() : null
@@ -438,6 +451,58 @@ export default function VerificationDiffPage() {
                         </Button>
                       </Form>
                     </Table.DataCell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table>
+          </VStack>
+        )}
+
+        {/* Missing approver data */}
+        {missingApproverDeployments.length > 0 && (
+          <VStack gap="space-4">
+            <Box background="danger-soft" padding="space-4" borderRadius="8">
+              <BodyShort>
+                ⚠️{' '}
+                {missingApproverDeployments.length === 1
+                  ? '1 godkjent deployment mangler godkjenner-data.'
+                  : `${missingApproverDeployments.length} godkjente deployments mangler godkjenner-data.`}{' '}
+                Disse vil blokkere leveranserapport.
+              </BodyShort>
+            </Box>
+            <Table>
+              <Table.Header>
+                <Table.Row>
+                  <Table.HeaderCell>Deployment</Table.HeaderCell>
+                  <Table.HeaderCell>Miljø</Table.HeaderCell>
+                  <Table.HeaderCell>Dato</Table.HeaderCell>
+                  <Table.HeaderCell>Status</Table.HeaderCell>
+                  <Table.HeaderCell>Deployer</Table.HeaderCell>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {missingApproverDeployments.map((d) => (
+                  <Table.Row key={d.id}>
+                    <Table.DataCell>
+                      <AkselLink
+                        as={Link}
+                        to={
+                          appContext
+                            ? `/team/${appContext.teamSlug}/env/${appContext.environmentName}/app/${appContext.appName}/deployments/${d.id}`
+                            : `/deployments/${d.id}`
+                        }
+                      >
+                        {d.commitSha?.substring(0, 7) ?? '—'}
+                      </AkselLink>
+                    </Table.DataCell>
+                    <Table.DataCell>{d.environmentName}</Table.DataCell>
+                    <Table.DataCell>{new Date(d.createdAt).toLocaleDateString('no-NO')}</Table.DataCell>
+                    <Table.DataCell>
+                      <Tag variant="warning" size="small">
+                        {getFourEyesStatusLabel(d.fourEyesStatus)}
+                      </Tag>
+                    </Table.DataCell>
+                    <Table.DataCell>{d.deployerUsername || '-'}</Table.DataCell>
                   </Table.Row>
                 ))}
               </Table.Body>
