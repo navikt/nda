@@ -5,7 +5,6 @@ import {
   Box,
   Button,
   Checkbox,
-  CheckboxGroup,
   Detail,
   Heading,
   HGrid,
@@ -36,10 +35,8 @@ import {
   getDeployerMonthlyStats,
   getDeploymentCountByDeployer,
 } from '~/db/deployments.server'
-import { getAllDevTeams } from '~/db/dev-teams.server'
-import { getUserRolesForDisplay, type UserRoleDisplay } from '~/db/role-assignments.server'
+import { getUserDevTeamsByRole, getUserRolesForDisplay, type UserRoleDisplay } from '~/db/role-assignments.server'
 import { getAllSectionsWithTeams } from '~/db/sections.server'
-import { addUserDevTeam, getUserDevTeams, removeUserDevTeam } from '~/db/user-dev-team-preference.server'
 import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
 import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
@@ -109,11 +106,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const canPrefillOwnMapping = !isBot && !mapping && username.toUpperCase() === identity.navIdent.toUpperCase()
 
   // Fetch dev teams if user has a nav_ident
-  let devTeams: Awaited<ReturnType<typeof getUserDevTeams>> = []
+  let devTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> = []
   let userRoles: UserRoleDisplay = { sectionRoles: [], teamRoles: [] }
   if (mapping?.nav_ident) {
     const [devTeamsResult, rolesResult] = await Promise.allSettled([
-      getUserDevTeams(mapping.nav_ident),
+      getUserDevTeamsByRole(mapping.nav_ident.toUpperCase()),
       getUserRolesForDisplay(mapping.nav_ident.toUpperCase()),
     ])
     if (devTeamsResult.status === 'fulfilled') devTeams = devTeamsResult.value
@@ -130,15 +127,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     )
   }
 
-  // Fetch all available teams if viewing own profile or admin viewing any profile
-  const isAdmin = identity.role === 'admin'
-  const canManageTeams = (isOwnProfile || isAdmin) && !!mapping?.nav_ident
-  let availableDevTeams: Awaited<ReturnType<typeof getAllDevTeams>> = []
   let landingPage = 'my-teams'
   let allSections: { slug: string; name: string }[] = []
-  if (canManageTeams) {
-    availableDevTeams = await getAllDevTeams()
-  }
   if (isOwnProfile) {
     try {
       const [lp, sections] = await Promise.all([getUserLandingPage(identity.navIdent), getAllSectionsWithTeams()])
@@ -169,11 +159,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     userRoles,
     availableBoards,
     isOwnProfile,
-    isAdmin,
     profileNavIdent: mapping?.nav_ident ?? null,
     canPrefillOwnMapping,
     loggedInNavIdent: canPrefillOwnMapping ? identity.navIdent : null,
-    availableDevTeams,
     landingPage,
     allSections,
   }
@@ -183,40 +171,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   const identity = await requireUser(request)
   const formData = await request.formData()
   const intent = formData.get('intent')
-
-  if (intent === 'add-dev-team') {
-    const devTeamId = Number(formData.get('devTeamId'))
-    if (!devTeamId || Number.isNaN(devTeamId)) {
-      return { error: 'Ugyldig team-valg' }
-    }
-    const targetNavIdent = (formData.get('targetNavIdent') as string) || identity.navIdent
-    if (targetNavIdent !== identity.navIdent && identity.role !== 'admin') {
-      throw new Response('Forbidden - admin access required', { status: 403 })
-    }
-    try {
-      await addUserDevTeam(targetNavIdent, devTeamId)
-    } catch {
-      return { error: 'Kunne ikke legge til team.' }
-    }
-    return { success: true }
-  }
-
-  if (intent === 'remove-dev-team') {
-    const devTeamId = Number(formData.get('devTeamId'))
-    if (!devTeamId || Number.isNaN(devTeamId)) {
-      return { error: 'Ugyldig team-valg' }
-    }
-    const targetNavIdent = (formData.get('targetNavIdent') as string) || identity.navIdent
-    if (targetNavIdent !== identity.navIdent && identity.role !== 'admin') {
-      throw new Response('Forbidden - admin access required', { status: 403 })
-    }
-    try {
-      await removeUserDevTeam(targetNavIdent, devTeamId)
-    } catch {
-      return { error: 'Kunne ikke fjerne team.' }
-    }
-    return { success: true }
-  }
 
   if (intent === 'set-landing-page') {
     const landingPage = formData.get('landingPage') as string
@@ -362,11 +316,9 @@ export default function UserPage() {
     userRoles,
     availableBoards,
     isOwnProfile,
-    isAdmin,
     profileNavIdent,
     canPrefillOwnMapping,
     loggedInNavIdent,
-    availableDevTeams,
     landingPage,
     allSections,
   } = useLoaderData<typeof loader>()
@@ -500,44 +452,13 @@ export default function UserPage() {
       {/* User roles (read-only) */}
       <UserRolesDisplay userRoles={userRoles} />
 
-      {/* Dev team memberships */}
-      {(isOwnProfile || isAdmin) && availableDevTeams.length > 0 ? (
-        <VStack gap="space-12">
-          <Heading level="2" size="small">
-            {isOwnProfile ? 'Mine utviklingsteam' : 'Teamtilhørighet'}
-          </Heading>
-          <Box background="raised" padding="space-16" borderRadius="4">
-            <CheckboxGroup legend="Velg team" hideLegend>
-              <HStack gap="space-16" wrap>
-                {availableDevTeams.map((team) => {
-                  const isSelected = devTeams.some((t) => t.id === team.id)
-                  return (
-                    <Form method="post" key={team.id}>
-                      <input type="hidden" name="intent" value={isSelected ? 'remove-dev-team' : 'add-dev-team'} />
-                      <input type="hidden" name="devTeamId" value={team.id} />
-                      {!isOwnProfile && profileNavIdent && (
-                        <input type="hidden" name="targetNavIdent" value={profileNavIdent} />
-                      )}
-                      <Checkbox
-                        value={String(team.id)}
-                        checked={isSelected}
-                        onChange={(e) => e.currentTarget.form?.requestSubmit()}
-                      >
-                        {team.name}
-                      </Checkbox>
-                    </Form>
-                  )
-                })}
-              </HStack>
-            </CheckboxGroup>
-          </Box>
-        </VStack>
-      ) : (
-        devTeams.length > 0 && (
-          <VStack gap="space-8">
-            <Detail textColor="subtle">Utviklingsteam</Detail>
-            <HStack gap="space-8" wrap>
-              {devTeams.map((team) => (
+      {/* Dev team memberships (read-only — team membership is managed via team admin) */}
+      {devTeams.length > 0 && (
+        <VStack gap="space-8">
+          <Detail textColor="subtle">Utviklingsteam</Detail>
+          <HStack gap="space-8" wrap>
+            {devTeams.map((team) =>
+              team.section_slug ? (
                 <Tag key={team.id} variant="moderate" size="small">
                   <Link
                     to={`/sections/${team.section_slug}/teams/${team.slug}`}
@@ -546,10 +467,14 @@ export default function UserPage() {
                     {team.name}
                   </Link>
                 </Tag>
-              ))}
-            </HStack>
-          </VStack>
-        )
+              ) : (
+                <Tag key={team.id} variant="moderate" size="small">
+                  {team.name}
+                </Tag>
+              ),
+            )}
+          </HStack>
+        </VStack>
       )}
 
       {/* Landing page preference — only for own profile */}

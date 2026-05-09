@@ -198,10 +198,10 @@ export async function removeDeploymentGoalLink(id: number, deploymentId: number)
     throw new Error('Kan ikke fjerne kobling til et deaktivert mål eller nøkkelresultat.')
   }
 
-  await pool.query(
-    'UPDATE deployment_goal_links SET is_active = false WHERE id = $1 AND deployment_id = $2',
-    [id, deploymentId],
-  )
+  await pool.query('UPDATE deployment_goal_links SET is_active = false WHERE id = $1 AND deployment_id = $2', [
+    id,
+    deploymentId,
+  ])
   return true
 }
 

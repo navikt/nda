@@ -1,4 +1,4 @@
-import { Alert, BodyShort, Box, Button, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { getGroupNamesByIds } from '~/db/application-groups.server'
@@ -105,10 +105,9 @@ export default function MyAppsPage({ loaderData: { appsByTeamAndEnv, teamNames }
             Mine applikasjoner
           </Heading>
           <Alert variant="info">
-            <BodyShort spacing>Du er ikke tilknyttet noen team ennå.</BodyShort>
-            <Button as={Link} to="/profile" size="small" variant="secondary">
-              Velg team i profilen din
-            </Button>
+            <BodyShort>
+              Du er ikke tilknyttet noen team ennå. Be en teamadministrator om å tildele deg en rolle.
+            </BodyShort>
           </Alert>
         </VStack>
       </Box>
