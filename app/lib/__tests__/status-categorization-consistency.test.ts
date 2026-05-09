@@ -27,6 +27,7 @@ import {
   LEGACY_STATUSES,
   NOT_APPROVED_STATUSES,
   PENDING_STATUSES,
+  REVERIFIABLE_STATUSES,
 } from '../four-eyes-status'
 import { getFourEyesStatus } from '../status-display'
 import { filterDeploymentsForVerification } from '../sync/verify-filters'
@@ -94,12 +95,18 @@ describe('status categorization semantic consistency', () => {
     }
   })
 
-  it('filterDeploymentsForVerification includes all pending statuses', () => {
-    for (const status of PENDING_STATUSES) {
+  it('filterDeploymentsForVerification includes all reverifiable statuses', () => {
+    for (const status of REVERIFIABLE_STATUSES) {
       const deployments = [makeDeployment(status)]
       const filtered = filterDeploymentsForVerification(deployments)
-      expect(filtered.length, `Pending status '${status}' should be included for verification`).toBe(1)
+      expect(filtered.length, `Reverifiable status '${status}' should be included for verification`).toBe(1)
     }
+  })
+
+  it('filterDeploymentsForVerification excludes pending_approval (awaiting human review)', () => {
+    const deployments = [makeDeployment('pending_approval')]
+    const filtered = filterDeploymentsForVerification(deployments)
+    expect(filtered.length, `'pending_approval' should not be auto-verified`).toBe(0)
   })
 
   it('filterDeploymentsForVerification excludes finalized legacy status', () => {
@@ -126,6 +133,19 @@ describe('status categorization semantic consistency', () => {
         expect(isPendingStatus(status), `Protected status '${status}' should not be pending`).toBe(false)
       }
     }
+  })
+
+  it('REVERIFIABLE_STATUSES is a strict subset of PENDING_STATUSES', () => {
+    for (const status of REVERIFIABLE_STATUSES) {
+      expect(
+        PENDING_STATUSES.includes(status),
+        `Reverifiable status '${status}' must also be in PENDING_STATUSES`,
+      ).toBe(true)
+    }
+  })
+
+  it('REVERIFIABLE_STATUSES excludes pending_approval', () => {
+    expect(REVERIFIABLE_STATUSES).not.toContain('pending_approval')
   })
 })
 
@@ -156,7 +176,7 @@ describe('no inline status category definitions in source files', () => {
   }
 
   it('no file defines a local PENDING_STATUSES constant', () => {
-    const matches = grepForPattern('(const|let|var)\\s+PENDING_STATUSES\\s*=')
+    const matches = grepForPattern('(const|let|var)\\s+PENDING_STATUSES\\b')
     expect(
       matches,
       `Found local PENDING_STATUSES definitions (must use canonical import):\n${matches.join('\n')}`,
@@ -164,7 +184,7 @@ describe('no inline status category definitions in source files', () => {
   })
 
   it('no file defines a local APPROVED_STATUSES constant', () => {
-    const matches = grepForPattern('(const|let|var)\\s+APPROVED_STATUSES\\s*=')
+    const matches = grepForPattern('(const|let|var)\\s+APPROVED_STATUSES\\b')
     expect(
       matches,
       `Found local APPROVED_STATUSES definitions (must use canonical import):\n${matches.join('\n')}`,
@@ -172,7 +192,7 @@ describe('no inline status category definitions in source files', () => {
   })
 
   it('no file defines a local approvedStatuses variable', () => {
-    const matches = grepForPattern('(const|let|var)\\s+approvedStatuses\\s*=')
+    const matches = grepForPattern('(const|let|var)\\s+approvedStatuses\\b')
     expect(
       matches,
       `Found local approvedStatuses definitions (must use canonical import):\n${matches.join('\n')}`,
@@ -180,7 +200,7 @@ describe('no inline status category definitions in source files', () => {
   })
 
   it('no file defines a local NOT_APPROVED_STATUSES constant', () => {
-    const matches = grepForPattern('(const|let|var)\\s+NOT_APPROVED_STATUSES\\s*=')
+    const matches = grepForPattern('(const|let|var)\\s+NOT_APPROVED_STATUSES\\b')
     expect(
       matches,
       `Found local NOT_APPROVED_STATUSES definitions (must use canonical import):\n${matches.join('\n')}`,

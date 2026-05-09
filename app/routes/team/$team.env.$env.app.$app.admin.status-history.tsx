@@ -8,6 +8,7 @@
 import { BodyShort, Box, Heading, Table, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { getDeploymentsWithStatusChanges } from '~/db/deployments.server'
+import { isApprovedStatus, isNotApprovedStatus, isPendingStatus } from '~/lib/four-eyes-status'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
@@ -44,12 +45,9 @@ function formatChangeSource(source: string): string {
 }
 
 function getStatusVariant(status: string): 'success' | 'warning' | 'error' | 'info' | 'neutral' {
-  if (
-    ['approved', 'approved_pr', 'manually_approved', 'implicitly_approved', 'baseline', 'no_changes'].includes(status)
-  )
-    return 'success'
-  if (['pending', 'pending_baseline', 'legacy_pending', 'direct_push'].includes(status)) return 'warning'
-  if (['unverified_commits', 'approved_pr_with_unreviewed', 'error', 'missing'].includes(status)) return 'error'
+  if (isApprovedStatus(status)) return 'success'
+  if (isPendingStatus(status)) return 'warning'
+  if (isNotApprovedStatus(status)) return 'error'
   return 'neutral'
 }
 

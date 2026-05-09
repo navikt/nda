@@ -1,4 +1,4 @@
-import { isApprovedStatus, PENDING_STATUSES } from '~/lib/four-eyes-status'
+import { isApprovedStatus, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 
 /**
  * Pure filtering/sorting logic extracted from verifyDeploymentsFourEyes.
@@ -20,7 +20,7 @@ interface DeploymentForFilter {
  * - Must have a pending or error status
  */
 export function filterDeploymentsForVerification<T extends DeploymentForFilter>(deployments: T[]): T[] {
-  const statusesToVerify = [...PENDING_STATUSES, 'error']
+  const statusesToVerify = [...REVERIFIABLE_STATUSES, 'error']
   return deployments.filter(
     (d) =>
       !isApprovedStatus(d.four_eyes_status ?? '') &&

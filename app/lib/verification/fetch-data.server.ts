@@ -23,6 +23,7 @@ import {
   savePrSnapshotsBatch,
 } from '~/db/github-data.server'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
+import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getCommitsBetween, getDetailedPullRequestInfo, getPullRequestForCommit, isCommitOnBranch } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import type { RepositoryStatus } from './types'
@@ -169,7 +170,7 @@ export async function fetchVerificationData(
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
          AND d.id != $1
          AND d.commit_sha = $2
-         AND d.four_eyes_status IN ('approved', 'implicitly_approved', 'no_changes', 'manually_approved')
+         AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})
          AND d.created_at BETWEEN (
            (SELECT created_at FROM deployments WHERE id = $1) - interval '30 minutes'
          ) AND (
@@ -203,7 +204,7 @@ export async function fetchVerificationData(
        FROM deployments d
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
          AND d.id != $1
-         AND d.four_eyes_status IN ('approved', 'implicitly_approved', 'no_changes', 'manually_approved')
+         AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})
          AND d.created_at BETWEEN (
            (SELECT created_at FROM deployments WHERE id = $1) - interval '30 minutes'
          ) AND (

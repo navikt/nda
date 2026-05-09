@@ -82,6 +82,13 @@ export const NOT_APPROVED_STATUSES: FourEyesStatus[] = [
 export const PENDING_STATUSES: FourEyesStatus[] = ['pending', 'pending_baseline', 'pending_approval', 'unknown']
 
 /**
+ * Statuses eligible for automatic re-verification by the background verifier.
+ * Excludes `pending_approval` which represents a manual registration explicitly
+ * awaiting human review — the verifier must not overwrite that workflow.
+ */
+export const REVERIFIABLE_STATUSES: FourEyesStatus[] = ['pending', 'pending_baseline', 'unknown']
+
+/**
  * SQL fragment for filtering pending deployments.
  */
 export const PENDING_STATUSES_SQL = PENDING_STATUSES.map((s) => `'${s}'`).join(', ')

@@ -7,7 +7,7 @@
  * When a deployment is verified in one cluster, the verification status
  * can be propagated to sibling deployments with the same commit SHA.
  */
-import { PENDING_STATUSES } from '~/lib/four-eyes-status'
+import { REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -40,8 +40,8 @@ const PROPAGATABLE_STATUSES = new Set([
   'manually_approved',
 ])
 
-// Statuses eligible for propagation: canonical pending + error (verification failure, can be retried)
-const PROPAGATION_TARGET_STATUSES = [...PENDING_STATUSES, 'error']
+// Statuses eligible for propagation: reverifiable pending + error (verification failure, can be retried)
+const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
