@@ -179,7 +179,7 @@ describe('no inline status category definitions in source files', () => {
   }
 
   it('no file defines a local PENDING_STATUSES constant', () => {
-    const matches = grepForPattern('(const|let|var)\\s+PENDING_STATUSES\\b')
+    const matches = grepForPattern('(const|let|var)[[:space:]]+PENDING_STATUSES[[:space:]]*[=:]')
     expect(
       matches,
       `Found local PENDING_STATUSES definitions (must use canonical import):\n${matches.join('\n')}`,
@@ -187,7 +187,7 @@ describe('no inline status category definitions in source files', () => {
   })
 
   it('no file defines a local APPROVED_STATUSES constant', () => {
-    const matches = grepForPattern('(const|let|var)\\s+APPROVED_STATUSES\\b')
+    const matches = grepForPattern('(const|let|var)[[:space:]]+APPROVED_STATUSES[[:space:]]*[=:]')
     expect(
       matches,
       `Found local APPROVED_STATUSES definitions (must use canonical import):\n${matches.join('\n')}`,
@@ -195,7 +195,7 @@ describe('no inline status category definitions in source files', () => {
   })
 
   it('no file defines a local approvedStatuses variable', () => {
-    const matches = grepForPattern('(const|let|var)\\s+approvedStatuses\\b')
+    const matches = grepForPattern('(const|let|var)[[:space:]]+approvedStatuses[[:space:]]*[=:]')
     expect(
       matches,
       `Found local approvedStatuses definitions (must use canonical import):\n${matches.join('\n')}`,
@@ -203,7 +203,7 @@ describe('no inline status category definitions in source files', () => {
   })
 
   it('no file defines a local NOT_APPROVED_STATUSES constant', () => {
-    const matches = grepForPattern('(const|let|var)\\s+NOT_APPROVED_STATUSES\\b')
+    const matches = grepForPattern('(const|let|var)[[:space:]]+NOT_APPROVED_STATUSES[[:space:]]*[=:]')
     expect(
       matches,
       `Found local NOT_APPROVED_STATUSES definitions (must use canonical import):\n${matches.join('\n')}`,
