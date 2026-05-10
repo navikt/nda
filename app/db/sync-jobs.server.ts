@@ -16,7 +16,7 @@ export const SYNC_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 export interface SyncJob {
   id: number
   job_type: SyncJobType
-  monitored_app_id: number
+  monitored_app_id: number | null
   status: SyncJobStatus
   started_at: string | null
   completed_at: string | null
@@ -136,9 +136,9 @@ export async function cleanupOldSyncJobs(keepPerApp: number = 50): Promise<numbe
 }
 
 interface SyncJobWithApp extends SyncJob {
-  app_name: string
-  team_slug: string
-  environment_name: string
+  app_name: string | null
+  team_slug: string | null
+  environment_name: string | null
 }
 
 /**
@@ -182,7 +182,7 @@ export async function getAllSyncJobs(filters?: {
        ma.team_slug,
        ma.environment_name
      FROM sync_jobs sj
-     JOIN monitored_applications ma ON sj.monitored_app_id = ma.id
+     LEFT JOIN monitored_applications ma ON sj.monitored_app_id = ma.id
      ${whereClause}
      ORDER BY sj.created_at DESC
      LIMIT $${paramIndex}`,

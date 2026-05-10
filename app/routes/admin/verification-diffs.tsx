@@ -25,11 +25,24 @@ import { Form, Link, useFetcher, useLoaderData, useNavigation, useRevalidator } 
 import { ErrorReasonWithLink } from '~/components/ErrorReasonWithLink'
 import { pool } from '~/db/connection.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { getSyncJobById } from '~/db/sync-jobs.server'
+import {
+  getSyncJobById,
+  heartbeatSyncJob,
+  isSyncJobCancelled,
+  releaseExpiredLocks,
+  updateSyncJobProgress,
+} from '~/db/sync-jobs.server'
+import { getAllApprovedDeploymentsMissingApprover, getMissingApproverSummary } from '~/db/verification-diff.server'
 import { requireAdmin } from '~/lib/auth.server'
-import { type FourEyesStatus, getFourEyesStatusLabel, isApprovedStatus } from '~/lib/four-eyes-status'
+import {
+  type FourEyesStatus,
+  getFourEyesStatusLabel,
+  isApprovedStatus,
+  isProtectedStatus,
+} from '~/lib/four-eyes-status'
+import { isValidCommitSha } from '~/lib/git-constants'
 import { logger } from '~/lib/logger.server'
-import { reverifyDeployment } from '~/lib/verification'
+import { reverifyDeployment, runVerification } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
 import type { Route } from './+types/verification-diffs'
 
@@ -109,7 +122,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   )
   const latestJob = jobResult.rows[0] || null
 
-  return { diffs, appCount: apps.length, latestJob }
+  // Get missing approver summary (aggregated — no full list needed)
+  const { total: missingApproverCount, byApp } = await getMissingApproverSummary()
+  const missingApproverApps = byApp.map((r) => ({
+    app: `${r.team_slug}/${r.environment_name}/${r.app_name}`,
+    count: r.count,
+  }))
+
+  // Get latest refresh job (global only — monitored_app_id IS NULL)
+  const refreshJobResult = await pool.query(
+    `SELECT id, status, result, started_at, completed_at
+     FROM sync_jobs
+     WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1`,
+  )
+  const latestRefreshJob = refreshJobResult.rows[0] || null
+
+  return { diffs, appCount: apps.length, latestJob, missingApproverCount, missingApproverApps, latestRefreshJob }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -174,6 +204,53 @@ export async function action({ request }: Route.ActionArgs) {
     return { appliedAll: true, applied, skipped, errors }
   }
 
+  if (actionType === 'refresh_missing_approver_all') {
+    // Release any stuck jobs with expired locks before checking/inserting
+    await releaseExpiredLocks()
+
+    // Check for existing running job BEFORE heavy query
+    const existingJob = await pool.query(
+      `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
+    )
+    if (existingJob.rows.length > 0) {
+      return { refreshStarted: existingJob.rows[0].id }
+    }
+
+    const deployments = await getAllApprovedDeploymentsMissingApprover()
+    if (deployments.length === 0)
+      return { refreshEmpty: true, refreshResult: { refreshed: 0, skipped: 0, errors: 0, total: 0 } }
+
+    // Create a tracking job — handle unique constraint race (23505)
+    let jobId: number
+    try {
+      const jobResult = await pool.query(
+        `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, locked_by, lock_expires_at, result)
+         VALUES ('refresh_missing_approver', $1, 'running', NOW(), $2, NOW() + INTERVAL '30 minutes', $3)
+         RETURNING id`,
+        [
+          null,
+          process.env.HOSTNAME || `local-${process.pid}`,
+          JSON.stringify({ processed: 0, refreshed: 0, skipped: 0, errors: 0, total: deployments.length }),
+        ],
+      )
+      jobId = jobResult.rows[0].id
+    } catch (err: unknown) {
+      if (err instanceof Error && 'code' in err && (err as { code: string }).code === '23505') {
+        const fallback = await pool.query(
+          `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
+        )
+        if (fallback.rows.length > 0) return { refreshStarted: fallback.rows[0].id }
+      }
+      throw err
+    }
+
+    processRefreshMissingApproverAsync(jobId, deployments).catch((err) => {
+      logger.error('Refresh missing approver failed', err instanceof Error ? err : new Error(String(err)))
+    })
+
+    return { refreshStarted: jobId }
+  }
+
   return null
 }
 
@@ -224,8 +301,99 @@ async function processComputeAllAsync(jobId: number, apps: Array<{ id: number; t
   }
 }
 
+interface RefreshableDeployment {
+  id: number
+  commit_sha: string | null
+  four_eyes_status: string
+  environment_name: string
+  detected_github_owner: string | null
+  detected_github_repo_name: string | null
+  monitored_app_id: number
+  default_branch: string | null
+}
+
+async function processRefreshMissingApproverAsync(jobId: number, deployments: RefreshableDeployment[]) {
+  let refreshed = 0
+  let skipped = 0
+  let errors = 0
+
+  let cancelled = false
+
+  try {
+    for (const dep of deployments) {
+      if (await isSyncJobCancelled(jobId)) {
+        cancelled = true
+        break
+      }
+
+      if (
+        !dep.commit_sha ||
+        !dep.detected_github_owner ||
+        !dep.detected_github_repo_name ||
+        isProtectedStatus(dep.four_eyes_status) ||
+        !isValidCommitSha(dep.commit_sha)
+      ) {
+        skipped++
+      } else {
+        try {
+          await runVerification(dep.id, {
+            commitSha: dep.commit_sha,
+            repository: `${dep.detected_github_owner}/${dep.detected_github_repo_name}`,
+            environmentName: dep.environment_name,
+            baseBranch: dep.default_branch || 'main',
+            monitoredAppId: dep.monitored_app_id,
+            forceRefresh: true,
+          })
+          await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [dep.id])
+          refreshed++
+        } catch (err) {
+          logger.error(
+            `Refresh verification failed for deployment ${dep.id}`,
+            err instanceof Error ? err : new Error(String(err)),
+          )
+          errors++
+        }
+      }
+
+      const processed = refreshed + skipped + errors
+
+      // Update progress every 5 deployments, plus first and last
+      if (processed === 1 || processed === deployments.length || processed % 5 === 0) {
+        await updateSyncJobProgress(jobId, { processed, refreshed, skipped, errors, total: deployments.length })
+        await heartbeatSyncJob(jobId, 30)
+      }
+    }
+
+    // Don't overwrite cancelled status
+    if (!cancelled && !(await isSyncJobCancelled(jobId))) {
+      await pool.query(
+        `UPDATE sync_jobs SET status = 'completed', completed_at = NOW(), result = $2 WHERE id = $1 AND status = 'running'`,
+        [
+          jobId,
+          JSON.stringify({
+            processed: refreshed + skipped + errors,
+            refreshed,
+            skipped,
+            errors,
+            total: deployments.length,
+          }),
+        ],
+      )
+    }
+  } catch (err) {
+    if (!(await isSyncJobCancelled(jobId))) {
+      await pool.query(
+        `UPDATE sync_jobs SET status = 'failed', completed_at = NOW(), error = $2 WHERE id = $1 AND status = 'running'`,
+        [jobId, err instanceof Error ? err.message : String(err)],
+      )
+    }
+    throw err
+  }
+}
+
 export default function GlobalVerificationDiffsPage() {
-  const { diffs, appCount, latestJob } = useLoaderData<typeof loader>()
+  const { diffs, appCount, latestJob, missingApproverCount, missingApproverApps, latestRefreshJob } =
+    useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const revalidator = useRevalidator()
   const isApplying = navigation.state === 'submitting' && navigation.formData?.get('action') === 'apply_selected'
@@ -294,6 +462,93 @@ export default function GlobalVerificationDiffsPage() {
   }, [triggerFetcher.data])
 
   const isComputing = !!activeJobId || triggerFetcher.state !== 'idle'
+
+  // Refresh missing approver job polling
+  const refreshFetcher = useFetcher()
+  const refreshTriggerFetcher = useFetcher()
+  const [activeRefreshJobId, setActiveRefreshJobId] = useState<number | null>(
+    latestRefreshJob?.status === 'running' ? latestRefreshJob.id : null,
+  )
+  const refreshPollInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const refreshFetcherRef = useRef(refreshFetcher)
+  refreshFetcherRef.current = refreshFetcher
+
+  useEffect(() => {
+    if (activeRefreshJobId) {
+      refreshPollInterval.current = setInterval(() => {
+        refreshFetcherRef.current.submit(
+          { action: 'check_job_status', job_id: String(activeRefreshJobId) },
+          { method: 'post' },
+        )
+      }, 3000)
+    }
+    return () => {
+      if (refreshPollInterval.current) clearInterval(refreshPollInterval.current)
+    }
+  }, [activeRefreshJobId])
+
+  const [refreshProgress, setRefreshProgress] = useState<{
+    refreshed: number
+    skipped: number
+    errors: number
+    total: number
+  } | null>(() => {
+    if (latestRefreshJob?.status === 'running' && latestRefreshJob.result) {
+      const r = latestRefreshJob.result as { refreshed?: number; skipped?: number; errors?: number; total?: number }
+      if (r.total != null)
+        return { refreshed: r.refreshed ?? 0, skipped: r.skipped ?? 0, errors: r.errors ?? 0, total: r.total }
+    }
+    return null
+  })
+
+  useEffect(() => {
+    const data = refreshFetcher.data as
+      | {
+          jobStatus?: {
+            status: string
+            result?: { refreshed?: number; skipped?: number; errors?: number; total?: number }
+          }
+        }
+      | undefined
+    if (data?.jobStatus) {
+      const { status, result: jobResult } = data.jobStatus
+      if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+        setActiveRefreshJobId(null)
+        if (refreshPollInterval.current) clearInterval(refreshPollInterval.current)
+        if (jobResult) {
+          setRefreshProgress({
+            refreshed: jobResult.refreshed ?? 0,
+            skipped: jobResult.skipped ?? 0,
+            errors: jobResult.errors ?? 0,
+            total: jobResult.total ?? 0,
+          })
+        }
+        revalidatorRef.current.revalidate()
+      } else if (jobResult?.total != null) {
+        setRefreshProgress({
+          refreshed: jobResult.refreshed ?? 0,
+          skipped: jobResult.skipped ?? 0,
+          errors: jobResult.errors ?? 0,
+          total: jobResult.total,
+        })
+      }
+    }
+  }, [refreshFetcher.data])
+
+  useEffect(() => {
+    const data = refreshTriggerFetcher.data as
+      | { refreshStarted?: number; refreshEmpty?: boolean; refreshResult?: { refreshed: number } }
+      | undefined
+    if (data?.refreshStarted) {
+      setActiveRefreshJobId(data.refreshStarted)
+      setRefreshProgress(null)
+    } else if (data?.refreshEmpty) {
+      setRefreshProgress({ refreshed: 0, skipped: 0, errors: 0, total: 0 })
+      revalidator.revalidate()
+    }
+  }, [refreshTriggerFetcher.data, revalidator])
+
+  const isRefreshing = !!activeRefreshJobId || refreshTriggerFetcher.state !== 'idle'
 
   // Multi-select
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -365,7 +620,50 @@ export default function GlobalVerificationDiffsPage() {
         )}
       </Box>
 
-      {/* Summary */}
+      {/* Missing approver section */}
+      {(missingApproverCount > 0 || activeRefreshJobId || (refreshProgress && !activeRefreshJobId)) && (
+        <Box background={missingApproverCount > 0 ? 'danger-soft' : 'success-soft'} padding="space-16" borderRadius="8">
+          <VStack gap="space-8">
+            <HStack gap="space-16" align="center" justify="space-between">
+              <BodyShort>
+                {missingApproverCount > 0 ? '⚠️ ' : '✅ '}
+                {missingApproverCount === 0
+                  ? 'Ingen deployments mangler godkjenner-data.'
+                  : missingApproverCount === 1
+                    ? '1 godkjent deployment mangler godkjenner-data.'
+                    : `${missingApproverCount} godkjente deployments mangler godkjenner-data.`}
+                {missingApproverApps.length > 0 &&
+                  ` (${missingApproverApps.map((a) => `${a.app}: ${a.count}`).join(', ')})`}
+              </BodyShort>
+              {missingApproverCount > 0 && (
+                <refreshTriggerFetcher.Form method="post">
+                  <input type="hidden" name="action" value="refresh_missing_approver_all" />
+                  <Button type="submit" size="small" variant="secondary" loading={isRefreshing}>
+                    {isRefreshing ? 'Re-verifiserer…' : `Re-verifiser alle (${missingApproverCount})`}
+                  </Button>
+                </refreshTriggerFetcher.Form>
+              )}
+            </HStack>
+            {isRefreshing && refreshProgress && (
+              <HStack gap="space-8" align="center">
+                <Loader size="xsmall" />
+                <Detail>
+                  {refreshProgress.refreshed + refreshProgress.skipped + refreshProgress.errors} av{' '}
+                  {refreshProgress.total}
+                  {refreshProgress.refreshed > 0 && ` — ${refreshProgress.refreshed} oppdatert`}
+                  {refreshProgress.errors > 0 && ` — ${refreshProgress.errors} feil`}…
+                </Detail>
+              </HStack>
+            )}
+            {!activeRefreshJobId && refreshProgress && (
+              <Alert variant={refreshProgress.errors > 0 ? 'warning' : 'success'} size="small">
+                Re-verifisering fullført: {refreshProgress.refreshed} oppdatert, {refreshProgress.skipped} hoppet over
+                {refreshProgress.errors > 0 && `, ${refreshProgress.errors} feil`}.
+              </Alert>
+            )}
+          </VStack>
+        </Box>
+      )}
       {diffs.length === 0 && lastComputed ? (
         <Alert variant="success" size="small">
           Ingen avvik funnet.

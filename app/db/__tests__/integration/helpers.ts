@@ -85,6 +85,7 @@ export async function seedDeployment(
     githubRepo?: string
     deployerUsername?: string | null
     githubPrData?: Record<string, unknown> | null
+    appName?: string
   },
 ): Promise<number> {
   const naisId = `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -94,12 +95,13 @@ export async function seedDeployment(
       commit_sha, created_at, title, four_eyes_status,
       detected_github_owner, detected_github_repo_name,
       deployer_username, github_pr_data
-    ) VALUES ($1, $2, $3, 'test-app', $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     RETURNING id`,
     [
       opts.monitoredAppId,
       naisId,
       opts.teamSlug,
+      opts.appName ?? 'test-app',
       opts.environment,
       opts.commitSha ?? `abc${Date.now()}`,
       opts.createdAt ?? new Date(),

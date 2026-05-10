@@ -190,3 +190,60 @@ export async function getApprovedDeploymentsMissingApprover(
   )
   return result.rows
 }
+
+interface GlobalMissingApproverDeployment extends MissingApproverDeployment {
+  team_slug: string
+  app_name: string
+}
+
+/**
+ * Find approved deployments missing approver data across ALL monitored applications.
+ * Used by the global admin verification-diffs page.
+ */
+export async function getAllApprovedDeploymentsMissingApprover(): Promise<GlobalMissingApproverDeployment[]> {
+  const result = await pool.query<GlobalMissingApproverDeployment>(
+    `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
+            d.created_at, d.deployer_username,
+            d.detected_github_owner, d.detected_github_repo_name,
+            d.monitored_app_id, ma.default_branch,
+            d.team_slug, d.app_name
+     FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE ma.is_active = true
+       AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+       AND ${MISSING_APPROVER_CONDITIONS}
+       AND ${AUDIT_START_YEAR_FILTER}
+     ORDER BY d.team_slug, d.app_name, d.created_at DESC`,
+  )
+  return result.rows
+}
+
+interface MissingApproverSummary {
+  team_slug: string
+  environment_name: string
+  app_name: string
+  count: number
+}
+
+/**
+ * Get aggregated counts of missing-approver deployments grouped by app.
+ * Lightweight alternative to getAllApprovedDeploymentsMissingApprover for loader use.
+ */
+export async function getMissingApproverSummary(): Promise<{
+  total: number
+  byApp: MissingApproverSummary[]
+}> {
+  const result = await pool.query<MissingApproverSummary>(
+    `SELECT d.team_slug, d.environment_name, d.app_name, COUNT(*)::int AS count
+     FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE ma.is_active = true
+       AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+       AND ${MISSING_APPROVER_CONDITIONS}
+       AND ${AUDIT_START_YEAR_FILTER}
+     GROUP BY d.team_slug, d.environment_name, d.app_name
+     ORDER BY d.team_slug, d.environment_name, d.app_name`,
+  )
+  const total = result.rows.reduce((sum, r) => sum + r.count, 0)
+  return { total, byApp: result.rows }
+}
