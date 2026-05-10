@@ -24,6 +24,7 @@ import {
 } from '~/db/github-data.server'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { getCommitsBetween, getDetailedPullRequestInfo, getPullRequestForCommit, isCommitOnBranch } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import type { RepositoryStatus } from './types'
@@ -965,8 +966,7 @@ export async function fetchVerificationDataForAllDeployments(
         AND d.commit_sha IS NOT NULL
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
-        AND d.commit_sha !~ '^refs/'
-        AND LENGTH(d.commit_sha) >= 7`
+        AND ${VALID_COMMIT_SHA_SQL}`
 
   const params: (number | string)[] = [monitoredAppId]
 

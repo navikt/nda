@@ -29,9 +29,15 @@ import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.s
 import { getLatestSyncJob, getSyncJobById } from '~/db/sync-jobs.server'
 import { getApprovedDeploymentsMissingApprover } from '~/db/verification-diff.server'
 import { requireAdmin } from '~/lib/auth.server'
-import { type FourEyesStatus, getFourEyesStatusLabel, isApprovedStatus } from '~/lib/four-eyes-status'
+import {
+  type FourEyesStatus,
+  getFourEyesStatusLabel,
+  isApprovedStatus,
+  isProtectedStatus,
+} from '~/lib/four-eyes-status'
+import { isValidCommitSha } from '~/lib/git-constants'
 import { logger } from '~/lib/logger.server'
-import { reverifyDeployment } from '~/lib/verification'
+import { reverifyDeployment, runVerification } from '~/lib/verification'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.verification-diff'
 
 interface DeploymentDiff {
@@ -108,8 +114,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return { diffs, missingApproverDeployments, appContext, lastComputed, latestJob }
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ request, params }: Route.ActionArgs) {
   await requireAdmin(request)
+
+  const { team, env, app } = params
 
   const formData = await request.formData()
   const actionType = formData.get('action') as string
@@ -170,6 +178,52 @@ export async function action({ request }: Route.ActionArgs) {
     if (!jobId) return { error: 'Mangler job_id' }
     const job = await getSyncJobById(jobId)
     return { computeJobStatus: job }
+  }
+
+  if (actionType === 'refresh_missing_approver') {
+    const monitoredApp = await getMonitoredApplicationByIdentity(team, env, app)
+    if (!monitoredApp) return { error: 'App ikke funnet' }
+
+    const deployments = await getApprovedDeploymentsMissingApprover(monitoredApp.id)
+    if (deployments.length === 0) return { refreshResult: { refreshed: 0, skipped: 0, errors: 0 } }
+
+    let refreshed = 0
+    let skipped = 0
+    let errors = 0
+
+    for (const dep of deployments) {
+      if (
+        !dep.commit_sha ||
+        !dep.detected_github_owner ||
+        !dep.detected_github_repo_name ||
+        isProtectedStatus(dep.four_eyes_status) ||
+        !isValidCommitSha(dep.commit_sha)
+      ) {
+        skipped++
+        continue
+      }
+      try {
+        await runVerification(dep.id, {
+          commitSha: dep.commit_sha,
+          repository: `${dep.detected_github_owner}/${dep.detected_github_repo_name}`,
+          environmentName: dep.environment_name,
+          baseBranch: dep.default_branch || 'main',
+          monitoredAppId: monitoredApp.id,
+          forceRefresh: true,
+        })
+        // Remove stale verification_diffs row if it exists
+        await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [dep.id])
+        refreshed++
+      } catch (err) {
+        logger.error(
+          `Refresh verification failed for deployment ${dep.id}`,
+          err instanceof Error ? err : new Error(String(err)),
+        )
+        errors++
+      }
+    }
+
+    return { refreshResult: { refreshed, skipped, errors } }
   }
 
   return null
@@ -460,56 +514,109 @@ export default function VerificationDiffPage() {
 
         {/* Missing approver data */}
         {missingApproverDeployments.length > 0 && (
-          <VStack gap="space-4">
-            <Box background="danger-soft" padding="space-4" borderRadius="8">
-              <BodyShort>
-                ⚠️{' '}
-                {missingApproverDeployments.length === 1
-                  ? '1 godkjent deployment mangler godkjenner-data.'
-                  : `${missingApproverDeployments.length} godkjente deployments mangler godkjenner-data.`}{' '}
-                Disse vil blokkere leveranserapport.
-              </BodyShort>
-            </Box>
-            <Table>
-              <Table.Header>
-                <Table.Row>
-                  <Table.HeaderCell>Deployment</Table.HeaderCell>
-                  <Table.HeaderCell>Miljø</Table.HeaderCell>
-                  <Table.HeaderCell>Dato</Table.HeaderCell>
-                  <Table.HeaderCell>Status</Table.HeaderCell>
-                  <Table.HeaderCell>Deployer</Table.HeaderCell>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {missingApproverDeployments.map((d) => (
-                  <Table.Row key={d.id}>
-                    <Table.DataCell>
-                      <AkselLink
-                        as={Link}
-                        to={
-                          appContext
-                            ? `/team/${appContext.teamSlug}/env/${appContext.environmentName}/app/${appContext.appName}/deployments/${d.id}`
-                            : `/deployments/${d.id}`
-                        }
-                      >
-                        {d.commitSha?.substring(0, 7) ?? '—'}
-                      </AkselLink>
-                    </Table.DataCell>
-                    <Table.DataCell>{d.environmentName}</Table.DataCell>
-                    <Table.DataCell>{new Date(d.createdAt).toLocaleDateString('no-NO')}</Table.DataCell>
-                    <Table.DataCell>
-                      <Tag variant="warning" size="small">
-                        {getFourEyesStatusLabel(d.fourEyesStatus)}
-                      </Tag>
-                    </Table.DataCell>
-                    <Table.DataCell>{d.deployerUsername || '-'}</Table.DataCell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
-          </VStack>
+          <MissingApproverSection deployments={missingApproverDeployments} appContext={appContext} />
         )}
       </VStack>
     </Box>
+  )
+}
+
+// =============================================================================
+// Missing Approver Section
+// =============================================================================
+
+type LoaderData = Awaited<ReturnType<typeof loader>>
+type MissingApproverClient = LoaderData['missingApproverDeployments'][number]
+
+function MissingApproverSection({
+  deployments,
+  appContext,
+}: {
+  deployments: MissingApproverClient[]
+  appContext: { teamSlug: string; environmentName: string; appName: string } | null
+}) {
+  const fetcher = useFetcher()
+  const revalidator = useRevalidator()
+  const isRefreshing = fetcher.state !== 'idle'
+  const refreshResult = fetcher.data && 'refreshResult' in fetcher.data ? fetcher.data.refreshResult : null
+  const errorResult = fetcher.data && 'error' in fetcher.data ? (fetcher.data.error as string) : null
+  const prevRefreshing = useRef(false)
+
+  useEffect(() => {
+    if (prevRefreshing.current && !isRefreshing && refreshResult) {
+      revalidator.revalidate()
+    }
+    prevRefreshing.current = isRefreshing
+  }, [isRefreshing, refreshResult, revalidator])
+
+  function handleRefresh() {
+    fetcher.submit({ action: 'refresh_missing_approver' }, { method: 'post' })
+  }
+
+  return (
+    <VStack gap="space-4">
+      <Box background="danger-soft" padding="space-4" borderRadius="8">
+        <HStack gap="space-4" align="center" justify="space-between">
+          <BodyShort>
+            ⚠️{' '}
+            {deployments.length === 1
+              ? '1 godkjent deployment mangler godkjenner-data.'
+              : `${deployments.length} godkjente deployments mangler godkjenner-data.`}{' '}
+            Disse vil blokkere leveranserapport.
+          </BodyShort>
+          <Button size="small" variant="secondary" onClick={handleRefresh} loading={isRefreshing}>
+            Re-verifiser alle
+          </Button>
+        </HStack>
+      </Box>
+      {refreshResult && (
+        <Alert variant={refreshResult.errors > 0 ? 'warning' : 'success'} size="small">
+          Re-verifisering fullført: {refreshResult.refreshed} oppdatert, {refreshResult.skipped} hoppet over
+          {refreshResult.errors > 0 && `, ${refreshResult.errors} feil`}.
+        </Alert>
+      )}
+      {errorResult && (
+        <Alert variant="error" size="small">
+          {errorResult}
+        </Alert>
+      )}
+      <Table>
+        <Table.Header>
+          <Table.Row>
+            <Table.HeaderCell>Deployment</Table.HeaderCell>
+            <Table.HeaderCell>Miljø</Table.HeaderCell>
+            <Table.HeaderCell>Dato</Table.HeaderCell>
+            <Table.HeaderCell>Status</Table.HeaderCell>
+            <Table.HeaderCell>Deployer</Table.HeaderCell>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {deployments.map((d) => (
+            <Table.Row key={d.id}>
+              <Table.DataCell>
+                <AkselLink
+                  as={Link}
+                  to={
+                    appContext
+                      ? `/team/${appContext.teamSlug}/env/${appContext.environmentName}/app/${appContext.appName}/deployments/${d.id}`
+                      : `/deployments/${d.id}`
+                  }
+                >
+                  {d.commitSha?.substring(0, 7) ?? '—'}
+                </AkselLink>
+              </Table.DataCell>
+              <Table.DataCell>{d.environmentName}</Table.DataCell>
+              <Table.DataCell>{new Date(d.createdAt).toLocaleDateString('no-NO')}</Table.DataCell>
+              <Table.DataCell>
+                <Tag variant="warning" size="small">
+                  {getFourEyesStatusLabel(d.fourEyesStatus)}
+                </Tag>
+              </Table.DataCell>
+              <Table.DataCell>{d.deployerUsername || '-'}</Table.DataCell>
+            </Table.Row>
+          ))}
+        </Table.Body>
+      </Table>
+    </VStack>
   )
 }
