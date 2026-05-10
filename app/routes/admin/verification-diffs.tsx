@@ -25,8 +25,8 @@ import { Form, Link, useFetcher, useLoaderData, useNavigation, useRevalidator } 
 import { ErrorReasonWithLink } from '~/components/ErrorReasonWithLink'
 import { pool } from '~/db/connection.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { getSyncJobById } from '~/db/sync-jobs.server'
-import { getAllApprovedDeploymentsMissingApprover } from '~/db/verification-diff.server'
+import { getSyncJobById, heartbeatSyncJob, updateSyncJobProgress } from '~/db/sync-jobs.server'
+import { getAllApprovedDeploymentsMissingApprover, getMissingApproverSummary } from '~/db/verification-diff.server'
 import { requireAdmin } from '~/lib/auth.server'
 import {
   type FourEyesStatus,
@@ -116,17 +116,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   )
   const latestJob = jobResult.rows[0] || null
 
-  // Get missing approver deployments across all apps
-  const missingApproverRows = await getAllApprovedDeploymentsMissingApprover()
-  const missingApproverCount = missingApproverRows.length
-
-  // Group missing approver by app for summary
-  const missingApproverByApp = new Map<string, number>()
-  for (const row of missingApproverRows) {
-    const key = `${row.team_slug}/${row.environment_name}/${row.app_name}`
-    missingApproverByApp.set(key, (missingApproverByApp.get(key) || 0) + 1)
-  }
-  const missingApproverApps = [...missingApproverByApp.entries()].map(([app, count]) => ({ app, count }))
+  // Get missing approver summary (aggregated — no full list needed)
+  const { total: missingApproverCount, byApp } = await getMissingApproverSummary()
+  const missingApproverApps = byApp.map((r) => ({
+    app: `${r.team_slug}/${r.environment_name}/${r.app_name}`,
+    count: r.count,
+  }))
 
   // Get latest refresh job (global only — monitored_app_id IS NULL)
   const refreshJobResult = await pool.query(
@@ -348,10 +343,8 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
 
       // Update progress and extend lock every 5 deployments
       if (processed % 5 === 0) {
-        await pool.query(
-          `UPDATE sync_jobs SET result = $2, lock_expires_at = NOW() + INTERVAL '30 minutes' WHERE id = $1 AND status = 'running'`,
-          [jobId, JSON.stringify({ processed, refreshed, skipped, errors, total: deployments.length })],
-        )
+        await updateSyncJobProgress(jobId, { processed, refreshed, skipped, errors, total: deployments.length })
+        await heartbeatSyncJob(jobId, 30)
       }
     }
 
@@ -597,7 +590,7 @@ export default function GlobalVerificationDiffsPage() {
 
       {/* Missing approver section */}
       {(missingApproverCount > 0 || (refreshProgress && !activeRefreshJobId)) && (
-        <Box background="danger-soft" padding="space-16" borderRadius="8">
+        <Box background={missingApproverCount > 0 ? 'danger-soft' : 'success-soft'} padding="space-16" borderRadius="8">
           <VStack gap="space-8">
             <HStack gap="space-16" align="center" justify="space-between">
               <BodyShort>
