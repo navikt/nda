@@ -342,9 +342,8 @@ describe('missing approver detection — getMissingApproverSummary', () => {
     })
 
     const { total, byApp } = await getMissingApproverSummary()
-    const s3 = byApp.find((a) => a.team_slug === 'team-s3')
-    expect(s3).toBeUndefined()
-    // total may include data from other tests if not isolated, but s3 should not appear
+    expect(total).toBe(0)
+    expect(byApp).toHaveLength(0)
   })
 
   it('includes environment_name in breakdown', async () => {

@@ -209,7 +209,8 @@ export async function getAllApprovedDeploymentsMissingApprover(): Promise<Global
             d.team_slug, d.app_name
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+     WHERE ma.is_active = true
+       AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
        AND ${MISSING_APPROVER_CONDITIONS}
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY d.team_slug, d.app_name, d.created_at DESC`,
@@ -236,11 +237,12 @@ export async function getMissingApproverSummary(): Promise<{
     `SELECT d.team_slug, d.environment_name, d.app_name, COUNT(*)::int AS count
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+     WHERE ma.is_active = true
+       AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
        AND ${MISSING_APPROVER_CONDITIONS}
        AND ${AUDIT_START_YEAR_FILTER}
      GROUP BY d.team_slug, d.environment_name, d.app_name
-     ORDER BY d.team_slug, d.app_name`,
+     ORDER BY d.team_slug, d.environment_name, d.app_name`,
   )
   const total = result.rows.reduce((sum, r) => sum + r.count, 0)
   return { total, byApp: result.rows }
