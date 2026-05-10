@@ -228,7 +228,7 @@ export async function action({ request }: Route.ActionArgs) {
     } catch (err: unknown) {
       if (err instanceof Error && 'code' in err && (err as { code: string }).code === '23505') {
         const fallback = await pool.query(
-          `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
+          `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' AND lock_expires_at > NOW() LIMIT 1`,
         )
         if (fallback.rows.length > 0) return { refreshStarted: fallback.rows[0].id }
       }
