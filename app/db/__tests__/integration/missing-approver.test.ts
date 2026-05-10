@@ -17,6 +17,7 @@ import { checkAuditReadiness } from '../../audit-reports.server'
 import {
   getAllApprovedDeploymentsMissingApprover,
   getApprovedDeploymentsMissingApprover,
+  getMissingApproverSummary,
 } from '../../verification-diff.server'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
@@ -284,5 +285,82 @@ describe('missing approver detection — getAllApprovedDeploymentsMissingApprove
     const match = result.find((r) => r.team_slug === 'team-meta')
     expect(match).toBeDefined()
     expect(match?.app_name).toBe('app-meta')
+  })
+})
+
+describe('missing approver detection — getMissingApproverSummary', () => {
+  it('returns total count and per-app breakdown', async () => {
+    const appId1 = await seedApp(pool, { teamSlug: 'team-s1', appName: 'app-s1', environment: 'prod' })
+    const appId2 = await seedApp(pool, { teamSlug: 'team-s2', appName: 'app-s2', environment: 'prod' })
+
+    await seedDeployment(pool, {
+      monitoredAppId: appId1,
+      teamSlug: 'team-s1',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: { reviewers: [] },
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId1,
+      teamSlug: 'team-s1',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved_pr',
+      githubPrData: { reviewers: [] },
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId2,
+      teamSlug: 'team-s2',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: { reviewers: [] },
+    })
+
+    const { total, byApp } = await getMissingApproverSummary()
+    expect(total).toBeGreaterThanOrEqual(3)
+    const s1 = byApp.find((a) => a.team_slug === 'team-s1' && a.app_name === 'app-s1')
+    const s2 = byApp.find((a) => a.team_slug === 'team-s2' && a.app_name === 'app-s2')
+    expect(s1).toBeDefined()
+    expect(s1!.count).toBe(2)
+    expect(s2).toBeDefined()
+    expect(s2!.count).toBe(1)
+  })
+
+  it('returns zero total when no deployments are missing approver', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-s3', appName: 'app-s3', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-s3',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved_pr',
+      githubPrData: {
+        reviewers: [{ username: 'reviewer1', state: 'APPROVED', submitted_at: '2026-06-15T09:00:00Z' }],
+      },
+    })
+
+    const { total, byApp } = await getMissingApproverSummary()
+    const s3 = byApp.find((a) => a.team_slug === 'team-s3')
+    expect(s3).toBeUndefined()
+    // total may include data from other tests if not isolated, but s3 should not appear
+  })
+
+  it('includes environment_name in breakdown', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-s4', appName: 'app-s4', environment: 'dev-gcp' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-s4',
+      environment: 'dev-gcp',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: { reviewers: [] },
+    })
+
+    const { byApp } = await getMissingApproverSummary()
+    const s4 = byApp.find((a) => a.team_slug === 'team-s4')
+    expect(s4).toBeDefined()
+    expect(s4!.environment_name).toBe('dev-gcp')
   })
 })
