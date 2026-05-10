@@ -7,6 +7,7 @@
 
 import { Alert, BodyShort, Box, Button, Heading, HStack, Switch, Tag, VStack } from '@navikt/ds-react'
 import { Link, useSearchParams } from 'react-router'
+import { ExternalLink } from '~/components/ExternalLink'
 import { getDeploymentById } from '~/db/deployments.server'
 import { getUserMappings } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
@@ -272,8 +273,16 @@ function DebugResultView({
             <Heading size="xsmall" level="3">
               Deployment info
             </Heading>
-            <DataRow label="Commit SHA" value={fetchedData.commitSha} />
-            <DataRow label="Repository" value={fetchedData.repository} />
+            <DataRow label="Commit SHA">
+              <ExternalLink href={`https://github.com/${fetchedData.repository}/commit/${fetchedData.commitSha}`}>
+                {fetchedData.commitSha}
+              </ExternalLink>
+            </DataRow>
+            <DataRow label="Repository">
+              <ExternalLink href={`https://github.com/${fetchedData.repository}`}>
+                {fetchedData.repository}
+              </ExternalLink>
+            </DataRow>
             <DataRow label="Environment" value={fetchedData.environmentName} />
             <DataRow label="Base branch" value={fetchedData.baseBranch} />
           </VStack>
@@ -284,7 +293,13 @@ function DebugResultView({
             </Heading>
             {fetchedData.deployedPr ? (
               <>
-                <DataRow label="PR nummer" value={`#${fetchedData.deployedPr.number}`} />
+                <DataRow label="PR nummer">
+                  <ExternalLink
+                    href={`https://github.com/${fetchedData.repository}/pull/${fetchedData.deployedPr.number}`}
+                  >
+                    #{fetchedData.deployedPr.number}
+                  </ExternalLink>
+                </DataRow>
                 <DataRow label="Tittel" value={fetchedData.deployedPr.metadata.title} />
                 <DataRow label="Forfatter" value={resolveUsername(fetchedData.deployedPr.metadata.author?.username)} />
                 <DataRow
@@ -307,8 +322,22 @@ function DebugResultView({
             {fetchedData.commitsBetween.slice(0, 5).map((commit) => (
               <Box key={commit.sha} padding="space-2" background="raised" borderRadius="4">
                 <BodyShort size="small">
-                  {commit.sha.substring(0, 7)} - {commit.message.split('\n')[0].substring(0, 60)}
-                  {commit.pr ? ` (PR #${commit.pr.number})` : ' (ingen PR)'}
+                  <ExternalLink href={`https://github.com/${fetchedData.repository}/commit/${commit.sha}`}>
+                    {commit.sha.substring(0, 7)}
+                  </ExternalLink>
+                  {' - '}
+                  {commit.message.split('\n')[0].substring(0, 60)}
+                  {commit.pr ? (
+                    <>
+                      {' (PR '}
+                      <ExternalLink href={`https://github.com/${fetchedData.repository}/pull/${commit.pr.number}`}>
+                        #{commit.pr.number}
+                      </ExternalLink>
+                      {')'}
+                    </>
+                  ) : (
+                    ' (ingen PR)'
+                  )}
                 </BodyShort>
               </Box>
             ))}
@@ -349,10 +378,21 @@ function DebugResultView({
                 <Box key={commit.sha} padding="space-2" background="danger-soft" borderRadius="4">
                   <VStack gap="space-1">
                     <BodyShort size="small" weight="semibold">
-                      {commit.sha.substring(0, 7)} - {commit.message.substring(0, 50)}
+                      <ExternalLink href={`https://github.com/${fetchedData.repository}/commit/${commit.sha}`}>
+                        {commit.sha.substring(0, 7)}
+                      </ExternalLink>
+                      {' - '}
+                      {commit.message.substring(0, 50)}
                     </BodyShort>
                     <BodyShort size="small">
-                      Grunn: {commit.reason} | PR: {commit.prNumber || 'ingen'}
+                      Grunn: {commit.reason} | PR:{' '}
+                      {commit.prNumber ? (
+                        <ExternalLink href={`https://github.com/${fetchedData.repository}/pull/${commit.prNumber}`}>
+                          #{commit.prNumber}
+                        </ExternalLink>
+                      ) : (
+                        'ingen'
+                      )}
                     </BodyShort>
                   </VStack>
                 </Box>
@@ -365,15 +405,28 @@ function DebugResultView({
   )
 }
 
-function DataRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+type DataRowProps = { label: string; highlight?: boolean } & (
+  | { value: string; children?: never }
+  | { value?: never; children: React.ReactNode }
+)
+
+function DataRow({ label, value, highlight, children }: DataRowProps) {
+  const style = highlight ? { color: 'var(--a-text-danger)' } : undefined
+
   return (
     <HStack gap="space-2">
       <BodyShort size="small" weight="semibold" style={{ minWidth: '140px' }}>
         {label}:
       </BodyShort>
-      <BodyShort size="small" style={{ color: highlight ? 'var(--a-text-danger)' : undefined }}>
-        {value}
-      </BodyShort>
+      {children != null ? (
+        <BodyShort size="small" as="span" style={style}>
+          {children}
+        </BodyShort>
+      ) : (
+        <BodyShort size="small" style={style}>
+          {value}
+        </BodyShort>
+      )}
     </HStack>
   )
 }
