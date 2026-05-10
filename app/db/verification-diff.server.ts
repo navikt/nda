@@ -1,6 +1,7 @@
 import { AUDIT_START_YEAR_FILTER } from '~/db/audit-start-year'
 import { pool } from '~/db/connection.server'
 import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 
 interface VerificationDiffDeployment {
   id: number
@@ -38,8 +39,7 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
         AND d.commit_sha IS NOT NULL
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
-        AND d.commit_sha !~ '^refs/'
-        AND LENGTH(d.commit_sha) >= 7
+        AND ${VALID_COMMIT_SHA_SQL}
         AND ${AUDIT_START_YEAR_FILTER}
       ORDER BY created_at DESC`,
     [monitoredAppId],
@@ -121,6 +121,10 @@ interface MissingApproverDeployment {
   environment_name: string
   created_at: Date
   deployer_username: string | null
+  detected_github_owner: string | null
+  detected_github_repo_name: string | null
+  monitored_app_id: number
+  default_branch: string | null
 }
 
 /**
@@ -172,7 +176,9 @@ export async function getApprovedDeploymentsMissingApprover(
 ): Promise<MissingApproverDeployment[]> {
   const result = await pool.query<MissingApproverDeployment>(
     `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
-            d.created_at, d.deployer_username
+            d.created_at, d.deployer_username,
+            d.detected_github_owner, d.detected_github_repo_name,
+            d.monitored_app_id, ma.default_branch
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE d.monitored_app_id = $1

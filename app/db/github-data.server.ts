@@ -12,6 +12,7 @@
  */
 
 import { pool } from '~/db/connection.server'
+import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import {
   type CommitDataType,
   type CommitSnapshot,
@@ -736,8 +737,7 @@ export async function getGitHubDataStatsForApp(
        AND d.commit_sha IS NOT NULL
        AND d.detected_github_owner IS NOT NULL
        AND d.detected_github_repo_name IS NOT NULL
-       AND d.commit_sha !~ '^refs/'
-       AND LENGTH(d.commit_sha) >= 7
+       AND ${VALID_COMMIT_SHA_SQL}
        ${dateFilter}`,
     params,
   )
