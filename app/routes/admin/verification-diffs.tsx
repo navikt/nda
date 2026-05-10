@@ -201,7 +201,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (actionType === 'refresh_missing_approver_all') {
     // Check for existing running job BEFORE heavy query
     const existingJob = await pool.query(
-      `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
+      `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' AND lock_expires_at > NOW() LIMIT 1`,
     )
     if (existingJob.rows.length > 0) {
       return { refreshStarted: existingJob.rows[0].id }
@@ -357,23 +357,26 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
 
     // Don't overwrite cancelled status
     if (!cancelled && !(await isSyncJobCancelled(jobId))) {
-      await pool.query(`UPDATE sync_jobs SET status = 'completed', completed_at = NOW(), result = $2 WHERE id = $1`, [
-        jobId,
-        JSON.stringify({
-          processed: refreshed + skipped + errors,
-          refreshed,
-          skipped,
-          errors,
-          total: deployments.length,
-        }),
-      ])
+      await pool.query(
+        `UPDATE sync_jobs SET status = 'completed', completed_at = NOW(), result = $2 WHERE id = $1 AND status = 'running'`,
+        [
+          jobId,
+          JSON.stringify({
+            processed: refreshed + skipped + errors,
+            refreshed,
+            skipped,
+            errors,
+            total: deployments.length,
+          }),
+        ],
+      )
     }
   } catch (err) {
     if (!(await isSyncJobCancelled(jobId))) {
-      await pool.query(`UPDATE sync_jobs SET status = 'failed', completed_at = NOW(), error = $2 WHERE id = $1`, [
-        jobId,
-        err instanceof Error ? err.message : String(err),
-      ])
+      await pool.query(
+        `UPDATE sync_jobs SET status = 'failed', completed_at = NOW(), error = $2 WHERE id = $1 AND status = 'running'`,
+        [jobId, err instanceof Error ? err.message : String(err)],
+      )
     }
     throw err
   }
@@ -607,7 +610,7 @@ export default function GlobalVerificationDiffsPage() {
           <VStack gap="space-8">
             <HStack gap="space-16" align="center" justify="space-between">
               <BodyShort>
-                ⚠️{' '}
+                {missingApproverCount > 0 ? '⚠️ ' : '✅ '}
                 {missingApproverCount === 0
                   ? 'Ingen deployments mangler godkjenner-data.'
                   : missingApproverCount === 1

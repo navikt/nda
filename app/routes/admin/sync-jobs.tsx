@@ -346,9 +346,11 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
                     <Detail textColor="subtle">#{job.id}</Detail>
                     <BodyShort weight="semibold">{job.app_name ?? 'Global'}</BodyShort>
                     <Show above="md">
-                      <Detail textColor="subtle">
-                        {job.team_slug ? `${job.team_slug} / ${job.environment_name}` : ''}
-                      </Detail>
+                      {job.team_slug && (
+                        <Detail textColor="subtle">
+                          {job.team_slug} / {job.environment_name}
+                        </Detail>
+                      )}
                     </Show>
                   </HStack>
                   <HStack gap="space-8">
@@ -359,9 +361,11 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
 
                 {/* Team/env on mobile */}
                 <Hide above="md">
-                  <Detail textColor="subtle">
-                    {job.team_slug ? `${job.team_slug} / ${job.environment_name}` : ''}
-                  </Detail>
+                  {job.team_slug && (
+                    <Detail textColor="subtle">
+                      {job.team_slug} / {job.environment_name}
+                    </Detail>
+                  )}
                 </Hide>
 
                 {/* Second row: Details */}
