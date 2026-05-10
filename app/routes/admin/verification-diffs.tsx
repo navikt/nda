@@ -601,7 +601,7 @@ export default function GlobalVerificationDiffsPage() {
       </Box>
 
       {/* Missing approver section */}
-      {(missingApproverCount > 0 || (refreshProgress && !activeRefreshJobId)) && (
+      {(missingApproverCount > 0 || activeRefreshJobId || (refreshProgress && !activeRefreshJobId)) && (
         <Box background={missingApproverCount > 0 ? 'danger-soft' : 'success-soft'} padding="space-16" borderRadius="8">
           <VStack gap="space-8">
             <HStack gap="space-16" align="center" justify="space-between">
