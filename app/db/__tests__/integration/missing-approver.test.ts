@@ -275,6 +275,7 @@ describe('missing approver detection — getAllApprovedDeploymentsMissingApprove
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-meta',
+      appName: 'app-meta',
       environment: 'prod',
       createdAt: IN_PERIOD,
       fourEyesStatus: 'approved',
@@ -296,6 +297,7 @@ describe('missing approver detection — getMissingApproverSummary', () => {
     await seedDeployment(pool, {
       monitoredAppId: appId1,
       teamSlug: 'team-s1',
+      appName: 'app-s1',
       environment: 'prod',
       createdAt: IN_PERIOD,
       fourEyesStatus: 'approved',
@@ -304,6 +306,7 @@ describe('missing approver detection — getMissingApproverSummary', () => {
     await seedDeployment(pool, {
       monitoredAppId: appId1,
       teamSlug: 'team-s1',
+      appName: 'app-s1',
       environment: 'prod',
       createdAt: IN_PERIOD,
       fourEyesStatus: 'approved_pr',
@@ -312,6 +315,7 @@ describe('missing approver detection — getMissingApproverSummary', () => {
     await seedDeployment(pool, {
       monitoredAppId: appId2,
       teamSlug: 'team-s2',
+      appName: 'app-s2',
       environment: 'prod',
       createdAt: IN_PERIOD,
       fourEyesStatus: 'approved',
@@ -319,7 +323,7 @@ describe('missing approver detection — getMissingApproverSummary', () => {
     })
 
     const { total, byApp } = await getMissingApproverSummary()
-    expect(total).toBeGreaterThanOrEqual(3)
+    expect(total).toBe(3)
     const s1 = byApp.find((a) => a.team_slug === 'team-s1' && a.app_name === 'app-s1')
     const s2 = byApp.find((a) => a.team_slug === 'team-s2' && a.app_name === 'app-s2')
     expect(s1).toBeDefined()
@@ -351,6 +355,7 @@ describe('missing approver detection — getMissingApproverSummary', () => {
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-s4',
+      appName: 'app-s4',
       environment: 'dev-gcp',
       createdAt: IN_PERIOD,
       fourEyesStatus: 'approved',
