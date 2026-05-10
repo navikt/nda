@@ -7,13 +7,17 @@
  * - Approved deployment with APPROVED reviewer → passes
  * - Approved deployment with manual_approval comment → passes
  * - Excluded statuses (no_changes, baseline, implicitly_approved) → not blocked
- * - getApprovedDeploymentsMissingApprover query
+ * - getApprovedDeploymentsMissingApprover query (per-app)
+ * - getAllApprovedDeploymentsMissingApprover query (global, cross-app)
  */
 
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { checkAuditReadiness } from '../../audit-reports.server'
-import { getApprovedDeploymentsMissingApprover } from '../../verification-diff.server'
+import {
+  getAllApprovedDeploymentsMissingApprover,
+  getApprovedDeploymentsMissingApprover,
+} from '../../verification-diff.server'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -215,5 +219,70 @@ describe('missing approver detection — getApprovedDeploymentsMissingApprover',
     const result = await getApprovedDeploymentsMissingApprover(appId)
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe(deploymentId)
+  })
+})
+
+describe('missing approver detection — getAllApprovedDeploymentsMissingApprover (global)', () => {
+  it('returns missing-approver deployments across multiple apps', async () => {
+    const appId1 = await seedApp(pool, { teamSlug: 'team-x', appName: 'app-x', environment: 'prod' })
+    const appId2 = await seedApp(pool, { teamSlug: 'team-y', appName: 'app-y', environment: 'prod' })
+
+    const dep1 = await seedDeployment(pool, {
+      monitoredAppId: appId1,
+      teamSlug: 'team-x',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: { reviewers: [] },
+    })
+    const dep2 = await seedDeployment(pool, {
+      monitoredAppId: appId2,
+      teamSlug: 'team-y',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved_pr',
+      githubPrData: { reviewers: [] },
+    })
+
+    const result = await getAllApprovedDeploymentsMissingApprover()
+    const ids = result.map((r) => r.id)
+    expect(ids).toContain(dep1)
+    expect(ids).toContain(dep2)
+    expect(result.find((r) => r.id === dep1)?.team_slug).toBe('team-x')
+    expect(result.find((r) => r.id === dep2)?.team_slug).toBe('team-y')
+  })
+
+  it('excludes deployments with APPROVED reviewer', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-z', appName: 'app-z', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-z',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved_pr',
+      githubPrData: {
+        reviewers: [{ username: 'reviewer1', state: 'APPROVED', submitted_at: '2026-06-15T09:00:00Z' }],
+      },
+    })
+
+    const result = await getAllApprovedDeploymentsMissingApprover()
+    expect(result.filter((r) => r.team_slug === 'team-z')).toHaveLength(0)
+  })
+
+  it('returns team_slug and app_name fields', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-meta', appName: 'app-meta', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-meta',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: { reviewers: [] },
+    })
+
+    const result = await getAllApprovedDeploymentsMissingApprover()
+    const match = result.find((r) => r.team_slug === 'team-meta')
+    expect(match).toBeDefined()
+    expect(match?.app_name).toBe('app-meta')
   })
 })

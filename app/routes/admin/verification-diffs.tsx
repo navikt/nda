@@ -205,7 +205,16 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (actionType === 'refresh_missing_approver_all') {
     const deployments = await getAllApprovedDeploymentsMissingApprover()
-    if (deployments.length === 0) return { refreshResult: { refreshed: 0, skipped: 0, errors: 0, total: 0 } }
+    if (deployments.length === 0)
+      return { refreshEmpty: true, refreshResult: { refreshed: 0, skipped: 0, errors: 0, total: 0 } }
+
+    // Prevent duplicate running jobs (NULL monitored_app_id bypasses unique index)
+    const existingJob = await pool.query(
+      `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
+    )
+    if (existingJob.rows.length > 0) {
+      return { refreshStarted: existingJob.rows[0].id }
+    }
 
     // Create a tracking job
     const jobResult = await pool.query(
@@ -486,10 +495,14 @@ export default function GlobalVerificationDiffsPage() {
   }, [refreshFetcher.data])
 
   useEffect(() => {
-    const data = refreshTriggerFetcher.data as { refreshStarted?: number } | undefined
+    const data = refreshTriggerFetcher.data as
+      | { refreshStarted?: number; refreshEmpty?: boolean; refreshResult?: { refreshed: number } }
+      | undefined
     if (data?.refreshStarted) {
       setActiveRefreshJobId(data.refreshStarted)
       setRefreshProgress(null)
+    } else if (data?.refreshEmpty) {
+      setRefreshProgress({ refreshed: 0, skipped: 0, errors: 0, total: 0 })
     }
   }, [refreshTriggerFetcher.data])
 
