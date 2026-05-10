@@ -123,16 +123,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Group missing approver by app for summary
   const missingApproverByApp = new Map<string, number>()
   for (const row of missingApproverRows) {
-    const key = `${row.team_slug}/${row.app_name}`
+    const key = `${row.team_slug}/${row.environment_name}/${row.app_name}`
     missingApproverByApp.set(key, (missingApproverByApp.get(key) || 0) + 1)
   }
   const missingApproverApps = [...missingApproverByApp.entries()].map(([app, count]) => ({ app, count }))
 
-  // Get latest refresh job
+  // Get latest refresh job (global only — monitored_app_id IS NULL)
   const refreshJobResult = await pool.query(
     `SELECT id, status, result, started_at, completed_at
      FROM sync_jobs
-     WHERE job_type = 'refresh_missing_approver'
+     WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL
      ORDER BY created_at DESC
      LIMIT 1`,
   )
