@@ -25,7 +25,7 @@ import { Form, Link, useFetcher, useLoaderData, useNavigation, useRevalidator } 
 import { ErrorReasonWithLink } from '~/components/ErrorReasonWithLink'
 import { pool } from '~/db/connection.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { getSyncJobById, heartbeatSyncJob, updateSyncJobProgress } from '~/db/sync-jobs.server'
+import { getSyncJobById, heartbeatSyncJob, isSyncJobCancelled, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { getAllApprovedDeploymentsMissingApprover, getMissingApproverSummary } from '~/db/verification-diff.server'
 import { requireAdmin } from '~/lib/auth.server'
 import {
@@ -308,8 +308,15 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
   let skipped = 0
   let errors = 0
 
+  let cancelled = false
+
   try {
     for (const dep of deployments) {
+      if (await isSyncJobCancelled(jobId)) {
+        cancelled = true
+        break
+      }
+
       if (
         !dep.commit_sha ||
         !dep.detected_github_owner ||
@@ -348,21 +355,26 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
       }
     }
 
-    await pool.query(`UPDATE sync_jobs SET status = 'completed', completed_at = NOW(), result = $2 WHERE id = $1`, [
-      jobId,
-      JSON.stringify({
-        processed: refreshed + skipped + errors,
-        refreshed,
-        skipped,
-        errors,
-        total: deployments.length,
-      }),
-    ])
+    // Don't overwrite cancelled status
+    if (!cancelled && !(await isSyncJobCancelled(jobId))) {
+      await pool.query(`UPDATE sync_jobs SET status = 'completed', completed_at = NOW(), result = $2 WHERE id = $1`, [
+        jobId,
+        JSON.stringify({
+          processed: refreshed + skipped + errors,
+          refreshed,
+          skipped,
+          errors,
+          total: deployments.length,
+        }),
+      ])
+    }
   } catch (err) {
-    await pool.query(`UPDATE sync_jobs SET status = 'failed', completed_at = NOW(), error = $2 WHERE id = $1`, [
-      jobId,
-      err instanceof Error ? err.message : String(err),
-    ])
+    if (!(await isSyncJobCancelled(jobId))) {
+      await pool.query(`UPDATE sync_jobs SET status = 'failed', completed_at = NOW(), error = $2 WHERE id = $1`, [
+        jobId,
+        err instanceof Error ? err.message : String(err),
+      ])
+    }
     throw err
   }
 }
