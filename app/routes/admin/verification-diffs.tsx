@@ -25,7 +25,13 @@ import { Form, Link, useFetcher, useLoaderData, useNavigation, useRevalidator } 
 import { ErrorReasonWithLink } from '~/components/ErrorReasonWithLink'
 import { pool } from '~/db/connection.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
-import { getSyncJobById, heartbeatSyncJob, isSyncJobCancelled, updateSyncJobProgress } from '~/db/sync-jobs.server'
+import {
+  getSyncJobById,
+  heartbeatSyncJob,
+  isSyncJobCancelled,
+  releaseExpiredLocks,
+  updateSyncJobProgress,
+} from '~/db/sync-jobs.server'
 import { getAllApprovedDeploymentsMissingApprover, getMissingApproverSummary } from '~/db/verification-diff.server'
 import { requireAdmin } from '~/lib/auth.server'
 import {
@@ -199,9 +205,12 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (actionType === 'refresh_missing_approver_all') {
+    // Release any stuck jobs with expired locks before checking/inserting
+    await releaseExpiredLocks()
+
     // Check for existing running job BEFORE heavy query
     const existingJob = await pool.query(
-      `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' AND lock_expires_at > NOW() LIMIT 1`,
+      `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
     )
     if (existingJob.rows.length > 0) {
       return { refreshStarted: existingJob.rows[0].id }
@@ -228,7 +237,7 @@ export async function action({ request }: Route.ActionArgs) {
     } catch (err: unknown) {
       if (err instanceof Error && 'code' in err && (err as { code: string }).code === '23505') {
         const fallback = await pool.query(
-          `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' AND lock_expires_at > NOW() LIMIT 1`,
+          `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
         )
         if (fallback.rows.length > 0) return { refreshStarted: fallback.rows[0].id }
       }
