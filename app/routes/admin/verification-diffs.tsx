@@ -525,8 +525,9 @@ export default function GlobalVerificationDiffsPage() {
       setRefreshProgress(null)
     } else if (data?.refreshEmpty) {
       setRefreshProgress({ refreshed: 0, skipped: 0, errors: 0, total: 0 })
+      revalidator.revalidate()
     }
-  }, [refreshTriggerFetcher.data])
+  }, [refreshTriggerFetcher.data, revalidator])
 
   const isRefreshing = !!activeRefreshJobId || refreshTriggerFetcher.state !== 'idle'
 

@@ -344,10 +344,10 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
                 <HStack gap="space-8" align="center" justify="space-between" wrap>
                   <HStack gap="space-12" align="center" style={{ flex: 1 }}>
                     <Detail textColor="subtle">#{job.id}</Detail>
-                    <BodyShort weight="semibold">{job.app_name}</BodyShort>
+                    <BodyShort weight="semibold">{job.app_name ?? 'Global'}</BodyShort>
                     <Show above="md">
                       <Detail textColor="subtle">
-                        {job.team_slug} / {job.environment_name}
+                        {job.team_slug ? `${job.team_slug} / ${job.environment_name}` : ''}
                       </Detail>
                     </Show>
                   </HStack>
@@ -360,7 +360,7 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
                 {/* Team/env on mobile */}
                 <Hide above="md">
                   <Detail textColor="subtle">
-                    {job.team_slug} / {job.environment_name}
+                    {job.team_slug ? `${job.team_slug} / ${job.environment_name}` : ''}
                   </Detail>
                 </Hide>
 
