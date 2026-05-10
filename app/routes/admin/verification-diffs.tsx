@@ -229,7 +229,7 @@ export async function action({ request }: Route.ActionArgs) {
          RETURNING id`,
         [
           null,
-          `pod-${process.env.HOSTNAME || 'local'}`,
+          process.env.HOSTNAME || `local-${process.pid}`,
           JSON.stringify({ processed: 0, refreshed: 0, skipped: 0, errors: 0, total: deployments.length }),
         ],
       )
@@ -357,8 +357,8 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
 
       const processed = refreshed + skipped + errors
 
-      // Update progress and extend lock every 5 deployments
-      if (processed % 5 === 0) {
+      // Update progress every 5 deployments, plus first and last
+      if (processed === 1 || processed === deployments.length || processed % 5 === 0) {
         await updateSyncJobProgress(jobId, { processed, refreshed, skipped, errors, total: deployments.length })
         await heartbeatSyncJob(jobId, 30)
       }
@@ -492,7 +492,14 @@ export default function GlobalVerificationDiffsPage() {
     skipped: number
     errors: number
     total: number
-  } | null>(null)
+  } | null>(() => {
+    if (latestRefreshJob?.status === 'running' && latestRefreshJob.result) {
+      const r = latestRefreshJob.result as { refreshed?: number; skipped?: number; errors?: number; total?: number }
+      if (r.total != null)
+        return { refreshed: r.refreshed ?? 0, skipped: r.skipped ?? 0, errors: r.errors ?? 0, total: r.total }
+    }
+    return null
+  })
 
   useEffect(() => {
     const data = refreshFetcher.data as
