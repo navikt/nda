@@ -204,11 +204,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (actionType === 'refresh_missing_approver_all') {
-    const deployments = await getAllApprovedDeploymentsMissingApprover()
-    if (deployments.length === 0)
-      return { refreshEmpty: true, refreshResult: { refreshed: 0, skipped: 0, errors: 0, total: 0 } }
-
-    // Prevent duplicate running jobs (NULL monitored_app_id bypasses unique index)
+    // Check for existing running job BEFORE heavy query
     const existingJob = await pool.query(
       `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
     )
@@ -216,18 +212,33 @@ export async function action({ request }: Route.ActionArgs) {
       return { refreshStarted: existingJob.rows[0].id }
     }
 
-    // Create a tracking job
-    const jobResult = await pool.query(
-      `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, locked_by, lock_expires_at, result)
-       VALUES ('refresh_missing_approver', $1, 'running', NOW(), $2, NOW() + INTERVAL '30 minutes', $3)
-       RETURNING id`,
-      [
-        null,
-        `pod-${process.env.HOSTNAME || 'local'}`,
-        JSON.stringify({ refreshed: 0, skipped: 0, errors: 0, total: deployments.length }),
-      ],
-    )
-    const jobId = jobResult.rows[0].id
+    const deployments = await getAllApprovedDeploymentsMissingApprover()
+    if (deployments.length === 0)
+      return { refreshEmpty: true, refreshResult: { refreshed: 0, skipped: 0, errors: 0, total: 0 } }
+
+    // Create a tracking job — handle unique constraint race (23505)
+    let jobId: number
+    try {
+      const jobResult = await pool.query(
+        `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, locked_by, lock_expires_at, result)
+         VALUES ('refresh_missing_approver', $1, 'running', NOW(), $2, NOW() + INTERVAL '30 minutes', $3)
+         RETURNING id`,
+        [
+          null,
+          `pod-${process.env.HOSTNAME || 'local'}`,
+          JSON.stringify({ processed: 0, refreshed: 0, skipped: 0, errors: 0, total: deployments.length }),
+        ],
+      )
+      jobId = jobResult.rows[0].id
+    } catch (err: unknown) {
+      if (err instanceof Error && 'code' in err && (err as { code: string }).code === '23505') {
+        const fallback = await pool.query(
+          `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
+        )
+        if (fallback.rows.length > 0) return { refreshStarted: fallback.rows[0].id }
+      }
+      throw err
+    }
 
     processRefreshMissingApproverAsync(jobId, deployments).catch((err) => {
       logger.error('Refresh missing approver failed', err instanceof Error ? err : new Error(String(err)))
@@ -339,14 +350,20 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
       if (processed % 5 === 0) {
         await pool.query(
           `UPDATE sync_jobs SET result = $2, lock_expires_at = NOW() + INTERVAL '30 minutes' WHERE id = $1 AND status = 'running'`,
-          [jobId, JSON.stringify({ refreshed, skipped, errors, total: deployments.length })],
+          [jobId, JSON.stringify({ processed, refreshed, skipped, errors, total: deployments.length })],
         )
       }
     }
 
     await pool.query(`UPDATE sync_jobs SET status = 'completed', completed_at = NOW(), result = $2 WHERE id = $1`, [
       jobId,
-      JSON.stringify({ refreshed, skipped, errors, total: deployments.length }),
+      JSON.stringify({
+        processed: refreshed + skipped + errors,
+        refreshed,
+        skipped,
+        errors,
+        total: deployments.length,
+      }),
     ])
   } catch (err) {
     await pool.query(`UPDATE sync_jobs SET status = 'failed', completed_at = NOW(), error = $2 WHERE id = $1`, [
