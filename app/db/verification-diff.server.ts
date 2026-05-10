@@ -190,3 +190,29 @@ export async function getApprovedDeploymentsMissingApprover(
   )
   return result.rows
 }
+
+interface GlobalMissingApproverDeployment extends MissingApproverDeployment {
+  team_slug: string
+  app_name: string
+}
+
+/**
+ * Find approved deployments missing approver data across ALL monitored applications.
+ * Used by the global admin verification-diffs page.
+ */
+export async function getAllApprovedDeploymentsMissingApprover(): Promise<GlobalMissingApproverDeployment[]> {
+  const result = await pool.query<GlobalMissingApproverDeployment>(
+    `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
+            d.created_at, d.deployer_username,
+            d.detected_github_owner, d.detected_github_repo_name,
+            d.monitored_app_id, ma.default_branch,
+            d.team_slug, d.app_name
+     FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+       AND ${MISSING_APPROVER_CONDITIONS}
+       AND ${AUDIT_START_YEAR_FILTER}
+     ORDER BY d.team_slug, d.app_name, d.created_at DESC`,
+  )
+  return result.rows
+}
