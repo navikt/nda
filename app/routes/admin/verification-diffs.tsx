@@ -213,7 +213,7 @@ export async function action({ request }: Route.ActionArgs) {
        VALUES ('refresh_missing_approver', $1, 'running', NOW(), $2, NOW() + INTERVAL '30 minutes', $3)
        RETURNING id`,
       [
-        deployments[0].monitored_app_id,
+        null,
         `pod-${process.env.HOSTNAME || 'local'}`,
         JSON.stringify({ refreshed: 0, skipped: 0, errors: 0, total: deployments.length }),
       ],
@@ -324,17 +324,13 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
         }
       }
 
-      // Update progress
-      await pool.query(`UPDATE sync_jobs SET result = $2 WHERE id = $1 AND status = 'running'`, [
-        jobId,
-        JSON.stringify({ refreshed, skipped, errors, total: deployments.length }),
-      ])
+      const processed = refreshed + skipped + errors
 
-      // Extend lock every 5 deployments
-      if ((refreshed + skipped + errors) % 5 === 0) {
+      // Update progress and extend lock every 5 deployments
+      if (processed % 5 === 0) {
         await pool.query(
-          `UPDATE sync_jobs SET lock_expires_at = NOW() + INTERVAL '30 minutes' WHERE id = $1 AND status = 'running'`,
-          [jobId],
+          `UPDATE sync_jobs SET result = $2, lock_expires_at = NOW() + INTERVAL '30 minutes' WHERE id = $1 AND status = 'running'`,
+          [jobId, JSON.stringify({ refreshed, skipped, errors, total: deployments.length })],
         )
       }
     }
