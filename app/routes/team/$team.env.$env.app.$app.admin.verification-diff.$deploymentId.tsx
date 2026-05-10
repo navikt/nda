@@ -405,28 +405,25 @@ function DebugResultView({
   )
 }
 
-function DataRow({
-  label,
-  value,
-  highlight,
-  children,
-}: {
-  label: string
-  value?: string
-  highlight?: boolean
-  children?: React.ReactNode
-}) {
+type DataRowProps = { label: string; highlight?: boolean } & (
+  | { value: string; children?: never }
+  | { value?: never; children: React.ReactNode }
+)
+
+function DataRow({ label, value, highlight, children }: DataRowProps) {
+  const style = highlight ? { color: 'var(--a-text-danger)' } : undefined
+
   return (
     <HStack gap="space-2">
       <BodyShort size="small" weight="semibold" style={{ minWidth: '140px' }}>
         {label}:
       </BodyShort>
-      {children ? (
-        <BodyShort size="small" as="span">
+      {children != null ? (
+        <BodyShort size="small" as="span" style={style}>
           {children}
         </BodyShort>
       ) : (
-        <BodyShort size="small" style={{ color: highlight ? 'var(--a-text-danger)' : undefined }}>
+        <BodyShort size="small" style={style}>
           {value}
         </BodyShort>
       )}
