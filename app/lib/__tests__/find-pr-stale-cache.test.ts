@@ -57,8 +57,9 @@ describe('findPrForCommit stale cache handling', () => {
     mockSaveCommitSnapshot.mockResolvedValue(undefined)
   })
 
-  it('uses stale empty cache when forceRefresh is false', async () => {
-    // Simulate a cached empty PR association (from a race condition)
+  it('trusts empty cache without calling GitHub (no staleness-based re-fetch)', async () => {
+    // Empty PR cache is trusted — healing only happens via forceRefresh
+    // (interactive operations like computeVerificationDiffs double-check)
     mockGetCommitSnapshot.mockResolvedValue({
       data: { prs: [] },
       schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -68,12 +69,12 @@ describe('findPrForCommit stale cache handling', () => {
       commits: [
         {
           sha: 'abc123',
-          message: 'Merge pull request #100 from navikt/feature-branch',
+          message: 'Direct push without PR',
           authorUsername: 'user1',
           authorDate: '2026-04-27T16:00:00Z',
           committerDate: '2026-04-27T16:00:00Z',
-          parentShas: ['parent1', 'parent2'],
-          isMergeCommit: true,
+          parentShas: ['parent1'],
+          isMergeCommit: false,
           htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
         },
       ],
@@ -81,9 +82,8 @@ describe('findPrForCommit stale cache handling', () => {
 
     const result = await buildCommitsBetweenFromCache('navikt', 'repo', 'main', compareData)
 
-    // Should NOT call GitHub API — uses the stale cache
+    // Should NOT call GitHub API — empty cache is trusted
     expect(mockGetPrForCommit).not.toHaveBeenCalled()
-    // Commit has no PR associated
     expect(result[0].pr).toBeNull()
   })
 

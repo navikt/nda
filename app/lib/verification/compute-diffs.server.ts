@@ -84,6 +84,7 @@ export async function computeVerificationDiffs(
       const baseBranch = row.default_branch || 'main'
 
       let input: VerificationInput
+      let precomputedResult: ReturnType<typeof verifyDeployment> | null = null
 
       const compareSnapshot = await getCompareSnapshotForCommit(row.commit_sha)
       if (compareSnapshot) {
@@ -110,6 +111,7 @@ export async function computeVerificationDiffs(
             monitoredAppId,
           )
         } else {
+          // First pass: fast cache-only check for commitsBetween
           const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
             cacheOnly: true,
           })
@@ -143,6 +145,55 @@ export async function computeVerificationDiffs(
             commitsBetween,
             dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
           }
+
+          // Double-check: if cache-only produced a different status than
+          // what's stored, or if the deployed PR couldn't be resolved from
+          // cache, re-run with forceRefresh to confirm. This prevents false
+          // diffs from stale empty PR caches without making API calls for
+          // all deployments. Stale caches on intermediate commits are healed
+          // via interactive re-verification ("Apply selected" in admin UI).
+          const cacheOnlyResult = verifyDeployment(input)
+          const normalizedOldStatus = normalizeStatus(row.four_eyes_status)
+          const normalizedCacheStatus = normalizeStatus(cacheOnlyResult.status)
+          const missingPrSnapshot = row.github_pr_number != null && deployedPr == null
+
+          if (normalizedOldStatus !== normalizedCacheStatus || missingPrSnapshot) {
+            const reasons: string[] = []
+            if (normalizedOldStatus !== normalizedCacheStatus) {
+              reasons.push(`status diff: ${row.four_eyes_status} → ${cacheOnlyResult.status}`)
+            }
+            if (missingPrSnapshot) {
+              reasons.push(`missing PR snapshot: DB has PR#${row.github_pr_number} but cached snapshot is incomplete`)
+            }
+            logger.info(`   🔄 Re-fetching deployment ${row.id}: ${reasons.join(', ')}`)
+
+            try {
+              input = await fetchVerificationData(
+                row.id,
+                row.commit_sha,
+                `${owner}/${repo}`,
+                row.environment_name,
+                baseBranch,
+                monitoredAppId,
+                { forceRefresh: true },
+              )
+            } catch (err) {
+              // If forceRefresh fails (e.g., deleted PR, API error), fall back
+              // to the cache-only result. Note: no failure marker is persisted,
+              // so a subsequent interactive run will retry the same forceRefresh.
+              // This is acceptable because computeVerificationDiffs is only
+              // triggered by admin actions (not scheduled jobs).
+              logger.warn(`   ⚠️ Force-refresh failed for deployment ${row.id}, using cache-only result`, {
+                error: err instanceof Error ? err.message : String(err),
+                stack_trace: err instanceof Error ? err.stack : undefined,
+              })
+              precomputedResult = cacheOnlyResult
+            }
+          } else {
+            // No diff detected and no missing PR snapshot — reuse cache-only result
+            // to avoid redundant verifyDeployment() call after the if/else block.
+            precomputedResult = cacheOnlyResult
+          }
         }
       } else {
         // No compare snapshot — fetch fresh data from GitHub (will be cached for future use)
@@ -157,7 +208,7 @@ export async function computeVerificationDiffs(
         )
       }
 
-      const newResult = verifyDeployment(input)
+      const newResult = precomputedResult ?? verifyDeployment(input)
 
       const normalizedOldStatus = normalizeStatus(row.four_eyes_status)
       const normalizedNewStatus = normalizeStatus(newResult.status)

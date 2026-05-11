@@ -532,8 +532,8 @@ async function findPrForCommit(
           mismatchedPrNumbers: mismatchedPrs.map((p) => p.number),
         }
       }
-      // Fall through to GitHub when cache says "associated PRs exist but none on baseBranch"
-      // — we still want to refresh in case the PR was retargeted.
+      // Fall through to GitHub when associated PRs exist but none match
+      // baseBranch (PR may have been retargeted).
     }
   }
 
