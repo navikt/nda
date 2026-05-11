@@ -174,7 +174,7 @@ export interface UnverifiedCommitDeploymentEntry {
   commits: UnverifiedCommitEntry[]
 }
 
-interface AuditReportSummary {
+export interface AuditReportSummary {
   id: number
   report_id: string
   app_name: string
@@ -197,7 +197,7 @@ interface AuditReportSummary {
   superseded_by_report_id: number | null
 }
 
-interface AuditReadinessCheck {
+export interface AuditReadinessCheck {
   is_ready: boolean
   total_deployments: number
   approved_count: number
