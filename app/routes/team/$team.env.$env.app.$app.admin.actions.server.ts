@@ -214,8 +214,12 @@ export async function action({ request }: { request: Request; params: Record<str
   if (action === 'check_readiness') {
     const periodStart = formData.get('period_start') as string
     const periodEnd = formData.get('period_end') as string
+    const periodTypeRaw = formData.get('period_type') as string
     if (!appId || !periodStart || !periodEnd) {
       return { error: 'Mangler app eller periode' }
+    }
+    if (!periodTypeRaw || !isValidReportPeriodType(periodTypeRaw)) {
+      return { error: 'Ugyldig periodetype' }
     }
 
     let parsedStart: Date
@@ -236,8 +240,7 @@ export async function action({ request }: { request: Request; params: Record<str
     const uniqueDeployers = [...new Set(deployerUsernames)]
     const userMappings = uniqueDeployers.length > 0 ? await getUserMappings(uniqueDeployers) : new Map()
 
-    const periodType = formData.get('period_type') as string
-    const readinessPeriodKey = `${periodType}:${periodStart}`
+    const readinessPeriodKey = `${periodTypeRaw}:${periodStart}`
 
     return { readiness, readinessPeriodKey, userMappings: serializeUserMappings(userMappings) }
   }
@@ -295,6 +298,7 @@ export async function action({ request }: { request: Request; params: Record<str
       return {
         error: `Kan ikke generere rapport: ${reasons.join('; ')}.`,
         readiness,
+        readinessPeriodKey: `${periodType}:${periodStartStr}`,
       }
     }
 

@@ -103,19 +103,25 @@ export function AuditReportGenerateSection({
             ))}
           </Select>
 
-          <Select
-            label="Periode"
-            value={String(selectedPeriodIndex)}
-            onChange={(e) => setSelectedPeriodIndex(Number(e.target.value))}
-            size="small"
-            style={{ minWidth: '180px' }}
-          >
-            {availablePeriods.map((period, index) => (
-              <option key={period.label} value={index}>
-                {period.label}
-              </option>
-            ))}
-          </Select>
+          {availablePeriods.length > 0 ? (
+            <Select
+              label="Periode"
+              value={String(selectedPeriodIndex)}
+              onChange={(e) => setSelectedPeriodIndex(Number(e.target.value))}
+              size="small"
+              style={{ minWidth: '180px' }}
+            >
+              {availablePeriods.map((period, index) => (
+                <option key={period.label} value={index}>
+                  {period.label}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Select label="Periode" value="" size="small" style={{ minWidth: '180px' }} disabled>
+              <option value="">Ingen fullførte perioder</option>
+            </Select>
+          )}
 
           <Button
             type="submit"
