@@ -40,6 +40,7 @@ spec:
   azure:
     application:
       enabled: true
+      allowAllUsers: true
       claims:
         groups:
           - id: 1e97cbc6-0687-4d23-aebd-c611035279c1  # pensjon-revisjon (admin)
