@@ -29,8 +29,14 @@ import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.s
 import { getLatestSyncJob, type SyncJob } from '~/db/sync-jobs.server'
 import { getAllUserMappings } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
+import { toDateString } from '~/lib/date-utils'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
-import { getCompletedPeriods, REPORT_PERIOD_TYPE_LABELS, type ReportPeriodType } from '~/lib/report-periods'
+import {
+  findExistingReportForPeriod,
+  getCompletedPeriods,
+  REPORT_PERIOD_TYPE_LABELS,
+  type ReportPeriodType,
+} from '~/lib/report-periods'
 import type { UserMappings } from '~/lib/user-display'
 import type { Route } from './+types/$team.env.$env.app.$app.admin'
 
@@ -120,18 +126,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
   const selectedPeriod = availablePeriods[selectedPeriodIndex] || availablePeriods[0]
 
   // Check if selected period already has an active (non-archived, non-superseded) report
-  // Match on period_start (same key as server-side hasActiveReportForPeriod) using YYYY-MM-DD to avoid timezone issues
-  const formatDateKey = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  const existingReportForPeriod = selectedPeriod
-    ? auditReports.find(
-        (r) =>
-          r.period_type === selectedPeriod.type &&
-          r.period_start.slice(0, 10) === formatDateKey(selectedPeriod.startDate) &&
-          !r.archived_at &&
-          !r.superseded_at,
-      )
-    : undefined
+  const existingReportForPeriod = selectedPeriod ? findExistingReportForPeriod(auditReports, selectedPeriod) : undefined
   const [supersedeReason, setSupersedeReason] = useState('')
 
   // Reset supersede reason when period selection changes
@@ -290,8 +285,8 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                   <input type="hidden" name="year" value={selectedPeriod.year} />
                   <input type="hidden" name="period_type" value={selectedPeriod.type} />
                   <input type="hidden" name="period_label" value={selectedPeriod.label} />
-                  <input type="hidden" name="period_start" value={formatDateKey(selectedPeriod.startDate)} />
-                  <input type="hidden" name="period_end" value={formatDateKey(selectedPeriod.endDate)} />
+                  <input type="hidden" name="period_start" value={toDateString(selectedPeriod.startDate)} />
+                  <input type="hidden" name="period_end" value={toDateString(selectedPeriod.endDate)} />
                 </>
               )}
               <VStack gap="space-16">

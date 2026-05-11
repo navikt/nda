@@ -5,6 +5,8 @@
  * Movable holidays are based on Easter (Gregorian algorithm).
  */
 
+import { toDateString } from './date-utils'
+
 interface HolidayMap {
   [key: string]: string
 }
@@ -39,13 +41,6 @@ function addDays(date: Date, days: number): Date {
   return result
 }
 
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 function computeHolidays(year: number): HolidayMap {
   const easter = calculateEasterSunday(year)
 
@@ -58,13 +53,13 @@ function computeHolidays(year: number): HolidayMap {
   }
 
   const movable: HolidayMap = {
-    [formatDateKey(addDays(easter, -3))]: 'Skjærtorsdag',
-    [formatDateKey(addDays(easter, -2))]: 'Langfredag',
-    [formatDateKey(easter)]: 'Første påskedag',
-    [formatDateKey(addDays(easter, 1))]: 'Andre påskedag',
-    [formatDateKey(addDays(easter, 39))]: 'Kristi himmelfartsdag',
-    [formatDateKey(addDays(easter, 49))]: 'Første pinsedag',
-    [formatDateKey(addDays(easter, 50))]: 'Andre pinsedag',
+    [toDateString(addDays(easter, -3))]: 'Skjærtorsdag',
+    [toDateString(addDays(easter, -2))]: 'Langfredag',
+    [toDateString(easter)]: 'Første påskedag',
+    [toDateString(addDays(easter, 1))]: 'Andre påskedag',
+    [toDateString(addDays(easter, 39))]: 'Kristi himmelfartsdag',
+    [toDateString(addDays(easter, 49))]: 'Første pinsedag',
+    [toDateString(addDays(easter, 50))]: 'Andre pinsedag',
   }
 
   return { ...fixed, ...movable }
@@ -92,7 +87,7 @@ export function getPublicHolidays(year: number): Map<string, string> {
 export function isPublicHoliday(date: Date): boolean {
   const day = date.getDay()
   if (day === 0 || day === 6) return true // Saturday or Sunday
-  const key = formatDateKey(date)
+  const key = toDateString(date)
   return key in getHolidaysForYear(date.getFullYear())
 }
 

@@ -183,7 +183,7 @@ interface AuditReportSummary {
   year: number
   period_type: ReportPeriodType
   period_label: string
-  period_start: string
+  period_start: Date
   total_deployments: number
   pr_approved_count: number
   manually_approved_count: number
