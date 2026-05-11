@@ -14,6 +14,7 @@ import {
   type DeviationIntent,
   type DeviationSeverity,
 } from '~/lib/deviation-constants'
+import { formatPercentages } from '~/lib/format-percentages'
 
 // Register fonts from local files (downloaded during Docker build)
 // In production: /app/fonts/
@@ -332,9 +333,10 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
   const prApprovedCount = reportData.deployments.filter((d) => d.method === 'pr').length
   const manuallyApprovedCount = reportData.deployments.filter((d) => d.method === 'manual').length
   const legacyCount = reportData.legacy_count || 0
-  const prPercentage = totalDeployments > 0 ? Math.round((prApprovedCount / totalDeployments) * 100) : 0
-  const manualPercentage = totalDeployments > 0 ? Math.round((manuallyApprovedCount / totalDeployments) * 100) : 0
-  const legacyPercentage = totalDeployments > 0 ? Math.round((legacyCount / totalDeployments) * 100) : 0
+  const [prDisplay, manualDisplay, legacyDisplay] = formatPercentages(
+    [prApprovedCount, manuallyApprovedCount, legacyCount],
+    totalDeployments,
+  )
 
   // Group deployments by month
   const deploymentsByMonth = new Map<string, typeof reportData.deployments>()
@@ -411,20 +413,20 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Via Pull Request:</Text>
             <Text style={styles.summaryValue}>
-              {prApprovedCount} ({prPercentage}%)
+              {prApprovedCount} ({prDisplay}%)
             </Text>
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Manuelt godkjent:</Text>
             <Text style={styles.summaryValue}>
-              {manuallyApprovedCount} ({manualPercentage}%)
+              {manuallyApprovedCount} ({manualDisplay}%)
             </Text>
           </View>
           {legacyCount > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Legacy (se forklaring):</Text>
               <Text style={styles.summaryValue}>
-                {legacyCount} ({legacyPercentage}%)
+                {legacyCount} ({legacyDisplay}%)
               </Text>
             </View>
           )}
