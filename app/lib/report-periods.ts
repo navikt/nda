@@ -157,3 +157,33 @@ export const REPORT_PERIOD_TYPE_LABELS: Record<ReportPeriodType, string> = {
   quarterly: 'Kvartalsvis',
   monthly: 'Månedlig',
 }
+
+/** Format a Date as YYYY-MM-DD using local time (no timezone shift). */
+export function formatDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Minimal shape needed to match existing reports against a selected period. */
+interface ReportForPeriodMatch {
+  period_type: ReportPeriodType
+  period_start: Date
+  archived_at: Date | null
+  superseded_at: Date | null
+}
+
+/**
+ * Find an active (non-archived, non-superseded) report that matches a selected period.
+ * Used by the app admin UI to detect existing reports and offer superseding.
+ */
+export function findExistingReportForPeriod<T extends ReportForPeriodMatch>(
+  reports: T[],
+  selectedPeriod: ReportPeriod,
+): T | undefined {
+  return reports.find(
+    (r) =>
+      r.period_type === selectedPeriod.type &&
+      formatDateKey(r.period_start) === formatDateKey(selectedPeriod.startDate) &&
+      !r.archived_at &&
+      !r.superseded_at,
+  )
+}

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { generateReportId, getCompletedPeriods, isPeriodCompleted, type ReportPeriod } from '../report-periods'
+import {
+  findExistingReportForPeriod,
+  formatDateKey,
+  generateReportId,
+  getCompletedPeriods,
+  isPeriodCompleted,
+  type ReportPeriod,
+} from '../report-periods'
 
 describe('getCompletedPeriods', () => {
   describe('yearly', () => {
@@ -248,5 +255,96 @@ describe('generateReportId', () => {
     const id1 = generateReportId('yearly', '2025', 'pensjon-pen', 'prod-gcp', 'abcdef1234567890')
     const id2 = generateReportId('yearly', '2025', 'pensjon-pen', 'prod-gcp', 'abcdef1234567890')
     expect(id1).not.toBe(id2)
+  })
+})
+
+describe('formatDateKey', () => {
+  it('formats Date as YYYY-MM-DD', () => {
+    expect(formatDateKey(new Date(2025, 0, 1))).toBe('2025-01-01')
+    expect(formatDateKey(new Date(2025, 11, 31))).toBe('2025-12-31')
+    expect(formatDateKey(new Date(2026, 4, 1))).toBe('2026-05-01')
+  })
+
+  it('pads single-digit month and day', () => {
+    expect(formatDateKey(new Date(2025, 0, 5))).toBe('2025-01-05')
+    expect(formatDateKey(new Date(2025, 8, 9))).toBe('2025-09-09')
+  })
+})
+
+describe('findExistingReportForPeriod', () => {
+  const makePeriod = (type: ReportPeriod['type'], startDate: Date): ReportPeriod => ({
+    type,
+    label: 'Test',
+    year: startDate.getFullYear(),
+    startDate,
+    endDate: new Date(startDate.getFullYear(), 11, 31),
+  })
+
+  const makeReport = (overrides: {
+    period_type: ReportPeriod['type']
+    period_start: Date
+    archived_at?: Date | null
+    superseded_at?: Date | null
+  }) => ({
+    id: 1,
+    report_id: 'test-report',
+    period_type: overrides.period_type,
+    period_start: overrides.period_start,
+    archived_at: overrides.archived_at ?? null,
+    superseded_at: overrides.superseded_at ?? null,
+  })
+
+  it('finds matching report for period', () => {
+    const reports = [makeReport({ period_type: 'yearly', period_start: new Date(2025, 0, 1) })]
+    const period = makePeriod('yearly', new Date(2025, 0, 1))
+    expect(findExistingReportForPeriod(reports, period)).toBe(reports[0])
+  })
+
+  it('handles period_start as Date object (as returned by node-postgres for DATE columns)', () => {
+    // node-postgres returns DATE columns as Date objects, not strings.
+    // The old code used .slice(0, 10) which crashes on Date objects.
+    const pgDate = new Date(2025, 0, 1) // This is what pg actually returns
+    const reports = [makeReport({ period_type: 'tertiary', period_start: pgDate })]
+    const period = makePeriod('tertiary', new Date(2025, 0, 1))
+
+    // This must not throw — the old inline code threw:
+    // "t.period_start.slice is not a function"
+    expect(() => findExistingReportForPeriod(reports, period)).not.toThrow()
+    expect(findExistingReportForPeriod(reports, period)).toBe(reports[0])
+  })
+
+  it('does not match different period types', () => {
+    const reports = [makeReport({ period_type: 'yearly', period_start: new Date(2025, 0, 1) })]
+    const period = makePeriod('tertiary', new Date(2025, 0, 1))
+    expect(findExistingReportForPeriod(reports, period)).toBeUndefined()
+  })
+
+  it('does not match different start dates', () => {
+    const reports = [makeReport({ period_type: 'tertiary', period_start: new Date(2025, 0, 1) })]
+    const period = makePeriod('tertiary', new Date(2025, 4, 1))
+    expect(findExistingReportForPeriod(reports, period)).toBeUndefined()
+  })
+
+  it('skips archived reports', () => {
+    const reports = [makeReport({ period_type: 'yearly', period_start: new Date(2025, 0, 1), archived_at: new Date() })]
+    const period = makePeriod('yearly', new Date(2025, 0, 1))
+    expect(findExistingReportForPeriod(reports, period)).toBeUndefined()
+  })
+
+  it('skips superseded reports', () => {
+    const reports = [
+      makeReport({ period_type: 'yearly', period_start: new Date(2025, 0, 1), superseded_at: new Date() }),
+    ]
+    const period = makePeriod('yearly', new Date(2025, 0, 1))
+    expect(findExistingReportForPeriod(reports, period)).toBeUndefined()
+  })
+
+  it('old .slice() approach crashes on Date objects from node-postgres', () => {
+    // This test documents the bug: the old inline code in the admin route used
+    // r.period_start.slice(0, 10) assuming period_start was a string.
+    // node-postgres returns DATE columns as Date objects, so .slice() is undefined.
+    const pgDate = new Date(2025, 0, 1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => (pgDate as any).slice(0, 10)).toThrow(/slice is not a function/)
   })
 })
