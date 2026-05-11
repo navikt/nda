@@ -110,6 +110,15 @@ const approved = deployments.filter(
 
 **Rationale:** A bug where `checkAuditReadiness()` defined its own approved-statuses list caused audit report counts to diverge from actual verification data. Audit reports are compliance evidence — this class of bug must be structurally prevented.
 
+### Archived Reports
+
+Audit reports can be archived (soft-delete with reason). **Archived reports must never be visible in public-facing views or M2M APIs.** Specifically:
+
+- `getAuditReportsForApp()` excludes archived reports — used on the app page (public)
+- `getAuditReportsForAppAdmin()` includes archived reports — used on admin pages only
+- Admin PDF routes (`/admin/audit-reports/:id/view` and `/pdf`) still serve archived reports (admin-only access)
+- Any new API endpoint that lists or serves reports must respect the `archived_at IS NULL` filter unless it is explicitly admin-only
+
 ## Authorization (RBAC) Architecture
 
 The application uses role-based access control with section-level and team-level roles. Authorization helpers live in `app/lib/authorization.server.ts`.

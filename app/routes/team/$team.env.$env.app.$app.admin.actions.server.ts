@@ -1,8 +1,10 @@
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
 import {
+  archiveAuditReport,
   buildReportData,
   checkAuditReadiness,
   getAuditReportData,
+  restoreAuditReport,
   saveAuditReport,
   updateAuditReportPdf,
 } from '~/db/audit-reports.server'
@@ -442,6 +444,40 @@ export async function action({ request }: { request: Request; params: Record<str
       return { success: 'Purring sendt!' }
     }
     return { error: 'Ingen deployments å purre på, eller purring nylig sendt.' }
+  }
+
+  if (action === 'archive_report') {
+    if (!Number.isFinite(appId)) {
+      return { error: 'Ugyldig app-ID' }
+    }
+    const reportId = parseInt(formData.get('report_id') as string, 10)
+    if (!Number.isFinite(reportId)) {
+      return { error: 'Ugyldig rapport-ID' }
+    }
+    const reason = (formData.get('archive_reason') as string)?.trim()
+    if (!reason) {
+      return { error: 'Begrunnelse er påkrevd for arkivering' }
+    }
+    const archived = await archiveAuditReport(reportId, appId, user.navIdent, reason)
+    if (!archived) {
+      return { error: 'Rapporten finnes ikke eller er allerede arkivert' }
+    }
+    return { success: 'Rapporten er arkivert' }
+  }
+
+  if (action === 'restore_report') {
+    if (!Number.isFinite(appId)) {
+      return { error: 'Ugyldig app-ID' }
+    }
+    const reportId = parseInt(formData.get('report_id') as string, 10)
+    if (!Number.isFinite(reportId)) {
+      return { error: 'Ugyldig rapport-ID' }
+    }
+    const restored = await restoreAuditReport(reportId, appId, user.navIdent)
+    if (!restored) {
+      return { error: 'Rapporten finnes ikke eller er ikke arkivert' }
+    }
+    return { success: 'Rapporten er gjenopprettet' }
   }
 
   return null
