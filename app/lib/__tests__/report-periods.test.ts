@@ -344,7 +344,8 @@ describe('findExistingReportForPeriod', () => {
     // r.period_start.slice(0, 10) assuming period_start was a string.
     // node-postgres returns DATE columns as Date objects, so .slice() is undefined.
     const pgDate = new Date(2025, 0, 1)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(() => (pgDate as any).slice(0, 10)).toThrow(/slice is not a function/)
+    expect(() => (pgDate as unknown as { slice: (start: number, end: number) => string }).slice(0, 10)).toThrow(
+      /slice is not a function/,
+    )
   })
 })
