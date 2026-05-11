@@ -14,14 +14,13 @@ import {
   Loader,
   Select,
   Switch,
-  Textarea,
   TextField,
   VStack,
 } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
 import { Form, Link, useFetcher, useNavigation, useRevalidator } from 'react-router'
+import { AuditReportGenerateSection } from '~/components/AuditReportGenerateSection'
 import { AuditReportList } from '~/components/AuditReportList'
-import { UserName } from '~/components/UserName'
 import { getAppConfigAuditLog, getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getGitHubDataStatsForApp } from '~/db/github-data.server'
@@ -29,14 +28,6 @@ import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.s
 import { getLatestSyncJob, type SyncJob } from '~/db/sync-jobs.server'
 import { getAllUserMappings } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
-import { toDateString } from '~/lib/date-utils'
-import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
-import {
-  findExistingReportForPeriod,
-  getCompletedPeriods,
-  REPORT_PERIOD_TYPE_LABELS,
-  type ReportPeriodType,
-} from '~/lib/report-periods'
 import type { UserMappings } from '~/lib/user-display'
 import type { Route } from './+types/$team.env.$env.app.$app.admin'
 
@@ -118,22 +109,6 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
   // Polling state for fetch data job
   const [fetchJobId, setFetchJobId] = useState<number | null>(null)
   const [fetchJobStatus, setFetchJobStatus] = useState<SyncJob | null>(latestFetchJob)
-
-  // Period selection state
-  const [periodType, setPeriodType] = useState<ReportPeriodType>('yearly')
-  const availablePeriods = getCompletedPeriods(periodType, new Date(), app.audit_start_year ?? undefined)
-  const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0)
-  const selectedPeriod = availablePeriods[selectedPeriodIndex] || availablePeriods[0]
-
-  // Check if selected period already has an active (non-archived, non-superseded) report
-  const existingReportForPeriod = selectedPeriod ? findExistingReportForPeriod(auditReports, selectedPeriod) : undefined
-  const [supersedeReason, setSupersedeReason] = useState('')
-
-  // Reset supersede reason when period selection changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset side-effect on period change
-  useEffect(() => {
-    setSupersedeReason('')
-  }, [selectedPeriod?.label])
 
   const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 
@@ -264,7 +239,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
         </Alert>
       )}
 
-      {/* Audit Report Generation - only for prod apps - MOVED TO TOP */}
+      {/* Audit Report Generation - only for prod apps */}
       {isProdApp && (
         <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
           <VStack gap="space-16">
@@ -274,213 +249,21 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
               </Heading>
               <BodyShort textColor="subtle" size="small">
                 Generer leveranserapport for revisjon. Rapporten dokumenterer four-eyes-prinsippet for alle deployments
-                i valgt år.
+                i valgt periode.
               </BodyShort>
             </div>
 
-            <Form method="post">
-              <input type="hidden" name="app_id" value={app.id} />
-              {selectedPeriod && (
-                <>
-                  <input type="hidden" name="year" value={selectedPeriod.year} />
-                  <input type="hidden" name="period_type" value={selectedPeriod.type} />
-                  <input type="hidden" name="period_label" value={selectedPeriod.label} />
-                  <input type="hidden" name="period_start" value={toDateString(selectedPeriod.startDate)} />
-                  <input type="hidden" name="period_end" value={toDateString(selectedPeriod.endDate)} />
-                </>
-              )}
-              <VStack gap="space-16">
-                <HStack gap="space-16" align="end" wrap>
-                  <Select
-                    label="Rapporttype"
-                    value={periodType}
-                    onChange={(e) => {
-                      setPeriodType(e.target.value as ReportPeriodType)
-                      setSelectedPeriodIndex(0)
-                    }}
-                    size="small"
-                    style={{ minWidth: '140px' }}
-                  >
-                    {Object.entries(REPORT_PERIOD_TYPE_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </Select>
-
-                  <Select
-                    label="Periode"
-                    value={String(selectedPeriodIndex)}
-                    onChange={(e) => setSelectedPeriodIndex(Number(e.target.value))}
-                    size="small"
-                    style={{ minWidth: '180px' }}
-                  >
-                    {availablePeriods.map((period, index) => (
-                      <option key={period.label} value={index}>
-                        {period.label}
-                      </option>
-                    ))}
-                  </Select>
-
-                  <Button
-                    type="submit"
-                    name="action"
-                    value="check_readiness"
-                    variant="secondary"
-                    size="small"
-                    loading={isSubmitting && navigation.formData?.get('action') === 'check_readiness'}
-                    disabled={!selectedPeriod || !!pendingJobId}
-                  >
-                    Kontroller grunnlag
-                  </Button>
-
-                  <Button
-                    type="submit"
-                    name="action"
-                    value="generate_report"
-                    variant="primary"
-                    size="small"
-                    loading={
-                      (isSubmitting && navigation.formData?.get('action') === 'generate_report') || !!pendingJobId
-                    }
-                    disabled={
-                      !readinessData?.is_ready ||
-                      !!pendingJobId ||
-                      (!!existingReportForPeriod && !supersedeReason.trim())
-                    }
-                  >
-                    {pendingJobId ? 'Genererer...' : existingReportForPeriod ? 'Erstatt rapport' : 'Generer rapport'}
-                  </Button>
-                </HStack>
-
-                {existingReportForPeriod && (
-                  <Alert variant="warning" size="small">
-                    <VStack gap="space-8">
-                      <BodyShort size="small" weight="semibold">
-                        Det finnes allerede en rapport for {selectedPeriod?.label}
-                      </BodyShort>
-                      <BodyShort size="small">
-                        Eksisterende rapport ({existingReportForPeriod.report_id}) vil bli markert som erstattet. Du må
-                        oppgi en begrunnelse for hvorfor rapporten genereres på nytt.
-                      </BodyShort>
-                      <Textarea
-                        label="Begrunnelse for ny rapport"
-                        name="supersede_reason"
-                        value={supersedeReason}
-                        onChange={(e) => setSupersedeReason(e.target.value)}
-                        description="Forklar hvorfor rapporten må genereres på nytt"
-                        size="small"
-                        minRows={2}
-                      />
-                    </VStack>
-                  </Alert>
-                )}
-
-                {/* Readiness check result */}
-                {readinessData && (
-                  <Box
-                    padding="space-16"
-                    borderRadius="4"
-                    background={readinessData.is_ready ? 'success-soft' : 'warning-soft'}
-                  >
-                    <VStack gap="space-8">
-                      <HStack gap="space-8" align="center">
-                        {readinessData.is_ready ? (
-                          <>
-                            <CheckmarkCircleIcon aria-hidden fontSize="1.5rem" />
-                            <Heading size="xsmall" level="3">
-                              Klar for leveranserapport
-                            </Heading>
-                          </>
-                        ) : (
-                          <>
-                            <ExclamationmarkTriangleIcon aria-hidden fontSize="1.5rem" />
-                            <Heading size="xsmall" level="3">
-                              Ikke klar
-                            </Heading>
-                          </>
-                        )}
-                      </HStack>
-
-                      <HStack gap="space-24" wrap>
-                        <div>
-                          <Detail>Totalt deployments</Detail>
-                          <BodyShort weight="semibold">{readinessData.total_deployments}</BodyShort>
-                        </div>
-                        <div>
-                          <Detail>Godkjent</Detail>
-                          <BodyShort weight="semibold">{readinessData.approved_count}</BodyShort>
-                        </div>
-                        {readinessData.legacy_count > 0 && (
-                          <div>
-                            <Detail>Legacy</Detail>
-                            <BodyShort weight="semibold">{readinessData.legacy_count}</BodyShort>
-                          </div>
-                        )}
-                        <div>
-                          <Detail>Venter godkjenning</Detail>
-                          <BodyShort weight="semibold">{readinessData.pending_count}</BodyShort>
-                        </div>
-                        {readinessData.missing_approver_count > 0 && (
-                          <div>
-                            <Detail>Mangler godkjenner</Detail>
-                            <BodyShort weight="semibold">{readinessData.missing_approver_count}</BodyShort>
-                          </div>
-                        )}
-                      </HStack>
-
-                      {readinessData.pending_count > 0 && (
-                        <div>
-                          <Detail>Deployments som mangler godkjenning:</Detail>
-                          <VStack gap="space-4">
-                            {readinessData.pending_deployments.map((d) => (
-                              <HStack key={d.id} gap="space-8" align="center">
-                                <AkselLink as={Link} to={`${appUrl}/deployments/${d.id}`}>
-                                  {d.commit_sha?.substring(0, 7) || 'N/A'}
-                                </AkselLink>
-                                <BodyShort size="small">
-                                  {new Date(d.created_at).toLocaleDateString('no-NO')} •{' '}
-                                  <UserName
-                                    username={d.deployer_username}
-                                    userMappings={readinessUserMappings}
-                                    link={false}
-                                  />{' '}
-                                  • {getFourEyesStatusLabel(d.four_eyes_status)}
-                                </BodyShort>
-                              </HStack>
-                            ))}
-                          </VStack>
-                        </div>
-                      )}
-
-                      {readinessData.missing_approver_count > 0 && (
-                        <div>
-                          <Detail>Godkjente deployments som mangler godkjenner-data:</Detail>
-                          <VStack gap="space-4">
-                            {readinessData.missing_approver_deployments.map((d) => (
-                              <HStack key={d.id} gap="space-8" align="center">
-                                <AkselLink as={Link} to={`${appUrl}/deployments/${d.id}`}>
-                                  {d.commit_sha?.substring(0, 7) || 'N/A'}
-                                </AkselLink>
-                                <BodyShort size="small">
-                                  {new Date(d.created_at).toLocaleDateString('no-NO')} •{' '}
-                                  <UserName
-                                    username={d.deployer_username}
-                                    userMappings={readinessUserMappings}
-                                    link={false}
-                                  />{' '}
-                                  • {getFourEyesStatusLabel(d.four_eyes_status)}
-                                </BodyShort>
-                              </HStack>
-                            ))}
-                          </VStack>
-                        </div>
-                      )}
-                    </VStack>
-                  </Box>
-                )}
-              </VStack>
-            </Form>
+            <AuditReportGenerateSection
+              appId={app.id}
+              appUrl={appUrl}
+              auditReports={auditReports}
+              auditStartYear={app.audit_start_year ?? undefined}
+              readinessData={readinessData}
+              readinessUserMappings={readinessUserMappings}
+              isSubmitting={isSubmitting}
+              isCheckingReadiness={isSubmitting && navigation.formData?.get('action') === 'check_readiness'}
+              pendingJobId={pendingJobId}
+            />
 
             {/* Existing reports for this app */}
             <AuditReportList reports={auditReports} appId={app.id} showArchiveActions displayNameMap={displayNameMap} />
