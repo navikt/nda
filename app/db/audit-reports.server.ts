@@ -181,6 +181,9 @@ interface AuditReportSummary {
   pr_approved_count: number
   manually_approved_count: number
   generated_at: Date
+  archived_at: Date | null
+  archived_by: string | null
+  archive_reason: string | null
 }
 
 interface AuditReadinessCheck {
@@ -812,7 +815,12 @@ export async function saveAuditReport(params: {
       report_data = EXCLUDED.report_data,
       content_hash = EXCLUDED.content_hash,
       generated_at = NOW(),
-      generated_by = EXCLUDED.generated_by
+      generated_by = EXCLUDED.generated_by,
+      archived_at = NULL,
+      archived_by = NULL,
+      archive_reason = NULL,
+      restored_at = NULL,
+      restored_by = NULL
     RETURNING *`,
     [
       reportId,
@@ -849,12 +857,13 @@ export async function getAuditReportById(id: number): Promise<AuditReport | null
 }
 
 /**
- * Get all audit reports (summary)
+ * Get all audit reports (summary) — includes archived reports for admin views
  */
 export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
     `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label,
-            total_deployments, pr_approved_count, manually_approved_count, generated_at
+            total_deployments, pr_approved_count, manually_approved_count, generated_at,
+            archived_at, archived_by, archive_reason
      FROM audit_reports
      ORDER BY generated_at DESC`,
   )
@@ -862,12 +871,29 @@ export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
 }
 
 /**
- * Get audit reports for a specific app
+ * Get audit reports for a specific app — excludes archived reports (public views)
  */
 export async function getAuditReportsForApp(monitoredAppId: number): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
     `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label,
-            total_deployments, pr_approved_count, manually_approved_count, generated_at
+            total_deployments, pr_approved_count, manually_approved_count, generated_at,
+            archived_at, archived_by, archive_reason
+     FROM audit_reports
+     WHERE monitored_app_id = $1 AND archived_at IS NULL
+     ORDER BY year DESC, period_start DESC`,
+    [monitoredAppId],
+  )
+  return result.rows
+}
+
+/**
+ * Get audit reports for a specific app — includes archived reports (admin views)
+ */
+export async function getAuditReportsForAppAdmin(monitoredAppId: number): Promise<AuditReportSummary[]> {
+  const result = await pool.query<AuditReportSummary>(
+    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label,
+            total_deployments, pr_approved_count, manually_approved_count, generated_at,
+            archived_at, archived_by, archive_reason
      FROM audit_reports
      WHERE monitored_app_id = $1
      ORDER BY year DESC, period_start DESC`,
@@ -881,4 +907,32 @@ export async function getAuditReportsForApp(monitoredAppId: number): Promise<Aud
  */
 export async function updateAuditReportPdf(reportId: number, pdfData: Buffer): Promise<void> {
   await pool.query('UPDATE audit_reports SET pdf_data = $1 WHERE id = $2', [pdfData, reportId])
+}
+
+/**
+ * Archive an audit report with a reason. Scoped to monitoredAppId for IDOR protection.
+ */
+export async function archiveAuditReport(
+  id: number,
+  monitoredAppId: number,
+  archivedBy: string,
+  reason: string,
+): Promise<boolean> {
+  const result = await pool.query(
+    'UPDATE audit_reports SET archived_at = NOW(), archived_by = $1, archive_reason = $2 WHERE id = $3 AND monitored_app_id = $4 AND archived_at IS NULL',
+    [archivedBy, reason, id, monitoredAppId],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
+/**
+ * Restore (unarchive) an audit report. Scoped to monitoredAppId for IDOR protection.
+ * Preserves archive metadata and records who restored it.
+ */
+export async function restoreAuditReport(id: number, monitoredAppId: number, restoredBy: string): Promise<boolean> {
+  const result = await pool.query(
+    'UPDATE audit_reports SET archived_at = NULL, restored_at = NOW(), restored_by = $1 WHERE id = $2 AND monitored_app_id = $3 AND archived_at IS NOT NULL',
+    [restoredBy, id, monitoredAppId],
+  )
+  return (result.rowCount ?? 0) > 0
 }

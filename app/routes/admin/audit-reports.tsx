@@ -15,6 +15,7 @@ import {
 } from '@navikt/ds-react'
 import { Link, useLoaderData } from 'react-router'
 import { getAllAuditReports } from '~/db/audit-reports.server'
+import { getAllUserMappings } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/audit-reports'
@@ -22,8 +23,18 @@ import type { Route } from './+types/audit-reports'
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const reports = await getAllAuditReports()
-  return { reports }
+  const [reports, userMappings] = await Promise.all([getAllAuditReports(), getAllUserMappings()])
+
+  const displayNameMap: Record<string, string> = Object.fromEntries(
+    userMappings
+      .filter(
+        (u): u is typeof u & { nav_ident: string; display_name: string } =>
+          u.nav_ident != null && u.display_name != null,
+      )
+      .map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
+  )
+
+  return { reports, displayNameMap }
 }
 
 export function meta() {
@@ -42,7 +53,7 @@ function formatDateTime(date: Date | string): string {
 }
 
 export default function AdminAuditReports() {
-  const { reports } = useLoaderData<typeof loader>()
+  const { reports, displayNameMap } = useLoaderData<typeof loader>()
 
   return (
     <VStack gap="space-24">
@@ -84,9 +95,18 @@ export default function AdminAuditReports() {
                   </Table.Header>
                   <Table.Body>
                     {reports.map((report) => (
-                      <Table.Row key={report.id}>
+                      <Table.Row key={report.id} style={report.archived_at ? { opacity: 0.5 } : undefined}>
                         <Table.DataCell>
                           <code style={{ fontSize: '0.75rem' }}>{report.report_id}</code>
+                          {report.archived_at && (
+                            <Detail textColor="subtle">
+                              Arkivert
+                              {report.archived_by
+                                ? ` av ${displayNameMap[report.archived_by.toUpperCase()] ?? report.archived_by}`
+                                : ''}
+                              : {report.archive_reason}
+                            </Detail>
+                          )}
                         </Table.DataCell>
                         <Table.DataCell>
                           <VStack gap="space-2">
@@ -142,7 +162,13 @@ export default function AdminAuditReports() {
               <Hide above="md">
                 <div>
                   {reports.map((report) => (
-                    <Box key={report.id} padding="space-16" background="default" className={styles.stackedListItem}>
+                    <Box
+                      key={report.id}
+                      padding="space-16"
+                      background="default"
+                      className={styles.stackedListItem}
+                      style={report.archived_at ? { opacity: 0.5 } : undefined}
+                    >
                       <VStack gap="space-8">
                         <HStack justify="space-between" align="start" wrap>
                           <div>
@@ -160,6 +186,15 @@ export default function AdminAuditReports() {
                             {report.total_deployments} deployments
                           </Tag>
                         </HStack>
+                        {report.archived_at && (
+                          <Detail textColor="subtle">
+                            Arkivert
+                            {report.archived_by
+                              ? ` av ${displayNameMap[report.archived_by.toUpperCase()] ?? report.archived_by}`
+                              : ''}
+                            : {report.archive_reason}
+                          </Detail>
+                        )}
                         <Detail>Generert: {formatDateTime(report.generated_at)}</Detail>
                         <code style={{ fontSize: '0.65rem', wordBreak: 'break-all' }}>{report.report_id}</code>
                         <HStack gap="space-8">

@@ -19,12 +19,14 @@ import {
 } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
 import { Form, Link, useFetcher, useNavigation, useRevalidator } from 'react-router'
+import { AuditReportList } from '~/components/AuditReportList'
 import { UserName } from '~/components/UserName'
 import { getAppConfigAuditLog, getImplicitApprovalSettings } from '~/db/app-settings.server'
-import { getAuditReportsForApp } from '~/db/audit-reports.server'
+import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getGitHubDataStatsForApp } from '~/db/github-data.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getLatestSyncJob, type SyncJob } from '~/db/sync-jobs.server'
+import { getAllUserMappings } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import { getCompletedPeriods, REPORT_PERIOD_TYPE_LABELS, type ReportPeriodType } from '~/lib/report-periods'
@@ -50,14 +52,24 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   // Check if this is a production app (audit reports only make sense for prod)
   const isProdApp = app.environment_name.startsWith('prod-')
 
-  const [implicitApprovalSettings, recentConfigChanges, auditReports, latestFetchJob, githubDataStats] =
+  const [implicitApprovalSettings, recentConfigChanges, auditReports, latestFetchJob, githubDataStats, userMappings] =
     await Promise.all([
       getImplicitApprovalSettings(app.id),
       getAppConfigAuditLog(app.id, { limit: 10 }),
-      getAuditReportsForApp(app.id),
+      getAuditReportsForAppAdmin(app.id),
       getLatestSyncJob(app.id, 'fetch_verification_data'),
       getGitHubDataStatsForApp(app.id, app.audit_start_year),
+      getAllUserMappings(),
     ])
+
+  const displayNameMap: Record<string, string> = Object.fromEntries(
+    userMappings
+      .filter(
+        (u): u is typeof u & { nav_ident: string; display_name: string } =>
+          u.nav_ident != null && u.display_name != null,
+      )
+      .map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
+  )
 
   return {
     app,
@@ -67,6 +79,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     isProdApp,
     latestFetchJob,
     githubDataStats,
+    displayNameMap,
   }
 }
 
@@ -79,6 +92,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     isProdApp,
     latestFetchJob,
     githubDataStats,
+    displayNameMap,
   } = loaderData
   const navigation = useNavigation()
   const revalidator = useRevalidator()
@@ -425,27 +439,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
             </Form>
 
             {/* Existing reports for this app */}
-            {auditReports.length > 0 && (
-              <VStack gap="space-8">
-                <Label>Eksisterende rapporter</Label>
-                <VStack gap="space-4">
-                  {auditReports.map((report) => (
-                    <HStack key={report.id} gap="space-16" align="center">
-                      <BodyShort weight="semibold">{report.period_label}</BodyShort>
-                      <Detail textColor="subtle">{report.report_id}</Detail>
-                      <HStack gap="space-8">
-                        <AkselLink href={`/admin/audit-reports/${report.id}/view`} target="_blank">
-                          Vis
-                        </AkselLink>
-                        <AkselLink href={`/admin/audit-reports/${report.id}/pdf`} target="_blank">
-                          Last ned
-                        </AkselLink>
-                      </HStack>
-                    </HStack>
-                  ))}
-                </VStack>
-              </VStack>
-            )}
+            <AuditReportList reports={auditReports} appId={app.id} showArchiveActions displayNameMap={displayNameMap} />
           </VStack>
         </Box>
       )}
