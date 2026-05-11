@@ -3,6 +3,8 @@
  * Shared between server and client code.
  */
 
+import { toDateString } from './date-utils'
+
 export type ReportPeriodType = 'yearly' | 'tertiary' | 'quarterly' | 'monthly'
 
 const VALID_PERIOD_TYPES: ReadonlySet<string> = new Set<ReportPeriodType>([
@@ -158,11 +160,6 @@ export const REPORT_PERIOD_TYPE_LABELS: Record<ReportPeriodType, string> = {
   monthly: 'Månedlig',
 }
 
-/** Format a Date as YYYY-MM-DD using local time (no timezone shift). */
-export function formatDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 /** Minimal shape needed to match existing reports against a selected period. */
 interface ReportForPeriodMatch {
   period_type: ReportPeriodType
@@ -182,7 +179,7 @@ export function findExistingReportForPeriod<T extends ReportForPeriodMatch>(
   return reports.find(
     (r) =>
       r.period_type === selectedPeriod.type &&
-      formatDateKey(r.period_start) === formatDateKey(selectedPeriod.startDate) &&
+      toDateString(r.period_start) === toDateString(selectedPeriod.startDate) &&
       !r.archived_at &&
       !r.superseded_at,
   )

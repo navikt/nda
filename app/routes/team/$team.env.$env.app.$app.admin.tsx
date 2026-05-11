@@ -29,10 +29,10 @@ import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.s
 import { getLatestSyncJob, type SyncJob } from '~/db/sync-jobs.server'
 import { getAllUserMappings } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
+import { toDateString } from '~/lib/date-utils'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import {
   findExistingReportForPeriod,
-  formatDateKey,
   getCompletedPeriods,
   REPORT_PERIOD_TYPE_LABELS,
   type ReportPeriodType,
@@ -285,8 +285,8 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                   <input type="hidden" name="year" value={selectedPeriod.year} />
                   <input type="hidden" name="period_type" value={selectedPeriod.type} />
                   <input type="hidden" name="period_label" value={selectedPeriod.label} />
-                  <input type="hidden" name="period_start" value={formatDateKey(selectedPeriod.startDate)} />
-                  <input type="hidden" name="period_end" value={formatDateKey(selectedPeriod.endDate)} />
+                  <input type="hidden" name="period_start" value={toDateString(selectedPeriod.startDate)} />
+                  <input type="hidden" name="period_end" value={toDateString(selectedPeriod.endDate)} />
                 </>
               )}
               <VStack gap="space-16">

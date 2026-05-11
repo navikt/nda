@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { toDateString } from '../date-utils'
 import {
   findExistingReportForPeriod,
-  formatDateKey,
   generateReportId,
   getCompletedPeriods,
   isPeriodCompleted,
@@ -258,16 +258,16 @@ describe('generateReportId', () => {
   })
 })
 
-describe('formatDateKey', () => {
+describe('toDateString', () => {
   it('formats Date as YYYY-MM-DD', () => {
-    expect(formatDateKey(new Date(2025, 0, 1))).toBe('2025-01-01')
-    expect(formatDateKey(new Date(2025, 11, 31))).toBe('2025-12-31')
-    expect(formatDateKey(new Date(2026, 4, 1))).toBe('2026-05-01')
+    expect(toDateString(new Date(2025, 0, 1))).toBe('2025-01-01')
+    expect(toDateString(new Date(2025, 11, 31))).toBe('2025-12-31')
+    expect(toDateString(new Date(2026, 4, 1))).toBe('2026-05-01')
   })
 
   it('pads single-digit month and day', () => {
-    expect(formatDateKey(new Date(2025, 0, 5))).toBe('2025-01-05')
-    expect(formatDateKey(new Date(2025, 8, 9))).toBe('2025-09-09')
+    expect(toDateString(new Date(2025, 0, 5))).toBe('2025-01-05')
+    expect(toDateString(new Date(2025, 8, 9))).toBe('2025-09-09')
   })
 })
 
