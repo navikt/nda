@@ -12,7 +12,7 @@ import {
   Textarea,
   VStack,
 } from '@navikt/ds-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Form, Link } from 'react-router'
 import type { AuditReadinessCheck, AuditReportSummary } from '~/db/audit-reports.server'
 import { toDateString } from '~/lib/date-utils'
@@ -33,9 +33,11 @@ interface AuditReportGenerateSectionProps {
   auditReports: AuditReportSummary[]
   auditStartYear?: number
   readinessData?: AuditReadinessCheck
+  /** The period key (e.g. "yearly:2025-01-01") that readinessData was checked for. */
+  readinessPeriodKey?: string
   readinessUserMappings: UserMappings
-  isSubmitting: boolean
   isCheckingReadiness: boolean
+  isGeneratingReport: boolean
   pendingJobId: string | null
 }
 
@@ -45,9 +47,10 @@ export function AuditReportGenerateSection({
   auditReports,
   auditStartYear,
   readinessData,
+  readinessPeriodKey,
   readinessUserMappings,
-  isSubmitting,
   isCheckingReadiness,
+  isGeneratingReport,
   pendingJobId,
 }: AuditReportGenerateSectionProps) {
   const [periodType, setPeriodType] = useState<ReportPeriodType>('yearly')
@@ -57,6 +60,16 @@ export function AuditReportGenerateSection({
 
   const existingReportForPeriod = selectedPeriod ? findExistingReportForPeriod(auditReports, selectedPeriod) : undefined
   const [supersedeReason, setSupersedeReason] = useState('')
+
+  // Reset supersede reason when period selection changes
+  const currentPeriodKey = selectedPeriod ? `${selectedPeriod.type}:${toDateString(selectedPeriod.startDate)}` : ''
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset side-effect on period change
+  useEffect(() => {
+    setSupersedeReason('')
+  }, [currentPeriodKey])
+
+  // Only show readiness data if it matches the currently selected period
+  const readinessMatchesPeriod = readinessPeriodKey === currentPeriodKey
 
   return (
     <Form method="post">
@@ -118,18 +131,18 @@ export function AuditReportGenerateSection({
         </HStack>
 
         {/* Steg 2: Readiness-resultat */}
-        {readinessData && (
+        {readinessData && readinessMatchesPeriod && (
           <ReadinessResult readinessData={readinessData} appUrl={appUrl} userMappings={readinessUserMappings} />
         )}
 
         {/* Steg 3: Generer/Erstatt rapport (bare når klar) */}
-        {readinessData?.is_ready && (
+        {readinessData?.is_ready && readinessMatchesPeriod && (
           <GenerateAction
             selectedPeriod={selectedPeriod}
             existingReportForPeriod={existingReportForPeriod}
             supersedeReason={supersedeReason}
             onSupersedeReasonChange={setSupersedeReason}
-            isSubmitting={isSubmitting}
+            isGeneratingReport={isGeneratingReport}
             pendingJobId={pendingJobId}
           />
         )}
@@ -254,14 +267,14 @@ function GenerateAction({
   existingReportForPeriod,
   supersedeReason,
   onSupersedeReasonChange,
-  isSubmitting,
+  isGeneratingReport,
   pendingJobId,
 }: {
   selectedPeriod: ReportPeriod | undefined
   existingReportForPeriod: AuditReportSummary | undefined
   supersedeReason: string
   onSupersedeReasonChange: (reason: string) => void
-  isSubmitting: boolean
+  isGeneratingReport: boolean
   pendingJobId: string | null
 }) {
   return (
@@ -296,7 +309,7 @@ function GenerateAction({
           value="generate_report"
           variant="primary"
           size="small"
-          loading={(isSubmitting && !pendingJobId) || !!pendingJobId}
+          loading={(isGeneratingReport && !pendingJobId) || !!pendingJobId}
           disabled={!!pendingJobId || (!!existingReportForPeriod && !supersedeReason.trim())}
         >
           {pendingJobId ? 'Genererer...' : existingReportForPeriod ? 'Erstatt rapport' : 'Generer rapport'}

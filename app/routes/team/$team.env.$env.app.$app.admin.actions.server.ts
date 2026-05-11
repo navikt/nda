@@ -236,7 +236,10 @@ export async function action({ request }: { request: Request; params: Record<str
     const uniqueDeployers = [...new Set(deployerUsernames)]
     const userMappings = uniqueDeployers.length > 0 ? await getUserMappings(uniqueDeployers) : new Map()
 
-    return { readiness, userMappings: serializeUserMappings(userMappings) }
+    const periodType = formData.get('period_type') as string
+    const readinessPeriodKey = `${periodType}:${periodStart}`
+
+    return { readiness, readinessPeriodKey, userMappings: serializeUserMappings(userMappings) }
   }
 
   if (action === 'generate_report') {

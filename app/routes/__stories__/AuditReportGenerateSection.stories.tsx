@@ -10,8 +10,8 @@ const meta: Meta<typeof AuditReportGenerateSection> = {
     appUrl: '/team/testteam/env/prod-gcp/app/test-app',
     auditReports: [],
     readinessUserMappings: {},
-    isSubmitting: false,
     isCheckingReadiness: false,
+    isGeneratingReport: false,
     pendingJobId: null,
   },
 }
@@ -109,6 +109,7 @@ export const FørKontroll: Story = {
 export const KlarForRapport: Story = {
   args: {
     readinessData: readyReadiness,
+    readinessPeriodKey: 'yearly:2025-01-01',
   },
 }
 
@@ -116,6 +117,7 @@ export const KlarForRapport: Story = {
 export const IkkeKlar: Story = {
   args: {
     readinessData: notReadyReadiness,
+    readinessPeriodKey: 'yearly:2025-01-01',
     readinessUserMappings: {
       gladfjord: { display_name: 'Glad Fjord', nav_ident: null },
       raskelv: { display_name: 'Rask Elv', nav_ident: null },
@@ -129,6 +131,7 @@ export const IkkeKlar: Story = {
 export const ErstattRapport: Story = {
   args: {
     readinessData: readyReadiness,
+    readinessPeriodKey: 'yearly:2025-01-01',
     auditReports: [existingReport],
   },
 }
@@ -137,6 +140,7 @@ export const ErstattRapport: Story = {
 export const Genererer: Story = {
   args: {
     readinessData: readyReadiness,
+    readinessPeriodKey: 'yearly:2025-01-01',
     pendingJobId: 'job-123',
   },
 }
@@ -145,6 +149,5 @@ export const Genererer: Story = {
 export const Kontrollerer: Story = {
   args: {
     isCheckingReadiness: true,
-    isSubmitting: true,
   },
 }

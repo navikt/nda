@@ -114,6 +114,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
 
   // Use action data for readiness (checked on demand)
   const readinessData = actionData?.readiness
+  const readinessPeriodKey = actionData?.readinessPeriodKey as string | undefined
   const readinessUserMappings = (actionData?.userMappings as UserMappings) ?? {}
 
   // Start polling when fetch job is started
@@ -259,9 +260,10 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
               auditReports={auditReports}
               auditStartYear={app.audit_start_year ?? undefined}
               readinessData={readinessData}
+              readinessPeriodKey={readinessPeriodKey}
               readinessUserMappings={readinessUserMappings}
-              isSubmitting={isSubmitting}
               isCheckingReadiness={isSubmitting && navigation.formData?.get('action') === 'check_readiness'}
+              isGeneratingReport={isSubmitting && navigation.formData?.get('action') === 'generate_report'}
               pendingJobId={pendingJobId}
             />
 
