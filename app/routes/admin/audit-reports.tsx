@@ -95,10 +95,22 @@ export default function AdminAuditReports() {
                   </Table.Header>
                   <Table.Body>
                     {reports.map((report) => (
-                      <Table.Row key={report.id} style={report.archived_at ? { opacity: 0.5 } : undefined}>
+                      <Table.Row
+                        key={report.id}
+                        style={report.archived_at || report.superseded_at ? { opacity: 0.5 } : undefined}
+                      >
                         <Table.DataCell>
                           <code style={{ fontSize: '0.75rem' }}>{report.report_id}</code>
-                          {report.archived_at && (
+                          {report.superseded_at && (
+                            <Detail textColor="subtle">
+                              Erstattet
+                              {report.superseded_by
+                                ? ` av ${displayNameMap[report.superseded_by.toUpperCase()] ?? report.superseded_by}`
+                                : ''}
+                              {report.supersede_reason ? `: ${report.supersede_reason}` : ''}
+                            </Detail>
+                          )}
+                          {report.archived_at && !report.superseded_at && (
                             <Detail textColor="subtle">
                               Arkivert
                               {report.archived_by
@@ -167,7 +179,7 @@ export default function AdminAuditReports() {
                       padding="space-16"
                       background="default"
                       className={styles.stackedListItem}
-                      style={report.archived_at ? { opacity: 0.5 } : undefined}
+                      style={report.archived_at || report.superseded_at ? { opacity: 0.5 } : undefined}
                     >
                       <VStack gap="space-8">
                         <HStack justify="space-between" align="start" wrap>
@@ -186,7 +198,16 @@ export default function AdminAuditReports() {
                             {report.total_deployments} deployments
                           </Tag>
                         </HStack>
-                        {report.archived_at && (
+                        {report.superseded_at && (
+                          <Detail textColor="subtle">
+                            Erstattet
+                            {report.superseded_by
+                              ? ` av ${displayNameMap[report.superseded_by.toUpperCase()] ?? report.superseded_by}`
+                              : ''}
+                            {report.supersede_reason ? `: ${report.supersede_reason}` : ''}
+                          </Detail>
+                        )}
+                        {report.archived_at && !report.superseded_at && (
                           <Detail textColor="subtle">
                             Arkivert
                             {report.archived_by

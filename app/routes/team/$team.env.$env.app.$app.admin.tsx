@@ -14,6 +14,7 @@ import {
   Loader,
   Select,
   Switch,
+  Textarea,
   TextField,
   VStack,
 } from '@navikt/ds-react'
@@ -117,6 +118,27 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
   const availablePeriods = getCompletedPeriods(periodType, new Date(), app.audit_start_year ?? undefined)
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0)
   const selectedPeriod = availablePeriods[selectedPeriodIndex] || availablePeriods[0]
+
+  // Check if selected period already has an active (non-archived, non-superseded) report
+  // Match on period_start (same key as server-side hasActiveReportForPeriod) using YYYY-MM-DD to avoid timezone issues
+  const formatDateKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const existingReportForPeriod = selectedPeriod
+    ? auditReports.find(
+        (r) =>
+          r.period_type === selectedPeriod.type &&
+          r.period_start.slice(0, 10) === formatDateKey(selectedPeriod.startDate) &&
+          !r.archived_at &&
+          !r.superseded_at,
+      )
+    : undefined
+  const [supersedeReason, setSupersedeReason] = useState('')
+
+  // Reset supersede reason when period selection changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset side-effect on period change
+  useEffect(() => {
+    setSupersedeReason('')
+  }, [selectedPeriod?.label])
 
   const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 
@@ -268,8 +290,8 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                   <input type="hidden" name="year" value={selectedPeriod.year} />
                   <input type="hidden" name="period_type" value={selectedPeriod.type} />
                   <input type="hidden" name="period_label" value={selectedPeriod.label} />
-                  <input type="hidden" name="period_start" value={selectedPeriod.startDate.toISOString()} />
-                  <input type="hidden" name="period_end" value={selectedPeriod.endDate.toISOString()} />
+                  <input type="hidden" name="period_start" value={formatDateKey(selectedPeriod.startDate)} />
+                  <input type="hidden" name="period_end" value={formatDateKey(selectedPeriod.endDate)} />
                 </>
               )}
               <VStack gap="space-16">
@@ -326,11 +348,38 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                     loading={
                       (isSubmitting && navigation.formData?.get('action') === 'generate_report') || !!pendingJobId
                     }
-                    disabled={!readinessData?.is_ready || !!pendingJobId}
+                    disabled={
+                      !readinessData?.is_ready ||
+                      !!pendingJobId ||
+                      (!!existingReportForPeriod && !supersedeReason.trim())
+                    }
                   >
-                    {pendingJobId ? 'Genererer...' : 'Generer rapport'}
+                    {pendingJobId ? 'Genererer...' : existingReportForPeriod ? 'Erstatt rapport' : 'Generer rapport'}
                   </Button>
                 </HStack>
+
+                {existingReportForPeriod && (
+                  <Alert variant="warning" size="small">
+                    <VStack gap="space-8">
+                      <BodyShort size="small" weight="semibold">
+                        Det finnes allerede en rapport for {selectedPeriod?.label}
+                      </BodyShort>
+                      <BodyShort size="small">
+                        Eksisterende rapport ({existingReportForPeriod.report_id}) vil bli markert som erstattet. Du må
+                        oppgi en begrunnelse for hvorfor rapporten genereres på nytt.
+                      </BodyShort>
+                      <Textarea
+                        label="Begrunnelse for ny rapport"
+                        name="supersede_reason"
+                        value={supersedeReason}
+                        onChange={(e) => setSupersedeReason(e.target.value)}
+                        description="Forklar hvorfor rapporten må genereres på nytt"
+                        size="small"
+                        minRows={2}
+                      />
+                    </VStack>
+                  </Alert>
+                )}
 
                 {/* Readiness check result */}
                 {readinessData && (

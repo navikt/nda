@@ -229,18 +229,24 @@ describe('isPeriodCompleted', () => {
 })
 
 describe('generateReportId', () => {
-  it('generates yearly report ID', () => {
+  it('generates yearly report ID with unique suffix', () => {
     const id = generateReportId('yearly', '2025', 'pensjon-pen', 'prod-gcp', 'abcdef1234567890')
-    expect(id).toBe('AUDIT-2025-pensjon-pen-prod-gcp-abcdef12')
+    expect(id).toMatch(/^AUDIT-2025-pensjon-pen-prod-gcp-abcdef12-[a-z0-9]+$/)
   })
 
   it('generates quarterly report ID with sanitized label', () => {
     const id = generateReportId('quarterly', 'Q3 2025', 'pensjon-pen', 'prod-gcp', 'abcdef1234567890')
-    expect(id).toBe('AUDIT-Q3-2025-pensjon-pen-prod-gcp-abcdef12')
+    expect(id).toMatch(/^AUDIT-Q3-2025-pensjon-pen-prod-gcp-abcdef12-[a-z0-9]+$/)
   })
 
   it('generates monthly report ID with sanitized label', () => {
     const id = generateReportId('monthly', 'Oktober 2025', 'pensjon-pen', 'prod-gcp', 'abcdef1234567890')
-    expect(id).toBe('AUDIT-Oktober-2025-pensjon-pen-prod-gcp-abcdef12')
+    expect(id).toMatch(/^AUDIT-Oktober-2025-pensjon-pen-prod-gcp-abcdef12-[a-z0-9]+$/)
+  })
+
+  it('generates unique IDs for identical inputs', () => {
+    const id1 = generateReportId('yearly', '2025', 'pensjon-pen', 'prod-gcp', 'abcdef1234567890')
+    const id2 = generateReportId('yearly', '2025', 'pensjon-pen', 'prod-gcp', 'abcdef1234567890')
+    expect(id1).not.toBe(id2)
   })
 })

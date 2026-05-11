@@ -5,6 +5,17 @@
 
 export type ReportPeriodType = 'yearly' | 'tertiary' | 'quarterly' | 'monthly'
 
+const VALID_PERIOD_TYPES: ReadonlySet<string> = new Set<ReportPeriodType>([
+  'yearly',
+  'tertiary',
+  'quarterly',
+  'monthly',
+])
+
+export function isValidReportPeriodType(value: string): value is ReportPeriodType {
+  return VALID_PERIOD_TYPES.has(value)
+}
+
 export interface ReportPeriod {
   type: ReportPeriodType
   label: string
@@ -136,7 +147,8 @@ export function generateReportId(
 ): string {
   const shortHash = hash.substring(0, 8)
   const sanitizedLabel = periodLabel.replace(/\s+/g, '-')
-  return `AUDIT-${sanitizedLabel}-${appName}-${environment}-${shortHash}`
+  const uniqueSuffix = globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+  return `AUDIT-${sanitizedLabel}-${appName}-${environment}-${shortHash}-${uniqueSuffix}`
 }
 
 export const REPORT_PERIOD_TYPE_LABELS: Record<ReportPeriodType, string> = {
