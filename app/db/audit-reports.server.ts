@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import type { PoolClient } from 'pg'
+import { toDateString } from '~/lib/date-utils'
 import { isApprovedStatus } from '~/lib/four-eyes-status'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import { generateReportId } from '~/lib/report-periods'
@@ -60,6 +62,10 @@ interface AuditReport {
   pdf_data: Buffer | null
   generated_at: Date
   generated_by: string | null
+  superseded_at: Date | null
+  superseded_by: string | null
+  supersede_reason: string | null
+  superseded_by_report_id: number | null
 }
 
 export interface AuditReportData {
@@ -177,6 +183,7 @@ interface AuditReportSummary {
   year: number
   period_type: ReportPeriodType
   period_label: string
+  period_start: string
   total_deployments: number
   pr_approved_count: number
   manually_approved_count: number
@@ -184,6 +191,10 @@ interface AuditReportSummary {
   archived_at: Date | null
   archived_by: string | null
   archive_reason: string | null
+  superseded_at: Date | null
+  superseded_by: string | null
+  supersede_reason: string | null
+  superseded_by_report_id: number | null
 }
 
 interface AuditReadinessCheck {
@@ -769,6 +780,7 @@ export async function saveAuditReport(params: {
   periodEnd: Date
   reportData: AuditReportData
   generatedBy?: string
+  supersedeReason?: string
 }): Promise<AuditReport> {
   const {
     monitoredAppId,
@@ -783,6 +795,7 @@ export async function saveAuditReport(params: {
     periodEnd,
     reportData,
     generatedBy,
+    supersedeReason,
   } = params
 
   const contentHash = calculateReportHash(reportData)
@@ -791,61 +804,78 @@ export async function saveAuditReport(params: {
   const prApprovedCount = reportData.deployments.filter((d) => d.method === 'pr').length
   const manuallyApprovedCount = reportData.deployments.filter((d) => d.method === 'manual').length
 
-  const result = await pool.query<AuditReport>(
-    `INSERT INTO audit_reports (
-      report_id, monitored_app_id, app_name, team_slug, environment_name, repository,
-      year, period_type, period_label, period_start, period_end,
-      total_deployments, pr_approved_count, manually_approved_count,
-      unique_deployers, unique_reviewers,
-      report_data, content_hash, generated_by
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-    ON CONFLICT (monitored_app_id, period_type, period_start) DO UPDATE SET
-      report_id = EXCLUDED.report_id,
-      app_name = EXCLUDED.app_name,
-      team_slug = EXCLUDED.team_slug,
-      environment_name = EXCLUDED.environment_name,
-      repository = EXCLUDED.repository,
-      period_label = EXCLUDED.period_label,
-      period_end = EXCLUDED.period_end,
-      total_deployments = EXCLUDED.total_deployments,
-      pr_approved_count = EXCLUDED.pr_approved_count,
-      manually_approved_count = EXCLUDED.manually_approved_count,
-      unique_deployers = EXCLUDED.unique_deployers,
-      unique_reviewers = EXCLUDED.unique_reviewers,
-      report_data = EXCLUDED.report_data,
-      content_hash = EXCLUDED.content_hash,
-      generated_at = NOW(),
-      generated_by = EXCLUDED.generated_by,
-      archived_at = NULL,
-      archived_by = NULL,
-      archive_reason = NULL,
-      restored_at = NULL,
-      restored_by = NULL
-    RETURNING *`,
-    [
-      reportId,
-      monitoredAppId,
-      appName,
-      teamSlug,
-      environmentName,
-      repository,
-      year,
-      periodType,
-      periodLabel,
-      periodStart,
-      periodEnd,
-      reportData.deployments.length,
-      prApprovedCount,
-      manuallyApprovedCount,
-      reportData.contributors.length,
-      reportData.reviewers.length,
-      JSON.stringify(reportData),
-      contentHash,
-      generatedBy || null,
-    ],
-  )
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
 
-  return result.rows[0]
+    // Step 1: Mark existing active reports as superseded (before INSERT to satisfy partial UNIQUE index)
+    const supersededIds = await supersedeExistingReports(
+      client,
+      monitoredAppId,
+      periodType,
+      periodStart,
+      generatedBy,
+      supersedeReason,
+    )
+
+    // Enforce: if we're actually superseding, a reason must be provided
+    if (supersededIds.length > 0 && !supersedeReason) {
+      throw new Error(
+        'Det finnes allerede en aktiv rapport for denne perioden. Du må oppgi en begrunnelse for å erstatte den.',
+      )
+    }
+
+    // Step 2: Insert new report (now safe — no active duplicates exist)
+    const result = await client.query<AuditReport>(
+      `INSERT INTO audit_reports (
+        report_id, monitored_app_id, app_name, team_slug, environment_name, repository,
+        year, period_type, period_label, period_start, period_end,
+        total_deployments, pr_approved_count, manually_approved_count,
+        unique_deployers, unique_reviewers,
+        report_data, content_hash, generated_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, $14, $15, $16, $17, $18, $19)
+      RETURNING *`,
+      [
+        reportId,
+        monitoredAppId,
+        appName,
+        teamSlug,
+        environmentName,
+        repository,
+        year,
+        periodType,
+        periodLabel,
+        toDateString(periodStart),
+        periodEnd,
+        reportData.deployments.length,
+        prApprovedCount,
+        manuallyApprovedCount,
+        reportData.contributors.length,
+        reportData.reviewers.length,
+        JSON.stringify(reportData),
+        contentHash,
+        generatedBy || null,
+      ],
+    )
+
+    const newReport = result.rows[0]
+
+    // Step 3: Back-fill superseded_by_report_id now that we have the new report's ID
+    if (supersededIds.length > 0) {
+      await client.query(`UPDATE audit_reports SET superseded_by_report_id = $1 WHERE id = ANY($2)`, [
+        newReport.id,
+        supersededIds,
+      ])
+    }
+
+    await client.query('COMMIT')
+    return newReport
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 /**
@@ -861,9 +891,10 @@ export async function getAuditReportById(id: number): Promise<AuditReport | null
  */
 export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label,
+    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
-            archived_at, archived_by, archive_reason
+            archived_at, archived_by, archive_reason,
+            superseded_at, superseded_by, supersede_reason, superseded_by_report_id
      FROM audit_reports
      ORDER BY generated_at DESC`,
   )
@@ -871,15 +902,16 @@ export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
 }
 
 /**
- * Get audit reports for a specific app — excludes archived reports (public views)
+ * Get audit reports for a specific app — excludes archived and superseded reports (public views)
  */
 export async function getAuditReportsForApp(monitoredAppId: number): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label,
+    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
-            archived_at, archived_by, archive_reason
+            archived_at, archived_by, archive_reason,
+            superseded_at, superseded_by, supersede_reason, superseded_by_report_id
      FROM audit_reports
-     WHERE monitored_app_id = $1 AND archived_at IS NULL
+     WHERE monitored_app_id = $1 AND archived_at IS NULL AND superseded_at IS NULL
      ORDER BY year DESC, period_start DESC`,
     [monitoredAppId],
   )
@@ -891,9 +923,10 @@ export async function getAuditReportsForApp(monitoredAppId: number): Promise<Aud
  */
 export async function getAuditReportsForAppAdmin(monitoredAppId: number): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label,
+    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
-            archived_at, archived_by, archive_reason
+            archived_at, archived_by, archive_reason,
+            superseded_at, superseded_by, supersede_reason, superseded_by_report_id
      FROM audit_reports
      WHERE monitored_app_id = $1
      ORDER BY year DESC, period_start DESC`,
@@ -935,4 +968,54 @@ export async function restoreAuditReport(id: number, monitoredAppId: number, res
     [restoredBy, id, monitoredAppId],
   )
   return (result.rowCount ?? 0) > 0
+}
+
+/**
+ * Mark existing active reports for a period as superseded.
+ * Returns the IDs of superseded reports so the caller can back-fill superseded_by_report_id.
+ * Must be called within a transaction via the provided client.
+ */
+async function supersedeExistingReports(
+  client: PoolClient,
+  monitoredAppId: number,
+  periodType: ReportPeriodType,
+  periodStart: Date,
+  supersededBy?: string,
+  supersedeReason?: string,
+): Promise<number[]> {
+  const result = await client.query<{ id: number }>(
+    `UPDATE audit_reports
+     SET superseded_at = NOW(),
+         superseded_by = $1,
+         supersede_reason = $2
+     WHERE monitored_app_id = $3
+       AND period_type = $4
+       AND period_start = $5::date
+       AND superseded_at IS NULL
+       AND archived_at IS NULL
+     RETURNING id`,
+    [supersededBy || null, supersedeReason || null, monitoredAppId, periodType, toDateString(periodStart)],
+  )
+  return result.rows.map((r) => r.id)
+}
+
+/**
+ * Check if an active (non-archived, non-superseded) report exists for a given period.
+ */
+export async function hasActiveReportForPeriod(
+  monitoredAppId: number,
+  periodType: ReportPeriodType,
+  periodStart: Date,
+): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1 FROM audit_reports
+     WHERE monitored_app_id = $1
+       AND period_type = $2
+       AND period_start = $3::date
+       AND superseded_at IS NULL
+       AND archived_at IS NULL
+     LIMIT 1`,
+    [monitoredAppId, periodType, toDateString(periodStart)],
+  )
+  return result.rows.length > 0
 }

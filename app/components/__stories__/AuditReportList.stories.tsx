@@ -17,6 +17,9 @@ const activeReport: AuditReportItem = {
   archived_at: null,
   archived_by: null,
   archive_reason: null,
+  superseded_at: null,
+  superseded_by: null,
+  supersede_reason: null,
 }
 
 const archivedReport: AuditReportItem = {
@@ -26,6 +29,9 @@ const archivedReport: AuditReportItem = {
   archived_at: new Date('2026-03-15T10:30:00Z'),
   archived_by: 'S654321',
   archive_reason: 'Erstattet av korrigert rapport med oppdaterte avvikstall',
+  superseded_at: null,
+  superseded_by: null,
+  supersede_reason: null,
 }
 
 const quarterlyReport: AuditReportItem = {
@@ -35,6 +41,21 @@ const quarterlyReport: AuditReportItem = {
   archived_at: null,
   archived_by: null,
   archive_reason: null,
+  superseded_at: null,
+  superseded_by: null,
+  supersede_reason: null,
+}
+
+const supersededReport: AuditReportItem = {
+  id: 4,
+  report_id: 'AUDIT-2025-pensjon-pen-prod-fss-x1y2z3',
+  period_label: 'Årsrapport 2025',
+  archived_at: null,
+  archived_by: null,
+  archive_reason: null,
+  superseded_at: new Date('2026-05-10T14:00:00Z'),
+  superseded_by: 'L123456',
+  supersede_reason: 'Korrigert etter oppdatering av verifiseringsdata for tre leveranser',
 }
 
 const mockDisplayNameMap: Record<string, string> = {
@@ -69,6 +90,24 @@ export const AllArchived: Story = {
         archive_reason: 'Feil i grunnlagsdata — PR-data manglet for tre leveranser',
       },
     ],
+    showArchiveActions: true,
+    displayNameMap: mockDisplayNameMap,
+  },
+}
+
+export const WithSupersededReport: Story = {
+  name: 'Med erstattet rapport',
+  args: {
+    reports: [activeReport, supersededReport, quarterlyReport],
+    showArchiveActions: true,
+    displayNameMap: mockDisplayNameMap,
+  },
+}
+
+export const MixedStatuses: Story = {
+  name: 'Alle statuser',
+  args: {
+    reports: [activeReport, supersededReport, archivedReport, quarterlyReport],
     showArchiveActions: true,
     displayNameMap: mockDisplayNameMap,
   },

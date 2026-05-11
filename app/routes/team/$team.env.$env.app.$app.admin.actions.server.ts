@@ -4,6 +4,7 @@ import {
   buildReportData,
   checkAuditReadiness,
   getAuditReportData,
+  hasActiveReportForPeriod,
   restoreAuditReport,
   saveAuditReport,
   updateAuditReportPdf,
@@ -25,9 +26,10 @@ import {
 import { getUserMappings } from '~/db/user-mappings.server'
 import { generateAuditReportPdf } from '~/lib/audit-report-pdf'
 import { requireAdmin } from '~/lib/auth.server'
+import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
-import type { ReportPeriodType } from '~/lib/report-periods'
+import { isValidReportPeriodType, type ReportPeriodType } from '~/lib/report-periods'
 import { serializeUserMappings } from '~/lib/user-display'
 import { fetchVerificationDataForAllDeployments } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
@@ -94,11 +96,12 @@ interface ReportJobParams {
   periodStart: Date
   periodEnd: Date
   generatedBy: string
+  supersedeReason?: string
 }
 
 // Async function to process report generation in background
 async function processReportJobAsync(params: ReportJobParams) {
-  const { jobId, appId, year, periodType, periodLabel, periodStart, periodEnd, generatedBy } = params
+  const { jobId, appId, year, periodType, periodLabel, periodStart, periodEnd, generatedBy, supersedeReason } = params
   try {
     await updateReportJobStatus(jobId, 'processing')
 
@@ -119,6 +122,7 @@ async function processReportJobAsync(params: ReportJobParams) {
       periodEnd,
       reportData,
       generatedBy,
+      supersedeReason,
     })
 
     // Generate PDF
@@ -213,7 +217,16 @@ export async function action({ request }: { request: Request; params: Record<str
     if (!appId || !periodStart || !periodEnd) {
       return { error: 'Mangler app eller periode' }
     }
-    const readiness = await checkAuditReadiness(appId, new Date(periodStart), new Date(periodEnd))
+
+    let parsedStart: Date
+    let readinessEnd: Date
+    try {
+      parsedStart = parseLocalDate(periodStart)
+      readinessEnd = endOfDay(parseLocalDate(periodEnd))
+    } catch {
+      return { error: 'Ugyldig datoformat for periode (forventet YYYY-MM-DD)' }
+    }
+    const readiness = await checkAuditReadiness(appId, parsedStart, readinessEnd)
 
     // Resolve display names for deployers in pending and missing approver lists
     const deployerUsernames = [
@@ -227,22 +240,40 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'generate_report') {
-    const periodType = (formData.get('period_type') as ReportPeriodType) || 'yearly'
+    const periodTypeRaw = formData.get('period_type') as string
     const periodLabel = formData.get('period_label') as string
     const periodStartStr = formData.get('period_start') as string
     const periodEndStr = formData.get('period_end') as string
     const year = Number(formData.get('year'))
+    const supersedeReason = (formData.get('supersede_reason') as string)?.trim() || undefined
 
     if (!appId || !periodStartStr || !periodEndStr || !periodLabel || !year) {
       return { error: 'Mangler påkrevde felter for rapportgenerering' }
     }
 
-    const periodStart = new Date(periodStartStr)
-    const periodEnd = new Date(periodEndStr)
+    if (!periodTypeRaw || !isValidReportPeriodType(periodTypeRaw)) {
+      return { error: 'Ugyldig periodetype' }
+    }
+    const periodType = periodTypeRaw
+
+    let periodStart: Date
+    let periodEnd: Date
+    try {
+      periodStart = parseLocalDate(periodStartStr)
+      periodEnd = endOfDay(parseLocalDate(periodEndStr))
+    } catch {
+      return { error: 'Ugyldig datoformat for periode (forventet YYYY-MM-DD)' }
+    }
 
     // Block incomplete periods
     if (periodEnd > new Date()) {
       return { error: 'Kan ikke generere rapport for ufullstendige perioder' }
+    }
+
+    // Require reason when superseding an existing report
+    const hasExisting = await hasActiveReportForPeriod(appId, periodType, periodStart)
+    if (hasExisting && !supersedeReason) {
+      return { error: 'Du må oppgi en begrunnelse når du erstatter en eksisterende rapport.' }
     }
 
     // Check readiness first
@@ -283,6 +314,7 @@ export async function action({ request }: { request: Request; params: Record<str
       periodStart,
       periodEnd,
       generatedBy: user.navIdent,
+      supersedeReason,
     }).catch((err) => {
       logger.error(`Report job ${jobId} failed:`, err)
     })
