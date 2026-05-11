@@ -7,12 +7,14 @@ export function formatPercent(value: number): string {
 }
 
 /**
- * Distribute percentages using the largest remainder method so they sum to exactly 100%.
+ * Distribute percentages using a largest remainder adjustment so they sum to exactly 100%
+ * when `total` is greater than 0.
  *
- * Each input count is converted to a percentage of the total, rounded to 1 decimal,
- * and adjusted so the displayed values always add up to 100.0%.
+ * Each input count is converted to a percentage of the total, truncated down to 1 decimal,
+ * then adjusted in 0.1 increments based on the largest remainders.
  *
- * Assumes `total` equals the sum of `counts` and all values are non-negative.
+ * Assumes `total` equals the sum of `counts` and all values are non-negative. If `total`
+ * is 0, returns "0" for every input count.
  *
  * Returns formatted strings (e.g. "99.6", "0.4", "0").
  */
