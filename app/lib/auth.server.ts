@@ -12,7 +12,7 @@ import { getSectionsForEntraGroups } from '~/db/sections.server'
 import { isJwtValidationConfigured, validateToken } from './jwt-validation.server'
 import { logger } from './logger.server'
 
-// Fallback admin group ID — used ONLY if no sections are configured in the DB
+// Fallback admin group ID — checked when no section grants admin or when the DB lookup fails
 const FALLBACK_GROUP_ADMIN = '1e97cbc6-0687-4d23-aebd-c611035279c1' // pensjon-revisjon
 
 type UserRole = 'admin' | 'user'
@@ -54,7 +54,7 @@ async function getRoleFromGroups(groups: string[] | undefined): Promise<UserRole
     const sections = await getSectionsForEntraGroups(groups)
     if (sections.some((s) => s.role === 'admin')) return 'admin'
   } catch (error) {
-    logger.warn(`Could not resolve sections from DB, falling back to hardcoded groups: ${error}`)
+    logger.warn(`Could not resolve sections from DB, falling back to hardcoded admin group: ${error}`)
   }
 
   // Fallback to hardcoded admin group (for backwards compatibility)
