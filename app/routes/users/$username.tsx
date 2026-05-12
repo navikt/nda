@@ -27,7 +27,11 @@ import { MethodTag, StatusTag } from '~/components/deployment-tags'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserRolesDisplay } from '~/components/UserRolesDisplay'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
-import { bulkAddDeploymentGoalLinks, getUnlinkedDependabotDeploymentIds } from '~/db/deployment-goal-links.server'
+import {
+  bulkAddDeploymentGoalLinks,
+  hasUnlinkedDependabotDeployments as checkHasUnlinkedDependabot,
+  getUnlinkedDependabotDeploymentIds,
+} from '~/db/deployment-goal-links.server'
 import {
   type DeployerTableFilters,
   getDeployerApps,
@@ -127,6 +131,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     )
   }
 
+  // Check if there are unlinked dependabot deployments (for bulk link button)
+  let hasUnlinkedDependabotDeployments = false
+  if (availableBoards.length > 0) {
+    hasUnlinkedDependabotDeployments = await checkHasUnlinkedDependabot(
+      username,
+      dateRange?.startDate,
+      dateRange?.endDate,
+      appFilter || undefined,
+    )
+  }
+
   let landingPage = 'my-teams'
   let allSections: { slug: string; name: string }[] = []
   if (isOwnProfile) {
@@ -158,6 +173,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     devTeams,
     userRoles,
     availableBoards,
+    hasUnlinkedDependabotDeployments,
     isOwnProfile,
     profileNavIdent: mapping?.nav_ident ?? null,
     canPrefillOwnMapping,
@@ -315,6 +331,7 @@ export default function UserPage() {
     devTeams,
     userRoles,
     availableBoards,
+    hasUnlinkedDependabotDeployments,
     isOwnProfile,
     profileNavIdent,
     canPrefillOwnMapping,
@@ -342,13 +359,15 @@ export default function UserPage() {
     setSearchParams(params)
   }
 
-  // Close modals when action succeeds
+  // Close modals when action completes (success or error)
   useEffect(() => {
-    if (actionData?.success && navigation.state === 'idle') {
-      modalRef.current?.close()
+    if ((actionData?.success || actionData?.error) && navigation.state === 'idle') {
       bulkLinkRef.current?.close()
       selectLinkRef.current?.close()
-      setSelectedIds(new Set())
+      if (actionData?.success) {
+        modalRef.current?.close()
+        setSelectedIds(new Set())
+      }
     }
   }, [actionData, navigation.state])
 
@@ -829,6 +848,7 @@ export default function UserPage() {
           appFilter={appFilter}
           availableBoards={availableBoards}
           isSubmitting={isSubmitting}
+          hasUnlinkedDeployments={hasUnlinkedDependabotDeployments}
         />
       )}
 

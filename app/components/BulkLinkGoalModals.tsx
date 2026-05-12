@@ -1,5 +1,5 @@
 import { Alert, BodyShort, Button, Modal, VStack } from '@navikt/ds-react'
-import { forwardRef, useMemo, useState } from 'react'
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Form } from 'react-router'
 import { endOfDay } from '~/lib/date-utils'
 import { GoalSelectionFields } from './GoalSelectionFields'
@@ -21,12 +21,41 @@ export const BulkLinkGoalModal = forwardRef<
     appFilter: string
     availableBoards: BulkLinkAvailableBoard[]
     isSubmitting: boolean
+    hasUnlinkedDeployments: boolean
   }
->(function BulkLinkGoalModal({ username, period, appFilter, availableBoards, isSubmitting }, ref) {
+>(function BulkLinkGoalModal(
+  { username, period, appFilter, availableBoards, isSubmitting, hasUnlinkedDeployments },
+  ref,
+) {
+  const internalRef = useRef<HTMLDialogElement>(null)
+  useImperativeHandle(ref, () => internalRef.current as HTMLDialogElement)
   const [hasObjective, setHasObjective] = useState(false)
 
+  if (!hasUnlinkedDeployments) {
+    return (
+      <Modal
+        ref={internalRef}
+        header={{ heading: 'Koble Dependabot-leveranser til endringsopphav' }}
+        closeOnBackdropClick
+      >
+        <Modal.Body>
+          <BodyShort>Ingen Dependabot-leveranser uten endringsopphav funnet.</BodyShort>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" size="small" type="button" onClick={() => internalRef.current?.close()}>
+            Lukk
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    )
+  }
+
   return (
-    <Modal ref={ref} header={{ heading: 'Koble Dependabot-leveranser til endringsopphav' }} closeOnBackdropClick>
+    <Modal
+      ref={internalRef}
+      header={{ heading: 'Koble Dependabot-leveranser til endringsopphav' }}
+      closeOnBackdropClick
+    >
       <Form method="post" id="bulk-link-form">
         <input type="hidden" name="intent" value="bulk_link_goal" />
         <input type="hidden" name="username" value={username} />
@@ -47,14 +76,7 @@ export const BulkLinkGoalModal = forwardRef<
           <Button type="submit" form="bulk-link-form" size="small" loading={isSubmitting} disabled={!hasObjective}>
             Koble alle
           </Button>
-          <Button
-            variant="secondary"
-            size="small"
-            type="button"
-            onClick={() => {
-              if (typeof ref === 'object' && ref?.current) ref.current.close()
-            }}
-          >
+          <Button variant="secondary" size="small" type="button" onClick={() => internalRef.current?.close()}>
             Avbryt
           </Button>
         </Modal.Footer>
@@ -72,6 +94,8 @@ export const SelectLinkGoalModal = forwardRef<
     isSubmitting: boolean
   }
 >(function SelectLinkGoalModal({ selectedIds, selectedDates, availableBoards, isSubmitting }, ref) {
+  const internalRef = useRef<HTMLDialogElement>(null)
+  useImperativeHandle(ref, () => internalRef.current as HTMLDialogElement)
   const [hasObjective, setHasObjective] = useState(false)
 
   // Filter boards to those covering any of the selected deployment dates
@@ -102,7 +126,7 @@ export const SelectLinkGoalModal = forwardRef<
 
   return (
     <Modal
-      ref={ref}
+      ref={internalRef}
       header={{ heading: `Koble ${selectedIds.length} leveranser til endringsopphav` }}
       closeOnBackdropClick
     >
@@ -137,14 +161,7 @@ export const SelectLinkGoalModal = forwardRef<
           <Button type="submit" form="select-link-form" size="small" loading={isSubmitting} disabled={!hasObjective}>
             Koble {selectedIds.length} leveranser
           </Button>
-          <Button
-            variant="secondary"
-            size="small"
-            type="button"
-            onClick={() => {
-              if (typeof ref === 'object' && ref?.current) ref.current.close()
-            }}
-          >
+          <Button variant="secondary" size="small" type="button" onClick={() => internalRef.current?.close()}>
             Avbryt
           </Button>
         </Modal.Footer>

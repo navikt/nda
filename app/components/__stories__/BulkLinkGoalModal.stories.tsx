@@ -82,6 +82,7 @@ export const Default: BulkStory = {
           appFilter=""
           availableBoards={mockBoards}
           isSubmitting={false}
+          hasUnlinkedDeployments={true}
         />
       )}
     </AutoOpenModal>
@@ -100,6 +101,7 @@ export const MedAppFilter: BulkStory = {
           appFilter="pensjon-selvbetjening"
           availableBoards={mockBoards}
           isSubmitting={false}
+          hasUnlinkedDeployments={true}
         />
       )}
     </AutoOpenModal>
@@ -118,6 +120,26 @@ export const Submitting: BulkStory = {
           appFilter=""
           availableBoards={mockBoards}
           isSubmitting={true}
+          hasUnlinkedDeployments={true}
+        />
+      )}
+    </AutoOpenModal>
+  ),
+}
+
+export const IngenLeveranser: BulkStory = {
+  name: 'Ingen Dependabot-leveranser',
+  render: () => (
+    <AutoOpenModal>
+      {(ref) => (
+        <BulkLinkGoalModal
+          ref={ref}
+          username="pcmoen"
+          period="T1 2026"
+          appFilter=""
+          availableBoards={mockBoards}
+          isSubmitting={false}
+          hasUnlinkedDeployments={false}
         />
       )}
     </AutoOpenModal>
