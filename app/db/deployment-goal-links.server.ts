@@ -215,6 +215,44 @@ export async function getUnlinkedDependabotDeploymentIds(
   endDate?: Date | null,
   appName?: string,
 ): Promise<number[]> {
+  const { whereSql, params } = buildUnlinkedDependabotWhere(deployerUsername, startDate, endDate, appName)
+
+  const result = await pool.query(
+    `SELECT d.id FROM deployments d
+     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+     ${whereSql}
+     ORDER BY d.created_at DESC`,
+    params,
+  )
+  return result.rows.map((r: { id: number }) => r.id)
+}
+
+export async function hasUnlinkedDependabotDeployments(
+  deployerUsername: string,
+  startDate?: Date | null,
+  endDate?: Date | null,
+  appName?: string,
+): Promise<boolean> {
+  const { whereSql, params } = buildUnlinkedDependabotWhere(deployerUsername, startDate, endDate, appName)
+
+  const result = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM deployments d
+       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+       ${whereSql}
+       LIMIT 1
+     ) AS has_unlinked`,
+    params,
+  )
+  return result.rows[0]?.has_unlinked === true
+}
+
+function buildUnlinkedDependabotWhere(
+  deployerUsername: string,
+  startDate?: Date | null,
+  endDate?: Date | null,
+  appName?: string,
+): { whereSql: string; params: (string | Date)[] } {
   let whereSql = `WHERE ${userDeploymentMatchSql(1)}
     AND LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]'
     AND ${AUDIT_START_YEAR_FILTER}
@@ -238,14 +276,7 @@ export async function getUnlinkedDependabotDeploymentIds(
     idx++
   }
 
-  const result = await pool.query(
-    `SELECT d.id FROM deployments d
-     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-     ${whereSql}
-     ORDER BY d.created_at DESC`,
-    params,
-  )
-  return result.rows.map((r: { id: number }) => r.id)
+  return { whereSql, params }
 }
 
 /**
