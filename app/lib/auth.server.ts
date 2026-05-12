@@ -12,9 +12,8 @@ import { getSectionsForEntraGroups } from '~/db/sections.server'
 import { isJwtValidationConfigured, validateToken } from './jwt-validation.server'
 import { logger } from './logger.server'
 
-// Fallback hardcoded group IDs — used ONLY if no sections are configured in the DB
+// Fallback admin group ID — used ONLY if no sections are configured in the DB
 const FALLBACK_GROUP_ADMIN = '1e97cbc6-0687-4d23-aebd-c611035279c1' // pensjon-revisjon
-const FALLBACK_GROUP_USER = '415d3817-c83d-44c9-a52b-5116757f8fa8' // teampensjon
 
 type UserRole = 'admin' | 'user'
 
@@ -44,26 +43,23 @@ export interface UserIdentity {
 
 /**
  * Determine user role from group memberships.
- * First checks sections in DB, then falls back to hardcoded groups.
+ * All authenticated users default to 'user' role. Admin role is granted
+ * if the user belongs to a section admin group or the fallback admin group.
  */
-async function getRoleFromGroups(groups: string[] | undefined): Promise<UserRole | null> {
-  if (!groups || groups.length === 0) return null
+async function getRoleFromGroups(groups: string[] | undefined): Promise<UserRole> {
+  if (!groups || groups.length === 0) return 'user'
 
   // Try DB-based section groups first
   try {
     const sections = await getSectionsForEntraGroups(groups)
-    if (sections.length > 0) {
-      // User is admin if they're admin in any section
-      return sections.some((s) => s.role === 'admin') ? 'admin' : 'user'
-    }
+    if (sections.some((s) => s.role === 'admin')) return 'admin'
   } catch (error) {
     logger.warn(`Could not resolve sections from DB, falling back to hardcoded groups: ${error}`)
   }
 
-  // Fallback to hardcoded groups (for backwards compatibility)
+  // Fallback to hardcoded admin group (for backwards compatibility)
   if (groups.includes(FALLBACK_GROUP_ADMIN)) return 'admin'
-  if (groups.includes(FALLBACK_GROUP_USER)) return 'user'
-  return null
+  return 'user'
 }
 
 /**
@@ -109,18 +105,13 @@ export async function getUserIdentity(request: Request): Promise<UserIdentity | 
         const groups = result.payload.groups ?? []
         const role = await getRoleFromGroups(groups)
 
-        if (role) {
-          return {
-            navIdent: result.payload.navIdent,
-            name: result.payload.name,
-            email: result.payload.email,
-            role,
-            entraGroups: groups,
-          }
+        return {
+          navIdent: result.payload.navIdent,
+          name: result.payload.name,
+          email: result.payload.email,
+          role,
+          entraGroups: groups,
         }
-        // User has valid token but not in authorized groups
-        logger.warn(`User ${result.payload.navIdent} not in authorized groups`)
-        return null
       }
 
       // Token validation failed
