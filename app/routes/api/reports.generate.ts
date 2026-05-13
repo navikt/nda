@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { data } from 'react-router'
 import { buildReportData, getAuditReportData } from '~/db/audit-reports.server'
-import { createReportJob, updateReportJobStatus } from '~/db/report-jobs.server'
+import { claimReportJob, createReportJob, isStaleJob, updateReportJobStatus } from '~/db/report-jobs.server'
 import { generateAuditReportPdf } from '~/lib/audit-report-pdf'
 import { requireAdmin } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
@@ -27,20 +27,25 @@ export async function action({ request }: Route.ActionArgs) {
   const periodStart = periodStartStr ? new Date(periodStartStr) : new Date(year, 0, 1)
   const periodEnd = periodEndStr ? new Date(periodEndStr) : new Date(year, 11, 31, 23, 59, 59)
 
-  const jobId = await createReportJob(monitoredAppId, year, periodType, periodLabel, periodStart, periodEnd)
+  const job = await createReportJob(monitoredAppId, year, periodType, periodLabel, periodStart, periodEnd)
 
-  // Start async processing (fire and forget)
-  processReportJob(jobId, monitoredAppId, periodStart, periodEnd).catch((err) => {
-    logger.error(`Report job ${jobId} failed:`, err)
-  })
+  if (job.created || isStaleJob({ status: job.status, created_at: job.createdAt, started_at: job.startedAt })) {
+    // Start async processing for new jobs or stale pending jobs (fire and forget)
+    processReportJob(job.jobId, monitoredAppId, periodStart, periodEnd).catch((err) => {
+      logger.error(`Report job ${job.jobId} failed:`, err)
+    })
+  }
 
-  return data({ jobId })
+  return data({ jobId: job.jobId })
 }
 
 // Async function to process the report job
 async function processReportJob(jobId: string, monitoredAppId: number, periodStart: Date, periodEnd: Date) {
   try {
-    await updateReportJobStatus(jobId, 'processing')
+    const claimed = await claimReportJob(jobId)
+    if (!claimed) {
+      return // Another processor already claimed this job
+    }
 
     const rawData = await getAuditReportData(monitoredAppId, periodStart, periodEnd)
     const reportData = buildReportData(rawData)

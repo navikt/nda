@@ -63,6 +63,17 @@ const ALL_ROUTES: { path: string; description: string }[] = [
 
   // M2M route (self-authenticated)
   { path: '/api/v1/apps/team/prod/myapp/verification-summary', description: 'M2M: verification summary' },
+  { path: '/api/v1/apps/team/prod/myapp/audit-reports', description: 'M2M: audit reports list' },
+  { path: '/api/v1/apps/team/prod/myapp/audit-reports/status', description: 'M2M: audit reports status' },
+  { path: '/api/v1/apps/team/prod/myapp/audit-reports/generate', description: 'M2M: audit reports generate' },
+  {
+    path: '/api/v1/apps/team/prod/myapp/audit-reports/jobs/00000000-0000-0000-0000-000000000000',
+    description: 'M2M: audit reports job status',
+  },
+  {
+    path: '/api/v1/apps/team/prod/myapp/audit-reports/AUDIT-2025-myapp-abc123/download',
+    description: 'M2M: audit reports download',
+  },
 
   // Browser routes inside layout
   { path: '/', description: 'Home' },

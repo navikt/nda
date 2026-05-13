@@ -1,16 +1,12 @@
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
 import {
   archiveAuditReport,
-  buildReportData,
   checkAuditReadiness,
-  getAuditReportData,
   hasActiveReportForPeriod,
   restoreAuditReport,
-  saveAuditReport,
-  updateAuditReportPdf,
 } from '~/db/audit-reports.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
-import { createReportJob, updateReportJobStatus } from '~/db/report-jobs.server'
+import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
 import {
   acquireSyncLock,
   cancelSyncJob,
@@ -24,12 +20,12 @@ import {
   updateSyncJobProgress,
 } from '~/db/sync-jobs.server'
 import { getUserMappings } from '~/db/user-mappings.server'
-import { generateAuditReportPdf } from '~/lib/audit-report-pdf'
 import { requireAdmin } from '~/lib/auth.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
-import { isValidReportPeriodType, type ReportPeriodType } from '~/lib/report-periods'
+import { processReportJobAsync } from '~/lib/report-job-processor.server'
+import { isValidReportPeriodType } from '~/lib/report-periods'
 import { serializeUserMappings } from '~/lib/user-display'
 import { fetchVerificationDataForAllDeployments } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
@@ -85,73 +81,6 @@ async function processComputeDiffsJobAsync(jobId: number, appId: number) {
       throw err
     }
   })
-}
-
-interface ReportJobParams {
-  jobId: string
-  appId: number
-  year: number
-  periodType: ReportPeriodType
-  periodLabel: string
-  periodStart: Date
-  periodEnd: Date
-  generatedBy: string
-  supersedeReason?: string
-}
-
-// Async function to process report generation in background
-async function processReportJobAsync(params: ReportJobParams) {
-  const { jobId, appId, year, periodType, periodLabel, periodStart, periodEnd, generatedBy, supersedeReason } = params
-  try {
-    await updateReportJobStatus(jobId, 'processing')
-
-    const rawData = await getAuditReportData(appId, periodStart, periodEnd)
-    const reportData = buildReportData(rawData)
-
-    // Save report metadata
-    const report = await saveAuditReport({
-      monitoredAppId: appId,
-      appName: rawData.app.app_name,
-      teamSlug: rawData.app.team_slug,
-      environmentName: rawData.app.environment_name,
-      repository: rawData.repository,
-      year,
-      periodType,
-      periodLabel,
-      periodStart,
-      periodEnd,
-      reportData,
-      generatedBy,
-      supersedeReason,
-    })
-
-    // Generate PDF
-    const pdfBuffer = await generateAuditReportPdf({
-      appName: report.app_name,
-      repository: report.repository,
-      teamSlug: report.team_slug,
-      environmentName: report.environment_name,
-      year: report.year,
-      periodLabel: report.period_label,
-      periodStart: new Date(report.period_start),
-      periodEnd: new Date(report.period_end),
-      reportData: report.report_data,
-      contentHash: report.content_hash,
-      reportId: report.report_id,
-      generatedAt: new Date(report.generated_at),
-      testRequirement: rawData.app.test_requirement as 'none' | 'unit_tests' | 'integration_tests',
-    })
-
-    // Store PDF in audit_reports table
-    await updateAuditReportPdf(report.id, Buffer.from(pdfBuffer))
-
-    // Update job with PDF data and mark completed
-    await updateReportJobStatus(jobId, 'completed', pdfBuffer)
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-    await updateReportJobStatus(jobId, 'failed', undefined, errorMessage)
-    throw err
-  }
 }
 
 export async function action({ request }: { request: Request; params: Record<string, string | undefined> }) {
@@ -305,7 +234,27 @@ export async function action({ request }: { request: Request; params: Record<str
     // Create background job for PDF generation
     let jobId: string
     try {
-      jobId = await createReportJob(appId, year, periodType, periodLabel, periodStart, periodEnd)
+      const job = await createReportJob(appId, year, periodType, periodLabel, periodStart, periodEnd)
+      jobId = job.jobId
+      if (!job.created) {
+        // Re-trigger stale pending jobs that were never picked up
+        if (isStaleJob({ status: job.status, created_at: job.createdAt, started_at: job.startedAt })) {
+          processReportJobAsync({
+            jobId: job.jobId,
+            appId,
+            year,
+            periodType,
+            periodLabel,
+            periodStart,
+            periodEnd,
+            generatedBy: user.navIdent,
+            supersedeReason,
+          }).catch((err) => {
+            logger.error(`Stale job re-trigger failed for ${job.jobId}:`, err)
+          })
+        }
+        return { jobStarted: jobId }
+      }
     } catch (err) {
       logger.error('Failed to create report job', err)
       return { error: 'Kunne ikke opprette rapportjobb. Sjekk serverloggen for detaljer.' }

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { toDateString } from '~/lib/date-utils'
+import { isDependabotUser } from '~/lib/dependabot'
 import { isApprovedStatus } from '~/lib/four-eyes-status'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import { generateReportId } from '~/lib/report-periods'
@@ -62,6 +63,8 @@ interface AuditReport {
   pdf_data: Buffer | null
   generated_at: Date
   generated_by: string | null
+  generated_by_app: string | null
+  change_origin_count: number | null
   superseded_at: Date | null
   superseded_by: string | null
   supersede_reason: string | null
@@ -780,6 +783,7 @@ export async function saveAuditReport(params: {
   periodEnd: Date
   reportData: AuditReportData
   generatedBy?: string
+  generatedByApp?: string
   supersedeReason?: string
 }): Promise<AuditReport> {
   const {
@@ -795,6 +799,7 @@ export async function saveAuditReport(params: {
     periodEnd,
     reportData,
     generatedBy,
+    generatedByApp,
     supersedeReason,
   } = params
 
@@ -803,6 +808,11 @@ export async function saveAuditReport(params: {
 
   const prApprovedCount = reportData.deployments.filter((d) => d.method === 'pr').length
   const manuallyApprovedCount = reportData.deployments.filter((d) => d.method === 'manual').length
+
+  // Count deployments with change origin (goal links), excluding Dependabot
+  const changeOriginCount = reportData.deployments.filter(
+    (d) => d.goal_links && d.goal_links.length > 0 && !isDependabotUser(d.pr_author),
+  ).length
 
   const client = await pool.connect()
   try {
@@ -814,14 +824,14 @@ export async function saveAuditReport(params: {
       monitoredAppId,
       periodType,
       periodStart,
-      generatedBy,
+      generatedBy ?? generatedByApp,
       supersedeReason,
     )
 
     // Enforce: if we're actually superseding, a reason must be provided
     if (supersededIds.length > 0 && !supersedeReason) {
       throw new Error(
-        'Det finnes allerede en aktiv rapport for denne perioden. Du må oppgi en begrunnelse for å erstatte den.',
+        'An active report already exists for this period. You must provide a reason to supersede it.',
       )
     }
 
@@ -832,8 +842,8 @@ export async function saveAuditReport(params: {
         year, period_type, period_label, period_start, period_end,
         total_deployments, pr_approved_count, manually_approved_count,
         unique_deployers, unique_reviewers,
-        report_data, content_hash, generated_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, $14, $15, $16, $17, $18, $19)
+        report_data, content_hash, generated_by, generated_by_app, change_origin_count
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING *`,
       [
         reportId,
@@ -846,7 +856,7 @@ export async function saveAuditReport(params: {
         periodType,
         periodLabel,
         toDateString(periodStart),
-        periodEnd,
+        toDateString(periodEnd),
         reportData.deployments.length,
         prApprovedCount,
         manuallyApprovedCount,
@@ -855,6 +865,8 @@ export async function saveAuditReport(params: {
         JSON.stringify(reportData),
         contentHash,
         generatedBy || null,
+        generatedByApp || null,
+        changeOriginCount,
       ],
     )
 
@@ -1014,8 +1026,102 @@ export async function hasActiveReportForPeriod(
        AND period_start = $3::date
        AND superseded_at IS NULL
        AND archived_at IS NULL
+       AND pdf_data IS NOT NULL
      LIMIT 1`,
     [monitoredAppId, periodType, toDateString(periodStart)],
   )
   return result.rows.length > 0
+}
+
+// ─── M2M API queries ────────────────────────────────────────────────────────
+
+interface M2MAuditReportRow {
+  id: number
+  report_id: string
+  period_type: ReportPeriodType
+  period_label: string
+  period_start: Date
+  period_end: Date
+  generated_at: Date
+  generated_by: string | null
+  generated_by_app: string | null
+  total_deployments: number
+  pr_approved_count: number
+  manually_approved_count: number
+  change_origin_count: number | null
+  content_hash: string
+}
+
+/**
+ * Get active (non-archived, non-superseded) reports for an app — M2M API shape.
+ */
+export async function getActiveReportsForAppM2M(monitoredAppId: number): Promise<M2MAuditReportRow[]> {
+  const result = await pool.query<M2MAuditReportRow>(
+    `SELECT id, report_id, period_type, period_label, period_start, period_end,
+            generated_at, generated_by, generated_by_app,
+            total_deployments, pr_approved_count, manually_approved_count,
+            change_origin_count, content_hash
+     FROM audit_reports
+     WHERE monitored_app_id = $1 AND archived_at IS NULL AND superseded_at IS NULL AND pdf_data IS NOT NULL
+     ORDER BY period_start DESC`,
+    [monitoredAppId],
+  )
+  return result.rows
+}
+
+/**
+ * Get active reports for a specific period — used by status endpoint.
+ */
+export async function getActiveReportsForPeriodM2M(
+  monitoredAppId: number,
+  periodType: ReportPeriodType,
+  periodStart: Date,
+): Promise<M2MAuditReportRow[]> {
+  const result = await pool.query<M2MAuditReportRow>(
+    `SELECT id, report_id, period_type, period_label, period_start, period_end,
+            generated_at, generated_by, generated_by_app,
+            total_deployments, pr_approved_count, manually_approved_count,
+            change_origin_count, content_hash
+     FROM audit_reports
+     WHERE monitored_app_id = $1
+       AND period_type = $2
+       AND period_start = $3::date
+       AND archived_at IS NULL AND superseded_at IS NULL AND pdf_data IS NOT NULL
+     ORDER BY generated_at DESC`,
+    [monitoredAppId, periodType, toDateString(periodStart)],
+  )
+  return result.rows
+}
+
+/**
+ * Get a report by report_id, scoped to app for IDOR protection.
+ * Allows superseded reports (valid historical evidence) but excludes archived.
+ */
+export async function getReportByReportIdForApp(
+  reportId: string,
+  monitoredAppId: number,
+): Promise<{ id: number; pdf_data: Buffer | null; report_id: string; archived_at: Date | null } | null> {
+  const result = await pool.query(
+    `SELECT id, pdf_data, report_id, archived_at
+     FROM audit_reports
+     WHERE report_id = $1 AND monitored_app_id = $2`,
+    [reportId, monitoredAppId],
+  )
+  return result.rows[0] || null
+}
+
+/**
+ * Get a report summary by internal ID — used by job-status endpoint after completion.
+ */
+export async function getReportSummaryById(reportId: number): Promise<M2MAuditReportRow | null> {
+  const result = await pool.query<M2MAuditReportRow>(
+    `SELECT id, report_id, period_type, period_label, period_start, period_end,
+            generated_at, generated_by, generated_by_app,
+            total_deployments, pr_approved_count, manually_approved_count,
+            change_origin_count, content_hash
+     FROM audit_reports
+     WHERE id = $1`,
+    [reportId],
+  )
+  return result.rows[0] || null
 }
