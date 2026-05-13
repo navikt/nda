@@ -18,7 +18,7 @@ import {
 import { useMemo, useRef, useState } from 'react'
 import { Form, Link, useLoaderData, useNavigation } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
-import { RoleMembersSection, type UserOption } from '~/components/RoleMembersSection'
+import { RoleMembersSection } from '~/components/RoleMembersSection'
 import { type Board, createBoard, getBoardsByDevTeam } from '~/db/boards.server'
 import { pool } from '~/db/connection.server'
 import {

@@ -5,9 +5,9 @@
  */
 
 import {
+  archiveAuditReport,
   buildReportData,
   getAuditReportData,
-  archiveAuditReport,
   saveAuditReport,
   updateAuditReportPdf,
 } from '~/db/audit-reports.server'

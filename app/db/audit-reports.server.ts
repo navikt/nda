@@ -830,9 +830,7 @@ export async function saveAuditReport(params: {
 
     // Enforce: if we're actually superseding, a reason must be provided
     if (supersededIds.length > 0 && !supersedeReason) {
-      throw new Error(
-        'An active report already exists for this period. You must provide a reason to supersede it.',
-      )
+      throw new Error('An active report already exists for this period. You must provide a reason to supersede it.')
     }
 
     // Step 2: Insert new report (now safe — no active duplicates exist)

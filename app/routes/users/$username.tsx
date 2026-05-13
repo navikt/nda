@@ -333,7 +333,6 @@ export default function UserPage() {
     availableBoards,
     hasUnlinkedDependabotDeployments,
     isOwnProfile,
-    profileNavIdent,
     canPrefillOwnMapping,
     loggedInNavIdent,
     landingPage,
