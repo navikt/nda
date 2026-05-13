@@ -73,20 +73,6 @@ export const Home: Story = {
   ),
 }
 
-export const AddApp: Story = {
-  name: 'Legg til app',
-  render: () => (
-    <MemoryRouter>
-      <MockBreadcrumbs
-        crumbs={[
-          { path: '/', label: 'Hjem' },
-          { path: '/apps/add', label: 'Legg til applikasjon' },
-        ]}
-      />
-    </MemoryRouter>
-  ),
-}
-
 export const Admin: Story = {
   name: 'Admin',
   render: () => (
