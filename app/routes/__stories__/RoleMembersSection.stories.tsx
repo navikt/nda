@@ -13,7 +13,7 @@ const mockRoleMembers: RoleMember[] = [
   {
     id: 2,
     nav_ident: 'B654321',
-    role: 'utvikler',
+    role: 'tech_lead',
     github_username: 'rask-elv',
     display_name: 'Rask Elv',
     assigned_at: '2026-03-20T14:30:00Z',

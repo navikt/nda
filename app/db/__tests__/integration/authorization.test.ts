@@ -126,6 +126,36 @@ describe('canAssignTeamRole', () => {
     expect(await canAssignTeamRole(pl, teamId, 'produktleder')).toBe(false)
   })
 
+  it('allows tech_lead to assign utvikler', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+
+    const tl = makeUser('T222222')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAssignTeamRole(tl, teamId, 'utvikler')).toBe(true)
+  })
+
+  it('denies tech_lead from assigning produktleder', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+
+    const tl = makeUser('T222222')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAssignTeamRole(tl, teamId, 'produktleder')).toBe(false)
+  })
+
+  it('denies tech_lead from assigning tech_lead', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+
+    const tl = makeUser('T222222')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAssignTeamRole(tl, teamId, 'tech_lead')).toBe(false)
+  })
+
   it('denies regular user without any roles', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
@@ -327,6 +357,21 @@ describe('canDeviateDeployment', () => {
     expect(await canDeviateDeployment(pl, appId)).toBe(true)
   })
 
+  it('allows tech_lead in managing team', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+
+    const tl = makeUser('T111111')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canDeviateDeployment(tl, appId)).toBe(true)
+  })
+
   it('denies utvikler in managing team', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
@@ -358,6 +403,14 @@ describe('canAdministerTeam', () => {
     const pl = makeUser('P333333')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
     expect(await canAdministerTeam(pl, teamId)).toBe(true)
+  })
+
+  it('allows tech_lead', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const tl = makeUser('T333333')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+    expect(await canAdministerTeam(tl, teamId)).toBe(true)
   })
 
   it('denies utvikler', async () => {
@@ -609,6 +662,14 @@ describe('canAccessTeamAdmin', () => {
     expect(await canAccessTeamAdmin(pl, teamId)).toBe(true)
   })
 
+  it('allows tech_lead in the team', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const tl = makeUser('T444444')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+    expect(await canAccessTeamAdmin(tl, teamId)).toBe(true)
+  })
+
   it('allows section leader in the team section', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
@@ -716,6 +777,15 @@ describe('resolveTeamAdminCapabilities', () => {
     expect(result).toEqual({ canAccess: true, canAdmin: true })
   })
 
+  it('returns canAccess=true, canAdmin=true for tech_lead in the team', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const tl = makeUser('T777777')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+    const result = await resolveTeamAdminCapabilities(tl, teamId)
+    expect(result).toEqual({ canAccess: true, canAdmin: true })
+  })
+
   it('returns canAccess=true, canAdmin=false for section leader', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
@@ -804,6 +874,28 @@ describe('resolveDeploymentCapabilities', () => {
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
 
     const result = await resolveDeploymentCapabilities(pl, appId)
+    expect(result).toEqual({
+      canApprove: true,
+      canDeviate: true,
+      canLinkGoal: true,
+      canNotify: true,
+      canLookupLegacy: true,
+    })
+  })
+
+  it('grants canDeviate to tech_lead in managing team', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+
+    const tl = makeUser('T222222')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    const result = await resolveDeploymentCapabilities(tl, appId)
     expect(result).toEqual({
       canApprove: true,
       canDeviate: true,

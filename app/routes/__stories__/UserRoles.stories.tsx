@@ -67,7 +67,8 @@ export const AllRoleTypes: Story = {
       ],
       teamRoles: [
         { role: 'produktleder', teamName: 'Team Dagpenger', teamSlug: 'dagpenger', sectionSlug: 'arbeid' },
-        { role: 'utvikler', teamName: 'Team AAP', teamSlug: 'aap', sectionSlug: 'arbeid' },
+        { role: 'tech_lead', teamName: 'Team AAP', teamSlug: 'aap', sectionSlug: 'arbeid' },
+        { role: 'utvikler', teamName: 'Team Sykepenger', teamSlug: 'sykepenger', sectionSlug: 'helse' },
       ],
     },
   },
