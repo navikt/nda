@@ -27,6 +27,7 @@ import {
   upsertUserMapping,
 } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
+import { isTeamLeaderRole, SECTION_ROLE_LABELS, TEAM_ROLE_LABELS } from '~/lib/authorization-types'
 import { isValidEmail, isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import styles from '~/styles/common.module.css'
@@ -333,11 +334,7 @@ export default function AdminUsers() {
                         <Detail textColor="subtle">Roller:</Detail>
                         {(userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).map((ra) => (
                           <Tag key={`s-${ra.section_id}-${ra.role}`} variant="warning" size="xsmall">
-                            {ra.role === 'teknologileder'
-                              ? 'Teknologileder'
-                              : ra.role === 'seksjonsleder'
-                                ? 'Seksjonsleder'
-                                : 'Leveranseleder'}{' '}
+                            {SECTION_ROLE_LABELS[ra.role] ?? ra.role}{' '}
                             – {ra.section_name}
                           </Tag>
                         ))}
@@ -346,10 +343,11 @@ export default function AdminUsers() {
                           return team ? (
                             <Tag
                               key={`t-${ra.dev_team_id}-${ra.role}`}
-                              variant={ra.role === 'produktleder' ? 'warning' : 'info'}
+                              variant={isTeamLeaderRole(ra.role) ? 'warning' : 'info'}
                               size="xsmall"
                             >
-                              {ra.role === 'produktleder' ? 'Produktleder' : 'Utvikler'} – {team.name}
+                              {TEAM_ROLE_LABELS[ra.role] ?? ra.role}{' '}
+                              – {team.name}
                             </Tag>
                           ) : null
                         })}

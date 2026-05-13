@@ -1,20 +1,10 @@
 import { Detail, HStack, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
+import { SECTION_ROLE_LABELS, TEAM_ROLE_LABELS } from '~/lib/authorization-types'
 
 interface UserRoleDisplayData {
   sectionRoles: Array<{ role: string; sectionName: string; sectionSlug: string }>
   teamRoles: Array<{ role: string; teamName: string; teamSlug: string; sectionSlug: string | null }>
-}
-
-const SECTION_ROLE_LABELS: Record<string, string> = {
-  teknologileder: 'Teknologileder',
-  seksjonsleder: 'Seksjonsleder',
-  leveranseleder: 'Leveranseleder',
-}
-
-const TEAM_ROLE_LABELS: Record<string, string> = {
-  produktleder: 'Produktleder',
-  utvikler: 'Utvikler',
 }
 
 /**

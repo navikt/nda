@@ -14,7 +14,7 @@ import {
 } from '@navikt/ds-react'
 import { useRef, useState } from 'react'
 import { Form } from 'react-router'
-import { TEAM_ROLES } from '~/lib/authorization-types'
+import { isTeamLeaderRole, TEAM_ROLE_LABELS, TEAM_ROLES } from '~/lib/authorization-types'
 
 export interface RoleMember {
   id: number
@@ -29,11 +29,6 @@ export interface UserOption {
   navIdent: string
   displayName: string | null
   githubUsername: string
-}
-
-const TEAM_ROLE_LABELS: Record<string, string> = {
-  produktleder: 'Produktleder',
-  utvikler: 'Utvikler',
 }
 
 /**
@@ -88,7 +83,7 @@ export function RoleMembersSection({ roleMembers, allUsers }: { roleMembers: Rol
                 </Table.DataCell>
                 <Table.DataCell>{member.display_name ?? '–'}</Table.DataCell>
                 <Table.DataCell>
-                  <Tag variant={member.role === 'produktleder' ? 'warning' : 'info'} size="xsmall">
+                  <Tag variant={isTeamLeaderRole(member.role) ? 'warning' : 'info'} size="xsmall">
                     {TEAM_ROLE_LABELS[member.role] ?? member.role}
                   </Tag>
                 </Table.DataCell>

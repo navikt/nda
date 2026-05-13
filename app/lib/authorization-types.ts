@@ -1,8 +1,30 @@
 export const SECTION_ROLES = ['teknologileder', 'seksjonsleder', 'leveranseleder'] as const
 export type SectionRole = (typeof SECTION_ROLES)[number]
 
-export const TEAM_ROLES = ['produktleder', 'utvikler'] as const
+export const TEAM_ROLES = ['produktleder', 'tech_lead', 'utvikler'] as const
 export type TeamRole = (typeof TEAM_ROLES)[number]
+
+/** Roles that grant team-leader-level permissions (same as produktleder). */
+const TEAM_LEADER_ROLES: readonly TeamRole[] = ['produktleder', 'tech_lead'] as const
+
+/** Check if a role grants team-leader-level permissions. */
+export function isTeamLeaderRole(role: string): boolean {
+  return (TEAM_LEADER_ROLES as readonly string[]).includes(role)
+}
+
+/** Display labels for section roles. */
+export const SECTION_ROLE_LABELS: Record<string, string> = {
+  teknologileder: 'Teknologileder',
+  seksjonsleder: 'Seksjonsleder',
+  leveranseleder: 'Leveranseleder',
+} satisfies Record<SectionRole, string>
+
+/** Display labels for team roles. */
+export const TEAM_ROLE_LABELS: Record<string, string> = {
+  produktleder: 'Produktleder',
+  tech_lead: 'Tech Lead',
+  utvikler: 'Utvikler',
+} satisfies Record<TeamRole, string>
 
 export interface SectionRoleAssignment {
   id: number

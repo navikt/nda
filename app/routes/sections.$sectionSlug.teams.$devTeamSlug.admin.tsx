@@ -42,7 +42,7 @@ import { getAllUserMappings, getUserMappingByNavIdent } from '~/db/user-mappings
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
-import { TEAM_ROLES, type TeamRole } from '~/lib/authorization-types'
+import { TEAM_ROLE_LABELS, TEAM_ROLES, type TeamRole } from '~/lib/authorization-types'
 import { type BoardPeriodType, formatBoardLabel, getPeriodsForYear } from '~/lib/board-periods'
 import { getFormString, isValidNavIdent } from '~/lib/form-validators'
 import { logger } from '~/lib/logger.server'
@@ -184,7 +184,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     if (!role || !TEAM_ROLES.includes(role)) {
-      return fail('Velg en gyldig rolle (produktleder eller utvikler).')
+      return fail(`Velg en gyldig rolle (${TEAM_ROLES.map((r) => TEAM_ROLE_LABELS[r]).join(', ')}).`)
     }
 
     if (!(await canAssignTeamRole(user, devTeam.id, role))) {
@@ -198,13 +198,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       )
     }
 
+    const roleLabel = TEAM_ROLE_LABELS[role] ?? role
     const result = await assignTeamRole(navIdent, devTeam.id, role, user.navIdent)
     if (!result) {
-      return fail(
-        `${navIdent} har allerede rollen ${role === 'produktleder' ? 'Produktleder' : 'Utvikler'} i dette teamet.`,
-      )
+      return fail(`${navIdent} har allerede rollen ${roleLabel} i dette teamet.`)
     }
-    return ok(`${navIdent} ble tildelt rollen ${role === 'produktleder' ? 'Produktleder' : 'Utvikler'}.`)
+    return ok(`${navIdent} ble tildelt rollen ${roleLabel}.`)
   }
 
   if (intent === 'remove_role') {

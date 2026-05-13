@@ -10,6 +10,7 @@ import { pool } from '~/db/connection.server'
 import { getUserRoles } from '~/db/role-assignments.server'
 import type { UserIdentity } from './auth.server'
 import type { SectionRole, TeamRole } from './authorization-types'
+import { isTeamLeaderRole } from './authorization-types'
 
 // ─── Actor context ───────────────────────────────────────────────────────────
 
@@ -32,7 +33,7 @@ export function canAssignSectionRole(actor: UserIdentity): boolean {
  *
  * - Admin: always
  * - Section leaders (teknologileder, seksjonsleder, leveranseleder) in the team's section: always
- * - Produktleder in the team: can assign/remove 'utvikler' only
+ * - Team leaders (produktleder/tech_lead) in the team: can assign/remove 'utvikler' only
  */
 export async function canAssignTeamRole(
   actor: UserIdentity,
@@ -55,9 +56,9 @@ export async function canAssignTeamRole(
   const hasSectionRole = sectionRoles.some((r) => r.section_id === teamSectionId)
   if (hasSectionRole) return true
 
-  // Produktleder in the team can assign 'utvikler' only
+  // Team leaders (produktleder/tech_lead) can assign 'utvikler' only
   if (targetRole === 'utvikler') {
-    return teamRoles.some((r) => r.dev_team_id === devTeamId && r.role === 'produktleder')
+    return teamRoles.some((r) => r.dev_team_id === devTeamId && isTeamLeaderRole(r.role))
   }
 
   return false
@@ -121,7 +122,7 @@ export async function canApproveDeployment(actor: UserIdentity, monitoredAppId: 
 
 /**
  * Check if the actor can register deviations or perform elevated actions.
- * Admin or produktleder in one of the managing teams.
+ * Admin or team leader (produktleder/tech_lead) in one of the managing teams.
  */
 export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
   if (isEntraAdmin(actor)) return true
@@ -131,25 +132,25 @@ export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: 
 
   const managingSet = new Set(managingTeamIds)
   const { teamRoles } = await getUserRoles(actor.navIdent)
-  return teamRoles.some((r) => managingSet.has(r.dev_team_id) && r.role === 'produktleder')
+  return teamRoles.some((r) => managingSet.has(r.dev_team_id) && isTeamLeaderRole(r.role))
 }
 
 // ─── Team administration ─────────────────────────────────────────────────────
 
 /**
  * Check if the actor can administer a dev team (admin page, boards, members).
- * Admin or produktleder in the team.
+ * Admin or team leader (produktleder/tech_lead) in the team.
  */
 export async function canAdministerTeam(actor: UserIdentity, devTeamId: number): Promise<boolean> {
   if (isEntraAdmin(actor)) return true
 
   const { teamRoles } = await getUserRoles(actor.navIdent)
-  return teamRoles.some((r) => r.dev_team_id === devTeamId && r.role === 'produktleder')
+  return teamRoles.some((r) => r.dev_team_id === devTeamId && isTeamLeaderRole(r.role))
 }
 
 /**
  * Check if the actor can access the team admin page.
- * Allowed for: admin, produktleder in the team, or section leaders in the team's section.
+ * Allowed for: admin, team leader (produktleder/tech_lead) in the team, or section leaders in the team's section.
  */
 export async function canAccessTeamAdmin(actor: UserIdentity, devTeamId: number): Promise<boolean> {
   if (isEntraAdmin(actor)) return true
@@ -165,7 +166,7 @@ export async function canAccessTeamAdmin(actor: UserIdentity, devTeamId: number)
 
   if (sectionRoles.some((r) => r.section_id === teamSectionId)) return true
 
-  return teamRoles.some((r) => r.dev_team_id === devTeamId && r.role === 'produktleder')
+  return teamRoles.some((r) => r.dev_team_id === devTeamId && isTeamLeaderRole(r.role))
 }
 
 interface TeamAdminCapabilities {
@@ -192,12 +193,12 @@ export async function resolveTeamAdminCapabilities(
 
   const { sectionRoles, teamRoles } = await getUserRoles(actor.navIdent)
 
-  const isProduktleder = teamRoles.some((r) => r.dev_team_id === devTeamId && r.role === 'produktleder')
+  const isTeamLeader = teamRoles.some((r) => r.dev_team_id === devTeamId && isTeamLeaderRole(r.role))
   const isSectionLeader = sectionRoles.some((r) => r.section_id === teamSectionId)
 
   return {
-    canAccess: isProduktleder || isSectionLeader,
-    canAdmin: isProduktleder,
+    canAccess: isTeamLeader || isSectionLeader,
+    canAdmin: isTeamLeader,
   }
 }
 
@@ -284,11 +285,11 @@ export async function resolveDeploymentCapabilities(
   const managingSet = new Set(managingTeamIds)
   const rolesInManagingTeams = teamRoles.filter((r) => managingSet.has(r.dev_team_id))
   const hasAnyRole = rolesInManagingTeams.length > 0
-  const isProduktleder = rolesInManagingTeams.some((r) => r.role === 'produktleder')
+  const isTeamLeader = rolesInManagingTeams.some((r) => isTeamLeaderRole(r.role))
 
   return {
     canApprove: hasAnyRole,
-    canDeviate: isProduktleder,
+    canDeviate: isTeamLeader,
     canLinkGoal: hasAnyRole,
     canNotify: hasAnyRole,
     canLookupLegacy: hasAnyRole,
