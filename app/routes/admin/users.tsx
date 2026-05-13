@@ -334,8 +334,7 @@ export default function AdminUsers() {
                         <Detail textColor="subtle">Roller:</Detail>
                         {(userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).map((ra) => (
                           <Tag key={`s-${ra.section_id}-${ra.role}`} variant="warning" size="xsmall">
-                            {SECTION_ROLE_LABELS[ra.role] ?? ra.role}{' '}
-                            – {ra.section_name}
+                            {SECTION_ROLE_LABELS[ra.role] ?? ra.role} – {ra.section_name}
                           </Tag>
                         ))}
                         {(userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).map((ra) => {
@@ -346,8 +345,7 @@ export default function AdminUsers() {
                               variant={isTeamLeaderRole(ra.role) ? 'warning' : 'info'}
                               size="xsmall"
                             >
-                              {TEAM_ROLE_LABELS[ra.role] ?? ra.role}{' '}
-                              – {team.name}
+                              {TEAM_ROLE_LABELS[ra.role] ?? ra.role} – {team.name}
                             </Tag>
                           ) : null
                         })}
