@@ -79,7 +79,6 @@ const ALL_ROUTES: { path: string; description: string }[] = [
   { path: '/', description: 'Home' },
   { path: '/my-teams', description: 'My teams' },
   { path: '/my-apps', description: 'My apps' },
-  { path: '/apps/add', description: 'Add app' },
   { path: '/search', description: 'Search page' },
   { path: '/team/my-team', description: 'Team overview' },
   { path: '/team/my-team/env/prod', description: 'Team environment' },

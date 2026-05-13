@@ -80,25 +80,15 @@ function HomePage({
   selectedDevTeams = [],
   teamStats = null,
   issueApps = [],
-  isAdmin = false,
   githubUsername = 'pcmoen',
 }: {
   selectedDevTeams?: DevTeamInfo[]
   teamStats?: DevTeamSummaryStats | null
   issueApps?: AppCardData[]
-  isAdmin?: boolean
   githubUsername?: string | null
 }) {
   return (
     <VStack gap="space-32">
-      {isAdmin && (
-        <HStack justify="end">
-          <Button as={Link} to="/apps/add" size="small" variant="secondary">
-            Legg til applikasjon
-          </Button>
-        </HStack>
-      )}
-
       {selectedDevTeams.length === 0 && (
         <Alert variant="info">
           <VStack gap="space-8">
@@ -284,6 +274,5 @@ export const AdminView: Story = {
     selectedDevTeams: mockDevTeams,
     teamStats: mockTeamStats,
     issueApps: mockIssueApps,
-    isAdmin: true,
   },
 }
