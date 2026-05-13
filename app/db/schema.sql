@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS monitored_applications (
   -- Metadata
   is_active BOOLEAN DEFAULT TRUE,
   default_branch VARCHAR(255) DEFAULT 'main',
-  audit_start_year INTEGER NOT NULL,
+  audit_start_year INTEGER,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   

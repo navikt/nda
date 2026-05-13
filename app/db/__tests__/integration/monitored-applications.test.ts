@@ -59,13 +59,14 @@ describe('createMonitoredApplication', () => {
     expect(fetched?.audit_start_year).toBe(2023)
   })
 
-  it('krever audit_start_year (NOT NULL i DB)', async () => {
+  it('setter audit_start_year til oppgitt verdi', async () => {
+    const year = new Date().getFullYear()
     const app = await createMonitoredApplication({
       team_slug: 'team-b',
       environment_name: 'prod-gcp',
       app_name: 'app-b',
-      audit_start_year: new Date().getFullYear(),
+      audit_start_year: year,
     })
-    expect(app.audit_start_year).toBe(new Date().getFullYear())
+    expect(app.audit_start_year).toBe(year)
   })
 })

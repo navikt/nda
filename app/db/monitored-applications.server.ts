@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { pool } from './connection.server'
 
 interface MonitoredApplication {
@@ -92,14 +93,20 @@ export async function getMonitoredApplicationByIdentity(
  * does NOT overwrite the existing audit window — that would silently change
  * which historical deployments are in audit scope. To change the audit year,
  * use the dedicated admin update flow.
+ *
+ * Pass `client` to run within an existing transaction.
  */
-export async function createMonitoredApplication(data: {
-  team_slug: string
-  environment_name: string
-  app_name: string
-  audit_start_year: number
-}): Promise<MonitoredApplication> {
-  const result = await pool.query(
+export async function createMonitoredApplication(
+  data: {
+    team_slug: string
+    environment_name: string
+    app_name: string
+    audit_start_year: number
+  },
+  client?: PoolClient,
+): Promise<MonitoredApplication> {
+  const queryable = client ?? pool
+  const result = await queryable.query(
     `INSERT INTO monitored_applications
         (team_slug, environment_name, app_name, audit_start_year)
       VALUES ($1, $2, $3, $4)
