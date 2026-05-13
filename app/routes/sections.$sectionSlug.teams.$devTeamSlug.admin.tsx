@@ -30,7 +30,7 @@ import {
   removeNaisTeamFromDevTeam,
   updateDevTeam,
 } from '~/db/dev-teams.server'
-import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
+import { createMonitoredApplication, getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import {
   assignTeamRole,
   getDevTeamMembersWithRoles,
@@ -44,7 +44,7 @@ import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
 import { TEAM_ROLE_LABELS, TEAM_ROLES, type TeamRole } from '~/lib/authorization-types'
 import { type BoardPeriodType, formatBoardLabel, getPeriodsForYear } from '~/lib/board-periods'
-import { getFormString, isValidNavIdent } from '~/lib/form-validators'
+import { getFormString, isValidNavIdent, parseAuditStartYear } from '~/lib/form-validators'
 import { logger } from '~/lib/logger.server'
 import { fetchAllTeamsAndApplications, getApplicationInfo } from '~/lib/nais.server'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.admin'
@@ -275,6 +275,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       return fail('Velg minst én applikasjon å legge til.')
     }
 
+    // Validate audit_start_year when there are new apps to create
+    let auditStartYear = 0
+    if (newIdentities.length > 0) {
+      const parsed = parseAuditStartYear(formData)
+      if (typeof parsed === 'string') return fail(parsed)
+      auditStartYear = parsed
+    }
+
     for (const id of newIdentities) {
       const found = await getApplicationInfo(id.team_slug, id.environment_name, id.app_name)
       if (!found) {
@@ -289,15 +297,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       await client.query('BEGIN')
       const createdIds: number[] = []
       for (const id of newIdentities) {
-        const result = await client.query<{ id: number }>(
-          `INSERT INTO monitored_applications (team_slug, environment_name, app_name)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (team_slug, environment_name, app_name)
-           DO UPDATE SET is_active = true, updated_at = CURRENT_TIMESTAMP
-           RETURNING id`,
-          [id.team_slug, id.environment_name, id.app_name],
-        )
-        createdIds.push(result.rows[0].id)
+        const app = await createMonitoredApplication({
+          team_slug: id.team_slug,
+          environment_name: id.environment_name,
+          app_name: id.app_name,
+          audit_start_year: auditStartYear,
+        })
+        createdIds.push(app.id)
       }
       for (const monitoredAppId of [...existingIds, ...createdIds]) {
         await client.query(
@@ -788,6 +794,9 @@ const AddAppsDialog = forwardRef<
   { addableApps: AddableApp[]; naisCatalogFailed: boolean; isSubmitting: boolean }
 >(function AddAppsDialog({ addableApps, naisCatalogFailed, isSubmitting }, ref) {
   const [search, setSearch] = useState('')
+  const currentYear = new Date().getFullYear()
+
+  const hasNewApps = addableApps.some((app) => app.monitored_id === null)
 
   const searchLower = search.toLowerCase()
   const filteredApps = useMemo(
@@ -844,6 +853,19 @@ const AddAppsDialog = forwardRef<
               Lista viser Nais-applikasjoner som ikke allerede er koblet til teamet. Apper merket «Ny i overvåking»
               opprettes automatisk når du krysser dem av og lagrer.
             </BodyShort>
+            {hasNewApps && (
+              <TextField
+                label="Startår for revisjon"
+                description="Gjelder kun apper som er nye i overvåking"
+                size="small"
+                name="audit_start_year"
+                type="number"
+                defaultValue={String(currentYear)}
+                htmlSize={6}
+                min={2000}
+                max={currentYear + 1}
+              />
+            )}
             <TextField
               label="Søk etter applikasjon"
               hideLabel

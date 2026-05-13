@@ -21,8 +21,8 @@ afterAll(async () => {
 
 async function seedDeployment(pool: Pool, suffix: string): Promise<number> {
   const app = await pool.query<{ id: number }>(
-    `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active)
-     VALUES ('t', $1, 'dev', true) RETURNING id`,
+    `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year)
+     VALUES ('t', $1, 'dev', true, 2025) RETURNING id`,
     [`a-${suffix}`],
   )
   const dep = await pool.query<{ id: number }>(
