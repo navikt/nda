@@ -12,7 +12,6 @@ import {
   MagnifyingGlassIcon,
   PersonGroupIcon,
   PersonIcon,
-  PlusCircleIcon,
 } from '@navikt/aksel-icons'
 import { BodyShort, Box, Heading, HGrid, VStack } from '@navikt/ds-react'
 import { Link, useLoaderData } from 'react-router'
@@ -413,28 +412,6 @@ export default function AdminIndex() {
                 <BodyShort textColor="subtle">
                   Finn rader der team/app er byttet om eller miljøet er feil, og rett dem opp.
                 </BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/apps/add" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <PlusCircleIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Legg til applikasjon
-                </Heading>
-                <BodyShort textColor="subtle">Legg til nye applikasjoner for overvåking av leveranser.</BodyShort>
               </div>
             </VStack>
           </Box>

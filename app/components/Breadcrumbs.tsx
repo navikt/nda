@@ -13,7 +13,6 @@ const breadcrumbConfig: Record<string, BreadcrumbConfig> = {
   '/': { label: 'Hjem' },
   '/my-teams': { label: 'Mine team' },
   '/sections': { label: 'Seksjoner' },
-  '/apps/add': { label: 'Legg til applikasjon' },
   '/admin': { label: 'Admin' },
   '/admin/users': { label: 'Brukermappinger' },
   '/admin/sync-jobs': { label: 'Sync Jobs' },
