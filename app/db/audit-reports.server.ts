@@ -1024,7 +1024,6 @@ export async function hasActiveReportForPeriod(
        AND period_start = $3::date
        AND superseded_at IS NULL
        AND archived_at IS NULL
-       AND pdf_data IS NOT NULL
      LIMIT 1`,
     [monitoredAppId, periodType, toDateString(periodStart)],
   )
