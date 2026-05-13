@@ -53,6 +53,11 @@ afterEach(async () => {
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
 
+function defined<T>(value: T | null | undefined): T {
+  if (value == null) throw new Error('Expected value to be defined')
+  return value
+}
+
 function makeAdmin(navIdent = 'A123456'): UserIdentity {
   return { navIdent, role: 'admin', entraGroups: [] }
 }
@@ -171,7 +176,7 @@ describe('canAssignTeamRole', () => {
     const assignment = await assignSectionRole(leader.navIdent, sectionId, 'leveranseleder', 'admin')
     expect(await canAssignTeamRole(leader, teamId, 'utvikler')).toBe(true)
 
-    await removeSectionRole(assignment!.id, 'admin')
+    await removeSectionRole(defined(assignment).id, 'admin')
     expect(await canAssignTeamRole(leader, teamId, 'utvikler')).toBe(false)
   })
 })
@@ -266,7 +271,7 @@ describe('canApproveDeployment', () => {
     const assignment = await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
     expect(await canApproveDeployment(dev, appId)).toBe(true)
 
-    await removeTeamRole(assignment!.id, 'admin')
+    await removeTeamRole(defined(assignment).id, 'admin')
     expect(await canApproveDeployment(dev, appId)).toBe(false)
   })
 
@@ -442,7 +447,7 @@ describe('isTeamMember', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const assignment = await assignTeamRole('M222222', teamId, 'utvikler', 'admin')
-    await removeTeamRole(assignment!.id, 'admin')
+    await removeTeamRole(defined(assignment).id, 'admin')
     expect(await isTeamMember('M222222', teamId)).toBe(false)
   })
 
@@ -501,7 +506,7 @@ describe('role assignment CRUD', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
     const first = await assignTeamRole('D444444', teamId, 'utvikler', 'admin')
-    await removeTeamRole(first!.id, 'admin')
+    await removeTeamRole(defined(first).id, 'admin')
 
     const second = await assignTeamRole('D444444', teamId, 'utvikler', 'other-admin')
     expect(second).not.toBeNull()
@@ -516,12 +521,12 @@ describe('role assignment CRUD', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const assignment = await assignTeamRole('E555555', teamId, 'utvikler', 'admin')
 
-    const removed = await removeTeamRole(assignment!.id, 'remover-ident')
+    const removed = await removeTeamRole(defined(assignment).id, 'remover-ident')
     expect(removed).toBe(true)
 
     // Verify the row still exists with deletion info
     const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM dev_team_role_assignments WHERE id = $1', [
-      assignment!.id,
+      defined(assignment).id,
     ])
     expect(rows[0].deleted_at).not.toBeNull()
     expect(rows[0].deleted_by).toBe('remover-ident')
@@ -532,8 +537,8 @@ describe('role assignment CRUD', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const assignment = await assignTeamRole('F666666', teamId, 'utvikler', 'admin')
 
-    expect(await removeTeamRole(assignment!.id, 'admin')).toBe(true)
-    expect(await removeTeamRole(assignment!.id, 'admin')).toBe(false)
+    expect(await removeTeamRole(defined(assignment).id, 'admin')).toBe(true)
+    expect(await removeTeamRole(defined(assignment).id, 'admin')).toBe(false)
   })
 
   it('getMembersGithubUsernamesForDevTeamRoles returns GitHub usernames for active team members', async () => {
@@ -561,7 +566,7 @@ describe('role assignment CRUD', () => {
       "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U333333', 'user3', 'User Three')",
     )
 
-    await removeTeamRole(assignment!.id, 'admin')
+    await removeTeamRole(defined(assignment).id, 'admin')
 
     const usernames = await getMembersGithubUsernamesForDevTeamRoles([teamId])
     expect(usernames).toEqual([])
@@ -622,7 +627,7 @@ describe('role assignment CRUD', () => {
     )
 
     // Soft-delete role in team1
-    await removeTeamRole(assignment1!.id, 'admin')
+    await removeTeamRole(defined(assignment1).id, 'admin')
     // Deactivate team2
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [team2])
 
@@ -726,10 +731,10 @@ describe('getTeamRoleAssignmentById', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const assignment = await assignTeamRole('R111111', teamId, 'utvikler', 'admin')
-    const result = await getTeamRoleAssignmentById(assignment!.id, teamId)
+    const result = await getTeamRoleAssignmentById(defined(assignment).id, teamId)
     expect(result).not.toBeNull()
-    expect(result!.role).toBe('utvikler')
-    expect(result!.nav_ident).toBe('R111111')
+    expect(defined(result).role).toBe('utvikler')
+    expect(defined(result).nav_ident).toBe('R111111')
   })
 
   it('returns null for wrong devTeamId', async () => {
@@ -737,7 +742,7 @@ describe('getTeamRoleAssignmentById', () => {
     const team1 = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const team2 = await seedDevTeam(pool, 'team-b', 'Team B', sectionId)
     const assignment = await assignTeamRole('R222222', team1, 'utvikler', 'admin')
-    const result = await getTeamRoleAssignmentById(assignment!.id, team2)
+    const result = await getTeamRoleAssignmentById(defined(assignment).id, team2)
     expect(result).toBeNull()
   })
 
@@ -745,8 +750,8 @@ describe('getTeamRoleAssignmentById', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const assignment = await assignTeamRole('R333333', teamId, 'utvikler', 'admin')
-    await removeTeamRole(assignment!.id, 'admin')
-    const result = await getTeamRoleAssignmentById(assignment!.id, teamId)
+    await removeTeamRole(defined(assignment).id, 'admin')
+    const result = await getTeamRoleAssignmentById(defined(assignment).id, teamId)
     expect(result).toBeNull()
   })
 
@@ -935,7 +940,7 @@ describe('resolveDeploymentCapabilities', () => {
     // Verify access before removal
     expect((await resolveDeploymentCapabilities(dev, appId)).canApprove).toBe(true)
 
-    await removeTeamRole(assignment!.id, 'admin')
+    await removeTeamRole(defined(assignment).id, 'admin')
 
     const result = await resolveDeploymentCapabilities(dev, appId)
     expect(result).toEqual({

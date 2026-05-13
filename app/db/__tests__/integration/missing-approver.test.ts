@@ -327,9 +327,9 @@ describe('missing approver detection — getMissingApproverSummary', () => {
     const s1 = byApp.find((a) => a.team_slug === 'team-s1' && a.app_name === 'app-s1')
     const s2 = byApp.find((a) => a.team_slug === 'team-s2' && a.app_name === 'app-s2')
     expect(s1).toBeDefined()
-    expect(s1!.count).toBe(2)
+    expect(s1?.count).toBe(2)
     expect(s2).toBeDefined()
-    expect(s2!.count).toBe(1)
+    expect(s2?.count).toBe(1)
   })
 
   it('returns zero total when no deployments are missing approver', async () => {
@@ -365,6 +365,6 @@ describe('missing approver detection — getMissingApproverSummary', () => {
     const { byApp } = await getMissingApproverSummary()
     const s4 = byApp.find((a) => a.team_slug === 'team-s4')
     expect(s4).toBeDefined()
-    expect(s4!.environment_name).toBe('dev-gcp')
+    expect(s4?.environment_name).toBe('dev-gcp')
   })
 })
