@@ -160,6 +160,90 @@ export const REPORT_PERIOD_TYPE_LABELS: Record<ReportPeriodType, string> = {
   monthly: 'Månedlig',
 }
 
+/**
+ * Resolve a period from periodType and periodStart date.
+ * Returns the full period with label and endDate derived server-side,
+ * or an error string if the input is invalid.
+ *
+ * Used by M2M API endpoints to avoid mismatches between periodStart and periodEnd.
+ */
+export function resolvePeriod(
+  periodType: ReportPeriodType,
+  periodStart: Date,
+  auditStartYear: number | null,
+): { period: ReportPeriod; error: null } | { period: null; error: string } {
+  const year = periodStart.getFullYear()
+  const month = periodStart.getMonth()
+  const day = periodStart.getDate()
+
+  // Validate audit_start_year constraint
+  if (auditStartYear !== null && year < auditStartYear) {
+    return { period: null, error: `periodStart cannot be before audit start year (${auditStartYear}-01-01)` }
+  }
+
+  if (day !== 1 && periodType !== 'yearly') {
+    return { period: null, error: 'periodStart must be the 1st of the month' }
+  }
+
+  let period: ReportPeriod
+
+  if (periodType === 'yearly') {
+    if (month !== 0 || day !== 1) {
+      return { period: null, error: 'periodStart for yearly must be January 1st (YYYY-01-01)' }
+    }
+    period = {
+      type: 'yearly',
+      label: String(year),
+      year,
+      startDate: new Date(year, 0, 1),
+      endDate: new Date(year, 11, 31, 23, 59, 59, 999),
+    }
+  } else if (periodType === 'tertiary') {
+    const tertiaryIndex = Math.floor(month / 4)
+    const expectedStartMonth = tertiaryIndex * 4
+    if (month !== expectedStartMonth) {
+      return { period: null, error: 'periodStart for tertiary must start in January, May, or September' }
+    }
+    const labels: Record<number, string> = TERTIARY_LABELS
+    period = {
+      type: 'tertiary',
+      label: `${labels[tertiaryIndex]} ${year}`,
+      year,
+      startDate: new Date(year, expectedStartMonth, 1),
+      endDate: new Date(year, expectedStartMonth + 4, 0, 23, 59, 59, 999),
+    }
+  } else if (periodType === 'quarterly') {
+    const quarterIndex = Math.floor(month / 3)
+    const expectedStartMonth = quarterIndex * 3
+    if (month !== expectedStartMonth) {
+      return { period: null, error: 'periodStart for quarterly must start in January, April, July, or October' }
+    }
+    const labels: Record<number, string> = QUARTER_LABELS
+    period = {
+      type: 'quarterly',
+      label: `${labels[quarterIndex]} ${year}`,
+      year,
+      startDate: new Date(year, expectedStartMonth, 1),
+      endDate: new Date(year, expectedStartMonth + 3, 0, 23, 59, 59, 999),
+    }
+  } else {
+    period = {
+      type: 'monthly',
+      label: `${MONTH_LABELS[month]} ${year}`,
+      year,
+      startDate: new Date(year, month, 1),
+      endDate: new Date(year, month + 1, 0, 23, 59, 59, 999),
+    }
+  }
+
+  // Validate period is completed
+  if (period.endDate >= new Date()) {
+    return { period: null, error: 'Period has not ended yet' }
+  }
+
+  return { period, error: null }
+}
+
 /** Minimal shape needed to match existing reports against a selected period. */
 interface ReportForPeriodMatch {
   period_type: ReportPeriodType

@@ -6,6 +6,7 @@ import {
   getCompletedPeriods,
   isPeriodCompleted,
   type ReportPeriod,
+  resolvePeriod,
 } from '../report-periods'
 
 describe('getCompletedPeriods', () => {
@@ -268,6 +269,135 @@ describe('toDateString', () => {
   it('pads single-digit month and day', () => {
     expect(toDateString(new Date(2025, 0, 5))).toBe('2025-01-05')
     expect(toDateString(new Date(2025, 8, 9))).toBe('2025-09-09')
+  })
+})
+
+describe('resolvePeriod', () => {
+  const pastYear = new Date().getFullYear() - 1
+
+  function expectSuccess(result: ReturnType<typeof resolvePeriod>) {
+    expect(result.error).toBeNull()
+    if (result.error !== null) throw new Error('Expected success')
+    return result.period
+  }
+
+  describe('yearly', () => {
+    it('resolves valid yearly period', () => {
+      const period = expectSuccess(resolvePeriod('yearly', new Date(pastYear, 0, 1), null))
+      expect(period.type).toBe('yearly')
+      expect(period.label).toBe(`${pastYear}`)
+      expect(period.year).toBe(pastYear)
+      expect(period.startDate).toEqual(new Date(pastYear, 0, 1))
+      expect(period.endDate).toEqual(new Date(pastYear, 11, 31, 23, 59, 59, 999))
+    })
+
+    it('rejects non-January start', () => {
+      const result = resolvePeriod('yearly', new Date(pastYear, 3, 1), null)
+      expect(result.error).toContain('January 1st')
+    })
+
+    it('rejects non-first day', () => {
+      const result = resolvePeriod('yearly', new Date(pastYear, 0, 15), null)
+      expect(result.error).toContain('January 1st')
+    })
+  })
+
+  describe('tertiary', () => {
+    it('resolves T1 (January start)', () => {
+      const period = expectSuccess(resolvePeriod('tertiary', new Date(pastYear, 0, 1), null))
+      expect(period.label).toBe(`T1 ${pastYear}`)
+      expect(period.startDate).toEqual(new Date(pastYear, 0, 1))
+      expect(period.endDate).toEqual(new Date(pastYear, 3, 30, 23, 59, 59, 999))
+    })
+
+    it('resolves T2 (May start)', () => {
+      const period = expectSuccess(resolvePeriod('tertiary', new Date(pastYear, 4, 1), null))
+      expect(period.label).toBe(`T2 ${pastYear}`)
+    })
+
+    it('resolves T3 (September start)', () => {
+      const period = expectSuccess(resolvePeriod('tertiary', new Date(pastYear, 8, 1), null))
+      expect(period.label).toBe(`T3 ${pastYear}`)
+    })
+
+    it('rejects invalid start month', () => {
+      const result = resolvePeriod('tertiary', new Date(pastYear, 2, 1), null)
+      expect(result.error).toContain('January, May, or September')
+    })
+
+    it('rejects non-first day', () => {
+      const result = resolvePeriod('tertiary', new Date(pastYear, 0, 15), null)
+      expect(result.error).toContain('1st of the month')
+    })
+  })
+
+  describe('quarterly', () => {
+    it('resolves Q1 (January start)', () => {
+      const period = expectSuccess(resolvePeriod('quarterly', new Date(pastYear, 0, 1), null))
+      expect(period.label).toBe(`Q1 ${pastYear}`)
+      expect(period.startDate).toEqual(new Date(pastYear, 0, 1))
+      expect(period.endDate).toEqual(new Date(pastYear, 2, 31, 23, 59, 59, 999))
+    })
+
+    it('resolves Q2 (April start)', () => {
+      const period = expectSuccess(resolvePeriod('quarterly', new Date(pastYear, 3, 1), null))
+      expect(period.label).toBe(`Q2 ${pastYear}`)
+    })
+
+    it('resolves Q3 (July start)', () => {
+      const period = expectSuccess(resolvePeriod('quarterly', new Date(pastYear, 6, 1), null))
+      expect(period.label).toBe(`Q3 ${pastYear}`)
+    })
+
+    it('resolves Q4 (October start)', () => {
+      const period = expectSuccess(resolvePeriod('quarterly', new Date(pastYear, 9, 1), null))
+      expect(period.label).toBe(`Q4 ${pastYear}`)
+    })
+
+    it('rejects invalid start month', () => {
+      const result = resolvePeriod('quarterly', new Date(pastYear, 1, 1), null)
+      expect(result.error).toContain('January, April, July, or October')
+    })
+  })
+
+  describe('monthly', () => {
+    it('resolves valid monthly period', () => {
+      const period = expectSuccess(resolvePeriod('monthly', new Date(pastYear, 5, 1), null))
+      expect(period.label).toBe(`Juni ${pastYear}`)
+      expect(period.startDate).toEqual(new Date(pastYear, 5, 1))
+      expect(period.endDate).toEqual(new Date(pastYear, 5, 30, 23, 59, 59, 999))
+    })
+
+    it('rejects non-first day', () => {
+      const result = resolvePeriod('monthly', new Date(pastYear, 5, 15), null)
+      expect(result.error).toContain('1st of the month')
+    })
+  })
+
+  describe('auditStartYear constraint', () => {
+    it('rejects period before audit start year', () => {
+      const result = resolvePeriod('yearly', new Date(2023, 0, 1), 2024)
+      expect(result.error).toContain('audit start year')
+      expect(result.error).toContain('2024')
+    })
+
+    it('accepts period at audit start year', () => {
+      const result = resolvePeriod('yearly', new Date(2024, 0, 1), 2024)
+      expect(result.error).toBeNull()
+    })
+
+    it('accepts period when auditStartYear is null', () => {
+      const result = resolvePeriod('yearly', new Date(2020, 0, 1), null)
+      expect(result.error).toBeNull()
+    })
+  })
+
+  describe('period completion', () => {
+    it('rejects period that has not ended yet', () => {
+      const futureYear = new Date().getFullYear() + 1
+      const result = resolvePeriod('yearly', new Date(futureYear, 0, 1), null)
+      expect(result.error).toContain('not ended yet')
+    })
   })
 })
 

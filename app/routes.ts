@@ -14,6 +14,23 @@ export default [
     'api/v1/apps/:team/:env/:app/verification-summary',
     'routes/api/v1.apps.$team.$env.$app.verification-summary.ts',
   ),
+  route('api/v1/apps/:team/:env/:app/audit-reports', 'routes/api/v1.apps.$team.$env.$app.audit-reports.ts'),
+  route(
+    'api/v1/apps/:team/:env/:app/audit-reports/status',
+    'routes/api/v1.apps.$team.$env.$app.audit-reports.status.ts',
+  ),
+  route(
+    'api/v1/apps/:team/:env/:app/audit-reports/generate',
+    'routes/api/v1.apps.$team.$env.$app.audit-reports.generate.ts',
+  ),
+  route(
+    'api/v1/apps/:team/:env/:app/audit-reports/jobs/:jobId',
+    'routes/api/v1.apps.$team.$env.$app.audit-reports.jobs.$jobId.ts',
+  ),
+  route(
+    'api/v1/apps/:team/:env/:app/audit-reports/:reportId/download',
+    'routes/api/v1.apps.$team.$env.$app.audit-reports.$reportId.download.ts',
+  ),
 
   layout('routes/layout.tsx', [
     index('routes/home.tsx'),
