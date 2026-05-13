@@ -185,13 +185,6 @@ export const mockSearchResults = [
   },
 ]
 
-export const mockNaisApps = [
-  { teamSlug: 'pensjondeployer', appName: 'pensjon-pen', environmentName: 'prod-fss' },
-  { teamSlug: 'pensjondeployer', appName: 'pensjon-selvbetjening', environmentName: 'prod-fss' },
-  { teamSlug: 'pensjondeployer', appName: 'pensjon-opptjening', environmentName: 'prod-gcp' },
-  { teamSlug: 'pensjonsamhandling', appName: 'pensjon-samhandling-api', environmentName: 'prod-fss' },
-]
-
 const _mockSyncJobs = [
   {
     id: 1,
