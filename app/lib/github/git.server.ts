@@ -1,4 +1,5 @@
 import { logger } from '~/lib/logger.server'
+import type { CompareData } from '~/lib/verification/types'
 import { getGitHubClient } from './client.server'
 
 /**
@@ -10,16 +11,7 @@ export async function getCommitsBetween(
   repo: string,
   base: string,
   head: string,
-): Promise<Array<{
-  sha: string
-  message: string
-  author: string
-  date: string
-  committer_date: string
-  html_url: string
-  parents_count: number
-  parent_shas: string[]
-}> | null> {
+): Promise<CompareData | null> {
   try {
     const client = getGitHubClient()
 
@@ -40,17 +32,19 @@ export async function getCommitsBetween(
 
     // Handle case where commits array might be undefined or empty
     const rawCommits = response.data.commits || []
+    const rawFiles = response.data.files || []
     logger.info(`      - Commits array length: ${rawCommits.length}`)
+    logger.info(`      - Files array length: ${rawFiles.length}`)
 
     const commits = rawCommits.map((commit) => ({
       sha: commit.sha,
       message: commit.commit.message,
-      author: commit.author?.login || commit.commit.author?.name || 'unknown',
-      date: commit.commit.author?.date || '',
-      committer_date: commit.commit.committer?.date || commit.commit.author?.date || '',
-      html_url: commit.html_url,
-      parents_count: commit.parents?.length || 0,
-      parent_shas: commit.parents?.map((p) => p.sha) || [],
+      authorUsername: commit.author?.login || commit.commit.author?.name || 'unknown',
+      authorDate: commit.commit.author?.date || '',
+      committerDate: commit.commit.committer?.date || commit.commit.author?.date || '',
+      htmlUrl: commit.html_url,
+      isMergeCommit: (commit.parents?.length || 0) > 1,
+      parentShas: commit.parents?.map((p) => p.sha) || [],
     }))
 
     logger.info(`✅ Found ${commits.length} commit(s) between ${base.substring(0, 7)} and ${head.substring(0, 7)}`)
@@ -59,14 +53,52 @@ export async function getCommitsBetween(
       logger.info(`   📝 Commits:`)
       commits.forEach((c, idx) => {
         logger.info(
-          `      ${idx + 1}. ${c.sha.substring(0, 7)} by ${c.author}: ${c.message.split('\n')[0].substring(0, 50)}`,
+          `      ${idx + 1}. ${c.sha.substring(0, 7)} by ${c.authorUsername}: ${c.message.split('\n')[0].substring(0, 50)}`,
         )
       })
     }
 
-    return commits
+    return {
+      compare: {
+        status: response.data.status,
+        aheadBy: response.data.ahead_by,
+        behindBy: response.data.behind_by,
+        totalCommits: response.data.total_commits,
+        changedFiles: rawFiles.length,
+        noDiffDetected: false,
+      },
+      commits,
+    }
   } catch (error) {
     logger.error(`❌ Error comparing commits ${base.substring(0, 7)}...${head.substring(0, 7)}:`, error)
+    return null
+  }
+}
+
+/**
+ * Check whether two commits have the same tree (no content changes).
+ * Returns null when GitHub cannot be queried.
+ */
+export async function haveSameCommitTree(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+): Promise<boolean | null> {
+  try {
+    const client = getGitHubClient()
+
+    const [baseCommit, headCommit] = await Promise.all([
+      client.repos.getCommit({ owner, repo, ref: baseSha }),
+      client.repos.getCommit({ owner, repo, ref: headSha }),
+    ])
+
+    return baseCommit.data.commit.tree?.sha === headCommit.data.commit.tree?.sha
+  } catch (error) {
+    logger.warn(
+      `⚠️ Failed to compare commit trees for ${baseSha.substring(0, 7)}...${headSha.substring(0, 7)} in ${owner}/${repo}:`,
+      error as Record<string, unknown>,
+    )
     return null
   }
 }

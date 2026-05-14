@@ -25,11 +25,18 @@ import {
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
-import { getCommitsBetween, getDetailedPullRequestInfo, getPullRequestForCommit, isCommitOnBranch } from '~/lib/github'
+import {
+  getCommitsBetween,
+  getDetailedPullRequestInfo,
+  getPullRequestForCommit,
+  haveSameCommitTree,
+  isCommitOnBranch,
+} from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import type { RepositoryStatus } from './types'
 import {
   type CompareData,
+  type CompareSummary,
   CURRENT_SCHEMA_VERSION,
   type ImplicitApprovalSettings,
   type PrChecks,
@@ -109,6 +116,7 @@ export async function fetchVerificationData(
 
   // Get commits between deployments
   let commitsBetween: VerificationInput['commitsBetween'] = []
+  let compareSummary: CompareSummary | null = null
   let compareFailed = false
   if (previousDeployment) {
     const result = await fetchCommitsBetween(
@@ -123,9 +131,11 @@ export async function fetchVerificationData(
     if (result === null) {
       compareFailed = true
     } else {
-      commitsBetween = result
+      commitsBetween = result.commitsBetween
+      compareSummary = result.compareSummary
     }
   }
+  const noDiffAlreadyConfirmed = compareSummary?.noDiffDetected === true
 
   // Aggregate base-branch mismatches discovered during commitsBetween enrichment.
   // Only aggregate for commits where NO matching PR was found on baseBranch —
@@ -163,7 +173,8 @@ export async function fetchVerificationData(
     previousDeployment &&
     commitsBetween.length === 0 &&
     !compareFailed &&
-    commitSha !== previousDeployment.commitSha
+    commitSha !== previousDeployment.commitSha &&
+    !noDiffAlreadyConfirmed
   ) {
     const nearbyResult = await pool.query(
       `SELECT d.id, d.four_eyes_status
@@ -198,6 +209,7 @@ export async function fetchVerificationData(
     commitsBetween.length === 0 &&
     !compareFailed &&
     commitSha !== previousDeployment.commitSha &&
+    !noDiffAlreadyConfirmed &&
     !nearbyApprovedDeployWithSameCommit
   ) {
     const nearbyAnyResult = await pool.query(
@@ -238,6 +250,7 @@ export async function fetchVerificationData(
     deployedPr,
     commitsBetween,
     compareFailed,
+    compareSummary,
     nearbyApprovedDeployWithSameCommit,
     nearbyApprovedDeploy,
     branchMismatch,
@@ -704,6 +717,19 @@ async function fetchPrFromGitHub(
 // Commits Between Deployments
 // =============================================================================
 
+export function resolveNoDiffDetection(
+  compareData: CompareData,
+  fromSha: string,
+  toSha: string,
+  hasSameTree: boolean | null,
+): { noDiffDetected: boolean; shouldPersistCompare: boolean } {
+  const isEmptyCompare = compareData.commits.length === 0 && compareData.compare.changedFiles === 0
+  const shouldTryTreeFallback = isEmptyCompare && compareData.compare.status !== 'identical' && fromSha !== toSha
+  const noDiffDetected = isEmptyCompare && (compareData.compare.status === 'identical' || hasSameTree === true)
+  const shouldPersistCompare = !shouldTryTreeFallback || hasSameTree !== null
+  return { noDiffDetected, shouldPersistCompare }
+}
+
 async function fetchCommitsBetween(
   owner: string,
   repo: string,
@@ -712,49 +738,66 @@ async function fetchCommitsBetween(
   baseBranch: string,
   _previousDeploymentDate: string,
   options?: FetchOptions,
-): Promise<VerificationInput['commitsBetween'] | null> {
+): Promise<{ commitsBetween: VerificationInput['commitsBetween']; compareSummary: CompareSummary } | null> {
   // Check cache first
   if (!options?.forceRefresh) {
     const cachedCompare = await getLatestCompareSnapshot(owner, repo, fromSha, toSha)
     if (cachedCompare) {
-      logger.info(`   📦 Using cached compare data (${cachedCompare.data.commits.length} commits)`)
-      return buildCommitsBetweenFromCache(owner, repo, baseBranch, cachedCompare.data, options)
+      logger.info(
+        `   📦 Using cached compare data (${cachedCompare.data.commits.length} commits, ${cachedCompare.data.compare.changedFiles} files)`,
+      )
+      return {
+        commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, cachedCompare.data, options),
+        compareSummary: cachedCompare.data.compare,
+      }
     }
   }
 
   // Fetch from GitHub API
   logger.info(`   🌐 Fetching compare from GitHub: ${fromSha.substring(0, 7)}...${toSha.substring(0, 7)}`)
-  const commitsRaw = await getCommitsBetween(owner, repo, fromSha, toSha)
+  const compareData = await getCommitsBetween(owner, repo, fromSha, toSha)
 
-  if (!commitsRaw) {
+  if (!compareData) {
     logger.warn(`Could not fetch commits between ${fromSha} and ${toSha}`)
     return null
   }
 
-  // Build compare data for storage
-  const compareData: CompareData = {
-    commits: commitsRaw.map((commit) => ({
-      sha: commit.sha,
-      message: commit.message,
-      authorUsername: commit.author,
-      authorDate: commit.date,
-      committerDate: commit.committer_date,
-      parentShas: commit.parent_shas,
-      isMergeCommit: commit.parents_count > 1,
-      htmlUrl: commit.html_url,
-    })),
+  const isEmptyCompare = compareData.commits.length === 0 && compareData.compare.changedFiles === 0
+  const shouldTryTreeFallback = isEmptyCompare && compareData.compare.status !== 'identical' && fromSha !== toSha
+  let hasSameTree: boolean | null = null
+  if (shouldTryTreeFallback) {
+    hasSameTree = await haveSameCommitTree(owner, repo, fromSha, toSha)
   }
 
-  // Save compare snapshot to database
-  await saveCompareSnapshot(owner, repo, fromSha, toSha, compareData)
+  const { noDiffDetected, shouldPersistCompare } = resolveNoDiffDetection(compareData, fromSha, toSha, hasSameTree)
+
+  const storedCompareData: CompareData = {
+    ...compareData,
+    compare: {
+      ...compareData.compare,
+      noDiffDetected,
+    },
+  }
+
+  if (shouldPersistCompare) {
+    // Save compare snapshot to database
+    await saveCompareSnapshot(owner, repo, fromSha, toSha, storedCompareData)
+  } else {
+    logger.warn(
+      `Skipping compare snapshot cache for ${fromSha.substring(0, 7)}...${toSha.substring(0, 7)}: tree fallback inconclusive`,
+    )
+  }
 
   // Also store individual commit snapshots
-  for (const commit of compareData.commits) {
+  for (const commit of storedCompareData.commits) {
     await saveCommitSnapshot(owner, repo, commit.sha, 'metadata', commit)
   }
 
   // Build the result with PR data
-  return buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, options)
+  return {
+    commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, storedCompareData, options),
+    compareSummary: storedCompareData.compare,
+  }
 }
 
 /**

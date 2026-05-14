@@ -66,6 +66,7 @@ function makeBaseInput(overrides: Partial<VerificationInput> = {}): Verification
     },
     deployedPr: null,
     commitsBetween: [],
+    compareSummary: null,
     dataFreshness: {
       deployedPrFetchedAt: new Date('2026-02-28T10:00:00Z'),
       commitsFetchedAt: new Date('2026-02-28T10:00:00Z'),

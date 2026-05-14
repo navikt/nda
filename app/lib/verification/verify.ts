@@ -10,6 +10,7 @@
 
 import {
   assertNever,
+  type CompareSummary,
   type ImplicitApprovalSettings,
   type PrCommit,
   type PrReview,
@@ -62,6 +63,9 @@ export function verifyDeployment(input: VerificationInput): VerificationResult {
         input,
         `GitHub compare API failed for ${input.repository}. Check that the GitHub App has access to this repository.`,
       )
+    }
+    if (input.compareSummary?.noDiffDetected) {
+      return handleNoChanges(input, describeNoDiff(input.compareSummary))
     }
     // Only treat as "no changes" when the commit SHA is identical.
     // Different SHAs with 0 commits means a rollback or branch divergence.
@@ -161,16 +165,30 @@ function handlePendingBaseline(input: VerificationInput): VerificationResult {
   })
 }
 
-function handleNoChanges(input: VerificationInput): VerificationResult {
+function handleNoChanges(
+  input: VerificationInput,
+  reason = 'No new commits since previous deployment',
+): VerificationResult {
   return buildResult(input, {
     hasFourEyes: true,
     status: 'no_changes',
     approvalDetails: {
       method: 'no_changes',
       approvers: [],
-      reason: 'No new commits since previous deployment',
+      reason,
     },
   })
+}
+
+function describeNoDiff(summary: CompareSummary): string {
+  if (summary.changedFiles === 0) {
+    if (summary.status === 'identical') {
+      return 'GitHub compare reported identical refs/commit with 0 changed files'
+    }
+    return `GitHub compare returned 0 commits and 0 changed files (status: ${summary.status})`
+  }
+
+  return `GitHub compare returned no diff (status: ${summary.status}, ${summary.changedFiles} changed files)`
 }
 
 function handleCompareError(input: VerificationInput, reason: string): VerificationResult {

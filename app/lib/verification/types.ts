@@ -16,7 +16,7 @@
  * Current schema version for GitHub data snapshots.
  * Increment this when the data structure changes and re-fetching is needed.
  */
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 4
 
 // =============================================================================
 // Exhaustive Check Helper
@@ -220,7 +220,17 @@ export interface CompareSnapshot extends SnapshotBase {
 /**
  * Data stored in compare snapshots
  */
+export interface CompareSummary {
+  status: string
+  aheadBy: number
+  behindBy: number
+  totalCommits: number
+  changedFiles: number
+  noDiffDetected: boolean
+}
+
 export interface CompareData {
+  compare: CompareSummary
   commits: Array<{
     sha: string
     message: string
@@ -447,6 +457,9 @@ export interface VerificationInput {
     mismatchedBaseBranches?: string[]
     mismatchedPrNumbers?: number[]
   }>
+
+  // Compare metadata for the deployment's commit range
+  compareSummary: CompareSummary | null
 
   // Metadata about data freshness
   dataFreshness: {

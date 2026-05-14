@@ -84,6 +84,7 @@ function makeDeploymentRow(overrides: Record<string, unknown> = {}) {
 
 function makeCompareSnapshot() {
   return {
+    base_sha: 'base123',
     data: {
       commits: [
         {
@@ -227,5 +228,28 @@ describe('computeVerificationDiffs double-check logic', () => {
     // verifyDeployment called only once (cache-only, then precomputedResult reused)
     expect(mockVerifyDeployment).toHaveBeenCalledTimes(1)
     expect(result.diffsFound).toBe(0)
+  })
+
+  it('refetches when compare snapshot base_sha does not match previous deployment', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', commit_sha: 'head123' })])
+    mockGetCompareSnapshot.mockResolvedValue({
+      ...makeCompareSnapshot(),
+      base_sha: 'wrong-base-sha',
+    })
+    mockGetPreviousDeployment.mockResolvedValue({
+      id: 42,
+      commit_sha: 'expected-base-sha',
+      created_at: new Date('2026-01-01T00:00:00Z'),
+    })
+    mockGetPrSnapshots.mockResolvedValue(makePrSnapshotMap())
+
+    const freshInput = makeVerificationInput()
+    mockFetchVerificationData.mockResolvedValue(freshInput)
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', approvalDetails: { reason: 'pr_approved' } })
+
+    await computeVerificationDiffs(1)
+
+    expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'head123', 'navikt/test-repo', 'prod-gcp', 'main', 1)
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Cached compare validation failed'))
   })
 })

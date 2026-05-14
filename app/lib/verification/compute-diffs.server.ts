@@ -97,11 +97,24 @@ export async function computeVerificationDiffs(
         const compareData = compareSnapshot.data as CompareData
 
         // Detect likely invalid cache: 0 commits between different SHAs
+        // Only trust compare metadata if it exists (schema v4+); v3 snapshots won't have it
+        const hasCompareMetadata = compareData.compare !== undefined
         const hasSuspiciousCache =
-          compareData.commits.length === 0 && previousDeployment && previousDeployment.commitSha !== row.commit_sha
+          compareData.commits.length === 0 &&
+          previousDeployment &&
+          previousDeployment.commitSha !== row.commit_sha &&
+          (!hasCompareMetadata || !compareData.compare.noDiffDetected)
 
-        if (hasSuspiciousCache) {
-          logger.info(`   🔄 Cached compare has 0 commits between different SHAs for deployment ${row.id} — refetching`)
+        // CRITICAL: Validate cache snapshot was created for the correct deployment range
+        // getCompareSnapshotForCommit() selects by head_sha only, so base_sha can mismatch
+        // If snapshot's base differs from previousDeployment, the noDiffDetected flag is for the wrong range
+        const cacheBaseMismatch = previousDeployment && compareSnapshot.base_sha !== previousDeployment.commitSha
+
+        if (hasSuspiciousCache || cacheBaseMismatch) {
+          const reason = cacheBaseMismatch
+            ? `snapshot base_sha ${compareSnapshot.base_sha} ≠ previousDeployment ${previousDeployment?.commitSha}`
+            : `0 commits between different SHAs`
+          logger.info(`   🔄 Cached compare validation failed for deployment ${row.id}: ${reason} — refetching`)
           input = await fetchVerificationData(
             row.id,
             row.commit_sha,
@@ -143,6 +156,7 @@ export async function computeVerificationDiffs(
             previousDeployment,
             deployedPr,
             commitsBetween,
+            compareSummary: hasCompareMetadata ? compareData.compare : null,
             dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
           }
 
