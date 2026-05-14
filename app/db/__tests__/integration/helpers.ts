@@ -33,26 +33,19 @@ export async function seedSection(pool: Pool, slug: string, name?: string): Prom
 /**
  * Insert a monitored application and return its id.
  *
- * When `auditStartYear` is omitted, the DB default for `audit_start_year`
- * applies (matches production behavior). Pass `null` explicitly to opt out
+ * When `auditStartYear` is omitted, defaults to the current year
+ * (matches production behavior). Pass `null` explicitly to opt out
  * of any audit window; pass a number to override.
  */
 export async function seedApp(
   pool: Pool,
   opts: { teamSlug: string; appName: string; environment: string; auditStartYear?: number | null },
 ): Promise<number> {
-  if (opts.auditStartYear === undefined) {
-    const { rows } = await pool.query<{ id: number }>(
-      `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active)
-       VALUES ($1, $2, $3, true) RETURNING id`,
-      [opts.teamSlug, opts.appName, opts.environment],
-    )
-    return rows[0].id
-  }
+  const year = opts.auditStartYear === undefined ? new Date().getFullYear() : opts.auditStartYear
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year)
      VALUES ($1, $2, $3, true, $4) RETURNING id`,
-    [opts.teamSlug, opts.appName, opts.environment, opts.auditStartYear],
+    [opts.teamSlug, opts.appName, opts.environment, year],
   )
   return rows[0].id
 }

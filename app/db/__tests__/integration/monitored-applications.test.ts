@@ -36,15 +36,6 @@ describe('createMonitoredApplication', () => {
     expect(app.audit_start_year).toBe(2026)
   })
 
-  it('bruker DB-default når audit_start_year ikke er angitt', async () => {
-    const app = await createMonitoredApplication({
-      team_slug: 'team-a',
-      environment_name: 'prod-gcp',
-      app_name: 'app-a',
-    })
-    expect(app.audit_start_year).toBe(2025)
-  })
-
   it('beholder eksisterende audit_start_year ved ON CONFLICT (re-add)', async () => {
     const first = await createMonitoredApplication({
       team_slug: 'team-a',
@@ -68,20 +59,14 @@ describe('createMonitoredApplication', () => {
     expect(fetched?.audit_start_year).toBe(2023)
   })
 
-  it('beholder eksisterende audit_start_year ved ON CONFLICT uten nytt år', async () => {
-    const first = await createMonitoredApplication({
-      team_slug: 'team-a',
+  it('setter audit_start_year til oppgitt verdi', async () => {
+    const year = new Date().getFullYear()
+    const app = await createMonitoredApplication({
+      team_slug: 'team-b',
       environment_name: 'prod-gcp',
-      app_name: 'app-a',
-      audit_start_year: 2023,
+      app_name: 'app-b',
+      audit_start_year: year,
     })
-    expect(first.audit_start_year).toBe(2023)
-
-    const second = await createMonitoredApplication({
-      team_slug: 'team-a',
-      environment_name: 'prod-gcp',
-      app_name: 'app-a',
-    })
-    expect(second.audit_start_year).toBe(2023)
+    expect(app.audit_start_year).toBe(year)
   })
 })

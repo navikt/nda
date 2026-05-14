@@ -4,8 +4,6 @@ import {
   BodyShort,
   Box,
   Button,
-  Checkbox,
-  CheckboxGroup,
   Heading,
   HStack,
   Modal,
@@ -15,9 +13,10 @@ import {
   TextField,
   VStack,
 } from '@navikt/ds-react'
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Form, Link, useLoaderData, useNavigation } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
+import { AddAppsDialog, type AddableApp } from '~/components/AddAppsDialog'
 import { RoleMembersSection } from '~/components/RoleMembersSection'
 import { type Board, createBoard, getBoardsByDevTeam } from '~/db/boards.server'
 import { pool } from '~/db/connection.server'
@@ -30,7 +29,7 @@ import {
   removeNaisTeamFromDevTeam,
   updateDevTeam,
 } from '~/db/dev-teams.server'
-import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
+import { createMonitoredApplication, getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import {
   assignTeamRole,
   getDevTeamMembersWithRoles,
@@ -44,7 +43,7 @@ import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
 import { TEAM_ROLE_LABELS, TEAM_ROLES, type TeamRole } from '~/lib/authorization-types'
 import { type BoardPeriodType, formatBoardLabel, getPeriodsForYear } from '~/lib/board-periods'
-import { getFormString, isValidNavIdent } from '~/lib/form-validators'
+import { getFormString, isValidNavIdent, parseAuditStartYear } from '~/lib/form-validators'
 import { logger } from '~/lib/logger.server'
 import { fetchAllTeamsAndApplications, getApplicationInfo } from '~/lib/nais.server'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.admin'
@@ -275,6 +274,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       return fail('Velg minst én applikasjon å legge til.')
     }
 
+    // Validate audit_start_year when there are new apps to create
+    let auditStartYear = 0
+    if (newIdentities.length > 0) {
+      const parsed = parseAuditStartYear(formData)
+      if (typeof parsed === 'string') return fail(parsed)
+      auditStartYear = parsed
+    }
+
     for (const id of newIdentities) {
       const found = await getApplicationInfo(id.team_slug, id.environment_name, id.app_name)
       if (!found) {
@@ -289,15 +296,16 @@ export async function action({ request, params }: Route.ActionArgs) {
       await client.query('BEGIN')
       const createdIds: number[] = []
       for (const id of newIdentities) {
-        const result = await client.query<{ id: number }>(
-          `INSERT INTO monitored_applications (team_slug, environment_name, app_name)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (team_slug, environment_name, app_name)
-           DO UPDATE SET is_active = true, updated_at = CURRENT_TIMESTAMP
-           RETURNING id`,
-          [id.team_slug, id.environment_name, id.app_name],
+        const app = await createMonitoredApplication(
+          {
+            team_slug: id.team_slug,
+            environment_name: id.environment_name,
+            app_name: id.app_name,
+            audit_start_year: auditStartYear,
+          },
+          client,
         )
-        createdIds.push(result.rows[0].id)
+        createdIds.push(app.id)
       }
       for (const monitoredAppId of [...existingIds, ...createdIds]) {
         await client.query(
@@ -378,13 +386,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   return fail('Ukjent handling.')
-}
-
-type AddableApp = {
-  team_slug: string
-  environment_name: string
-  app_name: string
-  monitored_id: number | null
 }
 
 export default function DevTeamAdmin({ actionData }: Route.ComponentProps) {
@@ -780,129 +781,3 @@ function ApplicationsSection({
     </VStack>
   )
 }
-
-import { forwardRef } from 'react'
-
-const AddAppsDialog = forwardRef<
-  HTMLDialogElement,
-  { addableApps: AddableApp[]; naisCatalogFailed: boolean; isSubmitting: boolean }
->(function AddAppsDialog({ addableApps, naisCatalogFailed, isSubmitting }, ref) {
-  const [search, setSearch] = useState('')
-
-  const searchLower = search.toLowerCase()
-  const filteredApps = useMemo(
-    () =>
-      search
-        ? addableApps.filter(
-            (app) =>
-              app.app_name.toLowerCase().includes(searchLower) ||
-              app.team_slug.toLowerCase().includes(searchLower) ||
-              app.environment_name.toLowerCase().includes(searchLower),
-          )
-        : addableApps,
-    [addableApps, search, searchLower],
-  )
-
-  const appsByNaisTeam = useMemo(() => {
-    const grouped = new Map<string, AddableApp[]>()
-    for (const app of filteredApps) {
-      const group = grouped.get(app.team_slug) ?? []
-      group.push(app)
-      grouped.set(app.team_slug, group)
-    }
-    return grouped
-  }, [filteredApps])
-
-  const closeModal = () => {
-    if (typeof ref === 'object' && ref?.current) ref.current.close()
-  }
-
-  const refValue = (app: AddableApp) =>
-    app.monitored_id !== null
-      ? `id:${app.monitored_id}`
-      : `new:${app.team_slug}|${app.environment_name}|${app.app_name}`
-
-  return (
-    <Modal ref={ref} header={{ heading: 'Legg til applikasjoner' }} closeOnBackdropClick width="640px">
-      <Modal.Body>
-        <Form
-          method="post"
-          id="add-apps-form"
-          onSubmit={() => {
-            closeModal()
-          }}
-        >
-          <input type="hidden" name="intent" value="add_apps" />
-          <VStack gap="space-12">
-            {naisCatalogFailed && (
-              <Alert variant="error" size="small">
-                Kunne ikke hente Nais-katalogen akkurat nå. Last siden på nytt om litt for å se tilgjengelige
-                applikasjoner.
-              </Alert>
-            )}
-            <BodyShort size="small" textColor="subtle">
-              Lista viser Nais-applikasjoner som ikke allerede er koblet til teamet. Apper merket «Ny i overvåking»
-              opprettes automatisk når du krysser dem av og lagrer.
-            </BodyShort>
-            <TextField
-              label="Søk etter applikasjon"
-              hideLabel
-              placeholder="Søk etter applikasjon, team eller miljø..."
-              size="small"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              autoComplete="off"
-            />
-            <Box style={{ maxHeight: '400px', overflowY: 'auto' }} paddingInline="space-4" paddingBlock="space-4">
-              {filteredApps.length === 0 ? (
-                <BodyShort size="small" textColor="subtle">
-                  {search
-                    ? 'Ingen applikasjoner matcher søket.'
-                    : naisCatalogFailed
-                      ? 'Ingen applikasjoner å vise — Nais-katalogen er utilgjengelig.'
-                      : addableApps.length === 0
-                        ? 'Alle Nais-applikasjoner er allerede koblet til teamet.'
-                        : 'Ingen applikasjoner funnet i Nais.'}
-                </BodyShort>
-              ) : (
-                <VStack gap="space-16">
-                  {[...appsByNaisTeam.entries()].map(([naisTeam, apps]) => (
-                    <CheckboxGroup key={naisTeam} legend={naisTeam} size="small">
-                      {apps.map((app) => (
-                        <Checkbox
-                          key={`${app.team_slug}|${app.environment_name}|${app.app_name}`}
-                          name="app_ref"
-                          value={refValue(app)}
-                        >
-                          <HStack gap="space-8" align="center" wrap>
-                            <span>{app.app_name}</span>
-                            <BodyShort as="span" size="small" textColor="subtle">
-                              ({app.environment_name})
-                            </BodyShort>
-                            {app.monitored_id === null && (
-                              <Tag size="xsmall" variant="info">
-                                Ny i overvåking
-                              </Tag>
-                            )}
-                          </HStack>
-                        </Checkbox>
-                      ))}
-                    </CheckboxGroup>
-                  ))}
-                </VStack>
-              )}
-            </Box>
-          </VStack>
-        </Form>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button type="submit" form="add-apps-form" size="small" loading={isSubmitting}>
-          Legg til valgte
-        </Button>
-        <Button variant="tertiary" size="small" type="button" onClick={closeModal}>
-          Avbryt
-        </Button>
-      </Modal.Footer>
-    </Modal>
-  )
-})

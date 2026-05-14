@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { pool } from './connection.server'
 
 interface MonitoredApplication {
@@ -92,35 +93,29 @@ export async function getMonitoredApplicationByIdentity(
  * does NOT overwrite the existing audit window — that would silently change
  * which historical deployments are in audit scope. To change the audit year,
  * use the dedicated admin update flow.
+ *
+ * Pass `client` to run within an existing transaction.
  */
-export async function createMonitoredApplication(data: {
-  team_slug: string
-  environment_name: string
-  app_name: string
-  audit_start_year?: number | null
-}): Promise<MonitoredApplication> {
-  const hasAuditYear = data.audit_start_year !== undefined
-  const result = await pool.query(
-    hasAuditYear
-      ? `INSERT INTO monitored_applications
-          (team_slug, environment_name, app_name, audit_start_year)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (team_slug, environment_name, app_name)
-        DO UPDATE SET
-          is_active = true,
-          updated_at = CURRENT_TIMESTAMP
-        RETURNING *`
-      : `INSERT INTO monitored_applications
-          (team_slug, environment_name, app_name)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (team_slug, environment_name, app_name)
-        DO UPDATE SET
-          is_active = true,
-          updated_at = CURRENT_TIMESTAMP
-        RETURNING *`,
-    hasAuditYear
-      ? [data.team_slug, data.environment_name, data.app_name, data.audit_start_year]
-      : [data.team_slug, data.environment_name, data.app_name],
+export async function createMonitoredApplication(
+  data: {
+    team_slug: string
+    environment_name: string
+    app_name: string
+    audit_start_year: number
+  },
+  client?: PoolClient,
+): Promise<MonitoredApplication> {
+  const queryable = client ?? pool
+  const result = await queryable.query(
+    `INSERT INTO monitored_applications
+        (team_slug, environment_name, app_name, audit_start_year)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (team_slug, environment_name, app_name)
+      DO UPDATE SET
+        is_active = true,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *`,
+    [data.team_slug, data.environment_name, data.app_name, data.audit_start_year],
   )
   return result.rows[0]
 }

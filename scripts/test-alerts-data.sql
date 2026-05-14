@@ -2,10 +2,10 @@
 -- Run this against your test database to see alerts in the UI
 
 -- First, ensure we have a monitored application
-INSERT INTO monitored_applications (team_slug, environment_name, app_name, is_active)
+INSERT INTO monitored_applications (team_slug, environment_name, app_name, is_active, audit_start_year)
 VALUES 
-  ('pensjon-test', 'dev-gcp', 'pensjon-testapp', TRUE),
-  ('pensjon-test', 'prod-gcp', 'pensjon-prodapp', TRUE)
+  ('pensjon-test', 'dev-gcp', 'pensjon-testapp', TRUE, 2025),
+  ('pensjon-test', 'prod-gcp', 'pensjon-prodapp', TRUE, 2025)
 ON CONFLICT (team_slug, environment_name, app_name) DO UPDATE SET is_active = TRUE
 RETURNING id;
 
