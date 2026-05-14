@@ -81,6 +81,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         if (review.username) usernames.push(review.username)
       }
     }
+    for (const nearby of debugResult.nearbyDeployments) {
+      if (nearby.deployerUsername) usernames.push(nearby.deployerUsername)
+    }
     const mappings = usernames.length > 0 ? await getUserMappings(usernames) : new Map()
 
     return {
@@ -197,7 +200,7 @@ function DebugResultView({
   result: DebugVerificationResult
   userMappings: Record<string, { display_name: string | null; nav_email: string | null }>
 }) {
-  const { existingStatus, fetchedData, newResult, comparison } = result
+  const { existingStatus, fetchedData, nearbyDeployments, newResult, comparison } = result
   const resolveUsername = (username: string | undefined | null) =>
     getUserDisplayName(username, userMappings) ?? username ?? 'ukjent'
 
@@ -324,6 +327,33 @@ function DebugResultView({
             ))}
             {fetchedData.commitsBetween.length > 5 && (
               <BodyShort size="small">... og {fetchedData.commitsBetween.length - 5} til</BodyShort>
+            )}
+          </VStack>
+
+          <VStack gap="space-2">
+            <Heading size="xsmall" level="3">
+              Nearby deploys (±30 min)
+            </Heading>
+            <DataRow label="Antall nearby deploys" value={nearbyDeployments.length.toString()} />
+            {nearbyDeployments.length === 0 ? (
+              <BodyShort>Ingen nearby deploys funnet</BodyShort>
+            ) : (
+              nearbyDeployments.map((nearby) => (
+                <Box key={nearby.id} padding="space-2" background="raised" borderRadius="4">
+                  <VStack gap="space-1">
+                    <BodyShort size="small">
+                      #{nearby.id} - {new Date(nearby.createdAt).toLocaleString('nb-NO')}
+                    </BodyShort>
+                    <BodyShort size="small">
+                      SHA: {(nearby.commitSha ?? 'null').substring(0, 7)} | Status: {nearby.fourEyesStatus ?? 'null'} |
+                      PR: {nearby.githubPrNumber ? `#${nearby.githubPrNumber}` : 'null'}
+                    </BodyShort>
+                    <BodyShort size="small">
+                      Deployer: {resolveUsername(nearby.deployerUsername)} | Tittel: {nearby.title ?? 'null'}
+                    </BodyShort>
+                  </VStack>
+                </Box>
+              ))
             )}
           </VStack>
 

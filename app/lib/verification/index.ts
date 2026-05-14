@@ -21,6 +21,7 @@
 import { getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { pool } from '~/db/connection.server'
+import { TITLE_COALESCE_SQL } from '~/db/deployments.server'
 import {
   getCompareSnapshotForCommit,
   getPreviousDeploymentForDiff,
@@ -169,6 +170,28 @@ export interface ExistingVerificationStatus {
 export interface DebugVerificationResult {
   existingStatus: ExistingVerificationStatus
   fetchedData: VerificationInput
+  nearbyDeployments: Array<{
+    id: number
+    commitSha: string | null
+    createdAt: string
+    fourEyesStatus: string | null
+    deployerUsername: string | null
+    githubPrNumber: number | null
+    githubPrUrl: string | null
+    githubPrData: unknown
+    unverifiedCommits: unknown
+    title: string | null
+    naisDeploymentId: string | null
+    environmentName: string
+    detectedGithubOwner: string | null
+    detectedGithubRepoName: string | null
+    verificationRun: {
+      status: string
+      runAt: string
+      schemaVersion: number
+      result: unknown
+    } | null
+  }>
   newResult: VerificationResult
   comparison: {
     statusChanged: boolean
@@ -250,12 +273,86 @@ export async function runDebugVerification(
 
   logger.info(`🔬 [DEBUG] Debug verification complete (result NOT saved)`)
 
+  const nearbyDeployments = await getNearbyDeploymentsDebugData(deploymentId)
+
   return {
     existingStatus,
     fetchedData,
+    nearbyDeployments,
     newResult,
     comparison,
   }
+}
+
+async function getNearbyDeploymentsDebugData(
+  deploymentId: number,
+): Promise<DebugVerificationResult['nearbyDeployments']> {
+  const result = await pool.query(
+    `SELECT 
+       d.id,
+       d.commit_sha,
+       d.created_at,
+       d.four_eyes_status,
+       d.deployer_username,
+       d.github_pr_number,
+       d.github_pr_url,
+       d.github_pr_data,
+       d.unverified_commits,
+       ${TITLE_COALESCE_SQL} AS title,
+       d.nais_deployment_id,
+       d.environment_name,
+       d.detected_github_owner,
+       d.detected_github_repo_name,
+       vr.status AS verification_status,
+       vr.run_at AS verification_run_at,
+       vr.schema_version AS verification_schema_version,
+       vr.result AS verification_result
+     FROM deployments d
+     LEFT JOIN commits c ON c.sha = d.commit_sha
+       AND c.repo_owner = d.detected_github_owner
+       AND c.repo_name = d.detected_github_repo_name
+     LEFT JOIN LATERAL (
+       SELECT status, run_at, schema_version, result
+       FROM verification_runs
+       WHERE deployment_id = d.id
+       ORDER BY run_at DESC
+       LIMIT 1
+     ) vr ON true
+     WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
+       AND d.id != $1
+       AND d.created_at BETWEEN (
+         (SELECT created_at FROM deployments WHERE id = $1) - interval '30 minutes'
+       ) AND (
+         (SELECT created_at FROM deployments WHERE id = $1) + interval '30 minutes'
+       )
+     ORDER BY d.created_at`,
+    [deploymentId],
+  )
+
+  return result.rows.map((row) => ({
+    id: row.id as number,
+    commitSha: (row.commit_sha as string | null) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+    fourEyesStatus: (row.four_eyes_status as string | null) ?? null,
+    deployerUsername: (row.deployer_username as string | null) ?? null,
+    githubPrNumber: (row.github_pr_number as number | null) ?? null,
+    githubPrUrl: (row.github_pr_url as string | null) ?? null,
+    githubPrData: row.github_pr_data as unknown,
+    unverifiedCommits: row.unverified_commits as unknown,
+    title: (row.title as string | null) ?? null,
+    naisDeploymentId: (row.nais_deployment_id as string | null) ?? null,
+    environmentName: row.environment_name as string,
+    detectedGithubOwner: (row.detected_github_owner as string | null) ?? null,
+    detectedGithubRepoName: (row.detected_github_repo_name as string | null) ?? null,
+    verificationRun: row.verification_status
+      ? {
+          status: row.verification_status as string,
+          runAt: (row.verification_run_at as Date).toISOString(),
+          schemaVersion: row.verification_schema_version as number,
+          result: row.verification_result as unknown,
+        }
+      : null,
+  }))
 }
 
 /**
