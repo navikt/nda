@@ -18,6 +18,79 @@ interface PullRequest {
   state: string
 }
 
+interface MergedPullRequestInWindow {
+  number: number
+  title: string
+  htmlUrl: string
+  mergedAt: string
+  baseBranch: string
+  headSha: string
+  mergeCommitSha: string | null
+  authorUsername: string | null
+  mergedByUsername: string | null
+}
+
+/**
+ * List merged PRs on a base branch within a merged_at time window.
+ * Used by debug tooling to explain out-of-order/superseded deployment sequences.
+ */
+export async function getMergedPullRequestsInWindow(
+  owner: string,
+  repo: string,
+  baseBranch: string,
+  windowStart: string,
+  windowEnd: string,
+): Promise<MergedPullRequestInWindow[]> {
+  const client = getGitHubClient()
+  const startMs = new Date(windowStart).getTime()
+  const endMs = new Date(windowEnd).getTime()
+  const mergedPrs: MergedPullRequestInWindow[] = []
+
+  // Keep this bounded: debug-only enrichment should not explode API usage.
+  const maxPages = 3
+  for (let page = 1; page <= maxPages; page++) {
+    const response = await client.pulls.list({
+      owner,
+      repo,
+      state: 'closed',
+      base: baseBranch,
+      sort: 'updated',
+      direction: 'desc',
+      per_page: 100,
+      page,
+    })
+
+    if (response.data.length === 0) break
+
+    for (const pr of response.data) {
+      if (!pr.merged_at) continue
+      const mergedAtMs = new Date(pr.merged_at).getTime()
+      if (Number.isNaN(mergedAtMs)) continue
+      if (mergedAtMs < startMs || mergedAtMs > endMs) continue
+
+      mergedPrs.push({
+        number: pr.number,
+        title: pr.title,
+        htmlUrl: pr.html_url,
+        mergedAt: pr.merged_at,
+        baseBranch: pr.base.ref,
+        headSha: pr.head.sha,
+        mergeCommitSha: pr.merge_commit_sha,
+        authorUsername: pr.user?.login ?? null,
+        mergedByUsername: null,
+      })
+    }
+
+    // We sort by updated_at, not merged_at. If this page has no in-window rows,
+    // it's unlikely later pages are relevant for a ±30 minute debug window.
+    if (!response.data.some((pr) => pr.merged_at && new Date(pr.merged_at).getTime() >= startMs)) {
+      break
+    }
+  }
+
+  return mergedPrs.sort((a, b) => new Date(a.mergedAt).getTime() - new Date(b.mergedAt).getTime())
+}
+
 /**
  * Result from `getPullRequestForCommit`: the PR matched by the (optional)
  * baseBranch filter (or null if none), plus the full unfiltered list of PRs

@@ -13,6 +13,7 @@
 
 import { Alert, BodyShort, Box, Button, Heading, HStack, Switch, Tag, VStack } from '@navikt/ds-react'
 import { Link, useSearchParams } from 'react-router'
+import { ExternalLink } from '~/components/ExternalLink'
 import { getDeploymentById } from '~/db/deployments.server'
 import { getUserMappings } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
@@ -83,6 +84,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
     for (const nearby of debugResult.nearbyDeployments) {
       if (nearby.deployerUsername) usernames.add(nearby.deployerUsername)
+    }
+    for (const pr of debugResult.mergedPullRequestsWindow.pullRequests) {
+      if (pr.authorUsername) usernames.add(pr.authorUsername)
+      if (pr.mergedByUsername) usernames.add(pr.mergedByUsername)
     }
     const mappingUsernames = Array.from(usernames)
     const mappings = mappingUsernames.length > 0 ? await getUserMappings(mappingUsernames) : new Map()
@@ -204,6 +209,20 @@ function DebugResultView({
   const { existingStatus, fetchedData, nearbyDeployments, newResult, comparison } = result
   const resolveUsername = (username: string | undefined | null) =>
     getUserDisplayName(username, userMappings) ?? username ?? 'ukjent'
+  const formatMergedPrClassification = (
+    classification: DebugVerificationResult['mergedPullRequestsWindow']['pullRequests'][number]['classification'],
+  ) => {
+    switch (classification) {
+      case 'deployed_as_current_pr':
+        return { label: 'Levert (nåværende PR)', variant: 'success' as const }
+      case 'deployed_as_nearby_pr':
+        return { label: 'Levert (nearby PR)', variant: 'info' as const }
+      case 'deployed_by_commit_sha':
+        return { label: 'Levert (commit SHA)', variant: 'neutral' as const }
+      case 'not_observed_in_deployments':
+        return { label: 'Ikke observert i deploys', variant: 'warning' as const }
+    }
+  }
 
   // Determine the display state
   const hasRealChange = comparison.statusChanged
@@ -355,6 +374,79 @@ function DebugResultView({
                   </VStack>
                 </Box>
               ))
+            )}
+          </VStack>
+
+          <VStack gap="space-2">
+            <Heading size="xsmall" level="3">
+              Merged PR-er (±30 min)
+            </Heading>
+            <DataRow
+              label="Tidsvindu"
+              value={
+                result.mergedPullRequestsWindow.windowStart && result.mergedPullRequestsWindow.windowEnd
+                  ? `${new Date(result.mergedPullRequestsWindow.windowStart).toLocaleString('nb-NO')} → ${new Date(
+                      result.mergedPullRequestsWindow.windowEnd,
+                    ).toLocaleString('nb-NO')}`
+                  : 'ikke tilgjengelig'
+              }
+            />
+            <DataRow
+              label="Antall merged PR-er"
+              value={result.mergedPullRequestsWindow.summary.totalMergedPrs.toString()}
+            />
+            <DataRow
+              label="Levert via nåværende PR"
+              value={result.mergedPullRequestsWindow.summary.deliveredAsCurrentPr.toString()}
+            />
+            <DataRow
+              label="Levert via nearby PR"
+              value={result.mergedPullRequestsWindow.summary.deliveredAsNearbyPr.toString()}
+            />
+            <DataRow
+              label="Levert via commit SHA"
+              value={result.mergedPullRequestsWindow.summary.deliveredByCommitSha.toString()}
+            />
+            <DataRow
+              label="Ikke observert i deploys"
+              value={result.mergedPullRequestsWindow.summary.notObservedInDeployments.toString()}
+            />
+            {result.mergedPullRequestsWindow.fetchError && (
+              <BodyShort size="small" style={{ color: 'var(--a-text-danger)' }}>
+                Klarte ikke hente merged PR-vindu: {result.mergedPullRequestsWindow.fetchError}
+              </BodyShort>
+            )}
+            {result.mergedPullRequestsWindow.pullRequests.length === 0 ? (
+              <BodyShort>Ingen merged PR-er funnet i tidsvinduet</BodyShort>
+            ) : (
+              result.mergedPullRequestsWindow.pullRequests.map((pr) => {
+                const classification = formatMergedPrClassification(pr.classification)
+                return (
+                  <Box key={pr.number} padding="space-2" background="raised" borderRadius="4">
+                    <VStack gap="space-1">
+                      <HStack gap="space-2" align="center">
+                        <Tag variant={classification.variant} size="small">
+                          {classification.label}
+                        </Tag>
+                        <BodyShort size="small">
+                          <ExternalLink href={pr.htmlUrl}>#{pr.number}</ExternalLink> -{' '}
+                          {new Date(pr.mergedAt).toLocaleString('nb-NO')}
+                        </BodyShort>
+                      </HStack>
+                      <BodyShort size="small">Tittel: {pr.title}</BodyShort>
+                      <BodyShort size="small">
+                        Forfatter: {resolveUsername(pr.authorUsername)} | Merged by:{' '}
+                        {resolveUsername(pr.mergedByUsername)}
+                      </BodyShort>
+                      <BodyShort size="small">
+                        merge_commit_sha: {pr.mergeCommitSha?.substring(0, 7) ?? 'null'} | head_sha:{' '}
+                        {pr.headSha.substring(0, 7)} | deploy matches:{' '}
+                        {pr.matchedDeploymentIds.length > 0 ? pr.matchedDeploymentIds.join(', ') : 'ingen'}
+                      </BodyShort>
+                    </VStack>
+                  </Box>
+                )
+              })
             )}
           </VStack>
 
