@@ -142,11 +142,31 @@ Hvis dette er **første gang** applikasjonen deployes (ingen tidligere deploymen
 
 Systemet henter listen over commits mellom forrige deployment sin commit-SHA og nåværende deployment sin commit-SHA via GitHub API.
 
-- **Samme commit-SHA** og tom commit-liste: Deploymentet er en **re-deploy** av eksakt samme kode. Status: **`no_changes`**.
-- **Forskjellig commit-SHA** men tom commit-liste: GitHub compare returnerte 0 commits til tross for ulike SHAer. Dette kan skyldes rollback (eldre commit deployet på nytt), branch-divergens, eller API-feil. Sjekkes i rekkefølge:
-  1. **Nærliggende deployment med samme commit-SHA** (±30 min) som allerede er godkjent → behandles som retry/duplikat, status: **`no_changes`**.
-  2. **Nærliggende deployment med annen commit-SHA** (±30 min) som er godkjent → dette er en *superseded deploy*: commit-en er en ancestor av den godkjente deployen (all kode er allerede inkludert), status: **`no_changes`**. Typisk ved rapid-fire deploys der webhook-rekkefølge ikke matcher merge-rekkefølge.
-  3. Ingen nærliggende godkjent deployment → Status: **`error`**. Krever manuell vurdering.
+##### Samme commit-SHA (re-deploy)
+- Deploymentet er en **re-deploy** av eksakt samme kode. Status: **`no_changes`**.
+
+##### Samme commit-SHA men GitHub compare returnerer 'identical'
+- Hvis GitHub compare-API returnerer `status = 'identical'`, bekrefter det at begge commitene er identiske. Status: **`no_changes`**.
+
+##### Forskjellig commit-SHA — no-diff-deteksjon
+
+Når GitHub compare returnerer 0 commits til tross for ulike SHAer, bruker systemet **compare-metadata** og en **tree-comparison-fallback** for å skille ekte «ingen diff» fra rollback, branch-divergens og API-feil:
+
+**Steg 1: Tree-comparison-fallback (for ambigøse tilfeller)**
+- Hvis begge commits har **identiske commit trees** (`tree.sha` match) → **Ekte no-diff** ✓
+  - Eksempel: To brancher som ble opprettet fra samme commit, deretter rebased eller reordered, men som nå peker på kode med samme tree
+- Hvis **tree-sjekken finner ulik trees** eller **feiler** → Fortsett til steg 2
+
+**Steg 2: Sjekk nærliggende godkjente deployments (for rollback-scenario)**
+
+Hvis ingen av stegene over bekreftet no-diff:
+1. **Nærliggende deployment med samme commit-SHA** (±30 min) som allerede er godkjent → behandles som retry/duplikat, status: **`no_changes`**.
+2. **Nærliggende deployment med annen commit-SHA** (±30 min) som er godkjent → mulig *superseded deploy* (heuristikk, ikke ancestry-verifisert), status: **`no_changes`**. Typisk ved rapid-fire deploys der webhook-rekkefølge ikke matcher merge-rekkefølge.
+3. Ingen nærliggende godkjent deployment → Status: **`error`**. Krever manuell vurdering.
+
+**Når returneres error?**
+- `compareFailed = true` → GitHub compare API feilet (403 Forbidden, 404 Not Found, 500, osv.). Status: **`error`** — GitHub App må sjekkes.
+- Ulike SHAer, 0 commits, og `noDiffDetected = false` → Trolig rollback eller branch-divergens med faktisk kodeendringer. Status: **`error`** — krever manuell vurdering.
 
 #### Steg 3: Sjekk hver commit individuelt
 
@@ -190,14 +210,14 @@ Hvert deployment får én av følgende statuser etter verifisering:
 |--------|-----------|-----------|-------------|
 | `approved` | Godkjent | ✅ Ja | Alle commits har godkjent PR-review |
 | `implicitly_approved` | Implisitt godkjent | ✅ Ja | Godkjent via implisitte regler (f.eks. Dependabot) |
-| `no_changes` | Ingen endringer | ✅ Ja | Re-deploy av eksakt samme commit (identisk SHA) |
+| `no_changes` | Ingen endringer | ✅ Ja | Re-deploy av eksakt samme commit, eller compare/tree bekrefter at det ikke finnes kodeendringer |
 | `pending_baseline` | Første deployment | ⚠️ Nei | Første deployment — brukes som referansepunkt |
 | `unverified_commits` | Uverifiserte commits | ❌ Nei | Én eller flere commits mangler godkjent PR-review |
 | `unauthorized_repository` | Ikke godkjent repo | ❌ Nei | Deploymentets repo er ikke godkjent for applikasjonen |
 | `unauthorized_branch` | Ikke på godkjent branch | ❌ Nei | Deployet commit er ikke på konfigurert base-branch |
 | `manually_approved` | Manuelt godkjent | ✅ Ja | Manuelt godkjent av administrator i applikasjonen |
 | `legacy` | Legacy | ⚠️ N/A | Deployment fra før audit-systemet ble aktivert |
-| `error` | Feil | ❌ Nei | Teknisk feil under verifisering, eller ulike commit-SHAer med 0 commits fra GitHub compare (rollback/divergens) |
+| `error` | Feil | ❌ Nei | Teknisk feil under verifisering, eller tvetydig compare med ulike commit-SHAer og reell diff/branch-divergens |
 
 > **Koderef**: Enum `VerificationStatus` i [`app/lib/verification/types.ts`](../app/lib/verification/types.ts)
 
@@ -339,6 +359,41 @@ Implisitt godkjenning er en konfigurerbar mekanisme som lar visse typer deployme
 | [`app/lib/__tests__/four-eyes-verification.test.ts`](../app/lib/__tests__/four-eyes-verification.test.ts) | PR-review, squash merge, Dependabot-scenarier |
 | [`app/lib/__tests__/verify-coverage-gaps.test.ts`](../app/lib/__tests__/verify-coverage-gaps.test.ts) | Alle 7 beslutningssteg i `verifyDeployment`, sikkerhetstester |
 | [`app/lib/__tests__/v1-unverified-reasons.test.ts`](../app/lib/__tests__/v1-unverified-reasons.test.ts) | Komplekse multi-commit scenarier |
+
+---
+
+## No-diff-deteksjon (GitHub compare-metadata + tree-fallback)
+
+Når GitHub API returnerer 0 commits mellom to commits, kan dette bety:
+
+1. **Ekte no-diff** — samme kode (commit-tree) på to ulike commits
+2. **Rollback** — ny commit som er en eldre versjon av koden
+3. **Branch-divergens** — to brancher som har gått ut av fase
+4. **API-feil** — GitHub repo-tilgang, rate-limiting, eller server-feil
+
+Systemet bruker en **tre-trinns strategi** for å skille disse scenarioene:
+
+**Trinn 1: GitHub compare-metadata**
+- Hvis `compare.status = 'identical'` + `changedFiles = 0` → Ekte no-diff ✓
+- Hvis `status = 'diverged'` + `0 commits` + `0 files` → Ambigøst, gå til trinn 2
+
+**Trinn 2: Commit-tree-sammenligning (fallback)**
+- Hvis begge commits har **samme `.tree.sha`** → Ekte no-diff ✓
+- Hvis trees er **ulike** → Trolig rollback/divergens, gå til trinn 3
+
+**Trinn 3: Nærliggende godkjente deployments**
+- **Samme commit-SHA** (±30 min) godkjent → retry/duplikat
+- **Annen commit-SHA** (±30 min) godkjent → mulig superseded deploy (heuristikk, ikke ancestry-verifisert)
+- **Ingen match** → `error` status, krever manuell gjennomgang
+
+**GitHub API-feil:**
+- Hvis `compareFailed = true` (403, 404, 500, osv.) → `error` status, løs GitHub App-tilgang
+
+> **Implementering**: 
+> - Tree-comparison: `haveSameCommitTree()` i [`app/lib/github/git.server.ts`](../app/lib/github/git.server.ts)
+> - Orkestrering: `fetchCommitsBetween()` i [`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts)
+> - Beslutningslogikk: `verifyDeployment()` og `handleNoChanges()` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts)
+> - Tester: [`app/lib/__tests__/verify-coverage-gaps.test.ts`](../app/lib/__tests__/verify-coverage-gaps.test.ts) — Case 2b (no-diff via compare) + GitHub API-feil
 
 ---
 

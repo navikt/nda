@@ -342,7 +342,6 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   const compareSnapshot = await getCompareSnapshotForCommit(dep.commit_sha)
   if (!compareSnapshot) return null
 
-  const compareData = compareSnapshot.data as CompareData
   const owner = dep.detected_github_owner
   const repo = dep.detected_github_repo_name
   const baseBranch = dep.default_branch || 'main'
@@ -352,38 +351,61 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     ? { id: prevRow.id, commitSha: prevRow.commit_sha, createdAt: prevRow.created_at.toISOString() }
     : null
 
-  const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
-    cacheOnly: true,
-  })
+  let input: VerificationInput
+  const cacheBaseMismatch = previousDeployment && compareSnapshot.base_sha !== previousDeployment.commitSha
+  if (cacheBaseMismatch) {
+    // Snapshot lookup is by head_sha only; a base mismatch means cache is for
+    // another deployment range and must not be reused.
+    logger.warn(
+      `reverifyDeployment(${dep.id}): cache snapshot base_sha ${compareSnapshot.base_sha} ≠ previousDeployment ${previousDeployment.commitSha} — refetching`,
+    )
+    input = await fetchVerificationData(
+      dep.id,
+      dep.commit_sha,
+      `${owner}/${repo}`,
+      dep.environment_name,
+      baseBranch,
+      dep.monitored_app_id,
+      { forceRefresh: true },
+    )
+  } else {
+    const compareData = compareSnapshot.data as CompareData
+    const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
+      cacheOnly: true,
+    })
 
-  let deployedPr: VerificationInput['deployedPr'] = null
-  if (dep.github_pr_number) {
-    const snapshotMap = await getPrSnapshotsForDiff(dep.github_pr_number)
-    if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
-      deployedPr = {
-        number: dep.github_pr_number,
-        url: `https://github.com/${owner}/${repo}/pull/${dep.github_pr_number}`,
-        metadata: snapshotMap.get('metadata') as PrMetadata,
-        reviews: snapshotMap.get('reviews') as PrReview[],
-        commits: snapshotMap.get('commits') as PrCommit[],
+    let deployedPr: VerificationInput['deployedPr'] = null
+    if (dep.github_pr_number) {
+      const snapshotMap = await getPrSnapshotsForDiff(dep.github_pr_number)
+      if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
+        deployedPr = {
+          number: dep.github_pr_number,
+          url: `https://github.com/${owner}/${repo}/pull/${dep.github_pr_number}`,
+          metadata: snapshotMap.get('metadata') as PrMetadata,
+          reviews: snapshotMap.get('reviews') as PrReview[],
+          commits: snapshotMap.get('commits') as PrCommit[],
+        }
       }
     }
-  }
 
-  const input: VerificationInput = {
-    deploymentId: dep.id,
-    commitSha: dep.commit_sha,
-    repository: `${owner}/${repo}`,
-    environmentName: dep.environment_name,
-    baseBranch,
-    auditStartYear: dep.audit_start_year,
-    implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
-    previousDeployment,
-    deployedPr,
-    commitsBetween,
-    dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
-    repositoryStatus: 'active',
-    commitOnBaseBranch: null,
+    // Guard against missing compare metadata (v3 snapshots only have 'commits')
+    const hasCompareMetadata = compareData.compare !== undefined
+    input = {
+      deploymentId: dep.id,
+      commitSha: dep.commit_sha,
+      repository: `${owner}/${repo}`,
+      environmentName: dep.environment_name,
+      baseBranch,
+      auditStartYear: dep.audit_start_year,
+      implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
+      previousDeployment,
+      deployedPr,
+      commitsBetween,
+      compareSummary: hasCompareMetadata ? compareData.compare : null,
+      dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
+      repositoryStatus: 'active',
+      commitOnBaseBranch: null,
+    }
   }
 
   const newResult = verifyDeployment(input)

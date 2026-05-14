@@ -31,6 +31,7 @@ vi.mock('~/lib/github', () => ({
   getPullRequestForCommit: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
   getCommitsBetween: vi.fn(),
+  haveSameCommitTree: vi.fn(),
   isCommitOnBranch: vi.fn(),
 }))
 
@@ -51,6 +52,24 @@ const mockSaveCommitSnapshot = saveCommitSnapshot as Mock
 const mockGetAllPrSnapshots = getAllLatestPrSnapshots as Mock
 const mockGetDetailedPrInfo = getDetailedPullRequestInfo as Mock
 
+function makeCompareData(
+  commits: CompareData['commits'],
+  compareOverrides: Partial<CompareData['compare']> = {},
+): CompareData {
+  return {
+    compare: {
+      status: commits.length > 0 ? 'ahead' : 'identical',
+      aheadBy: commits.length,
+      behindBy: 0,
+      totalCommits: commits.length,
+      changedFiles: commits.length,
+      noDiffDetected: false,
+      ...compareOverrides,
+    },
+    commits,
+  }
+}
+
 describe('findPrForCommit stale cache handling', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -65,20 +84,18 @@ describe('findPrForCommit stale cache handling', () => {
       schemaVersion: CURRENT_SCHEMA_VERSION,
     })
 
-    const compareData: CompareData = {
-      commits: [
-        {
-          sha: 'abc123',
-          message: 'Direct push without PR',
-          authorUsername: 'user1',
-          authorDate: '2026-04-27T16:00:00Z',
-          committerDate: '2026-04-27T16:00:00Z',
-          parentShas: ['parent1'],
-          isMergeCommit: false,
-          htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
-        },
-      ],
-    }
+    const compareData = makeCompareData([
+      {
+        sha: 'abc123',
+        message: 'Direct push without PR',
+        authorUsername: 'user1',
+        authorDate: '2026-04-27T16:00:00Z',
+        committerDate: '2026-04-27T16:00:00Z',
+        parentShas: ['parent1'],
+        isMergeCommit: false,
+        htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
+      },
+    ])
 
     const result = await buildCommitsBetweenFromCache('navikt', 'repo', 'main', compareData)
 
@@ -151,20 +168,18 @@ describe('findPrForCommit stale cache handling', () => {
     // Mock that no cached PR snapshots exist (force fetch from GitHub)
     mockGetAllPrSnapshots.mockResolvedValue(new Map())
 
-    const compareData: CompareData = {
-      commits: [
-        {
-          sha: 'abc123',
-          message: 'Merge pull request #100 from navikt/feature-branch',
-          authorUsername: 'user1',
-          authorDate: '2026-04-27T16:00:00Z',
-          committerDate: '2026-04-27T16:00:00Z',
-          parentShas: ['parent1', 'parent2'],
-          isMergeCommit: true,
-          htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
-        },
-      ],
-    }
+    const compareData = makeCompareData([
+      {
+        sha: 'abc123',
+        message: 'Merge pull request #100 from navikt/feature-branch',
+        authorUsername: 'user1',
+        authorDate: '2026-04-27T16:00:00Z',
+        committerDate: '2026-04-27T16:00:00Z',
+        parentShas: ['parent1', 'parent2'],
+        isMergeCommit: true,
+        htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
+      },
+    ])
 
     const result = await buildCommitsBetweenFromCache('navikt', 'repo', 'main', compareData, {
       forceRefresh: true,
@@ -189,20 +204,18 @@ describe('findPrForCommit stale cache handling', () => {
       schemaVersion: CURRENT_SCHEMA_VERSION,
     })
 
-    const compareData: CompareData = {
-      commits: [
-        {
-          sha: 'abc123',
-          message: 'Some commit',
-          authorUsername: 'user1',
-          authorDate: '2026-04-27T16:00:00Z',
-          committerDate: '2026-04-27T16:00:00Z',
-          parentShas: ['parent1'],
-          isMergeCommit: false,
-          htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
-        },
-      ],
-    }
+    const compareData = makeCompareData([
+      {
+        sha: 'abc123',
+        message: 'Some commit',
+        authorUsername: 'user1',
+        authorDate: '2026-04-27T16:00:00Z',
+        committerDate: '2026-04-27T16:00:00Z',
+        parentShas: ['parent1'],
+        isMergeCommit: false,
+        htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
+      },
+    ])
 
     const result = await buildCommitsBetweenFromCache('navikt', 'repo', 'main', compareData, {
       cacheOnly: true,

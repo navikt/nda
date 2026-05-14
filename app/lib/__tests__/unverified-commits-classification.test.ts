@@ -87,6 +87,7 @@ function makeInput(overrides: Partial<VerificationInput> = {}): VerificationInpu
     previousDeployment: { id: 0, commitSha: 'prev-sha', createdAt: '2026-01-10T00:00:00Z' },
     deployedPr: null,
     commitsBetween: [],
+    compareSummary: null,
     dataFreshness: { deployedPrFetchedAt: new Date(), commitsFetchedAt: new Date(), schemaVersion: 3 },
     ...overrides,
   }

@@ -88,6 +88,7 @@ function makeBaseInput(overrides: Partial<VerificationInput> = {}): Verification
     },
     deployedPr: null,
     commitsBetween: [],
+    compareSummary: null,
     dataFreshness: {
       deployedPrFetchedAt: new Date('2026-02-28T10:00:00Z'),
       commitsFetchedAt: new Date('2026-02-28T10:00:00Z'),
@@ -182,8 +183,34 @@ describe('verifyDeployment - Case 2a: no_changes (same commit SHA)', () => {
   })
 })
 
-describe('verifyDeployment - Case 2b: compare error (different SHAs, 0 commits)', () => {
-  it('should return error when SHAs differ but commitsBetween is empty', () => {
+describe('verifyDeployment - Case 2b: zero-commit handling', () => {
+  it('should return no_changes when compare.status=identical (explicit match)', () => {
+    const input = makeBaseInput({
+      commitSha: 'deploy-sha-same',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'deploy-sha-same',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      compareSummary: {
+        status: 'identical',
+        aheadBy: 0,
+        behindBy: 0,
+        totalCommits: 0,
+        changedFiles: 0,
+        noDiffDetected: true,
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('no_changes')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.reason).toContain('GitHub compare reported identical refs/commit')
+  })
+
+  it('should return no_changes when compare metadata confirms no diff (diverged but identical trees)', () => {
     const input = makeBaseInput({
       commitSha: 'deploy-sha-new',
       previousDeployment: {
@@ -192,6 +219,62 @@ describe('verifyDeployment - Case 2b: compare error (different SHAs, 0 commits)'
         createdAt: '2026-02-26T10:00:00Z',
       },
       commitsBetween: [],
+      compareSummary: {
+        status: 'diverged',
+        aheadBy: 0,
+        behindBy: 0,
+        totalCommits: 0,
+        changedFiles: 0,
+        noDiffDetected: true, // Tree comparison confirmed identical
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('no_changes')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.reason).toContain('GitHub compare returned 0 commits and 0 changed files')
+  })
+
+  it('should recognize diverged branches with no actual diff (tree comparison worked)', () => {
+    // Scenario: Different SHAs, compare says 0 commits, 0 files, status='diverged' (different branch)
+    // Tree comparison confirms both commits have identical tree → true no-diff
+    const input = makeBaseInput({
+      commitSha: 'branch-x-tip',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'branch-y-tip',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      compareSummary: {
+        status: 'diverged',
+        aheadBy: 0,
+        behindBy: 0,
+        totalCommits: 0,
+        changedFiles: 0,
+        noDiffDetected: true, // Tree check confirmed both commits wrap same tree
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('no_changes')
+    expect(result.hasFourEyes).toBe(true)
+  })
+
+  it('should return error when SHAs differ but commitsBetween is empty and no compare metadata', () => {
+    // Scenario: SHAs differ, 0 commits, no compare metadata, no noDiffDetected flag
+    // This is ambiguous — could be API error, rollback, or branch divergence
+    const input = makeBaseInput({
+      commitSha: 'deploy-sha-new',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'deploy-sha-old',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      // No compareSummary
     })
 
     const result = verifyDeployment(input)
@@ -200,6 +283,34 @@ describe('verifyDeployment - Case 2b: compare error (different SHAs, 0 commits)'
     expect(result.hasFourEyes).toBe(false)
     expect(result.approvalDetails.reason).toContain('Commit SHAs differ')
     expect(result.approvalDetails.reason).toContain('0 commits')
+  })
+
+  it('should return error when SHAs differ and tree comparison found real diff', () => {
+    // Scenario: Different SHAs, 0 commits in compare, but tree comparison shows different trees
+    // This indicates rollback or branch divergence with actual code changes
+    const input = makeBaseInput({
+      commitSha: 'older-sha-abc',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'newer-sha-xyz',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      compareSummary: {
+        status: 'diverged',
+        aheadBy: 0,
+        behindBy: 1,
+        totalCommits: 0,
+        changedFiles: 0,
+        noDiffDetected: false, // Tree comparison found different trees
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.reason).toContain('Commit SHAs differ')
   })
 
   it('should return error for rollback scenario (older commit deployed after newer)', () => {
@@ -249,6 +360,101 @@ describe('verifyDeployment - Case 2b: compare error (different SHAs, 0 commits)'
 
     expect(result.status).toBe('error')
     expect(result.approvalDetails.reason).toContain('GitHub compare API failed')
+  })
+})
+
+// =============================================================================
+// GitHub API Failures and Access Issues
+// =============================================================================
+
+describe('verifyDeployment - GitHub API and access failures', () => {
+  it('should return error when GitHub compare API fails with 403 (access denied)', () => {
+    // Scenario: GitHub returns 403 Forbidden (repo access issue, PAT expired, etc.)
+    // This must be surfaced as error, not treated as "no commits"
+    const input = makeBaseInput({
+      commitSha: 'deploy-sha-new',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'deploy-sha-old',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      compareFailed: true,
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.reason).toContain('GitHub compare API failed')
+    expect(result.approvalDetails.reason).toContain('GitHub App')
+  })
+
+  it('should return error when GitHub compare API fails with 404 (repo not found)', () => {
+    const input = makeBaseInput({
+      commitSha: 'deploy-sha-new',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'deploy-sha-old',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      compareFailed: true,
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    // Same message for both 403 and 404 — both are access/configuration issues
+  })
+
+  it('should return error when GitHub compare API fails with 500 (server error)', () => {
+    // Temporary GitHub outage or transient error
+    const input = makeBaseInput({
+      commitSha: 'deploy-sha-new',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'deploy-sha-old',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      compareFailed: true,
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.reason).toContain('GitHub compare API failed')
+  })
+
+  it('should return error when tree comparison fallback also fails', () => {
+    // Scenario: Compare returns 0 commits (ambiguous), tree comparison fallback also fails
+    // noDiffDetected=false (fallback failed or found diff), no nearby approved deploy
+    const input = makeBaseInput({
+      commitSha: 'deploy-sha-new',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'deploy-sha-old',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      compareSummary: {
+        status: 'diverged',
+        aheadBy: 0,
+        behindBy: 0,
+        totalCommits: 0,
+        changedFiles: 0,
+        noDiffDetected: false, // Tree fallback failed or found diff
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.reason).toContain('Commit SHAs differ')
   })
 
   it('should return no_changes when nearby approved deploy with same commit exists', () => {
