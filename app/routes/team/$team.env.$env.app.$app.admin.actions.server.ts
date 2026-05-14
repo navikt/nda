@@ -29,6 +29,7 @@ import { isValidReportPeriodType } from '~/lib/report-periods'
 import { serializeUserMappings } from '~/lib/user-display'
 import { fetchVerificationDataForAllDeployments } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
+import { isImplicitApprovalMode } from '~/lib/verification/types'
 
 // Async function to process data fetch job in background
 async function processFetchDataJobAsync(jobId: number, appId: number) {
@@ -100,14 +101,14 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'update_implicit_approval') {
-    const mode = formData.get('mode') as 'off' | 'dependabot_only' | 'all'
-    if (!['off', 'dependabot_only', 'all'].includes(mode)) {
+    const modeValue = formData.get('mode')
+    if (typeof modeValue !== 'string' || !isImplicitApprovalMode(modeValue)) {
       return { error: 'Ugyldig modus' }
     }
 
     await updateImplicitApprovalSettings({
       monitoredAppId: appId,
-      settings: { mode },
+      settings: { mode: modeValue },
       changedByNavIdent: user.navIdent,
       changedByName: user.name || undefined,
     })

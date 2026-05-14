@@ -7,12 +7,18 @@ import {
   CheckboxGroup,
   HStack,
   Modal,
+  Select,
   Tag,
   TextField,
   VStack,
 } from '@navikt/ds-react'
 import { forwardRef, useMemo, useState } from 'react'
 import { Form } from 'react-router'
+import {
+  IMPLICIT_APPROVAL_MODE_DESCRIPTIONS,
+  IMPLICIT_APPROVAL_MODE_LABELS,
+  IMPLICIT_APPROVAL_MODES,
+} from '~/lib/verification/types'
 
 export type AddableApp = {
   team_slug: string
@@ -93,18 +99,39 @@ export const AddAppsDialog = forwardRef<HTMLDialogElement, AddAppsDialogProps>(f
               opprettes automatisk når du krysser dem av og lagrer.
             </BodyShort>
             {hasNewApps && (
-              <TextField
-                label="Startår for revisjon"
-                description="Gjelder kun apper som er nye i overvåking"
-                size="small"
-                name="audit_start_year"
-                type="number"
-                defaultValue={String(currentYear)}
-                htmlSize={6}
-                min={2000}
-                max={currentYear + 1}
-                required
-              />
+              <>
+                <TextField
+                  label="Startår for revisjon"
+                  description="Gjelder kun apper som er nye i overvåking"
+                  size="small"
+                  name="audit_start_year"
+                  type="number"
+                  defaultValue={String(currentYear)}
+                  htmlSize={6}
+                  min={2000}
+                  max={currentYear + 1}
+                  required
+                />
+                <Select
+                  label="Implisitt godkjenning for nye apper"
+                  name="implicit_approval_mode"
+                  size="small"
+                  defaultValue="off"
+                  style={{ maxWidth: '300px' }}
+                >
+                  {IMPLICIT_APPROVAL_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {IMPLICIT_APPROVAL_MODE_LABELS[mode]}
+                    </option>
+                  ))}
+                </Select>
+                <BodyShort size="small" textColor="subtle">
+                  <strong>{IMPLICIT_APPROVAL_MODE_LABELS.dependabot_only}:</strong>{' '}
+                  {IMPLICIT_APPROVAL_MODE_DESCRIPTIONS.dependabot_only}.
+                  <br />
+                  <strong>{IMPLICIT_APPROVAL_MODE_LABELS.all}:</strong> {IMPLICIT_APPROVAL_MODE_DESCRIPTIONS.all}.
+                </BodyShort>
+              </>
             )}
             <TextField
               label="Søk etter applikasjon"

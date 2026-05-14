@@ -18,6 +18,7 @@ import { Form, Link, useLoaderData, useNavigation } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { AddAppsDialog, type AddableApp } from '~/components/AddAppsDialog'
 import { RoleMembersSection } from '~/components/RoleMembersSection'
+import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
 import { type Board, createBoard, getBoardsByDevTeam } from '~/db/boards.server'
 import { pool } from '~/db/connection.server'
 import {
@@ -46,6 +47,7 @@ import { type BoardPeriodType, formatBoardLabel, getPeriodsForYear } from '~/lib
 import { getFormString, isValidNavIdent, parseAuditStartYear } from '~/lib/form-validators'
 import { logger } from '~/lib/logger.server'
 import { fetchAllTeamsAndApplications, getApplicationInfo } from '~/lib/nais.server'
+import { type ImplicitApprovalMode, isImplicitApprovalMode } from '~/lib/verification/types'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.admin'
 
 export function meta({ data }: Route.MetaArgs) {
@@ -255,6 +257,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === 'add_apps') {
     const refs = [...new Set(formData.getAll('app_ref').map(String))]
+    const implicitApprovalModeRaw = getFormString(formData, 'implicit_approval_mode') ?? 'off'
     const existingIds = new Set<number>()
     const newKeys = new Map<string, { team_slug: string; environment_name: string; app_name: string }>()
     for (const ref of refs) {
@@ -276,10 +279,15 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     // Validate audit_start_year when there are new apps to create
     let auditStartYear = 0
+    let implicitApprovalMode: ImplicitApprovalMode = 'off'
     if (newIdentities.length > 0) {
       const parsed = parseAuditStartYear(formData)
       if (typeof parsed === 'string') return fail(parsed)
       auditStartYear = parsed
+      if (!isImplicitApprovalMode(implicitApprovalModeRaw)) {
+        return fail('Ugyldig modus for implisitt godkjenning.')
+      }
+      implicitApprovalMode = implicitApprovalModeRaw
     }
 
     for (const id of newIdentities) {
@@ -292,6 +300,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     const client = await pool.connect()
+    let transactionCommitted = false
+    let clientReleased = false
     try {
       await client.query('BEGIN')
       const createdIds: number[] = []
@@ -318,6 +328,28 @@ export async function action({ request, params }: Route.ActionArgs) {
         )
       }
       await client.query('COMMIT')
+      transactionCommitted = true
+      client.release()
+      clientReleased = true
+
+      if (createdIds.length > 0) {
+        try {
+          for (const monitoredAppId of createdIds) {
+            await updateImplicitApprovalSettings({
+              monitoredAppId,
+              settings: { mode: implicitApprovalMode },
+              changedByNavIdent: user.navIdent,
+              changedByName: user.name || undefined,
+            })
+          }
+        } catch (error) {
+          logger.error('implicit approval setup failed for newly added apps:', error)
+          return fail(
+            'Applikasjonene ble lagt til, men klarte ikke å lagre oppsett for implisitt godkjenning. Sett dette på appens admin-side.',
+          )
+        }
+      }
+
       const total = existingIds.size + createdIds.length
       const createdMsg =
         createdIds.length > 0
@@ -325,11 +357,15 @@ export async function action({ request, params }: Route.ActionArgs) {
           : ''
       return ok(`La til ${total} applikasjon${total === 1 ? '' : 'er'}${createdMsg}.`)
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => {})
+      if (!transactionCommitted) {
+        await client.query('ROLLBACK').catch(() => {})
+      }
       logger.error('add_apps tx failed:', error)
       return fail(`Kunne ikke legge til applikasjoner: ${error}`)
     } finally {
-      client.release()
+      if (!clientReleased) {
+        client.release()
+      }
     }
   }
 

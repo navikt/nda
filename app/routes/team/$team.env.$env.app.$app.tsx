@@ -51,6 +51,7 @@ import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
+import { isImplicitApprovalMode } from '~/lib/verification/types'
 import type { loader as layoutLoader } from '../layout'
 import type { Route } from './+types/$team.env.$env.app.$app'
 
@@ -154,19 +155,19 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (action === 'update_implicit_approval') {
       const appId = parseInt(formData.get('app_id') as string, 10)
-      const mode = formData.get('mode') as 'off' | 'dependabot_only' | 'all'
+      const modeValue = formData.get('mode')
 
       if (!identity) {
         return { error: 'Du må være innlogget for å endre innstillinger' }
       }
 
-      if (!['off', 'dependabot_only', 'all'].includes(mode)) {
+      if (typeof modeValue !== 'string' || !isImplicitApprovalMode(modeValue)) {
         return { error: 'Ugyldig modus valgt' }
       }
 
       await updateImplicitApprovalSettings({
         monitoredAppId: appId,
-        settings: { mode },
+        settings: { mode: modeValue },
         changedByNavIdent: identity.navIdent,
         changedByName: identity.name || undefined,
       })

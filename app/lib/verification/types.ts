@@ -58,6 +58,7 @@ const _IMPLICIT_APPROVAL_MODE_LABELS: Record<ImplicitApprovalMode, string> = {
   dependabot_only: 'Kun Dependabot',
   all: 'Alle PRer',
 }
+export const IMPLICIT_APPROVAL_MODE_LABELS = _IMPLICIT_APPROVAL_MODE_LABELS
 
 /**
  * Descriptions for implicit approval modes
@@ -66,6 +67,11 @@ const _IMPLICIT_APPROVAL_MODE_DESCRIPTIONS: Record<ImplicitApprovalMode, string>
   off: 'Ingen implisitt godkjenning - krever eksplisitt review-godkjenning',
   dependabot_only: 'Dependabot-PRer med kun Dependabot-commits godkjennes når merget av annen bruker',
   all: 'PRer godkjennes når merger er forskjellig fra PR-forfatter og siste commit-forfatter',
+}
+export const IMPLICIT_APPROVAL_MODE_DESCRIPTIONS = _IMPLICIT_APPROVAL_MODE_DESCRIPTIONS
+
+export function isImplicitApprovalMode(value: string): value is ImplicitApprovalMode {
+  return IMPLICIT_APPROVAL_MODES.includes(value as ImplicitApprovalMode)
 }
 
 // =============================================================================
