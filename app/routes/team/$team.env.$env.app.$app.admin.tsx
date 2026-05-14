@@ -29,6 +29,11 @@ import { getLatestSyncJob, type SyncJob } from '~/db/sync-jobs.server'
 import { getAllUserMappings } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { UserMappings } from '~/lib/user-display'
+import {
+  IMPLICIT_APPROVAL_MODE_DESCRIPTIONS,
+  IMPLICIT_APPROVAL_MODE_LABELS,
+  IMPLICIT_APPROVAL_MODES,
+} from '~/lib/verification/types'
 import type { Route } from './+types/$team.env.$env.app.$app.admin'
 
 export { action } from './$team.env.$env.app.$app.admin.actions.server'
@@ -349,17 +354,18 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                 size="small"
                 style={{ maxWidth: '300px' }}
               >
-                <option value="off">Av</option>
-                <option value="dependabot_only">Kun Dependabot</option>
-                <option value="all">Alle</option>
+                {IMPLICIT_APPROVAL_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {IMPLICIT_APPROVAL_MODE_LABELS[mode]}
+                  </option>
+                ))}
               </Select>
 
               <BodyShort size="small" textColor="subtle">
-                <strong>Kun Dependabot:</strong> Godkjenner automatisk PRer opprettet av Dependabot med kun
-                Dependabot-commits.
+                <strong>{IMPLICIT_APPROVAL_MODE_LABELS.dependabot_only}:</strong>{' '}
+                {IMPLICIT_APPROVAL_MODE_DESCRIPTIONS.dependabot_only}.
                 <br />
-                <strong>Alle:</strong> Godkjenner alle PRer der den som merger verken opprettet PRen eller har siste
-                commit.
+                <strong>{IMPLICIT_APPROVAL_MODE_LABELS.all}:</strong> {IMPLICIT_APPROVAL_MODE_DESCRIPTIONS.all}.
               </BodyShort>
 
               <Button type="submit" size="small" variant="secondary">
