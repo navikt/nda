@@ -28,7 +28,9 @@ import {
   getPrSnapshotsForDiff,
 } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
+import { getMergedPullRequestsInWindow } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
+import { analyzeMergedPrWindow } from './debug-merged-prs'
 import { buildCommitsBetweenFromCache, fetchVerificationData } from './fetch-data.server'
 import { storeVerificationResult, updateDeploymentVerification } from './store-data.server'
 import type { CompareData, PrCommit, PrMetadata, PrReview, VerificationInput, VerificationResult } from './types'
@@ -192,6 +194,35 @@ export interface DebugVerificationResult {
       result: unknown
     } | null
   }>
+  mergedPullRequestsWindow: {
+    windowStart: string
+    windowEnd: string
+    summary: {
+      totalMergedPrs: number
+      deliveredAsCurrentPr: number
+      deliveredAsNearbyPr: number
+      deliveredByCommitSha: number
+      notObservedInDeployments: number
+    }
+    pullRequests: Array<{
+      number: number
+      title: string
+      htmlUrl: string
+      mergedAt: string
+      baseBranch: string
+      headSha: string
+      mergeCommitSha: string | null
+      authorUsername: string | null
+      mergedByUsername: string | null
+      classification:
+        | 'deployed_as_current_pr'
+        | 'deployed_as_nearby_pr'
+        | 'deployed_by_commit_sha'
+        | 'not_observed_in_deployments'
+      matchedDeploymentIds: number[]
+    }>
+    fetchError: string | null
+  }
   newResult: VerificationResult
   comparison: {
     statusChanged: boolean
@@ -274,13 +305,115 @@ export async function runDebugVerification(
   logger.info(`🔬 [DEBUG] Debug verification complete (result NOT saved)`)
 
   const nearbyDeployments = await getNearbyDeploymentsDebugData(deploymentId)
+  const mergedPullRequestsWindow = await getMergedPullRequestsWindowDebugData(
+    deploymentId,
+    options,
+    fetchedData,
+    nearbyDeployments,
+  )
 
   return {
     existingStatus,
     fetchedData,
     nearbyDeployments,
+    mergedPullRequestsWindow,
     newResult,
     comparison,
+  }
+}
+
+async function getMergedPullRequestsWindowDebugData(
+  deploymentId: number,
+  options: RunVerificationOptions,
+  fetchedData: VerificationInput,
+  nearbyDeployments: DebugVerificationResult['nearbyDeployments'],
+): Promise<DebugVerificationResult['mergedPullRequestsWindow']> {
+  const deploymentCreatedAt = await getDeploymentCreatedAt(deploymentId)
+  if (!deploymentCreatedAt) {
+    return {
+      windowStart: '',
+      windowEnd: '',
+      summary: {
+        totalMergedPrs: 0,
+        deliveredAsCurrentPr: 0,
+        deliveredAsNearbyPr: 0,
+        deliveredByCommitSha: 0,
+        notObservedInDeployments: 0,
+      },
+      pullRequests: [],
+      fetchError: `Fant ikke deployment #${deploymentId}`,
+    }
+  }
+
+  const [owner, repo] = options.repository.split('/')
+  if (!owner || !repo) {
+    return {
+      windowStart: '',
+      windowEnd: '',
+      summary: {
+        totalMergedPrs: 0,
+        deliveredAsCurrentPr: 0,
+        deliveredAsNearbyPr: 0,
+        deliveredByCommitSha: 0,
+        notObservedInDeployments: 0,
+      },
+      pullRequests: [],
+      fetchError: `Ugyldig repository-format: ${options.repository}`,
+    }
+  }
+
+  const windowStartDate = new Date(deploymentCreatedAt.getTime() - 30 * 60 * 1000)
+  const windowEndDate = new Date(deploymentCreatedAt.getTime() + 30 * 60 * 1000)
+  const windowStart = windowStartDate.toISOString()
+  const windowEnd = windowEndDate.toISOString()
+
+  try {
+    const mergedPullRequests = await getMergedPullRequestsInWindow(
+      owner,
+      repo,
+      options.baseBranch,
+      windowStart,
+      windowEnd,
+    )
+
+    const analysis = analyzeMergedPrWindow(
+      mergedPullRequests,
+      {
+        deploymentId,
+        commitSha: options.commitSha,
+        githubPrNumber: fetchedData.deployedPr?.number ?? null,
+      },
+      nearbyDeployments.map((deployment) => ({
+        deploymentId: deployment.id,
+        commitSha: deployment.commitSha,
+        githubPrNumber: deployment.githubPrNumber,
+      })),
+    )
+
+    return {
+      windowStart,
+      windowEnd,
+      summary: analysis.summary,
+      pullRequests: analysis.pullRequests,
+      fetchError: null,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Ukjent feil ved henting av merged PR-er'
+    logger.warn(`runDebugVerification(${deploymentId}): could not fetch merged PR window: ${message}`)
+
+    return {
+      windowStart,
+      windowEnd,
+      summary: {
+        totalMergedPrs: 0,
+        deliveredAsCurrentPr: 0,
+        deliveredAsNearbyPr: 0,
+        deliveredByCommitSha: 0,
+        notObservedInDeployments: 0,
+      },
+      pullRequests: [],
+      fetchError: message,
+    }
   }
 }
 
@@ -359,6 +492,18 @@ async function getNearbyDeploymentsDebugData(
         }
       : null,
   }))
+}
+
+async function getDeploymentCreatedAt(deploymentId: number): Promise<Date | null> {
+  const result = await pool.query(
+    `SELECT created_at
+     FROM deployments
+     WHERE id = $1`,
+    [deploymentId],
+  )
+
+  if (result.rows.length === 0) return null
+  return result.rows[0].created_at as Date
 }
 
 /**

@@ -3,5 +3,6 @@ export { getCommitsBetween, haveSameCommitTree, isCommitOnBranch } from './git.s
 export { lookupLegacyByCommit, lookupLegacyByPR } from './legacy.server'
 export {
   getDetailedPullRequestInfo,
+  getMergedPullRequestsInWindow,
   getPullRequestForCommit,
 } from './pr.server'
