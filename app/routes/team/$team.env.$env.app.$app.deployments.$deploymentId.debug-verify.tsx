@@ -69,22 +69,23 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       forceRefresh: !useCache,
     })
 
-    // Collect usernames for display name resolution
-    const usernames: string[] = []
+    // Collect usernames for display name resolution (deduplicated)
+    const usernames = new Set<string>()
     const fetchedData = debugResult.fetchedData
     if (fetchedData?.deployedPr) {
       if (fetchedData.deployedPr.metadata.author?.username)
-        usernames.push(fetchedData.deployedPr.metadata.author.username)
+        usernames.add(fetchedData.deployedPr.metadata.author.username)
       if (fetchedData.deployedPr.metadata.mergedBy?.username)
-        usernames.push(fetchedData.deployedPr.metadata.mergedBy.username)
+        usernames.add(fetchedData.deployedPr.metadata.mergedBy.username)
       for (const review of fetchedData.deployedPr.reviews) {
-        if (review.username) usernames.push(review.username)
+        if (review.username) usernames.add(review.username)
       }
     }
     for (const nearby of debugResult.nearbyDeployments) {
-      if (nearby.deployerUsername) usernames.push(nearby.deployerUsername)
+      if (nearby.deployerUsername) usernames.add(nearby.deployerUsername)
     }
-    const mappings = usernames.length > 0 ? await getUserMappings(usernames) : new Map()
+    const mappingUsernames = Array.from(usernames)
+    const mappings = mappingUsernames.length > 0 ? await getUserMappings(mappingUsernames) : new Map()
 
     return {
       deployment,

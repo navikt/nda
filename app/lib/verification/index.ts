@@ -288,7 +288,12 @@ async function getNearbyDeploymentsDebugData(
   deploymentId: number,
 ): Promise<DebugVerificationResult['nearbyDeployments']> {
   const result = await pool.query(
-    `SELECT 
+    `WITH reference_deployment AS (
+       SELECT monitored_app_id, created_at
+       FROM deployments
+       WHERE id = $1
+     )
+     SELECT 
        d.id,
        d.commit_sha,
        d.created_at,
@@ -318,12 +323,13 @@ async function getNearbyDeploymentsDebugData(
        ORDER BY run_at DESC
        LIMIT 1
      ) vr ON true
-     WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
+     CROSS JOIN reference_deployment ref
+     WHERE d.monitored_app_id = ref.monitored_app_id
        AND d.id != $1
        AND d.created_at BETWEEN (
-         (SELECT created_at FROM deployments WHERE id = $1) - interval '30 minutes'
+         ref.created_at - interval '30 minutes'
        ) AND (
-         (SELECT created_at FROM deployments WHERE id = $1) + interval '30 minutes'
+         ref.created_at + interval '30 minutes'
        )
      ORDER BY d.created_at`,
     [deploymentId],
