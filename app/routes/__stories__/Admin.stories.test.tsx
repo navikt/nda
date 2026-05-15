@@ -1,23 +1,23 @@
 import { composeStories } from '@storybook/react'
-import type { JSX } from 'react'
+import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as stories from './Admin.stories'
+
+vi.mock('react-router', async () => {
+  const React = await import('react')
+
+  return {
+    Link: ({ children, to, ...props }: { children?: ReactNode; to?: string } & Record<string, unknown>) =>
+      React.createElement('a', { href: to as string, ...props }, children),
+  }
+})
 
 const { Default, WithPendingVerifications } = composeStories(stories)
 
-function renderStory(StoryComponent: () => JSX.Element) {
-  return renderToStaticMarkup(
-    <MemoryRouter>
-      <StoryComponent />
-    </MemoryRouter>,
-  )
-}
-
 describe('Admin story baseline characterization', () => {
   it('renders admin entry points when there are no pending verifications', () => {
-    const html = renderStory(Default)
+    const html = renderToStaticMarkup(<Default />)
 
     expect(html).toContain('Administrasjon')
     expect(html).toContain('/deployments/verify')
@@ -30,7 +30,7 @@ describe('Admin story baseline characterization', () => {
   })
 
   it('renders pending verification messaging when pending deployments exist', () => {
-    const html = renderStory(WithPendingVerifications)
+    const html = renderToStaticMarkup(<WithPendingVerifications />)
 
     expect(html).toContain('5 deployments venter på verifisering.')
     expect(html).toContain('GitHub-verifisering')
