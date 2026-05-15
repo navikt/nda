@@ -9,6 +9,7 @@ import {
   deactivateObjective,
   deleteExternalReference,
   type ExternalReference,
+  externalReferenceBelongsToBoard,
   getBoardDevTeamId,
   getBoardWithObjectives,
   keyResultBelongsToBoard,
@@ -92,7 +93,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         const title = (formData.get('title') as string)?.trim()
         if (!title) return { error: 'Tittel er påkrevd.', intent: 'update-objective', id }
         await updateObjective(id, { title, description: (formData.get('description') as string)?.trim() })
-        return { success: true, intent: 'update-objective', id }
+        return { success: true, intent: 'update-objective', id, resultToken: Date.now() }
       }
       case 'deactivate-objective': {
         const id = Number(formData.get('id'))
@@ -126,7 +127,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         const title = (formData.get('title') as string)?.trim()
         if (!title) return { error: 'Tittel er påkrevd.', intent: 'update-key-result', id }
         await updateKeyResult(id, { title, description: (formData.get('description') as string)?.trim() })
-        return { success: true, intent: 'update-key-result', id }
+        return { success: true, intent: 'update-key-result', id, resultToken: Date.now() }
       }
       case 'deactivate-key-result': {
         const id = Number(formData.get('id'))
@@ -167,7 +168,11 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { success: true }
       }
       case 'delete-reference': {
-        await deleteExternalReference(Number(formData.get('id')), user.navIdent)
+        const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig referanse-ID.' }
+        if (!(await externalReferenceBelongsToBoard(id, boardId)))
+          return { error: 'Referansen tilhører ikke denne tavlen.' }
+        await deleteExternalReference(id, user.navIdent)
         return { success: true }
       }
       case 'update-objective-keywords': {
@@ -217,7 +222,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { error: 'Ukjent handling.' }
     }
   } catch (error) {
-    return { error: `Feil: ${error}` }
+    console.error('Board action failed', { boardId, intent, error })
+    return { error: 'Kunne ikke utføre handlingen. Prøv igjen.' }
   }
 }
 

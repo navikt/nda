@@ -1,6 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
+  externalReferenceBelongsToBoard,
   getBoardsWithGoalsForDevTeam,
   getBoardWithObjectives,
   keyResultBelongsToBoard,
@@ -383,6 +384,38 @@ describe('getBoardWithObjectives', () => {
 
       await expect(keyResultBelongsToBoard(ownKrRows[0].id, board.id)).resolves.toBe(true)
       await expect(keyResultBelongsToBoard(otherKrRows[0].id, board.id)).resolves.toBe(false)
+    })
+
+    it('validates external reference ownership for board', async () => {
+      const { board } = await seedBoardStack(pool)
+      const sectionId = await seedSection(pool, 'sec-other-ref')
+      const otherDevTeamId = await seedDevTeam(pool, 'team-other-ref', 'Other Team Ref', sectionId)
+      const { rows: otherBoardRows } = await pool.query(
+        `INSERT INTO boards (dev_team_id, title, period_type, period_start, period_end, period_label)
+         VALUES ($1, 'Other Ref', 'tertiary', '2026-01-01', '2026-04-30', 'T1') RETURNING id`,
+        [otherDevTeamId],
+      )
+
+      const { rows: ownObjectiveRows } = await pool.query(
+        "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Own Objective', 0) RETURNING id",
+        [board.id],
+      )
+      const { rows: otherObjectiveRows } = await pool.query(
+        "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Other Objective', 0) RETURNING id",
+        [otherBoardRows[0].id],
+      )
+
+      const { rows: ownRefRows } = await pool.query(
+        "INSERT INTO external_references (ref_type, url, title, objective_id) VALUES ('jira', 'https://jira/own', 'Own Ref', $1) RETURNING id",
+        [ownObjectiveRows[0].id],
+      )
+      const { rows: otherRefRows } = await pool.query(
+        "INSERT INTO external_references (ref_type, url, title, objective_id) VALUES ('jira', 'https://jira/other', 'Other Ref', $1) RETURNING id",
+        [otherObjectiveRows[0].id],
+      )
+
+      await expect(externalReferenceBelongsToBoard(ownRefRows[0].id, board.id)).resolves.toBe(true)
+      await expect(externalReferenceBelongsToBoard(otherRefRows[0].id, board.id)).resolves.toBe(false)
     })
   })
 

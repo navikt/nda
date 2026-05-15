@@ -37,6 +37,7 @@ interface BoardDetailProps {
     success?: boolean
     intent?: string
     id?: number | null
+    resultToken?: number
   }
 }
 

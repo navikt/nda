@@ -30,11 +30,13 @@ export function ObjectiveCard({
     success?: boolean
     intent?: string
     id?: number | null
+    resultToken?: number
   }
 }) {
   const [showAddKR, setShowAddKR] = useState(false)
   const [showAddRef, setShowAddRef] = useState(false)
   const [editingObjective, setEditingObjective] = useState(false)
+  const [lastHandledObjectiveResultToken, setLastHandledObjectiveResultToken] = useState<number | null>(null)
   const isInactive = !objective.is_active
 
   const krProgressMap = new Map(progress?.key_results.map((kr) => [kr.id, kr.linked_deployments]) ?? [])
@@ -48,15 +50,19 @@ export function ObjectiveCard({
   }, [isInactive])
 
   useEffect(() => {
+    const token = actionResult?.resultToken ?? null
     if (
       editingObjective &&
       actionResult?.success &&
       actionResult.intent === 'update-objective' &&
-      actionResult.id === objective.id
+      actionResult.id === objective.id &&
+      token !== null &&
+      token !== lastHandledObjectiveResultToken
     ) {
       setEditingObjective(false)
+      setLastHandledObjectiveResultToken(token)
     }
-  }, [actionResult, editingObjective, objective.id])
+  }, [actionResult, editingObjective, objective.id, lastHandledObjectiveResultToken])
 
   return (
     <Box
@@ -227,16 +233,33 @@ function KeyResultRow({
     success?: boolean
     intent?: string
     id?: number | null
+    resultToken?: number
   }
 }) {
   const isInactive = !kr.is_active
   const [editing, setEditing] = useState(false)
+  const [lastHandledKeyResultToken, setLastHandledKeyResultToken] = useState<number | null>(null)
 
   useEffect(() => {
-    if (editing && actionResult?.success && actionResult.intent === 'update-key-result' && actionResult.id === kr.id) {
+    if (isInactive || !objectiveIsActive) {
       setEditing(false)
     }
-  }, [actionResult, editing, kr.id])
+  }, [isInactive, objectiveIsActive])
+
+  useEffect(() => {
+    const token = actionResult?.resultToken ?? null
+    if (
+      editing &&
+      actionResult?.success &&
+      actionResult.intent === 'update-key-result' &&
+      actionResult.id === kr.id &&
+      token !== null &&
+      token !== lastHandledKeyResultToken
+    ) {
+      setEditing(false)
+      setLastHandledKeyResultToken(token)
+    }
+  }, [actionResult, editing, kr.id, lastHandledKeyResultToken])
 
   return (
     <Box padding="space-12" borderRadius="4" background="sunken" style={isInactive ? { opacity: 0.7 } : undefined}>
