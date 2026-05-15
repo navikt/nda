@@ -58,6 +58,7 @@ describe('DevTeamCoverage stories baseline characterization', () => {
     expect(html).toContain('aria-label="4-øyne-dekning: 76%"')
     expect(html).toContain('43 av 56')
     expect(html).toContain('aria-label="Endringsopphav: 55%"')
+    expect(html).toContain('31 av 56')
     expect(html).toContain('aria-label="Fra andre: 5"')
   })
 
@@ -77,6 +78,7 @@ describe('DevTeamCoverage stories baseline characterization', () => {
     expect(html).toContain('aria-label="Leveranser i år: 0"')
     expect(html).toContain('aria-label="4-øyne-dekning: 0%"')
     expect(html).toContain('aria-label="Endringsopphav: 0%"')
+    expectOccurrences(html, '0 av 0', 2)
     expect(html).toContain('aria-label="Fra andre: 0"')
   })
 
