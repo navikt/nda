@@ -1,16 +1,10 @@
-import { composeStories } from '@storybook/react'
-import type { ReactNode } from 'react'
+import { composeStories, setProjectAnnotations } from '@storybook/react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import preview from '../../../.storybook/preview'
 import * as stories from './DeploymentDetail.stories'
 
-vi.mock('react-router', async () => {
-  const React = await import('react')
-  return {
-    Link: ({ children, to, ...props }: { children?: ReactNode; to?: string } & Record<string, unknown>) =>
-      React.createElement('a', { href: to as string, ...props }, children),
-  }
-})
+setProjectAnnotations(preview)
 
 const { Approved, DirectPush, ManuallyApproved, NotApproved, Pending } = composeStories(stories)
 
@@ -43,6 +37,7 @@ describe('DeploymentDetail story baseline characterization', () => {
     expect(html).toContain('Venter')
     expect(html).toContain('Admin-handlinger')
     expect(html).toContain('Re-verifiser')
+    expect(html).toContain('Godkjenn manuelt')
   })
 
   it('DirectPush story keeps no-PR baseline behavior', () => {
