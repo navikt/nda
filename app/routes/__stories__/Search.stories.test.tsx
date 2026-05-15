@@ -1,15 +1,15 @@
 import { composeStories } from '@storybook/react'
-import type { JSX, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 import * as stories from './Search.stories'
 
 vi.mock('react-router', async () => {
-  const actual = await vi.importActual<typeof import('react-router')>('react-router')
+  const React = await import('react')
 
   return {
-    ...actual,
+    Link: ({ children, to, ...props }: { children?: ReactNode; to?: string } & Record<string, unknown>) =>
+      React.createElement('a', { href: to as string, ...props }, children),
     Form: ({ children, ...props }: { children: ReactNode; [key: string]: unknown }) => (
       <form {...props}>{children}</form>
     ),
@@ -18,17 +18,9 @@ vi.mock('react-router', async () => {
 
 const { Empty, ManyResults, NoResults, WithResults } = composeStories(stories)
 
-function renderStory(StoryComponent: () => JSX.Element) {
-  return renderToStaticMarkup(
-    <MemoryRouter>
-      <StoryComponent />
-    </MemoryRouter>,
-  )
-}
-
 describe('Search story baseline characterization', () => {
   it('renders empty search state and search input', () => {
-    const html = renderStory(Empty)
+    const html = renderToStaticMarkup(<Empty />)
 
     expect(html).toContain('Søk')
     expect(html).toContain('Bruk søkefeltet i header for å søke')
@@ -36,7 +28,7 @@ describe('Search story baseline characterization', () => {
   })
 
   it('renders result entries and type tags for result scenario', () => {
-    const html = renderStory(WithResults)
+    const html = renderToStaticMarkup(<WithResults />)
 
     expect(html).toContain('resultater for &quot;john&quot;')
     expect(html).toContain('Deployment')
@@ -44,13 +36,13 @@ describe('Search story baseline characterization', () => {
   })
 
   it('renders no-results message for no-hit scenario', () => {
-    const html = renderStory(NoResults)
+    const html = renderToStaticMarkup(<NoResults />)
 
     expect(html).toContain('Ingen resultater for &quot;xyz123&quot;')
   })
 
   it('renders extended set of results in many-results scenario', () => {
-    const html = renderStory(ManyResults)
+    const html = renderToStaticMarkup(<ManyResults />)
 
     expect(html).toContain('def456ghi789')
     expect(html).toContain('ghi789jkl012')
