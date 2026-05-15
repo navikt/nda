@@ -1,4 +1,4 @@
-import { MinusCircleIcon, PlusCircleIcon, PlusIcon, RobotIcon, TrashIcon } from '@navikt/aksel-icons'
+import { MinusCircleIcon, PencilIcon, PlusCircleIcon, PlusIcon, RobotIcon, TrashIcon } from '@navikt/aksel-icons'
 import {
   BodyShort,
   Box,
@@ -27,6 +27,7 @@ export function ObjectiveCard({
 }) {
   const [showAddKR, setShowAddKR] = useState(false)
   const [showAddRef, setShowAddRef] = useState(false)
+  const [editingObjective, setEditingObjective] = useState(false)
   const isInactive = !objective.is_active
 
   const krProgressMap = new Map(progress?.key_results.map((kr) => [kr.id, kr.linked_deployments]) ?? [])
@@ -35,6 +36,7 @@ export function ObjectiveCard({
     if (isInactive) {
       setShowAddKR(false)
       setShowAddRef(false)
+      setEditingObjective(false)
     }
   }, [isInactive])
 
@@ -51,10 +53,16 @@ export function ObjectiveCard({
         <HStack justify="space-between" align="start">
           <HStack gap="space-8" align="center">
             <div>
-              <Heading level="2" size="medium">
-                {objective.title}
-              </Heading>
-              {objective.description && <BodyShort textColor="subtle">{objective.description}</BodyShort>}
+              {!editingObjective ? (
+                <>
+                  <Heading level="2" size="medium">
+                    {objective.title}
+                  </Heading>
+                  {objective.description && <BodyShort textColor="subtle">{objective.description}</BodyShort>}
+                </>
+              ) : (
+                <EditObjectiveForm objective={objective} onCancel={() => setEditingObjective(false)} />
+              )}
             </div>
             {isInactive && (
               <Tag variant="neutral" size="xsmall">
@@ -72,23 +80,35 @@ export function ObjectiveCard({
               </Tag>
             )}
           </HStack>
-          <Form method="post" style={{ display: 'inline' }}>
-            <input type="hidden" name="intent" value={isInactive ? 'reactivate-objective' : 'deactivate-objective'} />
-            <input type="hidden" name="id" value={objective.id} />
-            {isInactive ? (
-              <Tooltip content="Reaktiver mål">
-                <Button variant="tertiary-neutral" size="xsmall" icon={<PlusCircleIcon aria-hidden />} type="submit">
-                  Reaktiver
-                </Button>
-              </Tooltip>
-            ) : (
-              <Tooltip content="Deaktiver mål (kan ikke kobles til nye endringsopphav)">
-                <Button variant="tertiary-neutral" size="xsmall" icon={<MinusCircleIcon aria-hidden />} type="submit">
-                  Deaktiver
-                </Button>
-              </Tooltip>
+          <HStack gap="space-8" align="center">
+            {!isInactive && (
+              <Button
+                variant="tertiary-neutral"
+                size="xsmall"
+                icon={<PencilIcon aria-hidden />}
+                onClick={() => setEditingObjective((prev) => !prev)}
+              >
+                {editingObjective ? 'Avbryt' : 'Rediger'}
+              </Button>
             )}
-          </Form>
+            <Form method="post" style={{ display: 'inline' }}>
+              <input type="hidden" name="intent" value={isInactive ? 'reactivate-objective' : 'deactivate-objective'} />
+              <input type="hidden" name="id" value={objective.id} />
+              {isInactive ? (
+                <Tooltip content="Reaktiver mål">
+                  <Button variant="tertiary-neutral" size="xsmall" icon={<PlusCircleIcon aria-hidden />} type="submit">
+                    Reaktiver
+                  </Button>
+                </Tooltip>
+              ) : (
+                <Tooltip content="Deaktiver mål (kan ikke kobles til nye endringsopphav)">
+                  <Button variant="tertiary-neutral" size="xsmall" icon={<MinusCircleIcon aria-hidden />} type="submit">
+                    Deaktiver
+                  </Button>
+                </Tooltip>
+              )}
+            </Form>
+          </HStack>
         </HStack>
 
         {objective.external_references.length > 0 && (
@@ -184,29 +204,36 @@ function KeyResultRow({
   linkedDeployments: number
 }) {
   const isInactive = !kr.is_active
+  const [editing, setEditing] = useState(false)
 
   return (
     <Box padding="space-12" borderRadius="4" background="sunken" style={isInactive ? { opacity: 0.7 } : undefined}>
       <HStack justify="space-between" align="start">
         <HStack gap="space-8" align="center">
           <div>
-            <BodyShort weight="semibold">{kr.title}</BodyShort>
-            {kr.description && (
-              <BodyShort size="small" textColor="subtle">
-                {kr.description}
-              </BodyShort>
-            )}
-            {kr.external_references.length > 0 && (
-              <ReferenceList refs={kr.external_references} readOnly={isInactive || !objectiveIsActive} />
-            )}
-            <KeywordEditor
-              id={kr.id}
-              keywords={kr.keywords ?? []}
-              intent="update-kr-keywords"
-              readOnly={isInactive || !objectiveIsActive}
-            />
-            {((!isInactive && objectiveIsActive) || kr.dependabot_target) && (
-              <DependabotTargetToggle isTarget={kr.dependabot_target} keyResultId={kr.id} />
+            {!editing ? (
+              <>
+                <BodyShort weight="semibold">{kr.title}</BodyShort>
+                {kr.description && (
+                  <BodyShort size="small" textColor="subtle">
+                    {kr.description}
+                  </BodyShort>
+                )}
+                {kr.external_references.length > 0 && (
+                  <ReferenceList refs={kr.external_references} readOnly={isInactive || !objectiveIsActive} />
+                )}
+                <KeywordEditor
+                  id={kr.id}
+                  keywords={kr.keywords ?? []}
+                  intent="update-kr-keywords"
+                  readOnly={isInactive || !objectiveIsActive}
+                />
+                {((!isInactive && objectiveIsActive) || kr.dependabot_target) && (
+                  <DependabotTargetToggle isTarget={kr.dependabot_target} keyResultId={kr.id} />
+                )}
+              </>
+            ) : (
+              <EditKeyResultForm kr={kr} onCancel={() => setEditing(false)} />
             )}
           </div>
           {isInactive && (
@@ -223,14 +250,46 @@ function KeyResultRow({
             {linkedDeployments} leveranser
           </Tag>
         </HStack>
-        <Form method="post" style={{ display: 'inline' }}>
-          <input type="hidden" name="intent" value={isInactive ? 'reactivate-key-result' : 'deactivate-key-result'} />
-          <input type="hidden" name="id" value={kr.id} />
-          {isInactive ? (
-            objectiveIsActive ? (
-              <Tooltip content="Reaktiver nøkkelresultat">
-                <Button variant="tertiary-neutral" size="xsmall" icon={<PlusCircleIcon aria-hidden />} type="submit">
-                  Reaktiver
+        <HStack gap="space-8" align="center">
+          {!isInactive && objectiveIsActive && (
+            <Button
+              variant="tertiary-neutral"
+              size="xsmall"
+              icon={<PencilIcon aria-hidden />}
+              onClick={() => setEditing((prev) => !prev)}
+            >
+              {editing ? 'Avbryt' : 'Rediger'}
+            </Button>
+          )}
+          <Form method="post" style={{ display: 'inline' }}>
+            <input type="hidden" name="intent" value={isInactive ? 'reactivate-key-result' : 'deactivate-key-result'} />
+            <input type="hidden" name="id" value={kr.id} />
+            {isInactive ? (
+              objectiveIsActive ? (
+                <Tooltip content="Reaktiver nøkkelresultat">
+                  <Button variant="tertiary-neutral" size="xsmall" icon={<PlusCircleIcon aria-hidden />} type="submit">
+                    Reaktiver
+                  </Button>
+                </Tooltip>
+              ) : (
+                <Tooltip content="Reaktiver målet først for å kunne endre nøkkelresultatet">
+                  <span>
+                    <Button
+                      variant="tertiary-neutral"
+                      size="xsmall"
+                      icon={<PlusCircleIcon aria-hidden />}
+                      type="submit"
+                      disabled
+                    >
+                      Reaktiver
+                    </Button>
+                  </span>
+                </Tooltip>
+              )
+            ) : objectiveIsActive ? (
+              <Tooltip content="Deaktiver nøkkelresultat">
+                <Button variant="tertiary-neutral" size="xsmall" icon={<MinusCircleIcon aria-hidden />} type="submit">
+                  Deaktiver
                 </Button>
               </Tooltip>
             ) : (
@@ -239,39 +298,73 @@ function KeyResultRow({
                   <Button
                     variant="tertiary-neutral"
                     size="xsmall"
-                    icon={<PlusCircleIcon aria-hidden />}
+                    icon={<MinusCircleIcon aria-hidden />}
                     type="submit"
                     disabled
                   >
-                    Reaktiver
+                    Deaktiver
                   </Button>
                 </span>
               </Tooltip>
-            )
-          ) : objectiveIsActive ? (
-            <Tooltip content="Deaktiver nøkkelresultat">
-              <Button variant="tertiary-neutral" size="xsmall" icon={<MinusCircleIcon aria-hidden />} type="submit">
-                Deaktiver
-              </Button>
-            </Tooltip>
-          ) : (
-            <Tooltip content="Reaktiver målet først for å kunne endre nøkkelresultatet">
-              <span>
-                <Button
-                  variant="tertiary-neutral"
-                  size="xsmall"
-                  icon={<MinusCircleIcon aria-hidden />}
-                  type="submit"
-                  disabled
-                >
-                  Deaktiver
-                </Button>
-              </span>
-            </Tooltip>
-          )}
-        </Form>
+            )}
+          </Form>
+        </HStack>
       </HStack>
     </Box>
+  )
+}
+
+function EditObjectiveForm({ objective, onCancel }: { objective: ObjectiveWithKeyResults; onCancel: () => void }) {
+  return (
+    <Form method="post" onSubmit={onCancel}>
+      <input type="hidden" name="intent" value="update-objective" />
+      <input type="hidden" name="id" value={objective.id} />
+      <VStack gap="space-8">
+        <TextField label="Tittel" name="title" size="small" defaultValue={objective.title} autoComplete="off" />
+        <TextField
+          label="Beskrivelse (valgfritt)"
+          name="description"
+          size="small"
+          defaultValue={objective.description ?? ''}
+          autoComplete="off"
+        />
+        <HStack gap="space-8">
+          <Button type="submit" size="xsmall">
+            Lagre
+          </Button>
+          <Button variant="tertiary" size="xsmall" type="button" onClick={onCancel}>
+            Avbryt
+          </Button>
+        </HStack>
+      </VStack>
+    </Form>
+  )
+}
+
+function EditKeyResultForm({ kr, onCancel }: { kr: BoardKeyResultWithRefs; onCancel: () => void }) {
+  return (
+    <Form method="post" onSubmit={onCancel}>
+      <input type="hidden" name="intent" value="update-key-result" />
+      <input type="hidden" name="id" value={kr.id} />
+      <VStack gap="space-8">
+        <TextField label="Nøkkelresultat" name="title" size="small" defaultValue={kr.title} autoComplete="off" />
+        <TextField
+          label="Beskrivelse (valgfritt)"
+          name="description"
+          size="small"
+          defaultValue={kr.description ?? ''}
+          autoComplete="off"
+        />
+        <HStack gap="space-8">
+          <Button type="submit" size="xsmall">
+            Lagre
+          </Button>
+          <Button variant="tertiary" size="xsmall" type="button" onClick={onCancel}>
+            Avbryt
+          </Button>
+        </HStack>
+      </VStack>
+    </Form>
   )
 }
 
