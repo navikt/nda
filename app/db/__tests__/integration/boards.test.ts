@@ -413,9 +413,31 @@ describe('getBoardWithObjectives', () => {
         "INSERT INTO external_references (ref_type, url, title, objective_id) VALUES ('jira', 'https://jira/other', 'Other Ref', $1) RETURNING id",
         [otherObjectiveRows[0].id],
       )
+      const { rows: ownKrRows } = await pool.query(
+        "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'Own KR', 0) RETURNING id",
+        [ownObjectiveRows[0].id],
+      )
+      const { rows: otherKrRows } = await pool.query(
+        "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'Other KR', 0) RETURNING id",
+        [otherObjectiveRows[0].id],
+      )
+      const { rows: ownKrRefRows } = await pool.query(
+        "INSERT INTO external_references (ref_type, url, title, key_result_id) VALUES ('github_issue', 'https://gh/own', 'Own KR Ref', $1) RETURNING id",
+        [ownKrRows[0].id],
+      )
+      const { rows: otherKrRefRows } = await pool.query(
+        "INSERT INTO external_references (ref_type, url, title, key_result_id) VALUES ('github_issue', 'https://gh/other', 'Other KR Ref', $1) RETURNING id",
+        [otherKrRows[0].id],
+      )
+      await pool.query('UPDATE external_references SET deleted_at = NOW(), deleted_by = $2 WHERE id = $1', [
+        ownRefRows[0].id,
+        'A123456',
+      ])
 
       await expect(externalReferenceBelongsToBoard(ownRefRows[0].id, board.id)).resolves.toBe(true)
       await expect(externalReferenceBelongsToBoard(otherRefRows[0].id, board.id)).resolves.toBe(false)
+      await expect(externalReferenceBelongsToBoard(ownKrRefRows[0].id, board.id)).resolves.toBe(true)
+      await expect(externalReferenceBelongsToBoard(otherKrRefRows[0].id, board.id)).resolves.toBe(false)
     })
   })
 

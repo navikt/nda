@@ -94,7 +94,6 @@ export async function externalReferenceBelongsToBoard(referenceId: number, board
      LEFT JOIN board_key_results bkr ON bkr.id = er.key_result_id
      LEFT JOIN board_objectives bo_kr ON bo_kr.id = bkr.objective_id
      WHERE er.id = $1
-       AND er.deleted_at IS NULL
        AND (bo_obj.board_id = $2 OR bo_kr.board_id = $2)`,
     [referenceId, boardId],
   )

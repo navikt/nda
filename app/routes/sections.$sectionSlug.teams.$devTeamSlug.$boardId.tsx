@@ -149,9 +149,13 @@ export async function action({ request, params }: Route.ActionArgs) {
         const refType = formData.get('ref_type') as ExternalReference['ref_type']
         const url = (formData.get('url') as string)?.trim()
         const title = (formData.get('ref_title') as string)?.trim()
-        const objectiveId = formData.get('objective_id') ? Number(formData.get('objective_id')) : undefined
-        const keyResultId = formData.get('key_result_id') ? Number(formData.get('key_result_id')) : undefined
+        const rawObjectiveId = formData.get('objective_id')
+        const rawKeyResultId = formData.get('key_result_id')
+        const objectiveId = rawObjectiveId ? Number(rawObjectiveId) : undefined
+        const keyResultId = rawKeyResultId ? Number(rawKeyResultId) : undefined
         if (!url) return { error: 'URL er påkrevd.' }
+        if (rawObjectiveId && !Number.isFinite(objectiveId)) return { error: 'Ugyldig mål-ID.' }
+        if (rawKeyResultId && !Number.isFinite(keyResultId)) return { error: 'Ugyldig nøkkelresultat-ID.' }
         if (objectiveId !== undefined && !(await objectiveBelongsToBoard(objectiveId, boardId))) {
           return { error: 'Målet tilhører ikke denne tavlen.' }
         }
@@ -209,8 +213,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { success: true }
       }
       case 'set-dependabot-target': {
-        const objectiveId = formData.get('objective_id') ? Number(formData.get('objective_id')) : undefined
-        const keyResultId = formData.get('key_result_id') ? Number(formData.get('key_result_id')) : undefined
+        const rawObjectiveId = formData.get('objective_id')
+        const rawKeyResultId = formData.get('key_result_id')
+        const objectiveId = rawObjectiveId ? Number(rawObjectiveId) : undefined
+        const keyResultId = rawKeyResultId ? Number(rawKeyResultId) : undefined
+        if (rawObjectiveId && !Number.isFinite(objectiveId)) return { error: 'Ugyldig mål-ID.' }
+        if (rawKeyResultId && !Number.isFinite(keyResultId)) return { error: 'Ugyldig nøkkelresultat-ID.' }
         await setDependabotTarget(boardId, objectiveId, keyResultId)
         return { success: true }
       }
@@ -222,7 +230,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { error: 'Ukjent handling.' }
     }
   } catch (error) {
-    console.error('Board action failed', { boardId, intent, error })
+    const context = `boardId=${boardId} intent=${intent}`
+    if (error instanceof Error) {
+      console.error(`Board action failed ${context}`, error)
+    } else {
+      console.error(`Board action failed ${context}: ${String(error)}`)
+    }
     return { error: 'Kunne ikke utføre handlingen. Prøv igjen.' }
   }
 }
