@@ -1,4 +1,5 @@
 import type { AppCardData } from '~/components/AppCard'
+import type { HomeDevTeamInfo, HomeDevTeamSummaryStats } from '~/components/HomeOverview'
 
 // Base mock app data
 export const mockApp: AppCardData = {
@@ -50,6 +51,44 @@ export const mockApps: AppCardData[] = [
     alertCount: 0,
   },
 ]
+
+export const mockHomeDevTeams: HomeDevTeamInfo[] = [
+  {
+    id: 1,
+    name: 'Motta pensjon',
+    slug: 'motta-pensjon',
+    section_slug: 'pensjon',
+    nais_team_slugs: ['pensjondeployer', 'pensjonsamhandling'],
+  },
+  {
+    id: 2,
+    name: 'Beregne pensjon',
+    slug: 'beregne-pensjon',
+    section_slug: 'pensjon',
+    nais_team_slugs: ['pensjonberegning'],
+  },
+  {
+    id: 3,
+    name: 'Utbetale pensjon',
+    slug: 'utbetale-pensjon',
+    section_slug: 'pensjon',
+    nais_team_slugs: ['pensjonutbetaling'],
+  },
+]
+
+export const mockHomeTeamStats: HomeDevTeamSummaryStats = {
+  total_apps: 5,
+  total_deployments: 42,
+  with_four_eyes: 38,
+  without_four_eyes: 2,
+  pending_verification: 2,
+  four_eyes_percentage: 90,
+  apps_with_issues: 2,
+}
+
+export const mockHomeIssueApps = mockApps.filter(
+  (app) => app.stats.without_four_eyes > 0 || app.stats.pending_verification > 0,
+)
 
 export const mockDeploymentStats = {
   total: 42,
