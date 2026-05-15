@@ -21,6 +21,10 @@ const {
   WithNonMemberDeployments,
 } = composeStories(stories)
 
+function expectOccurrences(haystack: string, needle: string, count: number) {
+  expect(haystack.split(needle).length - 1).toBe(count)
+}
+
 describe('DevTeamCoverage stories baseline characterization', () => {
   it('FullCoverage keeps complete metrics with no warning alerts', () => {
     const html = renderToStaticMarkup(<FullCoverage />)
@@ -29,7 +33,7 @@ describe('DevTeamCoverage stories baseline characterization', () => {
     expect(html).toContain('aria-label="4-øyne-dekning: 100%"')
     expect(html).toContain('aria-label="Endringsopphav: 100%"')
     expect(html).toContain('aria-label="Fra andre: 0"')
-    expect(html).toContain('142 av 142')
+    expectOccurrences(html, '142 av 142', 2)
     expect(html).not.toContain('mangler GitHub-brukernavn')
   })
 
