@@ -1,107 +1,17 @@
-import { MagnifyingGlassIcon } from '@navikt/aksel-icons'
-import { BodyShort, Box, Heading, Hide, HStack, Search, Show, Tag, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { Form, Link } from 'react-router'
+import { SearchResultsPage } from '~/components/SearchResultsPage'
+import type { SearchResult, SearchResultPresentation } from '~/lib/search-results'
 import { mockSearchResults } from './mock-data'
 
-type SearchResult = {
-  id?: number
-  type: 'deployment' | 'user'
-  title: string
-  subtitle?: string
-  url: string
-}
+const storyPresentation = (result: SearchResult): SearchResultPresentation => ({
+  icon: 'search',
+  label: result.type === 'deployment' ? 'Deployment' : 'Bruker',
+  variant: result.type === 'deployment' ? 'info' : 'neutral',
+})
 
-function SearchPage({ query, results }: { query: string; results: SearchResult[] }) {
-  return (
-    <VStack gap="space-24">
-      <VStack gap="space-8">
-        <Heading level="1" size="large">
-          Søk
-        </Heading>
-        <Hide above="md">
-          <BodyShort>Søk på navn, NAV-ident, e-post, brukernavn, SHA eller ID</BodyShort>
-        </Hide>
-        <Show above="md">
-          <BodyShort>
-            {!query
-              ? 'Bruk søkefeltet i header for å søke'
-              : results.length === 0
-                ? `Ingen resultater for "${query}"`
-                : `${results.length} resultat${results.length === 1 ? '' : 'er'} for "${query}"`}
-          </BodyShort>
-        </Show>
-      </VStack>
-
-      <Hide above="md">
-        <Box background="sunken" padding="space-16" borderRadius="8">
-          <Form method="get" action="/search">
-            <Search
-              label="Søk"
-              hideLabel
-              variant="primary"
-              placeholder="Navn, NAV-ident, e-post, SHA..."
-              name="q"
-              defaultValue={query}
-            />
-          </Form>
-        </Box>
-        {query && (
-          <BodyShort>
-            {results.length === 0
-              ? `Ingen resultater for "${query}"`
-              : `${results.length} resultat${results.length === 1 ? '' : 'er'}`}
-          </BodyShort>
-        )}
-      </Hide>
-
-      {results.length > 0 && (
-        <VStack gap="space-8">
-          {results.map((result) => (
-            <Link
-              key={`${result.type}-${result.id || result.title}`}
-              to={result.url}
-              style={{ textDecoration: 'none' }}
-            >
-              <Box
-                background="default"
-                padding="space-16"
-                borderRadius="8"
-                borderWidth="1"
-                borderColor="neutral-subtle"
-                style={{ cursor: 'pointer' }}
-              >
-                <HStack gap="space-12" align="center">
-                  <MagnifyingGlassIcon
-                    style={{ fontSize: '1.25rem', color: 'var(--ax-text-neutral-subtle)' }}
-                    aria-hidden
-                  />
-                  <VStack gap="space-4" style={{ flex: 1 }}>
-                    <HStack gap="space-8" align="center">
-                      <BodyShort weight="semibold">{result.title}</BodyShort>
-                      <Tag size="xsmall" variant={result.type === 'deployment' ? 'info' : 'neutral'}>
-                        {result.type === 'deployment' ? 'Deployment' : 'Bruker'}
-                      </Tag>
-                    </HStack>
-                    {result.subtitle && (
-                      <BodyShort size="small" style={{ color: 'var(--ax-text-neutral-subtle)' }}>
-                        {result.subtitle}
-                      </BodyShort>
-                    )}
-                  </VStack>
-                </HStack>
-              </Box>
-            </Link>
-          ))}
-        </VStack>
-      )}
-    </VStack>
-  )
-}
-
-const meta: Meta<typeof SearchPage> = {
+const meta: Meta<typeof SearchResultsPage> = {
   title: 'Pages/Search',
-  component: SearchPage,
+  component: SearchResultsPage,
   decorators: [
     (Story) => (
       <div style={{ maxWidth: '800px' }}>
@@ -113,7 +23,7 @@ const meta: Meta<typeof SearchPage> = {
 
 export default meta
 
-type Story = StoryObj<typeof SearchPage>
+type Story = StoryObj<typeof SearchResultsPage>
 
 export const Empty: Story = {
   name: 'Tomt søk',
@@ -121,6 +31,7 @@ export const Empty: Story = {
     query: '',
     results: [],
   },
+  render: (args) => <SearchResultsPage {...args} getResultPresentation={storyPresentation} />,
 }
 
 export const WithResults: Story = {
@@ -129,6 +40,7 @@ export const WithResults: Story = {
     query: 'john',
     results: mockSearchResults,
   },
+  render: (args) => <SearchResultsPage {...args} getResultPresentation={storyPresentation} />,
 }
 
 export const NoResults: Story = {
@@ -137,6 +49,7 @@ export const NoResults: Story = {
     query: 'xyz123',
     results: [],
   },
+  render: (args) => <SearchResultsPage {...args} getResultPresentation={storyPresentation} />,
 }
 
 export const ManyResults: Story = {
@@ -167,4 +80,5 @@ export const ManyResults: Story = {
       },
     ],
   },
+  render: (args) => <SearchResultsPage {...args} getResultPresentation={storyPresentation} />,
 }

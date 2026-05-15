@@ -5,6 +5,7 @@ import {
   PENDING_STATUSES,
   PENDING_STATUSES_SQL,
 } from '~/lib/four-eyes-status'
+import type { SearchResult as SharedSearchResult } from '~/lib/search-results'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 import { logStatusTransition } from './deployments/status-history.server'
@@ -1170,13 +1171,7 @@ export async function getDeployerApps(deployerUsername: string): Promise<string[
 /**
  * Search result types for global search
  */
-export interface SearchResult {
-  type: 'deployment' | 'user' | 'team' | 'app' | 'group' | 'dev_team'
-  id?: number
-  url: string
-  title: string
-  subtitle?: string
-}
+export type SearchResult = SharedSearchResult
 
 /**
  * Search deployments by ID, commit SHA, or deployer username
