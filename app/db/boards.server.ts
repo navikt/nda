@@ -67,6 +67,39 @@ export async function getBoardDevTeamId(boardId: number): Promise<number | null>
   return result.rows[0]?.dev_team_id ?? null
 }
 
+export async function objectiveBelongsToBoard(objectiveId: number, boardId: number): Promise<boolean> {
+  const result = await pool.query('SELECT 1 FROM board_objectives WHERE id = $1 AND board_id = $2', [
+    objectiveId,
+    boardId,
+  ])
+  return (result.rowCount ?? 0) > 0
+}
+
+export async function keyResultBelongsToBoard(keyResultId: number, boardId: number): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1
+     FROM board_key_results bkr
+     JOIN board_objectives bo ON bo.id = bkr.objective_id
+     WHERE bkr.id = $1 AND bo.board_id = $2`,
+    [keyResultId, boardId],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
+export async function externalReferenceBelongsToBoard(referenceId: number, boardId: number): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1
+     FROM external_references er
+     LEFT JOIN board_objectives bo_obj ON bo_obj.id = er.objective_id
+     LEFT JOIN board_key_results bkr ON bkr.id = er.key_result_id
+     LEFT JOIN board_objectives bo_kr ON bo_kr.id = bkr.objective_id
+     WHERE er.id = $1
+       AND (bo_obj.board_id = $2 OR bo_kr.board_id = $2)`,
+    [referenceId, boardId],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
 export async function getBoardsByDevTeam(devTeamId: number): Promise<Board[]> {
   const result = await pool.query('SELECT * FROM boards WHERE dev_team_id = $1 ORDER BY period_start DESC', [devTeamId])
   return result.rows
