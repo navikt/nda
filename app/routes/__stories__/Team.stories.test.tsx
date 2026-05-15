@@ -30,7 +30,7 @@ describe('Team story baseline characterization', () => {
 
     expect(html).toContain('/team/pensjondeployer/env/prod-fss')
     expect(html).not.toContain('/team/pensjondeployer/env/prod-gcp')
-    expect(html).toContain('applikasjon')
+    expect(html).toContain('2 applikasjoner')
   })
 
   it('renders multiple-environment story with sorted environment order and counts', () => {
