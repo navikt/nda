@@ -32,9 +32,10 @@ interface BoardDetailProps {
     objectives: ObjectiveWithKeyResults[]
   }
   objectiveProgress: BoardObjectiveProgress[]
+  actionError?: string
 }
 
-export function BoardDetailPage({ devTeam, board, objectiveProgress }: BoardDetailProps) {
+export function BoardDetailPage({ devTeam, board, objectiveProgress, actionError }: BoardDetailProps) {
   const [showAddObjective, setShowAddObjective] = useState(false)
   const [editingDates, setEditingDates] = useState(false)
 
@@ -45,6 +46,7 @@ export function BoardDetailPage({ devTeam, board, objectiveProgress }: BoardDeta
 
   return (
     <VStack gap="space-24">
+      {actionError && <Alert variant="error">{actionError}</Alert>}
       <div>
         <Heading level="1" size="large" spacing>
           {formatBoardLabel({ teamName: devTeam.name, periodLabel: board.period_label })}

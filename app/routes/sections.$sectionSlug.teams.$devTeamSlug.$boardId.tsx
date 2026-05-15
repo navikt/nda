@@ -1,4 +1,4 @@
-import { useLoaderData } from 'react-router'
+import { useActionData, useLoaderData } from 'react-router'
 import { BoardDetailPage } from '~/components/BoardDetailPage'
 import {
   addExternalReference,
@@ -11,6 +11,8 @@ import {
   type ExternalReference,
   getBoardDevTeamId,
   getBoardWithObjectives,
+  keyResultBelongsToBoard,
+  objectiveBelongsToBoard,
   reactivateKeyResult,
   reactivateObjective,
   setDependabotTarget,
@@ -84,21 +86,32 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       case 'update-objective': {
         const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.' }
+        if (!(await objectiveBelongsToBoard(id, boardId))) return { error: 'Målet tilhører ikke denne tavlen.' }
         const title = (formData.get('title') as string)?.trim()
         if (!title) return { error: 'Tittel er påkrevd.' }
         await updateObjective(id, { title, description: (formData.get('description') as string)?.trim() })
         return { success: true }
       }
       case 'deactivate-objective': {
-        await deactivateObjective(Number(formData.get('id')))
+        const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.' }
+        if (!(await objectiveBelongsToBoard(id, boardId))) return { error: 'Målet tilhører ikke denne tavlen.' }
+        await deactivateObjective(id)
         return { success: true }
       }
       case 'reactivate-objective': {
-        await reactivateObjective(Number(formData.get('id')))
+        const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.' }
+        if (!(await objectiveBelongsToBoard(id, boardId))) return { error: 'Målet tilhører ikke denne tavlen.' }
+        await reactivateObjective(id)
         return { success: true }
       }
       case 'add-key-result': {
         const objectiveId = Number(formData.get('objective_id'))
+        if (!Number.isFinite(objectiveId)) return { error: 'Ugyldig mål-ID.' }
+        if (!(await objectiveBelongsToBoard(objectiveId, boardId)))
+          return { error: 'Målet tilhører ikke denne tavlen.' }
         const title = (formData.get('title') as string)?.trim()
         if (!title) return { error: 'Tittel er påkrevd.' }
         await createKeyResult(objectiveId, title, (formData.get('description') as string)?.trim())
@@ -106,17 +119,28 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       case 'update-key-result': {
         const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        if (!(await keyResultBelongsToBoard(id, boardId)))
+          return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
         const title = (formData.get('title') as string)?.trim()
         if (!title) return { error: 'Tittel er påkrevd.' }
         await updateKeyResult(id, { title, description: (formData.get('description') as string)?.trim() })
         return { success: true }
       }
       case 'deactivate-key-result': {
-        await deactivateKeyResult(Number(formData.get('id')))
+        const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        if (!(await keyResultBelongsToBoard(id, boardId)))
+          return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
+        await deactivateKeyResult(id)
         return { success: true }
       }
       case 'reactivate-key-result': {
-        await reactivateKeyResult(Number(formData.get('id')))
+        const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        if (!(await keyResultBelongsToBoard(id, boardId)))
+          return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
+        await reactivateKeyResult(id)
         return { success: true }
       }
       case 'add-reference': {
@@ -126,6 +150,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         const objectiveId = formData.get('objective_id') ? Number(formData.get('objective_id')) : undefined
         const keyResultId = formData.get('key_result_id') ? Number(formData.get('key_result_id')) : undefined
         if (!url) return { error: 'URL er påkrevd.' }
+        if (objectiveId !== undefined && !(await objectiveBelongsToBoard(objectiveId, boardId))) {
+          return { error: 'Målet tilhører ikke denne tavlen.' }
+        }
+        if (keyResultId !== undefined && !(await keyResultBelongsToBoard(keyResultId, boardId))) {
+          return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
+        }
         await addExternalReference({
           ref_type: refType,
           url,
@@ -141,6 +171,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       case 'update-objective-keywords': {
         const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.' }
+        if (!(await objectiveBelongsToBoard(id, boardId))) return { error: 'Målet tilhører ikke denne tavlen.' }
         const raw = (formData.get('keywords') as string) ?? ''
         const keywords = raw
           .split(',')
@@ -151,6 +183,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       case 'update-kr-keywords': {
         const id = Number(formData.get('id'))
+        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        if (!(await keyResultBelongsToBoard(id, boardId)))
+          return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
         const raw = (formData.get('keywords') as string) ?? ''
         const keywords = raw
           .split(',')
@@ -186,6 +221,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function BoardDetail() {
+  const actionData = useActionData<typeof action>()
   const { devTeam, board, objectiveProgress } = useLoaderData<typeof loader>()
-  return <BoardDetailPage devTeam={devTeam} board={board} objectiveProgress={objectiveProgress} />
+  return (
+    <BoardDetailPage
+      devTeam={devTeam}
+      board={board}
+      objectiveProgress={objectiveProgress}
+      actionError={actionData?.error}
+    />
+  )
 }

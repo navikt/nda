@@ -1,6 +1,11 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { getBoardsWithGoalsForDevTeam, getBoardWithObjectives } from '../../boards.server'
+import {
+  getBoardsWithGoalsForDevTeam,
+  getBoardWithObjectives,
+  keyResultBelongsToBoard,
+  objectiveBelongsToBoard,
+} from '../../boards.server'
 import { seedApp, seedDeployment, seedDevTeam, seedSection, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -322,6 +327,63 @@ describe('getBoardsWithGoalsForDevTeam', () => {
 describe('getBoardWithObjectives', () => {
   it('returns null for unknown board', async () => {
     expect(await getBoardWithObjectives(999_999)).toBeNull()
+  })
+
+  describe('ownership checks', () => {
+    it('validates objective ownership for board', async () => {
+      const { board } = await seedBoardStack(pool)
+      const sectionId = await seedSection(pool, 'sec-other-obj')
+      const otherDevTeamId = await seedDevTeam(pool, 'team-other-obj', 'Other Team', sectionId)
+      const { rows: otherBoardRows } = await pool.query(
+        `INSERT INTO boards (dev_team_id, title, period_type, period_start, period_end, period_label)
+         VALUES ($1, 'Other', 'tertiary', '2026-01-01', '2026-04-30', 'T1') RETURNING id`,
+        [otherDevTeamId],
+      )
+
+      const { rows: ownObjectiveRows } = await pool.query(
+        "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Own', 0) RETURNING id",
+        [board.id],
+      )
+      const { rows: otherObjectiveRows } = await pool.query(
+        "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Other', 0) RETURNING id",
+        [otherBoardRows[0].id],
+      )
+
+      await expect(objectiveBelongsToBoard(ownObjectiveRows[0].id, board.id)).resolves.toBe(true)
+      await expect(objectiveBelongsToBoard(otherObjectiveRows[0].id, board.id)).resolves.toBe(false)
+    })
+
+    it('validates key result ownership for board', async () => {
+      const { board } = await seedBoardStack(pool)
+      const sectionId = await seedSection(pool, 'sec-other-kr')
+      const otherDevTeamId = await seedDevTeam(pool, 'team-other-kr', 'Other Team KR', sectionId)
+      const { rows: otherBoardRows } = await pool.query(
+        `INSERT INTO boards (dev_team_id, title, period_type, period_start, period_end, period_label)
+         VALUES ($1, 'Other KR', 'tertiary', '2026-01-01', '2026-04-30', 'T1') RETURNING id`,
+        [otherDevTeamId],
+      )
+
+      const { rows: ownObjectiveRows } = await pool.query(
+        "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Own Objective', 0) RETURNING id",
+        [board.id],
+      )
+      const { rows: otherObjectiveRows } = await pool.query(
+        "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Other Objective', 0) RETURNING id",
+        [otherBoardRows[0].id],
+      )
+
+      const { rows: ownKrRows } = await pool.query(
+        "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'Own KR', 0) RETURNING id",
+        [ownObjectiveRows[0].id],
+      )
+      const { rows: otherKrRows } = await pool.query(
+        "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'Other KR', 0) RETURNING id",
+        [otherObjectiveRows[0].id],
+      )
+
+      await expect(keyResultBelongsToBoard(ownKrRows[0].id, board.id)).resolves.toBe(true)
+      await expect(keyResultBelongsToBoard(otherKrRows[0].id, board.id)).resolves.toBe(false)
+    })
   })
 
   it('returns board with empty objectives array when no objectives exist', async () => {

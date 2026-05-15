@@ -316,7 +316,7 @@ function KeyResultRow({
 
 function EditObjectiveForm({ objective, onCancel }: { objective: ObjectiveWithKeyResults; onCancel: () => void }) {
   return (
-    <Form method="post" onSubmit={onCancel}>
+    <Form method="post">
       <input type="hidden" name="intent" value="update-objective" />
       <input type="hidden" name="id" value={objective.id} />
       <VStack gap="space-8">
@@ -343,7 +343,7 @@ function EditObjectiveForm({ objective, onCancel }: { objective: ObjectiveWithKe
 
 function EditKeyResultForm({ kr, onCancel }: { kr: BoardKeyResultWithRefs; onCancel: () => void }) {
   return (
-    <Form method="post" onSubmit={onCancel}>
+    <Form method="post">
       <input type="hidden" name="intent" value="update-key-result" />
       <input type="hidden" name="id" value={kr.id} />
       <VStack gap="space-8">
