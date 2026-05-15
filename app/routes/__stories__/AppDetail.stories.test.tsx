@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 import * as stories from './AppDetail.stories'
+import { mockAuditReport } from './mock-data'
 
 vi.mock('react-router', async () => {
   const actual = await vi.importActual<typeof import('react-router')>('react-router')
@@ -64,7 +65,11 @@ describe('AppDetail story baseline characterization', () => {
   })
 
   it('does not render audit report section for dev environment', () => {
-    const html = renderStory(DevEnvironment)
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <DevEnvironment auditReports={[mockAuditReport]} />
+      </MemoryRouter>,
+    )
 
     expect(html).toContain('dev-fss')
     expect(html).not.toContain('Leveranserapport')
