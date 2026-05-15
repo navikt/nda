@@ -21,9 +21,16 @@ import type { BoardObjectiveProgress } from '~/db/dashboard-stats.server'
 export function ObjectiveCard({
   objective,
   progress,
+  actionResult,
 }: {
   objective: ObjectiveWithKeyResults
   progress?: BoardObjectiveProgress
+  actionResult?: {
+    error?: string
+    success?: boolean
+    intent?: string
+    id?: number | null
+  }
 }) {
   const [showAddKR, setShowAddKR] = useState(false)
   const [showAddRef, setShowAddRef] = useState(false)
@@ -39,6 +46,17 @@ export function ObjectiveCard({
       setEditingObjective(false)
     }
   }, [isInactive])
+
+  useEffect(() => {
+    if (
+      editingObjective &&
+      actionResult?.success &&
+      actionResult.intent === 'update-objective' &&
+      actionResult.id === objective.id
+    ) {
+      setEditingObjective(false)
+    }
+  }, [actionResult, editingObjective, objective.id])
 
   return (
     <Box
@@ -137,6 +155,7 @@ export function ObjectiveCard({
                 kr={kr}
                 objectiveIsActive={objective.is_active}
                 linkedDeployments={krProgressMap.get(kr.id) ?? 0}
+                actionResult={actionResult}
               />
             ))}
           </VStack>
@@ -198,13 +217,26 @@ function KeyResultRow({
   kr,
   objectiveIsActive,
   linkedDeployments,
+  actionResult,
 }: {
   kr: BoardKeyResultWithRefs
   objectiveIsActive: boolean
   linkedDeployments: number
+  actionResult?: {
+    error?: string
+    success?: boolean
+    intent?: string
+    id?: number | null
+  }
 }) {
   const isInactive = !kr.is_active
   const [editing, setEditing] = useState(false)
+
+  useEffect(() => {
+    if (editing && actionResult?.success && actionResult.intent === 'update-key-result' && actionResult.id === kr.id) {
+      setEditing(false)
+    }
+  }, [actionResult, editing, kr.id])
 
   return (
     <Box padding="space-12" borderRadius="4" background="sunken" style={isInactive ? { opacity: 0.7 } : undefined}>
@@ -316,7 +348,7 @@ function KeyResultRow({
 
 function EditObjectiveForm({ objective, onCancel }: { objective: ObjectiveWithKeyResults; onCancel: () => void }) {
   return (
-    <Form method="post">
+    <Form method="post" key={`${objective.id}:${objective.title}:${objective.description ?? ''}`}>
       <input type="hidden" name="intent" value="update-objective" />
       <input type="hidden" name="id" value={objective.id} />
       <VStack gap="space-8">
@@ -343,7 +375,7 @@ function EditObjectiveForm({ objective, onCancel }: { objective: ObjectiveWithKe
 
 function EditKeyResultForm({ kr, onCancel }: { kr: BoardKeyResultWithRefs; onCancel: () => void }) {
   return (
-    <Form method="post">
+    <Form method="post" key={`${kr.id}:${kr.title}:${kr.description ?? ''}`}>
       <input type="hidden" name="intent" value="update-key-result" />
       <input type="hidden" name="id" value={kr.id} />
       <VStack gap="space-8">

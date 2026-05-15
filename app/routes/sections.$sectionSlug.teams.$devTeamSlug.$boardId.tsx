@@ -86,12 +86,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       case 'update-objective': {
         const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.' }
-        if (!(await objectiveBelongsToBoard(id, boardId))) return { error: 'Målet tilhører ikke denne tavlen.' }
+        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.', intent: 'update-objective', id: null }
+        if (!(await objectiveBelongsToBoard(id, boardId)))
+          return { error: 'Målet tilhører ikke denne tavlen.', intent: 'update-objective', id }
         const title = (formData.get('title') as string)?.trim()
-        if (!title) return { error: 'Tittel er påkrevd.' }
+        if (!title) return { error: 'Tittel er påkrevd.', intent: 'update-objective', id }
         await updateObjective(id, { title, description: (formData.get('description') as string)?.trim() })
-        return { success: true }
+        return { success: true, intent: 'update-objective', id }
       }
       case 'deactivate-objective': {
         const id = Number(formData.get('id'))
@@ -119,13 +120,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       case 'update-key-result': {
         const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.', intent: 'update-key-result', id: null }
         if (!(await keyResultBelongsToBoard(id, boardId)))
-          return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
+          return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.', intent: 'update-key-result', id }
         const title = (formData.get('title') as string)?.trim()
-        if (!title) return { error: 'Tittel er påkrevd.' }
+        if (!title) return { error: 'Tittel er påkrevd.', intent: 'update-key-result', id }
         await updateKeyResult(id, { title, description: (formData.get('description') as string)?.trim() })
-        return { success: true }
+        return { success: true, intent: 'update-key-result', id }
       }
       case 'deactivate-key-result': {
         const id = Number(formData.get('id'))
@@ -224,11 +225,6 @@ export default function BoardDetail() {
   const actionData = useActionData<typeof action>()
   const { devTeam, board, objectiveProgress } = useLoaderData<typeof loader>()
   return (
-    <BoardDetailPage
-      devTeam={devTeam}
-      board={board}
-      objectiveProgress={objectiveProgress}
-      actionError={actionData?.error}
-    />
+    <BoardDetailPage devTeam={devTeam} board={board} objectiveProgress={objectiveProgress} actionResult={actionData} />
   )
 }
