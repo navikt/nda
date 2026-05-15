@@ -29,6 +29,7 @@ import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.
 import { getSectionBySlug } from '~/db/sections.server'
 import { requireUser } from '~/lib/auth.server'
 import { formatBoardLabel } from '~/lib/board-periods'
+import { isSafeHttpUrl, parseId } from '~/lib/route-helpers'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.$boardId'
 
 export function meta({ data }: Route.MetaArgs) {
@@ -86,8 +87,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { success: true }
       }
       case 'update-objective': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.', intent: 'update-objective', id: null }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig mål-ID.', intent: 'update-objective', id: null }
         if (!(await objectiveBelongsToBoard(id, boardId)))
           return { error: 'Målet tilhører ikke denne tavlen.', intent: 'update-objective', id }
         const title = (formData.get('title') as string)?.trim()
@@ -96,22 +97,22 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { success: true, intent: 'update-objective', id, resultToken: Date.now() }
       }
       case 'deactivate-objective': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.' }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig mål-ID.' }
         if (!(await objectiveBelongsToBoard(id, boardId))) return { error: 'Målet tilhører ikke denne tavlen.' }
         await deactivateObjective(id)
         return { success: true }
       }
       case 'reactivate-objective': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.' }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig mål-ID.' }
         if (!(await objectiveBelongsToBoard(id, boardId))) return { error: 'Målet tilhører ikke denne tavlen.' }
         await reactivateObjective(id)
         return { success: true }
       }
       case 'add-key-result': {
-        const objectiveId = Number(formData.get('objective_id'))
-        if (!Number.isFinite(objectiveId)) return { error: 'Ugyldig mål-ID.' }
+        const objectiveId = parseId(formData.get('objective_id'))
+        if (objectiveId === null) return { error: 'Ugyldig mål-ID.' }
         if (!(await objectiveBelongsToBoard(objectiveId, boardId)))
           return { error: 'Målet tilhører ikke denne tavlen.' }
         const title = (formData.get('title') as string)?.trim()
@@ -120,8 +121,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { success: true }
       }
       case 'update-key-result': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.', intent: 'update-key-result', id: null }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig nøkkelresultat-ID.', intent: 'update-key-result', id: null }
         if (!(await keyResultBelongsToBoard(id, boardId)))
           return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.', intent: 'update-key-result', id }
         const title = (formData.get('title') as string)?.trim()
@@ -130,16 +131,16 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { success: true, intent: 'update-key-result', id, resultToken: Date.now() }
       }
       case 'deactivate-key-result': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig nøkkelresultat-ID.' }
         if (!(await keyResultBelongsToBoard(id, boardId)))
           return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
         await deactivateKeyResult(id)
         return { success: true }
       }
       case 'reactivate-key-result': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig nøkkelresultat-ID.' }
         if (!(await keyResultBelongsToBoard(id, boardId)))
           return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
         await reactivateKeyResult(id)
@@ -151,37 +152,38 @@ export async function action({ request, params }: Route.ActionArgs) {
         const title = (formData.get('ref_title') as string)?.trim()
         const rawObjectiveId = formData.get('objective_id')
         const rawKeyResultId = formData.get('key_result_id')
-        const objectiveId = rawObjectiveId ? Number(rawObjectiveId) : undefined
-        const keyResultId = rawKeyResultId ? Number(rawKeyResultId) : undefined
+        const objectiveId = parseId(rawObjectiveId)
+        const keyResultId = parseId(rawKeyResultId)
         if (!url) return { error: 'URL er påkrevd.' }
-        if (rawObjectiveId && !Number.isFinite(objectiveId)) return { error: 'Ugyldig mål-ID.' }
-        if (rawKeyResultId && !Number.isFinite(keyResultId)) return { error: 'Ugyldig nøkkelresultat-ID.' }
-        if (objectiveId !== undefined && !(await objectiveBelongsToBoard(objectiveId, boardId))) {
+        if (!isSafeHttpUrl(url)) return { error: 'URL må starte med http:// eller https://.' }
+        if (rawObjectiveId !== null && objectiveId === null) return { error: 'Ugyldig mål-ID.' }
+        if (rawKeyResultId !== null && keyResultId === null) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        if (objectiveId !== null && !(await objectiveBelongsToBoard(objectiveId, boardId))) {
           return { error: 'Målet tilhører ikke denne tavlen.' }
         }
-        if (keyResultId !== undefined && !(await keyResultBelongsToBoard(keyResultId, boardId))) {
+        if (keyResultId !== null && !(await keyResultBelongsToBoard(keyResultId, boardId))) {
           return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
         }
         await addExternalReference({
           ref_type: refType,
           url,
           title,
-          objective_id: objectiveId,
-          key_result_id: keyResultId,
+          objective_id: objectiveId ?? undefined,
+          key_result_id: keyResultId ?? undefined,
         })
         return { success: true }
       }
       case 'delete-reference': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig referanse-ID.' }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig referanse-ID.' }
         if (!(await externalReferenceBelongsToBoard(id, boardId)))
           return { error: 'Referansen tilhører ikke denne tavlen.' }
         await deleteExternalReference(id, user.navIdent)
         return { success: true }
       }
       case 'update-objective-keywords': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig mål-ID.' }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig mål-ID.' }
         if (!(await objectiveBelongsToBoard(id, boardId))) return { error: 'Målet tilhører ikke denne tavlen.' }
         const raw = (formData.get('keywords') as string) ?? ''
         const keywords = raw
@@ -192,8 +194,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { success: true }
       }
       case 'update-kr-keywords': {
-        const id = Number(formData.get('id'))
-        if (!Number.isFinite(id)) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        const id = parseId(formData.get('id'))
+        if (id === null) return { error: 'Ugyldig nøkkelresultat-ID.' }
         if (!(await keyResultBelongsToBoard(id, boardId)))
           return { error: 'Nøkkelresultatet tilhører ikke denne tavlen.' }
         const raw = (formData.get('keywords') as string) ?? ''
@@ -215,11 +217,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       case 'set-dependabot-target': {
         const rawObjectiveId = formData.get('objective_id')
         const rawKeyResultId = formData.get('key_result_id')
-        const objectiveId = rawObjectiveId ? Number(rawObjectiveId) : undefined
-        const keyResultId = rawKeyResultId ? Number(rawKeyResultId) : undefined
-        if (rawObjectiveId && !Number.isFinite(objectiveId)) return { error: 'Ugyldig mål-ID.' }
-        if (rawKeyResultId && !Number.isFinite(keyResultId)) return { error: 'Ugyldig nøkkelresultat-ID.' }
-        await setDependabotTarget(boardId, objectiveId, keyResultId)
+        const objectiveId = parseId(rawObjectiveId)
+        const keyResultId = parseId(rawKeyResultId)
+        if (rawObjectiveId !== null && objectiveId === null) return { error: 'Ugyldig mål-ID.' }
+        if (rawKeyResultId !== null && keyResultId === null) return { error: 'Ugyldig nøkkelresultat-ID.' }
+        await setDependabotTarget(boardId, objectiveId ?? undefined, keyResultId ?? undefined)
         return { success: true }
       }
       case 'clear-dependabot-target': {
