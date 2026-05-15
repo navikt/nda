@@ -1,35 +1,6 @@
-import { Box, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { AppCard, type AppCardData } from '~/components/AppCard'
+import { TeamEnvPage } from '~/components/TeamEnvPage'
 import { mockApps } from './mock-data'
-
-function TeamEnvPage({ team, env, apps }: { team: string; env: string; apps: AppCardData[] }) {
-  return (
-    <Box paddingInline={{ xs: 'space-16', md: 'space-24' }} paddingBlock="space-24">
-      <VStack gap="space-24">
-        <VStack gap="space-8">
-          <Heading level="1" size="xlarge">
-            {team}
-          </Heading>
-          <HStack gap="space-8" align="center">
-            <Tag variant="neutral" size="small">
-              {env}
-            </Tag>
-            <Tag variant="neutral-moderate" size="xsmall">
-              {apps.length} {apps.length === 1 ? 'applikasjon' : 'applikasjoner'}
-            </Tag>
-          </HStack>
-        </VStack>
-
-        <div>
-          {apps.map((app) => (
-            <AppCard key={app.id} app={app} showEnvironment={false} />
-          ))}
-        </div>
-      </VStack>
-    </Box>
-  )
-}
 
 const meta: Meta<typeof TeamEnvPage> = {
   title: 'Pages/TeamEnv',
