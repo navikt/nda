@@ -89,7 +89,8 @@ export function getFourEyesStatus(deployment: any): {
       return {
         text: 'Venter på verifisering',
         variant: 'info',
-        description: 'Deploymentet er ikke verifisert ennå.',
+        description:
+          'Verifisering kjøres automatisk i bakgrunnen. NDA henter data fra GitHub og validerer om fire-øyne-prinsippet er oppfylt.',
       }
   }
 

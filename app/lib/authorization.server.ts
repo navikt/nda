@@ -234,8 +234,10 @@ export async function getUserSectionRoles(navIdent: string, sectionId: number): 
 // ─── Deployment capabilities (single-pass) ──────────────────────────────────
 
 export interface DeploymentCapabilities {
-  /** Approve/reject deployments, verify four-eyes, manage legacy info, approve baseline */
+  /** Approve/reject deployments, manage legacy info, approve baseline */
   canApprove: boolean
+  /** Trigger four-eyes verification (team member, teknologileder, or admin) */
+  canVerify: boolean
   /** Register deviations, delete comments */
   canDeviate: boolean
   /** Link/unlink deployments to goals */
@@ -252,7 +254,8 @@ export interface DeploymentCapabilities {
  *
  * Intent → capability mapping:
  * - canApprove:      manual_approval, confirm_legacy_lookup, register_legacy_info,
- *                    approve_legacy, reject_legacy, verify_four_eyes, approve_baseline
+ *                    approve_legacy, reject_legacy, approve_baseline
+ * - canVerify:       verify_four_eyes (team member, teknologileder in app's section, or admin)
  * - canDeviate:      register_deviation, delete_comment
  * - canLinkGoal:     link_goal, unlink_goal
  * - canNotify:       send_slack_notification
@@ -266,6 +269,7 @@ export async function resolveDeploymentCapabilities(
   if (isEntraAdmin(actor)) {
     return {
       canApprove: true,
+      canVerify: true,
       canDeviate: true,
       canLinkGoal: true,
       canNotify: true,
@@ -273,13 +277,20 @@ export async function resolveDeploymentCapabilities(
     }
   }
 
-  const [managingTeamIds, { teamRoles }] = await Promise.all([
+  const [managingTeamIds, { teamRoles, sectionRoles }] = await Promise.all([
     getManagingTeamIds(monitoredAppId),
     getUserRoles(actor.navIdent),
   ])
 
   if (managingTeamIds.length === 0) {
-    return { canApprove: false, canDeviate: false, canLinkGoal: false, canNotify: false, canLookupLegacy: false }
+    return {
+      canApprove: false,
+      canVerify: false,
+      canDeviate: false,
+      canLinkGoal: false,
+      canNotify: false,
+      canLookupLegacy: false,
+    }
   }
 
   const managingSet = new Set(managingTeamIds)
@@ -287,8 +298,23 @@ export async function resolveDeploymentCapabilities(
   const hasAnyRole = rolesInManagingTeams.length > 0
   const isTeamLeader = rolesInManagingTeams.some((r) => isTeamLeaderRole(r.role))
 
+  // Check if user is teknologileder in the section(s) that own the managing teams
+  const isTechnologileder = await (async () => {
+    if (sectionRoles.length === 0) return false
+    const teknologilederSections = new Set(
+      sectionRoles.filter((r) => r.role === 'teknologileder').map((r) => r.section_id),
+    )
+    if (teknologilederSections.size === 0) return false
+    const { rows } = await pool.query<{ section_id: number }>(
+      'SELECT DISTINCT section_id FROM dev_teams WHERE id = ANY($1) AND is_active = true',
+      [managingTeamIds],
+    )
+    return rows.some((r) => teknologilederSections.has(r.section_id))
+  })()
+
   return {
     canApprove: hasAnyRole,
+    canVerify: hasAnyRole || isTechnologileder,
     canDeviate: isTeamLeader,
     canLinkGoal: hasAnyRole,
     canNotify: hasAnyRole,
