@@ -358,11 +358,13 @@ export default function UserPage() {
     setSearchParams(params)
   }
 
-  // Close create-mapping modal when mapping is created (redirect lands on same URL)
+  // Close create-mapping modal when mapping transitions from null to non-null
+  const prevMappingRef = useRef(mapping)
   useEffect(() => {
-    if (mapping) {
+    if (!prevMappingRef.current && mapping) {
       modalRef.current?.close()
     }
+    prevMappingRef.current = mapping
   }, [mapping])
 
   // Close goal modals when action completes (success or error)
