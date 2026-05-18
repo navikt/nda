@@ -52,7 +52,10 @@ export function AuditReportList({
                       Vis
                     </Link>
                     <Link to={`/admin/audit-reports/${report.id}/pdf`} target="_blank">
-                      Last ned
+                      PDF
+                    </Link>
+                    <Link to={`/admin/audit-reports/${report.id}/xlsx`} target="_blank">
+                      Excel
                     </Link>
                   </HStack>
                   {showArchiveActions &&

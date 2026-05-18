@@ -1,4 +1,4 @@
-import { DownloadIcon, EyeIcon } from '@navikt/aksel-icons'
+import { DownloadIcon, EyeIcon, FileExcelIcon } from '@navikt/aksel-icons'
 import {
   Link as AkselLink,
   BodyShort,
@@ -160,7 +160,16 @@ export default function AdminAuditReports() {
                               variant="tertiary"
                               icon={<DownloadIcon aria-hidden />}
                             >
-                              Last ned
+                              PDF
+                            </Button>
+                            <Button
+                              as="a"
+                              href={`/admin/audit-reports/${report.id}/xlsx`}
+                              size="small"
+                              variant="tertiary"
+                              icon={<FileExcelIcon aria-hidden />}
+                            >
+                              Excel
                             </Button>
                           </HStack>
                         </Table.DataCell>
@@ -236,7 +245,16 @@ export default function AdminAuditReports() {
                             variant="secondary"
                             icon={<DownloadIcon aria-hidden />}
                           >
-                            Last ned
+                            PDF
+                          </Button>
+                          <Button
+                            as="a"
+                            href={`/admin/audit-reports/${report.id}/xlsx`}
+                            size="small"
+                            variant="secondary"
+                            icon={<FileExcelIcon aria-hidden />}
+                          >
+                            Excel
                           </Button>
                         </HStack>
                       </VStack>

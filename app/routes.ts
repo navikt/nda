@@ -83,6 +83,7 @@ export default [
     route('admin/slack', 'routes/admin/slack.tsx'),
     route('admin/audit-reports', 'routes/admin/audit-reports.tsx'),
     route('admin/audit-reports/:id/pdf', 'routes/admin/audit-reports.$id.pdf.ts'),
+    route('admin/audit-reports/:id/xlsx', 'routes/admin/audit-reports.$id.xlsx.ts'),
     route('admin/audit-reports/:id/view', 'routes/admin/audit-reports.$id.view.ts'),
     route('admin/global-settings', 'routes/admin/global-settings.tsx'),
     route('admin/section-roles', 'routes/admin/section-roles.tsx'),

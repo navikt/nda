@@ -61,6 +61,7 @@ interface AuditReport {
   report_data: AuditReportData
   content_hash: string
   pdf_data: Buffer | null
+  excel_data: Buffer | null
   generated_at: Date
   generated_by: string | null
   generated_by_app: string | null
@@ -953,6 +954,13 @@ export async function updateAuditReportPdf(reportId: number, pdfData: Buffer): P
 }
 
 /**
+ * Update Excel data for an audit report
+ */
+export async function updateAuditReportExcel(reportId: number, excelData: Buffer): Promise<void> {
+  await pool.query('UPDATE audit_reports SET excel_data = $1 WHERE id = $2', [excelData, reportId])
+}
+
+/**
  * Archive an audit report with a reason. Scoped to monitoredAppId for IDOR protection.
  */
 export async function archiveAuditReport(
@@ -1097,9 +1105,15 @@ export async function getActiveReportsForPeriodM2M(
 export async function getReportByReportIdForApp(
   reportId: string,
   monitoredAppId: number,
-): Promise<{ id: number; pdf_data: Buffer | null; report_id: string; archived_at: Date | null } | null> {
+): Promise<{
+  id: number
+  pdf_data: Buffer | null
+  excel_data: Buffer | null
+  report_id: string
+  archived_at: Date | null
+} | null> {
   const result = await pool.query(
-    `SELECT id, pdf_data, report_id, archived_at
+    `SELECT id, pdf_data, excel_data, report_id, archived_at
      FROM audit_reports
      WHERE report_id = $1 AND monitored_app_id = $2`,
     [reportId, monitoredAppId],
