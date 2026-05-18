@@ -554,7 +554,6 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
             {capabilities.canVerify &&
               deployment.commit_sha &&
               [
-                'pending',
                 'error',
                 'missing',
                 'direct_push',

@@ -837,6 +837,7 @@ describe('resolveDeploymentCapabilities', () => {
     const result = await resolveDeploymentCapabilities(makeAdmin(), appId)
     expect(result).toEqual({
       canApprove: true,
+      canVerify: true,
       canDeviate: true,
       canLinkGoal: true,
       canNotify: true,
@@ -859,6 +860,7 @@ describe('resolveDeploymentCapabilities', () => {
     const result = await resolveDeploymentCapabilities(dev, appId)
     expect(result).toEqual({
       canApprove: true,
+      canVerify: true,
       canDeviate: false,
       canLinkGoal: true,
       canNotify: true,
@@ -881,6 +883,7 @@ describe('resolveDeploymentCapabilities', () => {
     const result = await resolveDeploymentCapabilities(pl, appId)
     expect(result).toEqual({
       canApprove: true,
+      canVerify: true,
       canDeviate: true,
       canLinkGoal: true,
       canNotify: true,
@@ -903,6 +906,7 @@ describe('resolveDeploymentCapabilities', () => {
     const result = await resolveDeploymentCapabilities(tl, appId)
     expect(result).toEqual({
       canApprove: true,
+      canVerify: true,
       canDeviate: true,
       canLinkGoal: true,
       canNotify: true,
@@ -918,6 +922,7 @@ describe('resolveDeploymentCapabilities', () => {
     const result = await resolveDeploymentCapabilities(makeUser(), appId)
     expect(result).toEqual({
       canApprove: false,
+      canVerify: false,
       canDeviate: false,
       canLinkGoal: false,
       canNotify: false,
@@ -945,6 +950,54 @@ describe('resolveDeploymentCapabilities', () => {
     const result = await resolveDeploymentCapabilities(dev, appId)
     expect(result).toEqual({
       canApprove: false,
+      canVerify: false,
+      canDeviate: false,
+      canLinkGoal: false,
+      canNotify: false,
+      canLookupLegacy: false,
+    })
+  })
+
+  it('grants canVerify to teknologileder in app section without canApprove', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+
+    const leader = makeUser('L555555')
+    await assignSectionRole(leader.navIdent, sectionId, 'teknologileder', 'admin')
+
+    const result = await resolveDeploymentCapabilities(leader, appId)
+    expect(result).toEqual({
+      canApprove: false,
+      canVerify: true,
+      canDeviate: false,
+      canLinkGoal: false,
+      canNotify: false,
+      canLookupLegacy: false,
+    })
+  })
+
+  it('denies canVerify to teknologileder in different section', async () => {
+    const section1 = await seedSection(pool, 'pensjon')
+    const section2 = await seedSection(pool, 'arbeid')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', section1)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+
+    const leader = makeUser('L666666')
+    await assignSectionRole(leader.navIdent, section2, 'teknologileder', 'admin')
+
+    const result = await resolveDeploymentCapabilities(leader, appId)
+    expect(result).toEqual({
+      canApprove: false,
+      canVerify: false,
       canDeviate: false,
       canLinkGoal: false,
       canNotify: false,
