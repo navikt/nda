@@ -49,8 +49,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     throw jsonError(`Invalid periodType: ${periodType}. Valid values: yearly, tertiary, quarterly, monthly`, 400)
   }
 
-  if (format !== 'pdf') {
-    throw jsonError(`Invalid format: ${format}. Only "pdf" is currently supported.`, 400)
+  if (format !== 'pdf' && format !== 'xlsx') {
+    throw jsonError(`Invalid format: ${format}. Supported formats: "pdf", "xlsx".`, 400)
   }
 
   let periodStartDate: Date
