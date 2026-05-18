@@ -197,7 +197,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   // Resolve deployment capabilities for the current user (single-pass auth)
   const capabilities: DeploymentCapabilities = currentUser
     ? await resolveDeploymentCapabilities(currentUser, deployment.monitored_app_id)
-    : { canApprove: false, canVerify: false, canDeviate: false, canLinkGoal: false, canNotify: false, canLookupLegacy: false }
+    : {
+        canApprove: false,
+        canVerify: false,
+        canDeviate: false,
+        canLinkGoal: false,
+        canNotify: false,
+        canLookupLegacy: false,
+      }
 
   // Fetch boards only when user can link goals (avoids unnecessary DB queries)
   let availableBoards: AvailableBoard[] = []

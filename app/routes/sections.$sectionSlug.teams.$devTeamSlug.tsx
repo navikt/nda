@@ -1,16 +1,5 @@
 import { CogIcon } from '@navikt/aksel-icons'
-import {
-  Alert,
-  BodyShort,
-  Button,
-  Detail,
-  Heading,
-  HGrid,
-  HStack,
-  Switch,
-  Tag,
-  VStack,
-} from '@navikt/ds-react'
+import { Alert, BodyShort, Button, Detail, Heading, HGrid, HStack, Switch, Tag, VStack } from '@navikt/ds-react'
 import { Link, useLoaderData, useRouteLoaderData, useSearchParams } from 'react-router'
 import { ActiveBoardSection } from '~/components/ActiveBoardSection'
 import { AppCard, type AppCardData } from '~/components/AppCard'
