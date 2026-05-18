@@ -358,13 +358,19 @@ export default function UserPage() {
     setSearchParams(params)
   }
 
-  // Close modals when action completes (success or error)
+  // Close create-mapping modal when mapping is created (redirect lands on same URL)
+  useEffect(() => {
+    if (mapping) {
+      modalRef.current?.close()
+    }
+  }, [mapping])
+
+  // Close goal modals when action completes (success or error)
   useEffect(() => {
     if ((actionData?.success || actionData?.error) && navigation.state === 'idle') {
       bulkLinkRef.current?.close()
       selectLinkRef.current?.close()
       if (actionData?.success) {
-        modalRef.current?.close()
         setSelectedIds(new Set())
       }
     }
