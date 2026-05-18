@@ -1031,6 +1031,13 @@ export async function getAuditReportFile(reportId: number, format: 'pdf' | 'xlsx
 }
 
 /**
+ * Update Excel data for an audit report
+ */
+export async function updateAuditReportExcel(reportId: number, excelData: Buffer): Promise<void> {
+  await pool.query('UPDATE audit_reports SET excel_data = $1 WHERE id = $2', [excelData, reportId])
+}
+
+/**
  * Archive an audit report with a reason. Scoped to monitoredAppId for IDOR protection.
  */
 export async function archiveAuditReport(

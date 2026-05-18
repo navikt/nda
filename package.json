@@ -52,6 +52,7 @@
     "@octokit/auth-app": "^8.2.0",
     "@octokit/rest": "^22.0.1",
     "@opentelemetry/api": "^1.9.1",
+    "exceljs": "npm:@protobi/exceljs@4.4.0-protobi.10",
     "@react-pdf/renderer": "^4.5.1",
     "@react-router/express": "^7.17.0",
     "@react-router/node": "7.17.0",

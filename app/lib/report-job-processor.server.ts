@@ -12,6 +12,7 @@ import {
   saveAuditReportFile,
 } from '~/db/audit-reports.server'
 import { claimReportJob, setReportJobAuditReportId, updateReportJobStatus } from '~/db/report-jobs.server'
+import { generateAuditReportExcel } from '~/lib/audit-report-excel.server'
 import { generateAuditReportPdf } from '~/lib/audit-report-pdf'
 import type { ReportPeriodType } from '~/lib/report-periods'
 
@@ -77,7 +78,7 @@ export async function processReportJobAsync(params: ReportJobParams) {
     // Link job to the created report
     await setReportJobAuditReportId(jobId, report.id)
 
-    const pdfBuffer = await generateAuditReportPdf({
+    const reportProps = {
       appName: report.app_name,
       repository: report.repository,
       teamSlug: report.team_slug,
@@ -90,10 +91,20 @@ export async function processReportJobAsync(params: ReportJobParams) {
       contentHash: report.content_hash,
       reportId: report.report_id,
       generatedAt: new Date(report.generated_at),
-      testRequirement: rawData.app.test_requirement as 'none' | 'unit_tests' | 'integration_tests',
-    })
+    }
 
-    await saveAuditReportFile(report.id, 'pdf', pdfBuffer)
+    const [pdfBuffer, excelBuffer] = await Promise.all([
+      generateAuditReportPdf({
+        ...reportProps,
+        testRequirement: rawData.app.test_requirement as 'none' | 'unit_tests' | 'integration_tests',
+      }),
+      generateAuditReportExcel(reportProps),
+    ])
+
+    await Promise.all([
+      saveAuditReportFile(report.id, 'pdf', pdfBuffer),
+      saveAuditReportFile(report.id, 'xlsx', excelBuffer),
+    ])
     await updateReportJobStatus(jobId, 'completed', pdfBuffer)
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error'
@@ -101,7 +112,7 @@ export async function processReportJobAsync(params: ReportJobParams) {
 
     // Archive incomplete report (no PDF) so it doesn't block retries
     if (reportId) {
-      await archiveAuditReport(reportId, appId, generatedBy ?? generatedByApp ?? 'system', 'PDF generation failed')
+      await archiveAuditReport(reportId, appId, generatedBy ?? generatedByApp ?? 'system', 'Report generation failed')
     }
 
     throw err

@@ -1,11 +1,11 @@
 /**
  * API: Download an audit report
  *
- * Returns the PDF file for a report.
+ * Returns the PDF or Excel file for a report.
  * App-scoped for IDOR protection. Archived reports return 404. Superseded allowed.
  * Secured with M2M token validation.
  *
- * GET /api/v1/apps/:team/:env/:app/audit-reports/:reportId/download?format=pdf
+ * GET /api/v1/apps/:team/:env/:app/audit-reports/:reportId/download?format=pdf|xlsx
  */
 
 import { getAuditReportFile, getReportByReportIdForApp } from '~/db/audit-reports.server'
@@ -25,8 +25,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const url = new URL(request.url)
   const format = url.searchParams.get('format') ?? 'pdf'
 
-  if (format !== 'pdf') {
-    throw jsonError(`Invalid format: ${format}. Only "pdf" is currently supported.`, 400)
+  if (format !== 'pdf' && format !== 'xlsx') {
+    throw jsonError(`Invalid format: ${format}. Supported formats: "pdf", "xlsx".`, 400)
   }
 
   const monitoredApp = await getMonitoredApplicationByIdentity(team, env, appName)
@@ -41,6 +41,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   if (report.archived_at) {
     throw jsonError('Report has been archived', 404)
+  }
+
+  if (format === 'xlsx') {
+    const excelData = await getAuditReportFile(report.id, 'xlsx')
+    if (!excelData) {
+      throw jsonError('Excel not yet generated for this report', 404)
+    }
+    const excelBuffer = Buffer.isBuffer(excelData) ? excelData : Buffer.from(excelData)
+    const filename = `${report.report_id}.xlsx`
+    return new Response(excelBuffer as unknown as BodyInit, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(excelBuffer.length),
+      },
+    })
   }
 
   const pdfData = await getAuditReportFile(report.id, 'pdf')
