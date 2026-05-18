@@ -1,0 +1,858 @@
+openapi: 3.1.0
+info:
+  title: Deployment Audit M2M API
+  description: |
+    Machine-to-machine API for audit report management and deployment verification.
+
+    ## Authentication
+
+    All endpoints require a valid Entra ID M2M token (client_credentials flow) in the
+    `Authorization: Bearer <token>` header. Tokens are validated via NAIS token introspection.
+
+    ## Environment restriction
+
+    Audit report endpoints only accept production environments (`prod-fss`, `prod-gcp`).
+    Other environments return 400. The verification-summary endpoint accepts any monitored environment.
+
+    ## Period types
+
+    Audit reports are generated for fixed calendar periods:
+
+    | periodType  | Valid periodStart values                              |
+    |-------------|-------------------------------------------------------|
+    | `yearly`    | `YYYY-01-01`                                          |
+    | `tertiary`  | `YYYY-01-01`, `YYYY-05-01`, `YYYY-09-01`             |
+    | `quarterly` | `YYYY-01-01`, `YYYY-04-01`, `YYYY-07-01`, `YYYY-10-01` |
+    | `monthly`   | `YYYY-MM-01` (any month, 1st day)                     |
+
+    Custom date ranges are **not** supported for audit reports. The period must be a
+    completed calendar period (end date in the past).
+  version: 1.0.0
+  contact:
+    name: Team Deployment Audit
+
+servers:
+  - url: https://nda.ansatt.nav.no
+    description: Production
+
+paths:
+  /api/v1/apps/{team}/{env}/{app}/verification-summary:
+    get:
+      operationId: getVerificationSummary
+      summary: Get verification summary
+      description: |
+        Returns four-eyes coverage and change origin (endringsopphav) data
+        for a monitored application within a date range.
+
+        Unlike audit report endpoints, this supports arbitrary date ranges via
+        `from` and `to` query parameters.
+      tags:
+        - Verification
+      parameters:
+        - $ref: '#/components/parameters/team'
+        - $ref: '#/components/parameters/env'
+        - $ref: '#/components/parameters/app'
+        - name: from
+          in: query
+          description: Start date (ISO 8601). Defaults to January 1st of current year.
+          schema:
+            type: string
+            format: date
+            example: '2025-01-01'
+        - name: to
+          in: query
+          description: End date (ISO 8601). Defaults to now.
+          schema:
+            type: string
+            format: date
+            example: '2025-12-31'
+      responses:
+        '200':
+          description: Verification summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationSummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/apps/{team}/{env}/{app}/audit-reports:
+    get:
+      operationId: listAuditReports
+      summary: List audit reports
+      description: |
+        Returns all active (non-archived, non-superseded) reports for the application.
+      tags:
+        - Audit Reports
+      parameters:
+        - $ref: '#/components/parameters/team'
+        - $ref: '#/components/parameters/envProd'
+        - $ref: '#/components/parameters/app'
+      responses:
+        '200':
+          description: List of active reports
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditReportListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/apps/{team}/{env}/{app}/audit-reports/status:
+    get:
+      operationId: getAuditReportStatus
+      summary: Get audit status for a period
+      description: |
+        Returns deployment statistics and any existing reports for the specified period.
+        Use this to check readiness before generating a report.
+      tags:
+        - Audit Reports
+      parameters:
+        - $ref: '#/components/parameters/team'
+        - $ref: '#/components/parameters/envProd'
+        - $ref: '#/components/parameters/app'
+        - name: periodType
+          in: query
+          required: true
+          description: The period type.
+          schema:
+            $ref: '#/components/schemas/ReportPeriodType'
+        - name: periodStart
+          in: query
+          required: true
+          description: |
+            First day of the period (YYYY-MM-DD). Must align with the period type
+            (e.g., `2025-01-01` for yearly, `2025-04-01` for Q2).
+          schema:
+            type: string
+            format: date
+            example: '2025-01-01'
+      responses:
+        '200':
+          description: Period status with deployment stats and existing reports
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditReportStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/apps/{team}/{env}/{app}/audit-reports/generate:
+    post:
+      operationId: generateAuditReport
+      summary: Generate an audit report
+      description: |
+        Creates an async report generation job. Returns immediately with a job ID
+        that can be polled via the job status endpoint.
+
+        **Deduplication:** If a job for the same period is already in-flight (pending/processing),
+        the existing job is returned (200) instead of creating a new one.
+
+        **Completed job reuse:** If a completed job exists for the period (with a non-archived,
+        non-superseded report) and no `reason` is provided, the existing completed job is
+        returned (200) with its `reportId`.
+
+        **Superseding:** If an active report exists for the period (outside the completed-job
+        lookup) and no `reason` is provided, a 409 is returned. Provide a `reason` to supersede
+        the existing report — the old report is marked as superseded and a new one is generated.
+      tags:
+        - Audit Reports
+      parameters:
+        - $ref: '#/components/parameters/team'
+        - $ref: '#/components/parameters/envProd'
+        - $ref: '#/components/parameters/app'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - periodType
+                - periodStart
+              properties:
+                periodType:
+                  $ref: '#/components/schemas/ReportPeriodType'
+                periodStart:
+                  type: string
+                  format: date
+                  description: First day of the period (YYYY-MM-DD).
+                  example: '2025-01-01'
+                format:
+                  type: string
+                  default: pdf
+                  description: |
+                    Output format. Check `availableFormats` in the status or report
+                    summary responses for supported values.
+                reason:
+                  type: string
+                  description: |
+                    Required when superseding an existing report for the same period.
+                    Describes why the report is being regenerated.
+                  example: Updated deployment verification data
+      responses:
+        '202':
+          description: Report generation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditReportGenerateResponse'
+        '200':
+          description: Existing job returned (deduplication)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditReportGenerateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Active report exists. Provide `reason` to supersede.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/apps/{team}/{env}/{app}/audit-reports/jobs/{jobId}:
+    get:
+      operationId: getAuditReportJobStatus
+      summary: Check report generation job status
+      description: |
+        Returns the current status of a report generation job. Poll this endpoint
+        after calling `/generate` to wait for completion.
+
+        When the job is `pending` or `processing`, the response includes a
+        `Retry-After: 10` header suggesting a poll interval.
+      tags:
+        - Audit Reports
+      parameters:
+        - $ref: '#/components/parameters/team'
+        - $ref: '#/components/parameters/envProd'
+        - $ref: '#/components/parameters/app'
+        - name: jobId
+          in: path
+          required: true
+          description: Job ID returned from the generate endpoint.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status
+          headers:
+            Retry-After:
+              description: Suggested poll interval in seconds (present when job is pending/processing).
+              schema:
+                type: integer
+                example: 10
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditReportJobStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/apps/{team}/{env}/{app}/audit-reports/{reportId}/download:
+    get:
+      operationId: downloadAuditReport
+      summary: Download an audit report
+      description: |
+        Returns the report file for a completed report in the requested format.
+        Archived reports return 404. Superseded reports are still downloadable.
+
+        Check `availableFormats` in the report summary to see which formats
+        are available for a given report.
+      tags:
+        - Audit Reports
+      parameters:
+        - $ref: '#/components/parameters/team'
+        - $ref: '#/components/parameters/envProd'
+        - $ref: '#/components/parameters/app'
+        - name: reportId
+          in: path
+          required: true
+          description: Report ID (e.g., `AUDIT-2025-myapp-prod-a1b2c3d4-...`).
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: |
+            Download format. Check `availableFormats` in the report summary
+            for supported values.
+          schema:
+            type: string
+            default: pdf
+      responses:
+        '200':
+          description: Report file
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="AUDIT-2025-myapp-prod-a1b2c3d4.pdf"
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    m2mToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Entra ID M2M token (client_credentials flow)
+
+  parameters:
+    team:
+      name: team
+      in: path
+      required: true
+      description: NAIS team slug.
+      schema:
+        type: string
+        example: my-team
+    env:
+      name: env
+      in: path
+      required: true
+      description: Environment name. Any monitored environment is accepted.
+      schema:
+        type: string
+        example: prod-gcp
+    envProd:
+      name: env
+      in: path
+      required: true
+      description: Environment name. Only production environments are supported for audit reports.
+      schema:
+        type: string
+        enum:
+          - prod-fss
+          - prod-gcp
+    app:
+      name: app
+      in: path
+      required: true
+      description: Application name as registered in NAIS.
+      schema:
+        type: string
+        example: my-app
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid M2M token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Valid token but missing `access_as_application` role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Application or resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+          example: Application not found
+
+    ReportPeriodType:
+      type: string
+      enum:
+        - yearly
+        - tertiary
+        - quarterly
+        - monthly
+      description: |
+        The calendar period granularity:
+        - `yearly`: Full calendar year (Jan 1 – Dec 31)
+        - `tertiary`: 4-month period (T1: Jan–Apr, T2: May–Aug, T3: Sep–Dec)
+        - `quarterly`: 3-month period (Q1–Q4)
+        - `monthly`: Single calendar month
+
+    ReportJobStatus:
+      type: string
+      enum:
+        - pending
+        - processing
+        - completed
+        - failed
+
+    AppMetadata:
+      type: object
+      required:
+        - team
+        - environment
+        - name
+        - auditStartDate
+        - applicationGroup
+      properties:
+        team:
+          type: string
+          example: my-team
+        environment:
+          type: string
+          example: prod
+        name:
+          type: string
+          example: my-app
+        auditStartDate:
+          oneOf:
+            - type: string
+              format: date
+            - type: 'null'
+          description: Earliest date for audit data (YYYY-MM-DD), or null if unrestricted.
+          example: '2024-01-01'
+        applicationGroup:
+          oneOf:
+            - type: object
+              required:
+                - name
+                - apps
+              properties:
+                name:
+                  type: string
+                  example: My Service
+                apps:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - team
+                      - environment
+                      - name
+                    properties:
+                      team:
+                        type: string
+                      environment:
+                        type: string
+                      name:
+                        type: string
+            - type: 'null'
+          description: Group this app belongs to (for multi-app audit reports), or null.
+
+    AuditReportSummary:
+      type: object
+      required:
+        - reportId
+        - periodType
+        - periodLabel
+        - periodStart
+        - periodEnd
+        - generatedAt
+        - generatedBy
+        - totalDeployments
+        - approvedCount
+        - withChangeOriginCount
+        - contentHash
+        - availableFormats
+      properties:
+        reportId:
+          type: string
+          example: AUDIT-2025-myapp-prod-a1b2c3d4-1a2b3c4d5e6f
+        periodType:
+          $ref: '#/components/schemas/ReportPeriodType'
+        periodLabel:
+          type: string
+          description: Human-readable period label.
+          example: Q1 2025
+        periodStart:
+          type: string
+          format: date
+          example: '2025-01-01'
+        periodEnd:
+          type: string
+          format: date
+          description: Last day of the period.
+          example: '2025-03-31'
+        generatedAt:
+          type: string
+          format: date-time
+          example: '2025-04-02T10:30:00.000Z'
+        generatedBy:
+          type:
+            - string
+            - 'null'
+          description: NAV-ident (user) or M2M app name. Null for legacy reports.
+          example: dev-gcp:my-team:kiss
+        totalDeployments:
+          type: integer
+          example: 47
+        approvedCount:
+          type: integer
+          description: Deployments with approved four-eyes verification.
+          example: 45
+        withChangeOriginCount:
+          type:
+            - integer
+            - 'null'
+          description: Deployments linked to objectives (excl. Dependabot). Null for older reports.
+          example: 38
+        contentHash:
+          type: string
+          description: SHA-256 hash of report content for integrity verification.
+          example: a1b2c3d4e5f6...
+        availableFormats:
+          type: array
+          items:
+            type: string
+          example:
+            - pdf
+
+    VerificationSummaryResponse:
+      type: object
+      required:
+        - app
+        - period
+        - fourEyesCoverage
+        - changeOriginCoverage
+        - lastDeployment
+      properties:
+        app:
+          type: object
+          required:
+            - team
+            - environment
+            - name
+            - isActive
+          properties:
+            team:
+              type: string
+            environment:
+              type: string
+            name:
+              type: string
+            isActive:
+              type: boolean
+        period:
+          type: object
+          required:
+            - from
+            - to
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+        fourEyesCoverage:
+          type: object
+          required:
+            - total
+            - approved
+            - unapproved
+            - pending
+            - coveragePercent
+          properties:
+            total:
+              type: integer
+            approved:
+              type: integer
+            unapproved:
+              type: integer
+            pending:
+              type: integer
+            coveragePercent:
+              type: number
+              format: float
+              description: Percentage (0–100).
+        changeOriginCoverage:
+          type: object
+          required:
+            - total
+            - linked
+            - dependabot
+            - coveragePercent
+          properties:
+            total:
+              type: integer
+              description: Total deployments excluding Dependabot.
+            linked:
+              type: integer
+              description: Deployments linked to an objective/key result.
+            dependabot:
+              type: integer
+              description: Dependabot deployments (excluded from calculation).
+            coveragePercent:
+              type: number
+              format: float
+        lastDeployment:
+          oneOf:
+            - type: object
+              required:
+                - createdAt
+                - deployer
+                - commitSha
+                - fourEyesStatus
+                - hasChangeOrigin
+              properties:
+                createdAt:
+                  type: string
+                  format: date-time
+                deployer:
+                  type:
+                    - string
+                    - 'null'
+                commitSha:
+                  type:
+                    - string
+                    - 'null'
+                fourEyesStatus:
+                  type: string
+                hasChangeOrigin:
+                  type: boolean
+            - type: 'null'
+
+    AuditReportListResponse:
+      type: object
+      required:
+        - app
+        - reports
+      properties:
+        app:
+          $ref: '#/components/schemas/AppMetadata'
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditReportSummary'
+
+    AuditReportStatusResponse:
+      type: object
+      required:
+        - app
+        - period
+        - deployments
+        - existingReports
+        - availableFormats
+      properties:
+        app:
+          $ref: '#/components/schemas/AppMetadata'
+        period:
+          type: object
+          required:
+            - type
+            - label
+            - start
+            - end
+          properties:
+            type:
+              $ref: '#/components/schemas/ReportPeriodType'
+            label:
+              type: string
+              example: Q1 2025
+            start:
+              type: string
+              format: date
+              example: '2025-01-01'
+            end:
+              type: string
+              format: date
+              example: '2025-03-31'
+        deployments:
+          type: object
+          required:
+            - total
+            - approved
+            - pending
+            - notApproved
+            - approvedPercent
+            - withChangeOrigin
+            - changeOriginPercent
+          properties:
+            total:
+              type: integer
+            approved:
+              type: integer
+            pending:
+              type: integer
+            notApproved:
+              type: integer
+            approvedPercent:
+              type: number
+              format: float
+              description: Percentage (0–100, one decimal).
+            withChangeOrigin:
+              type: integer
+            changeOriginPercent:
+              type: number
+              format: float
+        existingReports:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditReportSummary'
+        availableFormats:
+          type: array
+          items:
+            type: string
+          example:
+            - pdf
+
+    AuditReportGenerateResponse:
+      type: object
+      required:
+        - app
+        - jobId
+        - status
+        - reportId
+        - message
+      properties:
+        app:
+          $ref: '#/components/schemas/AppMetadata'
+        jobId:
+          type: string
+          format: uuid
+          description: Job ID for polling status.
+        status:
+          $ref: '#/components/schemas/ReportJobStatus'
+        reportId:
+          type:
+            - string
+            - 'null'
+          description: Report ID if job is already completed (deduplication case).
+        message:
+          type: string
+          example: Report generation started
+
+    AuditReportJobStatusResponse:
+      type: object
+      required:
+        - app
+        - jobId
+        - status
+        - createdAt
+        - completedAt
+        - error
+        - reportId
+        - report
+      properties:
+        app:
+          $ref: '#/components/schemas/AppMetadata'
+        jobId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ReportJobStatus'
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        error:
+          type:
+            - string
+            - 'null'
+          description: Error message if job failed.
+        reportId:
+          type:
+            - string
+            - 'null'
+          description: Report ID when job is completed.
+        report:
+          oneOf:
+            - type: object
+              required:
+                - reportId
+                - generatedAt
+                - generatedBy
+                - totalDeployments
+                - approvedCount
+                - withChangeOriginCount
+                - contentHash
+                - availableFormats
+              properties:
+                reportId:
+                  type: string
+                generatedAt:
+                  type: string
+                  format: date-time
+                generatedBy:
+                  type:
+                    - string
+                    - 'null'
+                totalDeployments:
+                  type: integer
+                approvedCount:
+                  type: integer
+                withChangeOriginCount:
+                  type:
+                    - integer
+                    - 'null'
+                contentHash:
+                  type: string
+                availableFormats:
+                  type: array
+                  items:
+                    type: string
+            - type: 'null'
+          description: Report summary (present when completed).
+
+security:
+  - m2mToken: []
+
+tags:
+  - name: Verification
+    description: Deployment verification summary (supports arbitrary date ranges)
+  - name: Audit Reports
+    description: Audit report lifecycle (fixed calendar periods)
