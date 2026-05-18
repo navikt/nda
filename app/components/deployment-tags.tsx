@@ -1,6 +1,13 @@
 import { CheckmarkIcon, ExclamationmarkTriangleIcon, XMarkIcon } from '@navikt/aksel-icons'
 import { Tag } from '@navikt/ds-react'
-import { type FourEyesStatus, isApprovedStatus, isLegacyStatus, isPendingStatus } from '~/lib/four-eyes-status'
+import {
+  type FourEyesStatus,
+  isApprovedStatus,
+  isLegacyStatus,
+  isNotApprovedStatus,
+  isPendingStatus,
+  STATUS_DISPLAY,
+} from '~/lib/four-eyes-status'
 
 interface DeploymentTagProps {
   github_pr_number: number | null
@@ -40,66 +47,21 @@ export function MethodTag({
 }
 
 export function StatusTag({ four_eyes_status }: Pick<DeploymentTagProps, 'four_eyes_status'>) {
-  if (isApprovedStatus(four_eyes_status)) {
-    return (
-      <Tag data-color="success" variant="outline" size="small" icon={<CheckmarkIcon aria-hidden />}>
-        Godkjent
-      </Tag>
-    )
-  }
+  const display = STATUS_DISPLAY[four_eyes_status]
 
-  // Legacy deployments
-  if (isLegacyStatus(four_eyes_status)) {
-    return (
-      <Tag data-color="neutral" variant="outline" size="small">
-        Legacy
-      </Tag>
+  const icon = isApprovedStatus(four_eyes_status) ? (
+    <CheckmarkIcon aria-hidden />
+  ) : isLegacyStatus(four_eyes_status) ? undefined : isNotApprovedStatus(four_eyes_status) ? (
+    four_eyes_status === 'approved_pr_with_unreviewed' ? (
+      <ExclamationmarkTriangleIcon aria-hidden />
+    ) : (
+      <XMarkIcon aria-hidden />
     )
-  }
+  ) : undefined
 
-  // Venter på verifisering
-  if (isPendingStatus(four_eyes_status)) {
-    return (
-      <Tag data-color="neutral" variant="outline" size="small">
-        Venter
-      </Tag>
-    )
-  }
-
-  // Spesifikke ikke-godkjente statuser
-  switch (four_eyes_status) {
-    case 'direct_push':
-    case 'unverified_commits':
-      return (
-        <Tag data-color="warning" variant="outline" size="small" icon={<XMarkIcon aria-hidden />}>
-          Ikke godkjent
-        </Tag>
-      )
-    case 'approved_pr_with_unreviewed':
-      return (
-        <Tag data-color="warning" variant="outline" size="small" icon={<ExclamationmarkTriangleIcon aria-hidden />}>
-          Ureviewed
-        </Tag>
-      )
-    case 'error':
-    case 'repository_mismatch':
-    case 'unauthorized_repository':
-    case 'unauthorized_branch':
-      return (
-        <Tag data-color="danger" variant="outline" size="small" icon={<XMarkIcon aria-hidden />}>
-          {four_eyes_status === 'unauthorized_repository'
-            ? 'Ikke godkjent repo'
-            : four_eyes_status === 'unauthorized_branch'
-              ? 'Ikke på godkjent branch'
-              : 'Feil'}
-        </Tag>
-      )
-    default:
-      // Fallback for uventede statuser - vis status-tekst
-      return (
-        <Tag data-color="neutral" variant="outline" size="small">
-          {four_eyes_status}
-        </Tag>
-      )
-  }
+  return (
+    <Tag data-color={display.tagVariant} variant="outline" size="small" icon={icon}>
+      {display.tagLabel}
+    </Tag>
+  )
 }

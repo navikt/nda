@@ -131,6 +131,37 @@ export const PROTECTED_STATUSES_SQL = PROTECTED_STATUSES.map((s) => `'${s}'`).jo
 // Human-Readable Labels
 // =============================================================================
 
+/**
+ * Canonical display properties for each status, used by both list tags and detail views.
+ * tagLabel: short label for Tag components and list views
+ * tagVariant: semantic color variant for the tag
+ */
+export const STATUS_DISPLAY: Record<
+  FourEyesStatus,
+  { tagLabel: string; tagVariant: 'success' | 'warning' | 'danger' | 'info' | 'neutral' }
+> = {
+  approved: { tagLabel: 'Godkjent', tagVariant: 'success' },
+  approved_pr: { tagLabel: 'Godkjent', tagVariant: 'success' },
+  implicitly_approved: { tagLabel: 'Godkjent', tagVariant: 'success' },
+  manually_approved: { tagLabel: 'Godkjent', tagVariant: 'success' },
+  no_changes: { tagLabel: 'Godkjent', tagVariant: 'success' },
+  baseline: { tagLabel: 'Godkjent', tagVariant: 'success' },
+  pending: { tagLabel: 'Venter', tagVariant: 'neutral' },
+  pending_baseline: { tagLabel: 'Foreslått baseline', tagVariant: 'warning' },
+  pending_approval: { tagLabel: 'Venter', tagVariant: 'neutral' },
+  unknown: { tagLabel: 'Venter', tagVariant: 'neutral' },
+  direct_push: { tagLabel: 'Ikke godkjent', tagVariant: 'warning' },
+  unverified_commits: { tagLabel: 'Ikke godkjent', tagVariant: 'warning' },
+  approved_pr_with_unreviewed: { tagLabel: 'Ureviewed', tagVariant: 'warning' },
+  legacy: { tagLabel: 'Legacy', tagVariant: 'neutral' },
+  legacy_pending: { tagLabel: 'Legacy', tagVariant: 'neutral' },
+  missing: { tagLabel: 'Ikke godkjent', tagVariant: 'warning' },
+  error: { tagLabel: 'Feil', tagVariant: 'danger' },
+  repository_mismatch: { tagLabel: 'Feil', tagVariant: 'danger' },
+  unauthorized_repository: { tagLabel: 'Ikke godkjent repo', tagVariant: 'danger' },
+  unauthorized_branch: { tagLabel: 'Ikke på godkjent branch', tagVariant: 'danger' },
+}
+
 export const FOUR_EYES_STATUS_LABELS: Record<FourEyesStatus, string> = {
   approved: 'Godkjent',
   approved_pr: 'Godkjent PR',
