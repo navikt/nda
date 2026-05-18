@@ -197,7 +197,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   // Resolve deployment capabilities for the current user (single-pass auth)
   const capabilities: DeploymentCapabilities = currentUser
     ? await resolveDeploymentCapabilities(currentUser, deployment.monitored_app_id)
-    : { canApprove: false, canDeviate: false, canLinkGoal: false, canNotify: false, canLookupLegacy: false }
+    : { canApprove: false, canVerify: false, canDeviate: false, canLinkGoal: false, canNotify: false, canLookupLegacy: false }
 
   // Fetch boards only when user can link goals (avoids unnecessary DB queries)
   let availableBoards: AvailableBoard[] = []
@@ -426,14 +426,14 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
     setLegacySlackLink('')
   }
 
-  // Statuses that require manual approval (when no manualApproval exists)
+  // Statuses that require manual approval (when no manualApproval exists).
+  // Note: 'pending' is excluded — it means the verifier hasn't run yet, not that manual action is needed.
   const statusesRequiringApproval = [
     'direct_push',
     'missing',
     'unverified_commits',
     'approved_pr_with_unreviewed',
     'error',
-    'pending',
     'pr_not_approved',
   ]
   const isLegacy = deployment.four_eyes_status === 'legacy'
@@ -550,11 +550,10 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                 Legacy
               </Tag>
             ) : null}
-            {/* Verify button for non-OK states */}
-            {capabilities.canApprove &&
+            {/* Verify button for non-OK states - available to team members, teknologileder, and admin */}
+            {capabilities.canVerify &&
               deployment.commit_sha &&
               [
-                'pending',
                 'error',
                 'missing',
                 'direct_push',
@@ -672,6 +671,17 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                 </>
               )}
           </BodyShort>
+          {deployment.four_eyes_status === 'pending' && capabilities.canVerify && deployment.commit_sha && (
+            <VStack gap="space-8" marginBlock="space-8 space-0">
+              <BodyShort>Du kan også forsøke å verifisere manuelt.</BodyShort>
+              <Form method="post">
+                <input type="hidden" name="intent" value="verify_four_eyes" />
+                <Button type="submit" size="small" variant="secondary" icon={<ArrowsCirclepathIcon aria-hidden />}>
+                  Verifiser nå
+                </Button>
+              </Form>
+            </VStack>
+          )}
           {deployment.four_eyes_status === 'error' && (
             <VStack gap="space-8" marginBlock="space-8 space-0">
               {isAdmin &&

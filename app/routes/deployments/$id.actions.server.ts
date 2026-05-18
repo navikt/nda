@@ -13,15 +13,15 @@ import { logger } from '~/lib/logger.server'
 import { notifyDeploymentIfNeeded, sendDeviationNotification } from '~/lib/slack/client.server'
 import { runVerification } from '~/lib/verification'
 
-/** Map intent to the required capability. Intents not listed here are rejected (fail-closed). Only `add_comment` is handled separately above the auth gate. */
+/** Map intent to the required capability. Intents not listed here are rejected (fail-closed). `add_comment` is handled separately above the auth gate. */
 const INTENT_CAPABILITY: Record<string, keyof DeploymentCapabilities> = {
   manual_approval: 'canApprove',
   confirm_legacy_lookup: 'canApprove',
   register_legacy_info: 'canApprove',
   approve_legacy: 'canApprove',
   reject_legacy: 'canApprove',
-  verify_four_eyes: 'canApprove',
   approve_baseline: 'canApprove',
+  verify_four_eyes: 'canVerify',
   register_deviation: 'canDeviate',
   delete_comment: 'canDeviate',
   link_goal: 'canLinkGoal',
@@ -84,6 +84,38 @@ export async function action({ request, params }: { request: Request; params: Re
   const capabilities = await resolveDeploymentCapabilities(identity, deployment.monitored_app_id)
   if (!capabilities[requiredCapability]) {
     return { error: 'Du har ikke tilgang til å utføre denne handlingen' }
+  }
+
+  if (intent === 'verify_four_eyes') {
+    if (!deployment.commit_sha) {
+      return { error: 'Kan ikke verifisere: deployment mangler commit SHA' }
+    }
+    if (!deployment.detected_github_owner || !deployment.detected_github_repo_name) {
+      return { error: 'Kan ikke verifisere: deployment mangler repository info' }
+    }
+    try {
+      logger.info(`🔍 Manually verifying deployment ${deployment.nais_deployment_id}...`)
+      const result = await runVerification(deployment.id, {
+        commitSha: deployment.commit_sha,
+        repository: `${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`,
+        environmentName: deployment.environment_name,
+        baseBranch: deployment.default_branch || 'main',
+        monitoredAppId: deployment.monitored_app_id,
+        forceRefresh: true,
+      })
+      if (result.status !== 'error') {
+        return { success: 'Four-eyes status verifisert og oppdatert' }
+      }
+      return { error: 'Verifisering feilet - se logger for detaljer' }
+    } catch (error) {
+      logger.error('Verification error:', error)
+      if (error instanceof Error && error.message.includes('rate limit')) {
+        return { error: 'GitHub rate limit nådd. Prøv igjen senere.' }
+      }
+      return {
+        error: `Kunne ikke verifisere: ${error instanceof Error ? error.message : 'Ukjent feil'}`,
+      }
+    }
   }
 
   if (intent === 'manual_approval') {
@@ -496,44 +528,6 @@ export async function action({ request, params }: { request: Request; params: Re
       return { success: 'Kommentar slettet' }
     } catch (_error) {
       return { error: 'Kunne ikke slette kommentar' }
-    }
-  }
-
-  if (intent === 'verify_four_eyes') {
-    // Check if deployment has required data
-    if (!deployment.commit_sha) {
-      return { error: 'Kan ikke verifisere: deployment mangler commit SHA' }
-    }
-
-    if (!deployment.detected_github_owner || !deployment.detected_github_repo_name) {
-      return { error: 'Kan ikke verifisere: deployment mangler repository info' }
-    }
-
-    try {
-      logger.info(`🔍 Manually verifying deployment ${deployment.nais_deployment_id}...`)
-
-      const result = await runVerification(deployment.id, {
-        commitSha: deployment.commit_sha,
-        repository: `${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`,
-        environmentName: deployment.environment_name,
-        baseBranch: deployment.default_branch || 'main',
-        monitoredAppId: deployment.monitored_app_id,
-        forceRefresh: true, // Fetch fresh data from GitHub for manual re-verification
-      })
-
-      if (result.status !== 'error') {
-        return { success: 'Four-eyes status verifisert og oppdatert' }
-      } else {
-        return { error: 'Verifisering feilet - se logger for detaljer' }
-      }
-    } catch (error) {
-      logger.error('Verification error:', error)
-      if (error instanceof Error && error.message.includes('rate limit')) {
-        return { error: 'GitHub rate limit nådd. Prøv igjen senere.' }
-      }
-      return {
-        error: `Kunne ikke verifisere: ${error instanceof Error ? error.message : 'Ukjent feil'}`,
-      }
     }
   }
 
