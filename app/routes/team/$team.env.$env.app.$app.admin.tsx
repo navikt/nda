@@ -782,6 +782,12 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
           >
             Se statusoverganger →
           </AkselLink>
+          <AkselLink
+            as={Link}
+            to={`/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}/admin/sync-jobs`}
+          >
+            Se synk-jobber →
+          </AkselLink>
         </VStack>
       </Box>
 

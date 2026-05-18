@@ -236,6 +236,38 @@ export async function getSyncJobStats(): Promise<{
 }
 
 /**
+ * Get recent sync jobs for a specific app, ordered by most recent first.
+ */
+export async function getSyncJobsForApp(
+  appId: number,
+  options?: { limit?: number; jobType?: SyncJobType },
+): Promise<SyncJob[]> {
+  const conditions = ['monitored_app_id = $1']
+  const params: (string | number)[] = [appId]
+  let paramIndex = 2
+
+  if (options?.jobType) {
+    conditions.push(`job_type = $${paramIndex}`)
+    params.push(options.jobType)
+    paramIndex++
+  }
+
+  const limit = options?.limit ?? 100
+  params.push(limit)
+
+  const result = await pool.query(
+    `SELECT id, job_type, monitored_app_id, status, started_at, completed_at,
+            locked_by, lock_expires_at, result, error, options, created_at
+     FROM sync_jobs
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY created_at DESC
+     LIMIT $${paramIndex}`,
+    params,
+  )
+  return result.rows
+}
+
+/**
  * Get the latest job of a specific type for an app
  */
 export async function getLatestSyncJob(appId: number, jobType: SyncJobType): Promise<SyncJob | null> {
