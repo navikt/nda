@@ -19,6 +19,7 @@ interface ReportRow {
   manually_approved_count: number
   change_origin_count: number | null
   content_hash: string
+  formats: string[]
 }
 
 export function toReportSummaryM2M(row: ReportRow): AuditReportSummaryM2M {
@@ -34,6 +35,6 @@ export function toReportSummaryM2M(row: ReportRow): AuditReportSummaryM2M {
     approvedCount: row.pr_approved_count + row.manually_approved_count,
     withChangeOriginCount: row.change_origin_count,
     contentHash: row.content_hash,
-    availableFormats: ['pdf'],
+    availableFormats: row.formats,
   }
 }

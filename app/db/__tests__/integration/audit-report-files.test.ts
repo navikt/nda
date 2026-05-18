@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   getActiveReportsForAppM2M,
   getAuditReportFile,
+  getAuditReportsForApp,
   saveAuditReport,
   saveAuditReportFile,
 } from '../../audit-reports.server'
@@ -107,6 +108,36 @@ describe('getAuditReportFile', () => {
     await saveAuditReportFile(report.id, 'xlsx', Buffer.from('xlsx-only'))
 
     expect(await getAuditReportFile(report.id, 'pdf')).toBeNull()
+  })
+})
+
+describe('formats subquery in getAuditReportsForApp', () => {
+  it('returns empty formats array when no files are stored', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-h', appName: 'test-app', environment: 'prod-fss' })
+    await seedReport(appId)
+
+    const reports = await getAuditReportsForApp(appId)
+    expect(reports).toHaveLength(1)
+    expect(reports[0].formats).toEqual([])
+  })
+
+  it('returns ["pdf"] when only pdf is stored', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-i', appName: 'test-app', environment: 'prod-fss' })
+    const report = await seedReport(appId)
+    await saveAuditReportFile(report.id, 'pdf', Buffer.from('pdf'))
+
+    const reports = await getAuditReportsForApp(appId)
+    expect(reports[0].formats).toEqual(['pdf'])
+  })
+
+  it('returns ["pdf","xlsx"] when both files are stored', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-j', appName: 'test-app', environment: 'prod-fss' })
+    const report = await seedReport(appId)
+    await saveAuditReportFile(report.id, 'pdf', Buffer.from('pdf'))
+    await saveAuditReportFile(report.id, 'xlsx', Buffer.from('xlsx'))
+
+    const reports = await getAuditReportsForApp(appId)
+    expect(reports[0].formats).toEqual(['pdf', 'xlsx'])
   })
 })
 

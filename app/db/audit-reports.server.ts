@@ -198,6 +198,7 @@ export interface AuditReportSummary {
   superseded_by: string | null
   supersede_reason: string | null
   superseded_by_report_id: number | null
+  formats: string[]
 }
 
 export interface AuditReadinessCheck {
@@ -966,7 +967,8 @@ export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
     `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
-            superseded_at, superseded_by, supersede_reason, superseded_by_report_id
+            superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
+            ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
      ORDER BY generated_at DESC`,
   )
@@ -981,7 +983,8 @@ export async function getAuditReportsForApp(monitoredAppId: number): Promise<Aud
     `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
-            superseded_at, superseded_by, supersede_reason, superseded_by_report_id
+            superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
+            ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
      WHERE monitored_app_id = $1 AND archived_at IS NULL AND superseded_at IS NULL
      ORDER BY year DESC, period_start DESC`,
@@ -998,7 +1001,8 @@ export async function getAuditReportsForAppAdmin(monitoredAppId: number): Promis
     `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
-            superseded_at, superseded_by, supersede_reason, superseded_by_report_id
+            superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
+            ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
      WHERE monitored_app_id = $1
      ORDER BY year DESC, period_start DESC`,
@@ -1125,6 +1129,7 @@ interface M2MAuditReportRow {
   manually_approved_count: number
   change_origin_count: number | null
   content_hash: string
+  formats: string[]
 }
 
 /**
@@ -1135,7 +1140,8 @@ export async function getActiveReportsForAppM2M(monitoredAppId: number): Promise
     `SELECT id, report_id, period_type, period_label, period_start, period_end,
             generated_at, generated_by, generated_by_app,
             total_deployments, pr_approved_count, manually_approved_count,
-            change_origin_count, content_hash
+            change_origin_count, content_hash,
+            ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
      WHERE monitored_app_id = $1 AND archived_at IS NULL AND superseded_at IS NULL
        AND EXISTS (SELECT 1 FROM audit_report_files arf WHERE arf.audit_report_id = audit_reports.id AND arf.format = 'pdf')
@@ -1157,7 +1163,8 @@ export async function getActiveReportsForPeriodM2M(
     `SELECT id, report_id, period_type, period_label, period_start, period_end,
             generated_at, generated_by, generated_by_app,
             total_deployments, pr_approved_count, manually_approved_count,
-            change_origin_count, content_hash
+            change_origin_count, content_hash,
+            ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
      WHERE monitored_app_id = $1
        AND period_type = $2
@@ -1195,7 +1202,8 @@ export async function getReportSummaryById(reportId: number): Promise<M2MAuditRe
     `SELECT id, report_id, period_type, period_label, period_start, period_end,
             generated_at, generated_by, generated_by_app,
             total_deployments, pr_approved_count, manually_approved_count,
-            change_origin_count, content_hash
+            change_origin_count, content_hash,
+            ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
      WHERE id = $1`,
     [reportId],

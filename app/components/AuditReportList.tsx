@@ -12,6 +12,7 @@ export interface AuditReportItem {
   superseded_at: Date | null
   superseded_by: string | null
   supersede_reason: string | null
+  formats: string[]
 }
 
 interface AuditReportListProps {
@@ -48,12 +49,17 @@ export function AuditReportList({
                   <BodyShort weight="semibold">{report.period_label}</BodyShort>
                   <Detail textColor="subtle">{report.report_id}</Detail>
                   <HStack gap="space-8">
-                    <Link to={`/admin/audit-reports/${report.id}/view`} target="_blank">
+                    <Link to={`/admin/audit-reports/${report.id}/view`} target="_blank" rel="noopener noreferrer">
                       Vis
                     </Link>
-                    <Link to={`/admin/audit-reports/${report.id}/pdf`} target="_blank">
-                      Last ned
+                    <Link to={`/admin/audit-reports/${report.id}/pdf`} target="_blank" rel="noopener noreferrer">
+                      PDF
                     </Link>
+                    {report.formats.includes('xlsx') && (
+                      <Link to={`/admin/audit-reports/${report.id}/xlsx`} target="_blank" rel="noopener noreferrer">
+                        Excel
+                      </Link>
+                    )}
                   </HStack>
                   {showArchiveActions &&
                     !report.superseded_at &&

@@ -196,12 +196,6 @@ paths:
                   format: date
                   description: First day of the period (YYYY-MM-DD).
                   example: '2025-01-01'
-                format:
-                  type: string
-                  default: pdf
-                  description: |
-                    Output format. Check `availableFormats` in the status or report
-                    summary responses for supported values.
                 reason:
                   type: string
                   description: |
@@ -310,6 +304,7 @@ paths:
             for supported values.
           schema:
             type: string
+            enum: [pdf, xlsx]
             default: pdf
       responses:
         '200':
@@ -321,6 +316,10 @@ paths:
                 example: attachment; filename="AUDIT-2025-myapp-prod-a1b2c3d4.pdf"
           content:
             application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
                 type: string
                 format: binary
@@ -556,6 +555,7 @@ components:
             type: string
           example:
             - pdf
+            - xlsx
 
     VerificationSummaryResponse:
       type: object
@@ -745,6 +745,7 @@ components:
             type: string
           example:
             - pdf
+            - xlsx
 
     AuditReportGenerateResponse:
       type: object
