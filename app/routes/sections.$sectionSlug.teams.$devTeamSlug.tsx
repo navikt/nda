@@ -5,7 +5,7 @@ import { ActiveBoardSection } from '~/components/ActiveBoardSection'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { BoardSummaryCard } from '~/components/BoardSummaryCard'
 import { TeamCoverageCards } from '~/components/DevTeamCoverageCards'
-import { getGroupNamesByIds } from '~/db/application-groups.server'
+import { getAppIdsByGroupIds, getGroupNamesByIds } from '~/db/application-groups.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getBoardsByDevTeam } from '~/db/boards.server'
 import { getBoardObjectiveProgress, getContributedBoards, getDevTeamStats } from '~/db/dashboard-stats.server'
@@ -84,22 +84,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         )
       : new Set<number>()
 
-  // For grouped apps, all members must be exclusive for the group to be unfiltered.
-  // Downgrade exclusive apps in mixed groups to "shared" so stats match badge links.
+  // For grouped apps, all siblings (across all teams) must be exclusive for the
+  // group to be unfiltered. When AppCard uses group=true, the link expands to all
+  // siblings — so we must check the full group, not just this team's subset.
   const effectiveExclusiveIds = new Set(exclusiveAppIds)
-  const groupsByGroupId = new Map<number, typeof appsForStats>()
-  for (const app of appsForStats) {
-    if (app.application_group_id) {
-      const group = groupsByGroupId.get(app.application_group_id) ?? []
-      group.push(app)
-      groupsByGroupId.set(app.application_group_id, group)
-    }
-  }
-  for (const groupMembers of groupsByGroupId.values()) {
-    const allExclusive = groupMembers.every((a) => exclusiveAppIds.has(a.id))
-    if (!allExclusive) {
-      for (const a of groupMembers) {
-        effectiveExclusiveIds.delete(a.id)
+  const groupIdsInView = [
+    ...new Set(appsForStats.map((a) => a.application_group_id).filter((id): id is number => id != null)),
+  ]
+  if (groupIdsInView.length > 0) {
+    const allSiblingsByGroup = await getAppIdsByGroupIds(groupIdsInView)
+    for (const [, siblingIds] of allSiblingsByGroup) {
+      const allExclusive = siblingIds.every((id) => exclusiveAppIds.has(id))
+      if (!allExclusive) {
+        for (const id of siblingIds) {
+          effectiveExclusiveIds.delete(id)
+        }
       }
     }
   }

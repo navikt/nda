@@ -269,3 +269,27 @@ export async function propagateVerificationToSiblings(
 
   return result.rowCount ?? 0
 }
+
+/**
+ * Get all active app IDs belonging to the given application group IDs.
+ * Used to determine group membership across all teams (not just one team's apps).
+ */
+export async function getAppIdsByGroupIds(groupIds: number[]): Promise<Map<number, number[]>> {
+  if (groupIds.length === 0) return new Map()
+
+  const result = await pool.query<{ application_group_id: number; id: number }>(
+    `SELECT application_group_id, id
+     FROM monitored_applications
+     WHERE application_group_id = ANY($1)
+       AND is_active = true`,
+    [groupIds],
+  )
+
+  const map = new Map<number, number[]>()
+  for (const row of result.rows) {
+    const ids = map.get(row.application_group_id) ?? []
+    ids.push(row.id)
+    map.set(row.application_group_id, ids)
+  }
+  return map
+}
