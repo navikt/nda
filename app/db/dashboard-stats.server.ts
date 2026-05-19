@@ -573,7 +573,7 @@ export async function getDevTeamStatsBatch(
        SELECT DISTINCT r.dev_team_id, LOWER(um.github_username) AS github_username
        FROM dev_team_role_assignments r
        JOIN user_mappings um
-         ON UPPER(um.nav_ident) = UPPER(r.nav_ident) AND um.deleted_at IS NULL
+         ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
        WHERE r.dev_team_id = ANY($1::int[])
          AND r.deleted_at IS NULL
          AND um.github_username IS NOT NULL
