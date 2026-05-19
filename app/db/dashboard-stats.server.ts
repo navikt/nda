@@ -251,7 +251,7 @@ export async function getDevTeamSummaryStats(
            AND ($3::timestamptz IS NULL OR d.created_at >= $3)
            AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
            AND (LOWER(d.deployer_username) = ANY($${deployerParam}::text[])
-                OR LOWER(d.github_pr_data->'creator'->>'username') = ANY($${deployerParam}::text[]))
+                OR d.pr_creator_username = ANY($${deployerParam}::text[]))
          WHERE NOT EXISTS (
            SELECT 1 FROM deployment_goal_links dgl
            JOIN board_objectives bo ON (dgl.objective_id = bo.id
@@ -614,7 +614,7 @@ export async function getDevTeamStatsBatch(
          AND ($3::timestamptz IS NULL OR d.created_at < $3)
          AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
          AND (LOWER(d.deployer_username) = tm.github_username
-              OR LOWER(d.github_pr_data->'creator'->>'username') = tm.github_username)
+              OR d.pr_creator_username = tm.github_username)
        WHERE NOT EXISTS (
          SELECT 1 FROM deployment_goal_links dgl
          JOIN board_objectives bo ON (dgl.objective_id = bo.id
@@ -643,7 +643,7 @@ export async function getDevTeamStatsBatch(
                 SELECT 1 FROM team_members tm
                 WHERE tm.dev_team_id = td.dev_team_id
                   AND (LOWER(d.deployer_username) = tm.github_username
-                       OR LOWER(d.github_pr_data->'creator'->>'username') = tm.github_username)
+                       OR d.pr_creator_username = tm.github_username)
               ))::int AS non_member_deployments
        FROM team_deployments td
        JOIN deployments d ON d.id = td.deployment_id

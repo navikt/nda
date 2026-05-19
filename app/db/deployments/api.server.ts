@@ -32,10 +32,10 @@ export async function getAppChangeOriginCoverage(
   let sql = `SELECT
       COUNT(DISTINCT d.id)::int AS total_all,
       COUNT(DISTINCT d.id) FILTER (
-        WHERE LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]'
+        WHERE d.pr_creator_username = 'dependabot[bot]'
       )::int AS dependabot,
       COUNT(DISTINCT dgl.deployment_id) FILTER (
-        WHERE LOWER(d.github_pr_data->'creator'->>'username') IS DISTINCT FROM 'dependabot[bot]'
+        WHERE d.pr_creator_username IS DISTINCT FROM 'dependabot[bot]'
       )::int AS linked
     FROM deployments d
     LEFT JOIN deployment_goal_links dgl ON dgl.deployment_id = d.id AND dgl.is_active = true
