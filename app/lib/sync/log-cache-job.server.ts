@@ -19,7 +19,9 @@ export async function cacheCheckLogsWithLock(
 
   try {
     await logSyncJobMessage(lockId, 'info', 'Starter caching av sjekk-logger')
-    const { cached, diagnostics } = await runWithJobContext(lockId, false, () => cacheCheckLogs(monitoredAppId))
+    const { cached, diagnostics } = await runWithJobContext(lockId, 'cache_check_logs', monitoredAppId, false, () =>
+      cacheCheckLogs(monitoredAppId),
+    )
 
     if (cached === 0) {
       const d = diagnostics

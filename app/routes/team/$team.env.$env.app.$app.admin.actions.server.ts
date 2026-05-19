@@ -36,7 +36,7 @@ async function processFetchDataJobAsync(jobId: number, appId: number) {
   const options = await getSyncJobOptions(jobId)
   const debug = options?.debug === true
 
-  await runWithJobContext(jobId, debug, async () => {
+  await runWithJobContext(jobId, 'fetch_verification_data', appId, debug, async () => {
     try {
       const result = await fetchVerificationDataForAllDeployments(appId, { jobId })
       // Only release as completed if not cancelled
@@ -59,7 +59,7 @@ async function processFetchDataJobAsync(jobId: number, appId: number) {
 
 // Async function to compute verification diffs in background
 async function processComputeDiffsJobAsync(jobId: number, appId: number) {
-  await runWithJobContext(jobId, false, async () => {
+  await runWithJobContext(jobId, 'reverify_app', appId, false, async () => {
     try {
       const result = await computeVerificationDiffs(appId, {
         jobId,
