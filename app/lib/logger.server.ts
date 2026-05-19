@@ -74,13 +74,13 @@ export const logger = {
   info(message: string, details?: Record<string, unknown>) {
     const ctx = getJobContext()
     const meta = ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
-    winstonLogger.info(message, { trace_id: getTraceId(), ...meta, ...details })
+    winstonLogger.info(message, { trace_id: getTraceId(), ...details, ...meta })
     logToDb('info', message, details)
   },
   warn(message: string, details?: Record<string, unknown>) {
     const ctx = getJobContext()
     const meta = ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
-    winstonLogger.warn(message, { trace_id: getTraceId(), ...meta, ...details })
+    winstonLogger.warn(message, { trace_id: getTraceId(), ...details, ...meta })
     logToDb('warn', message, details)
   },
   error(message: string, errorOrDetails?: unknown) {
@@ -90,16 +90,16 @@ export const logger = {
     if (errorOrDetails instanceof Error) {
       winstonLogger.error(message, {
         trace_id: traceId,
-        ...meta,
         error: errorOrDetails.message,
         stack_trace: errorOrDetails.stack,
+        ...meta,
       })
       logToDb('error', message, {
         error: errorOrDetails.message,
         stack_trace: errorOrDetails.stack,
       })
     } else if (errorOrDetails && typeof errorOrDetails === 'object') {
-      winstonLogger.error(message, { trace_id: traceId, ...meta, ...(errorOrDetails as Record<string, unknown>) })
+      winstonLogger.error(message, { trace_id: traceId, ...(errorOrDetails as Record<string, unknown>), ...meta })
       logToDb('error', message, errorOrDetails as Record<string, unknown>)
     } else {
       winstonLogger.error(message, { trace_id: traceId, ...meta })
@@ -109,7 +109,7 @@ export const logger = {
   debug(message: string, details?: Record<string, unknown>) {
     const ctx = getJobContext()
     const meta = ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
-    winstonLogger.debug(message, { trace_id: getTraceId(), ...meta, ...details })
+    winstonLogger.debug(message, { trace_id: getTraceId(), ...details, ...meta })
     logToDb('debug', message, details)
   },
 }
