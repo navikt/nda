@@ -84,8 +84,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         )
       : new Set<number>()
 
-  const exclusiveApps = appsForStats.filter((a) => exclusiveAppIds.has(a.id))
-  const sharedApps = appsForStats.filter((a) => !exclusiveAppIds.has(a.id))
+  // For grouped apps, all members must be exclusive for the group to be unfiltered.
+  // Downgrade exclusive apps in mixed groups to "shared" so stats match badge links.
+  const effectiveExclusiveIds = new Set(exclusiveAppIds)
+  const groupsByGroupId = new Map<number, typeof appsForStats>()
+  for (const app of appsForStats) {
+    if (app.application_group_id) {
+      const group = groupsByGroupId.get(app.application_group_id) ?? []
+      group.push(app)
+      groupsByGroupId.set(app.application_group_id, group)
+    }
+  }
+  for (const groupMembers of groupsByGroupId.values()) {
+    const allExclusive = groupMembers.every((a) => exclusiveAppIds.has(a.id))
+    if (!allExclusive) {
+      for (const a of groupMembers) {
+        effectiveExclusiveIds.delete(a.id)
+      }
+    }
+  }
+
+  const exclusiveApps = appsForStats.filter((a) => effectiveExclusiveIds.has(a.id))
+  const sharedApps = appsForStats.filter((a) => !effectiveExclusiveIds.has(a.id))
 
   const statsOptions = { startDate: ytdStart }
   const [exclusiveStats, sharedStats] = await Promise.all([
@@ -158,23 +178,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     groupNames,
   ).sort((a, b) => (a.groupName ?? a.app_name).localeCompare(b.groupName ?? b.app_name, 'nb'))
 
-  // For grouped cards, only treat as unfiltered if ALL member apps are exclusive.
-  // This ensures badge links (which use group=true) apply consistently to all siblings.
+  // Determine which cards show unfiltered stats. Since effectiveExclusiveIds already
+  // downgrades mixed groups, we can check the card's primary ID directly.
+  // For grouped cards, all members share the same group fate (all exclusive or all shared).
   const unfilteredCardIds = new Set(
-    appCards
-      .filter((card) => {
-        if (card.groupApps) {
-          // Grouped card: find all member app IDs from displayApps matching group members
-          const memberIds = displayApps
-            .filter((a) =>
-              card.groupApps!.some((g) => g.app_name === a.app_name && g.environment_name === a.environment_name),
-            )
-            .map((a) => a.id)
-          return memberIds.length > 0 && memberIds.every((id) => exclusiveAppIds.has(id))
-        }
-        return exclusiveAppIds.has(card.id)
-      })
-      .map((card) => card.id),
+    appCards.filter((card) => effectiveExclusiveIds.has(card.id)).map((card) => card.id),
   )
 
   const section = await getSectionBySlug(params.sectionSlug)
