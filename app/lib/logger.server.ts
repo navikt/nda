@@ -36,6 +36,11 @@ function getJobContext(): JobContext | undefined {
   return jobContextStorage.getStore()
 }
 
+function getJobMeta(): Record<string, unknown> {
+  const ctx = getJobContext()
+  return ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
+}
+
 // =============================================================================
 // Winston Configuration
 // =============================================================================
@@ -72,44 +77,37 @@ function logToDb(level: 'info' | 'warn' | 'error' | 'debug', message: string, de
 
 export const logger = {
   info(message: string, details?: Record<string, unknown>) {
-    const ctx = getJobContext()
-    const meta = ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
-    winstonLogger.info(message, { trace_id: getTraceId(), ...details, ...meta })
+    winstonLogger.info(message, { trace_id: getTraceId(), ...details, ...getJobMeta() })
     logToDb('info', message, details)
   },
   warn(message: string, details?: Record<string, unknown>) {
-    const ctx = getJobContext()
-    const meta = ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
-    winstonLogger.warn(message, { trace_id: getTraceId(), ...details, ...meta })
+    winstonLogger.warn(message, { trace_id: getTraceId(), ...details, ...getJobMeta() })
     logToDb('warn', message, details)
   },
   error(message: string, errorOrDetails?: unknown) {
     const traceId = getTraceId()
-    const ctx = getJobContext()
-    const meta = ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
+    const jobMeta = getJobMeta()
     if (errorOrDetails instanceof Error) {
       winstonLogger.error(message, {
         trace_id: traceId,
         error: errorOrDetails.message,
         stack_trace: errorOrDetails.stack,
-        ...meta,
+        ...jobMeta,
       })
       logToDb('error', message, {
         error: errorOrDetails.message,
         stack_trace: errorOrDetails.stack,
       })
     } else if (errorOrDetails && typeof errorOrDetails === 'object') {
-      winstonLogger.error(message, { trace_id: traceId, ...(errorOrDetails as Record<string, unknown>), ...meta })
+      winstonLogger.error(message, { trace_id: traceId, ...(errorOrDetails as Record<string, unknown>), ...jobMeta })
       logToDb('error', message, errorOrDetails as Record<string, unknown>)
     } else {
-      winstonLogger.error(message, { trace_id: traceId, ...meta })
+      winstonLogger.error(message, { trace_id: traceId, ...jobMeta })
       logToDb('error', message)
     }
   },
   debug(message: string, details?: Record<string, unknown>) {
-    const ctx = getJobContext()
-    const meta = ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
-    winstonLogger.debug(message, { trace_id: getTraceId(), ...details, ...meta })
+    winstonLogger.debug(message, { trace_id: getTraceId(), ...details, ...getJobMeta() })
     logToDb('debug', message, details)
   },
 }

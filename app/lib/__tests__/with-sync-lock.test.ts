@@ -16,11 +16,13 @@ vi.mock('~/lib/logger.server', () => ({
 }))
 
 import { acquireSyncLock, logSyncJobMessage, releaseSyncLock } from '~/db/sync-jobs.server'
+import { runWithJobContext } from '~/lib/logger.server'
 import { withSyncLock } from '~/lib/sync/with-sync-lock.server'
 
 const mockAcquire = acquireSyncLock as Mock
 const mockRelease = releaseSyncLock as Mock
 const mockLog = logSyncJobMessage as Mock
+const mockRunWithJobContext = runWithJobContext as Mock
 
 describe('withSyncLock', () => {
   beforeEach(() => {
@@ -56,6 +58,7 @@ describe('withSyncLock', () => {
 
     expect(result).toEqual({ success: true, result: { newCount: 5, skipped: 2 } })
     expect(mockAcquire).toHaveBeenCalledWith('nais_sync', 1, undefined)
+    expect(mockRunWithJobContext).toHaveBeenCalledWith(42, 'nais_sync', 1, false, expect.any(Function))
     expect(mockLog).toHaveBeenCalledWith(42, 'info', 'Starting sync', undefined)
     expect(mockLog).toHaveBeenCalledWith(42, 'info', 'Sync done', undefined)
     expect(mockRelease).toHaveBeenCalledWith(42, 'completed', { newCount: 5, skipped: 2 })
