@@ -80,12 +80,13 @@ export async function assignTeamRole(
   role: TeamRole,
   assignedBy: string,
 ): Promise<TeamRoleAssignment | null> {
+  const normalizedIdent = navIdent.toUpperCase()
   const { rows } = await pool.query<TeamRoleAssignment>(
     `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (nav_ident, dev_team_id, role) WHERE deleted_at IS NULL DO NOTHING
      RETURNING *`,
-    [navIdent, devTeamId, role, assignedBy],
+    [normalizedIdent, devTeamId, role, assignedBy],
   )
   return rows[0] ?? null
 }
@@ -213,7 +214,7 @@ export interface DevTeamMemberWithRole {
 
 /**
  * Get all members of a dev team with their roles.
- * Uses UPPER() for case-insensitive join against user_mappings.
+ * Both tables store nav_ident as uppercase, so plain equality is used.
  */
 export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<DevTeamMemberWithRole[]> {
   const { rows } = await pool.query<DevTeamMemberWithRole>(
