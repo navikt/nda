@@ -158,6 +158,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     groupNames,
   ).sort((a, b) => (a.groupName ?? a.app_name).localeCompare(b.groupName ?? b.app_name, 'nb'))
 
+  // For grouped cards, only treat as unfiltered if ALL member apps are exclusive.
+  // This ensures badge links (which use group=true) apply consistently to all siblings.
+  const unfilteredCardIds = new Set(
+    appCards
+      .filter((card) => {
+        if (card.groupApps) {
+          // Grouped card: find all member app IDs from displayApps matching group members
+          const memberIds = displayApps
+            .filter((a) =>
+              card.groupApps!.some((g) => g.app_name === a.app_name && g.environment_name === a.environment_name),
+            )
+            .map((a) => a.id)
+          return memberIds.length > 0 && memberIds.every((id) => exclusiveAppIds.has(id))
+        }
+        return exclusiveAppIds.has(card.id)
+      })
+      .map((card) => card.id),
+  )
+
   const section = await getSectionBySlug(params.sectionSlug)
 
   // Deduplicate members by nav_ident (a user may have multiple roles)
@@ -174,7 +193,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       github_username,
     })),
     appCards,
-    exclusiveAppIds: [...exclusiveAppIds],
+    unfilteredCardIds: [...unfilteredCardIds],
     showAllApps,
     showAllBoards,
     sectionSlug: params.sectionSlug,
@@ -193,7 +212,7 @@ export default function DevTeamPage() {
     contributedBoards,
     members,
     appCards,
-    exclusiveAppIds,
+    unfilteredCardIds,
     showAllApps,
     showAllBoards,
     sectionSlug,
@@ -205,7 +224,7 @@ export default function DevTeamPage() {
   const isAdmin = layoutData?.user?.role === 'admin'
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
   const [searchParams, setSearchParams] = useSearchParams()
-  const exclusiveSet = new Set(exclusiveAppIds)
+  const unfilteredSet = new Set(unfilteredCardIds)
 
   return (
     <VStack gap="space-24">
@@ -343,14 +362,18 @@ export default function DevTeamPage() {
             Vis alle apper med teamaktivitet
           </Switch>
         </HStack>
-        <Detail textColor="subtle">Statistikk er filtrert til deploys utført av team-medlemmer.</Detail>
+        <Detail textColor="subtle">
+          {unfilteredSet.size > 0
+            ? 'Apper eid av kun dette teamet viser alle leveranser. Delte apper er filtrert til teammedlemmer.'
+            : 'Statistikk er filtrert til deploys utført av team-medlemmer.'}
+        </Detail>
         {appCards.length > 0 ? (
           <VStack gap="space-4">
             {appCards.map((app) => (
               <AppCard
                 key={app.id}
                 app={app}
-                appendSearchParams={exclusiveSet.has(app.id) ? undefined : `team=${encodeURIComponent(devTeam.slug)}`}
+                appendSearchParams={unfilteredSet.has(app.id) ? undefined : `team=${encodeURIComponent(devTeam.slug)}`}
               />
             ))}
           </VStack>
