@@ -1001,10 +1001,10 @@ export async function getDeployerMonthlyStats(
        TO_CHAR(DATE_TRUNC('month', d.created_at), 'YYYY-MM') AS month,
        COUNT(DISTINCT d.id)::int AS total,
        COUNT(DISTINCT d.id) FILTER (
-         WHERE LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]'
+        WHERE d.pr_creator_username = 'dependabot[bot]'
        )::int AS dependabot,
        COUNT(DISTINCT dgl.deployment_id) FILTER (
-         WHERE LOWER(d.github_pr_data->'creator'->>'username') IS DISTINCT FROM 'dependabot[bot]'
+         WHERE d.pr_creator_username IS DISTINCT FROM 'dependabot[bot]'
        )::int AS with_goal_non_dep
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
@@ -1087,7 +1087,7 @@ export async function getDeployerDeploymentsPaginated(
   }
 
   if (filters?.dependabot === 'only') {
-    whereSql += ` AND LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]'`
+    whereSql += ` AND d.pr_creator_username = 'dependabot[bot]'`
   }
 
   if (filters?.approval === 'approved') {
@@ -1122,7 +1122,7 @@ export async function getDeployerDeploymentsPaginated(
          ma.environment_name,
          ma.app_name,
          EXISTS (SELECT 1 FROM deployment_goal_links dgl WHERE dgl.deployment_id = d.id AND dgl.is_active = true AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)) AS has_goal_link,
-         LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]' AS is_dependabot
+         d.pr_creator_username = 'dependabot[bot]' AS is_dependabot
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        LEFT JOIN commits c ON c.sha = d.commit_sha

@@ -353,7 +353,7 @@ export async function getAuditReportData(
          WHERE r->>'state' = 'APPROVED'
        ) AS approved_by_usernames,
        -- Extract PR creator/author from JSON
-       d.github_pr_data->'creator'->>'username' AS pr_author,
+       d.pr_creator_username AS pr_author,
        -- Include unverified commits JSONB for report appendix
        d.unverified_commits
      FROM deployments d

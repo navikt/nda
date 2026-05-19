@@ -221,7 +221,7 @@ export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<Dev
      FROM dev_team_role_assignments r
      JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
      LEFT JOIN user_mappings um
-       ON UPPER(um.nav_ident) = UPPER(r.nav_ident) AND um.deleted_at IS NULL
+       ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
      WHERE r.dev_team_id = $1 AND r.deleted_at IS NULL
      ORDER BY r.role, COALESCE(um.display_name, r.nav_ident)`,
     [devTeamId],
@@ -241,7 +241,7 @@ export async function getMembersGithubUsernamesForDevTeamRoles(devTeamIds: numbe
      FROM dev_team_role_assignments r
      JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
      JOIN user_mappings um
-       ON UPPER(um.nav_ident) = UPPER(r.nav_ident) AND um.deleted_at IS NULL
+       ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
      WHERE r.dev_team_id = ANY($1::int[])
        AND r.deleted_at IS NULL
        AND um.github_username IS NOT NULL`,
@@ -263,7 +263,7 @@ export async function getDevTeamsForGithubUsernamesByRole(
     `SELECT DISTINCT dt.id, dt.slug, dt.name
      FROM dev_team_role_assignments r
      JOIN user_mappings um
-       ON UPPER(um.nav_ident) = UPPER(r.nav_ident) AND um.deleted_at IS NULL
+       ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
      JOIN dev_teams dt
        ON dt.id = r.dev_team_id AND dt.is_active = true
      WHERE r.deleted_at IS NULL
