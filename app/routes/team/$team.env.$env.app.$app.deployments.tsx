@@ -184,11 +184,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
            AND d.deployer_username IS NOT NULL AND d.deployer_username != ''
            AND (ma.audit_start_year IS NULL OR d.created_at >= make_date(ma.audit_start_year, 1, 1))
          UNION
-         SELECT d.github_pr_data->'creator'->>'username'
+         SELECT d.pr_creator_username
          FROM deployments d
          INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
          WHERE d.monitored_app_id = ANY($1)
-           AND d.github_pr_data->'creator'->>'username' IS NOT NULL
+           AND d.pr_creator_username IS NOT NULL
            AND (ma.audit_start_year IS NULL OR d.created_at >= make_date(ma.audit_start_year, 1, 1))
          UNION
          SELECT d.github_pr_data->'merged_by'->>'username'

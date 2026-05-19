@@ -9,7 +9,7 @@
  * Forutsetter at queryen aliaser `deployments` som `d`.
  */
 export function userDeploymentMatchSql(paramIndex: number): string {
-  return `(LOWER(d.deployer_username) = LOWER($${paramIndex}) OR LOWER(d.github_pr_data->'creator'->>'username') = LOWER($${paramIndex}))`
+  return `(LOWER(d.deployer_username) = LOWER($${paramIndex}) OR d.pr_creator_username = LOWER($${paramIndex}))`
 }
 
 /**
@@ -28,7 +28,7 @@ export function userDeploymentMatchSql(paramIndex: number): string {
  */
 export function userDeploymentMatchAnySql(paramIndex: number, tableAlias = 'd'): string {
   const t = tableAlias ? `${tableAlias}.` : ''
-  return `(LOWER(${t}deployer_username) = ANY($${paramIndex}::text[]) OR LOWER(${t}github_pr_data->'creator'->>'username') = ANY($${paramIndex}::text[]))`
+  return `(LOWER(${t}deployer_username) = ANY($${paramIndex}::text[]) OR ${t}pr_creator_username = ANY($${paramIndex}::text[]))`
 }
 
 /**

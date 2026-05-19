@@ -254,7 +254,7 @@ function buildUnlinkedDependabotWhere(
   appName?: string,
 ): { whereSql: string; params: (string | Date)[] } {
   let whereSql = `WHERE ${userDeploymentMatchSql(1)}
-    AND LOWER(d.github_pr_data->'creator'->>'username') = 'dependabot[bot]'
+    AND d.pr_creator_username = 'dependabot[bot]'
     AND ${AUDIT_START_YEAR_FILTER}
     AND NOT EXISTS (SELECT 1 FROM deployment_goal_links dgl WHERE dgl.deployment_id = d.id AND dgl.is_active = true AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL))`
   const params: (string | Date)[] = [deployerUsername]
