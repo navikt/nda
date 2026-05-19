@@ -17,7 +17,7 @@ import { useRef, useState } from 'react'
 import { Form, Link } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { AddAppsDialog, type AddableApp } from '~/components/AddAppsDialog'
-import { type RoleMember, RoleMembersSection, type UserOption } from '~/components/RoleMembersSection'
+import { type RoleMember, RoleMembersSection } from '~/components/RoleMembersSection'
 import { type BoardPeriodType, formatBoardLabel, getPeriodsForYear } from '~/lib/board-periods'
 
 type BoardView = {
@@ -55,7 +55,6 @@ interface DevTeamAdminPageProps {
   naisCatalogFailed: boolean
   boards: BoardView[]
   canAdmin: boolean
-  allUsers: UserOption[]
   teamBasePath: string
   isSubmitting: boolean
   actionData?: ActionResultView
@@ -69,7 +68,6 @@ export function DevTeamAdminPage({
   naisCatalogFailed,
   boards,
   canAdmin,
-  allUsers,
   teamBasePath,
   isSubmitting,
   actionData,
@@ -89,7 +87,7 @@ export function DevTeamAdminPage({
 
       {canAdmin && <BoardsSection teamName={devTeam.name} boards={boards} teamBasePath={teamBasePath} />}
       {canAdmin && <TeamNameSection name={devTeam.name} />}
-      <RoleMembersSection roleMembers={roleMembers} allUsers={allUsers} />
+      <RoleMembersSection roleMembers={roleMembers} />
       {canAdmin && <NaisTeamsSection naisTeamSlugs={devTeam.nais_team_slugs} />}
       {canAdmin && (
         <ApplicationsSection

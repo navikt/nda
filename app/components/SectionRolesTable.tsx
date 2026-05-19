@@ -1,8 +1,9 @@
 import { PlusIcon, TrashIcon } from '@navikt/aksel-icons'
-import { Alert, Button, Heading, HStack, Modal, Select, Table, Tag, TextField, VStack } from '@navikt/ds-react'
+import { Alert, Button, Heading, HStack, Modal, Select, Table, Tag, VStack } from '@navikt/ds-react'
 import { useRef, useState } from 'react'
 import { Form } from 'react-router'
 import { SECTION_ROLES, type SectionRole } from '~/lib/authorization-types'
+import { UserSearch } from './UserSearch'
 
 export interface SectionRoleAssignmentDisplay {
   id: number
@@ -39,6 +40,8 @@ export function SectionRolesTable({
 }) {
   const modalRef = useRef<HTMLDialogElement>(null)
   const [selectedSection, setSelectedSection] = useState('')
+  const [selectedNavIdent, setSelectedNavIdent] = useState('')
+  const [searchResetKey, setSearchResetKey] = useState(0)
 
   return (
     <VStack gap="space-16">
@@ -114,17 +117,31 @@ export function SectionRolesTable({
         </Alert>
       )}
 
-      <Modal ref={modalRef} header={{ heading: 'Tildel seksjonsrolle' }} closeOnBackdropClick>
+      <Modal
+        ref={modalRef}
+        header={{ heading: 'Tildel seksjonsrolle' }}
+        closeOnBackdropClick
+        onClose={() => {
+          setSelectedNavIdent('')
+          setSearchResetKey((k) => k + 1)
+        }}
+      >
         <Modal.Body>
-          <Form method="post" onSubmit={() => modalRef.current?.close()}>
+          <Form
+            method="post"
+            onSubmit={() => {
+              modalRef.current?.close()
+            }}
+          >
             <input type="hidden" name="intent" value="assign" />
+            <input type="hidden" name="nav_ident" value={selectedNavIdent} />
             <VStack gap="space-16">
-              <TextField
-                label="NAV-ident"
-                name="nav_ident"
-                size="small"
-                autoComplete="off"
-                description="Én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
+              <UserSearch
+                label="Søk etter bruker"
+                description="Søk med navn, e-post eller NAV-ident"
+                onSelect={(navIdent) => setSelectedNavIdent(navIdent)}
+                onClear={() => setSelectedNavIdent('')}
+                resetKey={searchResetKey}
               />
               <Select
                 label="Seksjon"
@@ -149,7 +166,7 @@ export function SectionRolesTable({
                 ))}
               </Select>
               <HStack gap="space-8">
-                <Button type="submit" size="small" icon={<PlusIcon aria-hidden />}>
+                <Button type="submit" size="small" icon={<PlusIcon aria-hidden />} disabled={!selectedNavIdent}>
                   Tildel
                 </Button>
                 <Button variant="tertiary" size="small" type="button" onClick={() => modalRef.current?.close()}>

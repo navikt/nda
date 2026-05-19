@@ -1,20 +1,9 @@
 import { PlusIcon, TrashIcon } from '@navikt/aksel-icons'
-import {
-  Alert,
-  BodyShort,
-  Button,
-  Heading,
-  HStack,
-  Modal,
-  Select,
-  Table,
-  Tag,
-  UNSAFE_Combobox,
-  VStack,
-} from '@navikt/ds-react'
+import { Alert, BodyShort, Button, Heading, HStack, Modal, Select, Table, Tag, VStack } from '@navikt/ds-react'
 import { useRef, useState } from 'react'
 import { Form } from 'react-router'
 import { isTeamLeaderRole, TEAM_ROLE_LABELS, TEAM_ROLES } from '~/lib/authorization-types'
+import { UserSearch } from './UserSearch'
 
 export interface RoleMember {
   id: number
@@ -25,28 +14,15 @@ export interface RoleMember {
   assigned_at: string | Date
 }
 
-export interface UserOption {
-  navIdent: string
-  displayName: string | null
-  githubUsername: string
-}
-
 /**
  * Team role management section with table and assign modal.
  * Used on the team admin page.
  */
-export function RoleMembersSection({ roleMembers, allUsers }: { roleMembers: RoleMember[]; allUsers: UserOption[] }) {
+export function RoleMembersSection({ roleMembers }: { roleMembers: RoleMember[] }) {
   const modalRef = useRef<HTMLDialogElement>(null)
   const [selectedNavIdent, setSelectedNavIdent] = useState('')
   const [selectedRole, setSelectedRole] = useState<string>('utvikler')
-
-  const roleMemberIdents = new Set(roleMembers.map((m) => `${m.nav_ident.toUpperCase()}-${m.role}`))
-  const availableUsers = allUsers.filter((u) => !roleMemberIdents.has(`${u.navIdent.toUpperCase()}-${selectedRole}`))
-
-  const comboboxOptions = availableUsers.map((u) => ({
-    label: `${u.displayName ?? u.githubUsername} (${u.navIdent})`,
-    value: u.navIdent,
-  }))
+  const [searchResetKey, setSearchResetKey] = useState(0)
 
   return (
     <VStack gap="space-16">
@@ -113,26 +89,31 @@ export function RoleMembersSection({ roleMembers, allUsers }: { roleMembers: Rol
         </Alert>
       )}
 
-      <Modal ref={modalRef} header={{ heading: 'Tildel teamrolle' }} closeOnBackdropClick>
+      <Modal
+        ref={modalRef}
+        header={{ heading: 'Tildel teamrolle' }}
+        closeOnBackdropClick
+        onClose={() => {
+          setSelectedNavIdent('')
+          setSearchResetKey((k) => k + 1)
+        }}
+      >
         <Modal.Body>
           <Form
             method="post"
             onSubmit={() => {
               modalRef.current?.close()
-              setSelectedNavIdent('')
             }}
           >
             <input type="hidden" name="intent" value="assign_role" />
             <input type="hidden" name="nav_ident" value={selectedNavIdent} />
             <VStack gap="space-16">
-              <UNSAFE_Combobox
-                key={selectedRole}
+              <UserSearch
                 label="Søk etter bruker"
-                options={comboboxOptions}
-                onToggleSelected={(value, isSelected) => {
-                  setSelectedNavIdent(isSelected ? value : '')
-                }}
-                shouldAutocomplete
+                description="Søk med navn, e-post eller NAV-ident"
+                onSelect={(navIdent) => setSelectedNavIdent(navIdent)}
+                onClear={() => setSelectedNavIdent('')}
+                resetKey={searchResetKey}
               />
               <Select
                 label="Rolle"
@@ -141,7 +122,6 @@ export function RoleMembersSection({ roleMembers, allUsers }: { roleMembers: Rol
                 value={selectedRole}
                 onChange={(e) => {
                   setSelectedRole(e.target.value)
-                  setSelectedNavIdent('')
                 }}
               >
                 {TEAM_ROLES.map((role) => (
@@ -154,15 +134,7 @@ export function RoleMembersSection({ roleMembers, allUsers }: { roleMembers: Rol
                 <Button type="submit" size="small" icon={<PlusIcon aria-hidden />} disabled={!selectedNavIdent}>
                   Tildel
                 </Button>
-                <Button
-                  variant="tertiary"
-                  size="small"
-                  type="button"
-                  onClick={() => {
-                    modalRef.current?.close()
-                    setSelectedNavIdent('')
-                  }}
-                >
+                <Button variant="tertiary" size="small" type="button" onClick={() => modalRef.current?.close()}>
                   Avbryt
                 </Button>
               </HStack>

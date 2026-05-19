@@ -233,6 +233,13 @@ export async function getUserSectionRoles(navIdent: string, sectionId: number): 
 
 // ─── Deployment capabilities (single-pass) ──────────────────────────────────
 
+/** Check if the actor has any role that allows user search (admin, section role, or team leader). */
+export async function canSearchUsers(actor: UserIdentity): Promise<boolean> {
+  if (isEntraAdmin(actor)) return true
+  const { sectionRoles, teamRoles } = await getUserRoles(actor.navIdent)
+  return sectionRoles.length > 0 || teamRoles.some((r) => isTeamLeaderRole(r.role))
+}
+
 export interface DeploymentCapabilities {
   /** Approve/reject deployments, manage legacy info, approve baseline */
   canApprove: boolean

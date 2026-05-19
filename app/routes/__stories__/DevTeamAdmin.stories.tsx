@@ -20,12 +20,6 @@ const mockRoleMembers = [
   },
 ]
 
-const mockAllUsers = [
-  { navIdent: 'A123456', displayName: 'Rask Elv', githubUsername: 'pensjon-dev-1' },
-  { navIdent: 'B654321', displayName: 'Glad Fjord', githubUsername: 'pensjon-dev-2' },
-  { navIdent: 'C111222', displayName: 'Stille Skog', githubUsername: 'pensjon-dev-3' },
-]
-
 const mockLinkedApps = [
   { monitored_app_id: 1, team_slug: 'pensjondeployer', environment_name: 'prod-fss', app_name: 'pensjon-pen' },
   {
@@ -76,7 +70,6 @@ export const Default: Story = {
     naisCatalogFailed: false,
     boards: mockBoards,
     canAdmin: true,
-    allUsers: mockAllUsers,
     teamBasePath: '/sections/pensjon/teams/starte-pensjon',
     isSubmitting: false,
     actionData: { success: 'Lagret' },
@@ -93,7 +86,6 @@ export const EmptyTeam: Story = {
     naisCatalogFailed: false,
     boards: [],
     canAdmin: true,
-    allUsers: mockAllUsers,
     teamBasePath: '/sections/pensjon/teams/nytt-team',
     isSubmitting: false,
     actionData: undefined,
@@ -110,7 +102,6 @@ export const RoleOnlyAccess: Story = {
     naisCatalogFailed: false,
     boards: mockBoards,
     canAdmin: false,
-    allUsers: mockAllUsers,
     teamBasePath: '/sections/pensjon/teams/starte-pensjon',
     isSubmitting: false,
     actionData: undefined,

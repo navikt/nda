@@ -48,7 +48,6 @@ function renderPage(canAdmin: boolean) {
         },
       ]}
       canAdmin={canAdmin}
-      allUsers={[{ navIdent: 'A123456', displayName: 'Rask Elv', githubUsername: 'pensjon-dev' }]}
       teamBasePath="/sections/pensjon/teams/starte-pensjon"
       isSubmitting={false}
       actionData={{ success: 'Lagret' }}
