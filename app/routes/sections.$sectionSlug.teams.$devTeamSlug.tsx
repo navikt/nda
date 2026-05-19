@@ -10,7 +10,12 @@ import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getBoardsByDevTeam } from '~/db/boards.server'
 import { getBoardObjectiveProgress, getContributedBoards, getDevTeamStats } from '~/db/dashboard-stats.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
-import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
+import {
+  getDevTeamApplications,
+  getDevTeamBySlug,
+  getExclusivelyOwnedAppIds,
+  getGroupAppIdsForDevTeams,
+} from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import {
   type DevTeamMemberWithRole,
@@ -67,25 +72,46 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const appsForStats = showAllApps ? allApps.filter((a) => a.is_active) : teamApps
 
-  // Filter stats to deploys made by team members (their GitHub usernames).
-  // deployerUsernames is fetched in Promise.all above via getMembersGithubUsernamesForDevTeamRoles
-  // (handles soft-deletes, consistent with the deployment list page's team filter).
-  // hasMappedMembers and unmappedMemberCount are derived from the members list
-  // (not from deployerUsernames which is deduplicated and may not reflect 1:1 mapping).
+  // Determine which apps are exclusively owned by this team (no other team claims them).
+  // For those apps, show all deployments unfiltered — avoids misleading "Ingen data" when
+  // an app is deployed by people not yet added as team members.
   const hasMappedMembers = members.some((m) => Boolean(m.github_username))
-
-  const statsByApp =
+  const exclusiveAppIds =
     appsForStats.length > 0
-      ? await getAppDeploymentStatsBatch(
-          appsForStats.map((a) => ({ id: a.id, audit_start_year: a.audit_start_year })),
-          deployerUsernames,
-          { startDate: ytdStart },
+      ? await getExclusivelyOwnedAppIds(
+          devTeam.id,
+          appsForStats.map((a) => a.id),
         )
-      : new Map()
+      : new Set<number>()
+
+  const exclusiveApps = appsForStats.filter((a) => exclusiveAppIds.has(a.id))
+  const sharedApps = appsForStats.filter((a) => !exclusiveAppIds.has(a.id))
+
+  const statsOptions = { startDate: ytdStart }
+  const [exclusiveStats, sharedStats] = await Promise.all([
+    exclusiveApps.length > 0
+      ? getAppDeploymentStatsBatch(
+          exclusiveApps.map((a) => ({ id: a.id, audit_start_year: a.audit_start_year })),
+          undefined,
+          statsOptions,
+        )
+      : Promise.resolve(new Map()),
+    sharedApps.length > 0
+      ? getAppDeploymentStatsBatch(
+          sharedApps.map((a) => ({ id: a.id, audit_start_year: a.audit_start_year })),
+          deployerUsernames,
+          statsOptions,
+        )
+      : Promise.resolve(new Map()),
+  ])
+
+  const statsByApp = new Map([...exclusiveStats, ...sharedStats])
 
   // Derive top-card stats from the board-based team stats function.
   // This guarantees consistency with the section page (same counting logic).
-  // Note: total = member deployments (shown per-app below) + non-member board-linked ("Fra andre" card).
+  // Note: top-level total counts board-linked deploys (any deployer) + unlinked deploys
+  // by team members. Per-app stats may differ for exclusively-owned apps where all
+  // deployments are shown unfiltered (app-level governance view vs team performance view).
   const teamCoverage = {
     total: teamStats.total_deployments,
     with_four_eyes: teamStats.with_four_eyes,
@@ -148,6 +174,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       github_username,
     })),
     appCards,
+    exclusiveAppIds: [...exclusiveAppIds],
     showAllApps,
     showAllBoards,
     sectionSlug: params.sectionSlug,
@@ -166,6 +193,7 @@ export default function DevTeamPage() {
     contributedBoards,
     members,
     appCards,
+    exclusiveAppIds,
     showAllApps,
     showAllBoards,
     sectionSlug,
@@ -177,6 +205,7 @@ export default function DevTeamPage() {
   const isAdmin = layoutData?.user?.role === 'admin'
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
   const [searchParams, setSearchParams] = useSearchParams()
+  const exclusiveSet = new Set(exclusiveAppIds)
 
   return (
     <VStack gap="space-24">
@@ -318,7 +347,11 @@ export default function DevTeamPage() {
         {appCards.length > 0 ? (
           <VStack gap="space-4">
             {appCards.map((app) => (
-              <AppCard key={app.id} app={app} appendSearchParams={`team=${encodeURIComponent(devTeam.slug)}`} />
+              <AppCard
+                key={app.id}
+                app={app}
+                appendSearchParams={exclusiveSet.has(app.id) ? undefined : `team=${encodeURIComponent(devTeam.slug)}`}
+              />
             ))}
           </VStack>
         ) : (
