@@ -42,7 +42,7 @@ export async function getUserMapping(identifier: string): Promise<UserMapping | 
   // Search both github_username and nav_ident
   const result = await pool.query(
     `SELECT * FROM user_mappings 
-     WHERE github_username = $1 OR UPPER(nav_ident) = UPPER($1)`,
+     WHERE github_username = $1 OR nav_ident = UPPER($1)`,
     [identifier],
   )
 
@@ -79,7 +79,7 @@ export async function getUserMappings(identifiers: string[]): Promise<Map<string
     const result = await pool.query(
       `SELECT * FROM user_mappings 
        WHERE github_username = ANY($1) 
-          OR UPPER(nav_ident) = ANY($2)`,
+          OR nav_ident = ANY($2)`,
       [uncached, uncached.map((u) => u.toUpperCase())],
     )
 
@@ -117,6 +117,17 @@ export async function getUserMappings(identifiers: string[]): Promise<Map<string
 function normalize(value: string | null | undefined): string | null {
   if (!value) return null
   const trimmed = value.trim()
+  return trimmed || null
+}
+
+/**
+ * Normalize a NAV-ident - trim, uppercase, return null if empty.
+ * NAV-idents are stored uppercase so that plain equality can be used
+ * in JOIN conditions (dev_team_role_assignments already stores them uppercase).
+ */
+function normalizeNavIdent(value: string | null | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim().toUpperCase()
   return trimmed || null
 }
 
@@ -160,7 +171,7 @@ export async function upsertUserMapping(params: {
       githubUsername,
       normalize(params.displayName),
       normalizeEmail(params.navEmail),
-      normalize(params.navIdent),
+      normalizeNavIdent(params.navIdent),
       normalize(params.slackMemberId),
     ],
   )
@@ -244,10 +255,9 @@ export async function getUnmappedUsers(): Promise<{ github_username: string; dep
  * Get user mapping by NAV-ident — current-state lookup, excludes soft-deleted.
  */
 export async function getUserMappingByNavIdent(navIdent: string): Promise<UserMapping | null> {
-  const result = await pool.query(
-    'SELECT * FROM user_mappings WHERE UPPER(nav_ident) = UPPER($1) AND deleted_at IS NULL',
-    [navIdent],
-  )
+  const result = await pool.query('SELECT * FROM user_mappings WHERE nav_ident = UPPER($1) AND deleted_at IS NULL', [
+    navIdent,
+  ])
   return result.rows[0] || null
 }
 
