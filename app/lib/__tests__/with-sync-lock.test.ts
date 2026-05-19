@@ -10,7 +10,9 @@ vi.mock('~/db/sync-jobs.server', () => ({
 // Mock the logger module
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  runWithJobContext: vi.fn((_lockId: number, _verbose: boolean, fn: () => unknown) => fn()),
+  runWithJobContext: vi.fn((_lockId: number, _jobType: string, _appId: number, _verbose: boolean, fn: () => unknown) =>
+    fn(),
+  ),
 }))
 
 import { acquireSyncLock, logSyncJobMessage, releaseSyncLock } from '~/db/sync-jobs.server'

@@ -34,7 +34,7 @@ export async function withSyncLock<T>(
 
   try {
     await logSyncJobMessage(lockId, 'info', options.startMessage, options.startContext)
-    const result = await runWithJobContext(lockId, false, fn)
+    const result = await runWithJobContext(lockId, jobType, monitoredAppId, false, fn)
     const resultContext = options.buildResultContext?.(result)
     await logSyncJobMessage(lockId, 'info', options.resultMessage, resultContext)
     await releaseSyncLock(lockId, 'completed', result as Record<string, unknown>)
