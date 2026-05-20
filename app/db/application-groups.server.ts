@@ -269,3 +269,27 @@ export async function propagateVerificationToSiblings(
 
   return result.rowCount ?? 0
 }
+
+/**
+ * Get all app IDs belonging to the given application group IDs.
+ * Includes inactive apps to match the deployment route's getGroupContext()
+ * which does not filter by is_active when expanding group siblings.
+ */
+export async function getAppIdsByGroupIds(groupIds: number[]): Promise<Map<number, number[]>> {
+  if (groupIds.length === 0) return new Map()
+
+  const result = await pool.query<{ application_group_id: number; id: number }>(
+    `SELECT application_group_id, id
+     FROM monitored_applications
+     WHERE application_group_id = ANY($1)`,
+    [groupIds],
+  )
+
+  const map = new Map<number, number[]>()
+  for (const row of result.rows) {
+    const ids = map.get(row.application_group_id) ?? []
+    ids.push(row.id)
+    map.set(row.application_group_id, ids)
+  }
+  return map
+}

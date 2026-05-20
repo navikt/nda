@@ -374,3 +374,52 @@ export async function getGroupAppIdsForDevTeams(devTeamIds: number[]): Promise<n
   )
   return result.rows.map((r) => r.id)
 }
+
+/**
+ * Returns the subset of appIds that are exclusively owned by the given dev team.
+ * An app is "exclusively owned" if exactly one active dev team claims it (across all
+ * ownership paths: direct link, nais team slug, or application group) AND that single
+ * owner is `devTeamId`. For exclusively-owned apps the team dashboard can show all
+ * deployments unfiltered since there's no ambiguity about which team the app belongs to.
+ */
+export async function getExclusivelyOwnedAppIds(devTeamId: number, appIds: number[]): Promise<Set<number>> {
+  if (appIds.length === 0) return new Set()
+
+  const result = await pool.query<{ app_id: number }>(
+    `WITH app_owners AS (
+       -- Path 1: direct dev_team_applications links
+       SELECT dta.monitored_app_id AS app_id, dta.dev_team_id
+       FROM dev_team_applications dta
+       JOIN monitored_applications ma ON ma.id = dta.monitored_app_id AND ma.is_active = true
+       JOIN dev_teams dt ON dt.id = dta.dev_team_id AND dt.is_active = true
+       WHERE dta.monitored_app_id = ANY($1::int[]) AND dta.deleted_at IS NULL
+
+       UNION
+
+       -- Path 2: via nais team slug
+       SELECT ma.id AS app_id, dnt.dev_team_id
+       FROM monitored_applications ma
+       JOIN dev_team_nais_teams dnt ON dnt.nais_team_slug = ma.team_slug AND dnt.deleted_at IS NULL
+       JOIN dev_teams dt ON dt.id = dnt.dev_team_id AND dt.is_active = true
+       WHERE ma.id = ANY($1::int[]) AND ma.is_active = true
+
+       UNION
+
+       -- Path 3: via application groups
+       SELECT ma.id AS app_id, dtag.dev_team_id
+       FROM dev_team_application_groups dtag
+       JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
+       JOIN monitored_applications ma ON ma.application_group_id = ag.id AND ma.is_active = true
+       JOIN dev_teams dt ON dt.id = dtag.dev_team_id AND dt.is_active = true
+       WHERE ma.id = ANY($1::int[]) AND dtag.deleted_at IS NULL
+     )
+     SELECT app_id
+     FROM app_owners
+     GROUP BY app_id
+     HAVING COUNT(DISTINCT dev_team_id) = 1
+        AND MIN(dev_team_id) = $2`,
+    [appIds, devTeamId],
+  )
+
+  return new Set(result.rows.map((r) => r.app_id))
+}
