@@ -97,8 +97,9 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
     const search = `"mail:${escapeSearchValue(trimmed)}"`
     url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&$select=displayName,mail,onPremisesSamAccountName,userPrincipalName&$count=true&$top=10`
   } else {
-    // Search by display name
-    const search = `"displayName:${escapeSearchValue(trimmed)}"`
+    // Search by display name — split words into AND-combined clauses for multi-word matching
+    const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
+    const search = words.map((w) => `"displayName:${w}"`).join(' AND ')
     url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&$select=displayName,mail,onPremisesSamAccountName,userPrincipalName&$count=true&$top=10&$orderby=displayName`
   }
 

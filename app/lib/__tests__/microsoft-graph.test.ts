@@ -130,8 +130,12 @@ describe('microsoft-graph', () => {
 
     const graphCall = fetchMock.mock.calls[1]
     const url = graphCall[0] as string
-    // Quotes and backslashes are stripped
-    expect(decodeURIComponent(url)).toContain('"displayName:Ola Nordmann test"')
+    // Quotes and backslashes are stripped, words combined with AND
+    const decoded = decodeURIComponent(url)
+    expect(decoded).toContain('"displayName:Ola"')
+    expect(decoded).toContain('"displayName:Nordmann"')
+    expect(decoded).toContain('"displayName:test"')
+    expect(decoded).toContain(' AND ')
   })
 
   it('returns empty array for empty or short query', async () => {
