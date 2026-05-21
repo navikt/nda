@@ -89,6 +89,7 @@ export function UserSearch({ label = 'Søk etter bruker', onSelect, onClear, res
       label={label}
       description={description}
       options={options}
+      filteredOptions={options}
       isLoading={isLoading}
       onToggleSelected={(value, isSelected) => {
         if (isSelected) {
