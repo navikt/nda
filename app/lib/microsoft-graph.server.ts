@@ -81,28 +81,55 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
   const isNavIdent = /^[A-Za-z]\d{6}$/.test(trimmed)
   const isEmail = trimmed.includes('@')
 
-  let url: string
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     ConsistencyLevel: 'eventual',
   }
 
+  const select = '$select=displayName,mail,onPremisesSamAccountName,userPrincipalName'
+
   if (isNavIdent) {
-    // Exact match on NAV-ident (stored as onPremisesSamAccountName)
     const sanitized = trimmed.toUpperCase().replace(/'/g, "''")
     const filter = `onPremisesSamAccountName eq '${sanitized}'`
-    url = `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(filter)}&$select=displayName,mail,onPremisesSamAccountName,userPrincipalName&$top=10`
-  } else if (isEmail) {
-    // Search by email
-    const search = `"mail:${escapeSearchValue(trimmed)}"`
-    url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&$select=displayName,mail,onPremisesSamAccountName,userPrincipalName&$count=true&$top=10`
-  } else {
-    // Search by display name — use OR to get broad results, then filter server-side
-    const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
-    const search = words.map((w) => `"displayName:${w}"`).join(' OR ')
-    url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&$select=displayName,mail,onPremisesSamAccountName,userPrincipalName&$count=true&$top=25`
+    const url = `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(filter)}&${select}&$top=10`
+    return fetchGraphUsers(url, headers)
   }
 
+  if (isEmail) {
+    const search = `"mail:${escapeSearchValue(trimmed)}"`
+    const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=10`
+    return fetchGraphUsers(url, headers)
+  }
+
+  // Name search: Graph AND/OR are unreliable for multi-word displayName queries.
+  // Search each word separately in parallel and intersect results.
+  const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
+
+  if (words.length === 1) {
+    const search = `"displayName:${words[0]}"`
+    const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=10`
+    return fetchGraphUsers(url, headers)
+  }
+
+  // Multi-word: fetch each word in parallel, intersect by navIdent
+  const allResults = await Promise.all(
+    words.map(async (word) => {
+      const search = `"displayName:${word}"`
+      const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=25`
+      return fetchGraphUsers(url, headers)
+    }),
+  )
+
+  // Intersect: only keep users present in ALL word results
+  const [first, ...rest] = allResults
+  const results = first.filter((user) =>
+    rest.every((wordResults) => wordResults.some((r) => r.navIdent === user.navIdent)),
+  )
+
+  return results.slice(0, 10)
+}
+
+async function fetchGraphUsers(url: string, headers: Record<string, string>): Promise<GraphUserResult[]> {
   const response = await fetch(url, { headers })
 
   if (!response.ok) {
@@ -112,22 +139,11 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
 
   const data: GraphSearchResponse = await response.json()
 
-  let results = data.value.map((user) => ({
+  return data.value.map((user) => ({
     displayName: user.displayName,
     email: user.mail || user.userPrincipalName,
     navIdent: user.onPremisesSamAccountName,
   }))
-
-  // For multi-word queries, filter to users matching ALL words (case-insensitive)
-  const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
-  if (words.length > 1) {
-    results = results.filter((user) => {
-      const name = (user.displayName ?? '').toLowerCase()
-      return words.every((w) => name.includes(w.toLowerCase()))
-    })
-  }
-
-  return results.slice(0, 10)
 }
 
 /** Escape characters that are reserved in Graph $search query values. */

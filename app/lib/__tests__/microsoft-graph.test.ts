@@ -121,26 +121,30 @@ describe('microsoft-graph', () => {
   })
 
   it('strips quotes and backslashes from search values', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockTokenResponse()).mockResolvedValueOnce(mockGraphResponse([]))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockTokenResponse())
+      .mockResolvedValueOnce(mockGraphResponse([]))
+      .mockResolvedValueOnce(mockGraphResponse([]))
+      .mockResolvedValueOnce(mockGraphResponse([]))
     vi.stubGlobal('fetch', fetchMock)
 
     const searchGraphUsers = await getSearchFn()
     await searchGraphUsers('Ola "Nordmann\\ test')
 
-    const graphCall = fetchMock.mock.calls[1]
-    const url = graphCall[0] as string
-    // Quotes and backslashes are stripped, words combined with OR
-    const decoded = decodeURIComponent(url)
-    expect(decoded).toContain('"displayName:Ola"')
-    expect(decoded).toContain('"displayName:Nordmann"')
-    expect(decoded).toContain('"displayName:test"')
-    expect(decoded).toContain(' OR ')
+    // Multi-word: one token call + 3 parallel word calls
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    const urls = fetchMock.mock.calls.slice(1).map((c) => decodeURIComponent(c[0] as string))
+    expect(urls[0]).toContain('"displayName:Ola"')
+    expect(urls[1]).toContain('"displayName:Nordmann"')
+    expect(urls[2]).toContain('"displayName:test"')
   })
 
-  it('filters multi-word results to only users matching all words', async () => {
+  it('intersects multi-word results to only users matching all words', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(mockTokenResponse())
+      // Results for "Modig"
       .mockResolvedValueOnce(
         mockGraphResponse([
           {
@@ -157,12 +161,23 @@ describe('microsoft-graph', () => {
           },
         ]),
       )
+      // Results for "Bjørk"
+      .mockResolvedValueOnce(
+        mockGraphResponse([
+          {
+            displayName: 'Modig Bjørk',
+            mail: 'modig.bjork@nav.no',
+            onPremisesSamAccountName: 'D111222',
+            userPrincipalName: 'modig.bjork@nav.no',
+          },
+        ]),
+      )
     vi.stubGlobal('fetch', fetchMock)
 
     const searchGraphUsers = await getSearchFn()
     const results = await searchGraphUsers('Modig Bjørk')
 
-    // Only the user matching both words should be returned
+    // Only the user appearing in ALL word results is returned
     expect(results).toEqual([{ displayName: 'Modig Bjørk', email: 'modig.bjork@nav.no', navIdent: 'D111222' }])
   })
 
@@ -191,7 +206,11 @@ describe('microsoft-graph', () => {
   })
 
   it('uses ConsistencyLevel: eventual header', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockTokenResponse()).mockResolvedValueOnce(mockGraphResponse([]))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockTokenResponse())
+      .mockResolvedValueOnce(mockGraphResponse([]))
+      .mockResolvedValueOnce(mockGraphResponse([]))
     vi.stubGlobal('fetch', fetchMock)
 
     const searchGraphUsers = await getSearchFn()
