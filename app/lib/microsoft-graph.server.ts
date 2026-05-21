@@ -122,7 +122,7 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
   const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
   if (words.length > 1) {
     results = results.filter((user) => {
-      const name = user.displayName.toLowerCase()
+      const name = (user.displayName ?? '').toLowerCase()
       return words.every((w) => name.includes(w.toLowerCase()))
     })
   }
