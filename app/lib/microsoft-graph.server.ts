@@ -101,8 +101,10 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
     return fetchGraphUsers(url, headers)
   }
 
-  // Name search: Graph AND/OR are unreliable for multi-word displayName queries.
-  // Search each word separately in parallel and intersect results.
+  // Name search: Graph $search does word-boundary prefix matching.
+  // AND/OR operators are not supported for directory objects.
+  // Strategy: search the least-common word (shortest is heuristic for surnames)
+  // with high $top, then filter client-side for all words.
   const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
 
   if (words.length === 1) {
@@ -111,22 +113,21 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
     return fetchGraphUsers(url, headers)
   }
 
-  // Multi-word: fetch each word in parallel, intersect by navIdent
-  const allResults = await Promise.all(
-    words.map(async (word) => {
-      const search = `"displayName:${word}"`
-      const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=25`
-      return fetchGraphUsers(url, headers)
-    }),
-  )
+  // Multi-word: search with the shortest word (likely surname, more distinctive)
+  // and filter results client-side to match ALL words.
+  const sortedByLength = [...words].sort((a, b) => a.length - b.length)
+  const searchWord = sortedByLength[0]
+  const search = `"displayName:${searchWord}"`
+  const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=100`
+  const results = await fetchGraphUsers(url, headers)
 
-  // Intersect: only keep users present in ALL word results
-  const [first, ...rest] = allResults
-  const results = first.filter((user) =>
-    rest.every((wordResults) => wordResults.some((r) => r.navIdent === user.navIdent)),
-  )
+  // Filter to only users whose displayName contains ALL search words (prefix match per word)
+  const filtered = results.filter((user) => {
+    const name = (user.displayName ?? '').toLowerCase()
+    return words.every((w) => name.includes(w.toLowerCase()))
+  })
 
-  return results.slice(0, 10)
+  return filtered.slice(0, 10)
 }
 
 async function fetchGraphUsers(url: string, headers: Record<string, string>): Promise<GraphUserResult[]> {

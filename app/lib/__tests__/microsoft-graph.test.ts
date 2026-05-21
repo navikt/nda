@@ -121,64 +121,51 @@ describe('microsoft-graph', () => {
   })
 
   it('strips quotes and backslashes from search values', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockTokenResponse())
-      .mockResolvedValueOnce(mockGraphResponse([]))
-      .mockResolvedValueOnce(mockGraphResponse([]))
-      .mockResolvedValueOnce(mockGraphResponse([]))
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockTokenResponse()).mockResolvedValueOnce(mockGraphResponse([]))
     vi.stubGlobal('fetch', fetchMock)
 
     const searchGraphUsers = await getSearchFn()
     await searchGraphUsers('Ola "Nordmann\\ test')
 
-    // Multi-word: one token call + 3 parallel word calls
-    expect(fetchMock).toHaveBeenCalledTimes(4)
-    const urls = fetchMock.mock.calls.slice(1).map((c) => decodeURIComponent(c[0] as string))
-    expect(urls[0]).toContain('"displayName:Ola"')
-    expect(urls[1]).toContain('"displayName:Nordmann"')
-    expect(urls[2]).toContain('"displayName:test"')
+    // Multi-word: token call + single search call (shortest word = "Ola")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
+    expect(url).toContain('"displayName:Ola"')
+    expect(url).toContain('$top=100')
   })
 
-  it('intersects multi-word results to only users matching all words', async () => {
+  it('filters multi-word results to only users matching all words', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(mockTokenResponse())
-      // Results for "Modig"
+      // Results for shortest word "Røe" (3 chars vs "Modig" 5 chars)
       .mockResolvedValueOnce(
         mockGraphResponse([
           {
-            displayName: 'Modig Bjørk',
-            mail: 'modig.bjork@nav.no',
+            displayName: 'Røe, Modig',
+            mail: 'modig.roe@nav.no',
             onPremisesSamAccountName: 'D111222',
-            userPrincipalName: 'modig.bjork@nav.no',
+            userPrincipalName: 'modig.roe@nav.no',
           },
           {
-            displayName: 'Modig Elv',
-            mail: 'modig.elv@nav.no',
+            displayName: 'Røe, Stille',
+            mail: 'stille.roe@nav.no',
             onPremisesSamAccountName: 'E333444',
-            userPrincipalName: 'modig.elv@nav.no',
-          },
-        ]),
-      )
-      // Results for "Bjørk"
-      .mockResolvedValueOnce(
-        mockGraphResponse([
-          {
-            displayName: 'Modig Bjørk',
-            mail: 'modig.bjork@nav.no',
-            onPremisesSamAccountName: 'D111222',
-            userPrincipalName: 'modig.bjork@nav.no',
+            userPrincipalName: 'stille.roe@nav.no',
           },
         ]),
       )
     vi.stubGlobal('fetch', fetchMock)
 
     const searchGraphUsers = await getSearchFn()
-    const results = await searchGraphUsers('Modig Bjørk')
+    const results = await searchGraphUsers('Modig Røe')
 
-    // Only the user appearing in ALL word results is returned
-    expect(results).toEqual([{ displayName: 'Modig Bjørk', email: 'modig.bjork@nav.no', navIdent: 'D111222' }])
+    // Only user matching ALL words in displayName is returned
+    expect(results).toEqual([{ displayName: 'Røe, Modig', email: 'modig.roe@nav.no', navIdent: 'D111222' }])
+
+    // Searched with shortest word "Røe" (3 chars)
+    const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
+    expect(url).toContain('"displayName:Røe"')
   })
 
   it('returns empty array for empty or short query', async () => {
@@ -206,11 +193,7 @@ describe('microsoft-graph', () => {
   })
 
   it('uses ConsistencyLevel: eventual header', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockTokenResponse())
-      .mockResolvedValueOnce(mockGraphResponse([]))
-      .mockResolvedValueOnce(mockGraphResponse([]))
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockTokenResponse()).mockResolvedValueOnce(mockGraphResponse([]))
     vi.stubGlobal('fetch', fetchMock)
 
     const searchGraphUsers = await getSearchFn()
