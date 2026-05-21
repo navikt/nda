@@ -97,10 +97,10 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
     const search = `"mail:${escapeSearchValue(trimmed)}"`
     url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&$select=displayName,mail,onPremisesSamAccountName,userPrincipalName&$count=true&$top=10`
   } else {
-    // Search by display name — split words into AND-combined clauses for multi-word matching
+    // Search by display name — use OR to get broad results, then filter server-side
     const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
-    const search = words.map((w) => `"displayName:${w}"`).join(' AND ')
-    url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&$select=displayName,mail,onPremisesSamAccountName,userPrincipalName&$count=true&$top=10&$orderby=displayName`
+    const search = words.map((w) => `"displayName:${w}"`).join(' OR ')
+    url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&$select=displayName,mail,onPremisesSamAccountName,userPrincipalName&$count=true&$top=25`
   }
 
   const response = await fetch(url, { headers })
@@ -112,11 +112,22 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
 
   const data: GraphSearchResponse = await response.json()
 
-  return data.value.map((user) => ({
+  let results = data.value.map((user) => ({
     displayName: user.displayName,
     email: user.mail || user.userPrincipalName,
     navIdent: user.onPremisesSamAccountName,
   }))
+
+  // For multi-word queries, filter to users matching ALL words (case-insensitive)
+  const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
+  if (words.length > 1) {
+    results = results.filter((user) => {
+      const name = user.displayName.toLowerCase()
+      return words.every((w) => name.includes(w.toLowerCase()))
+    })
+  }
+
+  return results.slice(0, 10)
 }
 
 /** Escape characters that are reserved in Graph $search query values. */

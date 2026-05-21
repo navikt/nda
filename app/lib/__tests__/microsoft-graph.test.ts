@@ -118,7 +118,6 @@ describe('microsoft-graph', () => {
     expect(url).toContain('$search=')
     expect(url).toContain(encodeURIComponent('"displayName:Stille"'))
     expect(url).toContain('$count=true')
-    expect(url).toContain('$orderby=displayName')
   })
 
   it('strips quotes and backslashes from search values', async () => {
@@ -130,12 +129,41 @@ describe('microsoft-graph', () => {
 
     const graphCall = fetchMock.mock.calls[1]
     const url = graphCall[0] as string
-    // Quotes and backslashes are stripped, words combined with AND
+    // Quotes and backslashes are stripped, words combined with OR
     const decoded = decodeURIComponent(url)
     expect(decoded).toContain('"displayName:Ola"')
     expect(decoded).toContain('"displayName:Nordmann"')
     expect(decoded).toContain('"displayName:test"')
-    expect(decoded).toContain(' AND ')
+    expect(decoded).toContain(' OR ')
+  })
+
+  it('filters multi-word results to only users matching all words', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockTokenResponse())
+      .mockResolvedValueOnce(
+        mockGraphResponse([
+          {
+            displayName: 'Modig Bjørk',
+            mail: 'modig.bjork@nav.no',
+            onPremisesSamAccountName: 'D111222',
+            userPrincipalName: 'modig.bjork@nav.no',
+          },
+          {
+            displayName: 'Modig Elv',
+            mail: 'modig.elv@nav.no',
+            onPremisesSamAccountName: 'E333444',
+            userPrincipalName: 'modig.elv@nav.no',
+          },
+        ]),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const searchGraphUsers = await getSearchFn()
+    const results = await searchGraphUsers('Modig Bjørk')
+
+    // Only the user matching both words should be returned
+    expect(results).toEqual([{ displayName: 'Modig Bjørk', email: 'modig.bjork@nav.no', navIdent: 'D111222' }])
   })
 
   it('returns empty array for empty or short query', async () => {
