@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import { type RoleMember, RoleMembersSection, type UserOption } from '~/components/RoleMembersSection'
+import { type RoleMember, RoleMembersSection } from '~/components/RoleMembersSection'
 
 const mockRoleMembers: RoleMember[] = [
   {
@@ -36,15 +36,6 @@ const mockRoleMembers: RoleMember[] = [
   },
 ]
 
-const mockAllUsers: UserOption[] = [
-  { navIdent: 'A123456', displayName: 'Glad Fjord', githubUsername: 'glad-fjord' },
-  { navIdent: 'B654321', displayName: 'Rask Elv', githubUsername: 'rask-elv' },
-  { navIdent: 'C789012', displayName: 'Stille Skog', githubUsername: 'stille-skog' },
-  { navIdent: 'D345678', displayName: 'Modig Bjørk', githubUsername: 'modig-bjork' },
-  { navIdent: 'E901234', displayName: 'Varm Stein', githubUsername: 'varm-stein' },
-  { navIdent: 'F567890', displayName: 'Lys Bakke', githubUsername: 'lys-bakke' },
-]
-
 const meta: Meta<typeof RoleMembersSection> = {
   title: 'Components/RoleMembersSection',
   component: RoleMembersSection,
@@ -59,21 +50,18 @@ type Story = StoryObj<typeof RoleMembersSection>
 export const Default: Story = {
   args: {
     roleMembers: mockRoleMembers,
-    allUsers: mockAllUsers,
   },
 }
 
 export const Empty: Story = {
   args: {
     roleMembers: [],
-    allUsers: mockAllUsers,
   },
 }
 
 export const OnlyProduktleder: Story = {
   args: {
     roleMembers: mockRoleMembers.filter((m) => m.role === 'produktleder'),
-    allUsers: mockAllUsers,
   },
 }
 
@@ -98,6 +86,5 @@ export const ManyMembers: Story = {
         assigned_at: '2026-04-12T16:30:00Z',
       },
     ],
-    allUsers: mockAllUsers,
   },
 }

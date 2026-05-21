@@ -21,7 +21,7 @@ import {
   removeTeamRole,
 } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import { getAllUserMappings, getUserMappingByNavIdent } from '~/db/user-mappings.server'
+import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
@@ -59,7 +59,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('Du har ikke tilgang til å administrere dette teamet', { status: 403 })
   }
 
-  const [roleMembers, allUsers] = await Promise.all([getDevTeamMembersWithRoles(devTeam.id), getAllUserMappings()])
+  const roleMembers = await getDevTeamMembersWithRoles(devTeam.id)
 
   let linkedApps: DevTeamApplication[] = []
   let addableApps: AddableApp[] = []
@@ -125,9 +125,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     boards,
     canAdmin,
     sectionSlug: section.slug,
-    allUsers: allUsers.flatMap((u) =>
-      u.nav_ident ? [{ navIdent: u.nav_ident, displayName: u.display_name, githubUsername: u.github_username }] : [],
-    ),
   }
 }
 
@@ -408,8 +405,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function DevTeamAdmin({ loaderData, actionData }: Route.ComponentProps) {
-  const { devTeam, roleMembers, linkedApps, addableApps, naisCatalogFailed, allUsers, boards, sectionSlug, canAdmin } =
-    loaderData
+  const { devTeam, roleMembers, linkedApps, addableApps, naisCatalogFailed, boards, sectionSlug, canAdmin } = loaderData
   const navigation = useNavigation()
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
 
@@ -422,7 +418,6 @@ export default function DevTeamAdmin({ loaderData, actionData }: Route.Component
       naisCatalogFailed={naisCatalogFailed}
       boards={boards}
       canAdmin={canAdmin}
-      allUsers={allUsers}
       teamBasePath={teamBasePath}
       isSubmitting={navigation.state === 'submitting'}
       actionData={actionData}

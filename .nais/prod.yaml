@@ -132,6 +132,8 @@ spec:
         - host: productionresultssa18.blob.core.windows.net
         - host: productionresultssa19.blob.core.windows.net
         - host: console.nav.cloud.nais.io
+        - host: graph.microsoft.com
+        - host: login.microsoftonline.com
         - host: slack.com
         - host: wss-primary.slack.com
         - host: wss-backup.slack.com
