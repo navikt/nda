@@ -287,7 +287,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       fieldErrors.github_username = 'Kan ikke opprette mapping for GitHub-botkontoer'
     }
 
-    if (navIdentInput && !isValidNavIdent(navIdentInput)) {
+    if (!navIdentInput) {
+      fieldErrors.nav_ident = 'NAV-ident er påkrevd'
+    } else if (!isValidNavIdent(navIdentInput)) {
       fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer (f.eks. A123456)'
     }
 
@@ -296,19 +298,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     // Fetch user data from Graph API to ensure display_name and nav_email are authoritative
-    if (!navIdentInput) {
-      return { fieldErrors: { nav_ident: 'NAV-ident er påkrevd' } }
-    }
-
+    // navIdentInput is guaranteed non-null here (validated above)
+    const navIdent = navIdentInput as string
     let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
     try {
-      graphResults = await searchGraphUsers(navIdentInput)
+      graphResults = await searchGraphUsers(navIdent)
     } catch (error) {
       logger.error('Graph API lookup failed during mapping creation', error)
       return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
     }
 
-    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdentInput.toUpperCase())
+    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
     if (!graphUser) {
       return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
     }
@@ -320,7 +320,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       githubUsername,
       displayName,
       navEmail,
-      navIdent: navIdentInput,
+      navIdent: navIdent,
       slackMemberId: (formData.get('slack_member_id') as string) || null,
     })
     return redirect(`/users/${githubUsername}`)
