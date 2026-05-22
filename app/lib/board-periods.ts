@@ -101,6 +101,12 @@ export function formatBoardLabel(input: { teamName: string; periodLabel: string 
   return `${teamName} - ${periodLabel}`
 }
 
+export const BOARD_PERIOD_TYPE_LABELS: Record<BoardPeriodType, string> = {
+  tertiary: 'Tertial',
+  quarterly: 'Kvartal',
+  monthly: 'Måned',
+}
+
 /** Get a list of periods for the given year and type. */
 export function getPeriodsForYear(type: BoardPeriodType, year: number): BoardPeriod[] {
   if (type === 'monthly') {

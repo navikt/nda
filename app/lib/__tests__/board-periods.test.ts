@@ -62,11 +62,11 @@ describe('getCurrentPeriod', () => {
 
   describe('monthly', () => {
     it.each([
-      { date: new Date(2026, 0, 15), label: 'Januar 2026', start: '2026-01-01', end: '2026-01-31' },
-      { date: new Date(2026, 1, 10), label: 'Februar 2026', start: '2026-02-01', end: '2026-02-28' },
-      { date: new Date(2026, 4, 20), label: 'Mai 2026', start: '2026-05-01', end: '2026-05-31' },
-      { date: new Date(2026, 11, 31), label: 'Desember 2026', start: '2026-12-01', end: '2026-12-31' },
-    ])('$label for month $date.getMonth()', ({ date, label, start, end }) => {
+      { month: 0, date: new Date(2026, 0, 15), label: 'Januar 2026', start: '2026-01-01', end: '2026-01-31' },
+      { month: 1, date: new Date(2026, 1, 10), label: 'Februar 2026', start: '2026-02-01', end: '2026-02-28' },
+      { month: 4, date: new Date(2026, 4, 20), label: 'Mai 2026', start: '2026-05-01', end: '2026-05-31' },
+      { month: 11, date: new Date(2026, 11, 31), label: 'Desember 2026', start: '2026-12-01', end: '2026-12-31' },
+    ])('$label for month $month', ({ date, label, start, end }) => {
       const result = getCurrentPeriod('monthly', date)
       expect(result.label).toBe(label)
       expect(result.start).toBe(start)
