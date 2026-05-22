@@ -13,7 +13,7 @@
  * @see https://doc.nais.io/auth/entra-id/how-to/secure/
  */
 
-import { fetchWithLogging, logger } from './logger.server'
+import { fetchWithLogging, logger } from '~/lib/logger.server'
 
 interface IntrospectionSuccessResponse {
   active: true

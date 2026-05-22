@@ -80,6 +80,8 @@ export function getGitHubClient(): Octokit {
 
     // Wrap each request in an OTel span and log as structured outgoing HTTP entry
     octokit.hook.wrap('request', async (request, options) => {
+      // Capture counter before the await — concurrent requests can increment it mid-flight
+      const thisRequestNumber = requestCount
       const method = options.method || 'GET'
       let path = options.url?.replace('https://api.github.com', '') || ''
       if (options.owner) path = path.replace('{owner}', options.owner as string)
@@ -105,7 +107,7 @@ export function getGitHubClient(): Octokit {
           path,
           status_code: response.status,
           duration_ms: Date.now() - start,
-          request_number: requestCount,
+          request_number: thisRequestNumber,
           ...(options.page !== undefined && { page: options.page }),
         })
         return response
@@ -120,7 +122,7 @@ export function getGitHubClient(): Octokit {
             status_code: (error as { status: number }).status,
           }),
           error: error instanceof Error ? error.message : 'Request failed',
-          request_number: requestCount,
+          request_number: thisRequestNumber,
         })
         throw error
       }
