@@ -91,7 +91,7 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
   if (isNavIdent) {
     const sanitized = trimmed.toUpperCase().replace(/'/g, "''")
     const filter = `onPremisesSamAccountName eq '${sanitized}'`
-    const url = `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(filter)}&${select}&$top=10`
+    const url = `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(filter)}&${select}&$count=true&$top=10`
     return fetchGraphUsers(url, headers)
   }
 

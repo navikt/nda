@@ -61,6 +61,7 @@ describe('microsoft-graph', () => {
     const url = graphCall[0] as string
     expect(url).toContain('$filter=')
     expect(url).toContain(encodeURIComponent("onPremisesSamAccountName eq 'A123456'"))
+    expect(url).toContain('$count=true')
     expect(url).not.toContain('$search')
   })
 
