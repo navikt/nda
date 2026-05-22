@@ -60,6 +60,26 @@ describe('getCurrentPeriod', () => {
     })
   })
 
+  describe('monthly', () => {
+    it.each([
+      { date: new Date(2026, 0, 15), label: 'Januar 2026', start: '2026-01-01', end: '2026-01-31' },
+      { date: new Date(2026, 1, 10), label: 'Februar 2026', start: '2026-02-01', end: '2026-02-28' },
+      { date: new Date(2026, 4, 20), label: 'Mai 2026', start: '2026-05-01', end: '2026-05-31' },
+      { date: new Date(2026, 11, 31), label: 'Desember 2026', start: '2026-12-01', end: '2026-12-31' },
+    ])('$label for month $date.getMonth()', ({ date, label, start, end }) => {
+      const result = getCurrentPeriod('monthly', date)
+      expect(result.label).toBe(label)
+      expect(result.start).toBe(start)
+      expect(result.end).toBe(end)
+    })
+
+    it('handles leap year February', () => {
+      const result = getCurrentPeriod('monthly', new Date(2028, 1, 15))
+      expect(result.label).toBe('Februar 2028')
+      expect(result.end).toBe('2028-02-29')
+    })
+  })
+
   it('defaults to current date when none provided', () => {
     const result = getCurrentPeriod('quarterly')
     expect(result.label).toMatch(/^Q[1-4] \d{4}$/)
@@ -87,6 +107,17 @@ describe('getPeriodsForYear', () => {
     expect(periods[3].start).toBe('2026-10-01')
   })
 
+  it('returns 12 monthly periods', () => {
+    const periods = getPeriodsForYear('monthly', 2026)
+    expect(periods).toHaveLength(12)
+    expect(periods[0].label).toBe('Januar 2026')
+    expect(periods[0].start).toBe('2026-01-01')
+    expect(periods[0].end).toBe('2026-01-31')
+    expect(periods[11].label).toBe('Desember 2026')
+    expect(periods[11].start).toBe('2026-12-01')
+    expect(periods[11].end).toBe('2026-12-31')
+  })
+
   it('has continuous date ranges (no gaps)', () => {
     const periods = getPeriodsForYear('tertiary', 2026)
     for (let i = 1; i < periods.length; i++) {
@@ -108,6 +139,22 @@ describe('getPeriodsForYear', () => {
     const periods = getPeriodsForYear('quarterly', 2026)
     expect(periods[0].start).toBe('2026-01-01')
     expect(periods[3].end).toBe('2026-12-31')
+  })
+
+  it('covers full year for monthly', () => {
+    const periods = getPeriodsForYear('monthly', 2026)
+    expect(periods[0].start).toBe('2026-01-01')
+    expect(periods[11].end).toBe('2026-12-31')
+  })
+
+  it('has continuous date ranges for monthly (no gaps)', () => {
+    const periods = getPeriodsForYear('monthly', 2026)
+    for (let i = 1; i < periods.length; i++) {
+      const prevEnd = new Date(periods[i - 1].end)
+      const currStart = new Date(periods[i].start)
+      prevEnd.setDate(prevEnd.getDate() + 1)
+      expect(prevEnd.toISOString().split('T')[0]).toBe(currStart.toISOString().split('T')[0])
+    }
   })
 })
 

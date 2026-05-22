@@ -5,7 +5,7 @@ import type { BoardObjectiveProgress } from '~/db/dashboard-stats.server'
 export interface ActiveBoardData {
   id: number
   period_label: string
-  period_type: 'tertiary' | 'quarterly'
+  period_type: 'tertiary' | 'quarterly' | 'monthly'
   period_start: string | Date
   period_end: string | Date
 }

@@ -17,7 +17,7 @@ export interface BoardSummaryObjective {
 export interface BoardSummary {
   boardId: number
   periodLabel: string
-  periodType: 'tertiary' | 'quarterly'
+  periodType: 'tertiary' | 'quarterly' | 'monthly'
   teamName: string
   teamSlug: string
   sectionSlug: string

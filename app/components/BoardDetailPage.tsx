@@ -24,7 +24,7 @@ import { formatBoardLabel, toDateInputValue } from '~/lib/board-periods'
 interface BoardDetailProps {
   devTeam: { name: string }
   board: {
-    period_type: 'tertiary' | 'quarterly'
+    period_type: 'tertiary' | 'quarterly' | 'monthly'
     period_start: string
     period_end: string
     period_label: string
@@ -59,7 +59,7 @@ export function BoardDetailPage({ devTeam, board, objectiveProgress, actionResul
         </Heading>
         <HStack gap="space-8" align="center">
           <Tag variant="neutral" size="small">
-            {board.period_type === 'tertiary' ? 'Tertial' : 'Kvartal'}
+            {board.period_type === 'tertiary' ? 'Tertial' : board.period_type === 'monthly' ? 'Måned' : 'Kvartal'}
           </Tag>
           <Tag variant={board.is_active ? 'success' : 'neutral'} size="small">
             {board.is_active ? 'Aktiv' : 'Avsluttet'}

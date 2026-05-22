@@ -78,7 +78,7 @@ function BoardRow({ board, teamBasePath, teamName }: { board: Board; teamBasePat
       </Table.DataCell>
       <Table.DataCell>
         <Tag variant="neutral" size="small">
-          {board.period_type === 'tertiary' ? 'Tertial' : 'Kvartal'}
+          {board.period_type === 'tertiary' ? 'Tertial' : board.period_type === 'monthly' ? 'Måned' : 'Kvartal'}
         </Tag>
       </Table.DataCell>
       <Table.DataCell>

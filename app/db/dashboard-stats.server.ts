@@ -705,7 +705,7 @@ export async function getDevTeamStats(devTeamId: number, startDate: Date, endDat
 interface ContributedBoard {
   board_id: number
   period_label: string
-  period_type: 'tertiary' | 'quarterly'
+  period_type: 'tertiary' | 'quarterly' | 'monthly'
   team_name: string
   team_slug: string
   section_slug: string

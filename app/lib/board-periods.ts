@@ -1,8 +1,8 @@
 /**
- * Board period helpers — compute tertial/quarterly start/end dates and labels.
+ * Board period helpers — compute tertial/quarterly/monthly start/end dates and labels.
  */
 
-export type BoardPeriodType = 'tertiary' | 'quarterly'
+export type BoardPeriodType = 'tertiary' | 'quarterly' | 'monthly'
 
 interface BoardPeriod {
   type: BoardPeriodType
@@ -38,6 +38,21 @@ export function toDateInputValue(value: string | Date): string {
   return value
 }
 
+const MONTH_LABELS = [
+  'Januar',
+  'Februar',
+  'Mars',
+  'April',
+  'Mai',
+  'Juni',
+  'Juli',
+  'August',
+  'September',
+  'Oktober',
+  'November',
+  'Desember',
+]
+
 export function getCurrentPeriod(type: BoardPeriodType, date = new Date()): BoardPeriod {
   const year = date.getFullYear()
   const month = date.getMonth()
@@ -51,6 +66,15 @@ export function getCurrentPeriod(type: BoardPeriodType, date = new Date()): Boar
       label: `T${t} ${year}`,
       start: `${year}-${String(startMonth + 1).padStart(2, '0')}-01`,
       end: formatLocalDate(new Date(year, endMonth + 1, 0)),
+    }
+  }
+
+  if (type === 'monthly') {
+    return {
+      type,
+      label: `${MONTH_LABELS[month]} ${year}`,
+      start: `${year}-${String(month + 1).padStart(2, '0')}-01`,
+      end: formatLocalDate(new Date(year, month + 1, 0)),
     }
   }
 
@@ -79,6 +103,9 @@ export function formatBoardLabel(input: { teamName: string; periodLabel: string 
 
 /** Get a list of periods for the given year and type. */
 export function getPeriodsForYear(type: BoardPeriodType, year: number): BoardPeriod[] {
+  if (type === 'monthly') {
+    return Array.from({ length: 12 }, (_, i) => getCurrentPeriod('monthly', new Date(year, i, 15)))
+  }
   const count = type === 'tertiary' ? 3 : 4
   return Array.from({ length: count }, (_, i) => {
     const month = type === 'tertiary' ? i * 4 : i * 3
