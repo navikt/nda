@@ -1,3 +1,4 @@
+import type { BoardPeriodType } from '~/lib/board-periods'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
@@ -705,7 +706,7 @@ export async function getDevTeamStats(devTeamId: number, startDate: Date, endDat
 interface ContributedBoard {
   board_id: number
   period_label: string
-  period_type: 'tertiary' | 'quarterly' | 'monthly'
+  period_type: BoardPeriodType
   team_name: string
   team_slug: string
   section_slug: string

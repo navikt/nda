@@ -19,12 +19,12 @@ import { Form, useSubmit } from 'react-router'
 import { ObjectiveCard } from '~/components/BoardObjectiveCard'
 import type { ObjectiveWithKeyResults } from '~/db/boards.server'
 import type { BoardObjectiveProgress } from '~/db/dashboard-stats.server'
-import { BOARD_PERIOD_TYPE_LABELS, formatBoardLabel, toDateInputValue } from '~/lib/board-periods'
+import { BOARD_PERIOD_TYPE_LABELS, type BoardPeriodType, formatBoardLabel, toDateInputValue } from '~/lib/board-periods'
 
 interface BoardDetailProps {
   devTeam: { name: string }
   board: {
-    period_type: 'tertiary' | 'quarterly' | 'monthly'
+    period_type: BoardPeriodType
     period_start: string
     period_end: string
     period_label: string

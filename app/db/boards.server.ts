@@ -1,10 +1,11 @@
+import type { BoardPeriodType } from '~/lib/board-periods'
 import { pool } from './connection.server'
 
 export interface Board {
   id: number
   dev_team_id: number
   title: string
-  period_type: 'tertiary' | 'quarterly' | 'monthly'
+  period_type: BoardPeriodType
   period_start: string
   period_end: string
   period_label: string
@@ -344,7 +345,7 @@ export async function getBoardWithObjectives(boardId: number): Promise<BoardWith
 export async function createBoard(data: {
   dev_team_id: number
   title: string
-  period_type: 'tertiary' | 'quarterly' | 'monthly'
+  period_type: BoardPeriodType
   period_start: string
   period_end: string
   period_label: string
