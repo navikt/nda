@@ -294,16 +294,24 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     // Fetch user data from Graph API to ensure display_name and nav_email are authoritative
-    let displayName: string | null = null
-    let navEmail: string | null = null
-    if (navIdentInput) {
-      const graphResults = await searchGraphUsers(navIdentInput)
-      const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdentInput.toUpperCase())
-      if (graphUser) {
-        displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
-        navEmail = graphUser.email ?? null
-      }
+    if (!navIdentInput) {
+      return { fieldErrors: { nav_ident: 'NAV-ident er påkrevd' } }
     }
+
+    let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
+    try {
+      graphResults = await searchGraphUsers(navIdentInput)
+    } catch {
+      return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
+    }
+
+    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdentInput.toUpperCase())
+    if (!graphUser) {
+      return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
+    }
+
+    const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
+    const navEmail = graphUser.email ?? null
 
     await upsertUserMapping({
       githubUsername,
