@@ -149,7 +149,7 @@ export const ManyResults: Story = {
         id: 3,
         type: 'deployment',
         title: 'def456ghi789',
-        subtitle: 'pensjon-selvbetjening (prod-fss) - Jane Doe',
+        subtitle: 'pensjon-selvbetjening (prod-fss) - Stille Skog',
         url: '/team/pensjondeployer/env/prod-fss/app/pensjon-selvbetjening/deployments/3',
       },
       {
@@ -162,7 +162,7 @@ export const ManyResults: Story = {
       {
         type: 'user',
         title: 'jane-doe',
-        subtitle: 'Jane Doe (B234567)',
+        subtitle: 'Stille Skog (Z990009)',
         url: '/users/jane-doe',
       },
     ],

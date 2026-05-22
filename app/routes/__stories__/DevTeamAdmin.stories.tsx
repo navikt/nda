@@ -4,7 +4,7 @@ import { DevTeamAdminPage } from '~/components/DevTeamAdminPage'
 const mockRoleMembers = [
   {
     id: 1,
-    nav_ident: 'A123456',
+    nav_ident: 'Z990001',
     role: 'utvikler',
     github_username: 'pensjon-dev-1',
     display_name: 'Rask Elv',
@@ -12,7 +12,7 @@ const mockRoleMembers = [
   },
   {
     id: 2,
-    nav_ident: 'B654321',
+    nav_ident: 'Z990002',
     role: 'techlead',
     github_username: 'pensjon-dev-2',
     display_name: 'Glad Fjord',

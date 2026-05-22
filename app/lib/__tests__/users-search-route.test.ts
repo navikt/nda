@@ -26,7 +26,7 @@ function makeRequest(query = '') {
   return new Request(url.toString())
 }
 
-const mockUser = { navIdent: 'A123456', name: 'Glad Fjord', role: 'admin' }
+const mockUser = { navIdent: 'Z990001', name: 'Glad Fjord', role: 'admin' }
 
 describe('users.search loader', () => {
   beforeEach(() => {
@@ -57,7 +57,7 @@ describe('users.search loader', () => {
   })
 
   it('returns search results with Cache-Control: no-store', async () => {
-    const mockResults = [{ displayName: 'Rask Elv', email: 'rask.elv@nav.no', navIdent: 'B654321' }]
+    const mockResults = [{ displayName: 'Rask Elv', email: 'rask.elv@nav.no', navIdent: 'Z990002' }]
     vi.mocked(searchGraphUsers).mockResolvedValue(mockResults)
 
     const response = await loader({ request: makeRequest('Rask') } as never)

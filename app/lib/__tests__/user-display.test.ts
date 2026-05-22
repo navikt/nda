@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getUserDisplayName, serializeUserMappings, type UserMappings } from '../user-display'
+import { formatDisplayNameNatural, getUserDisplayName, serializeUserMappings, type UserMappings } from '../user-display'
 
 /**
  * Tests for user display name resolution.
@@ -12,7 +12,7 @@ import { getUserDisplayName, serializeUserMappings, type UserMappings } from '..
 
 describe('getUserDisplayName — resolves GitHub username to display name with fallback chain', () => {
   const mappings: UserMappings = {
-    'ola.nordmann': { display_name: 'Ola Nordmann', nav_ident: 'O123456', nav_email: 'ola@nav.no' },
+    'modig.bjork': { display_name: 'Modig Bjørk', nav_ident: 'Z990007', nav_email: 'modig.bjork@nav.no' },
     'kari.hansen': { display_name: null, nav_email: 'kari@nav.no' },
     'per.person': { display_name: null, nav_email: null },
   }
@@ -29,7 +29,7 @@ describe('getUserDisplayName — resolves GitHub username to display name with f
   })
 
   it('prefers display_name when mapping exists', () => {
-    expect(getUserDisplayName('ola.nordmann', mappings)).toBe('Ola Nordmann')
+    expect(getUserDisplayName('modig.bjork', mappings)).toBe('Modig Bjørk')
   })
 
   it('falls back to nav_email when display_name is null', () => {
@@ -66,5 +66,27 @@ describe('serializeUserMappings — converts Map to plain object for JSON transp
       alice: { display_name: 'Alice A', nav_ident: 'A1', nav_email: 'alice@nav.no' },
       bob: { display_name: null, nav_ident: null, nav_email: undefined },
     })
+  })
+})
+
+describe('formatDisplayNameNatural — converts "Lastname, Firstname" to "Firstname Lastname"', () => {
+  it('converts comma-separated "Lastname, Firstname" format', () => {
+    expect(formatDisplayNameNatural('Røe, Modig')).toBe('Modig Røe')
+  })
+
+  it('returns name as-is when no comma is present', () => {
+    expect(formatDisplayNameNatural('Glad Fjord')).toBe('Glad Fjord')
+  })
+
+  it('returns empty string for null input', () => {
+    expect(formatDisplayNameNatural(null)).toBe('')
+  })
+
+  it('returns empty string for empty string input', () => {
+    expect(formatDisplayNameNatural('')).toBe('')
+  })
+
+  it('handles multiple commas (keeps first part as lastname)', () => {
+    expect(formatDisplayNameNatural('Skog, Stille, Jr')).toBe('Stille, Jr Skog')
   })
 })

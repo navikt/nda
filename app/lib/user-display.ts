@@ -53,3 +53,11 @@ export function serializeUserMappings(
   }
   return result
 }
+
+/** Convert "Lastname, Firstname" to "Firstname Lastname" */
+export function formatDisplayNameNatural(displayName: string | null): string {
+  if (!displayName) return ''
+  if (!displayName.includes(',')) return displayName
+  const [last, ...rest] = displayName.split(',')
+  return `${rest.join(',').trim()} ${last.trim()}`
+}

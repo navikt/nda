@@ -217,7 +217,7 @@ describe('createAuthMiddleware', () => {
 
   describe('valid token', () => {
     it('calls next() when JWT verification succeeds with user token', async () => {
-      mockJwtVerify.mockResolvedValue({ payload: { sub: 'user', NAVident: 'A123456' } })
+      mockJwtVerify.mockResolvedValue({ payload: { sub: 'user', NAVident: 'Z990001' } })
 
       const req = mockReq({ path: '/dashboard', authorization: 'Bearer valid-token' })
       const res = mockRes()
@@ -274,7 +274,7 @@ describe('createAuthMiddleware', () => {
     })
 
     it('allows tokens without idtyp (user tokens)', async () => {
-      mockJwtVerify.mockResolvedValue({ payload: { NAVident: 'A123456' } })
+      mockJwtVerify.mockResolvedValue({ payload: { NAVident: 'Z990001' } })
 
       const req = mockReq({ path: '/dashboard', authorization: 'Bearer user-token' })
       const res = mockRes()

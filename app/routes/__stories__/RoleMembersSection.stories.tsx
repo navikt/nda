@@ -4,7 +4,7 @@ import { type RoleMember, RoleMembersSection } from '~/components/RoleMembersSec
 const mockRoleMembers: RoleMember[] = [
   {
     id: 1,
-    nav_ident: 'A123456',
+    nav_ident: 'Z990001',
     role: 'produktleder',
     github_username: 'glad-fjord',
     display_name: 'Glad Fjord',
@@ -12,7 +12,7 @@ const mockRoleMembers: RoleMember[] = [
   },
   {
     id: 2,
-    nav_ident: 'B654321',
+    nav_ident: 'Z990002',
     role: 'tech_lead',
     github_username: 'rask-elv',
     display_name: 'Rask Elv',
@@ -20,7 +20,7 @@ const mockRoleMembers: RoleMember[] = [
   },
   {
     id: 3,
-    nav_ident: 'C789012',
+    nav_ident: 'Z990003',
     role: 'utvikler',
     github_username: 'stille-skog',
     display_name: 'Stille Skog',
@@ -28,7 +28,7 @@ const mockRoleMembers: RoleMember[] = [
   },
   {
     id: 4,
-    nav_ident: 'D345678',
+    nav_ident: 'Z990004',
     role: 'utvikler',
     github_username: null,
     display_name: 'Modig Bjørk',
@@ -71,7 +71,7 @@ export const ManyMembers: Story = {
       ...mockRoleMembers,
       {
         id: 5,
-        nav_ident: 'E901234',
+        nav_ident: 'Z990005',
         role: 'utvikler',
         github_username: 'varm-stein',
         display_name: 'Varm Stein',
@@ -79,7 +79,7 @@ export const ManyMembers: Story = {
       },
       {
         id: 6,
-        nav_ident: 'F567890',
+        nav_ident: 'Z990006',
         role: 'utvikler',
         github_username: 'lys-bakke',
         display_name: 'Lys Bakke',
