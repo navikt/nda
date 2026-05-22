@@ -48,6 +48,7 @@ import { requireUser } from '~/lib/auth.server'
 import { isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
+import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
 import styles from '~/styles/common.module.css'
@@ -273,7 +274,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     const githubUsername = isSelfService
       ? (formData.get('github_username') as string)?.trim().toLowerCase() || ''
       : routeUsername.toLowerCase()
-    const navIdentInput = isSelfService ? identity.navIdent : (formData.get('nav_ident') as string) || null
+    const navIdentRaw = isSelfService ? identity.navIdent : formData.get('nav_ident')?.toString().trim() || null
+    const navIdentInput = navIdentRaw?.toUpperCase() || null
 
     const fieldErrors: { github_username?: string; nav_ident?: string } = {}
 
@@ -301,7 +303,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
     try {
       graphResults = await searchGraphUsers(navIdentInput)
-    } catch {
+    } catch (error) {
+      logger.error('Graph API lookup failed during mapping creation', error)
       return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
     }
 
@@ -842,18 +845,20 @@ export default function UserPage() {
                     disabled
                   />
                 )}
-                <UserSearch
-                  label="Søk opp person"
-                  description="Søk med navn, e-post eller NAV-ident for å fylle ut feltene under"
-                  onSelect={() => {}}
-                  onSelectUser={(user) =>
-                    setMappingFields({
-                      display_name: formatDisplayNameNatural(user.displayName),
-                      nav_email: user.email ?? '',
-                      nav_ident: user.navIdent ?? '',
-                    })
-                  }
-                />
+                {!canPrefillOwnMapping && (
+                  <UserSearch
+                    label="Søk opp person"
+                    description="Søk med navn, e-post eller NAV-ident for å fylle ut feltene under"
+                    onSelect={() => {}}
+                    onSelectUser={(user) =>
+                      setMappingFields({
+                        display_name: formatDisplayNameNatural(user.displayName),
+                        nav_email: user.email ?? '',
+                        nav_ident: user.navIdent ?? '',
+                      })
+                    }
+                  />
+                )}
                 <TextField label="Navn" name="display_name" value={mappingFields.display_name} readOnly />
                 <TextField label="Nav e-post" name="nav_email" value={mappingFields.nav_email} readOnly />
                 <TextField
@@ -861,7 +866,6 @@ export default function UserPage() {
                   name="nav_ident"
                   value={mappingFields.nav_ident}
                   readOnly
-                  description="Format: én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
                   error={actionData?.fieldErrors?.nav_ident}
                 />
                 <TextField label="Slack member ID" name="slack_member_id" />
