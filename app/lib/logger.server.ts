@@ -96,7 +96,21 @@ export function logOutgoingHttp(details: {
   error?: string
   [key: string]: unknown
 }): void {
-  logger.info('Outgoing HTTP request', { type: 'outgoing_http', ...details })
+  // type is set last so callers cannot accidentally override it via the index signature
+  logger.info('Outgoing HTTP request', { ...details, type: 'outgoing_http' })
+}
+
+/** Parse host and pathname from a URL that may be a string or URL object. */
+function parseUrl(url: string | URL): { hostname: string; pathname: string } {
+  try {
+    const parsed = new URL(url)
+    return { hostname: parsed.hostname, pathname: parsed.pathname }
+  } catch {
+    // Relative URL or unparseable — log what we can
+    const str = url.toString()
+    const pathOnly = str.split('?')[0]
+    return { hostname: '(relative)', pathname: pathOnly }
+  }
 }
 
 /**
@@ -109,7 +123,7 @@ export async function fetchWithLogging(
   url: string | URL,
   options?: RequestInit,
 ): Promise<Response> {
-  const parsed = new URL(url)
+  const { hostname, pathname } = parseUrl(url)
   const method = (options?.method ?? 'GET').toUpperCase()
   const start = Date.now()
   try {
@@ -117,8 +131,8 @@ export async function fetchWithLogging(
     logOutgoingHttp({
       area,
       method,
-      host: parsed.hostname,
-      path: parsed.pathname,
+      host: hostname,
+      path: pathname,
       status_code: response.status,
       duration_ms: Date.now() - start,
     })
@@ -127,8 +141,8 @@ export async function fetchWithLogging(
     logOutgoingHttp({
       area,
       method,
-      host: parsed.hostname,
-      path: parsed.pathname,
+      host: hostname,
+      path: pathname,
       duration_ms: Date.now() - start,
       error: error instanceof Error ? error.message : 'Network error',
     })

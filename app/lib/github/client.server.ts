@@ -92,6 +92,8 @@ export function getGitHubClient(): Octokit {
         path = path.replace('{base}', (options.base as string).substring(0, 7))
         path = path.replace('{head}', (options.head as string).substring(0, 7))
       }
+      // Strip query string — Octokit may append ?page=N etc.
+      path = path.split('?')[0]
 
       const start = Date.now()
       try {
