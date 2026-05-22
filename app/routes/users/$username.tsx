@@ -47,7 +47,7 @@ import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
 import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
 import { canSearchUsers } from '~/lib/authorization.server'
-import { isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
+import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
@@ -278,9 +278,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     // - Self-service (own nav-ident URL): allow free-form GitHub username, force nav_ident
     // - Other profiles: derive GitHub username from route param, allow free-form nav_ident
     const githubUsername = isSelfService
-      ? (formData.get('github_username') as string)?.trim().toLowerCase() || ''
+      ? getFormString(formData, 'github_username')?.toLowerCase() || ''
       : routeUsername.toLowerCase()
-    const navIdentRaw = isSelfService ? identity.navIdent : formData.get('nav_ident')?.toString().trim() || null
+    const navIdentRaw = isSelfService ? identity.navIdent : getFormString(formData, 'nav_ident') || null
     const navIdentInput = navIdentRaw?.toUpperCase() || null
 
     const fieldErrors: { github_username?: string; nav_ident?: string } = {}
@@ -327,7 +327,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       displayName,
       navEmail,
       navIdent: navIdent,
-      slackMemberId: (formData.get('slack_member_id') as string) || null,
+      slackMemberId: getFormString(formData, 'slack_member_id') || null,
     })
     return redirect(`/users/${githubUsername}`)
   }
