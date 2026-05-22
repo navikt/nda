@@ -21,7 +21,7 @@ function getNaisClient(): GraphQLClient {
 
     client = new GraphQLClient(url, {
       headers,
-      fetch: (reqUrl, options) => fetchWithLogging('nais_graphql', reqUrl as string | URL, options),
+      fetch: (reqUrl, options) => fetchWithLogging('nais_graphql', reqUrl, options),
     })
   }
   return client

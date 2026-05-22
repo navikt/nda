@@ -117,14 +117,17 @@ function parseUrl(url: string | URL): { hostname: string; pathname: string } {
  * Drop-in replacement for `fetch` that logs the request and response as a
  * structured outgoing HTTP entry. Query strings are stripped from the logged
  * path to avoid capturing user-supplied data (e.g. Graph $filter values).
+ * Accepts `RequestInfo | URL` to match the native fetch signature exactly,
+ * including `Request` objects from library adapters (e.g. graphql-request).
  */
 export async function fetchWithLogging(
   area: OutgoingHttpArea,
-  url: string | URL,
+  url: RequestInfo | URL,
   options?: RequestInit,
 ): Promise<Response> {
-  const { hostname, pathname } = parseUrl(url)
-  const method = (options?.method ?? 'GET').toUpperCase()
+  const resolvedUrl = url instanceof Request ? url.url : url
+  const { hostname, pathname } = parseUrl(resolvedUrl)
+  const method = (options?.method ?? (url instanceof Request ? url.method : 'GET')).toUpperCase()
   const start = Date.now()
   try {
     const response = await fetch(url, options)
