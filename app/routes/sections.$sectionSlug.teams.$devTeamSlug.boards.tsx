@@ -5,7 +5,7 @@ import { type Board, getBoardsByDevTeam } from '~/db/boards.server'
 import { getDevTeamBySlug } from '~/db/dev-teams.server'
 import { getSectionBySlug } from '~/db/sections.server'
 import { requireUser } from '~/lib/auth.server'
-import { formatBoardLabel } from '~/lib/board-periods'
+import { BOARD_PERIOD_TYPE_LABELS, formatBoardLabel } from '~/lib/board-periods'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.boards'
 
 export function meta({ data }: Route.MetaArgs) {
@@ -78,7 +78,7 @@ function BoardRow({ board, teamBasePath, teamName }: { board: Board; teamBasePat
       </Table.DataCell>
       <Table.DataCell>
         <Tag variant="neutral" size="small">
-          {board.period_type === 'tertiary' ? 'Tertial' : 'Kvartal'}
+          {BOARD_PERIOD_TYPE_LABELS[board.period_type] ?? board.period_type}
         </Tag>
       </Table.DataCell>
       <Table.DataCell>

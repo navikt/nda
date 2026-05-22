@@ -219,6 +219,7 @@ function CreateBoardForm({ teamName, onCancel }: { teamName: string; onCancel: (
             >
               <option value="tertiary">Tertial</option>
               <option value="quarterly">Kvartal</option>
+              <option value="monthly">Måned</option>
             </Select>
             <Select
               label="Periode"

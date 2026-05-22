@@ -19,12 +19,12 @@ import { Form, useSubmit } from 'react-router'
 import { ObjectiveCard } from '~/components/BoardObjectiveCard'
 import type { ObjectiveWithKeyResults } from '~/db/boards.server'
 import type { BoardObjectiveProgress } from '~/db/dashboard-stats.server'
-import { formatBoardLabel, toDateInputValue } from '~/lib/board-periods'
+import { BOARD_PERIOD_TYPE_LABELS, formatBoardLabel, toDateInputValue } from '~/lib/board-periods'
 
 interface BoardDetailProps {
   devTeam: { name: string }
   board: {
-    period_type: 'tertiary' | 'quarterly'
+    period_type: 'tertiary' | 'quarterly' | 'monthly'
     period_start: string
     period_end: string
     period_label: string
@@ -59,7 +59,7 @@ export function BoardDetailPage({ devTeam, board, objectiveProgress, actionResul
         </Heading>
         <HStack gap="space-8" align="center">
           <Tag variant="neutral" size="small">
-            {board.period_type === 'tertiary' ? 'Tertial' : 'Kvartal'}
+            {BOARD_PERIOD_TYPE_LABELS[board.period_type] ?? board.period_type}
           </Tag>
           <Tag variant={board.is_active ? 'success' : 'neutral'} size="small">
             {board.is_active ? 'Aktiv' : 'Avsluttet'}
