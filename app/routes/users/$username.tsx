@@ -10,6 +10,7 @@ import {
   HGrid,
   Hide,
   HStack,
+  Label,
   Modal,
   Radio,
   RadioGroup,
@@ -859,15 +860,32 @@ export default function UserPage() {
                     }
                   />
                 )}
-                <TextField label="Navn" name="display_name" value={mappingFields.display_name} readOnly />
-                <TextField label="Nav e-post" name="nav_email" value={mappingFields.nav_email} readOnly />
-                <TextField
-                  label="Nav-ident"
-                  name="nav_ident"
-                  value={mappingFields.nav_ident}
-                  readOnly
-                  error={actionData?.fieldErrors?.nav_ident}
-                />
+                {mappingFields.nav_ident && (
+                  <Box background="sunken" padding="space-16" borderRadius="8">
+                    <VStack gap="space-8">
+                      <div>
+                        <Label size="small">Navn</Label>
+                        <BodyShort>{mappingFields.display_name || '–'}</BodyShort>
+                      </div>
+                      <div>
+                        <Label size="small">Nav e-post</Label>
+                        <BodyShort>{mappingFields.nav_email || '–'}</BodyShort>
+                      </div>
+                      <div>
+                        <Label size="small">Nav-ident</Label>
+                        <BodyShort>{mappingFields.nav_ident}</BodyShort>
+                      </div>
+                    </VStack>
+                  </Box>
+                )}
+                <input type="hidden" name="display_name" value={mappingFields.display_name} />
+                <input type="hidden" name="nav_email" value={mappingFields.nav_email} />
+                <input type="hidden" name="nav_ident" value={mappingFields.nav_ident} />
+                {actionData?.fieldErrors?.nav_ident && (
+                  <Alert variant="error" size="small">
+                    {actionData.fieldErrors.nav_ident}
+                  </Alert>
+                )}
                 <TextField label="Slack member ID" name="slack_member_id" />
               </VStack>
             </Form>
