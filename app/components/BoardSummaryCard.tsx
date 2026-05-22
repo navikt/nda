@@ -1,5 +1,6 @@
 import { BodyShort, Detail, HStack, LinkCard, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
+import type { BoardPeriodType } from '~/lib/board-periods'
 import { formatBoardLabel } from '~/lib/board-periods'
 
 /**
@@ -17,7 +18,7 @@ export interface BoardSummaryObjective {
 export interface BoardSummary {
   boardId: number
   periodLabel: string
-  periodType: 'tertiary' | 'quarterly' | 'monthly'
+  periodType: BoardPeriodType
   teamName: string
   teamSlug: string
   sectionSlug: string

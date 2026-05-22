@@ -1,11 +1,12 @@
 import { BodyShort, Box, Detail, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import type { BoardObjectiveProgress } from '~/db/dashboard-stats.server'
+import type { BoardPeriodType } from '~/lib/board-periods'
 
 export interface ActiveBoardData {
   id: number
   period_label: string
-  period_type: 'tertiary' | 'quarterly' | 'monthly'
+  period_type: BoardPeriodType
   period_start: string | Date
   period_end: string | Date
 }
