@@ -45,9 +45,10 @@ import { getAllSectionsWithTeams } from '~/db/sections.server'
 import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
 import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
-import { isValidEmail, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
+import { isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
+import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/$username'
@@ -272,8 +273,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const githubUsername = isSelfService
       ? (formData.get('github_username') as string)?.trim().toLowerCase() || ''
       : routeUsername.toLowerCase()
-    const navEmail = (formData.get('nav_email') as string) || null
-    const navIdent = isSelfService ? identity.navIdent : (formData.get('nav_ident') as string) || null
+    const navIdentInput = isSelfService ? identity.navIdent : (formData.get('nav_ident') as string) || null
 
     const fieldErrors: { github_username?: string; nav_email?: string; nav_ident?: string } = {}
 
@@ -285,13 +285,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       fieldErrors.github_username = 'Kan ikke opprette mapping for GitHub-botkontoer'
     }
 
-    // Validate email format
-    if (navEmail && !isValidEmail(navEmail)) {
-      fieldErrors.nav_email = 'Ugyldig e-postformat'
-    }
-
-    // Validate Nav-ident format (one letter followed by 6 digits)
-    if (navIdent && !isValidNavIdent(navIdent)) {
+    if (navIdentInput && !isValidNavIdent(navIdentInput)) {
       fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer (f.eks. A123456)'
     }
 
@@ -299,11 +293,23 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { fieldErrors }
     }
 
+    // Fetch user data from Graph API to ensure display_name and nav_email are authoritative
+    let displayName: string | null = null
+    let navEmail: string | null = null
+    if (navIdentInput) {
+      const graphResults = await searchGraphUsers(navIdentInput)
+      const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdentInput.toUpperCase())
+      if (graphUser) {
+        displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
+        navEmail = graphUser.email ?? null
+      }
+    }
+
     await upsertUserMapping({
       githubUsername,
-      displayName: (formData.get('display_name') as string) || null,
+      displayName,
       navEmail,
-      navIdent,
+      navIdent: navIdentInput,
       slackMemberId: (formData.get('slack_member_id') as string) || null,
     })
     return redirect(`/users/${githubUsername}`)
@@ -840,24 +846,19 @@ export default function UserPage() {
                     })
                   }
                 />
-                <TextField
-                  label="Navn"
-                  name="display_name"
-                  value={mappingFields.display_name}
-                  onChange={(e) => setMappingFields((prev) => ({ ...prev, display_name: e.target.value }))}
-                />
+                <TextField label="Navn" name="display_name" value={mappingFields.display_name} readOnly />
                 <TextField
                   label="Nav e-post"
                   name="nav_email"
                   value={mappingFields.nav_email}
-                  onChange={(e) => setMappingFields((prev) => ({ ...prev, nav_email: e.target.value }))}
+                  readOnly
                   error={actionData?.fieldErrors?.nav_email}
                 />
                 <TextField
                   label="Nav-ident"
                   name="nav_ident"
                   value={mappingFields.nav_ident}
-                  onChange={(e) => setMappingFields((prev) => ({ ...prev, nav_ident: e.target.value }))}
+                  readOnly
                   description="Format: én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
                   error={actionData?.fieldErrors?.nav_ident}
                 />
