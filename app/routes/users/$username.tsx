@@ -878,8 +878,6 @@ export default function UserPage() {
                     </VStack>
                   </Box>
                 )}
-                <input type="hidden" name="display_name" value={mappingFields.display_name} />
-                <input type="hidden" name="nav_email" value={mappingFields.nav_email} />
                 <input type="hidden" name="nav_ident" value={mappingFields.nav_ident} />
                 {actionData?.fieldErrors?.nav_ident && (
                   <Alert variant="error" size="small">
