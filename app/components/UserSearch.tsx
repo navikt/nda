@@ -7,6 +7,8 @@ interface UserSearchProps {
   label?: string
   /** Called when a user is selected. Receives the NAV-ident. */
   onSelect: (navIdent: string) => void
+  /** Called with the full user result when a user is selected */
+  onSelectUser?: (user: GraphUserResult) => void
   /** Called when the selection is cleared */
   onClear?: () => void
   /** Change this value to reset the component (clears input and selection) */
@@ -19,7 +21,14 @@ interface UserSearchProps {
  * User search component that queries Microsoft Graph API.
  * Searches by name, email, or NAV-ident and shows matching results.
  */
-export function UserSearch({ label = 'Søk etter bruker', onSelect, onClear, resetKey, description }: UserSearchProps) {
+export function UserSearch({
+  label = 'Søk etter bruker',
+  onSelect,
+  onSelectUser,
+  onClear,
+  resetKey,
+  description,
+}: UserSearchProps) {
   const [results, setResults] = useState<GraphUserResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -94,6 +103,8 @@ export function UserSearch({ label = 'Søk etter bruker', onSelect, onClear, res
       onToggleSelected={(value, isSelected) => {
         if (isSelected) {
           onSelect(value)
+          const user = results.find((r) => r.navIdent === value)
+          if (user) onSelectUser?.(user)
         } else {
           onClear?.()
         }

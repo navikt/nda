@@ -26,6 +26,7 @@ import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserRolesDisplay } from '~/components/UserRolesDisplay'
+import { UserSearch } from '~/components/UserSearch'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import {
   bulkAddDeploymentGoalLinks,
@@ -346,6 +347,11 @@ export default function UserPage() {
   const selectLinkRef = useRef<HTMLDialogElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [mappingFields, setMappingFields] = useState({
+    display_name: '',
+    nav_email: '',
+    nav_ident: canPrefillOwnMapping ? (loggedInNavIdent ?? '') : '',
+  })
 
   const updateFilter = (key: string, value: string, defaultValue: string) => {
     const params = new URLSearchParams(searchParams)
@@ -822,12 +828,36 @@ export default function UserPage() {
                     disabled
                   />
                 )}
-                <TextField label="Navn" name="display_name" />
-                <TextField label="Nav e-post" name="nav_email" error={actionData?.fieldErrors?.nav_email} />
+                <UserSearch
+                  label="Søk opp person"
+                  description="Søk med navn, e-post eller NAV-ident for å fylle ut feltene under"
+                  onSelect={() => {}}
+                  onSelectUser={(user) =>
+                    setMappingFields({
+                      display_name: formatDisplayNameNatural(user.displayName),
+                      nav_email: user.email ?? '',
+                      nav_ident: user.navIdent ?? '',
+                    })
+                  }
+                />
+                <TextField
+                  label="Navn"
+                  name="display_name"
+                  value={mappingFields.display_name}
+                  onChange={(e) => setMappingFields((prev) => ({ ...prev, display_name: e.target.value }))}
+                />
+                <TextField
+                  label="Nav e-post"
+                  name="nav_email"
+                  value={mappingFields.nav_email}
+                  onChange={(e) => setMappingFields((prev) => ({ ...prev, nav_email: e.target.value }))}
+                  error={actionData?.fieldErrors?.nav_email}
+                />
                 <TextField
                   label="Nav-ident"
                   name="nav_ident"
-                  defaultValue={canPrefillOwnMapping ? (loggedInNavIdent ?? '') : ''}
+                  value={mappingFields.nav_ident}
+                  onChange={(e) => setMappingFields((prev) => ({ ...prev, nav_ident: e.target.value }))}
                   description="Format: én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
                   error={actionData?.fieldErrors?.nav_ident}
                 />
@@ -871,4 +901,12 @@ export default function UserPage() {
       )}
     </VStack>
   )
+}
+
+/** Convert "Lastname, Firstname" to "Firstname Lastname" */
+function formatDisplayNameNatural(displayName: string | null): string {
+  if (!displayName) return ''
+  if (!displayName.includes(',')) return displayName
+  const [last, ...rest] = displayName.split(',')
+  return `${rest.join(',').trim()} ${last.trim()}`
 }
