@@ -271,7 +271,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const isSelfService = routeUsername.toUpperCase() === identity.navIdent.toUpperCase()
 
     if (!isSelfService && !(await canSearchUsers(identity))) {
-      return { error: 'Du har ikke tilgang til å opprette mapping for andre brukere' }
+      return { fieldErrors: { nav_ident: 'Du har ikke tilgang til å opprette mapping for andre brukere' } }
     }
 
     // Server-side ownership enforcement:
