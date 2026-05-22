@@ -10,6 +10,7 @@ import {
   HGrid,
   Hide,
   HStack,
+  Label,
   Modal,
   Radio,
   RadioGroup,
@@ -45,9 +46,12 @@ import { getAllSectionsWithTeams } from '~/db/sections.server'
 import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
 import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
-import { isValidEmail, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
+import { canSearchUsers } from '~/lib/authorization.server'
+import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
+import { logger } from '~/lib/logger.server'
+import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/$username'
@@ -266,16 +270,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     const routeUsername = params.username || ''
     const isSelfService = routeUsername.toUpperCase() === identity.navIdent.toUpperCase()
 
+    if (!isSelfService && !(await canSearchUsers(identity))) {
+      return { fieldErrors: { nav_ident: 'Du har ikke tilgang til å opprette mapping for andre brukere' } }
+    }
+
     // Server-side ownership enforcement:
     // - Self-service (own nav-ident URL): allow free-form GitHub username, force nav_ident
     // - Other profiles: derive GitHub username from route param, allow free-form nav_ident
     const githubUsername = isSelfService
-      ? (formData.get('github_username') as string)?.trim().toLowerCase() || ''
+      ? getFormString(formData, 'github_username')?.toLowerCase() || ''
       : routeUsername.toLowerCase()
-    const navEmail = (formData.get('nav_email') as string) || null
-    const navIdent = isSelfService ? identity.navIdent : (formData.get('nav_ident') as string) || null
+    const navIdentRaw = isSelfService ? identity.navIdent : getFormString(formData, 'nav_ident') || null
+    const navIdentInput = navIdentRaw?.toUpperCase() || null
 
-    const fieldErrors: { github_username?: string; nav_email?: string; nav_ident?: string } = {}
+    const fieldErrors: { github_username?: string; nav_ident?: string } = {}
 
     if (!githubUsername) {
       fieldErrors.github_username = 'GitHub brukernavn er påkrevd'
@@ -285,13 +293,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       fieldErrors.github_username = 'Kan ikke opprette mapping for GitHub-botkontoer'
     }
 
-    // Validate email format
-    if (navEmail && !isValidEmail(navEmail)) {
-      fieldErrors.nav_email = 'Ugyldig e-postformat'
-    }
-
-    // Validate Nav-ident format (one letter followed by 6 digits)
-    if (navIdent && !isValidNavIdent(navIdent)) {
+    if (!navIdentInput) {
+      fieldErrors.nav_ident = 'NAV-ident er påkrevd'
+    } else if (!isValidNavIdent(navIdentInput)) {
       fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer (f.eks. A123456)'
     }
 
@@ -299,12 +303,31 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { fieldErrors }
     }
 
+    // Fetch user data from Graph API to ensure display_name and nav_email are authoritative
+    // navIdentInput is guaranteed non-null here (validated above)
+    const navIdent = navIdentInput as string
+    let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
+    try {
+      graphResults = await searchGraphUsers(navIdent)
+    } catch (error) {
+      logger.error('Graph API lookup failed during mapping creation', error)
+      return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
+    }
+
+    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
+    if (!graphUser) {
+      return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
+    }
+
+    const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
+    const navEmail = graphUser.email ?? null
+
     await upsertUserMapping({
       githubUsername,
-      displayName: (formData.get('display_name') as string) || null,
+      displayName,
       navEmail,
-      navIdent,
-      slackMemberId: (formData.get('slack_member_id') as string) || null,
+      navIdent: navIdent,
+      slackMemberId: getFormString(formData, 'slack_member_id') || null,
     })
     return redirect(`/users/${githubUsername}`)
   }
@@ -828,39 +851,44 @@ export default function UserPage() {
                     disabled
                   />
                 )}
-                <UserSearch
-                  label="Søk opp person"
-                  description="Søk med navn, e-post eller NAV-ident for å fylle ut feltene under"
-                  onSelect={() => {}}
-                  onSelectUser={(user) =>
-                    setMappingFields({
-                      display_name: formatDisplayNameNatural(user.displayName),
-                      nav_email: user.email ?? '',
-                      nav_ident: user.navIdent ?? '',
-                    })
-                  }
-                />
-                <TextField
-                  label="Navn"
-                  name="display_name"
-                  value={mappingFields.display_name}
-                  onChange={(e) => setMappingFields((prev) => ({ ...prev, display_name: e.target.value }))}
-                />
-                <TextField
-                  label="Nav e-post"
-                  name="nav_email"
-                  value={mappingFields.nav_email}
-                  onChange={(e) => setMappingFields((prev) => ({ ...prev, nav_email: e.target.value }))}
-                  error={actionData?.fieldErrors?.nav_email}
-                />
-                <TextField
-                  label="Nav-ident"
-                  name="nav_ident"
-                  value={mappingFields.nav_ident}
-                  onChange={(e) => setMappingFields((prev) => ({ ...prev, nav_ident: e.target.value }))}
-                  description="Format: én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
-                  error={actionData?.fieldErrors?.nav_ident}
-                />
+                {!canPrefillOwnMapping && (
+                  <UserSearch
+                    label="Søk opp person"
+                    description="Søk med navn, e-post eller NAV-ident for å fylle ut feltene under"
+                    onSelect={() => {}}
+                    onSelectUser={(user) =>
+                      setMappingFields({
+                        display_name: formatDisplayNameNatural(user.displayName),
+                        nav_email: user.email ?? '',
+                        nav_ident: user.navIdent ?? '',
+                      })
+                    }
+                  />
+                )}
+                {mappingFields.nav_ident && (
+                  <Box background="sunken" padding="space-16" borderRadius="8">
+                    <VStack gap="space-8">
+                      <div>
+                        <Label size="small">Navn</Label>
+                        <BodyShort>{mappingFields.display_name || '–'}</BodyShort>
+                      </div>
+                      <div>
+                        <Label size="small">Nav e-post</Label>
+                        <BodyShort>{mappingFields.nav_email || '–'}</BodyShort>
+                      </div>
+                      <div>
+                        <Label size="small">Nav-ident</Label>
+                        <BodyShort>{mappingFields.nav_ident}</BodyShort>
+                      </div>
+                    </VStack>
+                  </Box>
+                )}
+                <input type="hidden" name="nav_ident" value={mappingFields.nav_ident} />
+                {actionData?.fieldErrors?.nav_ident && (
+                  <Alert variant="error" size="small">
+                    {actionData.fieldErrors.nav_ident}
+                  </Alert>
+                )}
                 <TextField label="Slack member ID" name="slack_member_id" />
               </VStack>
             </Form>
