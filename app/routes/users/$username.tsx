@@ -275,7 +275,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       : routeUsername.toLowerCase()
     const navIdentInput = isSelfService ? identity.navIdent : (formData.get('nav_ident') as string) || null
 
-    const fieldErrors: { github_username?: string; nav_email?: string; nav_ident?: string } = {}
+    const fieldErrors: { github_username?: string; nav_ident?: string } = {}
 
     if (!githubUsername) {
       fieldErrors.github_username = 'GitHub brukernavn er påkrevd'
@@ -855,13 +855,7 @@ export default function UserPage() {
                   }
                 />
                 <TextField label="Navn" name="display_name" value={mappingFields.display_name} readOnly />
-                <TextField
-                  label="Nav e-post"
-                  name="nav_email"
-                  value={mappingFields.nav_email}
-                  readOnly
-                  error={actionData?.fieldErrors?.nav_email}
-                />
+                <TextField label="Nav e-post" name="nav_email" value={mappingFields.nav_email} readOnly />
                 <TextField
                   label="Nav-ident"
                   name="nav_ident"
