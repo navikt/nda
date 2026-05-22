@@ -78,7 +78,7 @@ function BoardRow({ board, teamBasePath, teamName }: { board: Board; teamBasePat
       </Table.DataCell>
       <Table.DataCell>
         <Tag variant="neutral" size="small">
-          {BOARD_PERIOD_TYPE_LABELS[board.period_type as keyof typeof BOARD_PERIOD_TYPE_LABELS] ?? board.period_type}
+          {BOARD_PERIOD_TYPE_LABELS[board.period_type] ?? board.period_type}
         </Tag>
       </Table.DataCell>
       <Table.DataCell>
