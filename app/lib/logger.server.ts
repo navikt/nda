@@ -75,6 +75,67 @@ function logToDb(level: 'info' | 'warn' | 'error' | 'debug', message: string, de
   logSyncJobMessage(ctx.jobId, level, stripEmoji(message), details).catch(() => {})
 }
 
+// =============================================================================
+// Outgoing HTTP Logging
+// =============================================================================
+
+type OutgoingHttpArea = 'github' | 'slack' | 'microsoft_graph' | 'nais_auth' | 'nais_graphql'
+
+/**
+ * Log a structured entry for an outgoing HTTP request.
+ * Always sets type: 'outgoing_http' — use this field in ELK to filter all outgoing calls.
+ * Query strings are never included in `path` to avoid logging user data.
+ */
+export function logOutgoingHttp(details: {
+  area: OutgoingHttpArea
+  method: string
+  host: string
+  path: string
+  status_code?: number
+  duration_ms?: number
+  error?: string
+  [key: string]: unknown
+}): void {
+  logger.info('Outgoing HTTP request', { type: 'outgoing_http', ...details })
+}
+
+/**
+ * Drop-in replacement for `fetch` that logs the request and response as a
+ * structured outgoing HTTP entry. Query strings are stripped from the logged
+ * path to avoid capturing user-supplied data (e.g. Graph $filter values).
+ */
+export async function fetchWithLogging(
+  area: OutgoingHttpArea,
+  url: string | URL,
+  options?: RequestInit,
+): Promise<Response> {
+  const parsed = new URL(url)
+  const method = (options?.method ?? 'GET').toUpperCase()
+  const start = Date.now()
+  try {
+    const response = await fetch(url, options)
+    logOutgoingHttp({
+      area,
+      method,
+      host: parsed.hostname,
+      path: parsed.pathname,
+      status_code: response.status,
+      duration_ms: Date.now() - start,
+    })
+    return response
+  } catch (error) {
+    logOutgoingHttp({
+      area,
+      method,
+      host: parsed.hostname,
+      path: parsed.pathname,
+      duration_ms: Date.now() - start,
+      error: error instanceof Error ? error.message : 'Network error',
+    })
+    throw error
+  }
+}
+
 export const logger = {
   info(message: string, details?: Record<string, unknown>) {
     winstonLogger.info(message, { trace_id: getTraceId(), ...details, ...getJobMeta() })

@@ -5,7 +5,7 @@
  * Requires the application permission User.Read.All with admin consent.
  */
 
-import { logger } from '~/lib/logger.server'
+import { fetchWithLogging, logger } from '~/lib/logger.server'
 
 interface GraphToken {
   access_token: string
@@ -41,7 +41,7 @@ async function getAccessToken(): Promise<string> {
     throw new Error('NAIS_TOKEN_ENDPOINT is not configured')
   }
 
-  const response = await fetch(tokenEndpoint, {
+  const response = await fetchWithLogging('microsoft_graph', tokenEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -110,7 +110,7 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
 }
 
 async function fetchGraphUsers(url: string, headers: Record<string, string>): Promise<GraphUserResult[]> {
-  const response = await fetch(url, { headers })
+  const response = await fetchWithLogging('microsoft_graph', url, { headers })
 
   if (!response.ok) {
     logger.error('Graph API user search failed', { status: response.status })

@@ -1,5 +1,5 @@
 import { GraphQLClient } from 'graphql-request'
-import { logger } from '~/lib/logger.server'
+import { logger, logOutgoingHttp } from '~/lib/logger.server'
 
 let client: GraphQLClient | null = null
 let requestCount = 0
@@ -9,6 +9,7 @@ function getNaisClient(): GraphQLClient {
     const baseUrl = process.env.NAIS_GRAPHQL_URL || 'http://localhost:4242'
     // Ensure we're pointing to the GraphQL endpoint, not the playground
     const url = baseUrl.endsWith('/graphql') ? baseUrl : `${baseUrl}/graphql`
+    const parsed = new URL(url)
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -24,7 +25,13 @@ function getNaisClient(): GraphQLClient {
       headers,
       requestMiddleware: (request) => {
         requestCount++
-        logger.info(`🌐 [Nais #${requestCount}] POST ${url}`)
+        logOutgoingHttp({
+          area: 'nais_graphql',
+          method: 'POST',
+          host: parsed.hostname,
+          path: parsed.pathname,
+          request_number: requestCount,
+        })
         return request
       },
     })

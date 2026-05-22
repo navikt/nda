@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('~/lib/logger.server', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+  fetchWithLogging: async (_area: string, url: string | URL, options?: RequestInit) => fetch(url, options),
+  logOutgoingHttp: vi.fn(),
 }))
 
 import { requireM2MToken } from '../m2m-auth.server'
