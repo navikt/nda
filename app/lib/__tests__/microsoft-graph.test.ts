@@ -125,20 +125,20 @@ describe('microsoft-graph', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const searchGraphUsers = await getSearchFn()
-    await searchGraphUsers('Ola "Nordmann\\ test')
+    await searchGraphUsers('Glad "Fjord\\ test')
 
-    // Multi-word: token call + single search call (shortest word = "Ola")
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
-    expect(url).toContain('"displayName:Ola"')
-    expect(url).toContain('$top=100')
+    // Quotes and backslashes stripped, implicit AND via multiple displayName clauses
+    expect(url).toContain('"displayName:Glad"')
+    expect(url).toContain('"displayName:Fjord"')
+    expect(url).toContain('"displayName:test"')
   })
 
-  it('filters multi-word results to only users matching all words', async () => {
+  it('uses implicit AND for multi-word name searches', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(mockTokenResponse())
-      // Results for shortest word "Røe" (3 chars vs "Modig" 5 chars)
       .mockResolvedValueOnce(
         mockGraphResponse([
           {
@@ -147,12 +147,6 @@ describe('microsoft-graph', () => {
             onPremisesSamAccountName: 'D111222',
             userPrincipalName: 'modig.roe@nav.no',
           },
-          {
-            displayName: 'Røe, Stille',
-            mail: 'stille.roe@nav.no',
-            onPremisesSamAccountName: 'E333444',
-            userPrincipalName: 'stille.roe@nav.no',
-          },
         ]),
       )
     vi.stubGlobal('fetch', fetchMock)
@@ -160,12 +154,13 @@ describe('microsoft-graph', () => {
     const searchGraphUsers = await getSearchFn()
     const results = await searchGraphUsers('Modig Røe')
 
-    // Only user matching ALL words in displayName is returned
     expect(results).toEqual([{ displayName: 'Røe, Modig', email: 'modig.roe@nav.no', navIdent: 'D111222' }])
 
-    // Searched with shortest word "Røe" (3 chars)
+    // Both words sent as separate displayName clauses (implicit AND)
     const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
+    expect(url).toContain('"displayName:Modig"')
     expect(url).toContain('"displayName:Røe"')
+    expect(url).toContain('$top=10')
   })
 
   it('returns empty array for empty or short query', async () => {

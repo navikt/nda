@@ -101,33 +101,12 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
     return fetchGraphUsers(url, headers)
   }
 
-  // Name search: Graph $search does word-boundary prefix matching.
-  // AND/OR operators are not supported for directory objects.
-  // Strategy: search the least-common word (shortest is heuristic for surnames)
-  // with high $top, then filter client-side for all words.
+  // Name search: Graph $search supports implicit AND between clauses.
+  // "displayName:word1 displayName:word2" matches users with ALL words in displayName.
   const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
-
-  if (words.length === 1) {
-    const search = `"displayName:${words[0]}"`
-    const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=10`
-    return fetchGraphUsers(url, headers)
-  }
-
-  // Multi-word: search with the shortest word (likely surname, more distinctive)
-  // and filter results client-side to match ALL words.
-  const sortedByLength = [...words].sort((a, b) => a.length - b.length)
-  const searchWord = sortedByLength[0]
-  const search = `"displayName:${searchWord}"`
-  const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=100`
-  const results = await fetchGraphUsers(url, headers)
-
-  // Filter to only users whose displayName contains ALL search words (prefix match per word)
-  const filtered = results.filter((user) => {
-    const name = (user.displayName ?? '').toLowerCase()
-    return words.every((w) => name.includes(w.toLowerCase()))
-  })
-
-  return filtered.slice(0, 10)
+  const search = words.map((w) => `"displayName:${w}"`).join(' ')
+  const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=10`
+  return fetchGraphUsers(url, headers)
 }
 
 async function fetchGraphUsers(url: string, headers: Record<string, string>): Promise<GraphUserResult[]> {
