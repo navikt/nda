@@ -46,6 +46,7 @@ import { getAllSectionsWithTeams } from '~/db/sections.server'
 import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
 import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
+import { canSearchUsers } from '~/lib/authorization.server'
 import { isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
@@ -268,6 +269,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === 'create-mapping') {
     const routeUsername = params.username || ''
     const isSelfService = routeUsername.toUpperCase() === identity.navIdent.toUpperCase()
+
+    if (!isSelfService && !(await canSearchUsers(identity))) {
+      return { error: 'Du har ikke tilgang til å opprette mapping for andre brukere' }
+    }
 
     // Server-side ownership enforcement:
     // - Self-service (own nav-ident URL): allow free-form GitHub username, force nav_ident
