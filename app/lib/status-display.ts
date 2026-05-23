@@ -32,7 +32,7 @@ export function getFourEyesStatus(deployment: any): {
       }
     case 'unverified_commits':
       return {
-        text: 'Ikke-verifiserte commits',
+        text: 'Ikke-godkjente commits',
         variant: 'error',
         description: 'Deploymentet inneholder endringer som ikke er verifisert av en annen person.',
       }

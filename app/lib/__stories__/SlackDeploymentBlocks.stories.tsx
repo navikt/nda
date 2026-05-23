@@ -12,14 +12,14 @@ export default meta
 type Story = StoryObj<typeof SlackBlockPreview>
 
 export const Unverified: Story = {
-  name: '⚠️ Uverifisert (med PR)',
+  name: '⚠️ Ikke godkjent (med PR)',
   args: {
     blocks: buildDeploymentBlocks(deploymentFixtures.unverified),
   },
 }
 
 export const UnverifiedWithoutPr: Story = {
-  name: '⚠️ Uverifisert (uten PR)',
+  name: '⚠️ Ikke godkjent (uten PR)',
   args: {
     blocks: buildDeploymentBlocks(deploymentFixtures.unverifiedWithoutPr),
   },

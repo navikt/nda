@@ -44,7 +44,7 @@ export const StatusTagDirectPush: Story = {
 }
 
 export const StatusTagUnverifiedCommits: Story = {
-  name: 'StatusTag - Uverifiserte commits',
+  name: 'StatusTag - Ikke-godkjente commits',
   render: () => <StatusTag four_eyes_status="unverified_commits" />,
 }
 

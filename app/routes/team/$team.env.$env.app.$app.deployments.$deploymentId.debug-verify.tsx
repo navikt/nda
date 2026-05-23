@@ -267,7 +267,10 @@ function DebugResultView({
             </Heading>
             <DataRow label="Status" value={existingStatus.status || 'null'} />
             <DataRow label="PR nummer" value={existingStatus.prNumber?.toString() || 'null'} />
-            <DataRow label="Uverifiserte commits" value={existingStatus.unverifiedCommits?.length?.toString() || '0'} />
+            <DataRow
+              label="Ikke-godkjente commits"
+              value={existingStatus.unverifiedCommits?.length?.toString() || '0'}
+            />
           </VStack>
         </Box>
 
@@ -279,7 +282,7 @@ function DebugResultView({
             </Heading>
             <DataRow label="Status" value={newResult.status} highlight={comparison.statusChanged} />
             <DataRow label="PR nummer" value={newResult.deployedPr?.number?.toString() || 'null'} />
-            <DataRow label="Uverifiserte commits" value={newResult.unverifiedCommits.length.toString()} />
+            <DataRow label="Ikke-godkjente commits" value={newResult.unverifiedCommits.length.toString()} />
             <DataRow label="Approval method" value={newResult.approvalDetails.method || 'null'} />
             <DataRow label="Approval reason" value={newResult.approvalDetails.reason} />
           </VStack>
@@ -476,7 +479,7 @@ function DebugResultView({
           {newResult.unverifiedCommits.length > 0 && (
             <VStack gap="space-2">
               <Heading size="xsmall" level="3">
-                Uverifiserte commits
+                Ikke-godkjente commits
               </Heading>
               {newResult.unverifiedCommits.map((commit) => (
                 <Box key={commit.sha} padding="space-2" background="danger-soft" borderRadius="4">

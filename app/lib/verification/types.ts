@@ -102,7 +102,7 @@ export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number]
 const _VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   approved: 'Godkjent',
   implicitly_approved: 'Implisitt godkjent',
-  unverified_commits: 'Ikke verifisert',
+  unverified_commits: 'Ikke godkjent',
   pending_baseline: 'Første deployment - venter',
   no_changes: 'Ingen endringer',
   manually_approved: 'Manuelt godkjent',

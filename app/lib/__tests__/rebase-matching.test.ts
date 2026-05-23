@@ -150,7 +150,7 @@ const NON_MATCHING_COMMITS = [
 ]
 
 // Test Case 2: Normal Merge with extra commits (PR #2156 - pensjon-psak)
-// Merge-commit should be detected as NOT part of PR-commits → "Ikke-verifiserte commits"
+// Merge-commit should be detected as NOT part of PR-commits → "Ikke-godkjente commits"
 const PR_2156_METADATA = {
   number: 2156,
   base_sha: 'e3a7e8bbb8e698f08742525a7530d08400ef3a57',

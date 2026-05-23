@@ -25,7 +25,7 @@ describe('DeploymentDetail story baseline characterization', () => {
   it('NotApproved story keeps admin action panel visible', () => {
     const html = renderToStaticMarkup(<NotApproved />)
 
-    expect(html).toContain('Uverifiserte commits')
+    expect(html).toContain('Ikke-godkjente commits')
     expect(html).toContain('Admin-handlinger')
     expect(html).toContain('Re-verifiser')
     expect(html).toContain('Godkjenn manuelt')

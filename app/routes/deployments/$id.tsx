@@ -894,10 +894,10 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           filteredUnverifiedCommits.length > 0 && (
             <Alert variant="error">
               <Heading size="small" level="3" spacing>
-                Ikke-verifiserte commits ({filteredUnverifiedCommits.length})
+                Ikke-godkjente commits ({filteredUnverifiedCommits.length})
               </Heading>
               <BodyShort spacing>
-                Følgende commits mangler verifisering av fire-øyne-prinsippet.
+                Følgende commits mangler godkjenning etter fire-øyne-prinsippet.
                 {previousDeploymentForDiff?.commit_sha && deployment.commit_sha && (
                   <>
                     {' '}

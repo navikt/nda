@@ -834,7 +834,7 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
         <Page size="A4" style={styles.page}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>
-              Ikke-verifiserte commits ({reportData.unverified_commit_deployments.length} deployments)
+              Ikke-godkjente commits ({reportData.unverified_commit_deployments.length} deployments)
             </Text>
             <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>
               Følgende deployments inneholdt commits som ikke har godkjent pull request. Deployments som er manuelt
@@ -865,7 +865,7 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
                       : '✗ Ikke godkjent etter fire-øyne-prinsippet'}
                   </Text>
                   <Text style={[styles.manualDetail, { marginTop: 4, fontWeight: 600 }]}>
-                    Ikke-verifiserte commits ({entry.commits.length}):
+                    Ikke-godkjente commits ({entry.commits.length}):
                   </Text>
                   {entry.commits.map((commit) => (
                     <View key={commit.sha} style={{ marginLeft: 10, marginBottom: 3 }}>

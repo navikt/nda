@@ -23,7 +23,7 @@ describe('getFourEyesStatus — maps deployment status to user-visible label, va
     { status: 'no_changes', expectedText: 'Ingen endringer', expectedVariant: 'success' },
     {
       status: 'unverified_commits',
-      expectedText: 'Ikke-verifiserte commits',
+      expectedText: 'Ikke-godkjente commits',
       expectedVariant: 'error',
     },
     {

@@ -132,7 +132,7 @@ export function getStatusEmoji(status: DeploymentNotification['status']): string
 function getStatusText(status: DeploymentNotification['status']): string {
   switch (status) {
     case 'unverified':
-      return 'Uverifisert'
+      return 'Ikke godkjent'
     case 'pending_approval':
       return 'Venter på godkjenning'
     case 'approved':

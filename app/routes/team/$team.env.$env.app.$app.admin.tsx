@@ -427,7 +427,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                   Slack-varsler
                 </Heading>
                 <BodyShort textColor="subtle" size="small">
-                  Konfigurer Slack-varsler for uverifiserte deployments.
+                  Konfigurer Slack-varsler for ikke-godkjente deployments.
                 </BodyShort>
               </div>
             </HStack>
