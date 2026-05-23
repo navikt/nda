@@ -1,21 +1,10 @@
 import { DownloadIcon, PlusIcon, UploadIcon } from '@navikt/aksel-icons'
-import {
-  Alert,
-  BodyShort,
-  Box,
-  Button,
-  Detail,
-  Heading,
-  HStack,
-  Modal,
-  Show,
-  TextField,
-  VStack,
-} from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, Heading, HStack, Modal, Show, TextField, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
-import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router'
+import { Form, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { CreateMappingModal } from '~/components/CreateMappingModal'
+import { UnmappedUsersList } from '~/components/UnmappedUsersList'
 import { UserMappingCard } from '~/components/UserMappingCard'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
@@ -32,7 +21,6 @@ import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
-import styles from '~/styles/common.module.css'
 import type { Route } from './+types/users'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -342,40 +330,7 @@ export default function AdminUsers() {
         )}
 
         {/* Unmapped users section at bottom */}
-        {unmappedUsers.length > 0 && (
-          <VStack gap="space-16">
-            <Heading level="2" size="medium">
-              GitHub-brukere uten mapping ({unmappedUsers.length})
-            </Heading>
-            <div>
-              {unmappedUsers.map((user) => (
-                <Box
-                  key={user.github_username}
-                  padding="space-16"
-                  background="raised"
-                  className={styles.stackedListItem}
-                >
-                  <HStack justify="space-between" align="center">
-                    <HStack gap="space-12" align="center">
-                      <Link to={`/users/${user.github_username}`}>
-                        <BodyShort weight="semibold">{user.github_username}</BodyShort>
-                      </Link>
-                      <Detail textColor="subtle">{user.deployment_count} deployments</Detail>
-                    </HStack>
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      icon={<PlusIcon aria-hidden />}
-                      onClick={() => openAddWithUsername(user.github_username)}
-                    >
-                      <Show above="sm">Legg til mapping</Show>
-                    </Button>
-                  </HStack>
-                </Box>
-              ))}
-            </div>
-          </VStack>
-        )}
+        <UnmappedUsersList users={unmappedUsers} onAddMapping={openAddWithUsername} />
 
         {/* Add Modal */}
         <CreateMappingModal
