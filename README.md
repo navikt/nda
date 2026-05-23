@@ -229,7 +229,7 @@ Eksempel på logginnslag:
   "@timestamp": "2026-05-23T08:00:01.234Z",
   "level": "info",
   "message": "Outgoing HTTP request",
-  "type": "outgoing_http",
+  "log_type": "outgoing_http",
   "area": "github",
   "method": "GET",
   "host": "api.github.com",
@@ -245,7 +245,7 @@ Felter for utgående HTTP:
 
 | Felt | Beskrivelse |
 |------|-------------|
-| `type` | Alltid `outgoing_http` |
+| `log_type` | Alltid `outgoing_http` |
 | `area` | Funksjonelt område: `github`, `slack`, `microsoft_graph`, `nais_auth`, `nais_graphql` |
 | `method` | HTTP-metode: `GET`, `POST` osv. |
 | `host` | Hostnavn uten protokoll og sti |
@@ -258,19 +258,19 @@ Felter for utgående HTTP:
 
 ```
 # Alle utgående HTTP-kall
-type: "outgoing_http"
+log_type: "outgoing_http"
 
 # Kun GitHub-kall
-type: "outgoing_http" AND area: "github"
+log_type: "outgoing_http" AND area: "github"
 
 # Feilede kall (HTTP 4xx/5xx)
-type: "outgoing_http" AND status_code >= 400
+log_type: "outgoing_http" AND status_code >= 400
 
 # Trege kall (over 1 sekund)
-type: "outgoing_http" AND duration_ms > 1000
+log_type: "outgoing_http" AND duration_ms > 1000
 
 # Kall knyttet til en synkjobb
-type: "outgoing_http" AND job_id: 42
+log_type: "outgoing_http" AND job_id: 42
 
 # Alle loggmeldinger for én request
 trace_id: "abc123"
@@ -280,21 +280,21 @@ trace_id: "abc123"
 
 ```logql
 # Alle utgående HTTP-kall
-{app="nda"} | json | type="outgoing_http"
+{app="nda"} | json | log_type="outgoing_http"
 
 # Kun GitHub-kall
-{app="nda"} | json | type="outgoing_http" | area="github"
+{app="nda"} | json | log_type="outgoing_http" | area="github"
 
 # Feilede kall
-{app="nda"} | json | type="outgoing_http" | status_code >= 400
+{app="nda"} | json | log_type="outgoing_http" | status_code >= 400
 
 # Trege kall (over 1 sekund) med path og svartid
-{app="nda"} | json | type="outgoing_http" | duration_ms > 1000
+{app="nda"} | json | log_type="outgoing_http" | duration_ms > 1000
   | line_format "{{.area}} {{.method}} {{.path}} → {{.status_code}} ({{.duration_ms}}ms)"
 
 # Rate av utgående kall per area (per minutt)
 sum by (area) (
-  rate({app="nda"} | json | type="outgoing_http" [1m])
+  rate({app="nda"} | json | log_type="outgoing_http" [1m])
 )
 
 # Alle logger for én trace

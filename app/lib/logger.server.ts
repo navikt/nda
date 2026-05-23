@@ -83,7 +83,7 @@ type OutgoingHttpArea = 'github' | 'slack' | 'microsoft_graph' | 'nais_auth' | '
 
 /**
  * Log a structured entry for an outgoing HTTP request.
- * Always sets type: 'outgoing_http' — use this field in ELK to filter all outgoing calls.
+ * Always sets log_type: 'outgoing_http' — use this field in ELK to filter all outgoing calls.
  * Query strings are never included in `path` to avoid logging user data.
  */
 export function logOutgoingHttp(details: {
@@ -96,8 +96,8 @@ export function logOutgoingHttp(details: {
   error?: string
   [key: string]: unknown
 }): void {
-  // type is set last so callers cannot accidentally override it via the index signature
-  logger.info('Outgoing HTTP request', { ...details, type: 'outgoing_http' })
+  // log_type is set last so callers cannot accidentally override it via the index signature
+  logger.info('Outgoing HTTP request', { ...details, log_type: 'outgoing_http' })
 }
 
 /** Parse host and pathname from a URL that may be a string or URL object. */

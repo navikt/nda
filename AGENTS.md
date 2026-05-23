@@ -226,7 +226,7 @@ Background sync job infrastructure:
 
 All outgoing HTTP calls **must** be logged using the shared helpers in `app/lib/logger.server.ts`. This enables ELK monitoring and filtering of all outbound traffic.
 
-**Filter in ELK:** `type: outgoing_http` — use `area` to narrow to a specific integration.
+**Filter in ELK:** `log_type: outgoing_http` — use `area` to narrow to a specific integration.
 
 #### Helpers
 
