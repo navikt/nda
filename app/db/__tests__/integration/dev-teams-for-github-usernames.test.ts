@@ -64,10 +64,10 @@ describe('getDevTeamsForGithubUsernamesByRole', () => {
     const sectionId = await seedSection(pool, 'sec1')
     const teamId = await seedDevTeam(sectionId, 'beta', 'Team Beta')
 
-    await seedUserMapping('Bob-GH', 'B654321')
+    await seedUserMapping('bob-gh', 'B654321')
     await seedDevTeamRoleAssignment('B654321', teamId)
 
-    const result = await getDevTeamsForGithubUsernamesByRole(['bob-gh'])
+    const result = await getDevTeamsForGithubUsernamesByRole(['Bob-GH'])
 
     expect(result).toHaveLength(1)
     expect(result[0].slug).toBe('beta')

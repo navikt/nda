@@ -607,10 +607,10 @@ describe('role assignment CRUD', () => {
 
     await assignTeamRole('U666666', teamId, 'utvikler', 'admin')
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U666666', 'UserSix', 'User Six')",
+      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U666666', 'usersix', 'User Six')",
     )
 
-    const teams = await getDevTeamsForGithubUsernamesByRole(['usersix'])
+    const teams = await getDevTeamsForGithubUsernamesByRole(['UserSix'])
     expect(teams).toHaveLength(1)
     expect(teams[0].slug).toBe('team-a')
   })

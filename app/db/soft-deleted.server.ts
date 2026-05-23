@@ -1,5 +1,4 @@
 import { pool } from './connection.server'
-import { clearUserMappingCache } from './user-mappings.server'
 
 /**
  * Soft-deleted row management for the admin restore page.
@@ -192,22 +191,17 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
 /**
  * Restore (undelete) a soft-deleted user mapping.
  *
- * No-op if the row is missing or already active. Clears the in-memory cache
- * so subsequent lookups respect the restored state.
+ * No-op if the row is missing or already active.
  */
 export async function restoreUserMapping(githubUsername: string): Promise<boolean> {
   const result = await pool.query(
     `UPDATE user_mappings
      SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
-     WHERE github_username = $1 AND deleted_at IS NOT NULL
+     WHERE github_username = LOWER($1) AND deleted_at IS NOT NULL
      RETURNING github_username`,
-    [githubUsername],
+    [githubUsername.trim()],
   )
-  if ((result.rowCount ?? 0) > 0) {
-    clearUserMappingCache()
-    return true
-  }
-  return false
+  return (result.rowCount ?? 0) > 0
 }
 
 /**
