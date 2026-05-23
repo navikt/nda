@@ -13,7 +13,7 @@
  * @see https://doc.nais.io/auth/entra-id/how-to/secure/
  */
 
-import { logger } from './logger.server'
+import { fetchWithLogging, logger } from '~/lib/logger.server'
 
 interface IntrospectionSuccessResponse {
   active: true
@@ -70,7 +70,7 @@ async function introspectToken(token: string): Promise<IntrospectionResponse | n
   }
 
   try {
-    const response = await fetch(introspectionEndpoint, {
+    const response = await fetchWithLogging('nais_auth', introspectionEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

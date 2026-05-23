@@ -1,8 +1,7 @@
 import { GraphQLClient } from 'graphql-request'
-import { logger } from '~/lib/logger.server'
+import { fetchWithLogging, logger } from '~/lib/logger.server'
 
 let client: GraphQLClient | null = null
-let requestCount = 0
 
 function getNaisClient(): GraphQLClient {
   if (!client) {
@@ -22,11 +21,7 @@ function getNaisClient(): GraphQLClient {
 
     client = new GraphQLClient(url, {
       headers,
-      requestMiddleware: (request) => {
-        requestCount++
-        logger.info(`🌐 [Nais #${requestCount}] POST ${url}`)
-        return request
-      },
+      fetch: (reqUrl, options) => fetchWithLogging('nais_graphql', reqUrl, options),
     })
   }
   return client

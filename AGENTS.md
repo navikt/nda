@@ -222,6 +222,58 @@ Background sync job infrastructure:
 - `goal-keyword-sync.server.ts` — Auto-links deployments to goals via commit message keywords
 - `index.ts` — Re-exports
 
+### Outgoing HTTP Logging (REQUIRED for all new HTTP calls)
+
+All outgoing HTTP calls **must** be logged using the shared helpers in `app/lib/logger.server.ts`. This enables ELK monitoring and filtering of all outbound traffic.
+
+**Filter in ELK:** `type: outgoing_http` — use `area` to narrow to a specific integration.
+
+#### Helpers
+
+**`fetchWithLogging(area, url, options?)`** — drop-in replacement for `fetch`. Logs method, host, path, status_code, and duration_ms automatically. Query strings are always stripped from the logged path to avoid capturing user-supplied data (e.g. Graph `$filter` values with NAV-idents).
+
+```ts
+import { fetchWithLogging } from '~/lib/logger.server'
+
+const response = await fetchWithLogging('nais_auth', endpointUrl, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+})
+```
+
+**`logOutgoingHttp(details)`** — log a single structured entry manually. Use this when the HTTP client has its own hook system (Octokit, Slack Bolt, graphql-request).
+
+```ts
+import { logOutgoingHttp } from '~/lib/logger.server'
+
+logOutgoingHttp({
+  area: 'github',
+  method: 'GET',
+  host: 'api.github.com',
+  path: '/repos/navikt/myapp/pulls/42',
+  status_code: 200,
+  duration_ms: 145,
+})
+```
+
+#### Area values
+
+| `area` | Integration | How it logs |
+|--------|-------------|-------------|
+| `github` | GitHub API (Octokit) | `hook.wrap` in `client.server.ts` |
+| `slack` | Slack Web API (Bolt) | `callSlackApi()` wrapper in `slack/client.server.ts` |
+| `microsoft_graph` | Microsoft Graph + NAIS token | `fetchWithLogging` in `microsoft-graph.server.ts` |
+| `nais_auth` | NAIS M2M token introspection | `fetchWithLogging` in `m2m-auth.server.ts` |
+| `nais_graphql` | NAIS GraphQL API | custom `fetch:` adapter in `nais.server.ts` |
+
+#### Rules
+
+- **New `fetch` call** → use `fetchWithLogging` instead of raw `fetch`
+- **New client with hook system** (Octokit-style, graphql-request) → pass `fetchWithLogging` as a custom fetch adapter, or call `logOutgoingHttp` inside the hook
+- **Never log Authorization headers, tokens, or query strings** — only method, host, and pathname
+- Add the new area value to the `OutgoingHttpArea` union in `logger.server.ts` if introducing a new integration
+
 ### Goal Keyword Auto-Linking
 
 Commit messages are scanned for keywords defined on board objectives and key results. The system:

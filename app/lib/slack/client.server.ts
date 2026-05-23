@@ -33,7 +33,7 @@ import {
 } from '~/db/slack-notifications.server'
 import { getUserMappingBySlackId } from '~/db/user-mappings.server'
 import { isApprovedStatus, isLegacyStatus, isNotApprovedStatus, isPendingStatus } from '~/lib/four-eyes-status'
-import { logger } from '~/lib/logger.server'
+import { logger, logOutgoingHttp } from '~/lib/logger.server'
 import {
   buildDeploymentBlocks,
   buildDeviationBlocks,
@@ -57,6 +57,36 @@ import {
 // Singleton Slack app instance
 let slackApp: App | null = null
 let isConnected = false
+
+/**
+ * Wraps a Slack Web API call and logs it as a structured outgoing HTTP entry.
+ * Slack's transport always uses HTTP POST to slack.com/api/<method>.
+ */
+async function callSlackApi<T>(slackMethod: string, fn: () => Promise<T>): Promise<T> {
+  const start = Date.now()
+  try {
+    const result = await fn()
+    logOutgoingHttp({
+      area: 'slack',
+      method: 'POST',
+      host: 'slack.com',
+      path: `/api/${slackMethod}`,
+      status_code: 200,
+      duration_ms: Date.now() - start,
+    })
+    return result
+  } catch (error) {
+    logOutgoingHttp({
+      area: 'slack',
+      method: 'POST',
+      host: 'slack.com',
+      path: `/api/${slackMethod}`,
+      duration_ms: Date.now() - start,
+      error: error instanceof Error ? error.message : 'Slack API error',
+    })
+    throw error
+  }
+}
 
 /**
  * Check if Slack integration is configured
@@ -156,11 +186,13 @@ export async function sendDeploymentNotification(
   const text = `${getStatusEmoji(notification.status)} Deployment: ${notification.appName} (${notification.environmentName})`
 
   try {
-    const result = await app.client.chat.postMessage({
-      channel,
-      blocks: blocks as KnownBlock[],
-      text,
-    })
+    const result = await callSlackApi('chat.postMessage', () =>
+      app.client.chat.postMessage({
+        channel,
+        blocks: blocks as KnownBlock[],
+        text,
+      }),
+    )
 
     const messageTs = result.ts
     if (messageTs) {
@@ -204,11 +236,13 @@ export async function sendDeviationNotification(
   const text = `⚠️ Avvik registrert: ${notification.appName} (${notification.environmentName})`
 
   try {
-    const result = await app.client.chat.postMessage({
-      channel: channelId,
-      blocks: blocks as KnownBlock[],
-      text,
-    })
+    const result = await callSlackApi('chat.postMessage', () =>
+      app.client.chat.postMessage({
+        channel: channelId,
+        blocks: blocks as KnownBlock[],
+        text,
+      }),
+    )
     return result.ts || null
   } catch (error) {
     logger.error('Failed to send deviation Slack notification:', error)
@@ -236,11 +270,13 @@ export async function sendReminder(notification: ReminderNotification, channelId
   const text = `🔔 ${count} deployment${count === 1 ? '' : 's'} mangler godkjenning — ${notification.appName} (${notification.environmentName})`
 
   try {
-    const result = await app.client.chat.postMessage({
-      channel: channelId,
-      blocks: blocks as KnownBlock[],
-      text,
-    })
+    const result = await callSlackApi('chat.postMessage', () =>
+      app.client.chat.postMessage({
+        channel: channelId,
+        blocks: blocks as KnownBlock[],
+        text,
+      }),
+    )
     return result.ts || null
   } catch (error) {
     logger.error('Failed to send reminder Slack notification:', error)
@@ -267,12 +303,14 @@ async function _updateDeploymentNotification(
   const text = `${getStatusEmoji(notification.status)} Deployment: ${notification.appName} (${notification.environmentName})`
 
   try {
-    await app.client.chat.update({
-      channel,
-      ts: messageTs,
-      blocks: blocks as KnownBlock[],
-      text,
-    })
+    await callSlackApi('chat.update', () =>
+      app.client.chat.update({
+        channel,
+        ts: messageTs,
+        blocks: blocks as KnownBlock[],
+        text,
+      }),
+    )
 
     // Log the update in database
     const existing = await getSlackNotificationByMessage(channel, messageTs)
@@ -325,20 +363,24 @@ function registerActionHandlers(app: App): void {
 
         // TODO: Call the actual approval logic
         // For now, just update the message to show it was approved
-        await client.chat.update({
-          channel: body.channel.id,
-          ts: body.message.ts,
-          blocks: [
-            {
-              type: 'section',
-              text: {
-                type: 'mrkdwn',
-                text: `✅ *Deployment godkjent*\n\nApp: ${appName}\nGodkjent av: <@${userId}>`,
+        const channelId = body.channel.id
+        const messageTs = body.message.ts
+        await callSlackApi('chat.update', () =>
+          client.chat.update({
+            channel: channelId,
+            ts: messageTs,
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: `✅ *Deployment godkjent*\n\nApp: ${appName}\nGodkjent av: <@${userId}>`,
+                },
               },
-            },
-          ],
-          text: `Deployment ${deploymentId} godkjent av ${userId}`,
-        })
+            ],
+            text: `Deployment ${deploymentId} godkjent av ${userId}`,
+          }),
+        )
       }
     } catch (error) {
       logger.error('Error handling approve action:', error)
@@ -452,10 +494,12 @@ export async function notifyDeploymentIfNeeded(
   if (!claimed) {
     // Another pod already claimed it - delete our duplicate message
     try {
-      await app.client.chat.delete({
-        channel: channelId,
-        ts: messageTs,
-      })
+      await callSlackApi('chat.delete', () =>
+        app.client.chat.delete({
+          channel: channelId,
+          ts: messageTs,
+        }),
+      )
     } catch {
       // Ignore deletion errors
     }
@@ -545,11 +589,13 @@ async function notifyNewDeploymentIfNeeded(
 
   let messageTs: string | null = null
   try {
-    const result = await app.client.chat.postMessage({
-      channel: channelId,
-      blocks: blocks as KnownBlock[],
-      text,
-    })
+    const result = await callSlackApi('chat.postMessage', () =>
+      app.client.chat.postMessage({
+        channel: channelId,
+        blocks: blocks as KnownBlock[],
+        text,
+      }),
+    )
     messageTs = result.ts || null
   } catch (error) {
     logger.error(`Failed to send deploy notification for deployment ${deployment.id}:`, error)
@@ -566,10 +612,12 @@ async function notifyNewDeploymentIfNeeded(
   if (!claimed) {
     // Another pod already claimed it — delete our duplicate message
     try {
-      await app.client.chat.delete({
-        channel: channelId,
-        ts: messageTs,
-      })
+      await callSlackApi('chat.delete', () =>
+        app.client.chat.delete({
+          channel: channelId,
+          ts: messageTs,
+        }),
+      )
     } catch {
       // Ignore deletion errors
     }
@@ -644,13 +692,15 @@ function registerEventHandlers(app: App): void {
       const blocks = buildHomeTabBlocks(homeTabInput)
       logger.info('[Slack Home Tab] Built blocks, count:', { count: blocks.length })
 
-      await client.views.publish({
-        user_id: userId,
-        view: {
-          type: 'home',
-          blocks,
-        },
-      })
+      await callSlackApi('views.publish', () =>
+        client.views.publish({
+          user_id: userId,
+          view: {
+            type: 'home',
+            blocks,
+          },
+        }),
+      )
       logger.info('[Slack Home Tab] View published successfully')
     } catch (error) {
       logger.error('[Slack Home Tab] Error updating Home Tab:', error)

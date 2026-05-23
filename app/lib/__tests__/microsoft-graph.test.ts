@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Mock logger before importing the module under test
 vi.mock('~/lib/logger.server', () => ({
   logger: { error: vi.fn() },
+  fetchWithLogging: async (_area: string, url: string | URL, options?: RequestInit) => fetch(url, options),
+  logOutgoingHttp: vi.fn(),
 }))
 
 describe('microsoft-graph', () => {

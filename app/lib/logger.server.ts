@@ -75,6 +75,84 @@ function logToDb(level: 'info' | 'warn' | 'error' | 'debug', message: string, de
   logSyncJobMessage(ctx.jobId, level, stripEmoji(message), details).catch(() => {})
 }
 
+// =============================================================================
+// Outgoing HTTP Logging
+// =============================================================================
+
+type OutgoingHttpArea = 'github' | 'slack' | 'microsoft_graph' | 'nais_auth' | 'nais_graphql'
+
+/**
+ * Log a structured entry for an outgoing HTTP request.
+ * Always sets type: 'outgoing_http' — use this field in ELK to filter all outgoing calls.
+ * Query strings are never included in `path` to avoid logging user data.
+ */
+export function logOutgoingHttp(details: {
+  area: OutgoingHttpArea
+  method: string
+  host: string
+  path: string
+  status_code?: number
+  duration_ms?: number
+  error?: string
+  [key: string]: unknown
+}): void {
+  // type is set last so callers cannot accidentally override it via the index signature
+  logger.info('Outgoing HTTP request', { ...details, type: 'outgoing_http' })
+}
+
+/** Parse host and pathname from a URL that may be a string or URL object. */
+function parseUrl(url: string | URL): { hostname: string; pathname: string } {
+  try {
+    const parsed = new URL(url)
+    return { hostname: parsed.hostname, pathname: parsed.pathname }
+  } catch {
+    // Relative URL or unparseable — log what we can
+    const str = url.toString()
+    const pathOnly = str.split('?')[0]
+    return { hostname: '(relative)', pathname: pathOnly }
+  }
+}
+
+/**
+ * Drop-in replacement for `fetch` that logs the request and response as a
+ * structured outgoing HTTP entry. Query strings are stripped from the logged
+ * path to avoid capturing user-supplied data (e.g. Graph $filter values).
+ * Accepts `RequestInfo | URL` to match the native fetch signature exactly,
+ * including `Request` objects from library adapters (e.g. graphql-request).
+ */
+export async function fetchWithLogging(
+  area: OutgoingHttpArea,
+  url: RequestInfo | URL,
+  options?: RequestInit,
+): Promise<Response> {
+  const resolvedUrl = url instanceof Request ? url.url : url
+  const { hostname, pathname } = parseUrl(resolvedUrl)
+  const method = (options?.method ?? (url instanceof Request ? url.method : 'GET')).toUpperCase()
+  const start = Date.now()
+  try {
+    const response = await fetch(url, options)
+    logOutgoingHttp({
+      area,
+      method,
+      host: hostname,
+      path: pathname,
+      status_code: response.status,
+      duration_ms: Date.now() - start,
+    })
+    return response
+  } catch (error) {
+    logOutgoingHttp({
+      area,
+      method,
+      host: hostname,
+      path: pathname,
+      duration_ms: Date.now() - start,
+      error: error instanceof Error ? error.message : 'Network error',
+    })
+    throw error
+  }
+}
+
 export const logger = {
   info(message: string, details?: Record<string, unknown>) {
     winstonLogger.info(message, { trace_id: getTraceId(), ...details, ...getJobMeta() })
