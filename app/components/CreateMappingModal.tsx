@@ -1,4 +1,4 @@
-import { Alert, BodyShort, Box, Button, Label, Modal, TextField, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Button, Label, Modal, TextField, VStack } from '@navikt/ds-react'
 import { forwardRef, useState } from 'react'
 import { Form } from 'react-router'
 import type { GraphUserResult } from '~/lib/microsoft-graph.server'
@@ -90,22 +90,20 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
                 />
               )}
               {mappingFields.nav_ident && (
-                <Box background="sunken" padding="space-16" borderRadius="8">
-                  <VStack gap="space-8">
-                    <div>
-                      <Label size="small">Navn</Label>
-                      <BodyShort>{mappingFields.display_name || '–'}</BodyShort>
-                    </div>
-                    <div>
-                      <Label size="small">Nav e-post</Label>
-                      <BodyShort>{mappingFields.nav_email || '–'}</BodyShort>
-                    </div>
-                    <div>
-                      <Label size="small">Nav-ident</Label>
-                      <BodyShort>{mappingFields.nav_ident}</BodyShort>
-                    </div>
-                  </VStack>
-                </Box>
+                <VStack gap="space-8">
+                  <div>
+                    <Label size="small">Navn</Label>
+                    <BodyShort>{mappingFields.display_name || '–'}</BodyShort>
+                  </div>
+                  <div>
+                    <Label size="small">Nav e-post</Label>
+                    <BodyShort>{mappingFields.nav_email || '–'}</BodyShort>
+                  </div>
+                  <div>
+                    <Label size="small">Nav-ident</Label>
+                    <BodyShort>{mappingFields.nav_ident}</BodyShort>
+                  </div>
+                </VStack>
               )}
               <input type="hidden" name="nav_ident" value={mappingFields.nav_ident} />
               {fieldErrors?.nav_ident && (
