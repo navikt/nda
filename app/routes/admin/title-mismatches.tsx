@@ -119,15 +119,15 @@ export default function TitleMismatches() {
 
   return (
     <VStack gap="space-24">
-      <div>
-        <Heading level="1" size="large" spacing>
+      <VStack gap="space-8">
+        <Heading level="1" size="large">
           Tittel-avvik
         </Heading>
         <BodyShort textColor="subtle">
-          Deployments der lagret tittel (<code>d.title</code>) avviker fra PR-tittelen (
-          <code>github_pr_data.title</code>).
+          Denne siden viser deployments der den lagrede tittelen er feil eller mangler. Tittel brukes i
+          deployment-oversikter og auditrapporter for å beskrive hva som ble deployet.
         </BodyShort>
-      </div>
+      </VStack>
 
       <ActionAlert data={actionData} />
 
@@ -148,20 +148,50 @@ export default function TitleMismatches() {
           padding="space-16"
           borderRadius="8"
           borderWidth="1"
-          borderColor={Number(missing.total_missing) > 0 ? 'warning-subtle' : 'success-subtle'}
+          borderColor={Number(missing.with_pr_data) > 0 ? 'warning-subtle' : 'neutral-subtle'}
         >
-          <VStack gap="space-4">
-            <Heading size="medium">{missing.total_missing}</Heading>
-            <BodyShort size="small">Manglende tittel (NULL)</BodyShort>
-          </VStack>
-        </Box>
-        <Box padding="space-16" borderRadius="8" borderWidth="1" borderColor="neutral-subtle">
           <VStack gap="space-4">
             <Heading size="medium">{missing.with_pr_data}</Heading>
             <BodyShort size="small">Kan fylles fra PR-data</BodyShort>
           </VStack>
         </Box>
+        <Box padding="space-16" borderRadius="8" borderWidth="1" borderColor="neutral-subtle">
+          <VStack gap="space-4">
+            <Heading size="medium">{missing.total_missing}</Heading>
+            <BodyShort size="small">Manglende tittel (NULL)</BodyShort>
+          </VStack>
+        </Box>
       </HStack>
+
+      {/* Explanation */}
+      <Box background="neutral-softA" padding="space-16" borderRadius="8">
+        <VStack gap="space-8">
+          <Heading level="2" size="xsmall">
+            Hva betyr tallene?
+          </Heading>
+          <VStack as="ul" gap="space-4">
+            <li>
+              <BodyShort size="small">
+                <strong>Feil tittel</strong> — den lagrede tittelen avviker fra PR-tittelen i GitHub. Dette kan skje
+                hvis en PR-tittel endres etter at deployment ble registrert. Bør korrigeres med knappen under.
+              </BodyShort>
+            </li>
+            <li>
+              <BodyShort size="small">
+                <strong>Kan fylles fra PR-data</strong> — deployments uten tittel, men der PR-data er tilgjengelig slik
+                at tittelen kan fylles inn automatisk. Bør fylles med knappen under.
+              </BodyShort>
+            </li>
+            <li>
+              <BodyShort size="small">
+                <strong>Manglende tittel</strong> — deployments uten tittel og uten PR-data å hente fra. Typisk eldre
+                deployments fra før NDA begynte å samle PR-data, eller deployments uten tilknyttet PR (f.eks. direkte
+                push til main). Krever ingen handling.
+              </BodyShort>
+            </li>
+          </VStack>
+        </VStack>
+      </Box>
 
       {/* Fix actions */}
       <HStack gap="space-12">
