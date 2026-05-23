@@ -1,4 +1,4 @@
-import { DownloadIcon, PencilIcon, PlusIcon, TrashIcon, UploadIcon } from '@navikt/aksel-icons'
+import { DownloadIcon, PlusIcon, UploadIcon } from '@navikt/aksel-icons'
 import {
   Alert,
   BodyShort,
@@ -9,7 +9,6 @@ import {
   HStack,
   Modal,
   Show,
-  Tag,
   TextField,
   VStack,
 } from '@navikt/ds-react'
@@ -17,7 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { CreateMappingModal } from '~/components/CreateMappingModal'
-import { ExternalLink } from '~/components/ExternalLink'
+import { UserMappingCard } from '~/components/UserMappingCard'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
 import {
@@ -28,7 +27,6 @@ import {
   upsertUserMapping,
 } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
-import { isTeamLeaderRole, SECTION_ROLE_LABELS, TEAM_ROLE_LABELS } from '~/lib/authorization-types'
 import { getFormString, isValidEmail, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
@@ -325,91 +323,20 @@ export default function AdminUsers() {
         ) : (
           <div>
             {mappings.map((mapping) => (
-              <Box
+              <UserMappingCard
                 key={mapping.github_username}
-                padding="space-16"
-                background="raised"
-                className={styles.stackedListItem}
-              >
-                <VStack gap="space-12">
-                  {/* First row: Display name heading, actions */}
-                  <HStack gap="space-8" align="center" justify="space-between" wrap>
-                    <Link to={`/users/${mapping.github_username}`} style={{ textDecoration: 'none' }}>
-                      <Heading level="3" size="xsmall">
-                        {mapping.display_name || mapping.github_username}
-                      </Heading>
-                    </Link>
-                    <HStack gap="space-8">
-                      <Button
-                        variant="tertiary"
-                        size="small"
-                        icon={<PencilIcon aria-hidden />}
-                        onClick={() => openEdit(mapping)}
-                      >
-                        <Show above="sm">Rediger</Show>
-                      </Button>
-                      <Button
-                        variant="tertiary-neutral"
-                        size="small"
-                        icon={<TrashIcon aria-hidden />}
-                        onClick={() => {
-                          setDeleteTarget(mapping)
-                          deleteModalRef.current?.showModal()
-                        }}
-                      >
-                        <Show above="sm">Slett</Show>
-                      </Button>
-                    </HStack>
-                  </HStack>
-
-                  {/* Details row */}
-                  <HStack gap="space-16" wrap>
-                    <ExternalLink href={`https://github.com/${mapping.github_username}`}>
-                      <Detail textColor="subtle">GitHub: {mapping.github_username}</Detail>
-                    </ExternalLink>
-                    {mapping.nav_email && <Detail textColor="subtle">{mapping.nav_email}</Detail>}
-                    {mapping.nav_ident && (
-                      <ExternalLink href={`https://teamkatalogen.nav.no/resource/${mapping.nav_ident}`}>
-                        <Detail textColor="subtle">Teamkatalogen: {mapping.nav_ident}</Detail>
-                      </ExternalLink>
-                    )}
-                    {mapping.slack_member_id && (
-                      <ExternalLink href={`https://nav-it.slack.com/team/${mapping.slack_member_id}`}>
-                        <Detail textColor="subtle">Slack: {mapping.slack_member_id}</Detail>
-                      </ExternalLink>
-                    )}
-                    {!mapping.nav_email && !mapping.nav_ident && !mapping.slack_member_id && (
-                      <Detail textColor="subtle">Ingen tilleggsinformasjon</Detail>
-                    )}
-                  </HStack>
-
-                  {/* Role assignments row */}
-                  {mapping.nav_ident &&
-                    ((userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).length > 0 ||
-                      (userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).length > 0) && (
-                      <HStack gap="space-8" align="center" wrap>
-                        <Detail textColor="subtle">Roller:</Detail>
-                        {(userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).map((ra) => (
-                          <Tag key={`s-${ra.section_id}-${ra.role}`} variant="warning" size="xsmall">
-                            {SECTION_ROLE_LABELS[ra.role] ?? ra.role} – {ra.section_name}
-                          </Tag>
-                        ))}
-                        {(userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []).map((ra) => {
-                          const team = devTeamById.get(ra.dev_team_id)
-                          return team ? (
-                            <Tag
-                              key={`t-${ra.dev_team_id}-${ra.role}`}
-                              variant={isTeamLeaderRole(ra.role) ? 'warning' : 'info'}
-                              size="xsmall"
-                            >
-                              {TEAM_ROLE_LABELS[ra.role] ?? ra.role} – {team.name}
-                            </Tag>
-                          ) : null
-                        })}
-                      </HStack>
-                    )}
-                </VStack>
-              </Box>
+                mapping={mapping}
+                teamRoles={mapping.nav_ident ? (userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []}
+                sectionRoles={
+                  mapping.nav_ident ? (userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []
+                }
+                devTeamById={devTeamById}
+                onEdit={() => openEdit(mapping)}
+                onDelete={() => {
+                  setDeleteTarget(mapping)
+                  deleteModalRef.current?.showModal()
+                }}
+              />
             ))}
           </div>
         )}
