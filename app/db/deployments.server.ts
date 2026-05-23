@@ -1272,7 +1272,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
               um.display_name, um.nav_email, um.nav_ident, um.slack_member_id,
               COUNT(*) as deployment_count
        FROM deployments d
-       LEFT JOIN user_mappings um ON d.deployer_username = um.github_username AND um.deleted_at IS NULL
+       LEFT JOIN user_mappings um ON LOWER(d.deployer_username) = um.github_username AND um.deleted_at IS NULL
        WHERE d.deployer_username ILIKE $1
           OR um.display_name ILIKE $1
           OR um.nav_email ILIKE $1

@@ -176,7 +176,7 @@ export async function getUnmappedUsers(): Promise<{ github_username: string; dep
     INNER JOIN monitored_applications ma
       ON d.monitored_app_id = ma.id AND ma.is_active = true
     LEFT JOIN user_mappings um
-      ON d.deployer_username = um.github_username AND um.deleted_at IS NULL
+      ON LOWER(d.deployer_username) = um.github_username AND um.deleted_at IS NULL
     WHERE d.deployer_username IS NOT NULL
       AND d.deployer_username != ''
       AND um.github_username IS NULL
