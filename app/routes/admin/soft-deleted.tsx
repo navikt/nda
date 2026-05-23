@@ -197,7 +197,7 @@ export default function AdminSoftDeleted() {
             <Table.Body>
               {summary.userMappings.map((row) => (
                 <Table.Row key={row.github_username}>
-                  <Table.DataCell>{row.github_username}</Table.DataCell>
+                  <Table.DataCell>{row.display_github_username}</Table.DataCell>
                   <Table.DataCell>{row.display_name ?? '—'}</Table.DataCell>
                   <Table.DataCell>{row.nav_ident ?? '—'}</Table.DataCell>
                   <Table.DataCell>{formatDate(row.deleted_at)}</Table.DataCell>

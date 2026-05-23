@@ -24,6 +24,7 @@ interface DevTeam {
 interface UserMappingCardProps {
   mapping: {
     github_username: string
+    display_github_username: string
     display_name: string | null
     nav_email: string | null
     nav_ident: string | null
@@ -51,7 +52,7 @@ export function UserMappingCard({
         <HStack gap="space-8" align="center" justify="space-between" wrap>
           <Link to={`/users/${mapping.github_username}`} style={{ textDecoration: 'none' }}>
             <Heading level="3" size="xsmall">
-              {mapping.display_name || mapping.github_username}
+              {mapping.display_name || mapping.display_github_username}
             </Heading>
           </Link>
           <HStack gap="space-8">
@@ -82,8 +83,8 @@ export function UserMappingCard({
 
         {/* Details row */}
         <HStack gap="space-16" wrap>
-          <ExternalLink href={`https://github.com/${mapping.github_username}`}>
-            <Detail textColor="subtle">GitHub: {mapping.github_username}</Detail>
+          <ExternalLink href={`https://github.com/${mapping.display_github_username}`}>
+            <Detail textColor="subtle">GitHub: {mapping.display_github_username}</Detail>
           </ExternalLink>
           {mapping.nav_email && <Detail textColor="subtle">{mapping.nav_email}</Detail>}
           {mapping.nav_ident && (

@@ -3,6 +3,7 @@ import { AdminUsersPage } from '~/components/AdminUsersPage'
 
 type UserMapping = {
   github_username: string
+  display_github_username: string
   display_name: string | null
   nav_email: string | null
   nav_ident: string | null
@@ -17,6 +18,7 @@ type UnmappedUser = {
 const mockMappings: UserMapping[] = [
   {
     github_username: 'glad-fjord',
+    display_github_username: 'Glad-Fjord',
     display_name: 'Glad Fjord',
     nav_email: 'glad.fjord@nav.no',
     nav_ident: 'Z990001',
@@ -24,6 +26,7 @@ const mockMappings: UserMapping[] = [
   },
   {
     github_username: 'rask-elv',
+    display_github_username: 'Rask-Elv',
     display_name: 'Rask Elv',
     nav_email: 'rask.elv@nav.no',
     nav_ident: 'Z990002',
@@ -31,6 +34,7 @@ const mockMappings: UserMapping[] = [
   },
   {
     github_username: 'dev-user',
+    display_github_username: 'dev-user',
     display_name: null,
     nav_email: 'dev.user@nav.no',
     nav_ident: null,
@@ -38,6 +42,7 @@ const mockMappings: UserMapping[] = [
   },
   {
     github_username: 'minimal-user',
+    display_github_username: 'minimal-user',
     display_name: null,
     nav_email: null,
     nav_ident: null,
@@ -102,6 +107,7 @@ export const MinimalData: Story = {
     mappings: [
       {
         github_username: 'solo-user',
+        display_github_username: 'solo-user',
         display_name: null,
         nav_email: null,
         nav_ident: null,
