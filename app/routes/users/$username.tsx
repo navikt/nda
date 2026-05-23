@@ -251,9 +251,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     // Server-side ownership enforcement:
     // - Self-service (own nav-ident URL): allow free-form GitHub username, force nav_ident
     // - Other profiles: derive GitHub username from route param, allow free-form nav_ident
-    const githubUsername = isSelfService
-      ? getFormString(formData, 'github_username')?.toLowerCase() || ''
-      : routeUsername.toLowerCase()
+    const githubUsernameRaw = isSelfService ? getFormString(formData, 'github_username') || '' : routeUsername
+    const githubUsername = githubUsernameRaw.toLowerCase()
     const navIdentRaw = isSelfService ? identity.navIdent : getFormString(formData, 'nav_ident') || null
     const navIdentInput = navIdentRaw?.toUpperCase() || null
 
@@ -298,6 +297,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     await upsertUserMapping({
       githubUsername,
+      displayGithubUsername: isSelfService ? githubUsernameRaw : null,
       displayName,
       navEmail,
       navIdent: navIdent,

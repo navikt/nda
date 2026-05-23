@@ -18,6 +18,7 @@ import { pool } from './connection.server'
 
 interface SoftDeletedUserMapping {
   github_username: string
+  display_github_username: string | null
   display_name: string | null
   nav_ident: string | null
   deleted_at: Date
@@ -89,7 +90,7 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
   const [userMappings, deploymentComments, devTeamApplications, sectionTeams, devTeamNaisTeams, externalReferences] =
     await Promise.all([
       pool.query<SoftDeletedUserMapping>(
-        `SELECT github_username, display_name, nav_ident, deleted_at, deleted_by
+        `SELECT github_username, display_github_username, display_name, nav_ident, deleted_at, deleted_by
          FROM user_mappings
          WHERE deleted_at IS NOT NULL
          ORDER BY deleted_at DESC`,

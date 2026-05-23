@@ -58,7 +58,8 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === 'create-mapping') {
-    const githubUsername = getFormString(formData, 'github_username')?.toLowerCase() || ''
+    const githubUsernameRaw = getFormString(formData, 'github_username') || ''
+    const githubUsername = githubUsernameRaw.toLowerCase()
     const navIdentRaw = getFormString(formData, 'nav_ident')?.toUpperCase() || null
 
     // nav_email included for TypeScript compatibility — both create-mapping and upsert branches
@@ -102,6 +103,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     await upsertUserMapping({
       githubUsername,
+      displayGithubUsername: githubUsernameRaw,
       displayName,
       navEmail,
       navIdent,
@@ -139,6 +141,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     await upsertUserMapping({
       githubUsername,
+      displayGithubUsername: null,
       displayName: (formData.get('display_name') as string) || null,
       navEmail,
       navIdent,
@@ -280,7 +283,11 @@ export default function AdminUsers() {
               <input type="hidden" name="intent" value="upsert" />
               <input type="hidden" name="github_username" value={editMapping.github_username} />
               <VStack gap="space-16">
-                <TextField label="GitHub brukernavn" value={editMapping.github_username} disabled />
+                <TextField
+                  label="GitHub brukernavn"
+                  value={editMapping.display_github_username || editMapping.github_username}
+                  disabled
+                />
                 <TextField label="Navn" name="display_name" defaultValue={editMapping.display_name || ''} />
                 <TextField
                   label="Nav e-post"
