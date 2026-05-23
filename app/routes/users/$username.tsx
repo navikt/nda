@@ -7,7 +7,6 @@ import {
   Checkbox,
   Detail,
   Heading,
-  HGrid,
   Hide,
   HStack,
   Radio,
@@ -23,7 +22,7 @@ import { BulkLinkGoalModal, SelectLinkGoalModal } from '~/components/BulkLinkGoa
 import { CreateMappingModal } from '~/components/CreateMappingModal'
 import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
-import { ExternalLink } from '~/components/ExternalLink'
+import { UserProfileHeader } from '~/components/UserProfileHeader'
 import { UserRolesDisplay } from '~/components/UserRolesDisplay'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import {
@@ -441,61 +440,13 @@ export default function UserPage() {
 
   return (
     <VStack gap="space-32">
-      {/* Header */}
-      <VStack gap="space-8">
-        <HStack gap="space-12" align="center">
-          <Heading level="1" size="large">
-            {mapping?.display_name || botDisplayName || username}
-          </Heading>
-          {isBot && (
-            <Tag variant="neutral" size="small">
-              Bot
-            </Tag>
-          )}
-        </HStack>
-        {isBot && botDescription && <BodyShort textColor="subtle">{botDescription}</BodyShort>}
-      </VStack>
-
-      {/* Stats and links */}
-      <HGrid gap="space-16" columns={{ xs: 2, md: 4 }}>
-        <Box padding="space-16" borderRadius="8" background="sunken">
-          <VStack gap="space-4">
-            <Detail textColor="subtle">GitHub</Detail>
-            <ExternalLink href={`https://github.com/${username}`}>{username}</ExternalLink>
-          </VStack>
-        </Box>
-
-        {mapping?.nav_email && (
-          <Box padding="space-16" borderRadius="8" background="sunken">
-            <VStack gap="space-4">
-              <Detail textColor="subtle">E-post</Detail>
-              <BodyShort>{mapping.nav_email}</BodyShort>
-            </VStack>
-          </Box>
-        )}
-
-        {mapping?.nav_ident && (
-          <Box padding="space-16" borderRadius="8" background="sunken">
-            <VStack gap="space-4">
-              <Detail textColor="subtle">Teamkatalogen</Detail>
-              <ExternalLink href={`https://teamkatalogen.nav.no/resource/${mapping.nav_ident}`}>
-                {mapping.nav_ident}
-              </ExternalLink>
-            </VStack>
-          </Box>
-        )}
-
-        {mapping?.slack_member_id && (
-          <Box padding="space-16" borderRadius="8" background="sunken">
-            <VStack gap="space-4">
-              <Detail textColor="subtle">Slack</Detail>
-              <ExternalLink href={`https://nav-it.slack.com/team/${mapping.slack_member_id}`}>
-                Åpne i Slack
-              </ExternalLink>
-            </VStack>
-          </Box>
-        )}
-      </HGrid>
+      <UserProfileHeader
+        username={username}
+        displayName={mapping?.display_name || botDisplayName}
+        identity={mapping}
+        isBot={isBot}
+        botDescription={botDescription}
+      />
 
       {/* User roles (read-only) */}
       <UserRolesDisplay userRoles={userRoles} />
