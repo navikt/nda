@@ -1,9 +1,9 @@
-import { PencilIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
+import { PlusIcon } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Box, Button, Detail, Heading, HStack, Modal, Show, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ExternalLink } from '~/components/ExternalLink'
+import { UserMappingCard } from '~/components/UserMappingCard'
 import styles from '~/styles/common.module.css'
 
 type UserMapping = {
@@ -91,58 +91,15 @@ function AdminUsersPage({ mappings, unmappedUsers }: { mappings: UserMapping[]; 
         ) : (
           <div>
             {mappings.map((mapping) => (
-              <Box
+              <UserMappingCard
                 key={mapping.github_username}
-                padding="space-16"
-                background="raised"
-                className={styles.stackedListItem}
-              >
-                <VStack gap="space-12">
-                  <HStack gap="space-8" align="center" justify="space-between" wrap>
-                    <Link to={`/users/${mapping.github_username}`} style={{ textDecoration: 'none' }}>
-                      <Heading level="3" size="xsmall">
-                        {mapping.display_name || mapping.github_username}
-                      </Heading>
-                    </Link>
-                    <HStack gap="space-8">
-                      <Button variant="tertiary" size="small" icon={<PencilIcon aria-hidden />}>
-                        <Show above="sm">Rediger</Show>
-                      </Button>
-                      <Button
-                        variant="tertiary-neutral"
-                        size="small"
-                        icon={<TrashIcon aria-hidden />}
-                        onClick={() => {
-                          setDeleteTarget(mapping)
-                          deleteModalRef.current?.showModal()
-                        }}
-                      >
-                        <Show above="sm">Slett</Show>
-                      </Button>
-                    </HStack>
-                  </HStack>
-
-                  <HStack gap="space-16" wrap>
-                    <ExternalLink href={`https://github.com/${mapping.github_username}`}>
-                      <Detail textColor="subtle">GitHub: {mapping.github_username}</Detail>
-                    </ExternalLink>
-                    {mapping.nav_email && <Detail textColor="subtle">{mapping.nav_email}</Detail>}
-                    {mapping.nav_ident && (
-                      <ExternalLink href={`https://teamkatalogen.nav.no/resource/${mapping.nav_ident}`}>
-                        <Detail textColor="subtle">Teamkatalogen: {mapping.nav_ident}</Detail>
-                      </ExternalLink>
-                    )}
-                    {mapping.slack_member_id && (
-                      <ExternalLink href={`https://nav-it.slack.com/team/${mapping.slack_member_id}`}>
-                        <Detail textColor="subtle">Slack: {mapping.slack_member_id}</Detail>
-                      </ExternalLink>
-                    )}
-                    {!mapping.nav_email && !mapping.nav_ident && !mapping.slack_member_id && (
-                      <Detail textColor="subtle">Ingen tilleggsinformasjon</Detail>
-                    )}
-                  </HStack>
-                </VStack>
-              </Box>
+                mapping={mapping}
+                onEdit={() => {}}
+                onDelete={() => {
+                  setDeleteTarget(mapping)
+                  deleteModalRef.current?.showModal()
+                }}
+              />
             ))}
           </div>
         )}
