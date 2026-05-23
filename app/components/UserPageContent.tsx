@@ -446,7 +446,7 @@ export function UserPageContent({
                           />
                           <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
                           {deployment.has_goal_link && (
-                            <Tag variant="moderate" size="xsmall" data-color="success">
+                            <Tag variant="outline" size="xsmall" data-color="success">
                               <HStack gap="space-4" align="center">
                                 <LinkIcon aria-hidden style={{ fontSize: '0.75rem' }} />
                                 Endringsopphav
@@ -454,7 +454,7 @@ export function UserPageContent({
                             </Tag>
                           )}
                           {deployment.is_dependabot && (
-                            <Tag variant="moderate" size="xsmall" data-color="neutral">
+                            <Tag variant="outline" size="xsmall" data-color="neutral">
                               Dependabot
                             </Tag>
                           )}
