@@ -14,17 +14,6 @@ export interface UserMapping {
   deleted_by: string | null
 }
 
-// In-memory cache for user mappings
-const userMappingCache = new Map<string, UserMapping | null>()
-
-/**
- * Clear the in-memory user mapping cache. Intended for tests; safe to call
- * in production but will cause a brief spike of DB hits as caches refill.
- */
-export function clearUserMappingCache(): void {
-  userMappingCache.clear()
-}
-
 /**
  * Get user mapping by GitHub username or NAV-ident.
  *
@@ -32,33 +21,12 @@ export function clearUserMappingCache(): void {
  * to the previously-mapped display name.
  */
 export async function getUserMapping(identifier: string): Promise<UserMapping | null> {
-  const key = identifier.toLowerCase()
-
-  // Check cache first
-  if (userMappingCache.has(key)) {
-    return userMappingCache.get(key) || null
-  }
-
-  // Search both github_username and nav_ident
   const result = await pool.query(
     `SELECT * FROM user_mappings 
-     WHERE github_username = $1 OR nav_ident = UPPER($1)`,
+     WHERE github_username = LOWER($1) OR nav_ident = UPPER($1)`,
     [identifier],
   )
-
-  const mapping = result.rows[0] || null
-
-  // Cache by both github_username and nav_ident
-  if (mapping) {
-    userMappingCache.set(mapping.github_username.toLowerCase(), mapping)
-    if (mapping.nav_ident) {
-      userMappingCache.set(mapping.nav_ident.toLowerCase(), mapping)
-    }
-  } else {
-    userMappingCache.set(key, null)
-  }
-
-  return mapping
+  return result.rows[0] || null
 }
 
 /**
@@ -71,38 +39,28 @@ export async function getUserMapping(identifier: string): Promise<UserMapping | 
 export async function getUserMappings(identifiers: string[]): Promise<Map<string, UserMapping>> {
   if (identifiers.length === 0) return new Map()
 
-  // Filter out cached entries (check both github_username and nav_ident keys)
-  const uncached = identifiers.filter((u) => !userMappingCache.has(u.toLowerCase()))
+  const result = await pool.query(
+    `SELECT * FROM user_mappings 
+     WHERE github_username = ANY($1) 
+        OR nav_ident = ANY($2)`,
+    [identifiers.map((u) => u.toLowerCase()), identifiers.map((u) => u.toUpperCase())],
+  )
 
-  if (uncached.length > 0) {
-    // Search both github_username and nav_ident
-    const result = await pool.query(
-      `SELECT * FROM user_mappings 
-       WHERE github_username = ANY($1) 
-          OR nav_ident = ANY($2)`,
-      [uncached, uncached.map((u) => u.toUpperCase())],
-    )
-
-    // Cache results by both github_username and nav_ident
-    for (const row of result.rows) {
-      userMappingCache.set(row.github_username.toLowerCase(), row)
-      if (row.nav_ident) {
-        userMappingCache.set(row.nav_ident.toLowerCase(), row)
-      }
-    }
-
-    // Mark missing identifiers as null in cache
-    for (const identifier of uncached) {
-      if (!userMappingCache.has(identifier.toLowerCase())) {
-        userMappingCache.set(identifier.toLowerCase(), null)
-      }
+  // Build lookup maps keyed by lowercased github_username and nav_ident
+  const byUsername = new Map<string, UserMapping>()
+  const byNavIdent = new Map<string, UserMapping>()
+  for (const row of result.rows) {
+    byUsername.set(row.github_username.toLowerCase(), row)
+    if (row.nav_ident) {
+      byNavIdent.set(row.nav_ident.toLowerCase(), row)
     }
   }
 
-  // Build result map from cache
+  // Single pass over identifiers to build result map
   const mappings = new Map<string, UserMapping>()
   for (const identifier of identifiers) {
-    const mapping = userMappingCache.get(identifier.toLowerCase())
+    const key = identifier.toLowerCase()
+    const mapping = byUsername.get(key) ?? byNavIdent.get(key)
     if (mapping) {
       mappings.set(identifier, mapping)
     }
@@ -177,10 +135,6 @@ export async function upsertUserMapping(params: {
   )
 
   const mapping = result.rows[0]
-  userMappingCache.set(githubUsername.toLowerCase(), mapping)
-  if (mapping.nav_ident) {
-    userMappingCache.set(mapping.nav_ident.toLowerCase(), mapping)
-  }
   return mapping
 }
 
@@ -193,21 +147,10 @@ export async function upsertUserMapping(params: {
  * conflict.
  */
 export async function deleteUserMapping(githubUsername: string, deletedBy: string | null = null): Promise<void> {
-  // Fetch from DB to reliably get nav_ident for cache cleanup
-  const result = await pool.query('SELECT nav_ident FROM user_mappings WHERE github_username = $1', [githubUsername])
-  const existing = result.rows[0]
   await pool.query(
-    'UPDATE user_mappings SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW() WHERE github_username = $1 AND deleted_at IS NULL',
-    [githubUsername, deletedBy],
+    'UPDATE user_mappings SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW() WHERE github_username = LOWER($1) AND deleted_at IS NULL',
+    [githubUsername.trim(), deletedBy],
   )
-  // Drop cached entries so the next cached "current state" lookup by GitHub
-  // username or nav-ident re-queries and respects the deleted_at filter.
-  // Display-name lookups will repopulate the cache from the soft-deleted row.
-  // Cache keys are lowercased; DB matching is case-sensitive (pre-existing).
-  userMappingCache.delete(githubUsername.toLowerCase())
-  if (existing?.nav_ident) {
-    userMappingCache.delete(existing.nav_ident.toLowerCase())
-  }
 }
 
 /**

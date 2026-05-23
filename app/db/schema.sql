@@ -199,10 +199,10 @@ CREATE INDEX IF NOT EXISTS idx_commits_unverified ON commits(repo_owner, repo_na
 
 -- User mappings (GitHub username to Nav identity and Slack)
 CREATE TABLE IF NOT EXISTS user_mappings (
-  github_username TEXT PRIMARY KEY,
+  github_username TEXT PRIMARY KEY CHECK (github_username = LOWER(github_username)),
   display_name TEXT,
   nav_email TEXT,
-  nav_ident TEXT,
+  nav_ident TEXT CHECK (nav_ident IS NULL OR nav_ident = UPPER(nav_ident)),
   slack_member_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),

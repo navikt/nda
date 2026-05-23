@@ -2,7 +2,6 @@ import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { searchDeployments } from '../../deployments.server'
 import {
-  clearUserMappingCache,
   deleteUserMapping,
   getAllUserMappings,
   getUnmappedUsers,
@@ -41,24 +40,23 @@ async function seedDeploy(pool: Pool, deployer: string) {
 describe('user_mappings soft delete', () => {
   beforeEach(async () => {
     await truncateAllTables(pool)
-    clearUserMappingCache()
   })
 
   it('soft-deletes by setting deleted_at and deleted_by', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'O123456' })
-    await deleteUserMapping('octocat', 'A999999')
+    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+    await deleteUserMapping('octocat', 'Z990002')
 
     const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1', [
       'octocat',
     ])
     expect(rows).toHaveLength(1)
     expect(rows[0].deleted_at).not.toBeNull()
-    expect(rows[0].deleted_by).toBe('A999999')
+    expect(rows[0].deleted_by).toBe('Z990002')
   })
 
   it('getUserMapping still returns soft-deleted mapping (audit history)', async () => {
     await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat' })
-    await deleteUserMapping('octocat', 'A999999')
+    await deleteUserMapping('octocat', 'Z990002')
 
     const mapping = await getUserMapping('octocat')
     expect(mapping?.display_name).toBe('Octo Cat')
@@ -73,6 +71,24 @@ describe('user_mappings soft delete', () => {
     expect(mappings.get('octocat')?.display_name).toBe('Octo Cat')
   })
 
+  it('getUserMapping resolves case-insensitively for GitHub usernames', async () => {
+    await upsertUserMapping({ githubUsername: 'OctoCat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+
+    const byMixedCase = await getUserMapping('OctoCat')
+    expect(byMixedCase?.display_name).toBe('Octo Cat')
+
+    const byUpperCase = await getUserMapping('OCTOCAT')
+    expect(byUpperCase?.display_name).toBe('Octo Cat')
+  })
+
+  it('getUserMappings resolves case-insensitively for GitHub usernames', async () => {
+    await upsertUserMapping({ githubUsername: 'OctoCat', displayName: 'Octo Cat' })
+
+    const mappings = await getUserMappings(['OCTOCAT', 'OctoCat'])
+    expect(mappings.get('OCTOCAT')?.display_name).toBe('Octo Cat')
+    expect(mappings.get('OctoCat')?.display_name).toBe('Octo Cat')
+  })
+
   it('getAllUserMappings excludes soft-deleted', async () => {
     await upsertUserMapping({ githubUsername: 'alive', displayName: 'Alive' })
     await upsertUserMapping({ githubUsername: 'dead', displayName: 'Dead' })
@@ -83,10 +99,10 @@ describe('user_mappings soft delete', () => {
   })
 
   it('getUserMappingByNavIdent excludes soft-deleted (current-state lookup)', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', navIdent: 'O123456' })
+    await upsertUserMapping({ githubUsername: 'octocat', navIdent: 'Z990001' })
     await deleteUserMapping('octocat', null)
 
-    expect(await getUserMappingByNavIdent('O123456')).toBeNull()
+    expect(await getUserMappingByNavIdent('Z990001')).toBeNull()
   })
 
   it('getUserMappingBySlackId excludes soft-deleted (current-state lookup)', async () => {
@@ -108,8 +124,8 @@ describe('user_mappings soft delete', () => {
   })
 
   it('upsertUserMapping undeletes a soft-deleted row and updates fields', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'O123456' })
-    await deleteUserMapping('octocat', 'A999999')
+    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+    await deleteUserMapping('octocat', 'Z990002')
 
     const restored = await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat 2' })
 
@@ -117,7 +133,7 @@ describe('user_mappings soft delete', () => {
     expect(restored.deleted_by).toBeNull()
     expect(restored.display_name).toBe('Octo Cat 2')
     // Pre-existing nav_ident is preserved by COALESCE merge semantics.
-    expect(restored.nav_ident).toBe('O123456')
+    expect(restored.nav_ident).toBe('Z990001')
 
     expect((await getAllUserMappings()).length).toBe(1)
   })
@@ -148,22 +164,22 @@ describe('user_mappings soft delete', () => {
     await upsertUserMapping({
       githubUsername: 'octocat',
       displayName: 'Octo Cat',
-      navIdent: 'O123456',
+      navIdent: 'Z990001',
       navEmail: 'octo.cat@nav.no',
       slackMemberId: 'U001OCTO',
     })
 
     // Active mapping is discoverable by every joined field.
     expect((await searchDeployments('Octo Cat')).some((r) => r.type === 'user')).toBe(true)
-    expect((await searchDeployments('O123456')).some((r) => r.type === 'user')).toBe(true)
+    expect((await searchDeployments('Z990001')).some((r) => r.type === 'user')).toBe(true)
     expect((await searchDeployments('octo.cat')).some((r) => r.type === 'user')).toBe(true)
     expect((await searchDeployments('U001OCTO')).some((r) => r.type === 'user')).toBe(true)
 
-    await deleteUserMapping('octocat', 'A999999')
+    await deleteUserMapping('octocat', 'Z990002')
 
     // Soft-deleted mapping no longer matches via mapping fields.
     expect((await searchDeployments('Octo Cat')).some((r) => r.type === 'user')).toBe(false)
-    expect((await searchDeployments('O123456')).some((r) => r.type === 'user')).toBe(false)
+    expect((await searchDeployments('Z990001')).some((r) => r.type === 'user')).toBe(false)
     expect((await searchDeployments('octo.cat')).some((r) => r.type === 'user')).toBe(false)
     expect((await searchDeployments('U001OCTO')).some((r) => r.type === 'user')).toBe(false)
 
@@ -176,7 +192,6 @@ describe('user_mappings soft delete', () => {
 describe('getUnmappedUsers audit_start_year filtering', () => {
   beforeEach(async () => {
     await truncateAllTables(pool)
-    clearUserMappingCache()
   })
 
   it('excludes deployers whose only deployments are before audit_start_year', async () => {
