@@ -9,6 +9,8 @@ vi.mock('react-router', async () => {
   return {
     Link: ({ children, to, ...props }: { children?: ReactNode; to?: string } & Record<string, unknown>) =>
       React.createElement('a', { href: to as string, ...props }, children),
+    Form: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) =>
+      React.createElement('form', props, children),
   }
 })
 

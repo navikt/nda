@@ -1,11 +1,8 @@
-import { DownloadIcon, PlusIcon, UploadIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Heading, HStack, Modal, Show, TextField, VStack } from '@navikt/ds-react'
+import { Button, Modal, TextField, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
 import { Form, useActionData, useLoaderData, useNavigation } from 'react-router'
-import { ActionAlert } from '~/components/ActionAlert'
+import { AdminUsersPage } from '~/components/AdminUsersPage'
 import { CreateMappingModal } from '~/components/CreateMappingModal'
-import { UnmappedUsersList } from '~/components/UnmappedUsersList'
-import { UserMappingCard } from '~/components/UserMappingCard'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
 import {
@@ -200,8 +197,6 @@ export default function AdminUsers() {
   const [editMapping, setEditMapping] = useState<UserMapping | null>(null)
   const [addFormKey, setAddFormKey] = useState(0)
   const [prefillUsername, setPrefillUsername] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<UserMapping | null>(null)
-  const deleteModalRef = useRef<HTMLDialogElement>(null)
   const modalRef = useRef<HTMLDialogElement>(null)
   const addModalRef = useRef<HTMLDialogElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -214,7 +209,6 @@ export default function AdminUsers() {
       setAddFormKey((k) => k + 1)
       addModalRef.current?.close()
       modalRef.current?.close()
-      deleteModalRef.current?.close()
     }
   }, [actionData, navigation.state])
 
@@ -236,191 +230,89 @@ export default function AdminUsers() {
   }
 
   return (
-    <Box padding={{ xs: 'space-16', md: 'space-24' }}>
-      <VStack gap="space-24">
-        <HStack justify="space-between" align="center" wrap gap="space-8">
-          <Heading level="1" size="large">
-            Brukermappinger
-          </Heading>
-          <HStack gap="space-8">
-            <Button
-              as="a"
-              href="/admin/users/export"
-              download
-              variant="tertiary"
-              size="small"
-              icon={<DownloadIcon aria-hidden />}
-            >
-              <Show above="sm">Eksporter</Show>
-            </Button>
-            <Form method="post" encType="multipart/form-data" style={{ display: 'contents' }}>
-              <input type="hidden" name="intent" value="import" />
-              <input
-                ref={fileInputRef}
-                type="file"
-                name="file"
-                accept=".json"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  if (e.target.files?.length) {
-                    e.target.form?.requestSubmit()
-                  }
-                }}
-              />
-              <Button
-                type="button"
-                variant="tertiary"
-                size="small"
-                icon={<UploadIcon aria-hidden />}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Show above="sm">Importer</Show>
-              </Button>
+    <>
+      <AdminUsersPage
+        mappings={mappings}
+        unmappedUsers={unmappedUsers}
+        devTeamById={devTeamById}
+        userRoleAssignments={userRoleAssignments}
+        userSectionRoleAssignments={userSectionRoleAssignments}
+        actionMessage={actionData?.message}
+        actionData={actionData}
+        isSubmitting={isSubmitting}
+        onAdd={openAdd}
+        onEdit={openEdit}
+        onAddMapping={openAddWithUsername}
+        onImportClick={() => fileInputRef.current?.click()}
+        fileInputRef={fileInputRef}
+        onFileChange={(e) => {
+          if (e.target.files?.length) {
+            e.target.form?.requestSubmit()
+          }
+        }}
+      />
+
+      {/* Add Modal */}
+      <CreateMappingModal
+        ref={addModalRef}
+        key={addFormKey}
+        username={prefillUsername}
+        canPrefillOwnMapping={false}
+        githubEditable
+        isSubmitting={isSubmitting}
+        fieldErrors={actionData?.fieldErrors}
+        intent="create-mapping"
+        heading="Legg til brukermapping"
+        formId="add-form"
+        width="medium"
+      />
+
+      {/* Edit Modal */}
+      <Modal
+        ref={modalRef}
+        header={{ heading: 'Rediger brukermapping' }}
+        width="medium"
+        onClose={() => setEditMapping(null)}
+      >
+        <Modal.Body>
+          {editMapping && (
+            <Form method="post" id="edit-form">
+              <input type="hidden" name="intent" value="upsert" />
+              <input type="hidden" name="github_username" value={editMapping.github_username} />
+              <VStack gap="space-16">
+                <TextField label="GitHub brukernavn" value={editMapping.github_username} disabled />
+                <TextField label="Navn" name="display_name" defaultValue={editMapping.display_name || ''} />
+                <TextField
+                  label="Nav e-post"
+                  name="nav_email"
+                  defaultValue={editMapping.nav_email || ''}
+                  error={actionData?.fieldErrors?.nav_email}
+                />
+                <TextField
+                  label="Nav-ident"
+                  name="nav_ident"
+                  description="Format: én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
+                  defaultValue={editMapping.nav_ident || ''}
+                  error={actionData?.fieldErrors?.nav_ident}
+                />
+                <TextField
+                  label="Slack member ID"
+                  name="slack_member_id"
+                  defaultValue={editMapping.slack_member_id || ''}
+                />
+              </VStack>
             </Form>
-            <Button variant="secondary" size="small" icon={<PlusIcon aria-hidden />} onClick={openAdd}>
-              <Show above="sm">Legg til</Show>
-            </Button>
-          </HStack>
-        </HStack>
-
-        <BodyShort textColor="subtle">
-          Kobler GitHub-brukernavn til Nav-identitet og Slack for visning i deployment-oversikten.
-        </BodyShort>
-
-        {/* Success message from import */}
-        {actionData?.message && (
-          <Alert variant="success" closeButton>
-            {actionData.message}
-          </Alert>
-        )}
-
-        <ActionAlert data={actionData} />
-
-        {/* Warning alert for unmapped users */}
-        {unmappedUsers.length > 0 && (
-          <Alert variant="warning">
-            {unmappedUsers.length} GitHub-bruker{unmappedUsers.length === 1 ? '' : 'e'} har deployments men mangler
-            mapping. Se listen nederst på siden.
-          </Alert>
-        )}
-
-        {mappings.length === 0 ? (
-          <Alert variant="info">
-            Ingen brukermappinger er lagt til ennå. Klikk "Legg til" for å opprette den første.
-          </Alert>
-        ) : (
-          <div>
-            {mappings.map((mapping) => (
-              <UserMappingCard
-                key={mapping.github_username}
-                mapping={mapping}
-                teamRoles={mapping.nav_ident ? (userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []}
-                sectionRoles={
-                  mapping.nav_ident ? (userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []
-                }
-                devTeamById={devTeamById}
-                onEdit={() => openEdit(mapping)}
-                onDelete={() => {
-                  setDeleteTarget(mapping)
-                  deleteModalRef.current?.showModal()
-                }}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Unmapped users section at bottom */}
-        <UnmappedUsersList users={unmappedUsers} onAddMapping={openAddWithUsername} />
-
-        {/* Add Modal */}
-        <CreateMappingModal
-          ref={addModalRef}
-          key={addFormKey}
-          username={prefillUsername}
-          canPrefillOwnMapping={false}
-          githubEditable
-          isSubmitting={isSubmitting}
-          fieldErrors={actionData?.fieldErrors}
-          intent="create-mapping"
-          heading="Legg til brukermapping"
-          formId="add-form"
-          width="medium"
-        />
-
-        {/* Edit Modal */}
-        <Modal
-          ref={modalRef}
-          header={{ heading: 'Rediger brukermapping' }}
-          width="medium"
-          onClose={() => setEditMapping(null)}
-        >
-          <Modal.Body>
-            {editMapping && (
-              <Form method="post" id="edit-form">
-                <input type="hidden" name="intent" value="upsert" />
-                <input type="hidden" name="github_username" value={editMapping.github_username} />
-                <VStack gap="space-16">
-                  <TextField label="GitHub brukernavn" value={editMapping.github_username} disabled />
-                  <TextField label="Navn" name="display_name" defaultValue={editMapping.display_name || ''} />
-                  <TextField
-                    label="Nav e-post"
-                    name="nav_email"
-                    defaultValue={editMapping.nav_email || ''}
-                    error={actionData?.fieldErrors?.nav_email}
-                  />
-                  <TextField
-                    label="Nav-ident"
-                    name="nav_ident"
-                    description="Format: én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
-                    defaultValue={editMapping.nav_ident || ''}
-                    error={actionData?.fieldErrors?.nav_ident}
-                  />
-                  <TextField
-                    label="Slack member ID"
-                    name="slack_member_id"
-                    defaultValue={editMapping.slack_member_id || ''}
-                  />
-                </VStack>
-              </Form>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button type="submit" form="edit-form" loading={isSubmitting}>
-              Lagre
-            </Button>
-            <Button variant="secondary" onClick={() => modalRef.current?.close()}>
-              Avbryt
-            </Button>
-          </Modal.Footer>
-        </Modal>
-
-        {/* Delete Confirmation Modal */}
-        <Modal
-          ref={deleteModalRef}
-          header={{ heading: 'Bekreft sletting' }}
-          width="small"
-          onClose={() => setDeleteTarget(null)}
-        >
-          <Modal.Body>
-            <BodyShort>
-              Er du sikker på at du vil slette brukermappingen for{' '}
-              <strong>{deleteTarget?.display_name || deleteTarget?.github_username}</strong>
-              {deleteTarget?.display_name ? ` (${deleteTarget.github_username})` : ''}?
-            </BodyShort>
-          </Modal.Body>
-          <Modal.Footer>
-            <Form method="post">
-              <input type="hidden" name="github_username" value={deleteTarget?.github_username ?? ''} />
-              <Button variant="danger" type="submit" name="intent" value="delete" loading={isSubmitting}>
-                Slett
-              </Button>
-            </Form>
-            <Button variant="secondary" onClick={() => deleteModalRef.current?.close()}>
-              Avbryt
-            </Button>
-          </Modal.Footer>
-        </Modal>
-      </VStack>
-    </Box>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button type="submit" form="edit-form" loading={isSubmitting}>
+            Lagre
+          </Button>
+          <Button variant="secondary" onClick={() => modalRef.current?.close()}>
+            Avbryt
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    </>
   )
 }
