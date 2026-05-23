@@ -195,6 +195,112 @@ pnpm run db:migrate:create my-migration  # Create new migration
 pnpm run db:migrate:down         # Rollback last migration
 ```
 
+## 📊 Logging og observabilitet
+
+I produksjon skrives alle logger som strukturert JSON (Winston). Loggene er tilgjengelige i både ELK og Loki.
+
+### Loggformat
+
+Hvert logginnslag inneholder alltid:
+
+| Felt | Beskrivelse |
+|------|-------------|
+| `@timestamp` | Tidspunkt for hendelsen |
+| `level` | `info`, `warn`, `error`, eller `debug` |
+| `message` | Lesbar beskrivelse |
+| `applicationVersion` | Versjonsnummer for appen |
+| `trace_id` | Korrelerings-ID for én HTTP-forespørsel (request scoped) |
+
+Synkjobber inkluderer i tillegg:
+
+| Felt | Beskrivelse |
+|------|-------------|
+| `job_id` | ID for synkjobben som kjøres |
+| `job_type` | Type jobb, f.eks. `github_verify` |
+| `app_id` | Intern ID for applikasjonen som synkroniseres |
+
+### Utgående HTTP-kall
+
+Alle utgående HTTP-kall logges med `type: "outgoing_http"` som fast felt — bruk dette til å isolere ekstern trafikk i ELK og Loki.
+
+Eksempel på logginnslag:
+```json
+{
+  "@timestamp": "2026-05-23T08:00:01.234Z",
+  "level": "info",
+  "message": "Outgoing HTTP request",
+  "type": "outgoing_http",
+  "area": "github",
+  "method": "GET",
+  "host": "api.github.com",
+  "path": "/repos/navikt/myapp/pulls/42/reviews",
+  "status_code": 200,
+  "duration_ms": 143,
+  "request_number": 7,
+  "trace_id": "abc123"
+}
+```
+
+Felter for utgående HTTP:
+
+| Felt | Beskrivelse |
+|------|-------------|
+| `type` | Alltid `outgoing_http` |
+| `area` | Funksjonelt område: `github`, `slack`, `microsoft_graph`, `nais_auth`, `nais_graphql` |
+| `method` | HTTP-metode: `GET`, `POST` osv. |
+| `host` | Hostnavn uten protokoll og sti |
+| `path` | URL-sti uten query-streng |
+| `status_code` | HTTP-statuskode fra svaret (mangler ved nettverksfeil) |
+| `duration_ms` | Svartid i millisekunder |
+| `error` | Feilmelding (kun ved unntak/nettverksfeil) |
+
+### Spørringer i Kibana (ELK)
+
+```
+# Alle utgående HTTP-kall
+type: "outgoing_http"
+
+# Kun GitHub-kall
+type: "outgoing_http" AND area: "github"
+
+# Feilede kall (HTTP 4xx/5xx)
+type: "outgoing_http" AND status_code >= 400
+
+# Trege kall (over 1 sekund)
+type: "outgoing_http" AND duration_ms > 1000
+
+# Kall knyttet til en synkjobb
+type: "outgoing_http" AND job_id: 42
+
+# Alle loggmeldinger for én request
+trace_id: "abc123"
+```
+
+### Spørringer i Grafana Loki (LogQL)
+
+```logql
+# Alle utgående HTTP-kall
+{app="nda"} | json | type="outgoing_http"
+
+# Kun GitHub-kall
+{app="nda"} | json | type="outgoing_http" | area="github"
+
+# Feilede kall
+{app="nda"} | json | type="outgoing_http" | status_code >= 400
+
+# Trege kall (over 1 sekund) med path og svartid
+{app="nda"} | json | type="outgoing_http" | duration_ms > 1000
+  | line_format "{{.area}} {{.method}} {{.path}} → {{.status_code}} ({{.duration_ms}}ms)"
+
+# Rate av utgående kall per area (per minutt)
+sum by (area) (
+  rate({app="nda"} | json | type="outgoing_http" [1m])
+)
+
+# Alle logger for én trace
+{app="nda"} | json | trace_id="abc123"
+```
+
 ## 📚 Database Schema
 
 Database schema is managed with migrations in `app/db/migrations/`. See [Migration README](app/db/migrations/README.md) for details.
