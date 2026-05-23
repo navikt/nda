@@ -1,29 +1,8 @@
-import { ChevronLeftIcon, ChevronRightIcon, LinkIcon, PlusIcon } from '@navikt/aksel-icons'
-import {
-  Alert,
-  BodyShort,
-  Box,
-  Button,
-  Checkbox,
-  Detail,
-  Heading,
-  Hide,
-  HStack,
-  Radio,
-  RadioGroup,
-  Select,
-  Show,
-  Tag,
-  VStack,
-} from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
-import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router'
+import { redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router'
 import { BulkLinkGoalModal, SelectLinkGoalModal } from '~/components/BulkLinkGoalModals'
 import { CreateMappingModal } from '~/components/CreateMappingModal'
-import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
-import { MethodTag, StatusTag } from '~/components/deployment-tags'
-import { UserProfileHeader } from '~/components/UserProfileHeader'
-import { UserRolesDisplay } from '~/components/UserRolesDisplay'
+import { UserPageContent } from '~/components/UserPageContent'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import {
   bulkAddDeploymentGoalLinks,
@@ -44,13 +23,11 @@ import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.serve
 import { requireUser } from '~/lib/auth.server'
 import { canSearchUsers } from '~/lib/authorization.server'
 import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
-import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
-import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
+import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { formatDisplayNameNatural } from '~/lib/user-display'
-import styles from '~/styles/common.module.css'
 import type { Route } from './+types/$username'
 
 export function meta({ data }: { data: { username: string } }) {
@@ -366,18 +343,7 @@ export default function UserPage() {
   const bulkLinkRef = useRef<HTMLDialogElement>(null)
   const selectLinkRef = useRef<HTMLDialogElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-
-  const updateFilter = (key: string, value: string, defaultValue: string) => {
-    const params = new URLSearchParams(searchParams)
-    if (value === defaultValue) {
-      params.delete(key)
-    } else {
-      params.set(key, value)
-    }
-    params.delete('page')
-    setSearchParams(params)
-  }
+  const [pendingLinkIds, setPendingLinkIds] = useState<number[]>([])
 
   // Close create-mapping modal when mapping transitions from null to non-null
   const prevMappingRef = useRef(mapping)
@@ -388,390 +354,80 @@ export default function UserPage() {
     prevMappingRef.current = mapping
   }, [mapping])
 
-  // Close goal modals when action completes (success or error)
+  // Open select-link modal when pendingLinkIds is populated
+  useEffect(() => {
+    if (pendingLinkIds.length > 0) {
+      selectLinkRef.current?.showModal()
+    }
+  }, [pendingLinkIds])
+
+  // Close goal modals and clear selection when action completes
   useEffect(() => {
     if ((actionData?.success || actionData?.error) && navigation.state === 'idle') {
       bulkLinkRef.current?.close()
       selectLinkRef.current?.close()
       if (actionData?.success) {
-        setSelectedIds(new Set())
+        setPendingLinkIds([])
       }
     }
   }, [actionData, navigation.state])
 
-  const formatDate = (date: string | Date) => {
-    const d = new Date(date)
-    return d.toLocaleDateString('nb-NO', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
-
-  const unlinkableOnPage = paginatedDeployments.deployments.filter((d) => !d.has_goal_link)
-  const allOnPageSelected = unlinkableOnPage.length > 0 && unlinkableOnPage.every((d) => selectedIds.has(d.id))
-
-  const toggleSelect = (id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const toggleSelectAll = () => {
-    if (allOnPageSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev)
-        for (const d of unlinkableOnPage) next.delete(d.id)
-        return next
-      })
+  const updateFilter = (key: string, value: string) => {
+    const params = new URLSearchParams(searchParams)
+    const defaultValues: Record<string, string> = { goal: 'all', dependabot: 'all', approval: 'all', app: '' }
+    if (value === (defaultValues[key] ?? '')) {
+      params.delete(key)
     } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev)
-        for (const d of unlinkableOnPage) next.add(d.id)
-        return next
-      })
+      params.set(key, value)
     }
+    params.delete('page')
+    setSearchParams(params)
   }
 
   return (
-    <VStack gap="space-32">
-      <UserProfileHeader
+    <>
+      <UserPageContent
         username={username}
-        displayName={mapping?.display_name || botDisplayName}
-        identity={mapping}
+        mapping={mapping}
         isBot={isBot}
+        botDisplayName={botDisplayName}
         botDescription={botDescription}
+        devTeams={devTeams}
+        userRoles={userRoles}
+        deploymentCount={deploymentCount}
+        paginatedDeployments={paginatedDeployments}
+        monthlyStats={monthlyStats}
+        deployerApps={deployerApps}
+        period={period}
+        goalFilter={goalFilter}
+        dependabotFilter={dependabotFilter}
+        approvalFilter={approvalFilter}
+        appFilter={appFilter}
+        hasFilters={hasFilters}
+        availableBoards={availableBoards}
+        isOwnProfile={isOwnProfile}
+        landingPage={landingPage}
+        allSections={allSections}
+        actionData={actionData}
+        isSubmitting={isSubmitting}
+        onFilterChange={updateFilter}
+        onPeriodChange={(value) => {
+          const params = new URLSearchParams(searchParams)
+          params.set('period', value)
+          params.delete('page')
+          setSearchParams(params)
+        }}
+        onPageChange={(page) => {
+          const params = new URLSearchParams(searchParams)
+          params.set('page', String(page))
+          setSearchParams(params)
+        }}
+        onCreateMapping={() => modalRef.current?.showModal()}
+        onBulkLink={() => bulkLinkRef.current?.showModal()}
+        onSelectLink={(ids) => {
+          setPendingLinkIds(ids)
+        }}
       />
-
-      {/* User roles (read-only) */}
-      <UserRolesDisplay userRoles={userRoles} />
-
-      {/* Dev team memberships (read-only — team membership is managed via team admin) */}
-      {devTeams.length > 0 && (
-        <VStack gap="space-8">
-          <Detail textColor="subtle">Utviklingsteam</Detail>
-          <HStack gap="space-8" wrap>
-            {devTeams.map((team) =>
-              team.section_slug ? (
-                <Tag key={team.id} variant="moderate" size="small">
-                  <Link
-                    to={`/sections/${team.section_slug}/teams/${team.slug}`}
-                    style={{ textDecoration: 'none', color: 'inherit' }}
-                  >
-                    {team.name}
-                  </Link>
-                </Tag>
-              ) : (
-                <Tag key={team.id} variant="moderate" size="small">
-                  {team.name}
-                </Tag>
-              ),
-            )}
-          </HStack>
-        </VStack>
-      )}
-
-      {/* Landing page preference — only for own profile */}
-      {isOwnProfile && (
-        <VStack gap="space-12">
-          <Heading level="2" size="small">
-            Landingsside
-          </Heading>
-          <Box background="raised" padding="space-16" borderRadius="4">
-            <RadioGroup
-              legend="Velg hvilken side som vises når du åpner Deployment Audit"
-              hideLegend
-              value={landingPage}
-              onChange={(value) => {
-                const form = document.getElementById('landing-page-form') as HTMLFormElement | null
-                const input = form?.querySelector<HTMLInputElement>('input[name="landingPage"]')
-                if (input && form) {
-                  input.value = value
-                  form.requestSubmit()
-                }
-              }}
-            >
-              <Radio value="my-teams">Mine team</Radio>
-              <Radio value="sections">Alle seksjoner</Radio>
-              {allSections.map((section) => (
-                <Radio key={section.slug} value={`sections/${section.slug}`}>
-                  {section.name}
-                </Radio>
-              ))}
-            </RadioGroup>
-            <Form method="post" id="landing-page-form" style={{ display: 'none' }}>
-              <input type="hidden" name="intent" value="set-landing-page" />
-              <input type="hidden" name="landingPage" value={landingPage} />
-            </Form>
-          </Box>
-        </VStack>
-      )}
-
-      {/* No mapping warning - only for non-bots */}
-      {!mapping && !isBot && (
-        <Alert variant="warning">
-          <HStack gap="space-16" align="center" justify="space-between" wrap>
-            <BodyShort>Ingen brukermapping funnet for denne brukeren.</BodyShort>
-            <Button
-              variant="secondary"
-              size="small"
-              icon={<PlusIcon aria-hidden />}
-              onClick={() => modalRef.current?.showModal()}
-            >
-              Opprett mapping
-            </Button>
-          </HStack>
-        </Alert>
-      )}
-
-      {/* Time period selector + chart + deployments */}
-      <VStack gap="space-24">
-        <HStack justify="space-between" align="end" wrap>
-          <Heading level="2" size="small">
-            Leveranser {hasFilters ? `(${paginatedDeployments.total} av ${deploymentCount})` : `(${deploymentCount})`}
-          </Heading>
-          <Select
-            label="Tidsperiode"
-            size="small"
-            value={period}
-            onChange={(e) => {
-              const params = new URLSearchParams(searchParams)
-              params.set('period', e.target.value)
-              params.delete('page')
-              setSearchParams(params)
-            }}
-            style={{ width: '14rem' }}
-          >
-            {TIME_PERIOD_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </Select>
-        </HStack>
-
-        {/* Deployment activity chart */}
-        {monthlyStats.length > 0 && (
-          <Box background="raised" padding="space-16" borderRadius="4">
-            <DeploymentActivityChart data={monthlyStats} />
-          </Box>
-        )}
-
-        {/* Table filters */}
-        <HStack gap="space-12" align="end" wrap>
-          <Select
-            label="Endringsopphav"
-            size="small"
-            value={goalFilter}
-            onChange={(e) => updateFilter('goal', e.target.value, 'all')}
-            style={{ width: '14rem' }}
-          >
-            <option value="all">Alle</option>
-            <option value="with_goal">Med endringsopphav</option>
-            <option value="without_goal">Uten endringsopphav</option>
-          </Select>
-          <Select
-            label="Dependabot"
-            size="small"
-            value={dependabotFilter}
-            onChange={(e) => updateFilter('dependabot', e.target.value, 'all')}
-            style={{ width: '10rem' }}
-          >
-            <option value="all">Alle</option>
-            <option value="only">Kun Dependabot</option>
-          </Select>
-          <Select
-            label="Godkjenning"
-            size="small"
-            value={approvalFilter}
-            onChange={(e) => updateFilter('approval', e.target.value, 'all')}
-            style={{ width: '12rem' }}
-          >
-            <option value="all">Alle</option>
-            <option value="approved">Godkjent</option>
-            <option value="not_approved">Ikke godkjent</option>
-            <option value="pending">Venter</option>
-          </Select>
-          {deployerApps.length > 1 && (
-            <Select
-              label="Applikasjon"
-              size="small"
-              value={appFilter}
-              onChange={(e) => updateFilter('app', e.target.value, '')}
-              style={{ width: '16rem' }}
-            >
-              <option value="">Alle applikasjoner</option>
-              {deployerApps.map((app) => (
-                <option key={app} value={app}>
-                  {app}
-                </option>
-              ))}
-            </Select>
-          )}
-        </HStack>
-
-        {/* Bulk link actions + feedback */}
-        {availableBoards.length > 0 && (
-          <HStack gap="space-12" align="center" wrap>
-            <Button
-              variant="secondary"
-              size="small"
-              icon={<LinkIcon aria-hidden />}
-              onClick={() => bulkLinkRef.current?.showModal()}
-            >
-              Koble Dependabot til endringsopphav
-            </Button>
-            {unlinkableOnPage.length > 0 && (
-              <Checkbox size="small" checked={allOnPageSelected} onChange={toggleSelectAll}>
-                Velg alle uten endringsopphav på siden
-              </Checkbox>
-            )}
-            {selectedIds.size > 0 && (
-              <Button
-                variant="primary"
-                size="small"
-                icon={<LinkIcon aria-hidden />}
-                onClick={() => selectLinkRef.current?.showModal()}
-              >
-                Koble {selectedIds.size} markerte
-              </Button>
-            )}
-            {actionData?.success && typeof actionData.success === 'string' && (
-              <Alert variant="success" size="small" inline>
-                {actionData.success}
-              </Alert>
-            )}
-            {actionData?.error && typeof actionData.error === 'string' && (
-              <Alert variant="error" size="small" inline>
-                {actionData.error}
-              </Alert>
-            )}
-          </HStack>
-        )}
-
-        {/* Deployments (paginated) */}
-        {paginatedDeployments.deployments.length === 0 ? (
-          <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-            <BodyShort>Ingen leveranser funnet for denne brukeren.</BodyShort>
-          </Box>
-        ) : (
-          <>
-            <div>
-              {paginatedDeployments.deployments.map((deployment) => (
-                <Box key={deployment.id} padding="space-20" background="raised" className={styles.stackedListItem}>
-                  <HStack gap="space-12" align="start">
-                    {availableBoards.length > 0 && !deployment.has_goal_link && (
-                      <Checkbox
-                        size="small"
-                        checked={selectedIds.has(deployment.id)}
-                        onChange={() => toggleSelect(deployment.id)}
-                        hideLabel
-                        style={{ flexShrink: 0, marginTop: '2px' }}
-                      >
-                        Velg leveranse {deployment.id}
-                      </Checkbox>
-                    )}
-                    <VStack gap="space-12" style={{ flex: 1, minWidth: 0 }}>
-                      <HStack gap="space-8" align="center" justify="space-between">
-                        <HStack gap="space-8" align="center" style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                          <Link to={`/deployments/${deployment.id}`}>
-                            <BodyShort weight="semibold" style={{ whiteSpace: 'nowrap' }}>
-                              {formatDate(deployment.created_at)}
-                            </BodyShort>
-                          </Link>
-                          <Show above="md">
-                            {deployment.title && (
-                              <BodyShort className={styles.truncateText} style={{ flex: 1, minWidth: 0 }}>
-                                {deployment.title}
-                              </BodyShort>
-                            )}
-                          </Show>
-                        </HStack>
-                        <HStack gap="space-8" style={{ flexShrink: 0 }}>
-                          <MethodTag
-                            github_pr_number={deployment.github_pr_number}
-                            four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
-                          />
-                          <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
-                          {deployment.has_goal_link && (
-                            <Tag variant="moderate" size="xsmall" data-color="success">
-                              <HStack gap="space-4" align="center">
-                                <LinkIcon aria-hidden style={{ fontSize: '0.75rem' }} />
-                                Endringsopphav
-                              </HStack>
-                            </Tag>
-                          )}
-                          {deployment.is_dependabot && (
-                            <Tag variant="moderate" size="xsmall" data-color="neutral">
-                              Dependabot
-                            </Tag>
-                          )}
-                        </HStack>
-                      </HStack>
-
-                      <Hide above="md">
-                        {deployment.title && <BodyShort className={styles.truncateText}>{deployment.title}</BodyShort>}
-                      </Hide>
-
-                      <HStack gap="space-16" align="center" wrap>
-                        <Detail textColor="subtle">
-                          <Link
-                            to={`/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}`}
-                          >
-                            {deployment.app_name}
-                          </Link>
-                        </Detail>
-                        <Detail textColor="subtle">{deployment.environment_name}</Detail>
-                      </HStack>
-                    </VStack>
-                  </HStack>
-                </Box>
-              ))}
-            </div>
-
-            {/* Pagination */}
-            {paginatedDeployments.total_pages > 1 && (
-              <HStack gap="space-16" justify="center" align="center">
-                <Button
-                  variant="tertiary"
-                  size="small"
-                  icon={<ChevronLeftIcon aria-hidden />}
-                  disabled={paginatedDeployments.page <= 1}
-                  onClick={() => {
-                    const params = new URLSearchParams(searchParams)
-                    params.set('page', String(paginatedDeployments.page - 1))
-                    setSearchParams(params)
-                  }}
-                >
-                  Forrige
-                </Button>
-                <BodyShort>
-                  Side {paginatedDeployments.page} av {paginatedDeployments.total_pages}
-                </BodyShort>
-                <Button
-                  variant="tertiary"
-                  size="small"
-                  icon={<ChevronRightIcon aria-hidden />}
-                  iconPosition="right"
-                  disabled={paginatedDeployments.page >= paginatedDeployments.total_pages}
-                  onClick={() => {
-                    const params = new URLSearchParams(searchParams)
-                    params.set('page', String(paginatedDeployments.page + 1))
-                    setSearchParams(params)
-                  }}
-                >
-                  Neste
-                </Button>
-              </HStack>
-            )}
-          </>
-        )}
-      </VStack>
 
       {/* Create mapping modal - only for non-bots */}
       {!isBot && (
@@ -799,15 +455,17 @@ export default function UserPage() {
       )}
 
       {/* Link selected deployments to goal modal */}
-      {availableBoards.length > 0 && selectedIds.size > 0 && (
+      {availableBoards.length > 0 && (
         <SelectLinkGoalModal
           ref={selectLinkRef}
-          selectedIds={[...selectedIds]}
-          selectedDates={paginatedDeployments.deployments.filter((d) => selectedIds.has(d.id)).map((d) => d.created_at)}
+          selectedIds={pendingLinkIds}
+          selectedDates={paginatedDeployments.deployments
+            .filter((d) => pendingLinkIds.includes(d.id))
+            .map((d) => (d.created_at instanceof Date ? d.created_at.toISOString() : String(d.created_at)))}
           availableBoards={availableBoards}
           isSubmitting={isSubmitting}
         />
       )}
-    </VStack>
+    </>
   )
 }
