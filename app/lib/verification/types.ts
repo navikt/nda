@@ -150,6 +150,19 @@ const _UNVERIFIED_REASON_LABELS: Record<UnverifiedReason, string> = {
   approval_before_last_commit: 'Godkjenning før siste commit',
   pr_not_approved: 'PR ikke godkjent',
 }
+export const UNVERIFIED_REASON_LABELS = _UNVERIFIED_REASON_LABELS
+
+/**
+ * Longer human-readable explanations for each unverified reason.
+ * Used on the deployment detail page to help users understand what happened.
+ */
+export const UNVERIFIED_REASON_DESCRIPTIONS: Record<UnverifiedReason, string> = {
+  no_pr: 'Committen ble pushet direkte til main uten en pull request.',
+  no_approved_reviews: 'Pull requesten har ingen godkjent code review.',
+  approval_before_last_commit:
+    'Pull requesten ble godkjent, men det ble pushet nye commits etter godkjenningen. Endringene i de siste committene er ikke sett av en annen person.',
+  pr_not_approved: 'Pull requesten er ikke godkjent.',
+}
 
 // =============================================================================
 // Approval Methods

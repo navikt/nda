@@ -75,6 +75,11 @@ import { formatChangeSource, getFourEyesStatus } from '~/lib/status-display'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { getUserDisplayName, serializeUserMappings } from '~/lib/user-display'
 import { isVerificationDebugMode } from '~/lib/verification'
+import {
+  UNVERIFIED_REASON_DESCRIPTIONS,
+  UNVERIFIED_REASON_LABELS,
+  type UnverifiedReason,
+} from '~/lib/verification/types'
 import type { Route } from './+types/$id'
 
 export { action } from './$id.actions.server'
@@ -662,22 +667,68 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           <Heading size="small" level="3" spacing>
             {status.text}
           </Heading>
-          <BodyShort>
-            {status.description}
-            {(deployment.four_eyes_status === 'unverified_commits' ||
-              deployment.four_eyes_status === 'approved_pr_with_unreviewed') &&
+          <VStack gap="space-8">
+            <BodyShort>{status.description}</BodyShort>
+            {/* Reason-specific explanation for unverified_commits */}
+            {deployment.four_eyes_status === 'unverified_commits' &&
+              deployment.unverified_commits &&
+              deployment.unverified_commits.length > 0 &&
+              (() => {
+                const commits = deployment.unverified_commits!
+                const reasons = new Set(commits.map((c: { reason?: string }) => c.reason).filter(Boolean))
+                const primaryReason = (reasons.size === 1 ? [...reasons][0] : null) as UnverifiedReason | null
+                const prNumber = commits[0]?.pr_number ?? deployment.github_pr_number
+                const prUrl =
+                  prNumber && deployment.detected_github_owner && deployment.detected_github_repo_name
+                    ? `https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/pull/${prNumber}`
+                    : null
+                return (
+                  <>
+                    {primaryReason && (
+                      <BodyShort>
+                        <strong>Årsak:</strong> {UNVERIFIED_REASON_DESCRIPTIONS[primaryReason]}
+                      </BodyShort>
+                    )}
+                    <HStack gap="space-12" wrap>
+                      {prUrl && <ExternalLink href={prUrl}>Se PR #{prNumber} på GitHub</ExternalLink>}
+                      {previousDeploymentForDiff?.commit_sha && deployment.commit_sha && (
+                        <ExternalLink
+                          href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
+                        >
+                          Se endringer mellom deployments
+                        </ExternalLink>
+                      )}
+                    </HStack>
+                  </>
+                )
+              })()}
+            {/* Generic compare link for approved_pr_with_unreviewed (no reason breakdown) */}
+            {deployment.four_eyes_status === 'approved_pr_with_unreviewed' &&
               previousDeploymentForDiff?.commit_sha &&
               deployment.commit_sha && (
-                <>
-                  {' '}
+                <BodyShort>
                   <ExternalLink
                     href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
                   >
                     Se endringer på GitHub
                   </ExternalLink>
-                </>
+                </BodyShort>
               )}
-          </BodyShort>
+            {/* Compare link for other non-approved statuses */}
+            {deployment.four_eyes_status !== 'unverified_commits' &&
+              deployment.four_eyes_status !== 'approved_pr_with_unreviewed' &&
+              previousDeploymentForDiff?.commit_sha &&
+              deployment.commit_sha &&
+              ['direct_push', 'missing', 'pr_not_approved'].includes(deployment.four_eyes_status ?? '') && (
+                <BodyShort>
+                  <ExternalLink
+                    href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
+                  >
+                    Se endringer på GitHub
+                  </ExternalLink>
+                </BodyShort>
+              )}
+          </VStack>
           {deployment.four_eyes_status === 'pending' && capabilities.canVerify && deployment.commit_sha && (
             <VStack gap="space-8" marginBlock="space-8 space-0">
               <BodyShort>Du kan også forsøke å verifisere manuelt.</BodyShort>
@@ -846,7 +897,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                 Ikke-verifiserte commits ({filteredUnverifiedCommits.length})
               </Heading>
               <BodyShort spacing>
-                Følgende commits mellom forrige og dette deploymentet har ikke godkjent PR.
+                Følgende commits mangler verifisering av fire-øyne-prinsippet.
                 {previousDeploymentForDiff?.commit_sha && deployment.commit_sha && (
                   <>
                     {' '}
@@ -868,7 +919,23 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                     <br />
                     <Detail>
                       av <UserName username={commit.author} userMappings={userMappings} link={false} /> •{' '}
-                      {commit.pr_number ? `PR #${commit.pr_number} ikke godkjent` : 'Ingen PR (direkte push)'}
+                      {commit.reason && commit.reason in UNVERIFIED_REASON_LABELS
+                        ? UNVERIFIED_REASON_LABELS[commit.reason as UnverifiedReason]
+                        : commit.pr_number
+                          ? `PR #${commit.pr_number} ikke godkjent`
+                          : 'Ingen PR (direkte push)'}
+                      {commit.pr_number && deployment.detected_github_owner && deployment.detected_github_repo_name && (
+                        <>
+                          {' '}
+                          (
+                          <ExternalLink
+                            href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/pull/${commit.pr_number}`}
+                          >
+                            #{commit.pr_number}
+                          </ExternalLink>
+                          )
+                        </>
+                      )}
                     </Detail>
                   </li>
                 ))}

@@ -34,8 +34,7 @@ export function getFourEyesStatus(deployment: any): {
       return {
         text: 'Ikke-verifiserte commits',
         variant: 'error',
-        description:
-          'Det finnes commits mellom forrige og dette deploymentet som ikke har godkjent PR. Se detaljer under.',
+        description: 'Deploymentet inneholder endringer som ikke er verifisert av en annen person.',
       }
     case 'approved_pr_with_unreviewed':
       return {
