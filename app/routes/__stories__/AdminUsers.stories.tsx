@@ -21,17 +21,17 @@ type UnmappedUser = {
 
 const mockMappings: UserMapping[] = [
   {
-    github_username: 'john-doe',
-    display_name: 'John Doe',
-    nav_email: 'john.doe@nav.no',
-    nav_ident: 'A123456',
+    github_username: 'glad-fjord',
+    display_name: 'Glad Fjord',
+    nav_email: 'glad.fjord@nav.no',
+    nav_ident: 'Z990001',
     slack_member_id: 'U12345678',
   },
   {
-    github_username: 'jane-smith',
-    display_name: 'Jane Smith',
-    nav_email: 'jane.smith@nav.no',
-    nav_ident: 'B654321',
+    github_username: 'rask-elv',
+    display_name: 'Rask Elv',
+    nav_email: 'rask.elv@nav.no',
+    nav_ident: 'Z990002',
     slack_member_id: 'U87654321',
   },
   {

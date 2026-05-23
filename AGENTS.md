@@ -478,3 +478,9 @@ Do NOT duplicate route JSX inline in stories. If you find yourself copy-pasting 
 
 All fictional person names in stories, tests, and mock data must use the format **"Adjektiv Substantiv"** (Norwegian adjective + noun). Examples: "Glad Fjord", "Rask Elv", "Stille Skog", "Modig Bjørk". Do NOT use real-sounding Norwegian names like "Ola Nordmann" or "Kari Hansen".
 
+### Test NAV-Idents
+
+All fictional NAV-idents in stories, tests, and mock data must use the format **Z99xxxx** where `xxxx` is a number from `0000` to `9999`. Examples: "Z990001", "Z990042", "Z990100". Do NOT use other letter/digit prefixes like "A123456" — those resemble real idents.
+
+**Exception:** Tests that validate the NAV-ident format itself (e.g., `form-validators.test.ts`) may use various formats to verify the validator accepts/rejects them correctly.
+

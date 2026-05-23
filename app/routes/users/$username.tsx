@@ -10,24 +10,21 @@ import {
   HGrid,
   Hide,
   HStack,
-  Label,
-  Modal,
   Radio,
   RadioGroup,
   Select,
   Show,
   Tag,
-  TextField,
   VStack,
 } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from 'react-router'
 import { BulkLinkGoalModal, SelectLinkGoalModal } from '~/components/BulkLinkGoalModals'
+import { CreateMappingModal } from '~/components/CreateMappingModal'
 import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserRolesDisplay } from '~/components/UserRolesDisplay'
-import { UserSearch } from '~/components/UserSearch'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import {
   bulkAddDeploymentGoalLinks,
@@ -53,6 +50,7 @@ import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
+import { formatDisplayNameNatural } from '~/lib/user-display'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/$username'
 
@@ -370,11 +368,6 @@ export default function UserPage() {
   const selectLinkRef = useRef<HTMLDialogElement>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [mappingFields, setMappingFields] = useState({
-    display_name: '',
-    nav_email: '',
-    nav_ident: canPrefillOwnMapping ? (loggedInNavIdent ?? '') : '',
-  })
 
   const updateFilter = (key: string, value: string, defaultValue: string) => {
     const params = new URLSearchParams(searchParams)
@@ -831,77 +824,14 @@ export default function UserPage() {
 
       {/* Create mapping modal - only for non-bots */}
       {!isBot && (
-        <Modal ref={modalRef} header={{ heading: 'Opprett brukermapping' }}>
-          <Modal.Body>
-            <Form method="post" id="create-mapping-form">
-              <input type="hidden" name="intent" value="create-mapping" />
-              {!canPrefillOwnMapping && <input type="hidden" name="github_username" value={username} />}
-              <VStack gap="space-16">
-                {canPrefillOwnMapping ? (
-                  <TextField
-                    label="GitHub brukernavn"
-                    name="github_username"
-                    error={actionData?.fieldErrors?.github_username}
-                  />
-                ) : (
-                  <TextField
-                    label="GitHub brukernavn"
-                    value={username}
-                    error={actionData?.fieldErrors?.github_username}
-                    disabled
-                  />
-                )}
-                {!canPrefillOwnMapping && (
-                  <UserSearch
-                    label="Søk opp person"
-                    description="Søk med navn, e-post eller NAV-ident for å fylle ut feltene under"
-                    onSelect={() => {}}
-                    onSelectUser={(user) =>
-                      setMappingFields({
-                        display_name: formatDisplayNameNatural(user.displayName),
-                        nav_email: user.email ?? '',
-                        nav_ident: user.navIdent ?? '',
-                      })
-                    }
-                  />
-                )}
-                {mappingFields.nav_ident && (
-                  <Box background="sunken" padding="space-16" borderRadius="8">
-                    <VStack gap="space-8">
-                      <div>
-                        <Label size="small">Navn</Label>
-                        <BodyShort>{mappingFields.display_name || '–'}</BodyShort>
-                      </div>
-                      <div>
-                        <Label size="small">Nav e-post</Label>
-                        <BodyShort>{mappingFields.nav_email || '–'}</BodyShort>
-                      </div>
-                      <div>
-                        <Label size="small">Nav-ident</Label>
-                        <BodyShort>{mappingFields.nav_ident}</BodyShort>
-                      </div>
-                    </VStack>
-                  </Box>
-                )}
-                <input type="hidden" name="nav_ident" value={mappingFields.nav_ident} />
-                {actionData?.fieldErrors?.nav_ident && (
-                  <Alert variant="error" size="small">
-                    {actionData.fieldErrors.nav_ident}
-                  </Alert>
-                )}
-                <TextField label="Slack member ID" name="slack_member_id" />
-              </VStack>
-            </Form>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button type="submit" form="create-mapping-form" loading={isSubmitting}>
-              Lagre
-            </Button>
-            <Button variant="secondary" onClick={() => modalRef.current?.close()}>
-              Avbryt
-            </Button>
-          </Modal.Footer>
-        </Modal>
+        <CreateMappingModal
+          ref={modalRef}
+          username={username}
+          canPrefillOwnMapping={canPrefillOwnMapping}
+          loggedInNavIdent={loggedInNavIdent}
+          isSubmitting={isSubmitting}
+          fieldErrors={actionData?.fieldErrors}
+        />
       )}
 
       {/* Bulk link dependabot to goal modal */}
@@ -929,12 +859,4 @@ export default function UserPage() {
       )}
     </VStack>
   )
-}
-
-/** Convert "Lastname, Firstname" to "Firstname Lastname" */
-function formatDisplayNameNatural(displayName: string | null): string {
-  if (!displayName) return ''
-  if (!displayName.includes(',')) return displayName
-  const [last, ...rest] = displayName.split(',')
-  return `${rest.join(',').trim()} ${last.trim()}`
 }

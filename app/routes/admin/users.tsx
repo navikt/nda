@@ -16,6 +16,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { Form, Link, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
+import { CreateMappingModal } from '~/components/CreateMappingModal'
 import { ExternalLink } from '~/components/ExternalLink'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
@@ -28,8 +29,11 @@ import {
 } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { isTeamLeaderRole, SECTION_ROLE_LABELS, TEAM_ROLE_LABELS } from '~/lib/authorization-types'
-import { isValidEmail, isValidNavIdent } from '~/lib/form-validators'
+import { getFormString, isValidEmail, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
+import { logger } from '~/lib/logger.server'
+import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { formatDisplayNameNatural } from '~/lib/user-display'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/users'
 
@@ -70,6 +74,59 @@ export async function action({ request }: Route.ActionArgs) {
     return { success: true }
   }
 
+  if (intent === 'create-mapping') {
+    const githubUsername = getFormString(formData, 'github_username')?.toLowerCase() || ''
+    const navIdentRaw = getFormString(formData, 'nav_ident')?.toUpperCase() || null
+
+    // nav_email included for TypeScript compatibility — both create-mapping and upsert branches
+    // contribute to the same inferred action return type used by the Edit modal (line ~484)
+    const fieldErrors: { github_username?: string; nav_email?: string; nav_ident?: string } = {}
+
+    if (!githubUsername) {
+      fieldErrors.github_username = 'GitHub brukernavn er påkrevd'
+    } else if (!isValidGitHubUsername(githubUsername)) {
+      fieldErrors.github_username = 'Ugyldig GitHub-brukernavn (kun bokstaver, tall og bindestrek)'
+    } else if (isGitHubBot(githubUsername)) {
+      fieldErrors.github_username = 'Kan ikke opprette mapping for GitHub-botkontoer'
+    }
+
+    if (!navIdentRaw) {
+      fieldErrors.nav_ident = 'NAV-ident er påkrevd'
+    } else if (!isValidNavIdent(navIdentRaw)) {
+      fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer'
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      return { fieldErrors }
+    }
+
+    const navIdent = navIdentRaw as string
+    let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
+    try {
+      graphResults = await searchGraphUsers(navIdent)
+    } catch (error) {
+      logger.error('Graph API lookup failed during admin mapping creation', error)
+      return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
+    }
+
+    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
+    if (!graphUser) {
+      return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
+    }
+
+    const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
+    const navEmail = graphUser.email ?? null
+
+    await upsertUserMapping({
+      githubUsername,
+      displayName,
+      navEmail,
+      navIdent,
+      slackMemberId: getFormString(formData, 'slack_member_id') || null,
+    })
+    return { success: true }
+  }
+
   if (intent === 'upsert') {
     const githubUsername = formData.get('github_username') as string
     const navEmail = (formData.get('nav_email') as string) || null
@@ -90,7 +147,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     // Validate Nav-ident format (one letter followed by 6 digits)
     if (navIdent && !isValidNavIdent(navIdent)) {
-      fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer (f.eks. A123456)'
+      fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer'
     }
 
     if (Object.keys(fieldErrors).length > 0) {
@@ -394,39 +451,19 @@ export default function AdminUsers() {
         )}
 
         {/* Add Modal */}
-        <Modal ref={addModalRef} header={{ heading: 'Legg til brukermapping' }} width="medium">
-          <Modal.Body>
-            <Form method="post" id="add-form" key={addFormKey}>
-              <input type="hidden" name="intent" value="upsert" />
-              <VStack gap="space-16">
-                <TextField
-                  label="GitHub brukernavn"
-                  name="github_username"
-                  required
-                  defaultValue={prefillUsername}
-                  error={actionData?.fieldErrors?.github_username}
-                />
-                <TextField label="Navn" name="display_name" />
-                <TextField label="Nav e-post" name="nav_email" error={actionData?.fieldErrors?.nav_email} />
-                <TextField
-                  label="Nav-ident"
-                  name="nav_ident"
-                  description="Format: én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
-                  error={actionData?.fieldErrors?.nav_ident}
-                />
-                <TextField label="Slack member ID" name="slack_member_id" />
-              </VStack>
-            </Form>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button type="submit" form="add-form" loading={isSubmitting}>
-              Lagre
-            </Button>
-            <Button variant="secondary" onClick={() => addModalRef.current?.close()}>
-              Avbryt
-            </Button>
-          </Modal.Footer>
-        </Modal>
+        <CreateMappingModal
+          ref={addModalRef}
+          key={addFormKey}
+          username={prefillUsername}
+          canPrefillOwnMapping={false}
+          githubEditable
+          isSubmitting={isSubmitting}
+          fieldErrors={actionData?.fieldErrors}
+          intent="create-mapping"
+          heading="Legg til brukermapping"
+          formId="add-form"
+          width="medium"
+        />
 
         {/* Edit Modal */}
         <Modal

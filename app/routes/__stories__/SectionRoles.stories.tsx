@@ -14,43 +14,43 @@ const mockSections: SectionOption[] = [
 const mockAssignments: SectionRoleAssignmentDisplay[] = [
   {
     id: 1,
-    nav_ident: 'A123456',
+    nav_ident: 'Z990001',
     section_id: 1,
     role: 'teknologileder',
-    assigned_by: 'B654321',
+    assigned_by: 'Z990002',
     assigned_at: '2026-03-15T10:00:00Z',
   },
   {
     id: 2,
-    nav_ident: 'C789012',
+    nav_ident: 'Z990003',
     section_id: 1,
     role: 'seksjonsleder',
-    assigned_by: 'B654321',
+    assigned_by: 'Z990002',
     assigned_at: '2026-03-16T08:30:00Z',
   },
   {
     id: 3,
-    nav_ident: 'D345678',
+    nav_ident: 'Z990004',
     section_id: 2,
     role: 'leveranseleder',
-    assigned_by: 'A123456',
+    assigned_by: 'Z990001',
     assigned_at: '2026-04-01T14:00:00Z',
   },
   {
     id: 4,
-    nav_ident: 'E901234',
+    nav_ident: 'Z990005',
     section_id: 3,
     role: 'teknologileder',
-    assigned_by: 'A123456',
+    assigned_by: 'Z990001',
     assigned_at: '2026-04-10T09:15:00Z',
   },
 ]
 
 const mockDisplayNameMap: Record<string, string> = {
-  A123456: 'Glad Fjord',
-  C789012: 'Stille Skog',
-  D345678: 'Modig Bjørk',
-  E901234: 'Varm Stein',
+  Z990001: 'Glad Fjord',
+  Z990003: 'Stille Skog',
+  Z990004: 'Modig Bjørk',
+  Z990005: 'Varm Stein',
 }
 
 const meta: Meta<typeof SectionRolesTable> = {

@@ -79,7 +79,7 @@ describe('sections team admin action - add_apps characterization', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    mockRequireUser.mockResolvedValue({ navIdent: 'Z123456', name: 'Rask Elv' })
+    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
     mockGetDevTeamBySlug.mockResolvedValue({
       id: 10,
       section_slug: 'pensjon',
@@ -152,7 +152,7 @@ describe('sections team admin action - add_apps characterization', () => {
     expect(mockUpdateImplicitApprovalSettings).toHaveBeenCalledWith({
       monitoredAppId: 101,
       settings: { mode: 'dependabot_only' },
-      changedByNavIdent: 'Z123456',
+      changedByNavIdent: 'Z990010',
       changedByName: 'Rask Elv',
     })
 

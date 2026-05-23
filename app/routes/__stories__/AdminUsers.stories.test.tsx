@@ -19,7 +19,7 @@ describe('AdminUsers story baseline characterization', () => {
     const html = renderToStaticMarkup(<Default />)
 
     expect(html).toContain('Brukermappinger')
-    expect(html).toContain('John Doe')
+    expect(html).toContain('Glad Fjord')
     expect(html).toContain('minimal-user')
     expect(html).toContain('Ingen tilleggsinformasjon')
     expect(html).not.toContain('GitHub-brukere uten mapping')

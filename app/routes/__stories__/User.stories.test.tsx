@@ -18,7 +18,7 @@ describe('User story baseline characterization', () => {
   it('renders default story with identity cards and deployment list', () => {
     const html = renderToStaticMarkup(<Default />)
 
-    expect(html).toContain('John Doe')
+    expect(html).toContain('Glad Fjord')
     expect(html).toContain('Siste deployments (42)')
     expect(html).toContain('john.doe@nav.no')
     expect(html).toContain('Åpne i Slack')
@@ -40,7 +40,7 @@ describe('User story baseline characterization', () => {
 
     expect(html).toContain('Partial User')
     expect(html).toContain('Siste deployments (10)')
-    expect(html).toContain('A123456')
+    expect(html).toContain('Z990001')
     expect(html).not.toContain('Åpne i Slack')
     expect(html).not.toContain('john.doe@nav.no')
   })

@@ -114,7 +114,7 @@ export const mockAuditReport = {
   pr_approved_count: 145,
   manually_approved_count: 11,
   generated_at: '2026-02-01T12:00:00Z',
-  generated_by: 'A123456',
+  generated_by: 'Z990001',
   created_at: '2026-02-01T12:00:00Z',
 }
 
@@ -162,9 +162,9 @@ export const mockDeployments = [
 
 export const mockUserMapping = {
   github_username: 'john-doe',
-  display_name: 'John Doe',
+  display_name: 'Glad Fjord',
   nav_email: 'john.doe@nav.no',
-  nav_ident: 'A123456',
+  nav_ident: 'Z990001',
   slack_member_id: 'U12345678',
 }
 
@@ -173,14 +173,14 @@ export const mockSearchResults = [
     id: 1,
     type: 'deployment' as const,
     title: 'abc123def456',
-    subtitle: 'pensjon-pen (prod-fss) - John Doe',
+    subtitle: 'pensjon-pen (prod-fss) - Glad Fjord',
     url: '/team/pensjondeployer/env/prod-fss/app/pensjon-pen/deployments/1',
   },
   {
     id: 2,
     type: 'user' as const,
     title: 'john-doe',
-    subtitle: 'John Doe (A123456)',
+    subtitle: 'Glad Fjord (Z990001)',
     url: '/users/john-doe',
   },
 ]

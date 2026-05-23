@@ -150,7 +150,7 @@ export async function upsertUserMapping(params: {
   navIdent?: string | null
   slackMemberId?: string | null
 }): Promise<UserMapping> {
-  const githubUsername = normalize(params.githubUsername)
+  const githubUsername = normalize(params.githubUsername)?.toLowerCase() ?? null
   if (!githubUsername) {
     throw new Error('GitHub username is required')
   }
