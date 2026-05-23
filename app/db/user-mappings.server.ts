@@ -4,7 +4,6 @@ import { pool } from './connection.server'
 
 export interface UserMapping {
   github_username: string
-  display_github_username: string
   display_name: string | null
   nav_email: string | null
   nav_ident: string | null
@@ -113,13 +112,11 @@ export async function upsertUserMapping(params: {
   if (!githubUsername) {
     throw new Error('GitHub username is required')
   }
-  const displayGithubUsername = normalize(params.githubUsername) ?? githubUsername
 
   const result = await pool.query(
-    `INSERT INTO user_mappings (github_username, display_github_username, display_name, nav_email, nav_ident, slack_member_id, updated_at)
-     VALUES ($1, $6, $2, $3, $4, $5, NOW())
+    `INSERT INTO user_mappings (github_username, display_name, nav_email, nav_ident, slack_member_id, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
      ON CONFLICT (github_username) DO UPDATE SET
-       display_github_username = EXCLUDED.display_github_username,
        display_name = COALESCE(EXCLUDED.display_name, user_mappings.display_name),
        nav_email = COALESCE(EXCLUDED.nav_email, user_mappings.nav_email),
        nav_ident = COALESCE(EXCLUDED.nav_ident, user_mappings.nav_ident),
@@ -134,7 +131,6 @@ export async function upsertUserMapping(params: {
       normalizeEmail(params.navEmail),
       normalizeNavIdent(params.navIdent),
       normalize(params.slackMemberId),
-      displayGithubUsername,
     ],
   )
 

@@ -208,7 +208,6 @@ export interface DevTeamMemberWithRole {
   nav_ident: string
   role: TeamRole
   github_username: string | null
-  display_github_username: string | null
   display_name: string | null
   assigned_at: Date
 }
@@ -219,7 +218,7 @@ export interface DevTeamMemberWithRole {
  */
 export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<DevTeamMemberWithRole[]> {
   const { rows } = await pool.query<DevTeamMemberWithRole>(
-    `SELECT r.id, r.nav_ident, r.role, um.github_username, um.display_github_username, um.display_name, r.assigned_at
+    `SELECT r.id, r.nav_ident, r.role, um.github_username, um.display_name, r.assigned_at
      FROM dev_team_role_assignments r
      JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
      LEFT JOIN user_mappings um

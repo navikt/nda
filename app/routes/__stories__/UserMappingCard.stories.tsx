@@ -21,7 +21,6 @@ export const FullMapping: Story = {
   args: {
     mapping: {
       github_username: 'glad-fjord',
-      display_github_username: 'Glad-Fjord',
       display_name: 'Glad Fjord',
       nav_email: 'glad.fjord@nav.no',
       nav_ident: 'Z990001',
@@ -37,7 +36,6 @@ export const MinimalMapping: Story = {
   args: {
     mapping: {
       github_username: 'stille-skog',
-      display_github_username: 'StilleSkog',
       display_name: null,
       nav_email: null,
       nav_ident: null,
@@ -54,7 +52,6 @@ export const WithRoles: Story = {
     <UserMappingCard
       mapping={{
         github_username: 'rask-elv',
-        display_github_username: 'Rask-Elv',
         display_name: 'Rask Elv',
         nav_email: 'rask.elv@nav.no',
         nav_ident: 'Z990002',
@@ -82,7 +79,6 @@ export const ReadOnly: Story = {
   args: {
     mapping: {
       github_username: 'modig-bjork',
-      display_github_username: 'ModigBjork',
       display_name: 'Modig Bjørk',
       nav_email: 'modig.bjork@nav.no',
       nav_ident: 'Z990003',

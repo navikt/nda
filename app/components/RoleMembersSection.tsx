@@ -10,7 +10,6 @@ export interface RoleMember {
   nav_ident: string
   role: string
   github_username: string | null
-  display_github_username: string | null
   display_name: string | null
   assigned_at: string | Date
 }
@@ -65,8 +64,8 @@ export function RoleMembersSection({ roleMembers }: { roleMembers: RoleMember[] 
                   </Tag>
                 </Table.DataCell>
                 <Table.DataCell>
-                  {member.display_github_username || member.github_username ? (
-                    <code>{member.display_github_username ?? member.github_username}</code>
+                  {member.github_username ? (
+                    <code>{member.github_username}</code>
                   ) : (
                     <BodyShort textColor="subtle">–</BodyShort>
                   )}

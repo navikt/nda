@@ -8,7 +8,6 @@ import { UserMappingCard } from '~/components/UserMappingCard'
 
 interface UserMapping {
   github_username: string
-  display_github_username: string
   display_name: string | null
   nav_email: string | null
   nav_ident: string | null
@@ -192,8 +191,8 @@ export function AdminUsersPage<T extends UserMapping = UserMapping>({
           <Modal.Body>
             <BodyShort>
               Er du sikker på at du vil slette brukermappingen for{' '}
-              <strong>{deleteTarget?.display_name || deleteTarget?.display_github_username}</strong>
-              {deleteTarget?.display_name ? ` (${deleteTarget.display_github_username})` : ''}?
+              <strong>{deleteTarget?.display_name || deleteTarget?.github_username}</strong>
+              {deleteTarget?.display_name ? ` (${deleteTarget.github_username})` : ''}?
             </BodyShort>
           </Modal.Body>
           <Modal.Footer>

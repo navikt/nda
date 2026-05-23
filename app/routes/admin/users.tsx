@@ -280,7 +280,7 @@ export default function AdminUsers() {
               <input type="hidden" name="intent" value="upsert" />
               <input type="hidden" name="github_username" value={editMapping.github_username} />
               <VStack gap="space-16">
-                <TextField label="GitHub brukernavn" value={editMapping.display_github_username} disabled />
+                <TextField label="GitHub brukernavn" value={editMapping.github_username} disabled />
                 <TextField label="Navn" name="display_name" defaultValue={editMapping.display_name || ''} />
                 <TextField
                   label="Nav e-post"
