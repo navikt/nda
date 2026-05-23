@@ -161,9 +161,9 @@ export const mockDeployments = [
 ]
 
 export const mockUserMapping = {
-  github_username: 'john-doe',
+  github_username: 'glad-fjord',
   display_name: 'Glad Fjord',
-  nav_email: 'john.doe@nav.no',
+  nav_email: 'glad.fjord@nav.no',
   nav_ident: 'Z990001',
   slack_member_id: 'U12345678',
 }

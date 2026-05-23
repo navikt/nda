@@ -1,8 +1,8 @@
 import { PlusIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, Detail, Heading, HStack, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { Link } from 'react-router'
-import { ExternalLink } from '~/components/ExternalLink'
+import { UserProfileHeader } from '~/components/UserProfileHeader'
 import { mockDeployments, mockUserMapping } from './mock-data'
 
 type UserMapping = {
@@ -45,51 +45,7 @@ function UserPage({
 
   return (
     <VStack gap="space-32">
-      <VStack gap="space-8">
-        <Heading level="1" size="large">
-          {mapping?.display_name || username}
-        </Heading>
-      </VStack>
-
-      <HGrid gap="space-16" columns={{ xs: 2, md: 4 }}>
-        <Box padding="space-16" borderRadius="8" background="sunken">
-          <VStack gap="space-4">
-            <Detail textColor="subtle">GitHub</Detail>
-            <ExternalLink href={`https://github.com/${username}`}>{username}</ExternalLink>
-          </VStack>
-        </Box>
-
-        {mapping?.nav_email && (
-          <Box padding="space-16" borderRadius="8" background="sunken">
-            <VStack gap="space-4">
-              <Detail textColor="subtle">E-post</Detail>
-              <BodyShort>{mapping.nav_email}</BodyShort>
-            </VStack>
-          </Box>
-        )}
-
-        {mapping?.nav_ident && (
-          <Box padding="space-16" borderRadius="8" background="sunken">
-            <VStack gap="space-4">
-              <Detail textColor="subtle">Teamkatalogen</Detail>
-              <ExternalLink href={`https://teamkatalogen.nav.no/resource/${mapping.nav_ident}`}>
-                {mapping.nav_ident}
-              </ExternalLink>
-            </VStack>
-          </Box>
-        )}
-
-        {mapping?.slack_member_id && (
-          <Box padding="space-16" borderRadius="8" background="sunken">
-            <VStack gap="space-4">
-              <Detail textColor="subtle">Slack</Detail>
-              <ExternalLink href={`https://nav-it.slack.com/team/${mapping.slack_member_id}`}>
-                Åpne i Slack
-              </ExternalLink>
-            </VStack>
-          </Box>
-        )}
-      </HGrid>
+      <UserProfileHeader username={username} displayName={mapping?.display_name} identity={mapping} />
 
       {!mapping && (
         <Alert variant="warning">
@@ -162,7 +118,7 @@ type Story = StoryObj<typeof UserPage>
 
 export const Default: Story = {
   args: {
-    username: 'john-doe',
+    username: 'glad-fjord',
     mapping: mockUserMapping,
     deploymentCount: 42,
     recentDeployments: mockDeployments,
@@ -185,7 +141,7 @@ export const PartialMapping: Story = {
     username: 'partial-user',
     mapping: {
       github_username: 'partial-user',
-      display_name: 'Partial User',
+      display_name: 'Rolig Dal',
       nav_email: null,
       nav_ident: 'Z990001',
       slack_member_id: null,

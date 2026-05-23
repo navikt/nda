@@ -20,7 +20,7 @@ describe('User story baseline characterization', () => {
 
     expect(html).toContain('Glad Fjord')
     expect(html).toContain('Siste deployments (42)')
-    expect(html).toContain('john.doe@nav.no')
+    expect(html).toContain('glad.fjord@nav.no')
     expect(html).toContain('Åpne i Slack')
     expect(html).toContain('pensjon-pen')
     expect(html).toContain('/team/pensjondeployer/env/prod-fss/app/pensjon-pen')
@@ -32,17 +32,17 @@ describe('User story baseline characterization', () => {
     expect(html).toContain('unknown-user')
     expect(html).toContain('Ingen brukermapping funnet for denne brukeren.')
     expect(html).toContain('Opprett mapping')
-    expect(html).not.toContain('john.doe@nav.no')
+    expect(html).not.toContain('glad.fjord@nav.no')
   })
 
   it('renders partial mapping without optional contact fields', () => {
     const html = renderToStaticMarkup(<PartialMapping />)
 
-    expect(html).toContain('Partial User')
+    expect(html).toContain('Rolig Dal')
     expect(html).toContain('Siste deployments (10)')
     expect(html).toContain('Z990001')
     expect(html).not.toContain('Åpne i Slack')
-    expect(html).not.toContain('john.doe@nav.no')
+    expect(html).not.toContain('glad.fjord@nav.no')
   })
 
   it('renders no-deployments empty state baseline', () => {
