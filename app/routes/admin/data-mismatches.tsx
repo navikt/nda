@@ -14,7 +14,7 @@ import {
   TextField,
   VStack,
 } from '@navikt/ds-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Form, Link, useActionData, useLoaderData } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { ExternalLink } from '~/components/ExternalLink'
@@ -177,57 +177,64 @@ export default function DataMismatches() {
     }
   }
 
-  const filteredMismatches = mismatches
-    .filter((m) => {
-      if (!mismatchFilter) return true
-      const q = mismatchFilter.toLowerCase()
-      return [m.id.toString(), m.app_name, m.stored_title, m.pr_title, m.four_eyes_status].some((v) =>
-        v.toLowerCase().includes(q),
-      )
-    })
-    .sort((a, b) => {
-      if (!mismatchSort) return 0
-      const dir = mismatchSort.direction === 'ascending' ? 1 : -1
-      switch (mismatchSort.orderBy) {
-        case 'id':
-          return (a.id - b.id) * dir
-        case 'app_name':
-          return a.app_name.localeCompare(b.app_name, 'nb') * dir
-        case 'stored_title':
-          return a.stored_title.localeCompare(b.stored_title, 'nb') * dir
-        case 'pr_title':
-          return a.pr_title.localeCompare(b.pr_title, 'nb') * dir
-        case 'four_eyes_status':
-          return a.four_eyes_status.localeCompare(b.four_eyes_status, 'nb') * dir
-        default:
-          return 0
-      }
-    })
+  const filteredMismatches = useMemo(
+    () =>
+      mismatches
+        .filter((m) => {
+          if (!mismatchFilter) return true
+          const q = mismatchFilter.toLowerCase()
+          return [m.id.toString(), m.app_name, m.stored_title, m.pr_title, m.four_eyes_status].some((v) =>
+            v.toLowerCase().includes(q),
+          )
+        })
+        .sort((a, b) => {
+          if (!mismatchSort) return 0
+          const dir = mismatchSort.direction === 'ascending' ? 1 : -1
+          switch (mismatchSort.orderBy) {
+            case 'id':
+              return (a.id - b.id) * dir
+            case 'app_name':
+              return a.app_name.localeCompare(b.app_name, 'nb') * dir
+            case 'stored_title':
+              return a.stored_title.localeCompare(b.stored_title, 'nb') * dir
+            case 'pr_title':
+              return a.pr_title.localeCompare(b.pr_title, 'nb') * dir
+            case 'four_eyes_status':
+              return a.four_eyes_status.localeCompare(b.four_eyes_status, 'nb') * dir
+            default:
+              return 0
+          }
+        }),
+    [mismatches, mismatchFilter, mismatchSort],
+  )
 
-  const filteredBaseline = baselineNoApprover
-    .filter((b) => {
-      if (!baselineFilter) return true
-      const q = baselineFilter.toLowerCase()
-      return [b.id.toString(), b.app_name, b.team_slug, b.environment_name].some((v) => v.toLowerCase().includes(q))
-    })
-    .sort((a, b) => {
-      if (!baselineSort) return 0
-      const dir = baselineSort.direction === 'ascending' ? 1 : -1
-      switch (baselineSort.orderBy) {
-        case 'id':
-          return (a.id - b.id) * dir
-        case 'app_name':
-          return a.app_name.localeCompare(b.app_name, 'nb') * dir
-        case 'team_slug':
-          return a.team_slug.localeCompare(b.team_slug, 'nb') * dir
-        case 'environment_name':
-          return a.environment_name.localeCompare(b.environment_name, 'nb') * dir
-        case 'deployed_at':
-          return (new Date(a.deployed_at).getTime() - new Date(b.deployed_at).getTime()) * dir
-        default:
-          return 0
-      }
-    })
+  const filteredBaseline = useMemo(() => {
+    const withTs = baselineNoApprover.map((b) => ({ ...b, deployedTs: new Date(b.deployed_at).getTime() }))
+    return withTs
+      .filter((b) => {
+        if (!baselineFilter) return true
+        const q = baselineFilter.toLowerCase()
+        return [b.id.toString(), b.app_name, b.team_slug, b.environment_name].some((v) => v.toLowerCase().includes(q))
+      })
+      .sort((a, b) => {
+        if (!baselineSort) return 0
+        const dir = baselineSort.direction === 'ascending' ? 1 : -1
+        switch (baselineSort.orderBy) {
+          case 'id':
+            return (a.id - b.id) * dir
+          case 'app_name':
+            return a.app_name.localeCompare(b.app_name, 'nb') * dir
+          case 'team_slug':
+            return a.team_slug.localeCompare(b.team_slug, 'nb') * dir
+          case 'environment_name':
+            return a.environment_name.localeCompare(b.environment_name, 'nb') * dir
+          case 'deployed_at':
+            return (a.deployedTs - b.deployedTs) * dir
+          default:
+            return 0
+        }
+      })
+  }, [baselineNoApprover, baselineFilter, baselineSort])
 
   return (
     <VStack gap="space-24">
@@ -336,7 +343,7 @@ export default function DataMismatches() {
           </Heading>
 
           <TextField
-            label="Filtrer"
+            label="Filtrer tittel-avvik"
             hideLabel
             placeholder="Filtrer på ID, app, tittel eller status…"
             size="small"
@@ -462,7 +469,7 @@ export default function DataMismatches() {
             </Alert>
 
             <TextField
-              label="Filtrer"
+              label="Filtrer baseline-deployments"
               hideLabel
               placeholder="Filtrer på ID, app, team eller miljø…"
               size="small"
