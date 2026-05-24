@@ -517,7 +517,7 @@ export default function DataMismatches() {
                         <BodyShort size="small">{b.environment_name}</BodyShort>
                       </Table.DataCell>
                       <Table.DataCell>
-                        <BodyShort size="small">{new Date(b.deployed_at).toLocaleDateString('nb-NO')}</BodyShort>
+                        <BodyShort size="small">{b.deployedStr}</BodyShort>
                       </Table.DataCell>
                     </Table.Row>
                   ))}
