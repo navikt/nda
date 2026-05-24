@@ -430,6 +430,9 @@ export interface VerificationInput {
   // Whether the deployed commit is on the base branch (null = unknown/API error)
   commitOnBaseBranch: boolean | null
 
+  // Actual branch the commit was deployed from (populated when commitOnBaseBranch === false)
+  detectedBranchName?: string
+
   // App settings
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
@@ -566,6 +569,10 @@ export interface VerificationResult {
     detectedBranches: string[]
     prNumbers: number[]
   }
+
+  // Actual branch the deployment was made from (when commit is not on baseBranch).
+  // Passthrough from VerificationInput; populated by the orchestrator.
+  detectedBranchName?: string
 }
 
 /**

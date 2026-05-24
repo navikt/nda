@@ -186,7 +186,7 @@ async function verifySingleDeployment(
   commitSha: string,
   repository: string,
   environmentName: string,
-  _triggerUrl?: string | null,
+  triggerUrl?: string | null,
   baseBranch: string = 'main',
   monitoredAppId?: number,
 ): Promise<boolean> {
@@ -202,6 +202,7 @@ async function verifySingleDeployment(
       environmentName,
       baseBranch,
       monitoredAppId,
+      triggerUrl,
     })
 
     return result.status !== 'error'

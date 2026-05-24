@@ -66,6 +66,7 @@ interface RunVerificationOptions {
   baseBranch: string
   monitoredAppId: number
   forceRefresh?: boolean
+  triggerUrl?: string | null
 }
 
 /**
@@ -97,6 +98,7 @@ export async function runVerification(
     options.baseBranch,
     options.monitoredAppId,
     { forceRefresh: options.forceRefresh },
+    options.triggerUrl,
   )
 
   logger.info(`   ✅ Data fetched:`)
@@ -113,6 +115,11 @@ export async function runVerification(
   // and is available to UI consumers.
   if (input.branchMismatch) {
     result.branchMismatch = input.branchMismatch
+  }
+
+  // Passthrough: detectedBranchName is fetched during data-fetch, not a verify decision.
+  if (input.detectedBranchName) {
+    result.detectedBranchName = input.detectedBranchName
   }
 
   logger.info(`   ✅ Verification complete:`)

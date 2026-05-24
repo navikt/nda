@@ -26,6 +26,7 @@ import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobP
 import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import {
+  getBranchFromWorkflowRun,
   getCommitsBetween,
   getDetailedPullRequestInfo,
   getPullRequestForCommit,
@@ -68,6 +69,7 @@ export async function fetchVerificationData(
   baseBranch: string,
   monitoredAppId: number,
   options?: FetchOptions,
+  triggerUrl?: string | null,
 ): Promise<VerificationInput> {
   const [owner, repo] = repository.split('/')
   if (!owner || !repo) {
@@ -85,6 +87,10 @@ export async function fetchVerificationData(
 
   // Check if deployed commit is on the base branch
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
+
+  // When commit is not on the base branch, try to detect which branch it was deployed from
+  const detectedBranchName =
+    commitOnBaseBranch === false ? await getBranchFromWorkflowRun(owner, repo, triggerUrl) : undefined
 
   // Get previous deployment (with group fallback)
   const previousDeployment = await getPreviousDeployment(
@@ -244,6 +250,7 @@ export async function fetchVerificationData(
     baseBranch,
     repositoryStatus,
     commitOnBaseBranch,
+    detectedBranchName: detectedBranchName ?? undefined,
     auditStartYear: appSettings.auditStartYear,
     implicitApprovalSettings: appSettings.implicitApprovalSettings,
     previousDeployment,
