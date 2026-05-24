@@ -63,7 +63,7 @@ describe('deployment_comments soft delete', () => {
     const comment = await createComment({ deployment_id: depId, comment_text: 'hi', registered_by: 'Z990001' })
 
     expect(await deleteComment(comment.id, 'Z990001', depId)).toBe(true)
-    expect(await deleteComment(comment.id, 'B888888', depId)).toBe(false)
+    expect(await deleteComment(comment.id, 'Z990003', depId)).toBe(false)
 
     const { rows } = await pool.query('SELECT deleted_by FROM deployment_comments WHERE id = $1', [comment.id])
     expect(rows[0].deleted_by).toBe('Z990001')
@@ -157,7 +157,7 @@ describe('deployment_comments soft delete', () => {
     })
 
     expect(await deleteLegacyInfo(depId, 'Z990001')).toBe(true)
-    expect(await deleteLegacyInfo(depId, 'B888888')).toBe(false)
+    expect(await deleteLegacyInfo(depId, 'Z990003')).toBe(false)
   })
 
   it('soft-deleted row preserves audit fields (approved_by, registered_by)', async () => {
