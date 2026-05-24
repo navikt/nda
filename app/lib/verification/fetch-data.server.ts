@@ -1076,7 +1076,13 @@ export async function fetchVerificationDataForAllDeployments(
       const owner = deployment.detected_github_owner
       const repo = deployment.detected_github_repo_name
       const commitSha = deployment.commit_sha
-      const baseBranch = deployment.default_branch || 'main'
+
+      if (!deployment.default_branch) {
+        result.skipped++
+        result.processed++
+        continue
+      }
+      const baseBranch = deployment.default_branch
 
       // Use pre-computed snapshot existence from the query
       const hasCurrentData = deployment.has_pr_snapshot && deployment.has_compare_snapshot

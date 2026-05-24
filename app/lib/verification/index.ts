@@ -592,7 +592,8 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const owner = dep.detected_github_owner
   const repo = dep.detected_github_repo_name
-  const baseBranch = dep.default_branch || 'main'
+  if (!dep.default_branch) return null
+  const baseBranch = dep.default_branch
 
   const prevRow = await getPreviousDeploymentForDiff(dep.id, dep.environment_name)
   const previousDeployment = prevRow

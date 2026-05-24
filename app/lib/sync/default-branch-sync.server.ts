@@ -14,7 +14,7 @@ const DEFAULT_BRANCH_SYNC_COOLDOWN_MS = 24 * 60 * 60 * 1000
 interface SyncDefaultBranchInput {
   monitoredAppId: number
   appName: string
-  currentDefaultBranch: string
+  currentDefaultBranch: string | null
   defaultBranchSyncedAt: Date | null
   owner: string
   repo: string

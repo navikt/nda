@@ -196,6 +196,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         !dep.commit_sha ||
         !dep.detected_github_owner ||
         !dep.detected_github_repo_name ||
+        !dep.default_branch ||
         isProtectedStatus(dep.four_eyes_status) ||
         !isValidCommitSha(dep.commit_sha)
       ) {
@@ -207,7 +208,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           commitSha: dep.commit_sha,
           repository: `${dep.detected_github_owner}/${dep.detected_github_repo_name}`,
           environmentName: dep.environment_name,
-          baseBranch: dep.default_branch || 'main',
+          baseBranch: dep.default_branch,
           monitoredAppId: monitoredApp.id,
           forceRefresh: true,
         })

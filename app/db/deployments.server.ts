@@ -183,7 +183,7 @@ export interface DeploymentWithApp extends Deployment {
   team_slug: string
   environment_name: string
   app_name: string
-  default_branch: string
+  default_branch: string | null
   has_goal_link?: boolean
 }
 

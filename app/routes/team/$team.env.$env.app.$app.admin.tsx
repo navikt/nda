@@ -292,7 +292,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
                 label="Branch"
                 description="Branchen som PR-er må gå til for å bli godkjent (f.eks. main, master)"
                 name="default_branch"
-                defaultValue={app.default_branch}
+                defaultValue={app.default_branch ?? ''}
                 size="small"
                 style={{ minWidth: '200px' }}
               />

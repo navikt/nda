@@ -12,7 +12,7 @@ interface VerificationDiffDeployment {
   created_at: Date
   detected_github_owner: string
   detected_github_repo_name: string
-  default_branch: string
+  default_branch: string | null
   audit_start_year: number | null
 }
 

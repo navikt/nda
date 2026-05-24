@@ -334,13 +334,15 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
         !isValidCommitSha(dep.commit_sha)
       ) {
         skipped++
+      } else if (!dep.default_branch) {
+        skipped++
       } else {
         try {
           await runVerification(dep.id, {
             commitSha: dep.commit_sha,
             repository: `${dep.detected_github_owner}/${dep.detected_github_repo_name}`,
             environmentName: dep.environment_name,
-            baseBranch: dep.default_branch || 'main',
+            baseBranch: dep.default_branch,
             monitoredAppId: dep.monitored_app_id,
             forceRefresh: true,
           })

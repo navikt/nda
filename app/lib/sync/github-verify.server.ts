@@ -99,6 +99,12 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
         continue
       }
 
+      // Skip verification when default_branch is not yet determined
+      if (!deployment.default_branch) {
+        skipped++
+        continue
+      }
+
       // Always use V2 verification
       const success = await verifySingleDeployment(
         deployment.id,
@@ -106,7 +112,7 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
         `${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`,
         deployment.environment_name,
         deployment.trigger_url,
-        deployment.default_branch || 'main',
+        deployment.default_branch,
         deployment.monitored_app_id,
       )
 

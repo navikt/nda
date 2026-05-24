@@ -7,7 +7,7 @@ interface MonitoredApplication {
   environment_name: string
   app_name: string
   is_active: boolean
-  default_branch: string
+  default_branch: string | null
   default_branch_synced_at: Date | null
   audit_start_year: number | null
   test_requirement: 'none' | 'unit_tests' | 'integration_tests'
@@ -102,7 +102,7 @@ export async function createMonitoredApplication(
     environment_name: string
     app_name: string
     audit_start_year: number
-    default_branch: string
+    default_branch?: string | null
   },
   client?: PoolClient,
 ): Promise<MonitoredApplication> {
@@ -116,7 +116,7 @@ export async function createMonitoredApplication(
         is_active = true,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *`,
-    [data.team_slug, data.environment_name, data.app_name, data.audit_start_year, data.default_branch],
+    [data.team_slug, data.environment_name, data.app_name, data.audit_start_year, data.default_branch ?? null],
   )
   return result.rows[0]
 }

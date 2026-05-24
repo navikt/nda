@@ -284,19 +284,15 @@ export async function action({ request, params }: Route.ActionArgs) {
       appRepoMap.set(`${id.team_slug}|${id.environment_name}|${id.app_name}`, found.repository)
     }
 
-    // Resolve default branch from GitHub for each new app (best-effort, falls back to 'main')
-    const defaultBranchMap = new Map<string, string>()
+    // Resolve default branch from GitHub for each new app (best-effort, NULL if detection fails)
+    const defaultBranchMap = new Map<string, string | null>()
     await Promise.all(
       newIdentities.map(async (id) => {
         const key = `${id.team_slug}|${id.environment_name}|${id.app_name}`
         const repoUrl = appRepoMap.get(key)
-        let defaultBranch = 'main'
         const parsed = parseRepository(repoUrl)
-        if (parsed) {
-          const detected = await getRepositoryDefaultBranch(parsed.owner, parsed.repo)
-          if (detected) defaultBranch = detected
-        }
-        defaultBranchMap.set(key, defaultBranch)
+        const detected = parsed ? await getRepositoryDefaultBranch(parsed.owner, parsed.repo) : null
+        defaultBranchMap.set(key, detected)
       }),
     )
 
@@ -314,7 +310,7 @@ export async function action({ request, params }: Route.ActionArgs) {
             environment_name: id.environment_name,
             app_name: id.app_name,
             audit_start_year: auditStartYear,
-            default_branch: defaultBranchMap.get(key) ?? 'main',
+            default_branch: defaultBranchMap.get(key),
           },
           client,
         )
