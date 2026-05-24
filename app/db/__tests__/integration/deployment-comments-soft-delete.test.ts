@@ -43,9 +43,9 @@ describe('deployment_comments soft delete', () => {
 
   it('deleteComment soft-deletes by setting deleted_at and deleted_by', async () => {
     const depId = await seedDeployment(pool, 'c1')
-    const comment = await createComment({ deployment_id: depId, comment_text: 'hello' })
+    const comment = await createComment({ deployment_id: depId, comment_text: 'hello', registered_by: 'Z990001' })
 
-    const ok = await deleteComment(comment.id, 'A999999', depId)
+    const ok = await deleteComment(comment.id, 'Z990001', depId)
     expect(ok).toBe(true)
 
     const { rows } = await pool.query(
@@ -55,27 +55,27 @@ describe('deployment_comments soft delete', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].comment_text).toBe('hello')
     expect(rows[0].deleted_at).not.toBeNull()
-    expect(rows[0].deleted_by).toBe('A999999')
+    expect(rows[0].deleted_by).toBe('Z990001')
   })
 
   it('deleteComment is idempotent and returns false on second call', async () => {
     const depId = await seedDeployment(pool, 'c2')
-    const comment = await createComment({ deployment_id: depId, comment_text: 'hi' })
+    const comment = await createComment({ deployment_id: depId, comment_text: 'hi', registered_by: 'Z990001' })
 
-    expect(await deleteComment(comment.id, 'A999999', depId)).toBe(true)
+    expect(await deleteComment(comment.id, 'Z990001', depId)).toBe(true)
     expect(await deleteComment(comment.id, 'B888888', depId)).toBe(false)
 
     const { rows } = await pool.query('SELECT deleted_by FROM deployment_comments WHERE id = $1', [comment.id])
-    expect(rows[0].deleted_by).toBe('A999999')
+    expect(rows[0].deleted_by).toBe('Z990001')
   })
 
   it('deleteComment rejects wrong deploymentId (IDOR protection)', async () => {
     const depA = await seedDeployment(pool, 'idor-a')
     const depB = await seedDeployment(pool, 'idor-b')
-    const comment = await createComment({ deployment_id: depA, comment_text: 'on dep A' })
+    const comment = await createComment({ deployment_id: depA, comment_text: 'on dep A', registered_by: 'Z990001' })
 
     // Attempt to delete with wrong deploymentId
-    expect(await deleteComment(comment.id, 'A999999', depB)).toBe(false)
+    expect(await deleteComment(comment.id, 'Z990001', depB)).toBe(false)
 
     // Comment should still be active
     const { rows } = await pool.query('SELECT deleted_at FROM deployment_comments WHERE id = $1', [comment.id])
@@ -84,10 +84,10 @@ describe('deployment_comments soft delete', () => {
 
   it('getCommentsByDeploymentId excludes soft-deleted comments', async () => {
     const depId = await seedDeployment(pool, 'c3')
-    const kept = await createComment({ deployment_id: depId, comment_text: 'kept' })
-    const removed = await createComment({ deployment_id: depId, comment_text: 'removed' })
+    const kept = await createComment({ deployment_id: depId, comment_text: 'kept', registered_by: 'Z990001' })
+    const removed = await createComment({ deployment_id: depId, comment_text: 'removed', registered_by: 'Z990001' })
 
-    await deleteComment(removed.id, 'A999999', depId)
+    await deleteComment(removed.id, 'Z990001', depId)
 
     const comments = await getCommentsByDeploymentId(depId)
     expect(comments.map((c) => c.id)).toEqual([kept.id])
@@ -99,12 +99,13 @@ describe('deployment_comments soft delete', () => {
       deployment_id: depId,
       comment_text: 'approved',
       comment_type: 'manual_approval',
-      approved_by: 'B111111',
+      approved_by: 'Z990002',
+      registered_by: 'Z990002',
     })
 
     expect((await getManualApproval(depId))?.id).toBe(approval.id)
 
-    await deleteComment(approval.id, 'A999999', depId)
+    await deleteComment(approval.id, 'Z990001', depId)
 
     expect(await getManualApproval(depId)).toBeNull()
   })
@@ -115,26 +116,27 @@ describe('deployment_comments soft delete', () => {
       deployment_id: depId,
       comment_text: 'legacy',
       comment_type: 'legacy_info',
-      registered_by: 'B111111',
+      registered_by: 'Z990002',
     })
 
     expect(await getLegacyInfo(depId)).not.toBeNull()
 
-    expect(await deleteLegacyInfo(depId, 'A999999')).toBe(true)
+    expect(await deleteLegacyInfo(depId, 'Z990001')).toBe(true)
 
     expect(await getLegacyInfo(depId)).toBeNull()
   })
 
   it('deleteLegacyInfo soft-deletes only legacy_info comments, leaves others active', async () => {
     const depId = await seedDeployment(pool, 'c6')
-    const free = await createComment({ deployment_id: depId, comment_text: 'free' })
+    const free = await createComment({ deployment_id: depId, comment_text: 'free', registered_by: 'Z990001' })
     const legacy = await createComment({
       deployment_id: depId,
       comment_text: 'legacy',
       comment_type: 'legacy_info',
+      registered_by: 'Z990001',
     })
 
-    await deleteLegacyInfo(depId, 'A999999')
+    await deleteLegacyInfo(depId, 'Z990001')
 
     const { rows } = await pool.query<{ id: number; deleted_at: Date | null }>(
       'SELECT id, deleted_at FROM deployment_comments WHERE deployment_id = $1 ORDER BY id',
@@ -147,9 +149,14 @@ describe('deployment_comments soft delete', () => {
 
   it('deleteLegacyInfo is idempotent', async () => {
     const depId = await seedDeployment(pool, 'c7')
-    await createComment({ deployment_id: depId, comment_text: 'l', comment_type: 'legacy_info' })
+    await createComment({
+      deployment_id: depId,
+      comment_text: 'l',
+      comment_type: 'legacy_info',
+      registered_by: 'Z990001',
+    })
 
-    expect(await deleteLegacyInfo(depId, 'A999999')).toBe(true)
+    expect(await deleteLegacyInfo(depId, 'Z990001')).toBe(true)
     expect(await deleteLegacyInfo(depId, 'B888888')).toBe(false)
   })
 
@@ -159,17 +166,18 @@ describe('deployment_comments soft delete', () => {
       deployment_id: depId,
       comment_text: 'manual ok',
       comment_type: 'manual_approval',
-      approved_by: 'B111111',
+      approved_by: 'Z990002',
+      registered_by: 'Z990002',
     })
 
-    await deleteComment(approval.id, 'A999999', depId)
+    await deleteComment(approval.id, 'Z990001', depId)
 
     const { rows } = await pool.query(
       'SELECT comment_text, approved_by, deleted_by FROM deployment_comments WHERE id = $1',
       [approval.id],
     )
     expect(rows[0].comment_text).toBe('manual ok')
-    expect(rows[0].approved_by).toBe('B111111')
-    expect(rows[0].deleted_by).toBe('A999999')
+    expect(rows[0].approved_by).toBe('Z990002')
+    expect(rows[0].deleted_by).toBe('Z990001')
   })
 })

@@ -57,7 +57,7 @@ export async function action({ request, params }: { request: Request; params: Re
         deployment_id: deploymentId,
         comment_text: commentText.trim(),
         slack_link: slackLink || undefined,
-        registered_by: identity.navIdent || undefined,
+        registered_by: identity.navIdent,
       })
       return { success: 'Kommentar lagt til' }
     } catch (_error) {
@@ -177,6 +177,7 @@ export async function action({ request, params }: { request: Request; params: Re
         slack_link: slackLink?.trim() || undefined,
         comment_type: 'manual_approval',
         approved_by: identity.navIdent,
+        registered_by: identity.navIdent,
       })
 
       // Update deployment to mark as manually approved, preserving existing GitHub data
@@ -463,6 +464,7 @@ export async function action({ request, params }: { request: Request; params: Re
         slack_link: legacyInfo.slack_link || undefined,
         comment_type: 'manual_approval',
         approved_by: identity.navIdent,
+        registered_by: identity.navIdent,
       })
 
       // Preserve existing GitHub data when approving
@@ -506,6 +508,7 @@ export async function action({ request, params }: { request: Request; params: Re
         deployment_id: deploymentId,
         comment_text: `Legacy-verifisering avvist av ${identity.navIdent}${reason ? `: ${reason}` : ''}`,
         comment_type: 'comment',
+        registered_by: identity.navIdent,
       })
 
       // Reset status back to legacy
