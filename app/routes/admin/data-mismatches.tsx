@@ -369,12 +369,24 @@ export default function DataMismatches() {
               <Table size="small" sort={mismatchSort} onSortChange={handleSort(mismatchSort, setMismatchSort)}>
                 <Table.Header>
                   <Table.Row>
-                    <Table.ColumnHeader sortKey="id">ID</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="app_name">App</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="stored_title">Lagret tittel</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="pr_title">PR-tittel (riktig)</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="four_eyes_status">Status</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="github_pr_number">PR</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="id" sortable>
+                      ID
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="app_name" sortable>
+                      App
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="stored_title" sortable>
+                      Lagret tittel
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="pr_title" sortable>
+                      PR-tittel (riktig)
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="four_eyes_status" sortable>
+                      Status
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="github_pr_number" sortable>
+                      PR
+                    </Table.ColumnHeader>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
@@ -494,11 +506,21 @@ export default function DataMismatches() {
               <Table size="small" sort={baselineSort} onSortChange={handleSort(baselineSort, setBaselineSort)}>
                 <Table.Header>
                   <Table.Row>
-                    <Table.ColumnHeader sortKey="id">ID</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="app_name">App</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="team_slug">Team</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="environment_name">Miljø</Table.ColumnHeader>
-                    <Table.ColumnHeader sortKey="deployed_at">Deployet</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="id" sortable>
+                      ID
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="app_name" sortable>
+                      App
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="team_slug" sortable>
+                      Team
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="environment_name" sortable>
+                      Miljø
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="deployed_at" sortable>
+                      Deployet
+                    </Table.ColumnHeader>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
