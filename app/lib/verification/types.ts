@@ -430,7 +430,9 @@ export interface VerificationInput {
   // Whether the deployed commit is on the base branch (null = unknown/API error)
   commitOnBaseBranch: boolean | null
 
-  // Actual branch the commit was deployed from (populated when commitOnBaseBranch === false)
+  // Actual branch the deployment was made from. Populated for all verified deployments
+  // where branch can be detected: from deployedPr.metadata.headBranch (no extra API call)
+  // or from the GitHub Actions workflow run API (for deployments without a PR).
   detectedBranchName?: string
 
   // App settings
@@ -570,7 +572,9 @@ export interface VerificationResult {
     prNumbers: number[]
   }
 
-  // Actual branch the deployment was made from (when commit is not on baseBranch).
+  // Actual branch the deployment was made from. Populated for all verified deployments
+  // where branch can be detected: from deployedPr.metadata.headBranch (no extra API call)
+  // or from the GitHub Actions workflow run API (for deployments without a PR).
   // Passthrough from VerificationInput; populated by the orchestrator.
   detectedBranchName?: string
 }
