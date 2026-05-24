@@ -40,6 +40,12 @@ describe('getFourEyesStatus — maps deployment status to user-visible label, va
       expectedVariant: 'success',
     },
     { status: 'direct_push', expectedText: 'Direct push', expectedVariant: 'warning' },
+    { status: 'unauthorized_branch', expectedText: 'Ikke på godkjent branch', expectedVariant: 'error' },
+    {
+      status: 'unauthorized_repository',
+      expectedText: 'Ikke godkjent repository',
+      expectedVariant: 'error',
+    },
     { status: 'missing', expectedText: 'Mangler godkjenning', expectedVariant: 'error' },
     { status: 'error', expectedText: 'Feil ved verifisering', expectedVariant: 'error' },
     { status: 'pending', expectedText: 'Venter på verifisering', expectedVariant: 'info' },
