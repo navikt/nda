@@ -88,10 +88,6 @@ export async function fetchVerificationData(
   // Check if deployed commit is on the base branch
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
-  // When commit is not on the base branch, try to detect which branch it was deployed from
-  const detectedBranchName =
-    commitOnBaseBranch === false ? await getBranchFromWorkflowRun(owner, repo, triggerUrl) : undefined
-
   // Get previous deployment (with group fallback)
   const previousDeployment = await getPreviousDeployment(
     deploymentId,
@@ -241,6 +237,12 @@ export async function fetchVerificationData(
       }
     }
   }
+
+  // Detect which branch the deployment was made from.
+  // Prefer head_branch from the deployed PR (no extra API call),
+  // fall back to the GitHub Actions workflow run API.
+  const detectedBranchName: string | undefined =
+    deployedPr?.metadata.headBranch ?? (await getBranchFromWorkflowRun(owner, repo, triggerUrl)) ?? undefined
 
   return {
     deploymentId,
