@@ -54,12 +54,23 @@ interface BaselineNoApprover {
   deployed_at: Date
 }
 
+interface CommentMissingRegisteredBy {
+  comment_id: number
+  deployment_id: number
+  app_name: string
+  team_slug: string
+  environment_name: string
+  comment_type: string
+  created_at: Date
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const [mismatchResult, missingResult, baselineNoApproverResult] = await Promise.all([
-    pool.query<TitleMismatch>(
-      `SELECT
+  const [mismatchResult, missingResult, baselineNoApproverResult, commentsMissingRegisteredByResult] =
+    await Promise.all([
+      pool.query<TitleMismatch>(
+        `SELECT
          d.id,
          ma.app_name,
          ma.team_slug,
@@ -78,17 +89,17 @@ export async function loader({ request }: Route.LoaderArgs) {
          AND d.title IS NOT NULL
          AND d.title != d.github_pr_data->>'title'
        ORDER BY d.id DESC`,
-    ),
-    pool.query<MissingSummary>(
-      `SELECT
+      ),
+      pool.query<MissingSummary>(
+        `SELECT
          (COUNT(*) FILTER (WHERE d.title IS NULL))::int AS total_missing,
          (COUNT(*) FILTER (WHERE d.title IS NULL AND d.github_pr_data IS NOT NULL AND d.github_pr_data->>'title' IS NOT NULL))::int AS with_pr_data,
          (COUNT(*) FILTER (WHERE d.title IS NULL AND (d.github_pr_data IS NULL OR d.github_pr_data->>'title' IS NULL) AND d.unverified_commits IS NOT NULL AND jsonb_array_length(d.unverified_commits) > 0))::int AS with_unverified_commits,
          (COUNT(*) FILTER (WHERE d.title IS NULL AND (d.github_pr_data IS NULL OR d.github_pr_data->>'title' IS NULL) AND (d.unverified_commits IS NULL OR jsonb_array_length(d.unverified_commits) = 0)))::int AS no_fallback
        FROM deployments d`,
-    ),
-    pool.query<BaselineNoApprover>(
-      `SELECT
+      ),
+      pool.query<BaselineNoApprover>(
+        `SELECT
          d.id,
          ma.app_name,
          ma.team_slug,
@@ -104,14 +115,31 @@ export async function loader({ request }: Route.LoaderArgs) {
                AND dsh.changed_by IS NOT NULL
          )
        ORDER BY d.created_at DESC`,
-    ),
-  ])
+      ),
+      pool.query<CommentMissingRegisteredBy>(
+        `SELECT
+         dc.id AS comment_id,
+         dc.deployment_id,
+         ma.app_name,
+         ma.team_slug,
+         ma.environment_name,
+         dc.comment_type,
+         dc.created_at
+       FROM deployment_comments dc
+       JOIN deployments d ON dc.deployment_id = d.id
+       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+       WHERE dc.registered_by IS NULL
+         AND dc.deleted_at IS NULL
+       ORDER BY dc.created_at DESC`,
+      ),
+    ])
 
   return {
     mismatches: mismatchResult.rows,
     mismatchCount: mismatchResult.rowCount ?? 0,
     missing: missingResult.rows[0] ?? { total_missing: 0, with_pr_data: 0, with_unverified_commits: 0, no_fallback: 0 },
     baselineNoApprover: baselineNoApproverResult.rows,
+    commentsMissingRegisteredBy: commentsMissingRegisteredByResult.rows,
   }
 }
 
@@ -157,7 +185,8 @@ function truncate(str: string, maxLength: number) {
 }
 
 export default function DataMismatches() {
-  const { mismatches, mismatchCount, missing, baselineNoApprover } = useLoaderData<typeof loader>()
+  const { mismatches, mismatchCount, missing, baselineNoApprover, commentsMissingRegisteredBy } =
+    useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
 
   const [mismatchFilter, setMismatchFilter] = useState('')
@@ -165,6 +194,9 @@ export default function DataMismatches() {
 
   const [baselineFilter, setBaselineFilter] = useState('')
   const [baselineSort, setBaselineSort] = useState<SortState>()
+
+  const [commentsFilter, setCommentsFilter] = useState('')
+  const [commentsSort, setCommentsSort] = useState<SortState>()
 
   function handleSort(current: SortState | undefined, set: (s: SortState | undefined) => void) {
     return (sortKey: string | undefined) => {
@@ -248,6 +280,43 @@ export default function DataMismatches() {
       }
     })
   }, [baselineWithTs, baselineFilter, baselineSort])
+
+  const commentsWithTs = useMemo(
+    () =>
+      commentsMissingRegisteredBy.map((c) => {
+        const d = new Date(c.created_at)
+        return { ...c, createdTs: d.getTime(), createdStr: d.toLocaleDateString('nb-NO') }
+      }),
+    [commentsMissingRegisteredBy],
+  )
+
+  const filteredComments = useMemo(() => {
+    const filtered = commentsWithTs.filter((c) => {
+      if (!commentsFilter) return true
+      const q = commentsFilter.toLowerCase()
+      return [c.comment_id.toString(), c.deployment_id.toString(), c.app_name, c.team_slug, c.environment_name].some(
+        (v) => v.toLowerCase().includes(q),
+      )
+    })
+    if (!commentsSort) return filtered
+    const dir = commentsSort.direction === 'ascending' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      switch (commentsSort.orderBy) {
+        case 'comment_id':
+          return (a.comment_id - b.comment_id) * dir
+        case 'deployment_id':
+          return (a.deployment_id - b.deployment_id) * dir
+        case 'app_name':
+          return a.app_name.localeCompare(b.app_name, 'nb') * dir
+        case 'team_slug':
+          return a.team_slug.localeCompare(b.team_slug, 'nb') * dir
+        case 'created_at':
+          return (a.createdTs - b.createdTs) * dir
+        default:
+          return 0
+      }
+    })
+  }, [commentsWithTs, commentsFilter, commentsSort])
 
   return (
     <VStack gap="space-24">
@@ -540,6 +609,89 @@ export default function DataMismatches() {
                       </Table.DataCell>
                       <Table.DataCell>
                         <BodyShort size="small">{b.deployedStr}</BodyShort>
+                      </Table.DataCell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table>
+            </div>
+          </>
+        )}
+      </VStack>
+
+      {/* Comments missing registered_by section */}
+      <VStack gap="space-12">
+        <VStack gap="space-4">
+          <Heading level="2" size="medium">
+            Kommentarer uten registrert av
+          </Heading>
+          <BodyShort textColor="subtle">
+            Kommentarer lagret før <code>registered_by</code> ble innført (PR #211) mangler forfatterinformasjon.
+            Forfattervisningen på deployment-detaljsiden vil da ikke ha noe å vise for disse kommentarene.
+          </BodyShort>
+        </VStack>
+
+        {commentsMissingRegisteredBy.length === 0 ? (
+          <Alert variant="success">Ingen kommentarer mangler registrert av.</Alert>
+        ) : (
+          <>
+            <Alert variant="warning">
+              {commentsMissingRegisteredBy.length} kommentar
+              {commentsMissingRegisteredBy.length === 1 ? '' : 'er'} mangler <code>registered_by</code>. Disse kan ikke
+              repareres automatisk da forfatterinformasjonen ikke er tilgjengelig i ettertid.
+            </Alert>
+
+            <TextField
+              label="Filtrer kommentarer"
+              hideLabel
+              placeholder="Filtrer på ID, app, team eller miljø…"
+              size="small"
+              value={commentsFilter}
+              onChange={(e) => setCommentsFilter(e.target.value)}
+            />
+
+            <div style={{ overflowX: 'auto' }}>
+              <Table size="small" sort={commentsSort} onSortChange={handleSort(commentsSort, setCommentsSort)}>
+                <Table.Header>
+                  <Table.Row>
+                    <Table.ColumnHeader sortKey="comment_id" sortable>
+                      Kommentar-ID
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="deployment_id" sortable>
+                      Deployment
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="app_name" sortable>
+                      App
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="team_slug" sortable>
+                      Team
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader>Miljø</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="created_at" sortable>
+                      Opprettet
+                    </Table.ColumnHeader>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {filteredComments.map((c) => (
+                    <Table.Row key={c.comment_id}>
+                      <Table.DataCell>
+                        <BodyShort size="small">{c.comment_id}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <Link to={`/deployments/${c.deployment_id}`}>{c.deployment_id}</Link>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{c.app_name}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{c.team_slug}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{c.environment_name}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{c.createdStr}</BodyShort>
                       </Table.DataCell>
                     </Table.Row>
                   ))}

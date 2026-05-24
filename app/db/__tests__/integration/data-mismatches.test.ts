@@ -2,6 +2,7 @@
  * Integration tests: data-mismatches admin page queries.
  * 1. Title-missing summary query — validates FILTER aggregate syntax
  * 2. Baseline-without-approver query — validates detection of NULL changed_by
+ * 3. Comments missing registered_by query — validates detection of NULL registered_by
  */
 
 import { Pool } from 'pg'
@@ -152,5 +153,100 @@ describe('baseline-without-approver query', () => {
     expect(ids).toContain(missingId)
     expect(ids).toContain(nullApproverId)
     expect(rows).toHaveLength(2)
+  })
+})
+
+const COMMENTS_MISSING_REGISTERED_BY_SQL = `SELECT
+  dc.id AS comment_id,
+  dc.deployment_id,
+  ma.app_name,
+  ma.team_slug,
+  ma.environment_name,
+  dc.comment_type,
+  dc.created_at
+FROM deployment_comments dc
+JOIN deployments d ON dc.deployment_id = d.id
+JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+WHERE dc.registered_by IS NULL
+  AND dc.deleted_at IS NULL
+ORDER BY dc.created_at DESC`
+
+describe('data-mismatches: comments missing registered_by', () => {
+  it('returns empty when all comments have registered_by set', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+    })
+
+    await pool.query(
+      `INSERT INTO deployment_comments (deployment_id, comment_text, comment_type, registered_by)
+       VALUES ($1, 'En kommentar', 'comment', 'Z990001')`,
+      [deploymentId],
+    )
+
+    const { rows } = await pool.query(COMMENTS_MISSING_REGISTERED_BY_SQL)
+    expect(rows).toHaveLength(0)
+  })
+
+  it('returns comments where registered_by IS NULL', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-b', appName: 'app-b', environment: 'prod-gcp' })
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-b',
+      environment: 'prod-gcp',
+    })
+
+    await pool.query(
+      `INSERT INTO deployment_comments (deployment_id, comment_text, comment_type, registered_by)
+       VALUES ($1, 'Gammel kommentar uten forfatter', 'comment', NULL)`,
+      [deploymentId],
+    )
+
+    const { rows } = await pool.query(COMMENTS_MISSING_REGISTERED_BY_SQL)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].team_slug).toBe('team-b')
+    expect(rows[0].app_name).toBe('app-b')
+  })
+
+  it('excludes soft-deleted comments', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-c', appName: 'app-c', environment: 'prod-gcp' })
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-c',
+      environment: 'prod-gcp',
+    })
+
+    await pool.query(
+      `INSERT INTO deployment_comments (deployment_id, comment_text, comment_type, registered_by, deleted_at)
+       VALUES ($1, 'Slettet kommentar', 'comment', NULL, NOW())`,
+      [deploymentId],
+    )
+
+    const { rows } = await pool.query(COMMENTS_MISSING_REGISTERED_BY_SQL)
+    expect(rows).toHaveLength(0)
+  })
+
+  it('returns app_name, team_slug, environment_name from joined tables', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-d', appName: 'app-d', environment: 'dev-gcp' })
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-d',
+      environment: 'dev-gcp',
+    })
+
+    await pool.query(
+      `INSERT INTO deployment_comments (deployment_id, comment_text, comment_type, registered_by)
+       VALUES ($1, 'Test', 'comment', NULL)`,
+      [deploymentId],
+    )
+
+    const { rows } = await pool.query(COMMENTS_MISSING_REGISTERED_BY_SQL)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].app_name).toBe('app-d')
+    expect(rows[0].team_slug).toBe('team-d')
+    expect(rows[0].environment_name).toBe('dev-gcp')
+    expect(rows[0].deployment_id).toBe(deploymentId)
   })
 })
