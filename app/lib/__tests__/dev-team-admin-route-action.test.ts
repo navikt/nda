@@ -140,6 +140,7 @@ describe('sections team admin action - add_apps characterization', () => {
       params: { sectionSlug: 'pensjon', devTeamSlug: 'starte-pensjon' },
     } as never)
 
+    expect(mockGetRepositoryDefaultBranch).toHaveBeenCalledWith('navikt', 'pensjon-api')
     expect(mockCreateMonitoredApplication).toHaveBeenCalledWith(
       {
         team_slug: 'pensjondeployer',
@@ -173,5 +174,26 @@ describe('sections team admin action - add_apps characterization', () => {
     expect(result).toEqual({
       success: 'La til 2 applikasjoner (1 ny app lagt til overvåking).',
     })
+  })
+
+  it('passes null default_branch to createMonitoredApplication when GitHub detection fails', async () => {
+    mockGetRepositoryDefaultBranch.mockResolvedValue(null)
+
+    const formData = new FormData()
+    formData.set('intent', 'add_apps')
+    formData.append('app_ref', 'new:pensjondeployer|prod-gcp|pensjon-api')
+    formData.set('audit_start_year', '2025')
+    formData.set('implicit_approval_mode', 'dependabot_only')
+
+    await action({
+      request: makeRequest(formData),
+      params: { sectionSlug: 'pensjon', devTeamSlug: 'starte-pensjon' },
+    } as never)
+
+    expect(mockGetRepositoryDefaultBranch).toHaveBeenCalledWith('navikt', 'pensjon-api')
+    expect(mockCreateMonitoredApplication).toHaveBeenCalledWith(
+      expect.objectContaining({ default_branch: null }),
+      expect.anything(),
+    )
   })
 })

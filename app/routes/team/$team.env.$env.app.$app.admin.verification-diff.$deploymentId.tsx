@@ -56,10 +56,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
   }
 
-  try {
-    if (!deployment.default_branch) {
-      throw new Response('Kan ikke verifisere: default_branch er ikke satt for denne appen.', { status: 400 })
+  if (!deployment.default_branch) {
+    return {
+      deployment,
+      error:
+        'Kan ikke verifisere: default_branch er ikke satt for denne appen. Auto-sync fyller inn verdien innen 5 minutter.',
+      debugResult: null,
+      useCache,
+      params,
     }
+  }
+
+  try {
     const debugResult = await runDebugVerification(deploymentId, {
       commitSha: deployment.commit_sha,
       repository: `${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`,
