@@ -98,7 +98,7 @@ export async function updateDeploymentVerification(
        github_pr_url = COALESCE($7, github_pr_url),
        unverified_commits = $4::jsonb,
        github_pr_data = COALESCE($5::jsonb, github_pr_data),
-       title = COALESCE($6, title),
+       title = COALESCE($6, $9, title),
        branch_name = COALESCE($8, branch_name)
      WHERE id = $3
        AND four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})`,
@@ -123,6 +123,7 @@ export async function updateDeploymentVerification(
       result.deployedPr?.title || null,
       result.deployedPr?.url || null,
       result.detectedBranchName ?? null,
+      result.detectedTitle ?? null,
     ],
   )
 
