@@ -56,6 +56,43 @@ export type {
 export const isVerificationDebugMode = process.env.VERIFICATION_DEBUG === 'true'
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Copy data-fetch artifacts (branchMismatch, detectedBranchName, detectedTitle)
+ * from the input onto the result so they get persisted and surfaced to consumers.
+ * These fields are not decisions made by verifyDeployment — they come from the
+ * data-fetch phase and must be forwarded explicitly.
+ */
+function applyPassthroughFields(result: VerificationResult, input: VerificationInput): void {
+  if (input.branchMismatch) {
+    result.branchMismatch = input.branchMismatch
+  }
+  if (input.detectedBranchName) {
+    result.detectedBranchName = input.detectedBranchName
+  }
+  if (input.detectedTitle) {
+    result.detectedTitle = input.detectedTitle
+  }
+}
+
+/**
+ * Derive a title from the first commit message when no PR is present.
+ * Takes only the first line, trims whitespace, and caps at 500 chars (VARCHAR(500) column limit).
+ * Returns undefined for empty results so no blank title is persisted.
+ */
+function deriveDetectedTitle(
+  deployedPr: VerificationInput['deployedPr'],
+  commitsBetween: VerificationInput['commitsBetween'],
+): string | undefined {
+  if (deployedPr) return undefined
+  const raw = commitsBetween[0]?.message
+  if (!raw) return undefined
+  return raw.split('\n')[0].trim().slice(0, 500) || undefined
+}
+
+// =============================================================================
 // Main Verification Function
 // =============================================================================
 
@@ -109,18 +146,7 @@ export async function runVerification(
   // Step 2: Run stateless verification
   logger.info(`   🧪 Running verification logic...`)
   const result = verifyDeployment(input)
-
-  // Passthrough: branchMismatch is a data-fetch artifact, not a verify decision.
-  // Surface it on the result so it gets persisted in verification_runs.result
-  // and is available to UI consumers.
-  if (input.branchMismatch) {
-    result.branchMismatch = input.branchMismatch
-  }
-
-  // Passthrough: detectedBranchName is fetched during data-fetch, not a verify decision.
-  if (input.detectedBranchName) {
-    result.detectedBranchName = input.detectedBranchName
-  }
+  applyPassthroughFields(result, input)
 
   logger.info(`   ✅ Verification complete:`)
   logger.info(`      - Status: ${result.status}`)
@@ -661,10 +687,12 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
       repositoryStatus: 'active',
       commitOnBaseBranch: null,
+      detectedTitle: deriveDetectedTitle(deployedPr, commitsBetween),
     }
   }
 
   const newResult = verifyDeployment(input)
+  applyPassthroughFields(newResult, input)
 
   const statusChanged = dep.four_eyes_status !== newResult.status
 

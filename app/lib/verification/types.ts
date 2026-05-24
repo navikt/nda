@@ -435,7 +435,10 @@ export interface VerificationInput {
   // or from the GitHub Actions workflow run API (for deployments without a PR).
   detectedBranchName?: string
 
-  // App settings
+  // Fallback title derived from the first line of the first commit message in
+  // commitsBetween when there is no associated PR. Stored with precedence:
+  // PR title first, then detectedTitle, then keep existing value.
+  detectedTitle?: string
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
 
@@ -577,6 +580,11 @@ export interface VerificationResult {
   // or from the GitHub Actions workflow run API (for deployments without a PR).
   // Passthrough from VerificationInput; populated by the orchestrator.
   detectedBranchName?: string
+
+  // Fallback title from the first line of the first commit message when no PR is associated.
+  // Stored with precedence: PR title first, then detectedTitle, then keep existing value.
+  // Passthrough from VerificationInput; populated by the orchestrator.
+  detectedTitle?: string
 }
 
 /**

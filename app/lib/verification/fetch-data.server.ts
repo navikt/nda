@@ -244,6 +244,15 @@ export async function fetchVerificationData(
   const detectedBranchName: string | undefined =
     deployedPr?.metadata.headBranch ?? (await getBranchFromWorkflowRun(owner, repo, triggerUrl)) ?? undefined
 
+  // Derive a fallback title from the first commit message when there is no PR.
+  // This covers deployments from non-default branches (e.g. unauthorized_branch)
+  // where unverifiedCommits is empty and no PR title is available.
+  // Use only the first line, trimmed and capped at 500 chars (matching the DB column limit).
+  const rawFirstCommitMessage = deployedPr ? undefined : commitsBetween[0]?.message
+  const detectedTitle: string | undefined = rawFirstCommitMessage
+    ? rawFirstCommitMessage.split('\n')[0].trim().slice(0, 500) || undefined
+    : undefined
+
   return {
     deploymentId,
     commitSha,
@@ -253,6 +262,7 @@ export async function fetchVerificationData(
     repositoryStatus,
     commitOnBaseBranch,
     detectedBranchName: detectedBranchName ?? undefined,
+    detectedTitle,
     auditStartYear: appSettings.auditStartYear,
     implicitApprovalSettings: appSettings.implicitApprovalSettings,
     previousDeployment,
