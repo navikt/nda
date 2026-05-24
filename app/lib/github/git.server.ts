@@ -177,7 +177,9 @@ export async function getRepositoryDefaultBranch(owner: string, repo: string): P
     const response = await client.repos.get({ owner, repo })
     return response.data.default_branch || null
   } catch (error) {
-    logger.warn(`⚠️ Failed to fetch default_branch for ${owner}/${repo}:`, error as Record<string, unknown>)
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to fetch default_branch for ${owner}/${repo}:`, { error: message, stack_trace: stack })
     return null
   }
 }
