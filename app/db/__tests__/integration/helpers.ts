@@ -43,8 +43,8 @@ export async function seedApp(
 ): Promise<number> {
   const year = opts.auditStartYear === undefined ? new Date().getFullYear() : opts.auditStartYear
   const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year)
-     VALUES ($1, $2, $3, true, $4) RETURNING id`,
+    `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year, default_branch)
+     VALUES ($1, $2, $3, true, $4, 'main') RETURNING id`,
     [opts.teamSlug, opts.appName, opts.environment, year],
   )
   return rows[0].id

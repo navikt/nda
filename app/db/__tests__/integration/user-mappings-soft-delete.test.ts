@@ -24,8 +24,8 @@ afterAll(async () => {
 
 async function seedDeploy(pool: Pool, deployer: string) {
   const app = await pool.query<{ id: number }>(
-    `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year)
-     VALUES ('t', $1, 'dev', true, 2025) RETURNING id`,
+    `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year, default_branch)
+     VALUES ('t', $1, 'dev', true, 2025, 'main') RETURNING id`,
     [`a-${deployer}`],
   )
   await pool.query(
@@ -270,8 +270,8 @@ describe('getUnmappedUsers audit_start_year filtering', () => {
 
   it('excludes deployers on inactive apps', async () => {
     const { rows } = await pool.query<{ id: number }>(
-      `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year)
-       VALUES ('t', 'inactive-app', 'prod', false, NULL) RETURNING id`,
+      `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year, default_branch)
+       VALUES ('t', 'inactive-app', 'prod', false, NULL, 'main') RETURNING id`,
     )
     await seedDeployment(pool, {
       monitoredAppId: rows[0].id,

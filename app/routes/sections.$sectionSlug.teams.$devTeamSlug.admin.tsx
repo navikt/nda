@@ -31,6 +31,7 @@ import { getFormString, isValidNavIdent, parseAuditStartYear } from '~/lib/form-
 import { getRepositoryDefaultBranch } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { fetchAllTeamsAndApplications, getApplicationInfo } from '~/lib/nais.server'
+import { parseRepository } from '~/lib/sync/repo-parser'
 import { type ImplicitApprovalMode, isImplicitApprovalMode } from '~/lib/verification/types'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.admin'
 
@@ -290,12 +291,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         const key = `${id.team_slug}|${id.environment_name}|${id.app_name}`
         const repoUrl = appRepoMap.get(key)
         let defaultBranch = 'main'
-        if (repoUrl) {
-          const parts = repoUrl.replace('https://github.com/', '').split('/')
-          if (parts.length >= 2) {
-            const detected = await getRepositoryDefaultBranch(parts[0], parts[1])
-            if (detected) defaultBranch = detected
-          }
+        const parsed = parseRepository(repoUrl)
+        if (parsed) {
+          const detected = await getRepositoryDefaultBranch(parsed.owner, parsed.repo)
+          if (detected) defaultBranch = detected
         }
         defaultBranchMap.set(key, defaultBranch)
       }),

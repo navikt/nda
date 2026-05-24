@@ -89,10 +89,10 @@ export async function getMonitoredApplicationByIdentity(
 /**
  * Insert a monitored application, or refresh `updated_at` if it already exists.
  *
- * `audit_start_year` is only set on initial INSERT. Re-adding an existing app
- * does NOT overwrite the existing audit window — that would silently change
- * which historical deployments are in audit scope. To change the audit year,
- * use the dedicated admin update flow.
+ * `audit_start_year` and `default_branch` are only set on initial INSERT.
+ * Re-adding an existing app does NOT overwrite these values — the auto-sync
+ * handles `default_branch` updates, and `audit_start_year` changes go through
+ * the dedicated admin update flow.
  *
  * Pass `client` to run within an existing transaction.
  */
