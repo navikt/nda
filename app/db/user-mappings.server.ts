@@ -4,6 +4,7 @@ import { pool } from './connection.server'
 
 export interface UserMapping {
   github_username: string
+  display_github_username: string | null
   display_name: string | null
   nav_email: string | null
   nav_ident: string | null
@@ -99,10 +100,15 @@ function normalizeEmail(value: string | null | undefined): string | null {
 }
 
 /**
- * Create or update a user mapping
+ * Create or update a user mapping.
+ * `displayGithubUsername` preserves original casing for display:
+ * - Pass a string to set/overwrite the display casing.
+ * - Pass `null` to preserve the existing stored value (uses COALESCE in SQL).
+ * - Omit to derive from `githubUsername` (uses original casing of that input).
  */
 export async function upsertUserMapping(params: {
   githubUsername: string
+  displayGithubUsername?: string | null
   displayName?: string | null
   navEmail?: string | null
   navIdent?: string | null
@@ -112,11 +118,26 @@ export async function upsertUserMapping(params: {
   if (!githubUsername) {
     throw new Error('GitHub username is required')
   }
+  // Use explicit display username if provided, otherwise fall back to the
+  // original-cased input (before lowercasing). On UPDATE, COALESCE ensures we
+  // keep the existing value when NULL is passed.
+  const displayGithubUsername =
+    params.displayGithubUsername !== undefined
+      ? (normalize(params.displayGithubUsername) ?? null)
+      : (normalize(params.githubUsername) ?? null)
+
+  // Invariant: display casing must match the canonical username case-insensitively
+  if (displayGithubUsername && displayGithubUsername.toLowerCase() !== githubUsername) {
+    throw new Error(
+      `display_github_username '${displayGithubUsername}' does not match github_username '${githubUsername}'`,
+    )
+  }
 
   const result = await pool.query(
-    `INSERT INTO user_mappings (github_username, display_name, nav_email, nav_ident, slack_member_id, updated_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())
+    `INSERT INTO user_mappings (github_username, display_github_username, display_name, nav_email, nav_ident, slack_member_id, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
      ON CONFLICT (github_username) DO UPDATE SET
+       display_github_username = COALESCE(EXCLUDED.display_github_username, user_mappings.display_github_username),
        display_name = COALESCE(EXCLUDED.display_name, user_mappings.display_name),
        nav_email = COALESCE(EXCLUDED.nav_email, user_mappings.nav_email),
        nav_ident = COALESCE(EXCLUDED.nav_ident, user_mappings.nav_ident),
@@ -127,6 +148,7 @@ export async function upsertUserMapping(params: {
      RETURNING *`,
     [
       githubUsername,
+      displayGithubUsername,
       normalize(params.displayName),
       normalizeEmail(params.navEmail),
       normalizeNavIdent(params.navIdent),

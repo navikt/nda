@@ -20,9 +20,10 @@ function renderPage(canAdmin: boolean) {
       roleMembers={[
         {
           id: 1,
-          nav_ident: 'A123456',
+          nav_ident: 'Z990001',
           role: 'utvikler',
           github_username: 'pensjon-dev',
+          display_github_username: 'pensjon-dev',
           display_name: 'Rask Elv',
           assigned_at: '2026-01-01T00:00:00Z',
         },
