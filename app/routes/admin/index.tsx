@@ -62,11 +62,27 @@ export async function loader({ request }: Route.LoaderArgs) {
   `)
   const titleMismatchCount = parseInt(titleMismatchResult.rows[0].count, 10)
 
-  return { pendingCount, diffCount, softDeletedCount, titleMismatchCount }
+  // Count baseline deployments missing an approver
+  const baselineNoApproverResult = await pool.query<{ count: string }>(`
+    SELECT COUNT(*)::text AS count
+    FROM deployments d
+    WHERE d.four_eyes_status = 'baseline'
+      AND NOT EXISTS (
+        SELECT 1 FROM deployment_status_history dsh
+          WHERE dsh.deployment_id = d.id
+            AND dsh.change_source = 'baseline_approval'
+            AND dsh.changed_by IS NOT NULL
+      )
+  `)
+  const baselineNoApproverCount = parseInt(baselineNoApproverResult.rows[0].count, 10)
+
+  return { pendingCount, diffCount, softDeletedCount, titleMismatchCount, baselineNoApproverCount }
 }
 
 export default function AdminIndex() {
-  const { pendingCount, diffCount, softDeletedCount, titleMismatchCount } = useLoaderData<typeof loader>()
+  const { pendingCount, diffCount, softDeletedCount, titleMismatchCount, baselineNoApproverCount } =
+    useLoaderData<typeof loader>()
+  const dataQualityCount = titleMismatchCount + baselineNoApproverCount
   return (
     <VStack gap="space-24">
       <div>
@@ -298,9 +314,9 @@ export default function AdminIndex() {
             padding="space-24"
             borderRadius="8"
             background="raised"
-            borderColor={titleMismatchCount > 0 ? 'danger-subtle' : 'neutral-subtle'}
+            borderColor={dataQualityCount > 0 ? 'danger-subtle' : 'neutral-subtle'}
             borderWidth="1"
-            data-color={titleMismatchCount > 0 ? 'danger' : undefined}
+            data-color={dataQualityCount > 0 ? 'danger' : undefined}
             className="admin-card"
             style={{ height: '100%' }}
           >
@@ -311,8 +327,8 @@ export default function AdminIndex() {
                   Datakvalitet
                 </Heading>
                 <BodyShort textColor="subtle">
-                  {titleMismatchCount > 0
-                    ? `${titleMismatchCount} deployments har feil tittel. Sjekk datakvalitet.`
+                  {dataQualityCount > 0
+                    ? `${dataQualityCount} datakvalitetsproblemer funnet. Sjekk siden.`
                     : 'Tittel-avvik, baseline uten godkjenner og andre datakvalitetsproblemer.'}
                 </BodyShort>
               </div>
