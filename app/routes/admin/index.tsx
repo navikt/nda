@@ -293,7 +293,7 @@ export default function AdminIndex() {
           </Box>
         </Link>
 
-        <Link to="/admin/title-mismatches" style={{ textDecoration: 'none', height: '100%' }}>
+        <Link to="/admin/data-mismatches" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
             borderRadius="8"
@@ -308,12 +308,12 @@ export default function AdminIndex() {
               <MagnifyingGlassIcon fontSize="2rem" aria-hidden />
               <div>
                 <Heading level="2" size="small" spacing>
-                  Tittel-avvik
+                  Datakvalitet
                 </Heading>
                 <BodyShort textColor="subtle">
                   {titleMismatchCount > 0
-                    ? `${titleMismatchCount} deployments har feil tittel (avviker fra PR-tittel).`
-                    : 'Sjekk at lagrede titler samsvarer med PR-titler.'}
+                    ? `${titleMismatchCount} deployments har feil tittel. Sjekk datakvalitet.`
+                    : 'Tittel-avvik, baseline uten godkjenner og andre datakvalitetsproblemer.'}
                 </BodyShort>
               </div>
             </VStack>
