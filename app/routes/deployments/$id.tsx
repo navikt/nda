@@ -36,7 +36,7 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { useRef, useState } from 'react'
-import { Form, Link, useSearchParams } from 'react-router'
+import { Form, Link, useNavigation, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { CheckAnnotations } from '~/components/CheckAnnotations'
 import { CheckLogViewer } from '~/components/CheckLogViewer'
@@ -403,6 +403,8 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
     managingTeams,
   } = loaderData
   const [searchParams] = useSearchParams()
+  const navigation = useNavigation()
+  const isVerifying = navigation.state !== 'idle' && navigation.formData?.get('intent') === 'verify_four_eyes'
   const [commentText, setCommentText] = useState('')
   const [slackLink, setSlackLink] = useState('')
   const [approvalReason, setApprovalReason] = useState('')
@@ -569,6 +571,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                     variant="tertiary"
                     icon={<ArrowsCirclepathIcon aria-hidden />}
                     title="Verifiser godkjenningsstatus mot GitHub"
+                    loading={isVerifying}
                   >
                     Verifiser
                   </Button>
@@ -809,7 +812,13 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
               <BodyShort>Du kan også forsøke å verifisere manuelt.</BodyShort>
               <Form method="post">
                 <input type="hidden" name="intent" value="verify_four_eyes" />
-                <Button type="submit" size="small" variant="secondary" icon={<ArrowsCirclepathIcon aria-hidden />}>
+                <Button
+                  type="submit"
+                  size="small"
+                  variant="secondary"
+                  icon={<ArrowsCirclepathIcon aria-hidden />}
+                  loading={isVerifying}
+                >
                   Verifiser nå
                 </Button>
               </Form>
