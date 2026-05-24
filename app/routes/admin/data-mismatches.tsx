@@ -1,5 +1,20 @@
 import { WrenchIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Heading, Hide, HStack, Show, Table, Tag, VStack } from '@navikt/ds-react'
+import type { SortState } from '@navikt/ds-react'
+import {
+  Alert,
+  BodyShort,
+  Box,
+  Button,
+  Heading,
+  Hide,
+  HStack,
+  Show,
+  Table,
+  Tag,
+  TextField,
+  VStack,
+} from '@navikt/ds-react'
+import { useState } from 'react'
 import { Form, Link, useActionData, useLoaderData } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { ExternalLink } from '~/components/ExternalLink'
@@ -145,6 +160,75 @@ export default function DataMismatches() {
   const { mismatches, mismatchCount, missing, baselineNoApprover } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
 
+  const [mismatchFilter, setMismatchFilter] = useState('')
+  const [mismatchSort, setMismatchSort] = useState<SortState>()
+
+  const [baselineFilter, setBaselineFilter] = useState('')
+  const [baselineSort, setBaselineSort] = useState<SortState>()
+
+  function handleSort(current: SortState | undefined, set: (s: SortState | undefined) => void) {
+    return (sortKey: string | undefined) => {
+      if (!sortKey) return set(undefined)
+      if (current?.orderBy === sortKey) {
+        current.direction === 'ascending' ? set({ orderBy: sortKey, direction: 'descending' }) : set(undefined)
+      } else {
+        set({ orderBy: sortKey, direction: 'ascending' })
+      }
+    }
+  }
+
+  const filteredMismatches = mismatches
+    .filter((m) => {
+      if (!mismatchFilter) return true
+      const q = mismatchFilter.toLowerCase()
+      return [m.id.toString(), m.app_name, m.stored_title, m.pr_title, m.four_eyes_status].some((v) =>
+        v.toLowerCase().includes(q),
+      )
+    })
+    .sort((a, b) => {
+      if (!mismatchSort) return 0
+      const dir = mismatchSort.direction === 'ascending' ? 1 : -1
+      switch (mismatchSort.orderBy) {
+        case 'id':
+          return (a.id - b.id) * dir
+        case 'app_name':
+          return a.app_name.localeCompare(b.app_name, 'nb') * dir
+        case 'stored_title':
+          return a.stored_title.localeCompare(b.stored_title, 'nb') * dir
+        case 'pr_title':
+          return a.pr_title.localeCompare(b.pr_title, 'nb') * dir
+        case 'four_eyes_status':
+          return a.four_eyes_status.localeCompare(b.four_eyes_status, 'nb') * dir
+        default:
+          return 0
+      }
+    })
+
+  const filteredBaseline = baselineNoApprover
+    .filter((b) => {
+      if (!baselineFilter) return true
+      const q = baselineFilter.toLowerCase()
+      return [b.id.toString(), b.app_name, b.team_slug, b.environment_name].some((v) => v.toLowerCase().includes(q))
+    })
+    .sort((a, b) => {
+      if (!baselineSort) return 0
+      const dir = baselineSort.direction === 'ascending' ? 1 : -1
+      switch (baselineSort.orderBy) {
+        case 'id':
+          return (a.id - b.id) * dir
+        case 'app_name':
+          return a.app_name.localeCompare(b.app_name, 'nb') * dir
+        case 'team_slug':
+          return a.team_slug.localeCompare(b.team_slug, 'nb') * dir
+        case 'environment_name':
+          return a.environment_name.localeCompare(b.environment_name, 'nb') * dir
+        case 'deployed_at':
+          return (new Date(a.deployed_at).getTime() - new Date(b.deployed_at).getTime()) * dir
+        default:
+          return 0
+      }
+    })
+
   return (
     <VStack gap="space-24">
       <VStack gap="space-8">
@@ -251,21 +335,30 @@ export default function DataMismatches() {
             Mismatches ({mismatchCount})
           </Heading>
 
+          <TextField
+            label="Filtrer"
+            hideLabel
+            placeholder="Filtrer på ID, app, tittel eller status…"
+            size="small"
+            value={mismatchFilter}
+            onChange={(e) => setMismatchFilter(e.target.value)}
+          />
+
           <Show above="md">
-            <Box borderWidth="1" borderColor="neutral-subtle" borderRadius="8" style={{ overflow: 'auto' }}>
-              <Table size="small">
+            <div style={{ overflowX: 'auto' }}>
+              <Table size="small" sort={mismatchSort} onSortChange={handleSort(mismatchSort, setMismatchSort)}>
                 <Table.Header>
                   <Table.Row>
-                    <Table.HeaderCell>ID</Table.HeaderCell>
-                    <Table.HeaderCell>App</Table.HeaderCell>
-                    <Table.HeaderCell>Lagret tittel</Table.HeaderCell>
-                    <Table.HeaderCell>PR-tittel (riktig)</Table.HeaderCell>
-                    <Table.HeaderCell>Status</Table.HeaderCell>
+                    <Table.ColumnHeader sortKey="id">ID</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="app_name">App</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="stored_title">Lagret tittel</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="pr_title">PR-tittel (riktig)</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="four_eyes_status">Status</Table.ColumnHeader>
                     <Table.HeaderCell>PR</Table.HeaderCell>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
-                  {mismatches.map((m) => (
+                  {filteredMismatches.map((m) => (
                     <Table.Row key={m.id}>
                       <Table.DataCell>
                         <Link to={`/deployments/${m.id}`}>{m.id}</Link>
@@ -299,12 +392,12 @@ export default function DataMismatches() {
                   ))}
                 </Table.Body>
               </Table>
-            </Box>
+            </div>
           </Show>
 
           <Hide above="md">
             <VStack gap="space-12">
-              {mismatches.map((m) => (
+              {filteredMismatches.map((m) => (
                 <Box key={m.id} padding="space-16" borderRadius="8" borderWidth="1" borderColor="neutral-subtle">
                   <VStack gap="space-8">
                     <HStack justify="space-between" align="center">
@@ -367,19 +460,29 @@ export default function DataMismatches() {
               {baselineNoApprover.length === 1 ? '' : 's'} mangler godkjenner og vil blokkere auditrapport-generering.
               Åpne hvert deployment og godkjenn på nytt for å reparere.
             </Alert>
-            <Box borderWidth="1" borderColor="neutral-subtle" borderRadius="8" style={{ overflow: 'auto' }}>
-              <Table size="small">
+
+            <TextField
+              label="Filtrer"
+              hideLabel
+              placeholder="Filtrer på ID, app, team eller miljø…"
+              size="small"
+              value={baselineFilter}
+              onChange={(e) => setBaselineFilter(e.target.value)}
+            />
+
+            <div style={{ overflowX: 'auto' }}>
+              <Table size="small" sort={baselineSort} onSortChange={handleSort(baselineSort, setBaselineSort)}>
                 <Table.Header>
                   <Table.Row>
-                    <Table.HeaderCell>ID</Table.HeaderCell>
-                    <Table.HeaderCell>App</Table.HeaderCell>
-                    <Table.HeaderCell>Team</Table.HeaderCell>
-                    <Table.HeaderCell>Miljø</Table.HeaderCell>
-                    <Table.HeaderCell>Deployet</Table.HeaderCell>
+                    <Table.ColumnHeader sortKey="id">ID</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="app_name">App</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="team_slug">Team</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="environment_name">Miljø</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="deployed_at">Deployet</Table.ColumnHeader>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
-                  {baselineNoApprover.map((b) => (
+                  {filteredBaseline.map((b) => (
                     <Table.Row key={b.id}>
                       <Table.DataCell>
                         <Link to={`/deployments/${b.id}`}>{b.id}</Link>
@@ -400,7 +503,7 @@ export default function DataMismatches() {
                   ))}
                 </Table.Body>
               </Table>
-            </Box>
+            </div>
           </>
         )}
       </VStack>
