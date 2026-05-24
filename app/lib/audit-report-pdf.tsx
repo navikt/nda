@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
   },
 })
 
-interface AuditReportPdfProps {
+export interface AuditReportPdfProps {
   appName: string
   repository: string
   teamSlug: string
@@ -313,7 +313,7 @@ function formatUnverifiedReason(reason: string): string {
   return UNVERIFIED_REASON_LABELS[reason] || reason
 }
 
-function AuditReportPdfDocument(props: AuditReportPdfProps) {
+export function AuditReportPdfDocument(props: AuditReportPdfProps) {
   const {
     appName,
     repository,
