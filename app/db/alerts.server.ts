@@ -46,6 +46,12 @@ export async function createRepositoryAlert(data: {
 
   const deployment = depResult.rows[0]
 
+  if (deployment.monitored_app_id !== data.monitoredApplicationId) {
+    throw new Error(
+      `monitoredApplicationId mismatch: expected ${data.monitoredApplicationId}, got ${deployment.monitored_app_id} for deployment ${data.deploymentNaisId}`,
+    )
+  }
+
   // Use provided expected repo or default to detected (for pending/historical alerts)
   const expectedOwner = data.expectedGithubOwner || data.detectedGithubOwner
   const expectedRepoName = data.expectedGithubRepoName || data.detectedGithubRepoName
