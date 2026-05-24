@@ -23,6 +23,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { Form, Link } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
 import { StatCard } from '~/components/StatCard'
+import type { RepositoryAlertType } from '~/db/alerts.server'
 import {
   mockAlert,
   mockApp,
@@ -45,7 +46,7 @@ type Repository = {
 type AppAlert = {
   id: number
   deployment_id: number
-  alert_type: string
+  alert_type: RepositoryAlertType
   expected_github_owner: string
   expected_github_repo_name: string
   detected_github_owner: string

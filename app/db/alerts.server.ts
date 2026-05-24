@@ -1,10 +1,12 @@
 import { pool } from './connection.server'
 
+export type RepositoryAlertType = 'repository_mismatch' | 'pending_approval' | 'historical_repository'
+
 interface RepositoryAlert {
   id: number
   monitored_app_id: number
   deployment_id: number
-  alert_type: string
+  alert_type: RepositoryAlertType
   expected_github_owner: string
   expected_github_repo_name: string
   detected_github_owner: string
@@ -33,7 +35,7 @@ export async function createRepositoryAlert(data: {
   detectedGithubRepoName: string
   expectedGithubOwner?: string
   expectedGithubRepoName?: string
-  alertType?: string
+  alertType: RepositoryAlertType
 }): Promise<RepositoryAlert> {
   // First, find the deployment ID from nais_deployment_id
   const depResult = await pool.query('SELECT id, monitored_app_id FROM deployments WHERE nais_deployment_id = $1', [
@@ -46,10 +48,15 @@ export async function createRepositoryAlert(data: {
 
   const deployment = depResult.rows[0]
 
+  if (deployment.monitored_app_id !== data.monitoredApplicationId) {
+    throw new Error(
+      `monitoredApplicationId mismatch: expected ${data.monitoredApplicationId}, got ${deployment.monitored_app_id} for deployment ${data.deploymentNaisId}`,
+    )
+  }
+
   // Use provided expected repo or default to detected (for pending/historical alerts)
   const expectedOwner = data.expectedGithubOwner || data.detectedGithubOwner
   const expectedRepoName = data.expectedGithubRepoName || data.detectedGithubRepoName
-  const alertType = data.alertType || 'repository_mismatch'
 
   const result = await pool.query(
     `INSERT INTO repository_alerts 
@@ -60,7 +67,7 @@ export async function createRepositoryAlert(data: {
     [
       deployment.monitored_app_id,
       deployment.id,
-      alertType,
+      data.alertType,
       expectedOwner,
       expectedRepoName,
       data.detectedGithubOwner,
