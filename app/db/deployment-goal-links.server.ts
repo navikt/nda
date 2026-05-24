@@ -90,16 +90,18 @@ export async function getLinkedObjectivesForApps(appIds: number[]): Promise<Goal
   return result.rows
 }
 
-export async function addDeploymentGoalLink(data: {
+type SystemLinkMethod = Exclude<DeploymentGoalLink['link_method'], 'manual'>
+
+type AddDeploymentGoalLinkParams = {
   deployment_id: number
   objective_id?: number
   key_result_id?: number
   external_url?: string
   external_url_title?: string
   comment?: string
-  link_method: DeploymentGoalLink['link_method']
-  linked_by?: string
-}): Promise<DeploymentGoalLink | null> {
+} & ({ link_method: 'manual'; linked_by: string } | { link_method: SystemLinkMethod; linked_by?: string })
+
+export async function addDeploymentGoalLink(data: AddDeploymentGoalLinkParams): Promise<DeploymentGoalLink | null> {
   if (!data.objective_id && !data.key_result_id) {
     throw new Error('Må angi objective_id eller key_result_id.')
   }
@@ -286,7 +288,7 @@ function buildUnlinkedDependabotWhere(
 export async function bulkAddDeploymentGoalLinks(
   deploymentIds: number[],
   goal: { objective_id?: number; key_result_id?: number },
-  linkedBy?: string,
+  linkedBy: string,
   options?: { external_url?: string; comment?: string },
 ): Promise<number> {
   if (deploymentIds.length === 0) return 0

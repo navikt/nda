@@ -20,7 +20,7 @@ interface CreateCommentParams {
   slack_link?: string
   comment_type?: 'comment' | 'slack_link' | 'manual_approval' | 'legacy_info'
   approved_by?: string
-  registered_by?: string
+  registered_by: string
 }
 
 export async function getCommentsByDeploymentId(deployment_id: number): Promise<DeploymentComment[]> {
@@ -46,7 +46,7 @@ export async function createComment(params: CreateCommentParams): Promise<Deploy
       commentType,
       params.approved_by || null,
       approvedAt,
-      params.registered_by || null,
+      params.registered_by,
     ],
   )
   return result.rows[0]
