@@ -81,7 +81,13 @@ export async function computeVerificationDiffs(
 
       const owner = row.detected_github_owner as string
       const repo = row.detected_github_repo_name as string
-      const baseBranch = row.default_branch || 'main'
+
+      if (!row.default_branch) {
+        result.skipped++
+        result.deploymentsChecked++
+        continue
+      }
+      const baseBranch = row.default_branch
 
       let input: VerificationInput
       let precomputedResult: ReturnType<typeof verifyDeployment> | null = null

@@ -94,12 +94,18 @@ export async function action({ request, params }: { request: Request; params: Re
       return { error: 'Kan ikke verifisere: deployment mangler repository info' }
     }
     try {
+      if (!deployment.default_branch) {
+        return {
+          error:
+            'Kan ikke verifisere: default_branch er ikke satt. Vent på automatisk synkronisering eller sett branchen manuelt i app-admin.',
+        }
+      }
       logger.info(`🔍 Manually verifying deployment ${deployment.nais_deployment_id}...`)
       const result = await runVerification(deployment.id, {
         commitSha: deployment.commit_sha,
         repository: `${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`,
         environmentName: deployment.environment_name,
-        baseBranch: deployment.default_branch || 'main',
+        baseBranch: deployment.default_branch,
         monitoredAppId: deployment.monitored_app_id,
         forceRefresh: true,
       })
@@ -353,14 +359,14 @@ export async function action({ request, params }: { request: Request; params: Re
 
       // Run full GitHub verification to fetch all PR data (comments, reviews, etc.)
       let updatedDeployment = await getDeploymentById(deploymentId)
-      if (updatedDeployment && commitSha) {
+      if (updatedDeployment && commitSha && updatedDeployment.default_branch) {
         logger.info(`🔄 Running full GitHub verification for legacy deployment ${deploymentId}`)
         const repository = `${updatedDeployment.detected_github_owner}/${updatedDeployment.detected_github_repo_name}`
         await runVerification(deploymentId, {
           commitSha,
           repository,
           environmentName: updatedDeployment.environment_name,
-          baseBranch: updatedDeployment.default_branch || 'main',
+          baseBranch: updatedDeployment.default_branch,
           monitoredAppId: updatedDeployment.monitored_app_id,
           forceRefresh: true,
         })

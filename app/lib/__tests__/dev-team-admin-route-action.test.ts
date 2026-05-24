@@ -5,6 +5,7 @@ const {
   mockGetDevTeamBySlug,
   mockResolveTeamAdminCapabilities,
   mockGetApplicationInfo,
+  mockGetRepositoryDefaultBranch,
   mockCreateMonitoredApplication,
   mockUpdateImplicitApprovalSettings,
   mockClientQuery,
@@ -15,6 +16,7 @@ const {
   mockGetDevTeamBySlug: vi.fn(),
   mockResolveTeamAdminCapabilities: vi.fn(),
   mockGetApplicationInfo: vi.fn(),
+  mockGetRepositoryDefaultBranch: vi.fn(),
   mockCreateMonitoredApplication: vi.fn(),
   mockUpdateImplicitApprovalSettings: vi.fn(),
   mockClientQuery: vi.fn(),
@@ -43,6 +45,10 @@ vi.mock('~/lib/authorization.server', () => ({
 vi.mock('~/lib/nais.server', () => ({
   fetchAllTeamsAndApplications: vi.fn(),
   getApplicationInfo: mockGetApplicationInfo,
+}))
+
+vi.mock('~/lib/github/git.server', () => ({
+  getRepositoryDefaultBranch: mockGetRepositoryDefaultBranch,
 }))
 
 vi.mock('~/db/monitored-applications.server', () => ({
@@ -86,7 +92,13 @@ describe('sections team admin action - add_apps characterization', () => {
       is_active: true,
     })
     mockResolveTeamAdminCapabilities.mockResolvedValue({ canAdmin: true })
-    mockGetApplicationInfo.mockResolvedValue({ found: true })
+    mockGetApplicationInfo.mockResolvedValue({
+      name: 'pensjon-api',
+      team: 'pensjondeployer',
+      environment: 'prod-gcp',
+      repository: 'https://github.com/navikt/pensjon-api',
+    })
+    mockGetRepositoryDefaultBranch.mockResolvedValue('main')
 
     mockClientQuery.mockResolvedValue({ rows: [] })
     mockClientRelease.mockImplementation(() => {})
@@ -128,12 +140,14 @@ describe('sections team admin action - add_apps characterization', () => {
       params: { sectionSlug: 'pensjon', devTeamSlug: 'starte-pensjon' },
     } as never)
 
+    expect(mockGetRepositoryDefaultBranch).toHaveBeenCalledWith('navikt', 'pensjon-api')
     expect(mockCreateMonitoredApplication).toHaveBeenCalledWith(
       {
         team_slug: 'pensjondeployer',
         environment_name: 'prod-gcp',
         app_name: 'pensjon-api',
         audit_start_year: 2025,
+        default_branch: 'main',
       },
       expect.objectContaining({ query: mockClientQuery, release: mockClientRelease }),
     )
@@ -160,5 +174,26 @@ describe('sections team admin action - add_apps characterization', () => {
     expect(result).toEqual({
       success: 'La til 2 applikasjoner (1 ny app lagt til overvåking).',
     })
+  })
+
+  it('passes null default_branch to createMonitoredApplication when GitHub detection fails', async () => {
+    mockGetRepositoryDefaultBranch.mockResolvedValue(null)
+
+    const formData = new FormData()
+    formData.set('intent', 'add_apps')
+    formData.append('app_ref', 'new:pensjondeployer|prod-gcp|pensjon-api')
+    formData.set('audit_start_year', '2025')
+    formData.set('implicit_approval_mode', 'dependabot_only')
+
+    await action({
+      request: makeRequest(formData),
+      params: { sectionSlug: 'pensjon', devTeamSlug: 'starte-pensjon' },
+    } as never)
+
+    expect(mockGetRepositoryDefaultBranch).toHaveBeenCalledWith('navikt', 'pensjon-api')
+    expect(mockCreateMonitoredApplication).toHaveBeenCalledWith(
+      expect.objectContaining({ default_branch: null }),
+      expect.anything(),
+    )
   })
 })

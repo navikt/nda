@@ -7,7 +7,7 @@ interface MonitoredApplication {
   environment_name: string
   app_name: string
   is_active: boolean
-  default_branch: string
+  default_branch: string | null
   default_branch_synced_at: Date | null
   audit_start_year: number | null
   test_requirement: 'none' | 'unit_tests' | 'integration_tests'
@@ -89,10 +89,10 @@ export async function getMonitoredApplicationByIdentity(
 /**
  * Insert a monitored application, or refresh `updated_at` if it already exists.
  *
- * `audit_start_year` is only set on initial INSERT. Re-adding an existing app
- * does NOT overwrite the existing audit window — that would silently change
- * which historical deployments are in audit scope. To change the audit year,
- * use the dedicated admin update flow.
+ * `audit_start_year` and `default_branch` are only set on initial INSERT.
+ * Re-adding an existing app does NOT overwrite these values — the auto-sync
+ * handles `default_branch` updates, and `audit_start_year` changes go through
+ * the dedicated admin update flow.
  *
  * Pass `client` to run within an existing transaction.
  */
@@ -102,20 +102,21 @@ export async function createMonitoredApplication(
     environment_name: string
     app_name: string
     audit_start_year: number
+    default_branch?: string | null
   },
   client?: PoolClient,
 ): Promise<MonitoredApplication> {
   const queryable = client ?? pool
   const result = await queryable.query(
     `INSERT INTO monitored_applications
-        (team_slug, environment_name, app_name, audit_start_year)
-      VALUES ($1, $2, $3, $4)
+        (team_slug, environment_name, app_name, audit_start_year, default_branch)
+      VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (team_slug, environment_name, app_name)
       DO UPDATE SET
         is_active = true,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *`,
-    [data.team_slug, data.environment_name, data.app_name, data.audit_start_year],
+    [data.team_slug, data.environment_name, data.app_name, data.audit_start_year, data.default_branch ?? null],
   )
   return result.rows[0]
 }
