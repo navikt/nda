@@ -253,75 +253,30 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     )
   }
 
-  // Collect all GitHub usernames we need to look up
-  const usernames: string[] = []
-  if (deployment.deployer_username) usernames.push(deployment.deployer_username)
-  // Include nearby deployment deployers
-  for (const nd of nearbyDeployments) {
-    if (nd.deployer_username && !usernames.includes(nd.deployer_username)) {
-      usernames.push(nd.deployer_username)
-    }
+  // Collect all identifiers (GitHub usernames and NAV idents) we need to look up
+  const identifierSet = new Set<string>()
+  const addId = (id: string | null | undefined) => {
+    if (id) identifierSet.add(id)
   }
-  if (deployment.github_pr_data?.creator?.username) usernames.push(deployment.github_pr_data.creator.username)
-  if (deployment.github_pr_data?.merger?.username) usernames.push(deployment.github_pr_data.merger.username)
-  if (deployment.github_pr_data?.assignees) {
-    for (const assignee of deployment.github_pr_data.assignees) {
-      if (assignee.username && !usernames.includes(assignee.username)) {
-        usernames.push(assignee.username)
-      }
-    }
-  }
-  if (deployment.github_pr_data?.reviewers) {
-    for (const reviewer of deployment.github_pr_data.reviewers) {
-      if (reviewer.username && !usernames.includes(reviewer.username)) {
-        usernames.push(reviewer.username)
-      }
-    }
-  }
-  if (deployment.github_pr_data?.requested_reviewers) {
-    for (const reviewer of deployment.github_pr_data.requested_reviewers) {
-      if (reviewer.username && !usernames.includes(reviewer.username)) {
-        usernames.push(reviewer.username)
-      }
-    }
-  }
-  if (deployment.github_pr_data?.commits) {
-    for (const commit of deployment.github_pr_data.commits) {
-      if (commit.author?.username && !usernames.includes(commit.author.username)) {
-        usernames.push(commit.author.username)
-      }
-    }
-  }
-  if (deployment.github_pr_data?.comments) {
-    for (const comment of deployment.github_pr_data.comments) {
-      if (comment.user?.username && !usernames.includes(comment.user.username)) {
-        usernames.push(comment.user.username)
-      }
-    }
-  }
-  if (deployment.unverified_commits) {
-    for (const commit of deployment.unverified_commits) {
-      if (commit.author && !usernames.includes(commit.author)) {
-        usernames.push(commit.author)
-      }
-    }
-  }
-  for (const comment of comments) {
-    if (comment.registered_by && !usernames.includes(comment.registered_by)) {
-      usernames.push(comment.registered_by)
-    }
-  }
+
+  addId(deployment.deployer_username)
+  for (const nd of nearbyDeployments) addId(nd.deployer_username)
+  addId(deployment.github_pr_data?.creator?.username)
+  addId(deployment.github_pr_data?.merger?.username)
+  for (const assignee of deployment.github_pr_data?.assignees ?? []) addId(assignee.username)
+  for (const reviewer of deployment.github_pr_data?.reviewers ?? []) addId(reviewer.username)
+  for (const reviewer of deployment.github_pr_data?.requested_reviewers ?? []) addId(reviewer.username)
+  for (const commit of deployment.github_pr_data?.commits ?? []) addId(commit.author?.username)
+  for (const comment of deployment.github_pr_data?.comments ?? []) addId(comment.user?.username)
+  for (const commit of deployment.unverified_commits ?? []) addId(commit.author)
+  for (const comment of comments) addId(comment.registered_by)
   for (const deviation of deviations) {
-    if (deviation.registered_by && !usernames.includes(deviation.registered_by)) {
-      usernames.push(deviation.registered_by)
-    }
-    if (deviation.resolved_by && !usernames.includes(deviation.resolved_by)) {
-      usernames.push(deviation.resolved_by)
-    }
+    addId(deviation.registered_by)
+    addId(deviation.resolved_by)
   }
 
   // Get all user mappings in one query
-  const userMappings = await getUserMappings(usernames)
+  const userMappings = await getUserMappings([...identifierSet])
 
   // Check if current user is involved in this deployment (for four-eyes validation)
   let isCurrentUserInvolved = false
@@ -2162,7 +2117,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                   {deviation.resolved_at && deviation.resolution_note && (
                     <BodyShort size="small" textColor="subtle">
                       Løsning: {deviation.resolution_note}
-                      {deviation.resolved_by && (
+                      {(deviation.resolved_by_name ?? deviation.resolved_by) && (
                         <> — løst av {deviation.resolved_by_name || getUserDisplay(deviation.resolved_by)}</>
                       )}
                     </BodyShort>
