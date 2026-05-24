@@ -306,6 +306,19 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       }
     }
   }
+  for (const comment of comments) {
+    if (comment.registered_by && !usernames.includes(comment.registered_by)) {
+      usernames.push(comment.registered_by)
+    }
+  }
+  for (const deviation of deviations) {
+    if (deviation.registered_by && !usernames.includes(deviation.registered_by)) {
+      usernames.push(deviation.registered_by)
+    }
+    if (deviation.resolved_by && !usernames.includes(deviation.resolved_by)) {
+      usernames.push(deviation.resolved_by)
+    }
+  }
 
   // Get all user mappings in one query
   const userMappings = await getUserMappings(usernames)
@@ -2103,7 +2116,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                         timeStyle: 'short',
                       })}
                       {' — '}
-                      {deviation.registered_by_name || deviation.registered_by}
+                      {deviation.registered_by_name || getUserDisplay(deviation.registered_by)}
                     </Detail>
                     {deviation.resolved_at ? (
                       <Tag size="xsmall" variant="moderate" data-color="success">
@@ -2149,6 +2162,9 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                   {deviation.resolved_at && deviation.resolution_note && (
                     <BodyShort size="small" textColor="subtle">
                       Løsning: {deviation.resolution_note}
+                      {deviation.resolved_by && (
+                        <> — løst av {deviation.resolved_by_name || getUserDisplay(deviation.resolved_by)}</>
+                      )}
                     </BodyShort>
                   )}
                 </VStack>
@@ -2242,6 +2258,12 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                         dateStyle: 'medium',
                         timeStyle: 'short',
                       })}
+                      {comment.registered_by && (
+                        <>
+                          {' — '}
+                          {getUserDisplay(comment.registered_by)}
+                        </>
+                      )}
                     </Detail>
                     <BodyShort>{comment.comment_text}</BodyShort>
                     {comment.slack_link && (
