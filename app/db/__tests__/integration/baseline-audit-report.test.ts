@@ -5,7 +5,8 @@
  * - A deployment with four_eyes_status='baseline' gets method='baseline' in report data
  * - The approver is fetched from deployment_status_history (change_source='baseline_approval')
  * - baseline_count is correctly counted
- * - A baseline deployment with no status history row shows approver='-' (not PR reviewers)
+ * - A baseline deployment with no status history row causes buildReportData to throw
+ *   (report generation is blocked until the baseline is re-approved via the UI)
  */
 
 import { Pool } from 'pg'
