@@ -72,6 +72,20 @@ export function getFourEyesStatus(deployment: any): {
         variant: 'warning',
         description: 'Dette var en direct push til main. Legg til Slack-lenke som bevis på review.',
       }
+    case 'unauthorized_branch':
+      return {
+        text: 'Ikke på godkjent branch',
+        variant: 'error',
+        description:
+          'Den deployede committen finnes ikke på appens konfigurerte default-branch. Dette kan skje hvis det deployes fra en feature-branch eller en annen branch enn den som er satt opp for verifisering.',
+      }
+    case 'unauthorized_repository':
+      return {
+        text: 'Ikke godkjent repository',
+        variant: 'error',
+        description:
+          'Repositoryet som dette deploymentet kommer fra er ikke registrert som aktivt for denne appen. En team-administrator kan godkjenne repoet fra app-siden.',
+      }
     case 'missing':
       return {
         text: 'Mangler godkjenning',

@@ -43,6 +43,7 @@ import { CheckLogViewer } from '~/components/CheckLogViewer'
 import { ExternalLink } from '~/components/ExternalLink'
 import { type AvailableBoard, GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
+import { getRepositoriesByAppId } from '~/db/application-repositories.server'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import { getCommentsByDeploymentId, getLegacyInfo, getManualApproval } from '~/db/comments.server'
 import { pool } from '~/db/connection.server'
@@ -181,6 +182,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     previousDeploymentForDiff,
     fullVerificationRun,
     nearbyDeployments,
+    registeredRepos,
   ] = await Promise.all([
     getCommentsByDeploymentId(deploymentId),
     getManualApproval(deploymentId),
@@ -195,6 +197,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     getPreviousDeploymentForDiff(deploymentId, deployment.monitored_app_id, app.audit_start_year),
     getLatestVerificationRun(deploymentId),
     nearbyDeploymentsPromise,
+    deployment.four_eyes_status === 'unauthorized_repository'
+      ? getRepositoriesByAppId(deployment.monitored_app_id)
+      : Promise.resolve([]),
   ])
 
   // ── Phase 3: Queries that depend on Phase 2 results ─────────────────────
@@ -354,6 +359,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       channelId: app.slack_channel_id,
       alreadySent: !!deployment.slack_message_ts,
     },
+    registeredRepos: registeredRepos
+      .filter((r) => r.status === 'active')
+      .map((r) => ({ owner: r.github_owner, name: r.github_repo_name })),
+    managingTeams:
+      deployment.four_eyes_status === 'unauthorized_repository'
+        ? allDevTeams.map((dt) => ({ name: dt.name, slug: dt.slug, sectionSlug: dt.section_slug }))
+        : [],
   }
 }
 
@@ -386,6 +398,8 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
     verificationRun,
     nearbyDeployments,
     slackConfig,
+    registeredRepos,
+    managingTeams,
   } = loaderData
   const [searchParams] = useSearchParams()
   const [commentText, setCommentText] = useState('')
@@ -543,6 +557,8 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                 'baseline',
                 'no_changes',
                 'pending_baseline',
+                'unauthorized_branch',
+                'unauthorized_repository',
               ].includes(deployment.four_eyes_status) && (
                 <Form method="post" style={{ display: 'inline' }}>
                   <input type="hidden" name="intent" value="verify_four_eyes" />
@@ -639,10 +655,9 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
             <BodyShort>{status.description}</BodyShort>
             {/* Reason-specific explanation for unverified_commits */}
             {deployment.four_eyes_status === 'unverified_commits' &&
-              deployment.unverified_commits &&
-              deployment.unverified_commits.length > 0 &&
               (() => {
-                const commits = deployment.unverified_commits!
+                const commits = deployment.unverified_commits
+                if (!commits || commits.length === 0) return null
                 const reasons = new Set(commits.map((c: { reason?: string }) => c.reason).filter(Boolean))
                 const primaryReason = (reasons.size === 1 ? [...reasons][0] : null) as UnverifiedReason | null
                 const prNumber = commits[0]?.pr_number ?? deployment.github_pr_number
@@ -670,6 +685,97 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                   </>
                 )
               })()}
+            {/* Branch details for unauthorized_branch */}
+            {deployment.four_eyes_status === 'unauthorized_branch' &&
+              (() => {
+                const defaultBranch = deployment.default_branch
+                const shortSha = deployment.commit_sha?.slice(0, 7)
+                return (
+                  <VStack gap="space-4">
+                    {deployment.branch_name && (
+                      <BodyShort>
+                        <strong>Deployet fra branch:</strong> <code>{deployment.branch_name}</code>
+                      </BodyShort>
+                    )}
+                    {defaultBranch ? (
+                      <BodyShort>
+                        <strong>Konfigurert default-branch:</strong> <code>{defaultBranch}</code>
+                      </BodyShort>
+                    ) : (
+                      <BodyShort>
+                        <strong>Konfigurert default-branch:</strong>{' '}
+                        <em>(ikke satt ennå — auto-sync fyller inn innen 5 minutter)</em>
+                      </BodyShort>
+                    )}
+                    {shortSha && (
+                      <BodyShort>
+                        <strong>Deployet commit:</strong> <code>{shortSha}</code>
+                      </BodyShort>
+                    )}
+                    {deployment.commit_sha &&
+                      deployment.detected_github_owner &&
+                      deployment.detected_github_repo_name && (
+                        <HStack gap="space-12" wrap>
+                          <ExternalLink
+                            href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/commit/${deployment.commit_sha}`}
+                          >
+                            Se commit på GitHub
+                          </ExternalLink>
+                          {defaultBranch && (
+                            <ExternalLink
+                              href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/tree/${encodeURIComponent(defaultBranch)}`}
+                            >
+                              Se {defaultBranch}-branchen
+                            </ExternalLink>
+                          )}
+                        </HStack>
+                      )}
+                  </VStack>
+                )
+              })()}
+            {/* Repo details for unauthorized_repository */}
+            {deployment.four_eyes_status === 'unauthorized_repository' &&
+              deployment.detected_github_owner &&
+              deployment.detected_github_repo_name && (
+                <VStack gap="space-4">
+                  <BodyShort>
+                    <strong>Deployet fra repo:</strong>{' '}
+                    <ExternalLink
+                      href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`}
+                    >
+                      {deployment.detected_github_owner}/{deployment.detected_github_repo_name}
+                    </ExternalLink>
+                  </BodyShort>
+                  {registeredRepos.length > 0 && (
+                    <BodyShort>
+                      <strong>Godkjente repoer:</strong>{' '}
+                      {registeredRepos.map((r, idx) => (
+                        <span key={`${r.owner}/${r.name}`}>
+                          {idx > 0 ? ', ' : ''}
+                          <ExternalLink href={`https://github.com/${r.owner}/${r.name}`}>
+                            {r.owner}/{r.name}
+                          </ExternalLink>
+                        </span>
+                      ))}
+                    </BodyShort>
+                  )}
+                  {managingTeams.length > 0 && (
+                    <BodyShort>
+                      <strong>{managingTeams.length === 1 ? 'Ansvarlig team:' : 'Ansvarlige team:'}</strong>{' '}
+                      {managingTeams.map((t, idx) => (
+                        <span key={t.slug}>
+                          {idx > 0 ? ', ' : ''}
+                          <Link to={`/sections/${t.sectionSlug}/teams/${t.slug}`}>{t.name}</Link>
+                        </span>
+                      ))}
+                    </BodyShort>
+                  )}
+                  <BodyShort>
+                    Team-administratorer (produktleder/tech lead) kan godkjenne repoet fra{' '}
+                    <Link to={`${appUrl}`}>app-siden</Link>.
+                  </BodyShort>
+                </VStack>
+              )}
             {/* Generic compare link for approved_pr_with_unreviewed (no reason breakdown) */}
             {deployment.four_eyes_status === 'approved_pr_with_unreviewed' &&
               previousDeploymentForDiff?.commit_sha &&
