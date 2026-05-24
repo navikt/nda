@@ -122,8 +122,11 @@ CREATE TABLE IF NOT EXISTS repository_alerts (
   monitored_app_id INTEGER REFERENCES monitored_applications(id) ON DELETE CASCADE,
   deployment_id INTEGER REFERENCES deployments(id) ON DELETE CASCADE,
   
+  -- Note: the column default ('repository_changed') differs from the application
+  -- fallback in createRepositoryAlert ('repository_mismatch'). The column default
+  -- is unused in practice — the application always supplies alert_type explicitly.
   alert_type VARCHAR(50) NOT NULL DEFAULT 'repository_changed',
-  -- Alert types:
+  -- Alert types (distinct from deployments.four_eyes_status):
   -- 'repository_mismatch': Deployment from unknown/unapproved repository
   -- 'historical_repository': Deployment from historical (non-active) repository
   -- 'pending_approval': Deployment from repository pending approval

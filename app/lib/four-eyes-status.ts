@@ -28,7 +28,6 @@ export const FOUR_EYES_STATUSES = [
   'legacy', // Legacy deployment (before audit)
   'legacy_pending', // Legacy awaiting review
   'baseline', // First deployment baseline (manually approved)
-  'repository_mismatch', // Repository doesn't match monitored app
   'unauthorized_repository', // Repository not approved for this app
   'unauthorized_branch', // Deployed commit not on approved branch
   'missing', // Legacy: PR approval was missing at time of check
@@ -75,7 +74,6 @@ export const NOT_APPROVED_STATUSES: FourEyesStatus[] = [
   'legacy_pending',
   'missing',
   'error',
-  'repository_mismatch',
 ]
 
 /**
@@ -157,7 +155,6 @@ export const STATUS_DISPLAY: Record<
   legacy_pending: { tagLabel: 'Legacy', tagVariant: 'neutral' },
   missing: { tagLabel: 'Ikke godkjent', tagVariant: 'warning' },
   error: { tagLabel: 'Feil', tagVariant: 'danger' },
-  repository_mismatch: { tagLabel: 'Feil', tagVariant: 'danger' },
   unauthorized_repository: { tagLabel: 'Ikke godkjent repo', tagVariant: 'danger' },
   unauthorized_branch: { tagLabel: 'Ikke på godkjent branch', tagVariant: 'danger' },
 }
@@ -177,7 +174,6 @@ export const FOUR_EYES_STATUS_LABELS: Record<FourEyesStatus, string> = {
   legacy: 'Legacy',
   legacy_pending: 'Legacy (venter)',
   baseline: 'Baseline',
-  repository_mismatch: 'Repository mismatch',
   unauthorized_repository: 'Ikke godkjent repo',
   unauthorized_branch: 'Ikke på godkjent branch',
   missing: 'Mangler godkjenning',
