@@ -109,6 +109,7 @@ export async function action({ request, params }: { request: Request; params: Re
         baseBranch: deployment.default_branch,
         monitoredAppId: deployment.monitored_app_id,
         forceRefresh: true,
+        triggerUrl: deployment.trigger_url,
       })
       if (result.status !== 'error') {
         return { success: 'Four-eyes status verifisert og oppdatert' }

@@ -26,6 +26,7 @@ import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobP
 import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import {
+  getBranchFromWorkflowRun,
   getCommitsBetween,
   getDetailedPullRequestInfo,
   getPullRequestForCommit,
@@ -68,6 +69,7 @@ export async function fetchVerificationData(
   baseBranch: string,
   monitoredAppId: number,
   options?: FetchOptions,
+  triggerUrl?: string | null,
 ): Promise<VerificationInput> {
   const [owner, repo] = repository.split('/')
   if (!owner || !repo) {
@@ -236,6 +238,12 @@ export async function fetchVerificationData(
     }
   }
 
+  // Detect which branch the deployment was made from.
+  // Prefer head_branch from the deployed PR (no extra API call),
+  // fall back to the GitHub Actions workflow run API.
+  const detectedBranchName: string | undefined =
+    deployedPr?.metadata.headBranch ?? (await getBranchFromWorkflowRun(owner, repo, triggerUrl)) ?? undefined
+
   return {
     deploymentId,
     commitSha,
@@ -244,6 +252,7 @@ export async function fetchVerificationData(
     baseBranch,
     repositoryStatus,
     commitOnBaseBranch,
+    detectedBranchName: detectedBranchName ?? undefined,
     auditStartYear: appSettings.auditStartYear,
     implicitApprovalSettings: appSettings.implicitApprovalSettings,
     previousDeployment,

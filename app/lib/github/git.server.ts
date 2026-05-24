@@ -139,6 +139,31 @@ export async function isCommitOnBranch(
 }
 
 /**
+ * Get the branch name from a GitHub Actions workflow run URL.
+ * Used to detect which branch a deployment was made from.
+ */
+export async function getBranchFromWorkflowRun(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+): Promise<string | null> {
+  if (!triggerUrl) return null
+  const match = triggerUrl.match(/\/actions\/runs\/(\d+)/)
+  if (!match) return null
+  const runId = parseInt(match[1], 10)
+  try {
+    const client = getGitHubClient()
+    const response = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
+    return response.data.head_branch || null
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to get workflow run ${runId} for ${owner}/${repo}:`, { error: message, stack_trace: stack })
+    return null
+  }
+}
+
+/**
  * Fetch the GitHub repository's default branch (e.g., "main" or "master").
  * Returns null on API error (e.g., repo gone, permissions, rate limit).
  *
@@ -152,7 +177,9 @@ export async function getRepositoryDefaultBranch(owner: string, repo: string): P
     const response = await client.repos.get({ owner, repo })
     return response.data.default_branch || null
   } catch (error) {
-    logger.warn(`⚠️ Failed to fetch default_branch for ${owner}/${repo}:`, error as Record<string, unknown>)
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to fetch default_branch for ${owner}/${repo}:`, { error: message, stack_trace: stack })
     return null
   }
 }
