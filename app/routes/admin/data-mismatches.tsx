@@ -177,77 +177,78 @@ export default function DataMismatches() {
     }
   }
 
-  const filteredMismatches = useMemo(
+  const filteredMismatches = useMemo(() => {
+    const filtered = mismatches.filter((m) => {
+      if (!mismatchFilter) return true
+      const q = mismatchFilter.toLowerCase()
+      return [
+        m.id.toString(),
+        m.app_name,
+        m.stored_title,
+        m.pr_title,
+        m.four_eyes_status,
+        m.github_pr_number?.toString() ?? '',
+      ].some((v) => v.toLowerCase().includes(q))
+    })
+    if (!mismatchSort) return filtered
+    const dir = mismatchSort.direction === 'ascending' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      switch (mismatchSort.orderBy) {
+        case 'id':
+          return (a.id - b.id) * dir
+        case 'app_name':
+          return a.app_name.localeCompare(b.app_name, 'nb') * dir
+        case 'stored_title':
+          return a.stored_title.localeCompare(b.stored_title, 'nb') * dir
+        case 'pr_title':
+          return a.pr_title.localeCompare(b.pr_title, 'nb') * dir
+        case 'four_eyes_status':
+          return a.four_eyes_status.localeCompare(b.four_eyes_status, 'nb') * dir
+        case 'github_pr_number':
+          return ((a.github_pr_number ?? 0) - (b.github_pr_number ?? 0)) * dir
+        default:
+          return 0
+      }
+    })
+  }, [mismatches, mismatchFilter, mismatchSort])
+
+  const baselineWithTs = useMemo(
     () =>
-      mismatches
-        .filter((m) => {
-          if (!mismatchFilter) return true
-          const q = mismatchFilter.toLowerCase()
-          return [
-            m.id.toString(),
-            m.app_name,
-            m.stored_title,
-            m.pr_title,
-            m.four_eyes_status,
-            m.github_pr_number?.toString() ?? '',
-          ].some((v) => v.toLowerCase().includes(q))
-        })
-        .sort((a, b) => {
-          if (!mismatchSort) return 0
-          const dir = mismatchSort.direction === 'ascending' ? 1 : -1
-          switch (mismatchSort.orderBy) {
-            case 'id':
-              return (a.id - b.id) * dir
-            case 'app_name':
-              return a.app_name.localeCompare(b.app_name, 'nb') * dir
-            case 'stored_title':
-              return a.stored_title.localeCompare(b.stored_title, 'nb') * dir
-            case 'pr_title':
-              return a.pr_title.localeCompare(b.pr_title, 'nb') * dir
-            case 'four_eyes_status':
-              return a.four_eyes_status.localeCompare(b.four_eyes_status, 'nb') * dir
-            case 'github_pr_number':
-              return ((a.github_pr_number ?? 0) - (b.github_pr_number ?? 0)) * dir
-            default:
-              return 0
-          }
-        }),
-    [mismatches, mismatchFilter, mismatchSort],
+      baselineNoApprover.map((b) => ({
+        ...b,
+        deployedTs: new Date(b.deployed_at).getTime(),
+        deployedStr: new Date(b.deployed_at).toLocaleDateString('nb-NO'),
+      })),
+    [baselineNoApprover],
   )
 
   const filteredBaseline = useMemo(() => {
-    const withTs = baselineNoApprover.map((b) => ({
-      ...b,
-      deployedTs: new Date(b.deployed_at).getTime(),
-      deployedStr: new Date(b.deployed_at).toLocaleDateString('nb-NO'),
-    }))
-    return withTs
-      .filter((b) => {
-        if (!baselineFilter) return true
-        const q = baselineFilter.toLowerCase()
-        return [b.id.toString(), b.app_name, b.team_slug, b.environment_name, b.deployedStr].some((v) =>
-          v.toLowerCase().includes(q),
-        )
-      })
-      .sort((a, b) => {
-        if (!baselineSort) return 0
-        const dir = baselineSort.direction === 'ascending' ? 1 : -1
-        switch (baselineSort.orderBy) {
-          case 'id':
-            return (a.id - b.id) * dir
-          case 'app_name':
-            return a.app_name.localeCompare(b.app_name, 'nb') * dir
-          case 'team_slug':
-            return a.team_slug.localeCompare(b.team_slug, 'nb') * dir
-          case 'environment_name':
-            return a.environment_name.localeCompare(b.environment_name, 'nb') * dir
-          case 'deployed_at':
-            return (a.deployedTs - b.deployedTs) * dir
-          default:
-            return 0
-        }
-      })
-  }, [baselineNoApprover, baselineFilter, baselineSort])
+    const filtered = baselineWithTs.filter((b) => {
+      if (!baselineFilter) return true
+      const q = baselineFilter.toLowerCase()
+      return [b.id.toString(), b.app_name, b.team_slug, b.environment_name, b.deployedStr].some((v) =>
+        v.toLowerCase().includes(q),
+      )
+    })
+    if (!baselineSort) return filtered
+    const dir = baselineSort.direction === 'ascending' ? 1 : -1
+    return [...filtered].sort((a, b) => {
+      switch (baselineSort.orderBy) {
+        case 'id':
+          return (a.id - b.id) * dir
+        case 'app_name':
+          return a.app_name.localeCompare(b.app_name, 'nb') * dir
+        case 'team_slug':
+          return a.team_slug.localeCompare(b.team_slug, 'nb') * dir
+        case 'environment_name':
+          return a.environment_name.localeCompare(b.environment_name, 'nb') * dir
+        case 'deployed_at':
+          return (a.deployedTs - b.deployedTs) * dir
+        default:
+          return 0
+      }
+    })
+  }, [baselineWithTs, baselineFilter, baselineSort])
 
   return (
     <VStack gap="space-24">
