@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react';
-import path from 'path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
@@ -9,9 +9,9 @@ export default defineConfig({
   resolve: {
     alias: {
       // node:path is used in audit-report-pdf.tsx for production font paths.
-      // In Storybook (browser env) fontBasePath is null, so join() is never called,
-      // but the import itself must resolve.
-      'node:path': path.resolve(__dirname, '../app/lib/__stubs__/node-path.ts'),
+      // fontBasePath is only set server-side (typeof window === 'undefined'),
+      // so join() is never called in the browser, but the import must resolve.
+      'node:path': fileURLToPath(new URL('../app/lib/__stubs__/node-path.ts', import.meta.url)),
     },
   },
 });

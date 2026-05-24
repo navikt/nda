@@ -17,9 +17,10 @@ import {
 import { formatPercentages } from '~/lib/format-percentages'
 
 // Register fonts from local files (downloaded during Docker build)
-// In production: /app/fonts/
-// In development: use CDN fallback
-const fontBasePath = process.env.NODE_ENV === 'production' ? join(process.cwd(), 'fonts') : null
+// In production (server-side): /app/fonts/
+// In development or browser (Storybook): use CDN fallback
+const fontBasePath =
+  typeof window === 'undefined' && process.env.NODE_ENV === 'production' ? join(process.cwd(), 'fonts') : null
 
 Font.register({
   family: 'Source Sans Pro',

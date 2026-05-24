@@ -1,5 +1,6 @@
 import { PDFViewer } from '@react-pdf/renderer'
 import type { Meta, StoryObj } from '@storybook/react'
+import type { ComponentProps } from 'react'
 import type {
   AuditDeploymentEntry,
   AuditReportData,
@@ -16,13 +17,13 @@ import { AuditReportPdfDocument } from '~/lib/audit-report-pdf'
  * Første lasting kan ta 2–5 sekunder (WebAssembly).
  */
 
-const PdfWrapper = (props: React.ComponentProps<typeof AuditReportPdfDocument>) => (
+const PdfWrapper = (props: ComponentProps<typeof AuditReportPdfDocument>) => (
   <PDFViewer width="100%" height="900px" style={{ border: 'none' }}>
     <AuditReportPdfDocument {...props} />
   </PDFViewer>
 )
 
-const meta: Meta<typeof AuditReportPdfDocument> = {
+const meta: Meta<typeof PdfWrapper> = {
   title: 'Features/AuditReportPdf',
   component: PdfWrapper,
   parameters: {
@@ -132,10 +133,10 @@ const manualApprovals: ManualApprovalEntry[] = [
 ]
 
 const contributors: ContributorEntry[] = [
-  { github_username: 'gladfjord', display_name: 'Glad Fjord', nav_ident: 'G123456', deployment_count: 2 },
-  { github_username: 'raskelv', display_name: 'Rask Elv', nav_ident: 'R234567', deployment_count: 1 },
-  { github_username: 'modigbjork', display_name: 'Modig Bjørk', nav_ident: 'M345678', deployment_count: 1 },
-  { github_username: 'stilleskog', display_name: 'Stille Skog', nav_ident: 'S456789', deployment_count: 1 },
+  { github_username: 'gladfjord', display_name: 'Glad Fjord', nav_ident: 'Z990001', deployment_count: 2 },
+  { github_username: 'raskelv', display_name: 'Rask Elv', nav_ident: 'Z990002', deployment_count: 1 },
+  { github_username: 'modigbjork', display_name: 'Modig Bjørk', nav_ident: 'Z990003', deployment_count: 1 },
+  { github_username: 'stilleskog', display_name: 'Stille Skog', nav_ident: 'Z990004', deployment_count: 1 },
 ]
 
 const reviewers: ReviewerEntry[] = [
