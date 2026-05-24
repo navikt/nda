@@ -102,20 +102,21 @@ export async function createMonitoredApplication(
     environment_name: string
     app_name: string
     audit_start_year: number
+    default_branch: string
   },
   client?: PoolClient,
 ): Promise<MonitoredApplication> {
   const queryable = client ?? pool
   const result = await queryable.query(
     `INSERT INTO monitored_applications
-        (team_slug, environment_name, app_name, audit_start_year)
-      VALUES ($1, $2, $3, $4)
+        (team_slug, environment_name, app_name, audit_start_year, default_branch)
+      VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (team_slug, environment_name, app_name)
       DO UPDATE SET
         is_active = true,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *`,
-    [data.team_slug, data.environment_name, data.app_name, data.audit_start_year],
+    [data.team_slug, data.environment_name, data.app_name, data.audit_start_year, data.default_branch],
   )
   return result.rows[0]
 }

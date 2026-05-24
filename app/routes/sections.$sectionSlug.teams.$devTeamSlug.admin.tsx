@@ -28,6 +28,7 @@ import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authoriza
 import { TEAM_ROLE_LABELS, TEAM_ROLES, type TeamRole } from '~/lib/authorization-types'
 import { type BoardPeriodType, formatBoardLabel } from '~/lib/board-periods'
 import { getFormString, isValidNavIdent, parseAuditStartYear } from '~/lib/form-validators'
+import { getRepositoryDefaultBranch } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { fetchAllTeamsAndApplications, getApplicationInfo } from '~/lib/nais.server'
 import { type ImplicitApprovalMode, isImplicitApprovalMode } from '~/lib/verification/types'
@@ -270,6 +271,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       implicitApprovalMode = implicitApprovalModeRaw
     }
 
+    // Verify apps exist in NAIS and collect repository info for default branch detection
+    const appRepoMap = new Map<string, string | null>()
     for (const id of newIdentities) {
       const found = await getApplicationInfo(id.team_slug, id.environment_name, id.app_name)
       if (!found) {
@@ -277,7 +280,26 @@ export async function action({ request, params }: Route.ActionArgs) {
           `Fant ikke ${id.app_name} i Nais-team ${id.team_slug} (miljø ${id.environment_name}). Last siden på nytt og prøv igjen.`,
         )
       }
+      appRepoMap.set(`${id.team_slug}|${id.environment_name}|${id.app_name}`, found.repository)
     }
+
+    // Resolve default branch from GitHub for each new app (best-effort, falls back to 'main')
+    const defaultBranchMap = new Map<string, string>()
+    await Promise.all(
+      newIdentities.map(async (id) => {
+        const key = `${id.team_slug}|${id.environment_name}|${id.app_name}`
+        const repoUrl = appRepoMap.get(key)
+        let defaultBranch = 'main'
+        if (repoUrl) {
+          const parts = repoUrl.replace('https://github.com/', '').split('/')
+          if (parts.length >= 2) {
+            const detected = await getRepositoryDefaultBranch(parts[0], parts[1])
+            if (detected) defaultBranch = detected
+          }
+        }
+        defaultBranchMap.set(key, defaultBranch)
+      }),
+    )
 
     const client = await pool.connect()
     let transactionCommitted = false
@@ -286,12 +308,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       await client.query('BEGIN')
       const createdIds: number[] = []
       for (const id of newIdentities) {
+        const key = `${id.team_slug}|${id.environment_name}|${id.app_name}`
         const app = await createMonitoredApplication(
           {
             team_slug: id.team_slug,
             environment_name: id.environment_name,
             app_name: id.app_name,
             audit_start_year: auditStartYear,
+            default_branch: defaultBranchMap.get(key) ?? 'main',
           },
           client,
         )

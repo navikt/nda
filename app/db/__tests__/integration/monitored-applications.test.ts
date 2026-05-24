@@ -32,6 +32,7 @@ describe('createMonitoredApplication', () => {
       environment_name: 'prod-gcp',
       app_name: 'app-a',
       audit_start_year: 2026,
+      default_branch: 'main',
     })
     expect(app.audit_start_year).toBe(2026)
   })
@@ -42,6 +43,7 @@ describe('createMonitoredApplication', () => {
       environment_name: 'prod-gcp',
       app_name: 'app-a',
       audit_start_year: 2023,
+      default_branch: 'main',
     })
     expect(first.audit_start_year).toBe(2023)
 
@@ -51,6 +53,7 @@ describe('createMonitoredApplication', () => {
       environment_name: 'prod-gcp',
       app_name: 'app-a',
       audit_start_year: 2026,
+      default_branch: 'main',
     })
     expect(second.audit_start_year).toBe(2023)
 
@@ -66,7 +69,19 @@ describe('createMonitoredApplication', () => {
       environment_name: 'prod-gcp',
       app_name: 'app-b',
       audit_start_year: year,
+      default_branch: 'main',
     })
     expect(app.audit_start_year).toBe(year)
+  })
+
+  it('bruker oppgitt default_branch', async () => {
+    const app = await createMonitoredApplication({
+      team_slug: 'team-c',
+      environment_name: 'prod-gcp',
+      app_name: 'app-c',
+      audit_start_year: 2026,
+      default_branch: 'master',
+    })
+    expect(app.default_branch).toBe('master')
   })
 })
