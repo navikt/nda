@@ -294,9 +294,14 @@ export default function DataMismatches() {
     const filtered = commentsWithTs.filter((c) => {
       if (!commentsFilter) return true
       const q = commentsFilter.toLowerCase()
-      return [c.comment_id.toString(), c.deployment_id.toString(), c.app_name, c.team_slug, c.environment_name].some(
-        (v) => v.toLowerCase().includes(q),
-      )
+      return [
+        c.comment_id.toString(),
+        c.deployment_id.toString(),
+        c.app_name,
+        c.team_slug,
+        c.environment_name,
+        c.comment_type,
+      ].some((v) => v.toLowerCase().includes(q))
     })
     if (!commentsSort) return filtered
     const dir = commentsSort.direction === 'ascending' ? 1 : -1
@@ -310,6 +315,10 @@ export default function DataMismatches() {
           return a.app_name.localeCompare(b.app_name, 'nb') * dir
         case 'team_slug':
           return a.team_slug.localeCompare(b.team_slug, 'nb') * dir
+        case 'environment_name':
+          return a.environment_name.localeCompare(b.environment_name, 'nb') * dir
+        case 'comment_type':
+          return a.comment_type.localeCompare(b.comment_type, 'nb') * dir
         case 'created_at':
           return (a.createdTs - b.createdTs) * dir
         default:
@@ -644,7 +653,7 @@ export default function DataMismatches() {
             <TextField
               label="Filtrer kommentarer"
               hideLabel
-              placeholder="Filtrer på ID, app, team eller miljø…"
+              placeholder="Filtrer på ID, app, team, miljø eller type…"
               size="small"
               value={commentsFilter}
               onChange={(e) => setCommentsFilter(e.target.value)}
@@ -666,7 +675,12 @@ export default function DataMismatches() {
                     <Table.ColumnHeader sortKey="team_slug" sortable>
                       Team
                     </Table.ColumnHeader>
-                    <Table.ColumnHeader>Miljø</Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="environment_name" sortable>
+                      Miljø
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader sortKey="comment_type" sortable>
+                      Type
+                    </Table.ColumnHeader>
                     <Table.ColumnHeader sortKey="created_at" sortable>
                       Opprettet
                     </Table.ColumnHeader>
@@ -689,6 +703,9 @@ export default function DataMismatches() {
                       </Table.DataCell>
                       <Table.DataCell>
                         <BodyShort size="small">{c.environment_name}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{c.comment_type}</BodyShort>
                       </Table.DataCell>
                       <Table.DataCell>
                         <BodyShort size="small">{c.createdStr}</BodyShort>
