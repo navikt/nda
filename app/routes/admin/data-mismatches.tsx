@@ -36,7 +36,7 @@ interface BaselineNoApprover {
   app_name: string
   team_slug: string
   environment_name: string
-  deployed_at: string
+  deployed_at: Date
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -78,7 +78,7 @@ export async function loader({ request }: Route.LoaderArgs) {
          ma.app_name,
          ma.team_slug,
          ma.environment_name,
-         d.created_at::text AS deployed_at
+         d.created_at AS deployed_at
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE d.four_eyes_status = 'baseline'
