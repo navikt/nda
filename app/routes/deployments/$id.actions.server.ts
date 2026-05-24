@@ -57,6 +57,7 @@ export async function action({ request, params }: { request: Request; params: Re
         deployment_id: deploymentId,
         comment_text: commentText.trim(),
         slack_link: slackLink || undefined,
+        registered_by: identity.navIdent || undefined,
       })
       return { success: 'Kommentar lagt til' }
     } catch (_error) {
