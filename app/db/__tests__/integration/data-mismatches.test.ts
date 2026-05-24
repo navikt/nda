@@ -43,7 +43,7 @@ const BASELINE_NO_APPROVER_SQL = `SELECT
   ma.app_name,
   ma.team_slug,
   ma.environment_name,
-  d.created_at AS deployed_at
+  d.created_at::text AS deployed_at
 FROM deployments d
 JOIN monitored_applications ma ON d.monitored_app_id = ma.id
 WHERE d.four_eyes_status = 'baseline'
