@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
   },
 })
 
-export interface AuditReportPdfProps {
+interface AuditReportPdfProps {
   appName: string
   repository: string
   teamSlug: string
