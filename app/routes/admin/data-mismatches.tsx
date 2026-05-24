@@ -183,9 +183,14 @@ export default function DataMismatches() {
         .filter((m) => {
           if (!mismatchFilter) return true
           const q = mismatchFilter.toLowerCase()
-          return [m.id.toString(), m.app_name, m.stored_title, m.pr_title, m.four_eyes_status].some((v) =>
-            v.toLowerCase().includes(q),
-          )
+          return [
+            m.id.toString(),
+            m.app_name,
+            m.stored_title,
+            m.pr_title,
+            m.four_eyes_status,
+            m.github_pr_number?.toString() ?? '',
+          ].some((v) => v.toLowerCase().includes(q))
         })
         .sort((a, b) => {
           if (!mismatchSort) return 0
@@ -201,6 +206,8 @@ export default function DataMismatches() {
               return a.pr_title.localeCompare(b.pr_title, 'nb') * dir
             case 'four_eyes_status':
               return a.four_eyes_status.localeCompare(b.four_eyes_status, 'nb') * dir
+            case 'github_pr_number':
+              return ((a.github_pr_number ?? 0) - (b.github_pr_number ?? 0)) * dir
             default:
               return 0
           }
@@ -209,12 +216,18 @@ export default function DataMismatches() {
   )
 
   const filteredBaseline = useMemo(() => {
-    const withTs = baselineNoApprover.map((b) => ({ ...b, deployedTs: new Date(b.deployed_at).getTime() }))
+    const withTs = baselineNoApprover.map((b) => ({
+      ...b,
+      deployedTs: new Date(b.deployed_at).getTime(),
+      deployedStr: new Date(b.deployed_at).toLocaleDateString('nb-NO'),
+    }))
     return withTs
       .filter((b) => {
         if (!baselineFilter) return true
         const q = baselineFilter.toLowerCase()
-        return [b.id.toString(), b.app_name, b.team_slug, b.environment_name].some((v) => v.toLowerCase().includes(q))
+        return [b.id.toString(), b.app_name, b.team_slug, b.environment_name, b.deployedStr].some((v) =>
+          v.toLowerCase().includes(q),
+        )
       })
       .sort((a, b) => {
         if (!baselineSort) return 0
@@ -361,7 +374,7 @@ export default function DataMismatches() {
                     <Table.ColumnHeader sortKey="stored_title">Lagret tittel</Table.ColumnHeader>
                     <Table.ColumnHeader sortKey="pr_title">PR-tittel (riktig)</Table.ColumnHeader>
                     <Table.ColumnHeader sortKey="four_eyes_status">Status</Table.ColumnHeader>
-                    <Table.HeaderCell>PR</Table.HeaderCell>
+                    <Table.ColumnHeader sortKey="github_pr_number">PR</Table.ColumnHeader>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
