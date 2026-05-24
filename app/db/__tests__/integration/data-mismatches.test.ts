@@ -50,12 +50,12 @@ WHERE d.four_eyes_status = 'baseline'
   AND NOT EXISTS (
     SELECT 1 FROM deployment_status_history dsh
     WHERE dsh.deployment_id = d.id
-      AND dsh.to_status = 'baseline'
+      AND dsh.change_source = 'baseline_approval'
       AND dsh.changed_by IS NOT NULL
   )
 ORDER BY d.created_at DESC`
 
-describe('title-mismatches missing summary query', () => {
+describe('data-mismatches: title missing summary query', () => {
   it('broken syntax (regression): COUNT(*)::int FILTER is invalid SQL', async () => {
     await expect(pool.query(BROKEN_SUMMARY_SQL)).rejects.toThrow('syntax error at or near "FILTER"')
   })

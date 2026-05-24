@@ -84,9 +84,9 @@ export async function loader({ request }: Route.LoaderArgs) {
        WHERE d.four_eyes_status = 'baseline'
          AND NOT EXISTS (
            SELECT 1 FROM deployment_status_history dsh
-           WHERE dsh.deployment_id = d.id
-         AND dsh.to_status = 'baseline'
-             AND dsh.changed_by IS NOT NULL
+             WHERE dsh.deployment_id = d.id
+               AND dsh.change_source = 'baseline_approval'
+               AND dsh.changed_by IS NOT NULL
          )
        ORDER BY d.created_at DESC`,
     ),
@@ -352,9 +352,9 @@ export default function DataMismatches() {
             Baseline uten godkjenner
           </Heading>
           <BodyShort textColor="subtle">
-            Baseline-deployments der godkjenneren mangler i statushistorikken (<code>changed_by = NULL</code>). Disse
-            vil kaste feil ved generering av auditrapport. Årsak: deployments godkjent som baseline før logging av
-            godkjenner ble innført.
+            Baseline-deployments som mangler en godkjent <code>baseline_approval</code>-rad i statushistorikken
+            (godkjenner ikke logget). Disse vil kaste feil ved generering av auditrapport. Årsak: deployments godkjent
+            som baseline før logging av godkjenner ble innført.
           </BodyShort>
         </VStack>
 
