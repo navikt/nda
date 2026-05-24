@@ -76,7 +76,6 @@ describe('isNotApprovedStatus', () => {
     'legacy',
     'legacy_pending',
     'error',
-    'repository_mismatch',
   ])('returns true for %s', (status) => {
     expect(isNotApprovedStatus(status)).toBe(true)
   })

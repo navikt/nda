@@ -46,7 +46,7 @@ function getStatusIcon(status: FourEyesStatus) {
   if (isNotApprovedStatus(status)) {
     return <XMarkOctagonIcon aria-hidden />
   }
-  if (status === 'error' || status === 'repository_mismatch') {
+  if (status === 'error') {
     return <ExclamationmarkTriangleIcon aria-hidden />
   }
   return <MinusCircleIcon aria-hidden />
@@ -59,7 +59,7 @@ function getStatusColor(status: FourEyesStatus): 'success' | 'warning' | 'danger
   if (isPendingStatus(status)) {
     return 'warning'
   }
-  if (isNotApprovedStatus(status) || status === 'error' || status === 'repository_mismatch') {
+  if (isNotApprovedStatus(status) || status === 'error') {
     return 'danger'
   }
   return 'neutral'

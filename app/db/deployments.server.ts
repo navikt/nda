@@ -211,7 +211,6 @@ export interface DeploymentFilters {
   end_date?: Date
   four_eyes_status?: string
   only_missing_four_eyes?: boolean
-  only_repository_mismatch?: boolean
   deployer_username?: string
   /**
    * Filter to deployments where a team member is the deployer **or** PR creator.
@@ -321,10 +320,6 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
       params.push(filters.four_eyes_status)
       paramIndex++
     }
-  }
-
-  if (filters?.only_repository_mismatch) {
-    whereSql += ` AND d.four_eyes_status = 'repository_mismatch'`
   }
 
   if (filters?.deployer_username) {

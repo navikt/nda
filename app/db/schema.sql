@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS repository_alerts (
   
   alert_type VARCHAR(50) NOT NULL DEFAULT 'repository_changed',
   -- Alert types:
-  -- 'repository_mismatch': Deployment from unknown/unapproved repository
+  -- 'repository_mismatch': Deployment from unknown/unapproved repository (legacy; new rows use 'unauthorized_repository')
   -- 'historical_repository': Deployment from historical (non-active) repository
   -- 'pending_approval': Deployment from repository pending approval
   
