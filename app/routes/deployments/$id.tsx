@@ -279,6 +279,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     addId(deviation.registered_by)
     addId(deviation.resolved_by)
   }
+  for (const link of goalLinks) addId(link.linked_by)
 
   // Get all user mappings in one query
   const userMappings = await getUserMappings([...identifierSet])
@@ -2133,6 +2134,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
         availableBoards={availableBoards}
         sectionBoards={sectionBoards}
         canLinkGoal={capabilities.canLinkGoal}
+        userMappings={userMappings}
       />
 
       {/* Deviations section */}

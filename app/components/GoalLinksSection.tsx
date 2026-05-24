@@ -1,8 +1,9 @@
 import { LinkIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
-import { BodyShort, Box, Button, Heading, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
+import { BodyShort, Box, Button, Detail, Heading, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
 import { useState } from 'react'
 import { Form, Link } from 'react-router'
 import type { DeploymentGoalLinkWithDetails } from '~/db/deployment-goal-links.server'
+import { getUserDisplayName, type UserMappings } from '~/lib/user-display'
 import { ExternalLink } from './ExternalLink'
 import { type GoalSelectionBoard, GoalSelectionFields } from './GoalSelectionFields'
 
@@ -21,6 +22,7 @@ interface GoalLinksSectionProps {
   availableBoards?: AvailableBoard[]
   sectionBoards?: AvailableBoard[]
   canLinkGoal?: boolean
+  userMappings?: UserMappings
 }
 
 export function GoalLinksSection({
@@ -28,6 +30,7 @@ export function GoalLinksSection({
   availableBoards = [],
   sectionBoards = [],
   canLinkGoal = false,
+  userMappings = {},
 }: GoalLinksSectionProps) {
   const [showAddLink, setShowAddLink] = useState(false)
 
@@ -58,7 +61,7 @@ export function GoalLinksSection({
       {goalLinks.length > 0 && (
         <VStack gap="space-8">
           {goalLinks.map((link) => (
-            <GoalLinkItem key={link.id} link={link} canUnlink={canLinkGoal} />
+            <GoalLinkItem key={link.id} link={link} canUnlink={canLinkGoal} userMappings={userMappings} />
           ))}
         </VStack>
       )}
@@ -74,7 +77,15 @@ export function GoalLinksSection({
   )
 }
 
-function GoalLinkItem({ link, canUnlink }: { link: DeploymentGoalLinkWithDetails; canUnlink: boolean }) {
+function GoalLinkItem({
+  link,
+  canUnlink,
+  userMappings,
+}: {
+  link: DeploymentGoalLinkWithDetails
+  canUnlink: boolean
+  userMappings: UserMappings
+}) {
   const label = link.key_result_title
     ? `${link.objective_title} → ${link.key_result_title}`
     : link.objective_title
@@ -141,6 +152,9 @@ function GoalLinkItem({ link, canUnlink }: { link: DeploymentGoalLinkWithDetails
                 </Tag>
               )}
             </HStack>
+            {link.linked_by && link.link_method === 'manual' && (
+              <Detail textColor="subtle">Registrert av {getUserDisplayName(link.linked_by, userMappings)}</Detail>
+            )}
           </div>
         </HStack>
         {canUnlink && (
