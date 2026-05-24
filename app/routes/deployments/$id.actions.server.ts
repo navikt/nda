@@ -540,7 +540,7 @@ export async function action({ request, params }: { request: Request; params: Re
           githubPrNumber: null,
           githubPrUrl: null,
         },
-        { changeSource: 'baseline_approval' },
+        { changeSource: 'baseline_approval', changedBy: identity.navIdent },
       )
       return { success: 'Deployment godkjent som baseline' }
     } catch (_error) {

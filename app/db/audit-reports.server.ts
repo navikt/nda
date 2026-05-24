@@ -77,6 +77,7 @@ export interface AuditReportData {
   contributors: ContributorEntry[]
   reviewers: ReviewerEntry[]
   legacy_count: number
+  baseline_count?: number
   deviations: DeviationEntry[]
   unverified_commit_deployments: UnverifiedCommitDeploymentEntry[]
 }
@@ -109,7 +110,7 @@ export interface AuditDeploymentEntry {
   title: string
   date: string
   commit_sha: string
-  method: 'pr' | 'manual' | 'legacy'
+  method: 'pr' | 'manual' | 'legacy' | 'baseline'
   pr_author?: string
   pr_author_display_name?: string
   deployer: string
@@ -309,6 +310,11 @@ export async function getAuditReportData(
     deployment_id: number
     registered_by: string
   }>
+  baseline_approvals: Array<{
+    deployment_id: number
+    changed_by: string | null
+    created_at: Date
+  }>
   deviations: Awaited<ReturnType<typeof getDeviationsForPeriod>>
   reviewer_counts: Map<string, number>
   user_mappings: Map<string, { display_name: string | null; nav_ident: string | null; github_username: string }>
@@ -389,6 +395,12 @@ export async function getAuditReportData(
     registered_by: string
   }> = []
 
+  let baseline_approvals: Array<{
+    deployment_id: number
+    changed_by: string | null
+    created_at: Date
+  }> = []
+
   // Aggregate reviewer counts directly in SQL to avoid loading github_pr_data
   const reviewer_counts = new Map<string, number>()
 
@@ -410,6 +422,20 @@ export async function getAuditReportData(
       [deploymentIds],
     )
     legacy_infos = legacyInfoResult.rows
+
+    // Get baseline approvals from status history (change_source = 'baseline_approval')
+    const baselineApprovalResult = await pool.query<{
+      deployment_id: number
+      changed_by: string | null
+      created_at: Date
+    }>(
+      `SELECT deployment_id, changed_by, created_at
+       FROM deployment_status_history
+       WHERE deployment_id = ANY($1) AND change_source = 'baseline_approval'
+       ORDER BY created_at ASC`,
+      [deploymentIds],
+    )
+    baseline_approvals = baselineApprovalResult.rows
 
     // Get reviewer counts aggregated from github_pr_data in SQL
     const reviewerCountsResult = await pool.query<{ username: string; review_count: number }>(
@@ -445,6 +471,9 @@ export async function getAuditReportData(
   }
   for (const l of legacy_infos) {
     if (l.registered_by) identifiers.add(l.registered_by)
+  }
+  for (const b of baseline_approvals) {
+    if (b.changed_by) identifiers.add(b.changed_by)
   }
   // Add reviewer usernames from aggregated counts
   for (const username of reviewer_counts.keys()) {
@@ -536,6 +565,7 @@ export async function getAuditReportData(
     deployments,
     manual_approvals,
     legacy_infos,
+    baseline_approvals,
     reviewer_counts,
     user_mappings,
     canonical_map,
@@ -552,6 +582,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     deployments,
     manual_approvals,
     legacy_infos,
+    baseline_approvals,
     reviewer_counts,
     user_mappings,
     canonical_map,
@@ -560,6 +591,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
   } = rawData
   const manualApprovalMap = new Map(manual_approvals.map((a) => [a.deployment_id, a]))
   const legacyInfoMap = new Map(legacy_infos.map((l) => [l.deployment_id, l]))
+  const baselineApprovalMap = new Map(baseline_approvals.map((b) => [b.deployment_id, b]))
 
   // Helper to get display name for any identifier (github username or nav-ident)
   const getDisplayName = (identifier: string | null | undefined): string | undefined => {
@@ -577,8 +609,10 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
   const deploymentEntries: AuditDeploymentEntry[] = deployments.map((d) => {
     const isManual = d.four_eyes_status === 'manually_approved'
     const isLegacy = d.four_eyes_status === 'legacy'
+    const isBaseline = d.four_eyes_status === 'baseline'
     const manualApproval = manualApprovalMap.get(d.id)
     const legacyInfo = legacyInfoMap.get(d.id)
+    const baselineApproval = baselineApprovalMap.get(d.id)
     // Treat as legacy if has legacy_info comment (even if status is manually_approved)
     const hasLegacyInfo = !!legacyInfo
 
@@ -592,6 +626,15 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     if (isLegacy || hasLegacyInfo) {
       // Legacy: use GitHub PR reviewers if available, otherwise '-'
       approver = d.approved_by_usernames?.length ? formatApprovers(d.approved_by_usernames) : '-'
+    } else if (isBaseline) {
+      // Baseline: approver must exist in status history — report generation is invalid without it
+      if (!baselineApproval?.changed_by) {
+        throw new Error(
+          `Baseline deployment ${d.id} is missing an approver in deployment_status_history. ` +
+            `Cannot generate audit report with unattributed baseline approval.`,
+        )
+      }
+      approver = getDisplayName(baselineApproval.changed_by) || baselineApproval.changed_by
     } else if (isManual && manualApproval) {
       approver = getDisplayName(manualApproval.approved_by) || manualApproval.approved_by
     } else if (d.approved_by_usernames?.length) {
@@ -599,9 +642,11 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     }
 
     // Determine method - use legacy if has legacy_info comment
-    let method: 'pr' | 'manual' | 'legacy' = 'pr'
+    let method: 'pr' | 'manual' | 'legacy' | 'baseline' = 'pr'
     if (isLegacy || hasLegacyInfo) {
       method = 'legacy'
+    } else if (isBaseline) {
+      method = 'baseline'
     } else if (isManual) {
       method = 'manual'
     }
@@ -700,8 +745,9 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     }))
     .sort((a, b) => b.review_count - a.review_count)
 
-  // Count legacy deployments
+  // Count legacy and baseline deployments
   const legacyCount = deploymentEntries.filter((d) => d.method === 'legacy').length
+  const baselineCount = deploymentEntries.filter((d) => d.method === 'baseline').length
 
   // Build deviations list
   const deviationEntries: DeviationEntry[] = rawDeviations.map((d) => {
@@ -754,6 +800,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     contributors,
     reviewers,
     legacy_count: legacyCount,
+    baseline_count: baselineCount,
     deviations: deviationEntries,
     unverified_commit_deployments: unverifiedCommitDeployments,
   }

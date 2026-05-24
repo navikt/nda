@@ -332,9 +332,10 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
   const totalDeployments = reportData.deployments.length
   const prApprovedCount = reportData.deployments.filter((d) => d.method === 'pr').length
   const manuallyApprovedCount = reportData.deployments.filter((d) => d.method === 'manual').length
-  const legacyCount = reportData.legacy_count || 0
-  const [prDisplay, manualDisplay, legacyDisplay] = formatPercentages(
-    [prApprovedCount, manuallyApprovedCount, legacyCount],
+  const baselineCount = reportData.deployments.filter((d) => d.method === 'baseline').length
+  const legacyCount = reportData.deployments.filter((d) => d.method === 'legacy').length
+  const [prDisplay, manualDisplay, baselineDisplay, legacyDisplay] = formatPercentages(
+    [prApprovedCount, manuallyApprovedCount, baselineCount, legacyCount],
     totalDeployments,
   )
 
@@ -430,6 +431,14 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
               </Text>
             </View>
           )}
+          {baselineCount > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Baseline (se forklaring):</Text>
+              <Text style={styles.summaryValue}>
+                {baselineCount} ({baselineDisplay}%)
+              </Text>
+            </View>
+          )}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Unike bidragsytere:</Text>
             <Text style={styles.summaryValue}>{reportData.contributors.length} personer</Text>
@@ -480,6 +489,22 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
               <Text style={styles.methodologyText}>
                 For deployments som er resultat av sammenslåing uten forutgående godkjenning, er det lagt inn
                 kommentarer basert på meldinger fra Slack-kanalen #pensjon-merge-uten-godkjenning.
+              </Text>
+            </View>
+          )}
+          {baselineCount > 0 && (
+            <View style={styles.methodologyBox}>
+              <Text style={styles.methodologyTitle}>D. Baseline deployment ({baselineCount} stk)</Text>
+              <Text style={styles.methodologyText}>
+                En baseline er det første registrerte deploymentet for en applikasjon som ble lagt til i NDA. Det
+                markerer startpunktet for revisjonsperioden — kildekoden som applikasjonen allerede kjørte på da
+                NDA-overvåking ble aktivert.
+              </Text>
+              <Text style={styles.methodologyText}>
+                Siden et baseline-deployment ikke er et nytt produksjonssett, finnes det ingen tilhørende pull request
+                eller review-prosess å verifisere. Deploymentet godkjennes i stedet eksplisitt av en person med
+                godkjennerrolle i NDA, som bekrefter at den registrerte versjonen er riktig utgangspunkt for perioden.
+                Godkjenneren er oppgitt i «Godkjenner»-kolonnen for dette deploymentet.
               </Text>
             </View>
           )}
@@ -649,10 +674,16 @@ function AuditReportPdfDocument(props: AuditReportPdfProps) {
                         )}
                       </Text>
                       <Text style={[styles.tableCell, styles.r2col3]}>
-                        {d.method === 'pr' ? 'PR' : d.method === 'legacy' ? 'Legacy' : 'Manuell'}
+                        {d.method === 'pr'
+                          ? 'PR'
+                          : d.method === 'legacy'
+                            ? 'Legacy'
+                            : d.method === 'baseline'
+                              ? 'Baseline'
+                              : 'Manuell'}
                       </Text>
                       <Text style={[styles.tableCell, styles.r2col4]}>
-                        {d.method === 'legacy' ? (
+                        {d.method === 'legacy' || d.method === 'baseline' ? (
                           '-'
                         ) : d.pr_number && d.pr_url ? (
                           <Link src={d.pr_url} style={styles.link}>
