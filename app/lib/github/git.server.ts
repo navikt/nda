@@ -139,16 +139,8 @@ export async function isCommitOnBranch(
 }
 
 /**
- * Fetch the GitHub repository's default branch (e.g., "main" or "master").
- * Returns null on API error (e.g., repo gone, permissions, rate limit).
- *
- * Used by sync to keep `monitored_applications.default_branch` in sync with
- * the actual GitHub state, so PR base-branch filtering during verification
- * uses the correct value.
- */
-/**
  * Get the branch name from a GitHub Actions workflow run URL.
- * Used to detect which branch a deployment was made from when it's not on the default branch.
+ * Used to detect which branch a deployment was made from.
  */
 export async function getBranchFromWorkflowRun(
   owner: string,
@@ -164,11 +156,21 @@ export async function getBranchFromWorkflowRun(
     const response = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
     return response.data.head_branch || null
   } catch (error) {
-    logger.warn(`⚠️ Failed to get workflow run ${runId} for ${owner}/${repo}:`, error as Record<string, unknown>)
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to get workflow run ${runId} for ${owner}/${repo}:`, { error: message, stack_trace: stack })
     return null
   }
 }
 
+/**
+ * Fetch the GitHub repository's default branch (e.g., "main" or "master").
+ * Returns null on API error (e.g., repo gone, permissions, rate limit).
+ *
+ * Used by sync to keep `monitored_applications.default_branch` in sync with
+ * the actual GitHub state, so PR base-branch filtering during verification
+ * uses the correct value.
+ */
 export async function getRepositoryDefaultBranch(owner: string, repo: string): Promise<string | null> {
   try {
     const client = getGitHubClient()
