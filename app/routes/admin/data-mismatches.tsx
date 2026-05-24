@@ -187,7 +187,7 @@ export default function DataMismatches() {
         m.stored_title,
         m.pr_title,
         m.four_eyes_status,
-        m.github_pr_number?.toString() ?? '',
+        m.github_pr_number != null ? `#${m.github_pr_number}` : '',
       ].some((v) => v.toLowerCase().includes(q))
     })
     if (!mismatchSort) return filtered
@@ -214,11 +214,10 @@ export default function DataMismatches() {
 
   const baselineWithTs = useMemo(
     () =>
-      baselineNoApprover.map((b) => ({
-        ...b,
-        deployedTs: new Date(b.deployed_at).getTime(),
-        deployedStr: new Date(b.deployed_at).toLocaleDateString('nb-NO'),
-      })),
+      baselineNoApprover.map((b) => {
+        const d = new Date(b.deployed_at)
+        return { ...b, deployedTs: d.getTime(), deployedStr: d.toLocaleDateString('nb-NO') }
+      }),
     [baselineNoApprover],
   )
 
