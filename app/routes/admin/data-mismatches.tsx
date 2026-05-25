@@ -76,27 +76,40 @@ export async function loader({ request }: Route.LoaderArgs) {
          ma.team_slug,
          ma.environment_name,
          d.title AS stored_title,
-         d.github_pr_data->>'title' AS pr_title,
+         LEFT(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), 500) AS pr_title,
          d.four_eyes_status,
          d.github_pr_number,
          d.detected_github_owner,
          d.detected_github_repo_name
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-       WHERE d.github_pr_data IS NOT NULL
-         AND d.github_pr_data->>'title' IS NOT NULL
-         AND d.github_pr_data->>'title' != ''
+       WHERE COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') != ''
          AND d.title IS NOT NULL
-         AND d.title != d.github_pr_data->>'title'
+         AND d.title != LEFT(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), 500)
        ORDER BY d.id DESC`,
       ),
       pool.query<MissingSummary>(
         `SELECT
          (COUNT(*) FILTER (WHERE d.title IS NULL))::int AS total_missing,
-         (COUNT(*) FILTER (WHERE d.title IS NULL AND d.github_pr_data IS NOT NULL AND d.github_pr_data->>'title' IS NOT NULL))::int AS with_pr_data,
-         (COUNT(*) FILTER (WHERE d.title IS NULL AND (d.github_pr_data IS NULL OR d.github_pr_data->>'title' IS NULL) AND d.unverified_commits IS NOT NULL AND jsonb_array_length(d.unverified_commits) > 0))::int AS with_unverified_commits,
-         (COUNT(*) FILTER (WHERE d.title IS NULL AND (d.github_pr_data IS NULL OR d.github_pr_data->>'title' IS NULL) AND (d.unverified_commits IS NULL OR jsonb_array_length(d.unverified_commits) = 0)))::int AS no_fallback
-       FROM deployments d`,
+         (COUNT(*) FILTER (
+           WHERE d.title IS NULL
+             AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') != ''
+         ))::int AS with_pr_data,
+         (COUNT(*) FILTER (
+           WHERE d.title IS NULL
+             AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') = ''
+             AND d.unverified_commits IS NOT NULL
+             AND jsonb_array_length(d.unverified_commits) > 0
+             AND COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') != ''
+         ))::int AS with_unverified_commits,
+         (COUNT(*) FILTER (
+           WHERE d.title IS NULL
+             AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') = ''
+             AND (d.unverified_commits IS NULL
+                  OR jsonb_array_length(d.unverified_commits) = 0
+                  OR COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') = '')
+         ))::int AS no_fallback
+         FROM deployments d`,
       ),
       pool.query<BaselineNoApprover>(
         `SELECT
@@ -152,12 +165,10 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === 'fix_mismatches') {
     const result = await pool.query(
       `UPDATE deployments
-       SET title = github_pr_data->>'title'
-       WHERE github_pr_data IS NOT NULL
-         AND github_pr_data->>'title' IS NOT NULL
-         AND github_pr_data->>'title' != ''
+       SET title = LEFT(BTRIM(github_pr_data->>'title', E' \t\r\n'), 500)
+       WHERE COALESCE(BTRIM(github_pr_data->>'title', E' \t\r\n'), '') != ''
          AND title IS NOT NULL
-         AND title != github_pr_data->>'title'`,
+         AND title != LEFT(BTRIM(github_pr_data->>'title', E' \t\r\n'), 500)`,
     )
     const count = result.rowCount ?? 0
     return { success: `Korrigerte ${count} feil titler.` }
@@ -166,14 +177,59 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === 'fix_missing') {
     const result = await pool.query(
       `UPDATE deployments
-       SET title = github_pr_data->>'title'
+       SET title = LEFT(BTRIM(github_pr_data->>'title', E' \t\r\n'), 500)
        WHERE title IS NULL
-         AND github_pr_data IS NOT NULL
-         AND github_pr_data->>'title' IS NOT NULL
-         AND github_pr_data->>'title' != ''`,
+         AND COALESCE(BTRIM(github_pr_data->>'title', E' \t\r\n'), '') != ''`,
     )
     const count = result.rowCount ?? 0
     return { success: `Fylte inn ${count} manglende titler fra PR-data.` }
+  }
+
+  // ONE-TIME BACKFILL — safe to remove once all historical titles are populated
+  if (intent === 'backfill_from_cache') {
+    const result = await pool.query(
+      // Pass 3: compare-cache backfill. Mirrors migration priority — only touches rows
+      // that Pass 1 (PR title) and Pass 2 (unverified_commits) could not fill.
+      // Pre-aggregates snapshots once (DISTINCT ON per head_sha) to avoid per-row lookups.
+      // ONE-TIME BACKFILL: matches snapshots by head_sha only (not base_sha).
+      // A snapshot may have been fetched for a different range (e.g. different env
+      // or prior deployment). Acceptable for a best-effort historical backfill.
+      `WITH latest_snapshots AS (
+         SELECT DISTINCT ON (head_sha)
+           head_sha,
+           BTRIM(
+             SPLIT_PART(data->'commits'->0->>'message', E'\n', 1),
+             E' \t\r\n'
+           ) AS derived_title
+         FROM github_compare_snapshots
+         WHERE head_sha IN (
+           SELECT commit_sha FROM deployments
+           WHERE title IS NULL
+            AND COALESCE(BTRIM(github_pr_data->>'title', E' \t\r\n'), '') = ''
+             AND (unverified_commits IS NULL OR jsonb_array_length(unverified_commits) = 0
+                 OR COALESCE(BTRIM(SPLIT_PART(unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') = '')
+         )
+           AND jsonb_typeof(data->'commits') = 'array'
+           AND jsonb_array_length(data->'commits') > 0
+          AND BTRIM(SPLIT_PART(data->'commits'->0->>'message', E'\n', 1), E' \t\r\n') != ''
+        ORDER BY head_sha, fetched_at DESC
+      )
+      UPDATE deployments d
+      SET title = LEFT(ls.derived_title, 500)
+      FROM latest_snapshots ls
+      WHERE d.commit_sha = ls.head_sha
+        AND d.title IS NULL
+        AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') = ''
+        AND (d.unverified_commits IS NULL OR jsonb_array_length(d.unverified_commits) = 0
+             OR COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') = '')`,
+    )
+    const count = result.rowCount ?? 0
+    return {
+      success:
+        count > 0
+          ? `Fylte inn ${count} titler fra compare-cache. Kjør igjen for å se om det gjenstår flere.`
+          : 'Ingen titler å fylle inn fra compare-cache. Alle som kan fylles er allerede satt.',
+    }
   }
 
   return { error: 'Ukjent handling' }
@@ -374,6 +430,12 @@ export default function DataMismatches() {
             <BodyShort size="small">Manglende tittel (NULL)</BodyShort>
           </VStack>
         </Box>
+        <Box padding="space-16" borderRadius="8" borderWidth="1" borderColor="neutral-subtle">
+          <VStack gap="space-4">
+            <Heading size="medium">{missing.no_fallback}</Heading>
+            <BodyShort size="small">Kandidater for compare-cache-oppfylling</BodyShort>
+          </VStack>
+        </Box>
       </HStack>
 
       {/* Explanation */}
@@ -397,9 +459,14 @@ export default function DataMismatches() {
             </li>
             <li>
               <BodyShort size="small">
-                <strong>Manglende tittel</strong> — deployments uten tittel og uten PR-data å hente fra. Typisk eldre
-                deployments fra før NDA begynte å samle PR-data, eller deployments uten tilknyttet PR (f.eks. direkte
-                push til main). Krever ingen handling.
+                <strong>Manglende tittel</strong> — deployments uten tittel og uten PR-data å hente fra.
+              </BodyShort>
+            </li>
+            <li>
+              <BodyShort size="small">
+                <strong>Kandidater for compare-cache-oppfylling</strong> — deployments uten tittel og uten PR-data eller
+                commit-meldinger å hente fra. Disse er kandidater for engangsjobben under, men faktisk antall som fylles
+                kan være lavere siden ikke alle nødvendigvis finnes i compare-cachen.
               </BodyShort>
             </li>
           </VStack>
@@ -421,6 +488,15 @@ export default function DataMismatches() {
             <input type="hidden" name="intent" value="fix_missing" />
             <Button variant="secondary" size="small" icon={<WrenchIcon aria-hidden />}>
               Fyll inn {missing.with_pr_data} manglende titler
+            </Button>
+          </Form>
+        )}
+        {/* ONE-TIME BACKFILL — remove this form once all historical titles are populated */}
+        {missing.no_fallback > 0 && (
+          <Form method="post">
+            <input type="hidden" name="intent" value="backfill_from_cache" />
+            <Button variant="secondary" size="small" icon={<WrenchIcon aria-hidden />}>
+              [Engangsjobb] Fyll inn titler fra compare-cache ({missing.no_fallback} kandidater)
             </Button>
           </Form>
         )}
