@@ -9,46 +9,30 @@
 -- Three passes, in priority order (each pass only touches rows still NULL
 -- after the previous one):
 --
--- 1. github_pr_data->>'title'     — PR title already stored as JSON
--- 2. unverified_commits->0->>'message'  — first unverified commit in JSON
--- 3. github_compare_snapshots     — first commit in the compare cache
+-- 1. github_pr_data->>'title'          — PR title already stored as JSON
+-- 2. unverified_commits->0->>'message' — first unverified commit in JSON
+-- 3. github_compare_snapshots          — first commit in the compare cache
 --
--- All three passes take only the first line of the message, trim it, and
--- cap it at 500 chars to match the VARCHAR(500) column limit.
+-- Each pass strips whitespace including carriage returns and newlines
+-- (BTRIM with E' \t\r\n' to match JS .trim()) and caps at 500 chars (VARCHAR(500) column limit).
+-- Pass 1 uses the PR title as-is (PR titles are single-line by convention).
+-- Passes 2 and 3 extract only the first line of the commit message (SPLIT_PART on E'\n').
 
 -- Pass 1: backfill from stored PR data
 UPDATE deployments
-SET title = LEFT(TRIM(github_pr_data->>'title'), 500)
+SET title = LEFT(BTRIM(github_pr_data->>'title', E' \t\r\n'), 500)
 WHERE title IS NULL
   AND github_pr_data IS NOT NULL
-  AND TRIM(github_pr_data->>'title') != '';
+  AND BTRIM(github_pr_data->>'title', E' \t\r\n') != '';
 
 -- Pass 2: backfill from stored unverified commits (first commit, first line)
 UPDATE deployments
-SET title = LEFT(TRIM(SPLIT_PART(unverified_commits->0->>'message', E'\n', 1)), 500)
+SET title = LEFT(BTRIM(SPLIT_PART(unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), 500)
 WHERE title IS NULL
   AND unverified_commits IS NOT NULL
   AND jsonb_array_length(unverified_commits) > 0
-  AND TRIM(SPLIT_PART(unverified_commits->0->>'message', E'\n', 1)) != '';
+  AND BTRIM(SPLIT_PART(unverified_commits->0->>'message', E'\n', 1), E' \t\r\n') != '';
 
--- Pass 3: backfill from github_compare_snapshots (first commit, first line).
--- Uses DISTINCT ON to pick the most recently fetched snapshot per head_sha.
--- Only snapshots that include a 'commits' array are used.
-UPDATE deployments d
-SET title = LEFT(
-  TRIM(SPLIT_PART(gcs.data->'commits'->0->>'message', E'\n', 1)),
-  500
-)
-FROM (
-  SELECT DISTINCT ON (head_sha)
-    head_sha,
-    data
-  FROM github_compare_snapshots
-  WHERE head_sha IN (SELECT commit_sha FROM deployments WHERE title IS NULL)
-    AND data ? 'commits'
-    AND jsonb_array_length(data->'commits') > 0
-  ORDER BY head_sha, fetched_at DESC
-) gcs
-WHERE d.commit_sha = gcs.head_sha
-  AND d.title IS NULL
-  AND TRIM(SPLIT_PART(gcs.data->'commits'->0->>'message', E'\n', 1)) != '';
+-- Pass 3 (backfill from github_compare_snapshots) is intentionally omitted here.
+-- It is available as a manual admin action on /admin/data-mismatches to avoid
+-- holding a startup lock while joining against a potentially large cache table.

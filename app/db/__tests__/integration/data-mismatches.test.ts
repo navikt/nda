@@ -23,13 +23,29 @@ afterEach(async () => {
   await truncateAllTables(pool)
 })
 
-// This is the exact query from the title-mismatches route loader (FIXED version)
+// This is the exact query from the title-mismatches route loader.
+// Keep in sync with the MissingSummary pool.query() in app/routes/admin/data-mismatches.tsx.
 const FIXED_SUMMARY_SQL = `SELECT
   (COUNT(*) FILTER (WHERE d.title IS NULL))::int AS total_missing,
-  (COUNT(*) FILTER (WHERE d.title IS NULL AND d.github_pr_data IS NOT NULL AND d.github_pr_data->>'title' IS NOT NULL))::int AS with_pr_data,
-  (COUNT(*) FILTER (WHERE d.title IS NULL AND (d.github_pr_data IS NULL OR d.github_pr_data->>'title' IS NULL) AND d.unverified_commits IS NOT NULL AND jsonb_array_length(d.unverified_commits) > 0))::int AS with_unverified_commits,
-  (COUNT(*) FILTER (WHERE d.title IS NULL AND (d.github_pr_data IS NULL OR d.github_pr_data->>'title' IS NULL) AND (d.unverified_commits IS NULL OR jsonb_array_length(d.unverified_commits) = 0)))::int AS no_fallback
-FROM deployments d`
+  (COUNT(*) FILTER (
+    WHERE d.title IS NULL
+      AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \\t\\r\\n'), '') != ''
+  ))::int AS with_pr_data,
+  (COUNT(*) FILTER (
+    WHERE d.title IS NULL
+      AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \\t\\r\\n'), '') = ''
+      AND d.unverified_commits IS NOT NULL
+      AND jsonb_array_length(d.unverified_commits) > 0
+      AND COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\\n', 1), E' \\t\\r\\n'), '') != ''
+  ))::int AS with_unverified_commits,
+  (COUNT(*) FILTER (
+    WHERE d.title IS NULL
+      AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \\t\\r\\n'), '') = ''
+      AND (d.unverified_commits IS NULL
+           OR jsonb_array_length(d.unverified_commits) = 0
+           OR COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\\n', 1), E' \\t\\r\\n'), '') = '')
+  ))::int AS no_fallback
+  FROM deployments d`
 
 // The broken query before the fix — cast before FILTER is invalid SQL
 const BROKEN_SUMMARY_SQL = `SELECT
@@ -98,6 +114,24 @@ describe('data-mismatches: title missing summary query', () => {
     const { rows } = await pool.query(FIXED_SUMMARY_SQL)
     expect(rows[0].total_missing).toBe(2)
     expect(rows[0].with_pr_data).toBe(1)
+    expect(rows[0].no_fallback).toBe(1)
+  })
+
+  it('whitespace-only PR title counts as no_fallback, not with_pr_data', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+
+    // Whitespace-only PR title — should NOT count as with_pr_data
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      title: undefined,
+      githubPrData: { title: '   \r\n  ' },
+    })
+
+    const { rows } = await pool.query(FIXED_SUMMARY_SQL)
+    expect(rows[0].total_missing).toBe(1)
+    expect(rows[0].with_pr_data).toBe(0)
     expect(rows[0].no_fallback).toBe(1)
   })
 })
