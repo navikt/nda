@@ -132,7 +132,7 @@ export async function loader({ request }: Route.LoaderArgs) {
          JOIN monitored_applications ma ON d.monitored_app_id = ma.id
          WHERE ma.audit_start_year IS NOT NULL
            AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
-           AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})`,
+           AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})`,
       ),
       pool.query<BaselineNoApprover>(
         `SELECT
@@ -202,7 +202,7 @@ export async function loader({ request }: Route.LoaderArgs) {
      WHERE d.title IS NULL
        AND ma.audit_start_year IS NOT NULL
        AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
-       AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+       AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})
      ORDER BY d.id DESC
      LIMIT $1 OFFSET $2`,
     [MISSING_PAGE_SIZE, (clampedPage - 1) * MISSING_PAGE_SIZE],
@@ -246,7 +246,7 @@ export async function action({ request }: Route.ActionArgs) {
        WHERE d.monitored_app_id = ma.id
          AND d.title IS NULL
          AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') != ''
-         AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+         AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})
          AND ma.audit_start_year IS NOT NULL
          AND d.created_at >= make_date(ma.audit_start_year, 1, 1)`,
     )
@@ -278,7 +278,7 @@ export async function action({ request }: Route.ActionArgs) {
             AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') = ''
              AND (d.unverified_commits IS NULL OR jsonb_array_length(d.unverified_commits) = 0
                  OR COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') = '')
-             AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+             AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})
              AND ma.audit_start_year IS NOT NULL
              AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
          )
@@ -296,7 +296,7 @@ export async function action({ request }: Route.ActionArgs) {
         AND COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') = ''
         AND (d.unverified_commits IS NULL OR jsonb_array_length(d.unverified_commits) = 0
              OR COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') = '')
-        AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+        AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})
         AND ma.audit_start_year IS NOT NULL
         AND d.created_at >= make_date(ma.audit_start_year, 1, 1)`,
     )

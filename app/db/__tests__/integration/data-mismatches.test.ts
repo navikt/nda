@@ -50,7 +50,7 @@ const FIXED_SUMMARY_SQL = `SELECT
   JOIN monitored_applications ma ON d.monitored_app_id = ma.id
   WHERE ma.audit_start_year IS NOT NULL
     AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
-    AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})`
+    AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})`
 
 // Keep in sync with missingRowsResult pool.query() in app/routes/admin/data-mismatches.tsx.
 function MISSING_ROWS_SQL(limit: number, offset: number) {
@@ -71,7 +71,7 @@ function MISSING_ROWS_SQL(limit: number, offset: number) {
     WHERE d.title IS NULL
       AND ma.audit_start_year IS NOT NULL
       AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
-      AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+      AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})
     ORDER BY d.id DESC
     LIMIT $1 OFFSET $2`,
     values: [limit, offset],
@@ -327,6 +327,74 @@ describe('data-mismatches: title missing summary query', () => {
     expect(rows[0].total_missing).toBe(1)
     expect(rows[0].with_pr_data).toBe(0)
     expect(rows[0].no_fallback).toBe(1)
+  })
+
+  it('excludes legacy deployments from summary counts', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-s1', appName: 'app-s1', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-s1',
+      environment: 'prod',
+      title: undefined,
+      fourEyesStatus: 'legacy',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-s1',
+      environment: 'prod',
+      title: undefined,
+      fourEyesStatus: 'legacy_pending',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-s1',
+      environment: 'prod',
+      title: undefined,
+      fourEyesStatus: 'pending',
+    })
+
+    const { rows } = await pool.query(FIXED_SUMMARY_SQL)
+    expect(rows[0].total_missing).toBe(1)
+  })
+
+  it('excludes deployments before audit_start_year from summary counts', async () => {
+    const currentYear = new Date().getFullYear()
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-s2',
+      appName: 'app-s2',
+      environment: 'prod',
+      auditStartYear: currentYear,
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-s2',
+      environment: 'prod',
+      title: undefined,
+      createdAt: new Date(currentYear - 1, 6, 1),
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-s2',
+      environment: 'prod',
+      title: undefined,
+      createdAt: new Date(currentYear, 6, 1),
+    })
+
+    const { rows } = await pool.query(FIXED_SUMMARY_SQL)
+    expect(rows[0].total_missing).toBe(1)
+  })
+
+  it('excludes apps without audit_start_year from summary counts', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-s3',
+      appName: 'app-s3',
+      environment: 'prod',
+      auditStartYear: null,
+    })
+    await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team-s3', environment: 'prod', title: undefined })
+
+    const { rows } = await pool.query(FIXED_SUMMARY_SQL)
+    expect(rows[0].total_missing).toBe(0)
   })
 })
 
