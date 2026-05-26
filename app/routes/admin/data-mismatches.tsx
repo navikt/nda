@@ -15,8 +15,9 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { useMemo, useState } from 'react'
-import { Form, Link, useActionData, useLoaderData } from 'react-router'
+import { Form, Link, useActionData, useLoaderData, useNavigate } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
+import { PaginationControls } from '~/components/deployments/PaginationControls'
 import { ExternalLink } from '~/components/ExternalLink'
 import { pool } from '~/db/connection.server'
 import { requireAdmin } from '~/lib/auth.server'
@@ -46,6 +47,17 @@ interface MissingSummary {
   no_fallback: number
 }
 
+interface MissingTitleRow {
+  id: number
+  app_name: string
+  team_slug: string
+  environment_name: string
+  deployed_at: Date
+  four_eyes_status: string
+  has_pr_data: boolean
+  has_commits: boolean
+}
+
 interface BaselineNoApprover {
   id: number
   app_name: string
@@ -64,13 +76,23 @@ interface CommentMissingRegisteredBy {
   created_at: Date
 }
 
+const MISSING_PAGE_SIZE = 50
+
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const [mismatchResult, missingResult, baselineNoApproverResult, commentsMissingRegisteredByResult] =
-    await Promise.all([
-      pool.query<TitleMismatch>(
-        `SELECT
+  const url = new URL(request.url)
+  const missingPage = Math.max(1, parseInt(url.searchParams.get('missingPage') ?? '1', 10))
+
+  const [
+    mismatchResult,
+    missingResult,
+    baselineNoApproverResult,
+    commentsMissingRegisteredByResult,
+    missingRowsResult,
+  ] = await Promise.all([
+    pool.query<TitleMismatch>(
+      `SELECT
          d.id,
          ma.app_name,
          ma.team_slug,
@@ -87,9 +109,9 @@ export async function loader({ request }: Route.LoaderArgs) {
          AND d.title IS NOT NULL
          AND d.title != LEFT(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), 500)
        ORDER BY d.id DESC`,
-      ),
-      pool.query<MissingSummary>(
-        `SELECT
+    ),
+    pool.query<MissingSummary>(
+      `SELECT
          (COUNT(*) FILTER (WHERE d.title IS NULL))::int AS total_missing,
          (COUNT(*) FILTER (
            WHERE d.title IS NULL
@@ -110,9 +132,9 @@ export async function loader({ request }: Route.LoaderArgs) {
                   OR COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') = '')
          ))::int AS no_fallback
          FROM deployments d`,
-      ),
-      pool.query<BaselineNoApprover>(
-        `SELECT
+    ),
+    pool.query<BaselineNoApprover>(
+      `SELECT
          d.id,
          ma.app_name,
          ma.team_slug,
@@ -128,9 +150,9 @@ export async function loader({ request }: Route.LoaderArgs) {
                AND dsh.changed_by IS NOT NULL
          )
        ORDER BY d.created_at DESC`,
-      ),
-      pool.query<CommentMissingRegisteredBy>(
-        `SELECT
+    ),
+    pool.query<CommentMissingRegisteredBy>(
+      `SELECT
          dc.id AS comment_id,
          dc.deployment_id,
          ma.app_name,
@@ -144,13 +166,43 @@ export async function loader({ request }: Route.LoaderArgs) {
        WHERE dc.registered_by IS NULL
          AND dc.deleted_at IS NULL
        ORDER BY dc.created_at DESC`,
-      ),
-    ])
+    ),
+    pool.query<MissingTitleRow>(
+      `SELECT
+         d.id,
+         ma.app_name,
+         ma.team_slug,
+         ma.environment_name,
+         d.created_at AS deployed_at,
+         d.four_eyes_status,
+         (COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') != '') AS has_pr_data,
+         (d.unverified_commits IS NOT NULL
+           AND jsonb_array_length(d.unverified_commits) > 0
+           AND COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') != '') AS has_commits
+       FROM deployments d
+       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+       WHERE d.title IS NULL
+       ORDER BY d.id DESC
+       LIMIT $1 OFFSET $2`,
+      [MISSING_PAGE_SIZE, (missingPage - 1) * MISSING_PAGE_SIZE],
+    ),
+  ])
+
+  const missing = missingResult.rows[0] ?? {
+    total_missing: 0,
+    with_pr_data: 0,
+    with_unverified_commits: 0,
+    no_fallback: 0,
+  }
+  const missingTotalPages = Math.max(1, Math.ceil(Number(missing.total_missing) / MISSING_PAGE_SIZE))
 
   return {
     mismatches: mismatchResult.rows,
     mismatchCount: mismatchResult.rowCount ?? 0,
-    missing: missingResult.rows[0] ?? { total_missing: 0, with_pr_data: 0, with_unverified_commits: 0, no_fallback: 0 },
+    missing,
+    missingRows: missingRowsResult.rows,
+    missingPage,
+    missingTotalPages,
     baselineNoApprover: baselineNoApproverResult.rows,
     commentsMissingRegisteredBy: commentsMissingRegisteredByResult.rows,
   }
@@ -241,9 +293,18 @@ function truncate(str: string, maxLength: number) {
 }
 
 export default function DataMismatches() {
-  const { mismatches, mismatchCount, missing, baselineNoApprover, commentsMissingRegisteredBy } =
-    useLoaderData<typeof loader>()
+  const {
+    mismatches,
+    mismatchCount,
+    missing,
+    missingRows,
+    missingPage,
+    missingTotalPages,
+    baselineNoApprover,
+    commentsMissingRegisteredBy,
+  } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
+  const navigate = useNavigate()
 
   const [mismatchFilter, setMismatchFilter] = useState('')
   const [mismatchSort, setMismatchSort] = useState<SortState>()
@@ -624,7 +685,79 @@ export default function DataMismatches() {
         </Alert>
       )}
 
-      {/* Baseline without approver section */}
+      {/* Deployments without title — paginated list */}
+      {missing.total_missing > 0 && (
+        <VStack gap="space-12">
+          <Heading level="2" size="medium">
+            Deployments uten tittel ({missing.total_missing})
+          </Heading>
+
+          <div style={{ overflowX: 'auto' }}>
+            <Table size="small">
+              <Table.Header>
+                <Table.Row>
+                  <Table.HeaderCell>ID</Table.HeaderCell>
+                  <Table.HeaderCell>App</Table.HeaderCell>
+                  <Table.HeaderCell>Team</Table.HeaderCell>
+                  <Table.HeaderCell>Miljø</Table.HeaderCell>
+                  <Table.HeaderCell>Deployet</Table.HeaderCell>
+                  <Table.HeaderCell>Status</Table.HeaderCell>
+                  <Table.HeaderCell>Data</Table.HeaderCell>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {missingRows.map((row) => {
+                  const deployedStr = new Date(row.deployed_at).toLocaleDateString('nb-NO')
+                  return (
+                    <Table.Row key={row.id}>
+                      <Table.DataCell>
+                        <Link to={`/deployments/${row.id}`}>{row.id}</Link>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{row.app_name}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{row.team_slug}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{row.environment_name}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{deployedStr}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <BodyShort size="small">{row.four_eyes_status}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        {row.has_pr_data ? (
+                          <Tag variant="moderate" data-color="warning" size="xsmall">
+                            PR-data
+                          </Tag>
+                        ) : row.has_commits ? (
+                          <Tag variant="moderate" data-color="info" size="xsmall">
+                            Commits
+                          </Tag>
+                        ) : (
+                          <Tag variant="moderate" data-color="neutral" size="xsmall">
+                            Ingen data
+                          </Tag>
+                        )}
+                      </Table.DataCell>
+                    </Table.Row>
+                  )
+                })}
+              </Table.Body>
+            </Table>
+          </div>
+
+          <PaginationControls
+            page={missingPage}
+            totalPages={missingTotalPages}
+            onPageChange={(p) => navigate(`?missingPage=${p}`)}
+          />
+        </VStack>
+      )}
+
       <VStack gap="space-12">
         <VStack gap="space-4">
           <Heading level="2" size="medium">
