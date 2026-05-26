@@ -47,7 +47,122 @@ const FIXED_SUMMARY_SQL = `SELECT
   ))::int AS no_fallback
   FROM deployments d`
 
-// The broken query before the fix — cast before FILTER is invalid SQL
+// Keep in sync with missingRowsResult pool.query() in app/routes/admin/data-mismatches.tsx.
+function MISSING_ROWS_SQL(limit: number, offset: number) {
+  return {
+    text: `SELECT
+      d.id,
+      ma.app_name,
+      ma.team_slug,
+      ma.environment_name,
+      d.created_at AS deployed_at,
+      d.four_eyes_status,
+      (COALESCE(BTRIM(d.github_pr_data->>'title', E' \\t\\r\\n'), '') != '') AS has_pr_data,
+      (d.unverified_commits IS NOT NULL
+        AND jsonb_array_length(d.unverified_commits) > 0
+        AND COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\\n', 1), E' \\t\\r\\n'), '') != '') AS has_commits
+    FROM deployments d
+    JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+    WHERE d.title IS NULL
+    ORDER BY d.id DESC
+    LIMIT $1 OFFSET $2`,
+    values: [limit, offset],
+  }
+}
+
+describe('data-mismatches: missing title rows (paginated) query', () => {
+  it('returns only deployments with title IS NULL', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-e', appName: 'app-e', environment: 'prod' })
+    await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team-e', environment: 'prod', title: 'Has title' })
+    await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team-e', environment: 'prod', title: undefined })
+
+    const { rows } = await pool.query(MISSING_ROWS_SQL(50, 0))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].app_name).toBe('app-e')
+  })
+
+  it('sets has_pr_data=true when PR title is non-empty', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-f', appName: 'app-f', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-f',
+      environment: 'prod',
+      title: undefined,
+      githubPrData: { title: 'Valid PR title' },
+    })
+
+    const { rows } = await pool.query(MISSING_ROWS_SQL(50, 0))
+    expect(rows[0].has_pr_data).toBe(true)
+    expect(rows[0].has_commits).toBe(false)
+  })
+
+  it('sets has_pr_data=false for whitespace-only PR title', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-g', appName: 'app-g', environment: 'prod' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-g',
+      environment: 'prod',
+      title: undefined,
+      githubPrData: { title: '   \r\n  ' },
+    })
+
+    const { rows } = await pool.query(MISSING_ROWS_SQL(50, 0))
+    expect(rows[0].has_pr_data).toBe(false)
+  })
+
+  it('sets has_commits=true when unverified_commits has a non-empty first-line message', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-h', appName: 'app-h', environment: 'prod' })
+    const id = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-h',
+      environment: 'prod',
+      title: undefined,
+    })
+    await pool.query(`UPDATE deployments SET unverified_commits = $1 WHERE id = $2`, [
+      JSON.stringify([{ message: 'fix: some commit message' }]),
+      id,
+    ])
+
+    const { rows } = await pool.query(MISSING_ROWS_SQL(50, 0))
+    expect(rows[0].has_commits).toBe(true)
+    expect(rows[0].has_pr_data).toBe(false)
+  })
+
+  it('sets has_commits=false when commit message is whitespace-only', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-i', appName: 'app-i', environment: 'prod' })
+    const id = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-i',
+      environment: 'prod',
+      title: undefined,
+    })
+    await pool.query(`UPDATE deployments SET unverified_commits = $1 WHERE id = $2`, [
+      JSON.stringify([{ message: '   \r\n  ' }]),
+      id,
+    ])
+
+    const { rows } = await pool.query(MISSING_ROWS_SQL(50, 0))
+    expect(rows[0].has_commits).toBe(false)
+  })
+
+  it('paginates correctly with LIMIT and OFFSET', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-j', appName: 'app-j', environment: 'prod' })
+    for (let i = 0; i < 3; i++) {
+      await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team-j', environment: 'prod', title: undefined })
+    }
+
+    const page1 = await pool.query(MISSING_ROWS_SQL(2, 0))
+    expect(page1.rows).toHaveLength(2)
+
+    const page2 = await pool.query(MISSING_ROWS_SQL(2, 2))
+    expect(page2.rows).toHaveLength(1)
+
+    // Pages should not overlap
+    const ids1 = page1.rows.map((r: { id: number }) => r.id)
+    const ids2 = page2.rows.map((r: { id: number }) => r.id)
+    expect(ids1.some((id: number) => ids2.includes(id))).toBe(false)
+  })
+})
 const BROKEN_SUMMARY_SQL = `SELECT
   COUNT(*)::int FILTER (WHERE d.title IS NULL) AS total_missing,
   COUNT(*)::int FILTER (WHERE d.title IS NULL AND d.github_pr_data IS NOT NULL AND d.github_pr_data->>'title' IS NOT NULL) AS with_pr_data,
