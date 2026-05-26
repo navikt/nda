@@ -15,7 +15,7 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { useMemo, useState } from 'react'
-import { Form, Link, useActionData, useLoaderData, useNavigate } from 'react-router'
+import { Form, Link, redirect, useActionData, useLoaderData, useNavigate } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { PaginationControls } from '~/components/deployments/PaginationControls'
 import { ExternalLink } from '~/components/ExternalLink'
@@ -82,17 +82,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
   const url = new URL(request.url)
-  const missingPage = Math.max(1, parseInt(url.searchParams.get('missingPage') ?? '1', 10))
+  const rawPage = parseInt(url.searchParams.get('missingPage') ?? '1', 10)
+  const missingPage = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1
 
-  const [
-    mismatchResult,
-    missingResult,
-    baselineNoApproverResult,
-    commentsMissingRegisteredByResult,
-    missingRowsResult,
-  ] = await Promise.all([
-    pool.query<TitleMismatch>(
-      `SELECT
+  const [mismatchResult, missingResult, baselineNoApproverResult, commentsMissingRegisteredByResult] =
+    await Promise.all([
+      pool.query<TitleMismatch>(
+        `SELECT
          d.id,
          ma.app_name,
          ma.team_slug,
@@ -109,9 +105,9 @@ export async function loader({ request }: Route.LoaderArgs) {
          AND d.title IS NOT NULL
          AND d.title != LEFT(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), 500)
        ORDER BY d.id DESC`,
-    ),
-    pool.query<MissingSummary>(
-      `SELECT
+      ),
+      pool.query<MissingSummary>(
+        `SELECT
          (COUNT(*) FILTER (WHERE d.title IS NULL))::int AS total_missing,
          (COUNT(*) FILTER (
            WHERE d.title IS NULL
@@ -132,9 +128,9 @@ export async function loader({ request }: Route.LoaderArgs) {
                   OR COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') = '')
          ))::int AS no_fallback
          FROM deployments d`,
-    ),
-    pool.query<BaselineNoApprover>(
-      `SELECT
+      ),
+      pool.query<BaselineNoApprover>(
+        `SELECT
          d.id,
          ma.app_name,
          ma.team_slug,
@@ -150,9 +146,9 @@ export async function loader({ request }: Route.LoaderArgs) {
                AND dsh.changed_by IS NOT NULL
          )
        ORDER BY d.created_at DESC`,
-    ),
-    pool.query<CommentMissingRegisteredBy>(
-      `SELECT
+      ),
+      pool.query<CommentMissingRegisteredBy>(
+        `SELECT
          dc.id AS comment_id,
          dc.deployment_id,
          ma.app_name,
@@ -166,27 +162,8 @@ export async function loader({ request }: Route.LoaderArgs) {
        WHERE dc.registered_by IS NULL
          AND dc.deleted_at IS NULL
        ORDER BY dc.created_at DESC`,
-    ),
-    pool.query<MissingTitleRow>(
-      `SELECT
-         d.id,
-         ma.app_name,
-         ma.team_slug,
-         ma.environment_name,
-         d.created_at AS deployed_at,
-         d.four_eyes_status,
-         (COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') != '') AS has_pr_data,
-         (d.unverified_commits IS NOT NULL
-           AND jsonb_array_length(d.unverified_commits) > 0
-           AND COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') != '') AS has_commits
-       FROM deployments d
-       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-       WHERE d.title IS NULL
-       ORDER BY d.id DESC
-       LIMIT $1 OFFSET $2`,
-      [MISSING_PAGE_SIZE, (missingPage - 1) * MISSING_PAGE_SIZE],
-    ),
-  ])
+      ),
+    ])
 
   const missing = missingResult.rows[0] ?? {
     total_missing: 0,
@@ -196,12 +173,39 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   const missingTotalPages = Math.max(1, Math.ceil(Number(missing.total_missing) / MISSING_PAGE_SIZE))
 
+  // Redirect to last valid page if requested page is out of range
+  const clampedPage = Math.min(missingPage, missingTotalPages)
+  if (clampedPage !== missingPage) {
+    url.searchParams.set('missingPage', String(clampedPage))
+    throw redirect(url.pathname + url.search)
+  }
+
+  const missingRowsResult = await pool.query<MissingTitleRow>(
+    `SELECT
+       d.id,
+       ma.app_name,
+       ma.team_slug,
+       ma.environment_name,
+       d.created_at AS deployed_at,
+       d.four_eyes_status,
+       (COALESCE(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), '') != '') AS has_pr_data,
+       (d.unverified_commits IS NOT NULL
+         AND jsonb_array_length(d.unverified_commits) > 0
+         AND COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') != '') AS has_commits
+     FROM deployments d
+     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+     WHERE d.title IS NULL
+     ORDER BY d.id DESC
+     LIMIT $1 OFFSET $2`,
+    [MISSING_PAGE_SIZE, (clampedPage - 1) * MISSING_PAGE_SIZE],
+  )
+
   return {
     mismatches: mismatchResult.rows,
     mismatchCount: mismatchResult.rowCount ?? 0,
     missing,
     missingRows: missingRowsResult.rows,
-    missingPage,
+    missingPage: clampedPage,
     missingTotalPages,
     baselineNoApprover: baselineNoApproverResult.rows,
     commentsMissingRegisteredBy: commentsMissingRegisteredByResult.rows,
