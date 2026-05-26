@@ -7,6 +7,7 @@
 
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { LEGACY_STATUSES_SQL } from '../../../lib/four-eyes-status'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -49,7 +50,7 @@ const FIXED_SUMMARY_SQL = `SELECT
   JOIN monitored_applications ma ON d.monitored_app_id = ma.id
   WHERE ma.audit_start_year IS NOT NULL
     AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
-    AND d.four_eyes_status NOT IN ('legacy', 'legacy_pending')`
+    AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})`
 
 // Keep in sync with missingRowsResult pool.query() in app/routes/admin/data-mismatches.tsx.
 function MISSING_ROWS_SQL(limit: number, offset: number) {
@@ -70,7 +71,7 @@ function MISSING_ROWS_SQL(limit: number, offset: number) {
     WHERE d.title IS NULL
       AND ma.audit_start_year IS NOT NULL
       AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
-      AND d.four_eyes_status NOT IN ('legacy', 'legacy_pending')
+      AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
     ORDER BY d.id DESC
     LIMIT $1 OFFSET $2`,
     values: [limit, offset],
