@@ -21,6 +21,7 @@ import { PaginationControls } from '~/components/deployments/PaginationControls'
 import { ExternalLink } from '~/components/ExternalLink'
 import { pool } from '~/db/connection.server'
 import { requireAdmin } from '~/lib/auth.server'
+import { LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { Route } from './+types/data-mismatches'
 
 export function meta(_args: Route.MetaArgs) {
@@ -127,7 +128,11 @@ export async function loader({ request }: Route.LoaderArgs) {
                   OR jsonb_array_length(d.unverified_commits) = 0
                   OR COALESCE(BTRIM(SPLIT_PART(d.unverified_commits->0->>'message', E'\n', 1), E' \t\r\n'), '') = '')
          ))::int AS no_fallback
-         FROM deployments d`,
+         FROM deployments d
+         JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+         WHERE ma.audit_start_year IS NOT NULL
+           AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
+           AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})`,
       ),
       pool.query<BaselineNoApprover>(
         `SELECT
@@ -195,6 +200,9 @@ export async function loader({ request }: Route.LoaderArgs) {
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.title IS NULL
+       AND ma.audit_start_year IS NOT NULL
+       AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
+       AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
      ORDER BY d.id DESC
      LIMIT $1 OFFSET $2`,
     [MISSING_PAGE_SIZE, (clampedPage - 1) * MISSING_PAGE_SIZE],
