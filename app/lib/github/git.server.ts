@@ -139,6 +139,25 @@ export async function isCommitOnBranch(
 }
 
 /**
+ * Get the full commit message for a single commit SHA.
+ * Used as a title fallback for baseline deployments that have no PR and no commitsBetween.
+ * Returns null on error (fail-open: caller should omit the title rather than crash).
+ */
+export async function getSingleCommitMessage(owner: string, repo: string, commitSha: string): Promise<string | null> {
+  try {
+    const client = getGitHubClient()
+    const response = await client.repos.getCommit({ owner, repo, ref: commitSha })
+    return response.data.commit.message || null
+  } catch (error) {
+    logger.warn(
+      `⚠️ Failed to fetch commit message for ${commitSha.substring(0, 7)} in ${owner}/${repo}:`,
+      error as Record<string, unknown>,
+    )
+    return null
+  }
+}
+
+/**
  * Get the branch name from a GitHub Actions workflow run URL.
  * Used to detect which branch a deployment was made from.
  */

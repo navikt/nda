@@ -30,6 +30,7 @@ import {
   getCommitsBetween,
   getDetailedPullRequestInfo,
   getPullRequestForCommit,
+  getSingleCommitMessage,
   haveSameCommitTree,
   isCommitOnBranch,
 } from '~/lib/github'
@@ -247,8 +248,14 @@ export async function fetchVerificationData(
   // Derive a fallback title from the first commit message when there is no PR.
   // This covers deployments from non-default branches (e.g. unauthorized_branch)
   // where unverifiedCommits is empty and no PR title is available.
+  // For baseline deployments (no previousDeployment), commitsBetween is empty, so we
+  // fetch the commit message directly from GitHub as an additional fallback.
   // Use only the first line, trimmed and capped at 500 chars (matching the DB column limit).
-  const rawFirstCommitMessage = deployedPr ? undefined : commitsBetween[0]?.message
+  let rawFirstCommitMessage: string | undefined = deployedPr ? undefined : commitsBetween[0]?.message
+  if (!rawFirstCommitMessage && !deployedPr && !previousDeployment) {
+    const commitMsg = await getSingleCommitMessage(owner, repo, commitSha)
+    rawFirstCommitMessage = commitMsg ?? undefined
+  }
   const detectedTitle: string | undefined = rawFirstCommitMessage
     ? rawFirstCommitMessage.split('\n')[0].trim().slice(0, 500) || undefined
     : undefined
