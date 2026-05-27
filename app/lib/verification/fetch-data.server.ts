@@ -30,6 +30,7 @@ import {
   getCommitsBetween,
   getDetailedPullRequestInfo,
   getPullRequestForCommit,
+  getSingleCommitMessage,
   haveSameCommitTree,
   isCommitOnBranch,
 } from '~/lib/github'
@@ -247,8 +248,17 @@ export async function fetchVerificationData(
   // Derive a fallback title from the first commit message when there is no PR.
   // This covers deployments from non-default branches (e.g. unauthorized_branch)
   // where unverifiedCommits is empty and no PR title is available.
+  // For baseline deployments (no previousDeployment), commitsBetween is empty, so we
+  // fetch the commit message directly from GitHub as an additional fallback.
   // Use only the first line, trimmed and capped at 500 chars (matching the DB column limit).
-  const rawFirstCommitMessage = deployedPr ? undefined : commitsBetween[0]?.message
+  const rawFirstCommitMessage = await resolveRawCommitMessage({
+    deployedPr,
+    commitsBetween,
+    previousDeployment,
+    owner,
+    repo,
+    commitSha,
+  })
   const detectedTitle: string | undefined = rawFirstCommitMessage
     ? rawFirstCommitMessage.split('\n')[0].trim().slice(0, 500) || undefined
     : undefined
@@ -735,6 +745,41 @@ async function fetchPrFromGitHub(
 // =============================================================================
 // Commits Between Deployments
 // =============================================================================
+
+/**
+ * Resolve the raw first commit message used to derive a deployment title.
+ *
+ * Priority:
+ * 1. If there is a deployed PR → no title derived from commit message (PR title is used instead)
+ * 2. If commitsBetween is non-empty → use the first commit message
+ * 3. If this is a baseline deployment (no previousDeployment) → fetch commit message directly from GitHub
+ *
+ * Exported for unit testing.
+ */
+export async function resolveRawCommitMessage({
+  deployedPr,
+  commitsBetween,
+  previousDeployment,
+  owner,
+  repo,
+  commitSha,
+}: {
+  deployedPr: VerificationInput['deployedPr']
+  commitsBetween: VerificationInput['commitsBetween']
+  previousDeployment: VerificationInput['previousDeployment']
+  owner: string
+  repo: string
+  commitSha: string
+}): Promise<string | undefined> {
+  if (deployedPr) return undefined
+  const fromBetween = commitsBetween[0]?.message
+  if (fromBetween) return fromBetween
+  if (!previousDeployment) {
+    const commitMsg = await getSingleCommitMessage(owner, repo, commitSha)
+    return commitMsg ?? undefined
+  }
+  return undefined
+}
 
 export function resolveNoDiffDetection(
   compareData: CompareData,
