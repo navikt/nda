@@ -1,6 +1,6 @@
 import { CogIcon } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Button, Detail, Heading, HGrid, HStack, Switch, Tag, VStack } from '@navikt/ds-react'
-import { Link, useLoaderData, useRouteLoaderData, useSearchParams } from 'react-router'
+import { Link, useLoaderData, useSearchParams } from 'react-router'
 import { ActiveBoardSection } from '~/components/ActiveBoardSection'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { BoardSummaryCard } from '~/components/BoardSummaryCard'
@@ -24,31 +24,41 @@ import {
 } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
 import { requireUser } from '~/lib/auth.server'
+import { canAccessTeamAdmin } from '~/lib/authorization.server'
 import { groupAppCards } from '~/lib/group-app-cards'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug'
-import type { loader as layoutLoader } from './layout'
 
 export function meta({ data }: Route.MetaArgs) {
   return [{ title: `${data?.devTeam?.name ?? 'Utviklingsteam'}` }]
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireUser(request)
+  const user = await requireUser(request)
   const devTeam = await getDevTeamBySlug(params.devTeamSlug)
   if (!devTeam) {
     throw new Response('Utviklingsteam ikke funnet', { status: 404 })
   }
-  const [boards, members, directApps, groupAppIds, allApps, alertCounts, activeRepos, deployerUsernames] =
-    await Promise.all([
-      getBoardsByDevTeam(devTeam.id),
-      getDevTeamMembersWithRoles(devTeam.id).catch(() => [] as DevTeamMemberWithRole[]),
-      getDevTeamApplications(devTeam.id),
-      getGroupAppIdsForDevTeams([devTeam.id]),
-      getAllMonitoredApplications(),
-      getAllAlertCounts(),
-      getAllActiveRepositories(),
-      getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
-    ])
+  const [
+    boards,
+    members,
+    directApps,
+    groupAppIds,
+    allApps,
+    alertCounts,
+    activeRepos,
+    deployerUsernames,
+    canAccessAdmin,
+  ] = await Promise.all([
+    getBoardsByDevTeam(devTeam.id),
+    getDevTeamMembersWithRoles(devTeam.id).catch(() => [] as DevTeamMemberWithRole[]),
+    getDevTeamApplications(devTeam.id),
+    getGroupAppIdsForDevTeams([devTeam.id]),
+    getAllMonitoredApplications(),
+    getAllAlertCounts(),
+    getAllActiveRepositories(),
+    getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
+    canAccessTeamAdmin(user, devTeam.id),
+  ])
 
   // Top-of-page coverage stats: YTD, filtered to team members' deploys.
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
@@ -208,6 +218,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     teamCoverage,
     hasMappedMembers,
     unmappedMemberCount: uniqueMembers.filter((m) => !m.github_username).length,
+    canAccessAdmin,
   }
 }
 
@@ -226,9 +237,8 @@ export default function DevTeamPage() {
     teamCoverage,
     hasMappedMembers,
     unmappedMemberCount,
+    canAccessAdmin,
   } = useLoaderData<typeof loader>()
-  const layoutData = useRouteLoaderData<typeof layoutLoader>('routes/layout')
-  const isAdmin = layoutData?.user?.role === 'admin'
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
   const [searchParams, setSearchParams] = useSearchParams()
   const unfilteredSet = new Set(unfilteredCardIds)
@@ -240,7 +250,7 @@ export default function DevTeamPage() {
           <Heading level="1" size="large">
             {devTeam.name}
           </Heading>
-          {isAdmin && (
+          {canAccessAdmin && (
             <Button
               as={Link}
               to={`${teamBasePath}/admin`}
