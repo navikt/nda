@@ -1,7 +1,12 @@
 import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { createComment, deleteComment, deleteLegacyInfo, getLegacyInfo } from '~/db/comments.server'
 import { addDeploymentGoalLink, removeDeploymentGoalLink } from '~/db/deployment-goal-links.server'
-import { getDeploymentById, updateDeploymentFourEyes, updateDeploymentLegacyData } from '~/db/deployments.server'
+import {
+  getDeploymentById,
+  recordBaselineApproval,
+  updateDeploymentFourEyes,
+  updateDeploymentLegacyData,
+} from '~/db/deployments.server'
 import { createDeviation } from '~/db/deviations.server'
 import { getDeviationSlackChannel } from '~/db/global-settings.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
@@ -544,15 +549,21 @@ export async function action({ request, params }: { request: Request; params: Re
 
   if (intent === 'approve_baseline') {
     try {
-      await updateDeploymentFourEyes(
-        deploymentId,
-        {
-          fourEyesStatus: 'baseline',
-          githubPrNumber: null,
-          githubPrUrl: null,
-        },
-        { changeSource: 'baseline_approval', changedBy: identity.navIdent },
-      )
+      if (deployment.four_eyes_status === 'baseline') {
+        // Status is already correct — just record the missing approver attribution.
+        // recordBaselineApproval is idempotent: no-ops if a non-null changed_by already exists.
+        await recordBaselineApproval(deploymentId, identity.navIdent)
+      } else {
+        await updateDeploymentFourEyes(
+          deploymentId,
+          {
+            fourEyesStatus: 'baseline',
+            githubPrNumber: null,
+            githubPrUrl: null,
+          },
+          { changeSource: 'baseline_approval', changedBy: identity.navIdent },
+        )
+      }
       return { success: 'Deployment godkjent som baseline' }
     } catch (_error) {
       return { error: 'Kunne ikke godkjenne baseline' }
