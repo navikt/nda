@@ -577,21 +577,24 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                   </Button>
                 </Form>
               )}
-            {/* Approve baseline button */}
-            {capabilities.canApprove && deployment.four_eyes_status === 'pending_baseline' && (
-              <Form method="post" style={{ display: 'inline' }}>
-                <input type="hidden" name="intent" value="approve_baseline" />
-                <Button
-                  type="submit"
-                  size="small"
-                  variant="primary"
-                  icon={<CheckmarkCircleIcon aria-hidden />}
-                  title="Godkjenn dette deploymentet som baseline"
-                >
-                  Godkjenn baseline
-                </Button>
-              </Form>
-            )}
+            {/* Approve baseline button — shown for pending_baseline, or for baseline missing an attributed approver */}
+            {capabilities.canApprove &&
+              (deployment.four_eyes_status === 'pending_baseline' ||
+                (deployment.four_eyes_status === 'baseline' &&
+                  !statusHistory.some((h) => h.change_source === 'baseline_approval' && h.changed_by !== null))) && (
+                <Form method="post" style={{ display: 'inline' }}>
+                  <input type="hidden" name="intent" value="approve_baseline" />
+                  <Button
+                    type="submit"
+                    size="small"
+                    variant="primary"
+                    icon={<CheckmarkCircleIcon aria-hidden />}
+                    title="Godkjenn dette deploymentet som baseline"
+                  >
+                    Godkjenn baseline
+                  </Button>
+                </Form>
+              )}
           </HStack>
         </HStack>
         <BodyShort textColor="subtle">

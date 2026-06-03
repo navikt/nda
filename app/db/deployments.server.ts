@@ -1456,4 +1456,5 @@ export {
   getDeploymentsWithStatusChanges,
   getStatusHistory,
   logStatusTransition,
+  recordBaselineApproval,
 } from './deployments/status-history.server'
