@@ -579,6 +579,13 @@ export async function getDevTeamStatsBatch(
          AND r.deleted_at IS NULL
          AND um.github_username IS NOT NULL
      ),
+     -- Aggregate member usernames per team as an array to avoid fan-out
+     -- when joining against deployments in unlinked_member.
+     team_member_usernames AS (
+       SELECT dev_team_id, array_agg(github_username) AS usernames
+       FROM team_members
+       GROUP BY dev_team_id
+     ),
      team_apps AS (
        SELECT dt.id AS dev_team_id, dt.name AS dev_team_name, dt.slug AS dev_team_slug,
               ma.id AS app_id, ma.audit_start_year
@@ -590,14 +597,35 @@ export async function getDevTeamStatsBatch(
        WHERE dt.id = ANY($1::int[]) AND dt.is_active = true
        GROUP BY dt.id, dt.name, dt.slug, ma.id, ma.audit_start_year
      ),
-     -- Deployments linked to a team's board (via objectives or key results)
-     board_linked AS (
+     -- Pre-compute all deployment IDs linked to any active board (objective or KR path).
+     -- Scoped to the $2/$3 date window since unlinked_member only considers deployments
+     -- within that window — avoids scanning historical DGL rows that can't affect the result.
+     any_board_linked AS (
+       SELECT dgl.deployment_id
+       FROM deployment_goal_links dgl
+       JOIN deployments d ON d.id = dgl.deployment_id
+         AND d.created_at >= $2
+         AND ($3::timestamptz IS NULL OR d.created_at < $3)
+       JOIN board_objectives bo ON bo.id = dgl.objective_id AND bo.is_active = true
+       JOIN boards b ON b.id = bo.board_id AND b.is_active = true
+       WHERE dgl.is_active = true
+       UNION
+       SELECT dgl.deployment_id
+       FROM deployment_goal_links dgl
+       JOIN deployments d ON d.id = dgl.deployment_id
+         AND d.created_at >= $2
+         AND ($3::timestamptz IS NULL OR d.created_at < $3)
+       JOIN board_key_results bkr ON bkr.id = dgl.key_result_id AND bkr.is_active = true
+       JOIN board_objectives bo ON bo.id = bkr.objective_id AND bo.is_active = true
+       JOIN boards b ON b.id = bo.board_id AND b.is_active = true
+       WHERE dgl.is_active = true
+     ),
+     -- Deployments linked to a team's board via objectives (avoids nested IN subquery)
+     board_linked_obj AS (
        SELECT DISTINCT b.dev_team_id, d.id AS deployment_id
        FROM boards b
        JOIN board_objectives bo ON bo.board_id = b.id AND bo.is_active = true
-       JOIN deployment_goal_links dgl ON dgl.is_active = true
-         AND (dgl.objective_id = bo.id
-              OR dgl.key_result_id IN (SELECT bkr.id FROM board_key_results bkr WHERE bkr.objective_id = bo.id AND bkr.is_active = true))
+       JOIN deployment_goal_links dgl ON dgl.objective_id = bo.id AND dgl.is_active = true
        JOIN deployments d ON d.id = dgl.deployment_id
          AND d.created_at >= $2
          AND ($3::timestamptz IS NULL OR d.created_at < $3)
@@ -605,49 +633,77 @@ export async function getDevTeamStatsBatch(
        WHERE b.dev_team_id = ANY($1::int[]) AND b.is_active = true
          AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
      ),
-     -- Unlinked deployments by team members (not linked to ANY board)
+     -- Deployments linked to a team's board via key results (avoids nested IN subquery)
+     board_linked_kr AS (
+       SELECT DISTINCT b.dev_team_id, d.id AS deployment_id
+       FROM boards b
+       JOIN board_objectives bo ON bo.board_id = b.id AND bo.is_active = true
+       JOIN board_key_results bkr ON bkr.objective_id = bo.id AND bkr.is_active = true
+       JOIN deployment_goal_links dgl ON dgl.key_result_id = bkr.id AND dgl.is_active = true
+       JOIN deployments d ON d.id = dgl.deployment_id
+         AND d.created_at >= $2
+         AND ($3::timestamptz IS NULL OR d.created_at < $3)
+       JOIN team_apps ta ON ta.dev_team_id = b.dev_team_id AND ta.app_id = d.monitored_app_id
+       WHERE b.dev_team_id = ANY($1::int[]) AND b.is_active = true
+         AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
+     ),
+     board_linked AS (
+       SELECT dev_team_id, deployment_id FROM board_linked_obj
+       UNION
+       SELECT dev_team_id, deployment_id FROM board_linked_kr
+     ),
+     -- Unlinked deployments by team members (not linked to ANY active board).
+     -- Uses array-based username lookup (1 row per team) instead of
+     -- joining team_apps × team_members (N_apps × N_members rows per team).
      unlinked_member AS (
-       SELECT ta.dev_team_id, d.id AS deployment_id
+       SELECT DISTINCT ta.dev_team_id, d.id AS deployment_id
        FROM team_apps ta
-       JOIN team_members tm ON tm.dev_team_id = ta.dev_team_id
+       JOIN team_member_usernames tmu ON tmu.dev_team_id = ta.dev_team_id
        JOIN deployments d ON d.monitored_app_id = ta.app_id
          AND d.created_at >= $2
          AND ($3::timestamptz IS NULL OR d.created_at < $3)
          AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
-         AND (LOWER(d.deployer_username) = tm.github_username
-              OR d.pr_creator_username = tm.github_username)
-       WHERE NOT EXISTS (
-         SELECT 1 FROM deployment_goal_links dgl
-         JOIN board_objectives bo ON (dgl.objective_id = bo.id
-           OR dgl.key_result_id IN (SELECT bkr.id FROM board_key_results bkr WHERE bkr.objective_id = bo.id AND bkr.is_active = true))
-         JOIN boards b ON b.id = bo.board_id AND b.is_active = true
-         WHERE dgl.deployment_id = d.id AND dgl.is_active = true AND bo.is_active = true
-       )
+         AND (LOWER(d.deployer_username) = ANY(tmu.usernames)
+              OR d.pr_creator_username = ANY(tmu.usernames))
+       WHERE NOT EXISTS (SELECT 1 FROM any_board_linked abl WHERE abl.deployment_id = d.id)
      ),
-     -- Union of both sets (deduplicated per team)
-     team_deployments AS (
+     -- Union of both sets (deduplicated per team). MATERIALIZED ensures it is
+     -- computed once and reused by both member_deployed and deployment_stats.
+     team_deployments AS MATERIALIZED (
        SELECT dev_team_id, deployment_id FROM board_linked
        UNION
        SELECT dev_team_id, deployment_id FROM unlinked_member
+     ),
+     -- Pre-compute deployments with any active goal link, scoped to team_deployments
+     -- to avoid building a global DISTINCT set over all DGL rows.
+     linked_goal_deployments AS (
+       SELECT DISTINCT td.deployment_id
+       FROM team_deployments td
+       JOIN deployment_goal_links dgl ON dgl.deployment_id = td.deployment_id
+         AND dgl.is_active = true
+         AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
+     ),
+     -- Pre-compute (team, deployment) pairs where the deployer IS a team member
+     -- (replaces correlated NOT EXISTS per row in deployment_stats)
+     member_deployed AS (
+       SELECT DISTINCT td.dev_team_id, td.deployment_id
+       FROM team_deployments td
+       JOIN deployments d ON d.id = td.deployment_id
+       JOIN team_members tm ON tm.dev_team_id = td.dev_team_id
+         AND (LOWER(d.deployer_username) = tm.github_username
+              OR d.pr_creator_username = tm.github_username)
      ),
      deployment_stats AS (
        SELECT td.dev_team_id,
               COUNT(DISTINCT td.deployment_id)::int AS total_deployments,
               COUNT(DISTINCT td.deployment_id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL}))::int AS with_four_eyes,
               COUNT(DISTINCT td.deployment_id) FILTER (WHERE COALESCE(d.four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL}))::int AS pending_verification,
-              COUNT(DISTINCT td.deployment_id) FILTER (WHERE EXISTS (
-                SELECT 1 FROM deployment_goal_links dgl
-                WHERE dgl.deployment_id = td.deployment_id AND dgl.is_active = true
-                  AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
-              ))::int AS linked_to_goal,
-              COUNT(DISTINCT td.deployment_id) FILTER (WHERE NOT EXISTS (
-                SELECT 1 FROM team_members tm
-                WHERE tm.dev_team_id = td.dev_team_id
-                  AND (LOWER(d.deployer_username) = tm.github_username
-                       OR d.pr_creator_username = tm.github_username)
-              ))::int AS non_member_deployments
+              COUNT(DISTINCT td.deployment_id) FILTER (WHERE lgd.deployment_id IS NOT NULL)::int AS linked_to_goal,
+              COUNT(DISTINCT td.deployment_id) FILTER (WHERE md.deployment_id IS NULL)::int AS non_member_deployments
        FROM team_deployments td
        JOIN deployments d ON d.id = td.deployment_id
+       LEFT JOIN linked_goal_deployments lgd ON lgd.deployment_id = td.deployment_id
+       LEFT JOIN member_deployed md ON md.dev_team_id = td.dev_team_id AND md.deployment_id = td.deployment_id
        GROUP BY td.dev_team_id
      )
      SELECT ta_distinct.dev_team_id, ta_distinct.dev_team_name, ta_distinct.dev_team_slug,
