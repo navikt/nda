@@ -33,7 +33,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const goalObjectiveId = goalParam.startsWith('obj:') ? parseInt(goalParam.slice(4), 10) : undefined
   const deployer = url.searchParams.get('deployer') || undefined
   const sha = url.searchParams.get('sha') || undefined
-  const period = (url.searchParams.get('period') || 'ytd') as TimePeriod
+  const period = (url.searchParams.get('period') || 'year-to-date') as TimePeriod
   const appFilter = url.searchParams.get('app') || ''
 
   const range = getDateRangeForPeriod(period)
@@ -242,7 +242,7 @@ export default function TeamDeployments() {
   const currentGoal = searchParams.get('goal') || ''
   const currentDeployer = searchParams.get('deployer') || ''
   const currentSha = searchParams.get('sha') || ''
-  const currentPeriod = searchParams.get('period') || 'ytd'
+  const currentPeriod = searchParams.get('period') || 'year-to-date'
   const currentApp = searchParams.get('app') || ''
 
   const updateFilter = (key: string, value: string) => {
