@@ -418,7 +418,6 @@ export function UserPageContent({
                         checked={selectedIds.has(deployment.id)}
                         onChange={() => toggleSelect(deployment.id)}
                         hideLabel
-                        style={{ flexShrink: 0, marginTop: '2px' }}
                       >
                         Velg leveranse {deployment.id}
                       </Checkbox>
