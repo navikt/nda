@@ -248,4 +248,109 @@ describe('non-member goal filter should be scoped to team board', () => {
     expect(result.total).toBe(1)
     expect(result.deployments[0].id).toBe(d1)
   })
+
+  it('goal_filter=missing without goal_dev_team_id only returns deployments not linked to ANY board', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamA = await seedDevTeam(pool, 'starte-pensjon', 'Starte pensjon', sectionId)
+    const teamB = await seedDevTeam(pool, 'other-team', 'Other Team', sectionId)
+
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'shared-app', environment: 'prod' })
+
+    const boardA = await seedBoardWithObjective(pool, teamA, 'Board A')
+    const boardB = await seedBoardWithObjective(pool, teamB, 'Board B')
+
+    // d1 linked to teamA's board, d2 linked to teamB's board, d3 not linked at all
+    const d1 = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'nais-team',
+      environment: 'prod',
+      deployerUsername: 'outsider',
+    })
+    const d2 = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'nais-team',
+      environment: 'prod',
+      deployerUsername: 'outsider',
+    })
+    const d3 = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'nais-team',
+      environment: 'prod',
+      deployerUsername: 'outsider',
+    })
+
+    await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
+       VALUES ($1, $2, 'manual', 'someone', true)`,
+      [d1, boardA.objectiveId],
+    )
+    await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
+       VALUES ($1, $2, 'manual', 'someone', true)`,
+      [d2, boardB.objectiveId],
+    )
+
+    // Without goal_dev_team_id, goal=missing must use the global definition:
+    // only d3 (linked to NO board) is "missing". d2 (linked to another team's
+    // board) must NOT appear here, matching the row badge and dashboard count.
+    const result = await getDeploymentsPaginated({
+      monitored_app_ids: [appId],
+      goal_filter: 'missing',
+    })
+    expect(result.total).toBe(1)
+    expect(result.deployments[0].id).toBe(d3)
+  })
+
+  it('goal_filter=missing with non-member exclusion (no goal_dev_team_id) uses global definition', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamA = await seedDevTeam(pool, 'starte-pensjon', 'Starte pensjon', sectionId)
+    const teamB = await seedDevTeam(pool, 'other-team', 'Other Team', sectionId)
+
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'shared-app', environment: 'prod' })
+
+    const boardA = await seedBoardWithObjective(pool, teamA, 'Board A')
+    const boardB = await seedBoardWithObjective(pool, teamB, 'Board B')
+
+    // All deploys by a non-member ("outsider"); d1 linked to teamA, d2 to teamB, d3 unlinked
+    const d1 = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'nais-team',
+      environment: 'prod',
+      deployerUsername: 'outsider',
+    })
+    const d2 = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'nais-team',
+      environment: 'prod',
+      deployerUsername: 'outsider',
+    })
+    const d3 = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'nais-team',
+      environment: 'prod',
+      deployerUsername: 'outsider',
+    })
+
+    await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
+       VALUES ($1, $2, 'manual', 'someone', true)`,
+      [d1, boardA.objectiveId],
+    )
+    await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
+       VALUES ($1, $2, 'manual', 'someone', true)`,
+      [d2, boardB.objectiveId],
+    )
+
+    // goal=missing + non-member must NOT be team-scoped: only d3 (no link on any
+    // board) is missing. d2 (linked to another team's board) carries a goal badge
+    // and must not appear here.
+    const result = await getDeploymentsPaginated({
+      monitored_app_ids: [appId],
+      goal_filter: 'missing',
+      exclude_deployer_usernames: ['team-member'],
+    })
+    expect(result.total).toBe(1)
+    expect(result.deployments[0].id).toBe(d3)
+  })
 })
