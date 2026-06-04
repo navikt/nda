@@ -327,3 +327,132 @@ describe('getDevTeamCoverageStats', () => {
     expect(r.total).toBe(1)
   })
 })
+
+async function seedBaselineApproval(deploymentId: number, changedBy: string | null = 'Z990001'): Promise<void> {
+  await pool.query(
+    `INSERT INTO deployment_status_history
+       (deployment_id, from_status, to_status, changed_by, change_source, created_at)
+     VALUES ($1, 'pending_baseline', 'baseline', $2, 'baseline_approval', NOW())`,
+    [deploymentId, changedBy],
+  )
+}
+
+describe('baseline_action_count in getAppDeploymentStatsBatch', () => {
+  it('counts pending_baseline deployments', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    await seedDeploy(appId, 'tx', 'alice', 'pending_baseline', new Date())
+    await seedDeploy(appId, 'tx', 'alice', 'approved_pr', new Date())
+
+    const stats = await getAppDeploymentStatsBatch([{ id: appId }])
+    expect(stats.get(appId)?.baseline_action_count).toBe(1)
+  })
+
+  it('counts baseline deployments missing an attributed baseline_approval', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    const noApprover = await seedDeploy(appId, 'tx', 'alice', 'baseline', new Date())
+    // No deployment_status_history row → missing approver
+    void noApprover
+
+    const stats = await getAppDeploymentStatsBatch([{ id: appId }])
+    expect(stats.get(appId)?.baseline_action_count).toBe(1)
+  })
+
+  it('excludes baseline deployments that have an attributed baseline_approval', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    const withApprover = await seedDeploy(appId, 'tx', 'alice', 'baseline', new Date())
+    await seedBaselineApproval(withApprover, 'Z990001')
+
+    const stats = await getAppDeploymentStatsBatch([{ id: appId }])
+    expect(stats.get(appId)?.baseline_action_count).toBe(0)
+  })
+
+  it('is not date-filtered — counts baseline actions outside the selected period', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    const old = new Date('2023-01-15')
+    await seedDeploy(appId, 'tx', 'alice', 'pending_baseline', old)
+
+    // Applying a recent date range should NOT suppress the baseline_action_count
+    const startDate = new Date('2025-01-01')
+    const endDate = new Date('2025-12-31')
+    const stats = await getAppDeploymentStatsBatch([{ id: appId }], undefined, { startDate, endDate })
+    expect(stats.get(appId)?.baseline_action_count).toBe(1)
+
+    // But total (date-filtered) should be 0 — proving the date filter applies to other counts
+    expect(stats.get(appId)?.total).toBe(0)
+  })
+
+  it('is not deployer-filtered — counts baseline actions regardless of who deployed', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    // Deployed by a non-member
+    await seedDeploy(appId, 'tx', 'outsider', 'pending_baseline', new Date())
+
+    const stats = await getAppDeploymentStatsBatch([{ id: appId }], ['alice', 'bob'])
+    expect(stats.get(appId)?.baseline_action_count).toBe(1)
+
+    // But total (deployer-filtered) should be 0
+    expect(stats.get(appId)?.total).toBe(0)
+  })
+})
+
+describe('getDeploymentsPaginated with baseline_action filter', () => {
+  it('returns pending_baseline deployments', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    await seedDeploy(appId, 'tx', 'alice', 'pending_baseline', new Date())
+    await seedDeploy(appId, 'tx', 'alice', 'approved_pr', new Date())
+
+    const result = await getDeploymentsPaginated({
+      monitored_app_id: appId,
+      four_eyes_status: 'baseline_action',
+      page: 1,
+      per_page: 100,
+    })
+    expect(result.total).toBe(1)
+    expect(result.deployments[0].four_eyes_status).toBe('pending_baseline')
+  })
+
+  it('returns baseline deployments missing an attributed baseline_approval', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    await seedDeploy(appId, 'tx', 'alice', 'baseline', new Date())
+    // No deployment_status_history row → missing approver
+
+    const result = await getDeploymentsPaginated({
+      monitored_app_id: appId,
+      four_eyes_status: 'baseline_action',
+      page: 1,
+      per_page: 100,
+    })
+    expect(result.total).toBe(1)
+  })
+
+  it('excludes baseline deployments that have an attributed baseline_approval', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    const withApprover = await seedDeploy(appId, 'tx', 'alice', 'baseline', new Date())
+    await seedBaselineApproval(withApprover, 'Z990002')
+
+    const result = await getDeploymentsPaginated({
+      monitored_app_id: appId,
+      four_eyes_status: 'baseline_action',
+      page: 1,
+      per_page: 100,
+    })
+    expect(result.total).toBe(0)
+  })
+
+  it('returns both pending_baseline and baseline-without-approver in the same list', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
+    await seedDeploy(appId, 'tx', 'alice', 'pending_baseline', new Date())
+    const noApprover = await seedDeploy(appId, 'tx', 'alice', 'baseline', new Date())
+    void noApprover
+    const withApprover = await seedDeploy(appId, 'tx', 'alice', 'baseline', new Date())
+    await seedBaselineApproval(withApprover, 'Z990003')
+    await seedDeploy(appId, 'tx', 'alice', 'approved_pr', new Date())
+
+    const result = await getDeploymentsPaginated({
+      monitored_app_id: appId,
+      four_eyes_status: 'baseline_action',
+      page: 1,
+      per_page: 100,
+    })
+    expect(result.total).toBe(2)
+  })
+})

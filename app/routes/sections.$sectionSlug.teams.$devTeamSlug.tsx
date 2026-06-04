@@ -178,6 +178,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         without_four_eyes: 0,
         pending_verification: 0,
         missing_goal_links: 0,
+        baseline_action_count: 0,
         last_deployment: null,
         last_deployment_id: null,
         four_eyes_percentage: 0,

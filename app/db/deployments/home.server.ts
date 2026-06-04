@@ -1,5 +1,6 @@
 import { APPROVED_STATUSES, PENDING_STATUSES } from '~/lib/four-eyes-status'
 import { isGitHubBot, NON_BRACKET_BOT_USERNAMES } from '~/lib/github-bots'
+import { baselineActionSql } from '../baseline-action'
 import { pool } from '../connection.server'
 import type { AppWithIssues, DeploymentWithApp } from '../deployments.server'
 import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '../dev-teams.server'
@@ -153,7 +154,8 @@ export async function getDevTeamAppsWithIssues(
       COALESCE(dep.pending_verification, 0)::integer as pending_verification,
       COALESCE(alerts.count, 0)::integer as alert_count,
       COALESCE(dep.missing_goal_links, 0)::integer as missing_goal_links,
-      COALESCE(dep.unmapped_deployer_count, 0)::integer as unmapped_deployer_count
+      COALESCE(dep.unmapped_deployer_count, 0)::integer as unmapped_deployer_count,
+      COALESCE(dep.baseline_action_count, 0)::integer as baseline_action_count
     FROM monitored_applications ma
     LEFT JOIN LATERAL (
       SELECT 
@@ -171,7 +173,8 @@ export async function getDevTeamAppsWithIssues(
               WHERE mu.username = LOWER(d.deployer_username)
             )
           THEN LOWER(d.deployer_username)
-        END) as unmapped_deployer_count
+        END) as unmapped_deployer_count,
+        SUM(CASE WHEN ${baselineActionSql('d')} THEN 1 ELSE 0 END) as baseline_action_count
       FROM deployments d
       WHERE d.monitored_app_id = ma.id
         AND (ma.audit_start_year IS NULL OR d.created_at >= make_date(ma.audit_start_year, 1, 1))
@@ -187,7 +190,8 @@ export async function getDevTeamAppsWithIssues(
         OR COALESCE(dep.pending_verification, 0) > 0 
         OR COALESCE(alerts.count, 0) > 0
         OR COALESCE(dep.missing_goal_links, 0) > 0
-        OR COALESCE(dep.unmapped_deployer_count, 0) > 0)
+        OR COALESCE(dep.unmapped_deployer_count, 0) > 0
+        OR COALESCE(dep.baseline_action_count, 0) > 0)
     ORDER BY GREATEST(0, COALESCE(dep.total_count, 0) - COALESCE(dep.with_four_eyes, 0) - COALESCE(dep.pending_verification, 0)) DESC, COALESCE(dep.missing_goal_links, 0) DESC, COALESCE(alerts.count, 0) DESC
   `,
     params,

@@ -6,6 +6,7 @@ import {
   PENDING_STATUSES_SQL,
 } from '~/lib/four-eyes-status'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
+import { baselineActionSql } from './baseline-action'
 import { pool } from './connection.server'
 import { logStatusTransition } from './deployments/status-history.server'
 import { lowerUsernames, userDeploymentMatchAnySql, userDeploymentMatchSql } from './user-deployment-match'
@@ -315,6 +316,8 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
       whereSql += ` AND ${notApprovedWhereClause('d.four_eyes_status')}`
     } else if (filters.four_eyes_status === 'pending') {
       whereSql += ` AND COALESCE(d.four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL})`
+    } else if (filters.four_eyes_status === 'baseline_action') {
+      whereSql += ` AND ${baselineActionSql('d')}`
     } else {
       whereSql += ` AND d.four_eyes_status = $${paramIndex}`
       params.push(filters.four_eyes_status)
@@ -781,6 +784,8 @@ function buildNavFilterConditions(
       conditions.push(notApprovedWhereClause('nav_dep.four_eyes_status'))
     } else if (filters.four_eyes_status === 'pending') {
       conditions.push(`COALESCE(nav_dep.four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL})`)
+    } else if (filters.four_eyes_status === 'baseline_action') {
+      conditions.push(baselineActionSql('nav_dep'))
     } else {
       conditions.push(`nav_dep.four_eyes_status = $${idx}`)
       params.push(filters.four_eyes_status)
@@ -927,6 +932,8 @@ export interface AppDeploymentStats {
   last_deployment_id: number | null
   four_eyes_percentage: number
   missing_goal_links?: number
+  /** Deployments in pending_baseline state, or baseline state with no attributed approver. */
+  baseline_action_count?: number
 }
 
 /**
@@ -1408,6 +1415,7 @@ export interface AppWithIssues {
   alert_count: number
   missing_goal_links: number
   unmapped_deployer_count: number
+  baseline_action_count: number
 }
 
 // =============================================================================

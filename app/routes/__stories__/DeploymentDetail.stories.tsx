@@ -5,9 +5,22 @@ import {
   MinusCircleIcon,
   XMarkOctagonIcon,
 } from '@navikt/aksel-icons'
-import { BodyShort, Box, Button, CopyButton, Detail, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
+import {
+  Alert,
+  BodyShort,
+  Box,
+  Button,
+  CopyButton,
+  Detail,
+  Heading,
+  HGrid,
+  HStack,
+  Tag,
+  VStack,
+} from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { Link } from 'react-router'
+import { Form, Link } from 'react-router'
+import { BaselineInfo } from '~/components/BaselineInfo'
 import {
   type FourEyesStatus,
   getFourEyesStatusLabel,
@@ -70,11 +83,13 @@ function DeploymentDetailPage({
   previousId,
   nextId,
   isAdmin = false,
+  canApproveBaseline = false,
 }: {
   deployment: DeploymentDetail
   previousId: number | null
   nextId: number | null
   isAdmin?: boolean
+  canApproveBaseline?: boolean
 }) {
   const statusColor = getStatusColor(deployment.four_eyes_status)
 
@@ -101,8 +116,53 @@ function DeploymentDetailPage({
           <Button variant="tertiary" size="small" disabled={!nextId}>
             Neste →
           </Button>
+          {canApproveBaseline && (
+            <Form method="post" style={{ display: 'inline' }}>
+              <input type="hidden" name="intent" value="approve_baseline" />
+              <Button
+                type="submit"
+                size="small"
+                variant="primary"
+                icon={<CheckmarkCircleIcon aria-hidden />}
+                title="Godkjenn dette deploymentet som baseline"
+              >
+                Godkjenn baseline
+              </Button>
+            </Form>
+          )}
         </HStack>
       </HStack>
+
+      {/* Baseline explanation for pending_baseline */}
+      {deployment.four_eyes_status === 'pending_baseline' && (
+        <Alert variant="warning">
+          <Heading size="small" level="3" spacing>
+            Foreslått baseline
+          </Heading>
+          <VStack gap="space-8">
+            <BodyShort>
+              Første deployment for dette miljøet. Må godkjennes manuelt som baseline før videre verifisering.
+            </BodyShort>
+            <BaselineInfo />
+          </VStack>
+        </Alert>
+      )}
+
+      {/* Baseline explanation for baseline missing attributed approver */}
+      {deployment.four_eyes_status === 'baseline' && canApproveBaseline && (
+        <Alert variant="warning">
+          <Heading size="small" level="3" spacing>
+            Godkjenner ikke registrert
+          </Heading>
+          <VStack gap="space-8">
+            <BodyShort>
+              Baseline ble godkjent uten at godkjenneren ble registrert. Godkjenn baseline på nytt for å dokumentere
+              hvem som bekrefter at koden var godkjent.
+            </BodyShort>
+            <BaselineInfo />
+          </VStack>
+        </Alert>
+      )}
 
       {/* Overview Cards */}
       <HGrid gap="space-16" columns={{ xs: 1, md: 2, lg: 4 }}>
@@ -338,5 +398,65 @@ export const ManuallyApproved: Story = {
     previousId: 122,
     nextId: 124,
     isAdmin: false,
+  },
+}
+
+export const PendingBaseline: Story = {
+  name: 'Baseline: venter godkjenning (pending_baseline)',
+  args: {
+    deployment: {
+      ...baseDeployment,
+      id: 16833,
+      four_eyes_status: 'pending_baseline',
+      approval_source: null,
+      github_pr_number: null,
+      github_pr_url: null,
+      github_pr_data: undefined,
+      commit_message: 'Initial deployment — satt som baseline for fremtidig sammenligning.',
+    },
+    previousId: null,
+    nextId: 16834,
+    isAdmin: false,
+    canApproveBaseline: true,
+  },
+}
+
+export const BaselineMissingApprover: Story = {
+  name: 'Baseline: godkjent uten kjent godkjenner (trenger re-approve)',
+  args: {
+    deployment: {
+      ...baseDeployment,
+      id: 16833,
+      four_eyes_status: 'baseline',
+      approval_source: null,
+      github_pr_number: null,
+      github_pr_url: null,
+      github_pr_data: undefined,
+      commit_message: 'Initial deployment — baseline satt, men godkjenner er ukjent.',
+    },
+    previousId: null,
+    nextId: 16834,
+    isAdmin: false,
+    canApproveBaseline: true,
+  },
+}
+
+export const BaselineApprovedWithApprover: Story = {
+  name: 'Baseline: godkjent med kjent godkjenner (ingen handling nødvendig)',
+  args: {
+    deployment: {
+      ...baseDeployment,
+      id: 16833,
+      four_eyes_status: 'baseline',
+      approval_source: 'baseline_approval',
+      github_pr_number: null,
+      github_pr_url: null,
+      github_pr_data: undefined,
+      commit_message: 'Initial deployment — baseline godkjent av Glad Fjord.',
+    },
+    previousId: null,
+    nextId: 16834,
+    isAdmin: false,
+    canApproveBaseline: false,
   },
 }

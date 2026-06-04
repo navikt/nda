@@ -1,6 +1,7 @@
 import {
   BellIcon,
   CheckmarkCircleIcon,
+  ClockDashedIcon,
   ExclamationmarkTriangleIcon,
   LayersIcon,
   LinkBrokenIcon,
@@ -19,6 +20,7 @@ interface AppStats {
   pending_verification: number
   missing_goal_links?: number
   unmapped_deployers?: number
+  baseline_action_count?: number
 }
 
 export interface AppCardData {
@@ -170,6 +172,15 @@ export function AppCard({ app, showEnvironment = true, appendSearchParams }: App
                 color="warning"
               >
                 {app.stats.missing_goal_links} uten opphav
+              </IssueBadge>
+            )}
+            {(app.stats.baseline_action_count ?? 0) > 0 && (
+              <IssueBadge
+                to={`${appUrl}/deployments?status=baseline_action&period=all${groupParam}`}
+                icon={<ClockDashedIcon aria-hidden />}
+                color="warning"
+              >
+                Trenger baseline
               </IssueBadge>
             )}
             {getStatusBadge(app.stats, {

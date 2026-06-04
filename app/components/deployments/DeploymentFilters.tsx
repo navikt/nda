@@ -84,6 +84,7 @@ export function DeploymentFilters({
               <option value="legacy_pending">Legacy (venter)</option>
               <option value="baseline">Baseline</option>
               <option value="pending_baseline">Baseline (venter)</option>
+              <option value="baseline_action">Baseline (trenger handling)</option>
               <option value="error">Feil</option>
               <option value="unknown">Ukjent</option>
             </Select>

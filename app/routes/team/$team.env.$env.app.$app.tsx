@@ -32,6 +32,7 @@ import {
 import { useState } from 'react'
 import { Form, Link, useActionData, useLoaderData, useRouteLoaderData, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
+import { BaselineInfo } from '~/components/BaselineInfo'
 import { ExternalLink } from '~/components/ExternalLink'
 import { StatCard } from '~/components/StatCard'
 import { getUnresolvedAlertsByApp, resolveRepositoryAlert } from '~/db/alerts.server'
@@ -266,6 +267,19 @@ export default function AppDetail() {
       </HStack>
 
       <ActionAlert data={actionData} />
+
+      {(deploymentStats.baseline_action_count ?? 0) > 0 && (
+        <Alert variant="warning">
+          <VStack gap="space-8">
+            <BodyShort>
+              <Link to={`${appUrl}/deployments?status=baseline_action&period=all`} style={{ color: 'inherit' }}>
+                En deployment trenger baseline-godkjenning.
+              </Link>
+            </BodyShort>
+            <BaselineInfo />
+          </VStack>
+        </Alert>
+      )}
 
       {/* Application Group Banner */}
       {group && siblings.length > 0 && (
