@@ -63,25 +63,25 @@ export function TeamCoverageCards({
         <CoverageCard
           label="Leveranser i år"
           value={coverage.total.toString()}
-          href={`${deploymentsPath}?period=ytd`}
+          href={`${deploymentsPath}?period=year-to-date`}
         />
         <CoverageCard
           label="4-øyne-dekning"
           value={`${coverage.four_eyes_percentage}%`}
           sub={`${coverage.with_four_eyes} av ${coverage.total}`}
-          href={`${deploymentsPath}?period=ytd&status=not_approved`}
+          href={`${deploymentsPath}?period=year-to-date&status=not_approved`}
         />
         <CoverageCard
           label="Endringsopphav"
           value={`${coverage.origin_percentage}%`}
           sub={`${coverage.with_origin} av ${coverage.total}`}
-          href={`${deploymentsPath}?period=ytd&goal=missing`}
+          href={`${deploymentsPath}?period=year-to-date&goal=missing`}
         />
         <CoverageCard
           label="Fra andre"
           value={coverage.non_member_deployments.toString()}
           sub="Koblet via måltavle"
-          href={`${deploymentsPath}?period=ytd&deployer=__non_member__&goal=linked`}
+          href={`${deploymentsPath}?period=year-to-date&deployer=__non_member__&goal=linked`}
         />
       </HGrid>
       <Detail textColor="subtle">
