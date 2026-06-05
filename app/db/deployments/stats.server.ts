@@ -1,4 +1,5 @@
 import { APPROVED_STATUSES, PENDING_STATUSES } from '~/lib/four-eyes-status'
+import { baselineActionSql } from '../baseline-action'
 import { pool } from '../connection.server'
 import type { AppDeploymentStats } from '../deployments.server'
 import { lowerUsernames, userDeploymentMatchAnySql } from '../user-deployment-match'
@@ -110,10 +111,29 @@ export async function getAppDeploymentStatsBatch(
       COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM deployment_goal_links dgl WHERE dgl.deployment_id = deployments.id AND dgl.is_active = true AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL))${deployerFilterClause}) as missing_goal_links,
       MAX(created_at) as last_deployment
     FROM deployments
-    WHERE monitored_app_id = ANY($1) ${auditYearFilter}${dateFilter}
+    WHERE monitored_app_id = ANY($1) ${auditYearFilter} ${dateFilter}
     GROUP BY monitored_app_id`,
     baseParams,
   )
+
+  // baseline_action_count is intentionally not date-filtered (it reflects
+  // outstanding compliance items regardless of viewing period) and not
+  // deployer-filtered (baseline compliance is app-level, not per-member).
+  // A separate query avoids forcing the main aggregation to scan all rows
+  // outside the requested date range just to count baseline items.
+  const baselineResult = await pool.query(
+    `SELECT monitored_app_id, COUNT(*) AS baseline_action_count
+     FROM deployments
+     WHERE monitored_app_id = ANY($1) ${auditYearFilter}
+       AND ${baselineActionSql('deployments')}
+     GROUP BY monitored_app_id`,
+    [appIds],
+  )
+
+  const baselineByApp = new Map<number, number>()
+  for (const row of baselineResult.rows) {
+    baselineByApp.set(row.monitored_app_id, parseInt(row.baseline_action_count, 10) || 0)
+  }
 
   // last_deployment_id is intentionally unfiltered by deployer (see note above).
   const lastDeploymentResult = await pool.query(
@@ -139,6 +159,7 @@ export async function getAppDeploymentStatsBatch(
       without_four_eyes: 0,
       pending_verification: 0,
       missing_goal_links: 0,
+      baseline_action_count: 0,
       last_deployment: null,
       last_deployment_id: lastDeploymentIds.get(app.id) || null,
       four_eyes_percentage: 0,
@@ -162,10 +183,18 @@ export async function getAppDeploymentStatsBatch(
       without_four_eyes: withoutFourEyes,
       pending_verification: pending,
       missing_goal_links: parseInt(row.missing_goal_links, 10) || 0,
+      baseline_action_count: 0, // overwritten in the final pass below
       last_deployment: row.last_deployment ? new Date(row.last_deployment) : null,
       last_deployment_id: lastDeploymentIds.get(appId) || null,
       four_eyes_percentage: percentage,
     })
+  }
+
+  // Apply baseline_action_count to every app — done in a separate pass because
+  // the baseline query has no date filter, so apps with no in-period deployments
+  // (i.e. no rows in the main result) must still receive their baseline count.
+  for (const [appId, stats] of statsMap) {
+    stats.baseline_action_count = baselineByApp.get(appId) ?? 0
   }
 
   return statsMap

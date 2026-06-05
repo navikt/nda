@@ -38,6 +38,7 @@ import {
 import { useRef, useState } from 'react'
 import { Form, Link, useNavigation, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
+import { BaselineInfo } from '~/components/BaselineInfo'
 import { CheckAnnotations } from '~/components/CheckAnnotations'
 import { CheckLogViewer } from '~/components/CheckLogViewer'
 import { ExternalLink } from '~/components/ExternalLink'
@@ -611,6 +612,22 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
         </BodyShort>
       </div>
       <ActionAlert data={actionData} />
+      {/* Baseline explanation — shown for baseline with no attributed approver */}
+      {deployment.four_eyes_status === 'baseline' &&
+        !statusHistory.some((h) => h.change_source === 'baseline_approval' && h.changed_by !== null) && (
+          <Alert variant="warning">
+            <Heading size="small" level="3" spacing>
+              Godkjenner ikke registrert
+            </Heading>
+            <VStack gap="space-8">
+              <BodyShort>
+                Baseline ble godkjent uten at godkjenneren ble registrert. Godkjenn baseline på nytt for å dokumentere
+                hvem som bekrefter at koden var godkjent.
+              </BodyShort>
+              <BaselineInfo />
+            </VStack>
+          </Alert>
+        )}
       {/* Branch mismatch warning - shown to all viewers when the configured
           default_branch differs from the actual base ref of related PRs.
           Auto-detection corrects monitored_applications.default_branch within 24h. */}
@@ -660,6 +677,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           </Heading>
           <VStack gap="space-8">
             <BodyShort>{status.description}</BodyShort>
+            {deployment.four_eyes_status === 'pending_baseline' && <BaselineInfo />}
             {/* Reason-specific explanation for unverified_commits */}
             {deployment.four_eyes_status === 'unverified_commits' &&
               (() => {

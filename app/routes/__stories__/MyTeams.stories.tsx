@@ -584,3 +584,36 @@ export const MedGrupperteApps: Story = {
     profileId: 'pcmoen',
   },
 }
+
+const mockIssueAppsWithBaseline: AppCardData[] = [
+  {
+    id: 200,
+    team_slug: 'pensjonopptjening',
+    environment_name: 'prod-gcp',
+    app_name: 'pensjon-opptjening-administrasjon',
+    active_repo: 'navikt/pensjon-opptjening-administrasjon',
+    stats: { total: 18, without_four_eyes: 0, pending_verification: 0, baseline_action_count: 1 },
+    alertCount: 0,
+  },
+  {
+    id: 201,
+    team_slug: 'pensjon-start',
+    environment_name: 'prod-gcp',
+    app_name: 'pensjon-soknad',
+    active_repo: 'navikt/pensjon-soknad',
+    stats: { total: 12, without_four_eyes: 1, pending_verification: 0, baseline_action_count: 1 },
+    alertCount: 0,
+  },
+]
+
+export const MedBaselineHandling: Story = {
+  name: 'Baseline: apper som trenger baseline-handling',
+  args: {
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsLowCoverage,
+    issueApps: mockIssueAppsWithBaseline,
+    boardSummaries: [],
+    personalMissingGoalLinks: 0,
+    profileId: 'pcmoen',
+  },
+}

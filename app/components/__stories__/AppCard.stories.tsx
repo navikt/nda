@@ -248,3 +248,30 @@ export const WithAllIssueTypes: Story = {
     },
   },
 }
+
+export const WithBaselineAction: Story = {
+  name: 'Baseline: trenger baseline-godkjenning',
+  args: {
+    app: {
+      ...baseApp,
+      stats: { total: 42, without_four_eyes: 0, pending_verification: 0, baseline_action_count: 1 },
+    },
+  },
+}
+
+export const WithBaselineAndOtherIssues: Story = {
+  name: 'Baseline: kombinert med andre issues',
+  args: {
+    app: {
+      ...baseApp,
+      stats: {
+        total: 42,
+        without_four_eyes: 2,
+        pending_verification: 1,
+        baseline_action_count: 1,
+        missing_goal_links: 4,
+      },
+      alertCount: 1,
+    },
+  },
+}

@@ -21,6 +21,7 @@ import {
 } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { Form, Link } from 'react-router'
+import { BaselineInfo } from '~/components/BaselineInfo'
 import { ExternalLink } from '~/components/ExternalLink'
 import { StatCard } from '~/components/StatCard'
 import type { RepositoryAlertType } from '~/db/alerts.server'
@@ -90,6 +91,7 @@ function AppDetailPage({
   alerts,
   auditReports,
   isAdmin = false,
+  baselineActionCount = 0,
 }: {
   app: App
   activeRepo: Repository | null
@@ -98,6 +100,7 @@ function AppDetailPage({
   alerts: AppAlert[]
   auditReports: AuditReport[]
   isAdmin?: boolean
+  baselineActionCount?: number
 }) {
   const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
   const naisConsoleUrl = `https://console.nav.cloud.nais.io/team/${app.team_slug}/${app.environment_name}/app/${app.app_name}`
@@ -137,7 +140,18 @@ function AppDetailPage({
         )}
       </HStack>
 
-      {/* Statistics Section */}
+      {baselineActionCount > 0 && (
+        <Alert variant="warning">
+          <VStack gap="space-8">
+            <BodyShort>
+              <Link to={`${appUrl}/deployments?status=baseline_action&period=all`} style={{ color: 'inherit' }}>
+                En deployment trenger baseline-godkjenning.
+              </Link>
+            </BodyShort>
+            <BaselineInfo />
+          </VStack>
+        </Alert>
+      )}
       <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
         <VStack gap="space-20">
           <HStack justify="space-between" align="center" wrap>
@@ -415,5 +429,19 @@ export const DevEnvironment: Story = {
     alerts: [],
     auditReports: [], // No audit reports shown for dev
     isAdmin: false,
+  },
+}
+
+export const WithBaselineWarning: Story = {
+  name: 'Baseline: deployment venter baseline-godkjenning',
+  args: {
+    app: baseApp,
+    activeRepo: mockRepository,
+    pendingRepos: [],
+    deploymentStats: mockDeploymentStats,
+    alerts: [],
+    auditReports: [mockAuditReport],
+    isAdmin: false,
+    baselineActionCount: 1,
   },
 }
