@@ -17,6 +17,7 @@ export const FullMapping: Story = {
   name: 'Komplett mapping',
   args: {
     username: 'glad-fjord',
+    githubUsername: 'glad-fjord',
     displayName: 'Glad Fjord',
     identity: {
       nav_email: 'glad.fjord@nav.no',
@@ -30,6 +31,7 @@ export const PartialMapping: Story = {
   name: 'Delvis mapping',
   args: {
     username: 'rask-elv',
+    githubUsername: 'rask-elv',
     displayName: 'Rask Elv',
     identity: {
       nav_email: null,
@@ -39,10 +41,25 @@ export const PartialMapping: Story = {
   },
 }
 
+export const NoGitHub: Story = {
+  name: 'Uten GitHub-konto (nav_ident-only)',
+  args: {
+    username: 'Z990003',
+    githubUsername: null,
+    displayName: 'Stille Skog',
+    identity: {
+      nav_email: 'stille.skog@nav.no',
+      nav_ident: 'Z990003',
+      slack_member_id: null,
+    },
+  },
+}
+
 export const NoMapping: Story = {
   name: 'Uten mapping',
   args: {
     username: 'unknown-user',
+    githubUsername: 'unknown-user',
     identity: null,
   },
 }
@@ -51,6 +68,7 @@ export const BotUser: Story = {
   name: 'Bot-bruker',
   args: {
     username: 'dependabot[bot]',
+    githubUsername: 'dependabot[bot]',
     displayName: 'Dependabot',
     isBot: true,
     botDescription: 'Automatisk avhengighetsoppdatering',

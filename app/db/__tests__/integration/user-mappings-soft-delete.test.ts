@@ -43,12 +43,18 @@ describe('user_mappings soft delete', () => {
   })
 
   it('soft-deletes by setting deleted_at and deleted_by', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+    await upsertUserMapping({
+      githubUsername: 'octocat',
+      displayName: 'Octo Cat',
+      navIdent: 'Z990001',
+      navEmail: 'octo.cat@nav.no',
+    })
     await deleteUserMapping('octocat', 'Z990002')
 
-    const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1', [
-      'octocat',
-    ])
+    const { rows } = await pool.query(
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
+      ['octocat'],
+    )
     expect(rows).toHaveLength(1)
     expect(rows[0].deleted_at).not.toBeNull()
     expect(rows[0].deleted_by).toBe('Z990002')
@@ -72,7 +78,12 @@ describe('user_mappings soft delete', () => {
   })
 
   it('getUserMapping resolves case-insensitively for GitHub usernames', async () => {
-    await upsertUserMapping({ githubUsername: 'OctoCat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+    await upsertUserMapping({
+      githubUsername: 'OctoCat',
+      displayName: 'Octo Cat',
+      navIdent: 'Z990001',
+      navEmail: 'octo.cat@nav.no',
+    })
 
     const byMixedCase = await getUserMapping('OctoCat')
     expect(byMixedCase?.display_name).toBe('Octo Cat')
@@ -98,11 +109,21 @@ describe('user_mappings soft delete', () => {
     expect(all.map((m) => m.github_username).sort()).toEqual(['alive'])
   })
 
-  it('getUserMappingByNavIdent excludes soft-deleted (current-state lookup)', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', navIdent: 'Z990001' })
+  it('getUserMappingByNavIdent still returns user when only github account is soft-deleted', async () => {
+    await upsertUserMapping({
+      githubUsername: 'octocat',
+      navIdent: 'Z990001',
+      displayName: 'Octo Cat',
+      navEmail: 'octo.cat@nav.no',
+    })
     await deleteUserMapping('octocat', null)
 
-    expect(await getUserMappingByNavIdent('Z990001')).toBeNull()
+    // User row in `users` table is still active — only the GitHub account is soft-deleted.
+    // getUserMappingByNavIdent finds users by nav_ident, not by github account.
+    const user = await getUserMappingByNavIdent('Z990001')
+    expect(user).not.toBeNull()
+    expect(user?.github_username).toBeNull()
+    expect(user?.nav_ident).toBe('Z990001')
   })
 
   it('getUserMappingBySlackId excludes soft-deleted (current-state lookup)', async () => {
@@ -124,7 +145,12 @@ describe('user_mappings soft delete', () => {
   })
 
   it('upsertUserMapping undeletes a soft-deleted row and updates fields', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+    await upsertUserMapping({
+      githubUsername: 'octocat',
+      displayName: 'Octo Cat',
+      navIdent: 'Z990001',
+      navEmail: 'octo.cat@nav.no',
+    })
     await deleteUserMapping('octocat', 'Z990002')
 
     const restored = await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat 2' })
@@ -143,7 +169,7 @@ describe('user_mappings soft delete', () => {
     await deleteUserMapping('octocat', 'A111111')
 
     const { rows: first } = await pool.query<{ deleted_at: Date; deleted_by: string }>(
-      'SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1',
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
       ['octocat'],
     )
 
@@ -151,7 +177,7 @@ describe('user_mappings soft delete', () => {
     await deleteUserMapping('octocat', 'B222222')
 
     const { rows: second } = await pool.query<{ deleted_at: Date; deleted_by: string }>(
-      'SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1',
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
       ['octocat'],
     )
 

@@ -37,7 +37,7 @@ import {
   resolveDeploymentCapabilities,
   resolveTeamAdminCapabilities,
 } from '~/lib/authorization.server'
-import { seedApp, seedDevTeam, seedSection, truncateAllTables } from './helpers'
+import { seedApp, seedDevTeam, seedSection, seedUser, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -64,6 +64,12 @@ function makeAdmin(navIdent = 'A123456'): UserIdentity {
 
 function makeUser(navIdent = 'B654321'): UserIdentity {
   return { navIdent, role: 'user', entraGroups: [] }
+}
+
+/** Seeds the user in the DB and returns a UserIdentity in one step. */
+async function seedAndMakeUser(navIdent: string, displayName = 'Glad Fjord'): Promise<UserIdentity> {
+  await seedUser(pool, navIdent, displayName)
+  return makeUser(navIdent)
 }
 
 // ─── Section role assignment authorization ───────────────────────────────────
@@ -93,7 +99,7 @@ describe('canAssignTeamRole', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
-    const leader = makeUser('L111111')
+    const leader = await seedAndMakeUser('L111111')
     await assignSectionRole(leader.navIdent, sectionId, 'teknologileder', 'admin')
 
     expect(await canAssignTeamRole(leader, teamId, 'produktleder')).toBe(true)
@@ -105,7 +111,7 @@ describe('canAssignTeamRole', () => {
     const section2 = await seedSection(pool, 'arbeid')
     const teamInSection2 = await seedDevTeam(pool, 'team-b', 'Team B', section2)
 
-    const leader = makeUser('L111111')
+    const leader = await seedAndMakeUser('L111111')
     await assignSectionRole(leader.navIdent, section1, 'seksjonsleder', 'admin')
 
     expect(await canAssignTeamRole(leader, teamInSection2, 'utvikler')).toBe(false)
@@ -115,7 +121,7 @@ describe('canAssignTeamRole', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
-    const pl = makeUser('P222222')
+    const pl = await seedAndMakeUser('P222222')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
 
     expect(await canAssignTeamRole(pl, teamId, 'utvikler')).toBe(true)
@@ -125,7 +131,7 @@ describe('canAssignTeamRole', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
-    const pl = makeUser('P222222')
+    const pl = await seedAndMakeUser('P222222')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
 
     expect(await canAssignTeamRole(pl, teamId, 'produktleder')).toBe(false)
@@ -135,7 +141,7 @@ describe('canAssignTeamRole', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
-    const tl = makeUser('T222222')
+    const tl = await seedAndMakeUser('T222222')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
     expect(await canAssignTeamRole(tl, teamId, 'utvikler')).toBe(true)
@@ -145,7 +151,7 @@ describe('canAssignTeamRole', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
-    const tl = makeUser('T222222')
+    const tl = await seedAndMakeUser('T222222')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
     expect(await canAssignTeamRole(tl, teamId, 'produktleder')).toBe(false)
@@ -155,7 +161,7 @@ describe('canAssignTeamRole', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
-    const tl = makeUser('T222222')
+    const tl = await seedAndMakeUser('T222222')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
     expect(await canAssignTeamRole(tl, teamId, 'tech_lead')).toBe(false)
@@ -172,7 +178,7 @@ describe('canAssignTeamRole', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
-    const leader = makeUser('L333333')
+    const leader = await seedAndMakeUser('L333333')
     const assignment = await assignSectionRole(leader.navIdent, sectionId, 'leveranseleder', 'admin')
     expect(await canAssignTeamRole(leader, teamId, 'utvikler')).toBe(true)
 
@@ -202,7 +208,7 @@ describe('canApproveDeployment', () => {
       appId,
     ])
 
-    const dev = makeUser('D444444')
+    const dev = await seedAndMakeUser('D444444')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
 
     expect(await canApproveDeployment(dev, appId)).toBe(true)
@@ -219,7 +225,7 @@ describe('canApproveDeployment', () => {
       'my-nais-team',
     ])
 
-    const dev = makeUser('D555555')
+    const dev = await seedAndMakeUser('D555555')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
 
     expect(await canApproveDeployment(dev, appId)).toBe(true)
@@ -240,7 +246,7 @@ describe('canApproveDeployment', () => {
       group.id,
     ])
 
-    const dev = makeUser('D666666')
+    const dev = await seedAndMakeUser('D666666')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
 
     expect(await canApproveDeployment(dev, appId)).toBe(true)
@@ -267,7 +273,7 @@ describe('canApproveDeployment', () => {
       appId,
     ])
 
-    const dev = makeUser('D777777')
+    const dev = await seedAndMakeUser('D777777')
     const assignment = await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
     expect(await canApproveDeployment(dev, appId)).toBe(true)
 
@@ -292,7 +298,7 @@ describe('canApproveDeployment', () => {
     ])
 
     // User is only in team2
-    const dev = makeUser('D888888')
+    const dev = await seedAndMakeUser('D888888')
     await assignTeamRole(dev.navIdent, team2, 'utvikler', 'admin')
 
     expect(await canApproveDeployment(dev, appId)).toBe(true)
@@ -308,7 +314,7 @@ describe('canApproveDeployment', () => {
       appId,
     ])
 
-    const dev = makeUser('D999999')
+    const dev = await seedAndMakeUser('D999999')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
     expect(await canApproveDeployment(dev, appId)).toBe(true)
 
@@ -329,7 +335,7 @@ describe('canApproveDeployment', () => {
       appId,
     ])
 
-    const dev = makeUser('D101010')
+    const dev = await seedAndMakeUser('D101010')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
     expect(await canApproveDeployment(dev, appId)).toBe(true)
 
@@ -356,7 +362,7 @@ describe('canDeviateDeployment', () => {
       appId,
     ])
 
-    const pl = makeUser('P111111')
+    const pl = await seedAndMakeUser('P111111')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
 
     expect(await canDeviateDeployment(pl, appId)).toBe(true)
@@ -371,7 +377,7 @@ describe('canDeviateDeployment', () => {
       appId,
     ])
 
-    const tl = makeUser('T111111')
+    const tl = await seedAndMakeUser('T111111')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
     expect(await canDeviateDeployment(tl, appId)).toBe(true)
@@ -386,7 +392,7 @@ describe('canDeviateDeployment', () => {
       appId,
     ])
 
-    const dev = makeUser('D111111')
+    const dev = await seedAndMakeUser('D111111')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
 
     expect(await canDeviateDeployment(dev, appId)).toBe(false)
@@ -405,7 +411,7 @@ describe('canAdministerTeam', () => {
   it('allows produktleder', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const pl = makeUser('P333333')
+    const pl = await seedAndMakeUser('P333333')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
     expect(await canAdministerTeam(pl, teamId)).toBe(true)
   })
@@ -413,7 +419,7 @@ describe('canAdministerTeam', () => {
   it('allows tech_lead', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const tl = makeUser('T333333')
+    const tl = await seedAndMakeUser('T333333')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
     expect(await canAdministerTeam(tl, teamId)).toBe(true)
   })
@@ -421,7 +427,7 @@ describe('canAdministerTeam', () => {
   it('denies utvikler', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const dev = makeUser('D333333')
+    const dev = await seedAndMakeUser('D333333')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
     expect(await canAdministerTeam(dev, teamId)).toBe(false)
   })
@@ -439,6 +445,7 @@ describe('isTeamMember', () => {
   it('returns true for member with active role', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    await seedUser(pool, 'M111111', 'Glad Fjord')
     await assignTeamRole('M111111', teamId, 'utvikler', 'admin')
     expect(await isTeamMember('M111111', teamId)).toBe(true)
   })
@@ -446,6 +453,7 @@ describe('isTeamMember', () => {
   it('returns false after soft-delete', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    await seedUser(pool, 'M222222', 'Glad Fjord')
     const assignment = await assignTeamRole('M222222', teamId, 'utvikler', 'admin')
     await removeTeamRole(defined(assignment).id, 'admin')
     expect(await isTeamMember('M222222', teamId)).toBe(false)
@@ -463,6 +471,7 @@ describe('isTeamMember', () => {
 describe('role assignment CRUD', () => {
   it('assigns and retrieves section roles', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
+    await seedUser(pool, 'A111111', 'Glad Fjord')
     const result = await assignSectionRole('A111111', sectionId, 'teknologileder', 'admin')
 
     expect(result).not.toBeNull()
@@ -477,6 +486,7 @@ describe('role assignment CRUD', () => {
   it('assigns and retrieves team roles', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    await seedUser(pool, 'B222222', 'Glad Fjord')
     const result = await assignTeamRole('B222222', teamId, 'produktleder', 'admin')
 
     expect(result).not.toBeNull()
@@ -491,6 +501,7 @@ describe('role assignment CRUD', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
+    await seedUser(pool, 'C333333', 'Glad Fjord')
     const first = await assignTeamRole('C333333', teamId, 'utvikler', 'admin')
     expect(first).not.toBeNull()
 
@@ -505,6 +516,7 @@ describe('role assignment CRUD', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
+    await seedUser(pool, 'D444444', 'Glad Fjord')
     const first = await assignTeamRole('D444444', teamId, 'utvikler', 'admin')
     await removeTeamRole(defined(first).id, 'admin')
 
@@ -519,6 +531,7 @@ describe('role assignment CRUD', () => {
   it('soft-delete sets deleted_at and deleted_by', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    await seedUser(pool, 'E555555', 'Glad Fjord')
     const assignment = await assignTeamRole('E555555', teamId, 'utvikler', 'admin')
 
     const removed = await removeTeamRole(defined(assignment).id, 'remover-ident')
@@ -535,6 +548,7 @@ describe('role assignment CRUD', () => {
   it('double soft-delete returns false', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    await seedUser(pool, 'F666666', 'Glad Fjord')
     const assignment = await assignTeamRole('F666666', teamId, 'utvikler', 'admin')
 
     expect(await removeTeamRole(defined(assignment).id, 'admin')).toBe(true)
@@ -545,12 +559,27 @@ describe('role assignment CRUD', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
+    await seedUser(pool, 'U111111', 'Glad Fjord')
     await assignTeamRole('U111111', teamId, 'utvikler', 'admin')
+    await seedUser(pool, 'U222222', 'Glad Fjord')
     await assignTeamRole('U222222', teamId, 'produktleder', 'admin')
 
     // Create user mappings
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U111111', 'user1', 'User One'), ('U222222', 'user2', 'User Two')",
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+      ['U111111', 'User One', 'u111111@nav.no'],
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['user1', 'U111111', 'User One'],
+    )
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+      ['U222222', 'User Two', 'u222222@nav.no'],
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['user2', 'U222222', 'User Two'],
     )
 
     const usernames = await getMembersGithubUsernamesForDevTeamRoles([teamId])
@@ -561,9 +590,15 @@ describe('role assignment CRUD', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
+    await seedUser(pool, 'U333333', 'Glad Fjord')
     const assignment = await assignTeamRole('U333333', teamId, 'utvikler', 'admin')
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U333333', 'user3', 'User Three')",
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+      ['U333333', 'User Three', 'u333333@nav.no'],
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['user3', 'U333333', 'User Three'],
     )
 
     await removeTeamRole(defined(assignment).id, 'admin')
@@ -576,9 +611,15 @@ describe('role assignment CRUD', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
+    await seedUser(pool, 'U444444', 'Glad Fjord')
     await assignTeamRole('U444444', teamId, 'utvikler', 'admin')
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U444444', 'user4', 'User Four')",
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+      ['U444444', 'User Four', 'u444444@nav.no'],
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['user4', 'U444444', 'User Four'],
     )
 
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [teamId])
@@ -591,9 +632,15 @@ describe('role assignment CRUD', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
+    await seedUser(pool, 'U555555', 'Glad Fjord')
     await assignTeamRole('U555555', teamId, 'utvikler', 'admin')
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U555555', 'user5', 'User Five')",
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+      ['U555555', 'User Five', 'u555555@nav.no'],
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['user5', 'U555555', 'User Five'],
     )
 
     const teams = await getDevTeamsForGithubUsernamesByRole(['user5'])
@@ -605,9 +652,15 @@ describe('role assignment CRUD', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
+    await seedUser(pool, 'U666666', 'Glad Fjord')
     await assignTeamRole('U666666', teamId, 'utvikler', 'admin')
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U666666', 'usersix', 'User Six')",
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+      ['U666666', 'User Six', 'u666666@nav.no'],
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['usersix', 'U666666', 'User Six'],
     )
 
     const teams = await getDevTeamsForGithubUsernamesByRole(['UserSix'])
@@ -620,10 +673,16 @@ describe('role assignment CRUD', () => {
     const team1 = await seedDevTeam(pool, 'team-1', 'Team 1', sectionId)
     const team2 = await seedDevTeam(pool, 'team-2', 'Team 2', sectionId)
 
+    await seedUser(pool, 'U777777', 'Glad Fjord')
     const assignment1 = await assignTeamRole('U777777', team1, 'utvikler', 'admin')
     await assignTeamRole('U777777', team2, 'utvikler', 'admin')
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U777777', 'user7', 'User Seven')",
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+      ['U777777', 'User Seven', 'u777777@nav.no'],
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['user7', 'U777777', 'User Seven'],
     )
 
     // Soft-delete role in team1
@@ -639,7 +698,9 @@ describe('role assignment CRUD', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
+    await seedUser(pool, 'G777777', 'Glad Fjord')
     await assignTeamRole('G777777', teamId, 'produktleder', 'admin')
+    await seedUser(pool, 'H888888', 'Glad Fjord')
     await assignTeamRole('H888888', teamId, 'utvikler', 'admin')
 
     const members = await getDevTeamMembersWithRoles(teamId)
@@ -662,7 +723,7 @@ describe('canAccessTeamAdmin', () => {
   it('allows produktleder in the team', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const pl = makeUser('P444444')
+    const pl = await seedAndMakeUser('P444444')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
     expect(await canAccessTeamAdmin(pl, teamId)).toBe(true)
   })
@@ -670,7 +731,7 @@ describe('canAccessTeamAdmin', () => {
   it('allows tech_lead in the team', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const tl = makeUser('T444444')
+    const tl = await seedAndMakeUser('T444444')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
     expect(await canAccessTeamAdmin(tl, teamId)).toBe(true)
   })
@@ -678,7 +739,7 @@ describe('canAccessTeamAdmin', () => {
   it('allows section leader in the team section', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const sl = makeUser('S444444')
+    const sl = await seedAndMakeUser('S444444')
     await assignSectionRole(sl.navIdent, sectionId, 'seksjonsleder', 'admin')
     expect(await canAccessTeamAdmin(sl, teamId)).toBe(true)
   })
@@ -686,7 +747,7 @@ describe('canAccessTeamAdmin', () => {
   it('allows teknologileder in the team section', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const tl = makeUser('T444444')
+    const tl = await seedAndMakeUser('T444444')
     await assignSectionRole(tl.navIdent, sectionId, 'teknologileder', 'admin')
     expect(await canAccessTeamAdmin(tl, teamId)).toBe(true)
   })
@@ -695,7 +756,7 @@ describe('canAccessTeamAdmin', () => {
     const section1 = await seedSection(pool, 'pensjon')
     const section2 = await seedSection(pool, 'arbeid')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', section1)
-    const sl = makeUser('S555555')
+    const sl = await seedAndMakeUser('S555555')
     await assignSectionRole(sl.navIdent, section2, 'seksjonsleder', 'admin')
     expect(await canAccessTeamAdmin(sl, teamId)).toBe(false)
   })
@@ -703,7 +764,7 @@ describe('canAccessTeamAdmin', () => {
   it('denies utvikler in the team', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const dev = makeUser('D444444')
+    const dev = await seedAndMakeUser('D444444')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
     expect(await canAccessTeamAdmin(dev, teamId)).toBe(false)
   })
@@ -717,7 +778,7 @@ describe('canAccessTeamAdmin', () => {
   it('denies access to inactive team', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const pl = makeUser('P666666')
+    const pl = await seedAndMakeUser('P666666')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [teamId])
     expect(await canAccessTeamAdmin(pl, teamId)).toBe(false)
@@ -730,6 +791,7 @@ describe('getTeamRoleAssignmentById', () => {
   it('returns assignment when id and devTeamId match', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    await seedUser(pool, 'R111111', 'Glad Fjord')
     const assignment = await assignTeamRole('R111111', teamId, 'utvikler', 'admin')
     const result = await getTeamRoleAssignmentById(defined(assignment).id, teamId)
     expect(result).not.toBeNull()
@@ -741,6 +803,7 @@ describe('getTeamRoleAssignmentById', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const team1 = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const team2 = await seedDevTeam(pool, 'team-b', 'Team B', sectionId)
+    await seedUser(pool, 'R222222', 'Glad Fjord')
     const assignment = await assignTeamRole('R222222', team1, 'utvikler', 'admin')
     const result = await getTeamRoleAssignmentById(defined(assignment).id, team2)
     expect(result).toBeNull()
@@ -749,6 +812,7 @@ describe('getTeamRoleAssignmentById', () => {
   it('returns null for soft-deleted assignment', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    await seedUser(pool, 'R333333', 'Glad Fjord')
     const assignment = await assignTeamRole('R333333', teamId, 'utvikler', 'admin')
     await removeTeamRole(defined(assignment).id, 'admin')
     const result = await getTeamRoleAssignmentById(defined(assignment).id, teamId)
@@ -776,7 +840,7 @@ describe('resolveTeamAdminCapabilities', () => {
   it('returns canAccess=true, canAdmin=true for produktleder in the team', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const pl = makeUser('P777777')
+    const pl = await seedAndMakeUser('P777777')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
     const result = await resolveTeamAdminCapabilities(pl, teamId)
     expect(result).toEqual({ canAccess: true, canAdmin: true })
@@ -785,7 +849,7 @@ describe('resolveTeamAdminCapabilities', () => {
   it('returns canAccess=true, canAdmin=true for tech_lead in the team', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const tl = makeUser('T777777')
+    const tl = await seedAndMakeUser('T777777')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
     const result = await resolveTeamAdminCapabilities(tl, teamId)
     expect(result).toEqual({ canAccess: true, canAdmin: true })
@@ -794,7 +858,7 @@ describe('resolveTeamAdminCapabilities', () => {
   it('returns canAccess=true, canAdmin=false for section leader', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const sl = makeUser('S777777')
+    const sl = await seedAndMakeUser('S777777')
     await assignSectionRole(sl.navIdent, sectionId, 'seksjonsleder', 'admin')
     const result = await resolveTeamAdminCapabilities(sl, teamId)
     expect(result).toEqual({ canAccess: true, canAdmin: false })
@@ -804,7 +868,7 @@ describe('resolveTeamAdminCapabilities', () => {
     const section1 = await seedSection(pool, 'pensjon')
     const section2 = await seedSection(pool, 'arbeid')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', section1)
-    const sl = makeUser('S888888')
+    const sl = await seedAndMakeUser('S888888')
     await assignSectionRole(sl.navIdent, section2, 'seksjonsleder', 'admin')
     const result = await resolveTeamAdminCapabilities(sl, teamId)
     expect(result).toEqual({ canAccess: false, canAdmin: false })
@@ -820,7 +884,7 @@ describe('resolveTeamAdminCapabilities', () => {
   it('returns canAccess=false, canAdmin=false for inactive team', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const pl = makeUser('P888888')
+    const pl = await seedAndMakeUser('P888888')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [teamId])
     const result = await resolveTeamAdminCapabilities(pl, teamId)
@@ -854,7 +918,7 @@ describe('resolveDeploymentCapabilities', () => {
       appId,
     ])
 
-    const dev = makeUser('D444444')
+    const dev = await seedAndMakeUser('D444444')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
 
     const result = await resolveDeploymentCapabilities(dev, appId)
@@ -877,7 +941,7 @@ describe('resolveDeploymentCapabilities', () => {
       appId,
     ])
 
-    const pl = makeUser('P222222')
+    const pl = await seedAndMakeUser('P222222')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
 
     const result = await resolveDeploymentCapabilities(pl, appId)
@@ -900,7 +964,7 @@ describe('resolveDeploymentCapabilities', () => {
       appId,
     ])
 
-    const tl = makeUser('T222222')
+    const tl = await seedAndMakeUser('T222222')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
     const result = await resolveDeploymentCapabilities(tl, appId)
@@ -939,7 +1003,7 @@ describe('resolveDeploymentCapabilities', () => {
       appId,
     ])
 
-    const dev = makeUser('D444444')
+    const dev = await seedAndMakeUser('D444444')
     const assignment = await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
 
     // Verify access before removal
@@ -967,7 +1031,7 @@ describe('resolveDeploymentCapabilities', () => {
       appId,
     ])
 
-    const leader = makeUser('L555555')
+    const leader = await seedAndMakeUser('L555555')
     await assignSectionRole(leader.navIdent, sectionId, 'teknologileder', 'admin')
 
     const result = await resolveDeploymentCapabilities(leader, appId)
@@ -991,7 +1055,7 @@ describe('resolveDeploymentCapabilities', () => {
       appId,
     ])
 
-    const leader = makeUser('L666666')
+    const leader = await seedAndMakeUser('L666666')
     await assignSectionRole(leader.navIdent, section2, 'teknologileder', 'admin')
 
     const result = await resolveDeploymentCapabilities(leader, appId)

@@ -7,7 +7,7 @@ import { UnmappedUsersList } from '~/components/UnmappedUsersList'
 import { UserMappingCard } from '~/components/UserMappingCard'
 
 interface UserMapping {
-  github_username: string
+  github_username: string | null
   display_github_username: string | null
   display_name: string | null
   nav_email: string | null
@@ -137,7 +137,8 @@ export function AdminUsersPage<T extends UserMapping = UserMapping>({
         </HStack>
 
         <BodyShort textColor="subtle">
-          Kobler GitHub-brukernavn til Nav-identitet og Slack for visning i deployment-oversikten.
+          Kobler GitHub-brukernavn til Nav-identitet og Slack for visning i deployment-oversikten. Brukere uten
+          GitHub-konto (f.eks. produktledere) kan legges til med kun NAV-ident.
         </BodyShort>
 
         {actionMessage && (
@@ -163,7 +164,7 @@ export function AdminUsersPage<T extends UserMapping = UserMapping>({
           <div>
             {mappings.map((mapping) => (
               <UserMappingCard
-                key={mapping.github_username}
+                key={mapping.github_username ?? mapping.nav_ident}
                 mapping={mapping}
                 teamRoles={mapping.nav_ident ? (userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []}
                 sectionRoles={
@@ -191,21 +192,32 @@ export function AdminUsersPage<T extends UserMapping = UserMapping>({
         >
           <Modal.Body>
             <BodyShort>
-              Er du sikker på at du vil slette brukermappingen for{' '}
+              Er du sikker på at du vil slette {deleteTarget?.nav_ident ? 'brukeren' : 'GitHub-kontoen'}{' '}
               <strong>
-                {deleteTarget?.display_name || deleteTarget?.display_github_username || deleteTarget?.github_username}
+                {deleteTarget?.display_name ||
+                  deleteTarget?.display_github_username ||
+                  deleteTarget?.github_username ||
+                  deleteTarget?.nav_ident}
               </strong>
               {deleteTarget?.display_name
-                ? ` (${deleteTarget.display_github_username || deleteTarget.github_username})`
+                ? ` (${deleteTarget.display_github_username || deleteTarget.github_username || deleteTarget.nav_ident})`
                 : ''}
               ?
             </BodyShort>
           </Modal.Body>
           <Modal.Footer>
             <Form method="post">
-              <input type="hidden" name="github_username" value={deleteTarget?.github_username ?? ''} />
+              {deleteTarget?.nav_ident && <input type="hidden" name="nav_ident" value={deleteTarget.nav_ident} />}
+              {deleteTarget?.github_username && (
+                <input type="hidden" name="github_username" value={deleteTarget.github_username} />
+              )}
+              {deleteTarget?.nav_ident && deleteTarget.github_username && (
+                <Button variant="secondary" type="submit" name="intent" value="unlink-github" loading={isSubmitting}>
+                  Fjern GitHub-konto
+                </Button>
+              )}
               <Button variant="danger" type="submit" name="intent" value="delete" loading={isSubmitting}>
-                Slett
+                {deleteTarget?.nav_ident ? 'Slett bruker' : 'Slett'}
               </Button>
             </Form>
             <Button variant="secondary" onClick={() => deleteModalRef.current?.close()}>

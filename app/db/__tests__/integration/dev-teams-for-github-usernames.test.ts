@@ -32,9 +32,13 @@ async function seedDevTeam(sectionId: number, slug: string, name: string): Promi
 
 async function seedUserMapping(github: string, navIdent: string, opts?: { deletedAt?: Date }): Promise<void> {
   await pool.query(
-    `INSERT INTO user_mappings (github_username, nav_ident, display_name, deleted_at)
+    `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+    [navIdent.toUpperCase(), `${github} Display`, `${navIdent.toLowerCase()}@nav.no`],
+  )
+  await pool.query(
+    `INSERT INTO user_github_accounts (github_username, nav_ident, display_name, deleted_at)
      VALUES ($1, $2, $3, $4)`,
-    [github, navIdent, `${github} Display`, opts?.deletedAt ?? null],
+    [github.toLowerCase(), navIdent.toUpperCase(), `${github} Display`, opts?.deletedAt ?? null],
   )
 }
 

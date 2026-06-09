@@ -14,7 +14,7 @@ vi.mock('react-router', async () => {
   }
 })
 
-const { Default, WithUnmappedUsers, Empty, MinimalData, OnlyUnmapped } = composeStories(stories)
+const { Default, WithUnmappedUsers, Empty, MinimalData, OnlyUnmapped, WithoutGithub } = composeStories(stories)
 
 describe('AdminUsers story baseline characterization', () => {
   it('renders default story with mapped users and no unmapped warning', () => {
@@ -22,8 +22,8 @@ describe('AdminUsers story baseline characterization', () => {
 
     expect(html).toContain('Brukermappinger')
     expect(html).toContain('Glad Fjord')
-    expect(html).toContain('minimal-user')
-    expect(html).toContain('Ingen tilleggsinformasjon')
+    // Produktleder uten GitHub vises uten GitHub-lenke
+    expect(html).toContain('Stille Skog')
     expect(html).not.toContain('GitHub-brukere uten mapping')
   })
 
@@ -51,7 +51,17 @@ describe('AdminUsers story baseline characterization', () => {
 
     expect(html).toContain('solo-user')
     expect(html).toContain('GitHub: solo-user')
-    expect(html).toContain('Ingen tilleggsinformasjon')
+    // GitHub-lenke vises i detaljraden; "Ingen tilleggsinformasjon" vises ikke
+    // når brukeren har en GitHub-konto
+    expect(html).not.toContain('Ingen tilleggsinformasjon')
+  })
+
+  it('renders user without github account', () => {
+    const html = renderToStaticMarkup(<WithoutGithub />)
+
+    expect(html).toContain('Modig Bjørk')
+    expect(html).toContain('Z990099')
+    expect(html).not.toContain('GitHub:')
   })
 
   it('renders only-unmapped story with both empty and warning states', () => {

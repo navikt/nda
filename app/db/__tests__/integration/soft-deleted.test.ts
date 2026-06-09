@@ -69,7 +69,12 @@ describe('soft-deleted: getAllSoftDeleted', () => {
     })
 
     // user_mappings
-    await upsertUserMapping({ githubUsername: 'gh-alice', navIdent: 'A111111' })
+    await upsertUserMapping({
+      githubUsername: 'gh-alice',
+      navIdent: 'A111111',
+      displayName: 'Glad Fjord',
+      navEmail: 'glad.fjord@nav.no',
+    })
     await deleteUserMapping('gh-alice', 'B222222')
 
     // deployment_comments
@@ -156,7 +161,12 @@ describe('soft-deleted: getAllSoftDeleted', () => {
 
 describe('soft-deleted: restore', () => {
   it('restores a soft-deleted user mapping and clears the cache', async () => {
-    await upsertUserMapping({ githubUsername: 'gh-alice', navIdent: 'A111111' })
+    await upsertUserMapping({
+      githubUsername: 'gh-alice',
+      navIdent: 'A111111',
+      displayName: 'Glad Fjord',
+      navEmail: 'glad.fjord@nav.no',
+    })
     await deleteUserMapping('gh-alice', 'B222222')
 
     // Warm the cache (query does not filter on deleted_at, so it returns the soft-deleted row).
@@ -166,9 +176,10 @@ describe('soft-deleted: restore', () => {
     const restored = await restoreUserMapping('gh-alice')
     expect(restored).toBe(true)
 
-    const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1', [
-      'gh-alice',
-    ])
+    const { rows } = await pool.query(
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
+      ['gh-alice'],
+    )
     expect(rows[0].deleted_at).toBeNull()
     expect(rows[0].deleted_by).toBeNull()
 

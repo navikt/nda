@@ -93,9 +93,9 @@ export async function getUnmappedContributors(
        GROUP BY LOWER(d.deployer_username)
      ),
      mapped_usernames AS (
-       SELECT DISTINCT LOWER(um.github_username) AS username
-       FROM user_mappings um
-       WHERE um.deleted_at IS NULL
+       SELECT DISTINCT LOWER(uga.github_username) AS username
+       FROM user_github_accounts uga
+       WHERE uga.deleted_at IS NULL
      )
      SELECT td.username
      FROM team_deployers td
@@ -143,7 +143,7 @@ export async function getDevTeamAppsWithIssues(
     `
     WITH mapped_users AS (
       SELECT DISTINCT LOWER(github_username) AS username
-      FROM user_mappings
+      FROM user_github_accounts
       WHERE deleted_at IS NULL
     )
     SELECT 

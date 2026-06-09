@@ -68,7 +68,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Redirect to canonical GitHub username URL if nav-ident resolves to a different username
   if (
-    mapping &&
+    mapping?.github_username &&
     isValidGitHubUsername(mapping.github_username) &&
     mapping.github_username.toLowerCase() !== username.toLowerCase()
   ) {

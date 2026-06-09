@@ -317,7 +317,7 @@ export async function getAuditReportData(
   }>
   deviations: Awaited<ReturnType<typeof getDeviationsForPeriod>>
   reviewer_counts: Map<string, number>
-  user_mappings: Map<string, { display_name: string | null; nav_ident: string | null; github_username: string }>
+  user_mappings: Map<string, { display_name: string | null; nav_ident: string | null; github_username: string | null }>
   canonical_map: Map<string, string>
   goal_links_by_deployment: Map<number, AuditGoalLinkEntry[]>
 }> {
@@ -483,7 +483,7 @@ export async function getAuditReportData(
   // Fetch mappings where identifier matches github_username OR nav_ident
   const user_mappings = new Map<
     string,
-    { display_name: string | null; nav_ident: string | null; github_username: string }
+    { display_name: string | null; nav_ident: string | null; github_username: string | null }
   >()
   // Maps any identifier (github_username or nav_ident) to canonical github_username
   const canonical_map = new Map<string, string>()
@@ -491,21 +491,63 @@ export async function getAuditReportData(
   if (identifiers.size > 0) {
     const identifierArray = Array.from(identifiers)
     const mappingsResult = await pool.query(
-      `SELECT github_username, display_name, nav_ident 
-       FROM user_mappings 
-       WHERE github_username = ANY($1) OR nav_ident = ANY($1)`,
+      `-- Branch A: look up by github_username
+       SELECT uga.github_username,
+              COALESCE(u.display_name, uga.display_name) AS display_name,
+              u.nav_ident
+       FROM user_github_accounts uga
+       LEFT JOIN users u ON u.nav_ident = uga.nav_ident
+       WHERE uga.github_username = ANY($1)
+
+       UNION ALL
+
+       -- Branch B: look up by nav_ident — LATERAL picks best active account (primary first)
+       SELECT uga.github_username,
+              COALESCE(u.display_name, uga.display_name) AS display_name,
+              u.nav_ident
+       FROM users u
+       LEFT JOIN LATERAL (
+         SELECT github_username, display_name
+         FROM user_github_accounts
+         WHERE nav_ident = u.nav_ident AND deleted_at IS NULL
+         ORDER BY is_primary DESC, updated_at DESC NULLS LAST
+         LIMIT 1
+       ) uga ON TRUE
+       WHERE u.nav_ident = ANY($1)
+         AND NOT EXISTS (
+           SELECT 1 FROM user_github_accounts uga2
+           WHERE uga2.github_username = ANY($1) AND uga2.nav_ident = u.nav_ident
+         )
+
+       UNION ALL
+
+       -- Branch C: NAV-ident-only users (no GitHub account)
+       SELECT NULL::text AS github_username,
+              u.display_name,
+              u.nav_ident
+       FROM users u
+       WHERE u.nav_ident = ANY($1)
+         AND NOT EXISTS (
+           SELECT 1 FROM user_github_accounts uga2
+           WHERE uga2.nav_ident = u.nav_ident AND uga2.deleted_at IS NULL
+         )`,
       [identifierArray],
     )
     for (const row of mappingsResult.rows) {
-      user_mappings.set(row.github_username, {
+      // Use github_username as key when available, otherwise fall back to nav_ident
+      const key = row.github_username ?? row.nav_ident
+      if (!key) continue
+      user_mappings.set(key, {
         display_name: row.display_name,
         nav_ident: row.nav_ident,
         github_username: row.github_username,
       })
-      // Map both github_username and nav_ident to the canonical github_username
-      canonical_map.set(row.github_username, row.github_username)
-      if (row.nav_ident) {
-        canonical_map.set(row.nav_ident, row.github_username)
+      if (row.github_username) {
+        canonical_map.set(row.github_username, row.github_username)
+      }
+      // Only set nav_ident mapping on first occurrence to avoid secondary accounts overwriting
+      if (row.nav_ident && !canonical_map.has(row.nav_ident)) {
+        canonical_map.set(row.nav_ident, row.github_username ?? row.nav_ident)
       }
     }
   }

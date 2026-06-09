@@ -9,13 +9,21 @@ interface UserProfileIdentity {
 
 interface UserProfileHeaderProps {
   username: string
+  githubUsername?: string | null
   displayName?: string | null
   identity?: UserProfileIdentity | null
   isBot?: boolean
   botDescription?: string | null
 }
 
-export function UserProfileHeader({ username, displayName, identity, isBot, botDescription }: UserProfileHeaderProps) {
+export function UserProfileHeader({
+  username,
+  githubUsername,
+  displayName,
+  identity,
+  isBot,
+  botDescription,
+}: UserProfileHeaderProps) {
   return (
     <>
       <VStack gap="space-8">
@@ -33,12 +41,14 @@ export function UserProfileHeader({ username, displayName, identity, isBot, botD
       </VStack>
 
       <HGrid gap="space-16" columns={{ xs: 2, md: 4 }}>
-        <Box padding="space-16" borderRadius="8" background="sunken">
-          <VStack gap="space-4">
-            <Detail textColor="subtle">GitHub</Detail>
-            <ExternalLink href={`https://github.com/${username}`}>{username}</ExternalLink>
-          </VStack>
-        </Box>
+        {githubUsername && (
+          <Box padding="space-16" borderRadius="8" background="sunken">
+            <VStack gap="space-4">
+              <Detail textColor="subtle">GitHub</Detail>
+              <ExternalLink href={`https://github.com/${githubUsername}`}>{githubUsername}</ExternalLink>
+            </VStack>
+          </Box>
+        )}
 
         {identity?.nav_email && (
           <Box padding="space-16" borderRadius="8" background="sunken">

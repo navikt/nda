@@ -27,10 +27,14 @@ afterEach(async () => {
 
 async function seedUser(navIdent: string, githubUsername: string) {
   await pool.query(
-    `INSERT INTO user_mappings (nav_ident, github_username, display_name)
-     VALUES ($1, $2, $3)`,
-    [navIdent, githubUsername, navIdent],
+    `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT (nav_ident) DO NOTHING`,
+    [navIdent.toUpperCase(), navIdent, `${navIdent.toLowerCase()}@nav.no`],
   )
+  await pool.query(`INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`, [
+    githubUsername.toLowerCase(),
+    navIdent.toUpperCase(),
+    navIdent,
+  ])
 }
 
 async function joinDevTeam(navIdent: string, devTeamId: number) {
@@ -81,7 +85,9 @@ describe('getMembersGithubUsernamesForDevTeamRoles', () => {
     const team = await seedDevTeam(pool, 'team-y', 'Team Y', sectionId)
     await seedUser('A111111', 'alice')
     await seedUser('B222222', 'bob')
-    await pool.query(`UPDATE user_mappings SET deleted_at = NOW() WHERE nav_ident = 'B222222'`)
+    await pool.query(
+      `UPDATE user_github_accounts SET deleted_at = NOW(), updated_at = NOW() WHERE nav_ident = 'B222222'`,
+    )
     await joinDevTeam('A111111', team)
     await joinDevTeam('B222222', team)
 
@@ -205,7 +211,9 @@ describe('unmapped_deployers filter', () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
     await seedUser('B222222', 'soft-deleted-user')
-    await pool.query("UPDATE user_mappings SET deleted_at = NOW() WHERE github_username = 'soft-deleted-user'")
+    await pool.query(
+      "UPDATE user_github_accounts SET deleted_at = NOW(), updated_at = NOW() WHERE github_username = 'soft-deleted-user'",
+    )
 
     await seedDeployment(pool, {
       monitoredAppId: appId,

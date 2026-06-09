@@ -40,7 +40,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Count soft-deleted rows across the audit-relevant tables
   const softDeletedResult = await pool.query<{ total: string }>(`
     SELECT (
-      (SELECT COUNT(*) FROM user_mappings WHERE deleted_at IS NOT NULL) +
+      (SELECT COUNT(*) FROM users WHERE deleted_at IS NOT NULL) +
+      (SELECT COUNT(*) FROM user_github_accounts WHERE deleted_at IS NOT NULL) +
       (SELECT COUNT(*) FROM deployment_comments WHERE deleted_at IS NOT NULL AND comment_type NOT IN ('manual_approval', 'legacy_info')) +
       (SELECT COUNT(*) FROM dev_team_applications WHERE deleted_at IS NOT NULL) +
       (SELECT COUNT(*) FROM section_teams WHERE deleted_at IS NOT NULL) +

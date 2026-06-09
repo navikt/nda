@@ -15,12 +15,18 @@ export async function assignSectionRole(
   role: SectionRole,
   assignedBy: string,
 ): Promise<SectionRoleAssignment | null> {
+  const normalizedIdent = navIdent.toUpperCase()
+  // INSERT...SELECT FROM users eliminates the TOCTOU window between the
+  // pre-check in the route action and this insert: if the user is deleted
+  // between the two calls the SELECT returns no rows and no role is assigned.
   const { rows } = await pool.query<SectionRoleAssignment>(
     `INSERT INTO section_role_assignments (nav_ident, section_id, role, assigned_by)
-     VALUES ($1, $2, $3, $4)
+     SELECT $1, $2, $3, $4
+     FROM users
+     WHERE nav_ident = $1 AND deleted_at IS NULL
      ON CONFLICT (nav_ident, section_id, role) WHERE deleted_at IS NULL DO NOTHING
      RETURNING *`,
-    [navIdent, sectionId, role, assignedBy],
+    [normalizedIdent, sectionId, role, assignedBy],
   )
   return rows[0] ?? null
 }
@@ -81,9 +87,14 @@ export async function assignTeamRole(
   assignedBy: string,
 ): Promise<TeamRoleAssignment | null> {
   const normalizedIdent = navIdent.toUpperCase()
+  // INSERT...SELECT FROM users eliminates the TOCTOU window between the
+  // pre-check in the route action and this insert: if the user is deleted
+  // between the two calls the SELECT returns no rows and no role is assigned.
   const { rows } = await pool.query<TeamRoleAssignment>(
     `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by)
-     VALUES ($1, $2, $3, $4)
+     SELECT $1, $2, $3, $4
+     FROM users
+     WHERE nav_ident = $1 AND deleted_at IS NULL
      ON CONFLICT (nav_ident, dev_team_id, role) WHERE deleted_at IS NULL DO NOTHING
      RETURNING *`,
     [normalizedIdent, devTeamId, role, assignedBy],
@@ -219,13 +230,22 @@ export interface DevTeamMemberWithRole {
  */
 export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<DevTeamMemberWithRole[]> {
   const { rows } = await pool.query<DevTeamMemberWithRole>(
-    `SELECT r.id, r.nav_ident, r.role, um.github_username, um.display_github_username, um.display_name, r.assigned_at
+    `SELECT r.id, r.nav_ident, r.role,
+            uga.github_username, uga.display_github_username,
+            COALESCE(u.display_name, uga.display_name) AS display_name,
+            r.assigned_at
      FROM dev_team_role_assignments r
      JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
-     LEFT JOIN user_mappings um
-       ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
+     LEFT JOIN users u ON u.nav_ident = r.nav_ident
+     LEFT JOIN LATERAL (
+       SELECT github_username, display_github_username, display_name
+       FROM user_github_accounts
+       WHERE nav_ident = r.nav_ident AND deleted_at IS NULL
+       ORDER BY is_primary DESC, updated_at DESC NULLS LAST
+       LIMIT 1
+     ) uga ON TRUE
      WHERE r.dev_team_id = $1 AND r.deleted_at IS NULL
-     ORDER BY r.role, COALESCE(um.display_name, r.nav_ident)`,
+     ORDER BY r.role, COALESCE(u.display_name, uga.display_name, r.nav_ident)`,
     [devTeamId],
   )
   return rows
@@ -239,14 +259,13 @@ export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<Dev
 export async function getMembersGithubUsernamesForDevTeamRoles(devTeamIds: number[]): Promise<string[]> {
   if (devTeamIds.length === 0) return []
   const { rows } = await pool.query<{ github_username: string }>(
-    `SELECT DISTINCT um.github_username
+    `SELECT DISTINCT uga.github_username
      FROM dev_team_role_assignments r
      JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
-     JOIN user_mappings um
-       ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
+     JOIN user_github_accounts uga
+       ON uga.nav_ident = r.nav_ident AND uga.deleted_at IS NULL
      WHERE r.dev_team_id = ANY($1::int[])
-       AND r.deleted_at IS NULL
-       AND um.github_username IS NOT NULL`,
+       AND r.deleted_at IS NULL`,
     [devTeamIds],
   )
   return rows.map((r) => r.github_username)
@@ -264,12 +283,12 @@ export async function getDevTeamsForGithubUsernamesByRole(
   const { rows } = await pool.query<{ id: number; slug: string; name: string }>(
     `SELECT DISTINCT dt.id, dt.slug, dt.name
      FROM dev_team_role_assignments r
-     JOIN user_mappings um
-       ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
+     JOIN user_github_accounts uga
+       ON uga.nav_ident = r.nav_ident AND uga.deleted_at IS NULL
      JOIN dev_teams dt
        ON dt.id = r.dev_team_id AND dt.is_active = true
      WHERE r.deleted_at IS NULL
-       AND LOWER(um.github_username) = ANY($1)`,
+       AND LOWER(uga.github_username) = ANY($1)`,
     [githubUsernames.map((u) => u.toLowerCase())],
   )
   return rows

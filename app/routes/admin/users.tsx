@@ -6,10 +6,13 @@ import { CreateMappingModal } from '~/components/CreateMappingModal'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
 import {
+  deleteUser,
   deleteUserMapping,
   getAllUserMappings,
   getUnmappedUsers,
+  getUserMappingByNavIdent,
   type UserMapping,
+  upsertUser,
   upsertUserMapping,
 } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
@@ -49,11 +52,79 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === 'delete') {
     const githubUsername = formData.get('github_username')
+    const navIdentRaw = formData.get('nav_ident')
     const normalized = typeof githubUsername === 'string' ? githubUsername.trim() : ''
-    if (!normalized) {
-      return { fieldErrors: { github_username: 'GitHub brukernavn er påkrevd' } }
+    const navIdent = typeof navIdentRaw === 'string' ? navIdentRaw.trim().toUpperCase() : ''
+
+    if (navIdent) {
+      if (!isValidNavIdent(navIdent)) {
+        return { fieldErrors: { nav_ident: 'Ugyldig NAV-ident-format' } }
+      }
+      // Full delete: revokes all role assignments atomically in one transaction.
+      // This covers users with and without a GitHub account.
+      await deleteUser(navIdent, admin.navIdent)
+    } else if (normalized) {
+      if (!isValidGitHubUsername(normalized)) {
+        return { fieldErrors: { github_username: 'Ugyldig GitHub brukernavn' } }
+      }
+      // No nav_ident — unlinked deployer with only a GitHub account (no NAV identity).
+      // Only the GitHub account row is removed; no role assignments exist for these accounts.
+      await deleteUserMapping(normalized, admin.navIdent)
+    } else {
+      return { fieldErrors: { github_username: 'GitHub brukernavn eller NAV-ident er påkrevd' } }
     }
+    return { success: true }
+  }
+
+  if (intent === 'unlink-github') {
+    const githubUsernameRaw = getFormString(formData, 'github_username')
+    const normalized = githubUsernameRaw?.trim() ?? ''
+    if (!normalized || !isValidGitHubUsername(normalized)) {
+      return { fieldErrors: { github_username: 'Ugyldig GitHub brukernavn' } }
+    }
+    // Unlink GitHub account from user without deleting the user row or revoking roles.
     await deleteUserMapping(normalized, admin.navIdent)
+    return { success: true }
+  }
+
+  if (intent === 'create-user') {
+    const navIdentRaw = getFormString(formData, 'nav_ident')?.toUpperCase() || null
+    const fieldErrors: { nav_ident?: string } = {}
+
+    if (!navIdentRaw) {
+      fieldErrors.nav_ident = 'NAV-ident er påkrevd'
+    } else if (!isValidNavIdent(navIdentRaw)) {
+      fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer'
+    }
+
+    if (Object.keys(fieldErrors).length > 0) return { fieldErrors }
+
+    const navIdent = navIdentRaw as string
+    let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
+    try {
+      graphResults = await searchGraphUsers(navIdent)
+    } catch (error) {
+      logger.error('Graph API lookup failed during user creation', error)
+      return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
+    }
+
+    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
+    if (!graphUser) {
+      return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
+    }
+    if (!graphUser.displayName) {
+      return { fieldErrors: { nav_ident: 'Brukeren mangler visningsnavn i Active Directory' } }
+    }
+    if (!graphUser.email) {
+      return { fieldErrors: { nav_ident: 'Brukeren mangler e-postadresse i Active Directory' } }
+    }
+
+    await upsertUser({
+      navIdent,
+      displayName: formatDisplayNameNatural(graphUser.displayName),
+      navEmail: graphUser.email,
+      slackMemberId: getFormString(formData, 'slack_member_id') || null,
+    })
     return { success: true }
   }
 
@@ -62,16 +133,14 @@ export async function action({ request }: Route.ActionArgs) {
     const githubUsername = githubUsernameRaw.toLowerCase()
     const navIdentRaw = getFormString(formData, 'nav_ident')?.toUpperCase() || null
 
-    // nav_email included for TypeScript compatibility — both create-mapping and upsert branches
-    // contribute to the same inferred action return type used by the Edit modal (line ~484)
     const fieldErrors: { github_username?: string; nav_email?: string; nav_ident?: string } = {}
 
-    if (!githubUsername) {
-      fieldErrors.github_username = 'GitHub brukernavn er påkrevd'
-    } else if (!isValidGitHubUsername(githubUsername)) {
-      fieldErrors.github_username = 'Ugyldig GitHub-brukernavn (kun bokstaver, tall og bindestrek)'
-    } else if (isGitHubBot(githubUsername)) {
-      fieldErrors.github_username = 'Kan ikke opprette mapping for GitHub-botkontoer'
+    if (githubUsername) {
+      if (!isValidGitHubUsername(githubUsername)) {
+        fieldErrors.github_username = 'Ugyldig GitHub-brukernavn (kun bokstaver, tall og bindestrek)'
+      } else if (isGitHubBot(githubUsername)) {
+        fieldErrors.github_username = 'Kan ikke opprette mapping for GitHub-botkontoer'
+      }
     }
 
     if (!navIdentRaw) {
@@ -97,17 +166,74 @@ export async function action({ request }: Route.ActionArgs) {
     if (!graphUser) {
       return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
     }
+    if (!graphUser.displayName) {
+      return { fieldErrors: { nav_ident: 'Brukeren mangler visningsnavn i Active Directory' } }
+    }
+    if (!graphUser.email) {
+      return { fieldErrors: { nav_ident: 'Brukeren mangler e-postadresse i Active Directory' } }
+    }
 
-    const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
-    const navEmail = graphUser.email ?? null
+    const displayName = formatDisplayNameNatural(graphUser.displayName)
+    const navEmail = graphUser.email
+    const slackMemberId = getFormString(formData, 'slack_member_id') || null
 
-    await upsertUserMapping({
-      githubUsername,
-      displayGithubUsername: githubUsernameRaw,
+    if (githubUsername) {
+      await upsertUserMapping({
+        githubUsername,
+        displayGithubUsername: githubUsernameRaw,
+        displayName,
+        navEmail,
+        navIdent,
+        slackMemberId,
+      })
+    } else {
+      await upsertUser({ navIdent, displayName, navEmail, slackMemberId })
+    }
+    return { success: true }
+  }
+
+  if (intent === 'update-user') {
+    // Update profile fields for a user identified by nav_ident only.
+    // Used by the edit modal for users without a GitHub account.
+    const navIdentRaw = getFormString(formData, 'nav_ident')?.toUpperCase() || null
+    const fieldErrors: { nav_ident?: string } = {}
+
+    if (!navIdentRaw) {
+      fieldErrors.nav_ident = 'NAV-ident er påkrevd'
+    } else if (!isValidNavIdent(navIdentRaw)) {
+      fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer'
+    }
+
+    if (Object.keys(fieldErrors).length > 0) return { fieldErrors }
+
+    const navIdent = navIdentRaw as string
+
+    // Guard: update-user must only modify existing active users, never create or revive.
+    // Without this check, a crafted POST could bypass the Graph API verification
+    // enforced by create-user and create-mapping.
+    const existingUser = await getUserMappingByNavIdent(navIdent)
+    if (!existingUser) {
+      return { fieldErrors: { nav_ident: 'Bruker finnes ikke eller er slettet' } }
+    }
+
+    const navEmail = getFormString(formData, 'nav_email')
+    if (!navEmail) {
+      return { fieldErrors: { nav_email: 'E-post er påkrevd' } }
+    }
+    if (!isValidEmail(navEmail)) {
+      return { fieldErrors: { nav_email: 'Ugyldig e-postformat' } }
+    }
+
+    const displayName = getFormString(formData, 'display_name')
+    if (!displayName) {
+      return { fieldErrors: { display_name: 'Navn er påkrevd' } }
+    }
+
+    await upsertUser({
+      navIdent,
       displayName,
       navEmail,
-      navIdent,
-      slackMemberId: getFormString(formData, 'slack_member_id') || null,
+      slackMemberId: getFormString(formData, 'slack_member_id'),
     })
     return { success: true }
   }
@@ -280,27 +406,49 @@ export default function AdminUsers() {
         <Modal.Body>
           {editMapping && (
             <Form method="post" id="edit-form">
-              <input type="hidden" name="intent" value="upsert" />
-              <input type="hidden" name="github_username" value={editMapping.github_username} />
+              <input type="hidden" name="intent" value={editMapping.github_username ? 'upsert' : 'update-user'} />
+              <input type="hidden" name="github_username" value={editMapping.github_username ?? ''} />
+              {/* nav_ident is the primary key and must not change — send as hidden for update-user intent */}
+              {!editMapping.github_username && (
+                <input type="hidden" name="nav_ident" value={editMapping.nav_ident ?? ''} />
+              )}
               <VStack gap="space-16">
                 <TextField
                   label="GitHub brukernavn"
-                  value={editMapping.display_github_username || editMapping.github_username}
+                  value={editMapping.display_github_username || editMapping.github_username || ''}
                   disabled
                 />
-                <TextField label="Navn" name="display_name" defaultValue={editMapping.display_name || ''} />
+                <TextField
+                  label="Navn"
+                  name="display_name"
+                  defaultValue={editMapping.display_name || ''}
+                  error={
+                    actionData && 'fieldErrors' in actionData
+                      ? (actionData.fieldErrors as Record<string, string | undefined>)?.display_name
+                      : undefined
+                  }
+                />
                 <TextField
                   label="Nav e-post"
                   name="nav_email"
                   defaultValue={editMapping.nav_email || ''}
-                  error={actionData?.fieldErrors?.nav_email}
+                  error={
+                    actionData && 'fieldErrors' in actionData
+                      ? (actionData.fieldErrors as Record<string, string | undefined>)?.nav_email
+                      : undefined
+                  }
                 />
                 <TextField
                   label="Nav-ident"
-                  name="nav_ident"
+                  name={editMapping.github_username ? 'nav_ident' : undefined}
                   description="Format: én bokstav etterfulgt av 6 siffer (f.eks. A123456)"
                   defaultValue={editMapping.nav_ident || ''}
-                  error={actionData?.fieldErrors?.nav_ident}
+                  disabled={!editMapping.github_username}
+                  error={
+                    actionData && 'fieldErrors' in actionData
+                      ? (actionData.fieldErrors as Record<string, string | undefined>)?.nav_ident
+                      : undefined
+                  }
                 />
                 <TextField
                   label="Slack member ID"

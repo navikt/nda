@@ -22,12 +22,13 @@ import { DeploymentActivityChart } from '~/components/DeploymentActivityChart'
 import { MethodTag, StatusTag } from '~/components/deployment-tags'
 import { UserProfileHeader } from '~/components/UserProfileHeader'
 import { UserRolesDisplay } from '~/components/UserRolesDisplay'
+import { isValidNavIdent } from '~/lib/form-validators'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
 import styles from '~/styles/common.module.css'
 
 interface UserMapping {
-  github_username: string
+  github_username: string | null
   display_name: string | null
   nav_email: string | null
   nav_ident: string | null
@@ -202,6 +203,7 @@ export function UserPageContent({
     <VStack gap="space-32">
       <UserProfileHeader
         username={username}
+        githubUsername={mapping?.github_username ?? (isValidNavIdent(username) ? null : username)}
         displayName={mapping?.display_name || botDisplayName}
         identity={mapping}
         isBot={isBot}

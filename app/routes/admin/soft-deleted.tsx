@@ -11,11 +11,13 @@ import {
   restoreDevTeamNaisTeam,
   restoreExternalReference,
   restoreSectionTeam,
+  restoreUser,
   restoreUserMapping,
 } from '~/db/soft-deleted.server'
 import { getUserMappings, type UserMapping } from '~/db/user-mappings.server'
 import { type ActionResult, fail, ok } from '~/lib/action-result'
 import { requireAdmin } from '~/lib/auth.server'
+import { getFormString } from '~/lib/form-validators'
 import { isSafeHttpUrl, parseId } from '~/lib/route-helpers'
 import { serializeUserMappings, type UserMappings } from '~/lib/user-display'
 import type { Route } from './+types/soft-deleted'
@@ -70,8 +72,16 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionResul
 
   try {
     switch (intent) {
+      case 'restore-user': {
+        const navIdent = getFormString(formData, 'nav_ident')
+        if (!navIdent) return fail('Mangler NAV-ident.')
+        const restored = await restoreUser(navIdent)
+        return restored
+          ? ok(`Bruker ${navIdent} er gjenopprettet.`)
+          : fail('Brukeren finnes ikke, er allerede aktiv, eller har GitHub-kontoer.')
+      }
       case 'restore-user-mapping': {
-        const githubUsername = String(formData.get('github_username') ?? '').trim()
+        const githubUsername = getFormString(formData, 'github_username')
         if (!githubUsername) return fail('Mangler GitHub-brukernavn.')
         const restored = await restoreUserMapping(githubUsername)
         return restored
@@ -196,8 +206,8 @@ export default function AdminSoftDeleted() {
             </Table.Header>
             <Table.Body>
               {summary.userMappings.map((row) => (
-                <Table.Row key={row.github_username}>
-                  <Table.DataCell>{row.display_github_username || row.github_username}</Table.DataCell>
+                <Table.Row key={row.github_username ?? row.nav_ident}>
+                  <Table.DataCell>{row.display_github_username || row.github_username || '—'}</Table.DataCell>
                   <Table.DataCell>{row.display_name ?? '—'}</Table.DataCell>
                   <Table.DataCell>{row.nav_ident ?? '—'}</Table.DataCell>
                   <Table.DataCell>{formatDate(row.deleted_at)}</Table.DataCell>
@@ -209,11 +219,19 @@ export default function AdminSoftDeleted() {
                     />
                   </Table.DataCell>
                   <Table.DataCell>
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="restore-user-mapping" />
-                      <input type="hidden" name="github_username" value={row.github_username} />
-                      <RestoreButton />
-                    </Form>
+                    {row.github_username ? (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="restore-user-mapping" />
+                        <input type="hidden" name="github_username" value={row.github_username} />
+                        <RestoreButton />
+                      </Form>
+                    ) : (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="restore-user" />
+                        <input type="hidden" name="nav_ident" value={row.nav_ident ?? ''} />
+                        <RestoreButton />
+                      </Form>
+                    )}
                   </Table.DataCell>
                 </Table.Row>
               ))}

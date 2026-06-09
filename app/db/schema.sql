@@ -230,23 +230,49 @@ CREATE INDEX IF NOT EXISTS idx_commits_pr ON commits(repo_owner, repo_name, orig
 CREATE INDEX IF NOT EXISTS idx_commits_unverified ON commits(repo_owner, repo_name) 
   WHERE pr_approved IS NULL OR pr_approved = false;
 
--- User mappings (GitHub username to Nav identity and Slack)
-CREATE TABLE IF NOT EXISTS user_mappings (
-  github_username TEXT PRIMARY KEY CHECK (github_username = LOWER(github_username)),
-  display_github_username TEXT CHECK (display_github_username IS NULL OR LOWER(display_github_username) = github_username),
-  display_name TEXT,
-  nav_email TEXT,
-  nav_ident TEXT CHECK (nav_ident IS NULL OR nav_ident = UPPER(nav_ident)),
-  slack_member_id TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ NULL,
-  deleted_by TEXT NULL
+-- User identity: nav_ident is the stable primary key.
+-- Users without a GitHub account (e.g. produktledere) exist here only.
+CREATE TABLE IF NOT EXISTS users (
+  nav_ident        TEXT PRIMARY KEY CHECK (nav_ident = UPPER(nav_ident) AND nav_ident ~ '^[A-Z][0-9]{6}$'),
+  display_name     TEXT NOT NULL,
+  nav_email        TEXT NOT NULL,
+  slack_member_id  TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at       TIMESTAMPTZ,
+  deleted_by       TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_mappings_slack ON user_mappings(slack_member_id);
-CREATE INDEX IF NOT EXISTS idx_user_mappings_email ON user_mappings(nav_email);
-CREATE INDEX IF NOT EXISTS idx_user_mappings_active ON user_mappings(github_username) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_slack  ON users(slack_member_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_email  ON users(nav_email)       WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(nav_ident)       WHERE deleted_at IS NULL;
+
+-- GitHub accounts linked to a NAV user (1-to-many).
+-- Accounts without nav_ident are "unlinked" deployers discovered from deployments.
+CREATE TABLE IF NOT EXISTS user_github_accounts (
+  id                      SERIAL PRIMARY KEY,
+  nav_ident               TEXT REFERENCES users(nav_ident) ON DELETE SET NULL,
+  github_username         TEXT NOT NULL UNIQUE CHECK (
+    github_username = LOWER(github_username)
+    AND github_username ~ '^[a-z0-9][a-z0-9-]*$'
+    AND github_username !~ '--'
+    AND github_username !~ '-$'
+    AND length(github_username) BETWEEN 1 AND 39
+  ),
+  display_github_username TEXT CHECK (
+    display_github_username IS NULL OR LOWER(display_github_username) = github_username
+  ),
+  display_name            TEXT,
+  is_primary              BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at              TIMESTAMPTZ,
+  deleted_by              TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_github_nav_ident ON user_github_accounts(nav_ident)      WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_user_github_username  ON user_github_accounts(github_username) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_github_primary ON user_github_accounts(nav_ident) WHERE is_primary = TRUE AND deleted_at IS NULL;
 
 -- Triggers for updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()

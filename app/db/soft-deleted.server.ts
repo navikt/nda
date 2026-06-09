@@ -3,8 +3,9 @@ import { pool } from './connection.server'
 /**
  * Soft-deleted row management for the admin restore page.
  *
- * Covers the six tables that use the deleted_at/deleted_by pattern:
- *   - user_mappings
+ * Covers the tables that use the deleted_at/deleted_by pattern:
+ *   - users (nav_ident-only users soft-deleted via deleteUser)
+ *   - user_github_accounts (soft-deleted via deleteUserMapping)
  *   - deployment_comments
  *   - dev_team_applications
  *   - section_teams
@@ -17,7 +18,7 @@ import { pool } from './connection.server'
  */
 
 interface SoftDeletedUserMapping {
-  github_username: string
+  github_username: string | null
   display_github_username: string | null
   display_name: string | null
   nav_ident: string | null
@@ -90,9 +91,25 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
   const [userMappings, deploymentComments, devTeamApplications, sectionTeams, devTeamNaisTeams, externalReferences] =
     await Promise.all([
       pool.query<SoftDeletedUserMapping>(
-        `SELECT github_username, display_github_username, display_name, nav_ident, deleted_at, deleted_by
-         FROM user_mappings
-         WHERE deleted_at IS NOT NULL
+        `-- Soft-deleted GitHub accounts (with or without linked user)
+         SELECT uga.github_username, uga.display_github_username,
+                COALESCE(u.display_name, uga.display_name) AS display_name,
+                u.nav_ident, uga.deleted_at, COALESCE(uga.deleted_by, u.deleted_by) AS deleted_by
+         FROM user_github_accounts uga
+         LEFT JOIN users u ON u.nav_ident = uga.nav_ident
+         WHERE uga.deleted_at IS NOT NULL
+
+         UNION ALL
+
+         -- NAV-ident-only users with no GitHub accounts at all (soft-deleted via deleteUser)
+         SELECT NULL::text AS github_username, NULL::text AS display_github_username,
+                u.display_name, u.nav_ident, u.deleted_at, u.deleted_by
+         FROM users u
+         WHERE u.deleted_at IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM user_github_accounts uga2 WHERE uga2.nav_ident = u.nav_ident
+           )
+
          ORDER BY deleted_at DESC`,
       ),
       pool.query<SoftDeletedDeploymentComment>(
@@ -193,14 +210,73 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
  * Restore (undelete) a soft-deleted user mapping.
  *
  * No-op if the row is missing or already active.
+ * Runs in a transaction to:
+ * - Also restore the linked `users` row when nav_ident is present (deleteUser soft-deletes both)
+ * - Demote any existing active primary account to avoid UNIQUE partial index violations
  */
 export async function restoreUserMapping(githubUsername: string): Promise<boolean> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    // Find the nav_ident of the account being restored
+    const accountResult = await client.query<{ nav_ident: string | null }>(
+      `SELECT nav_ident FROM user_github_accounts WHERE github_username = LOWER($1) AND deleted_at IS NOT NULL`,
+      [githubUsername.trim()],
+    )
+    const navIdent = accountResult.rows[0]?.nav_ident ?? null
+
+    if (navIdent) {
+      // Restore the users row — it may have been soft-deleted by deleteUser
+      await client.query(
+        `UPDATE users
+         SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
+         WHERE nav_ident = $1 AND deleted_at IS NOT NULL`,
+        [navIdent],
+      )
+
+      // Demote any existing active primary for the same nav_ident to avoid UNIQUE index violation
+      await client.query(
+        `UPDATE user_github_accounts
+         SET is_primary = FALSE, updated_at = NOW()
+         WHERE nav_ident = $1 AND is_primary = TRUE AND deleted_at IS NULL AND github_username != LOWER($2)`,
+        [navIdent, githubUsername.trim()],
+      )
+    }
+
+    const result = await client.query(
+      `UPDATE user_github_accounts
+       SET deleted_at = NULL, deleted_by = NULL, is_primary = TRUE, updated_at = NOW()
+       WHERE github_username = LOWER($1) AND deleted_at IS NOT NULL
+       RETURNING github_username`,
+      [githubUsername.trim()],
+    )
+    await client.query('COMMIT')
+    return (result.rowCount ?? 0) > 0
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+/**
+ * Restore a soft-deleted NAV-ident-only user (no GitHub account).
+ * No-op if the row is missing, already active, or has any GitHub accounts
+ * (those are restored via restoreUserMapping instead).
+ */
+export async function restoreUser(navIdent: string): Promise<boolean> {
   const result = await pool.query(
-    `UPDATE user_mappings
+    `UPDATE users
      SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
-     WHERE github_username = LOWER($1) AND deleted_at IS NOT NULL
-     RETURNING github_username`,
-    [githubUsername.trim()],
+     WHERE nav_ident = UPPER($1)
+       AND deleted_at IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM user_github_accounts uga WHERE uga.nav_ident = users.nav_ident
+       )
+     RETURNING nav_ident`,
+    [navIdent.trim()],
   )
   return (result.rowCount ?? 0) > 0
 }
