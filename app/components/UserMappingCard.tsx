@@ -23,7 +23,7 @@ interface DevTeam {
 
 interface UserMappingCardProps {
   mapping: {
-    github_username: string
+    github_username: string | null
     display_github_username: string | null
     display_name: string | null
     nav_email: string | null
@@ -50,11 +50,23 @@ export function UserMappingCard({
       <VStack gap="space-12">
         {/* First row: Display name heading, actions */}
         <HStack gap="space-8" align="center" justify="space-between" wrap>
-          <Link to={`/users/${mapping.github_username}`} style={{ textDecoration: 'none' }}>
+          {mapping.github_username ? (
+            <Link to={`/users/${mapping.github_username}`} style={{ textDecoration: 'none' }}>
+              <Heading level="3" size="xsmall">
+                {mapping.display_name || mapping.display_github_username || mapping.github_username}
+              </Heading>
+            </Link>
+          ) : mapping.nav_ident ? (
+            <Link to={`/users/${mapping.nav_ident}`} style={{ textDecoration: 'none' }}>
+              <Heading level="3" size="xsmall">
+                {mapping.display_name || mapping.nav_ident}
+              </Heading>
+            </Link>
+          ) : (
             <Heading level="3" size="xsmall">
-              {mapping.display_name || mapping.display_github_username || mapping.github_username}
+              {mapping.display_name || mapping.nav_ident}
             </Heading>
-          </Link>
+          )}
           <HStack gap="space-8">
             {onEdit && (
               <Button
@@ -83,9 +95,11 @@ export function UserMappingCard({
 
         {/* Details row */}
         <HStack gap="space-16" wrap>
-          <ExternalLink href={`https://github.com/${mapping.display_github_username || mapping.github_username}`}>
-            <Detail textColor="subtle">GitHub: {mapping.display_github_username || mapping.github_username}</Detail>
-          </ExternalLink>
+          {mapping.github_username && (
+            <ExternalLink href={`https://github.com/${mapping.display_github_username || mapping.github_username}`}>
+              <Detail textColor="subtle">GitHub: {mapping.display_github_username || mapping.github_username}</Detail>
+            </ExternalLink>
+          )}
           {mapping.nav_email && <Detail textColor="subtle">{mapping.nav_email}</Detail>}
           {mapping.nav_ident && (
             <ExternalLink href={`https://teamkatalogen.nav.no/resource/${mapping.nav_ident}`}>
@@ -97,7 +111,7 @@ export function UserMappingCard({
               <Detail textColor="subtle">Slack: {mapping.slack_member_id}</Detail>
             </ExternalLink>
           )}
-          {!mapping.nav_email && !mapping.nav_ident && !mapping.slack_member_id && (
+          {!mapping.github_username && !mapping.nav_email && !mapping.nav_ident && !mapping.slack_member_id && (
             <Detail textColor="subtle">Ingen tilleggsinformasjon</Detail>
           )}
         </HStack>

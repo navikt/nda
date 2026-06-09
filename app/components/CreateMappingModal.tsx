@@ -71,11 +71,10 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
             <VStack gap="space-16">
               {isGithubEditable ? (
                 <TextField
-                  label="GitHub brukernavn"
+                  label={canPrefillOwnMapping ? 'GitHub brukernavn' : 'GitHub brukernavn (valgfritt)'}
                   name="github_username"
                   defaultValue={canPrefillOwnMapping ? '' : username}
                   error={fieldErrors?.github_username}
-                  required
                 />
               ) : (
                 <TextField label="GitHub brukernavn" value={username} error={fieldErrors?.github_username} disabled />

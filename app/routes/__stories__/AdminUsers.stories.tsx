@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { AdminUsersPage } from '~/components/AdminUsersPage'
 
 type UserMapping = {
-  github_username: string
+  github_username: string | null
   display_github_username: string | null
   display_name: string | null
   nav_email: string | null
@@ -40,12 +40,13 @@ const mockMappings: UserMapping[] = [
     nav_ident: null,
     slack_member_id: null,
   },
+  // Produktleder uten GitHub-konto
   {
-    github_username: 'minimal-user',
-    display_github_username: 'minimal-user',
-    display_name: null,
-    nav_email: null,
-    nav_ident: null,
+    github_username: null,
+    display_github_username: null,
+    display_name: 'Stille Skog',
+    nav_email: 'stille.skog@nav.no',
+    nav_ident: 'Z990003',
     slack_member_id: null,
   },
 ]
@@ -111,6 +112,25 @@ export const MinimalData: Story = {
         display_name: null,
         nav_email: null,
         nav_ident: null,
+        slack_member_id: null,
+      },
+    ],
+    unmappedUsers: [],
+    onAdd: () => {},
+    onEdit: () => {},
+  },
+}
+
+export const WithoutGithub: Story = {
+  name: 'Bruker uten GitHub',
+  args: {
+    mappings: [
+      {
+        github_username: null,
+        display_github_username: null,
+        display_name: 'Modig Bjørk',
+        nav_email: 'modig.bjork@nav.no',
+        nav_ident: 'Z990099',
         slack_member_id: null,
       },
     ],

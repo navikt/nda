@@ -571,16 +571,14 @@ export async function getDevTeamStatsBatch(
     non_member_deployments: number
   }>(
     `WITH team_members AS (
-       SELECT DISTINCT r.dev_team_id, LOWER(um.github_username) AS github_username
+       SELECT DISTINCT r.dev_team_id, LOWER(uga.github_username) AS github_username
        FROM dev_team_role_assignments r
-       JOIN user_mappings um
-         ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
+       JOIN user_github_accounts uga
+         ON uga.nav_ident = r.nav_ident AND uga.deleted_at IS NULL
        WHERE r.dev_team_id = ANY($1::int[])
          AND r.deleted_at IS NULL
-         AND um.github_username IS NOT NULL
+         AND uga.github_username IS NOT NULL
      ),
-     -- Aggregate member usernames per team as an array to avoid fan-out
-     -- when joining against deployments in unlinked_member.
      team_member_usernames AS (
        SELECT dev_team_id, array_agg(github_username) AS usernames
        FROM team_members

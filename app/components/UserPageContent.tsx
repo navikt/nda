@@ -27,7 +27,7 @@ import { TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
 import styles from '~/styles/common.module.css'
 
 interface UserMapping {
-  github_username: string
+  github_username: string | null
   display_name: string | null
   nav_email: string | null
   nav_ident: string | null

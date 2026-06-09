@@ -90,10 +90,13 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
   const [userMappings, deploymentComments, devTeamApplications, sectionTeams, devTeamNaisTeams, externalReferences] =
     await Promise.all([
       pool.query<SoftDeletedUserMapping>(
-        `SELECT github_username, display_github_username, display_name, nav_ident, deleted_at, deleted_by
-         FROM user_mappings
-         WHERE deleted_at IS NOT NULL
-         ORDER BY deleted_at DESC`,
+        `SELECT uga.github_username, uga.display_github_username,
+                COALESCE(u.display_name, uga.display_name) AS display_name,
+                u.nav_ident, uga.deleted_at, COALESCE(uga.deleted_by, u.deleted_by) AS deleted_by
+         FROM user_github_accounts uga
+         LEFT JOIN users u ON u.nav_ident = uga.nav_ident
+         WHERE uga.deleted_at IS NOT NULL
+         ORDER BY uga.deleted_at DESC`,
       ),
       pool.query<SoftDeletedDeploymentComment>(
         `SELECT dc.id,
@@ -196,7 +199,7 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
  */
 export async function restoreUserMapping(githubUsername: string): Promise<boolean> {
   const result = await pool.query(
-    `UPDATE user_mappings
+    `UPDATE user_github_accounts
      SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
      WHERE github_username = LOWER($1) AND deleted_at IS NOT NULL
      RETURNING github_username`,

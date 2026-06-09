@@ -98,11 +98,16 @@ describe('user_mappings soft delete', () => {
     expect(all.map((m) => m.github_username).sort()).toEqual(['alive'])
   })
 
-  it('getUserMappingByNavIdent excludes soft-deleted (current-state lookup)', async () => {
+  it('getUserMappingByNavIdent still returns user when only github account is soft-deleted', async () => {
     await upsertUserMapping({ githubUsername: 'octocat', navIdent: 'Z990001' })
     await deleteUserMapping('octocat', null)
 
-    expect(await getUserMappingByNavIdent('Z990001')).toBeNull()
+    // User row in `users` table is still active — only the GitHub account is soft-deleted.
+    // getUserMappingByNavIdent finds users by nav_ident, not by github account.
+    const user = await getUserMappingByNavIdent('Z990001')
+    expect(user).not.toBeNull()
+    expect(user?.github_username).toBeNull()
+    expect(user?.nav_ident).toBe('Z990001')
   })
 
   it('getUserMappingBySlackId excludes soft-deleted (current-state lookup)', async () => {

@@ -455,9 +455,13 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
       opts.naisTeamSlug,
     ])
     for (const m of opts.members) {
-      await pool.query(`INSERT INTO user_mappings (github_username, nav_ident) VALUES ($1, $2)`, [
-        m.githubUsername,
-        m.navIdent,
+      await pool.query(
+        `INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT (nav_ident) DO NOTHING`,
+        [m.navIdent.toUpperCase(), m.navIdent.toUpperCase()],
+      )
+      await pool.query(`INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2)`, [
+        m.githubUsername.toLowerCase(),
+        m.navIdent.toUpperCase(),
       ])
       await pool.query(
         `INSERT INTO dev_team_role_assignments (dev_team_id, nav_ident, role, assigned_by) VALUES ($1, $2, 'utvikler', 'test')`,
@@ -782,11 +786,14 @@ describe('Regression: unrecognized four_eyes_status values sum correctly', () =>
       appId,
     ])
     // Add team member via user_mappings + dev_team_role_assignments
-    await pool.query(`INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ($1, $2, $3)`, [
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT (nav_ident) DO NOTHING`, [
       'A123456',
-      'alice',
       'Alice',
     ])
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['alice', 'A123456', 'Alice'],
+    )
     await pool.query(
       `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by) VALUES ($1, $2, 'utvikler', 'test')`,
       ['A123456', devTeamId],
@@ -934,8 +941,12 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     ])
     for (const m of opts.members) {
       await pool.query(
-        `INSERT INTO user_mappings (github_username, nav_ident) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [m.githubUsername, m.navIdent],
+        `INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT (nav_ident) DO NOTHING`,
+        [m.navIdent.toUpperCase(), m.navIdent.toUpperCase()],
+      )
+      await pool.query(
+        `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2) ON CONFLICT (github_username) DO NOTHING`,
+        [m.githubUsername.toLowerCase(), m.navIdent.toUpperCase()],
       )
       await pool.query(
         `INSERT INTO dev_team_role_assignments (dev_team_id, nav_ident, role, assigned_by) VALUES ($1, $2, 'utvikler', 'test') ON CONFLICT DO NOTHING`,
@@ -1194,8 +1205,13 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       appId,
     ])
     // Add team member via user_mappings + dev_team_role_assignments
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT (nav_ident) DO NOTHING`, [
+      'S123456',
+      'Sam',
+    ])
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('S123456', 'sam', 'Sam')",
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['sam', 'S123456', 'Sam'],
     )
     await pool.query(
       `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by) VALUES ('S123456', $1, 'utvikler', 'test')`,
@@ -1251,8 +1267,13 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       teamBId,
     ])
     // Member in both teams via user_mappings + dev_team_role_assignments
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT (nav_ident) DO NOTHING`, [
+      'X123456',
+      'Xena',
+    ])
     await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('X123456', 'xena', 'Xena')",
+      `INSERT INTO user_github_accounts (github_username, nav_ident, display_name) VALUES ($1, $2, $3)`,
+      ['xena', 'X123456', 'Xena'],
     )
     await pool.query(
       `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by)

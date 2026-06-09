@@ -62,6 +62,17 @@ export async function seedDevTeam(pool: Pool, slug: string, name?: string, secti
 }
 
 /**
+ * Insert a user into the users table (required before calling assignTeamRole/assignSectionRole).
+ * Uses ON CONFLICT DO NOTHING so it is safe to call multiple times with the same nav_ident.
+ */
+export async function seedUser(pool: Pool, navIdent: string, displayName?: string): Promise<void> {
+  await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT (nav_ident) DO NOTHING`, [
+    navIdent.toUpperCase(),
+    displayName ?? null,
+  ])
+}
+
+/**
  * Insert a deployment and return its id.
  */
 export async function seedDeployment(

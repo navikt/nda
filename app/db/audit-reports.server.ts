@@ -491,9 +491,12 @@ export async function getAuditReportData(
   if (identifiers.size > 0) {
     const identifierArray = Array.from(identifiers)
     const mappingsResult = await pool.query(
-      `SELECT github_username, display_name, nav_ident 
-       FROM user_mappings 
-       WHERE github_username = ANY($1) OR nav_ident = ANY($1)`,
+      `SELECT uga.github_username,
+              COALESCE(u.display_name, uga.display_name) AS display_name,
+              u.nav_ident
+       FROM user_github_accounts uga
+       LEFT JOIN users u ON u.nav_ident = uga.nav_ident
+       WHERE uga.github_username = ANY($1) OR u.nav_ident = ANY($1)`,
       [identifierArray],
     )
     for (const row of mappingsResult.rows) {

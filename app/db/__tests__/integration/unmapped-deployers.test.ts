@@ -25,8 +25,8 @@ afterEach(async () => {
 })
 
 async function seedUserMapping(githubUsername: string): Promise<void> {
-  await pool.query(`INSERT INTO user_mappings (github_username, display_name) VALUES ($1, $2)`, [
-    githubUsername,
+  await pool.query(`INSERT INTO user_github_accounts (github_username, display_name) VALUES ($1, $2)`, [
+    githubUsername.toLowerCase(),
     `Name of ${githubUsername}`,
   ])
 }
@@ -150,7 +150,9 @@ describe('getUnmappedContributors', () => {
       deployerUsername: 'alice',
     })
     await seedUserMapping('alice')
-    await pool.query(`UPDATE user_mappings SET deleted_at = NOW() WHERE github_username = 'alice'`)
+    await pool.query(
+      `UPDATE user_github_accounts SET deleted_at = NOW(), updated_at = NOW() WHERE github_username = 'alice'`,
+    )
 
     const result = await getUnmappedContributors(['team-a'])
     expect(result).toEqual(['alice'])

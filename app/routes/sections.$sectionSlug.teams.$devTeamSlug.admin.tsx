@@ -177,7 +177,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const userMapping = await getUserMappingByNavIdent(navIdent)
     if (!userMapping) {
       return fail(
-        `Brukeren ${navIdent} er ikke kjent i systemet. Opprett en brukerkobling først under Admin → Brukermappinger.`,
+        `Brukeren ${navIdent} er ikke kjent i systemet. Opprett brukeren først under Admin → Brukermappinger.`,
       )
     }
 
