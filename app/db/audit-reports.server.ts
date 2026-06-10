@@ -491,10 +491,13 @@ export async function getAuditReportData(
   if (identifiers.size > 0) {
     const identifierArray = Array.from(identifiers)
     const mappingsResult = await pool.query(
-      `SELECT github_username, display_name, nav_ident 
-       FROM user_mappings 
-       WHERE github_username = ANY($1) OR nav_ident = ANY($1)`,
-      [identifierArray],
+      `SELECT um.github_username,
+              u.display_name,
+              um.nav_ident
+       FROM user_mappings um
+       LEFT JOIN users u ON u.nav_ident = um.nav_ident AND u.deleted_at IS NULL
+       WHERE um.github_username = ANY($1) OR um.nav_ident = ANY($2)`,
+      [identifierArray.map((id) => id.toLowerCase()), identifierArray.map((id) => id.toUpperCase())],
     )
     for (const row of mappingsResult.rows) {
       user_mappings.set(row.github_username, {
@@ -502,11 +505,24 @@ export async function getAuditReportData(
         nav_ident: row.nav_ident,
         github_username: row.github_username,
       })
-      // Map both github_username and nav_ident to the canonical github_username
+      // Map canonical github_username and nav_ident to canonical github_username.
       canonical_map.set(row.github_username, row.github_username)
       if (row.nav_ident) {
         canonical_map.set(row.nav_ident, row.github_username)
       }
+    }
+    // Map original identifier strings (preserving their casing) so lookups work
+    // regardless of how the identifier appeared in deployment data. O(n+m) by
+    // building lookup sets from DB rows first, then iterating identifierArray once.
+    const githubSet = new Set(mappingsResult.rows.map((r) => r.github_username))
+    const navIdentMap = new Map<string, string>(
+      mappingsResult.rows.filter((r) => r.nav_ident).map((r) => [r.nav_ident, r.github_username]),
+    )
+    for (const original of identifierArray) {
+      const byGithub = githubSet.has(original.toLowerCase()) ? original.toLowerCase() : undefined
+      if (byGithub) canonical_map.set(original, byGithub)
+      const byNavIdent = navIdentMap.get(original.toUpperCase())
+      if (byNavIdent) canonical_map.set(original, byNavIdent)
     }
   }
 

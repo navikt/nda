@@ -20,13 +20,25 @@ export interface UserMapping {
 /**
  * Get user mapping by GitHub username or NAV-ident.
  *
- * Returns soft-deleted mappings too, so historical deployments keep resolving
- * to the previously-mapped display name.
+ * Returns soft-deleted mappings too, so historical deployment lookups can still
+ * find the mapping. Note: display_name and nav_email are read from the `users`
+ * table and may be null if the user has not been imported yet.
  */
 export async function getUserMapping(identifier: string): Promise<UserMapping | null> {
   const result = await pool.query(
-    `SELECT * FROM user_mappings 
-     WHERE github_username = LOWER($1) OR nav_ident = UPPER($1)`,
+    `SELECT um.github_username,
+            um.display_github_username,
+            um.nav_ident,
+            um.slack_member_id,
+            um.created_at,
+            um.updated_at,
+            um.deleted_at,
+            um.deleted_by,
+            u.display_name,
+            u.nav_email
+     FROM user_mappings um
+     LEFT JOIN users u ON u.nav_ident = um.nav_ident AND u.deleted_at IS NULL
+     WHERE um.github_username = LOWER($1) OR um.nav_ident = UPPER($1)`,
     [identifier],
   )
   return result.rows[0] || null
@@ -36,16 +48,28 @@ export async function getUserMapping(identifier: string): Promise<UserMapping | 
  * Get multiple user mappings by GitHub usernames or NAV-idents.
  * Searches both github_username and nav_ident fields.
  *
- * Returns soft-deleted mappings too, so historical deployments keep resolving
- * to the previously-mapped display name.
+ * Returns soft-deleted mappings too, so historical deployment lookups can still
+ * find the mapping. Note: display_name and nav_email are read from the `users`
+ * table and may be null if the user has not been imported yet.
  */
 export async function getUserMappings(identifiers: string[]): Promise<Map<string, UserMapping>> {
   if (identifiers.length === 0) return new Map()
 
   const result = await pool.query(
-    `SELECT * FROM user_mappings 
-     WHERE github_username = ANY($1) 
-        OR nav_ident = ANY($2)`,
+    `SELECT um.github_username,
+            um.display_github_username,
+            um.nav_ident,
+            um.slack_member_id,
+            um.created_at,
+            um.updated_at,
+            um.deleted_at,
+            um.deleted_by,
+            u.display_name,
+            u.nav_email
+     FROM user_mappings um
+     LEFT JOIN users u ON u.nav_ident = um.nav_ident AND u.deleted_at IS NULL
+     WHERE um.github_username = ANY($1)
+        OR um.nav_ident = ANY($2)`,
     [identifiers.map((u) => u.toLowerCase()), identifiers.map((u) => u.toUpperCase())],
   )
 
@@ -298,7 +322,22 @@ export async function deleteUserMapping(githubUsername: string, deletedBy: strin
  * Get all active (non-soft-deleted) user mappings — for admin list views.
  */
 export async function getAllUserMappings(): Promise<UserMapping[]> {
-  const result = await pool.query('SELECT * FROM user_mappings WHERE deleted_at IS NULL ORDER BY github_username')
+  const result = await pool.query(
+    `SELECT um.github_username,
+            um.display_github_username,
+            um.nav_ident,
+            um.slack_member_id,
+            um.created_at,
+            um.updated_at,
+            um.deleted_at,
+            um.deleted_by,
+            u.display_name,
+            u.nav_email
+     FROM user_mappings um
+     LEFT JOIN users u ON u.nav_ident = um.nav_ident AND u.deleted_at IS NULL
+     WHERE um.deleted_at IS NULL
+     ORDER BY um.github_username`,
+  )
   return result.rows
 }
 

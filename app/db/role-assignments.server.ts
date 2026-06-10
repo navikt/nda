@@ -219,13 +219,13 @@ export interface DevTeamMemberWithRole {
  */
 export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<DevTeamMemberWithRole[]> {
   const { rows } = await pool.query<DevTeamMemberWithRole>(
-    `SELECT r.id, r.nav_ident, r.role, um.github_username, um.display_github_username, um.display_name, r.assigned_at
+    `SELECT r.id, r.nav_ident, r.role, um.github_username, um.display_github_username, u.display_name, r.assigned_at
      FROM dev_team_role_assignments r
      JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true
-     LEFT JOIN user_mappings um
-       ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
+     LEFT JOIN user_mappings um ON um.nav_ident = r.nav_ident AND um.deleted_at IS NULL
+     LEFT JOIN users u ON u.nav_ident = r.nav_ident AND u.deleted_at IS NULL
      WHERE r.dev_team_id = $1 AND r.deleted_at IS NULL
-     ORDER BY r.role, COALESCE(um.display_name, r.nav_ident)`,
+     ORDER BY r.role, COALESCE(u.display_name, r.nav_ident)`,
     [devTeamId],
   )
   return rows
