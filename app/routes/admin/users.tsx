@@ -13,6 +13,7 @@ import {
   getUnmappedUsers,
   populateUsersFromGraph,
   type UserMapping,
+  upsertUser,
   upsertUserMapping,
 } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
@@ -61,6 +62,46 @@ export async function action({ request }: Route.ActionArgs) {
     }
     await deleteUserMapping(normalized, admin.navIdent)
     return { success: true }
+  }
+
+  if (intent === 'create-user') {
+    const navIdentRaw = getFormString(formData, 'nav_ident')?.toUpperCase() || null
+
+    const fieldErrors: { nav_ident?: string } = {}
+
+    if (!navIdentRaw) {
+      fieldErrors.nav_ident = 'NAV-ident er påkrevd'
+    } else if (!isValidNavIdent(navIdentRaw)) {
+      fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer'
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      return { createUserFieldErrors: fieldErrors }
+    }
+
+    const navIdent = navIdentRaw as string
+    let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
+    try {
+      graphResults = await searchGraphUsers(navIdent)
+    } catch (error) {
+      logger.error('Graph API lookup failed during create-user', error)
+      return { createUserFieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
+    }
+
+    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
+    if (!graphUser) {
+      return { createUserFieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
+    }
+
+    const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
+    const navEmail = graphUser.email ?? null
+
+    if (!displayName || !navEmail) {
+      return { createUserFieldErrors: { nav_ident: 'Brukeren mangler navn eller e-post i Active Directory' } }
+    }
+
+    await upsertUser({ navIdent, displayName, navEmail })
+    return { createUserSuccess: true, createUserNavIdent: navIdent }
   }
 
   if (intent === 'create-mapping') {
@@ -314,6 +355,41 @@ export default function AdminUsers() {
             </HStack>
             {actionData?.githubAccountsError && <Alert variant="error">{actionData.githubAccountsError}</Alert>}
             {actionData?.githubAccountsMessage && <Alert variant="success">{actionData.githubAccountsMessage}</Alert>}
+          </VStack>
+        </div>
+
+        <div>
+          <Heading level="2" size="small" spacing>
+            Legg til bruker uten GitHub-konto
+          </Heading>
+          <VStack gap="space-8">
+            <p>
+              Opprett en bruker i <code>users</code>-tabellen kun fra NAV-ident — uten å kreve GitHub-konto. Nyttig for
+              produktledere og andre som ikke bruker GitHub. GitHub-konto kan kobles til på et senere tidspunkt.
+            </p>
+            <Form method="post">
+              <input type="hidden" name="intent" value="create-user" />
+              <HStack gap="space-4" align="end">
+                <TextField
+                  label="NAV-ident"
+                  name="nav_ident"
+                  placeholder="A123456"
+                  size="small"
+                  error={actionData?.createUserFieldErrors?.nav_ident}
+                />
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  size="small"
+                  loading={navigation.state === 'submitting' && navigation.formData?.get('intent') === 'create-user'}
+                >
+                  Legg til bruker
+                </Button>
+              </HStack>
+            </Form>
+            {actionData?.createUserSuccess && (
+              <Alert variant="success">{actionData.createUserNavIdent} er lagt til i brukerdatabasen.</Alert>
+            )}
           </VStack>
         </div>
 
