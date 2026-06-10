@@ -9,6 +9,7 @@ import {
   getUserMappingByNavIdent,
   getUserMappingBySlackId,
   getUserMappings,
+  upsertUser,
   upsertUserMapping,
 } from '../../user-mappings.server'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
@@ -55,7 +56,8 @@ describe('user_mappings soft delete', () => {
   })
 
   it('getUserMapping still returns soft-deleted mapping (audit history)', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat' })
+    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Octo Cat', navEmail: 'octocat@nav.no' })
     await deleteUserMapping('octocat', 'Z990002')
 
     const mapping = await getUserMapping('octocat')
@@ -64,7 +66,8 @@ describe('user_mappings soft delete', () => {
   })
 
   it('getUserMappings still returns soft-deleted mappings', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat' })
+    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990003' })
+    await upsertUser({ navIdent: 'Z990003', displayName: 'Octo Cat', navEmail: 'octocat@nav.no' })
     await deleteUserMapping('octocat', null)
 
     const mappings = await getUserMappings(['octocat'])
@@ -73,6 +76,7 @@ describe('user_mappings soft delete', () => {
 
   it('getUserMapping resolves case-insensitively for GitHub usernames', async () => {
     await upsertUserMapping({ githubUsername: 'OctoCat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Octo Cat', navEmail: 'octocat@nav.no' })
 
     const byMixedCase = await getUserMapping('OctoCat')
     expect(byMixedCase?.display_name).toBe('Octo Cat')
@@ -82,7 +86,8 @@ describe('user_mappings soft delete', () => {
   })
 
   it('getUserMappings resolves case-insensitively for GitHub usernames', async () => {
-    await upsertUserMapping({ githubUsername: 'OctoCat', displayName: 'Octo Cat' })
+    await upsertUserMapping({ githubUsername: 'OctoCat', displayName: 'Octo Cat', navIdent: 'Z990002' })
+    await upsertUser({ navIdent: 'Z990002', displayName: 'Octo Cat', navEmail: 'octocat@nav.no' })
 
     const mappings = await getUserMappings(['OCTOCAT', 'OctoCat'])
     expect(mappings.get('OCTOCAT')?.display_name).toBe('Octo Cat')
