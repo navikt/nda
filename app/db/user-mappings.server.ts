@@ -1,4 +1,6 @@
 import { isGitHubBot } from '~/lib/github-bots'
+import { logger } from '~/lib/logger.server'
+import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 
@@ -156,8 +158,125 @@ export async function upsertUserMapping(params: {
     ],
   )
 
-  const mapping = result.rows[0]
+  const mapping: UserMapping = result.rows[0]
+
+  // Dual-write: keep users table in sync when we have all required fields.
+  // This ensures users are available for Step 2 (reading from users only).
+  // Best-effort: a failure here must not break the existing user_mappings write.
+  if (mapping.nav_ident && mapping.display_name && mapping.nav_email) {
+    upsertUser({
+      navIdent: mapping.nav_ident,
+      displayName: mapping.display_name,
+      navEmail: mapping.nav_email,
+      slackMemberId: mapping.slack_member_id,
+    }).catch((err) => {
+      logger.error('Failed to dual-write to users table', err)
+    })
+  }
+
   return mapping
+}
+
+export interface User {
+  nav_ident: string
+  display_name: string
+  nav_email: string
+  slack_member_id: string | null
+  created_at: Date
+  updated_at: Date
+  deleted_at: Date | null
+  deleted_by: string | null
+}
+
+/**
+ * Create or update a user in the `users` table.
+ * Called from upsertUserMapping (dual-write) and from the populate-users script.
+ * Requires display_name and nav_email — Graph API lookup must happen before calling this.
+ */
+export async function upsertUser(params: {
+  navIdent: string
+  displayName: string
+  navEmail: string
+  slackMemberId?: string | null
+}): Promise<User> {
+  const navIdent = normalizeNavIdent(params.navIdent)
+  const displayName = normalize(params.displayName)
+  const navEmail = normalizeEmail(params.navEmail)
+  const slackMemberId = normalize(params.slackMemberId)
+
+  if (!navIdent) throw new Error('navIdent is required')
+  if (!displayName) throw new Error('displayName is required')
+  if (!navEmail) throw new Error('navEmail is required')
+
+  const result = await pool.query(
+    `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (nav_ident) DO UPDATE SET
+       display_name    = EXCLUDED.display_name,
+       nav_email       = EXCLUDED.nav_email,
+       slack_member_id = COALESCE(EXCLUDED.slack_member_id, users.slack_member_id),
+       updated_at      = NOW(),
+       deleted_at      = NULL,
+       deleted_by      = NULL
+     RETURNING *`,
+    [navIdent, displayName, navEmail, slackMemberId],
+  )
+
+  return result.rows[0]
+}
+
+export interface PopulateResult {
+  success: number
+  skipped: number
+  errors: number
+}
+
+/**
+ * Backfill the `users` table from `user_mappings` + MS Graph API.
+ *
+ * For every active user_mappings row that has a nav_ident, looks up the user
+ * in Graph and upserts into `users`. Idempotent — safe to run multiple times.
+ */
+export async function populateUsersFromGraph(): Promise<PopulateResult> {
+  const { rows } = await pool.query<{ nav_ident: string }>(
+    `SELECT DISTINCT nav_ident FROM user_mappings WHERE nav_ident IS NOT NULL AND deleted_at IS NULL`,
+  )
+
+  let success = 0
+  let skipped = 0
+  let errors = 0
+
+  for (const row of rows) {
+    const navIdent = normalizeNavIdent(row.nav_ident)
+    if (!navIdent) {
+      skipped++
+      continue
+    }
+    try {
+      const graphUsers = await searchGraphUsers(navIdent)
+      if (graphUsers.length !== 1) {
+        logger.warn('populate-users: skipping nav_ident — expected 1 Graph result', {
+          nav_ident: navIdent,
+          count: graphUsers.length,
+        })
+        skipped++
+        continue
+      }
+      const user = graphUsers[0]
+      if (!user.displayName || !user.email) {
+        logger.warn('populate-users: skipping nav_ident — missing displayName or email', { nav_ident: navIdent })
+        skipped++
+        continue
+      }
+      await upsertUser({ navIdent, displayName: user.displayName, navEmail: user.email })
+      success++
+    } catch (err) {
+      logger.error('populate-users: error processing nav_ident', err)
+      errors++
+    }
+  }
+
+  return { success, skipped, errors }
 }
 
 /**

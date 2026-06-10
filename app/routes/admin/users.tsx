@@ -1,14 +1,16 @@
-import { Button, Modal, TextField, VStack } from '@navikt/ds-react'
+import { Alert, Button, Heading, HStack, Modal, TextField, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
 import { Form, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { AdminUsersPage } from '~/components/AdminUsersPage'
 import { CreateMappingModal } from '~/components/CreateMappingModal'
+import { pool } from '~/db/connection.server'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
 import {
   deleteUserMapping,
   getAllUserMappings,
   getUnmappedUsers,
+  populateUsersFromGraph,
   type UserMapping,
   upsertUserMapping,
 } from '~/db/user-mappings.server'
@@ -23,21 +25,24 @@ import type { Route } from './+types/users'
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const [mappings, unmappedUsers, allDevTeams, userRoleAssignments, userSectionRoleAssignments] = await Promise.all([
-    getAllUserMappings(),
-    getUnmappedUsers(),
-    getAllDevTeams(),
-    getAllUserRoleAssignments().catch(() => new Map<string, Array<{ dev_team_id: number; role: string }>>()),
-    getAllSectionRoleAssignments().catch(
-      () => new Map<string, Array<{ section_id: number; section_name: string; role: string }>>(),
-    ),
-  ])
+  const [mappings, unmappedUsers, allDevTeams, userRoleAssignments, userSectionRoleAssignments, usersCountResult] =
+    await Promise.all([
+      getAllUserMappings(),
+      getUnmappedUsers(),
+      getAllDevTeams(),
+      getAllUserRoleAssignments().catch(() => new Map<string, Array<{ dev_team_id: number; role: string }>>()),
+      getAllSectionRoleAssignments().catch(
+        () => new Map<string, Array<{ section_id: number; section_name: string; role: string }>>(),
+      ),
+      pool.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM users WHERE deleted_at IS NULL'),
+    ])
   return {
     mappings,
     unmappedUsers,
     allDevTeams,
     userRoleAssignments: Object.fromEntries(userRoleAssignments),
     userSectionRoleAssignments: Object.fromEntries(userSectionRoleAssignments),
+    usersCount: parseInt(usersCountResult.rows[0].count, 10),
   }
 }
 
@@ -150,6 +155,19 @@ export async function action({ request }: Route.ActionArgs) {
     return { success: true }
   }
 
+  if (intent === 'populate-users') {
+    try {
+      const result = await populateUsersFromGraph()
+      return {
+        success: true,
+        message: `Importerte ${result.success} brukere fra Graph API (${result.skipped} hoppet over, ${result.errors} feil)`,
+      }
+    } catch (error) {
+      logger.error('populate-users action failed', error)
+      return { error: 'Kunne ikke importere brukere fra Graph API' }
+    }
+  }
+
   if (intent === 'import') {
     const file = formData.get('file') as File
     if (!file || file.size === 0) {
@@ -191,7 +209,7 @@ export function meta() {
 }
 
 export default function AdminUsers() {
-  const { mappings, unmappedUsers, allDevTeams, userRoleAssignments, userSectionRoleAssignments } =
+  const { mappings, unmappedUsers, allDevTeams, userRoleAssignments, userSectionRoleAssignments, usersCount } =
     useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
@@ -232,28 +250,55 @@ export default function AdminUsers() {
     addModalRef.current?.showModal()
   }
 
+  const isPopulating = navigation.state === 'submitting' && navigation.formData?.get('intent') === 'populate-users'
+
   return (
     <>
-      <AdminUsersPage
-        mappings={mappings}
-        unmappedUsers={unmappedUsers}
-        devTeamById={devTeamById}
-        userRoleAssignments={userRoleAssignments}
-        userSectionRoleAssignments={userSectionRoleAssignments}
-        actionMessage={actionData?.message}
-        actionData={actionData}
-        isSubmitting={isSubmitting}
-        onAdd={openAdd}
-        onEdit={openEdit}
-        onAddMapping={openAddWithUsername}
-        onImportClick={() => fileInputRef.current?.click()}
-        fileInputRef={fileInputRef}
-        onFileChange={(e) => {
-          if (e.target.files?.length) {
-            e.target.form?.requestSubmit()
-          }
-        }}
-      />
+      <VStack gap="space-16">
+        <div>
+          <Heading level="2" size="small" spacing>
+            Importer brukere fra Entra ID
+          </Heading>
+          <VStack gap="space-8">
+            <p>
+              Henter alle aktive NAV-identer fra brukermappinger, slår opp i Graph API og fyller <code>users</code>
+              -tabellen. Idempotent — trygt å kjøre flere ganger.
+              {usersCount > 0 && ` (${usersCount} brukere i tabellen nå)`}
+            </p>
+            {actionData?.error && <Alert variant="error">{actionData.error}</Alert>}
+            {actionData?.message && <Alert variant="success">{actionData.message}</Alert>}
+            <HStack>
+              <Form method="post">
+                <input type="hidden" name="intent" value="populate-users" />
+                <Button type="submit" variant="secondary" loading={isPopulating}>
+                  Importer brukere fra Graph API
+                </Button>
+              </Form>
+            </HStack>
+          </VStack>
+        </div>
+
+        <AdminUsersPage
+          mappings={mappings}
+          unmappedUsers={unmappedUsers}
+          devTeamById={devTeamById}
+          userRoleAssignments={userRoleAssignments}
+          userSectionRoleAssignments={userSectionRoleAssignments}
+          actionMessage={actionData?.message}
+          actionData={actionData}
+          isSubmitting={isSubmitting}
+          onAdd={openAdd}
+          onEdit={openEdit}
+          onAddMapping={openAddWithUsername}
+          onImportClick={() => fileInputRef.current?.click()}
+          fileInputRef={fileInputRef}
+          onFileChange={(e) => {
+            if (e.target.files?.length) {
+              e.target.form?.requestSubmit()
+            }
+          }}
+        />
+      </VStack>
 
       {/* Add Modal */}
       <CreateMappingModal

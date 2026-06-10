@@ -230,7 +230,21 @@ CREATE INDEX IF NOT EXISTS idx_commits_pr ON commits(repo_owner, repo_name, orig
 CREATE INDEX IF NOT EXISTS idx_commits_unverified ON commits(repo_owner, repo_name) 
   WHERE pr_approved IS NULL OR pr_approved = false;
 
--- User mappings (GitHub username to Nav identity and Slack)
+-- Users (NAV-ident as primary key — stable identity across GitHub account changes)
+CREATE TABLE IF NOT EXISTS users (
+  nav_ident   TEXT PRIMARY KEY CHECK (nav_ident ~ '^[A-Z][0-9]{6}$'),
+  display_name TEXT NOT NULL,
+  nav_email    TEXT NOT NULL,
+  slack_member_id TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at   TIMESTAMPTZ NULL,
+  deleted_by   TEXT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_nav_email ON users(nav_email);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(nav_ident) WHERE deleted_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS user_mappings (
   github_username TEXT PRIMARY KEY CHECK (github_username = LOWER(github_username)),
   display_github_username TEXT CHECK (display_github_username IS NULL OR LOWER(display_github_username) = github_username),
