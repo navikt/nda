@@ -394,6 +394,17 @@ export async function getUserMappingByNavIdent(navIdent: string): Promise<UserMa
 }
 
 /**
+ * Get a user from the `users` table by NAV-ident — excludes soft-deleted.
+ * Use this instead of getUserMappingByNavIdent when GitHub account is not required.
+ */
+export async function getUserByNavIdent(navIdent: string): Promise<User | null> {
+  const result = await pool.query<User>('SELECT * FROM users WHERE nav_ident = UPPER($1) AND deleted_at IS NULL', [
+    navIdent,
+  ])
+  return result.rows[0] ?? null
+}
+
+/**
  * Get user mapping by Slack member ID — current-state lookup, excludes soft-deleted.
  */
 export async function getUserMappingBySlackId(slackMemberId: string): Promise<UserMapping | null> {

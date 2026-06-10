@@ -21,7 +21,7 @@ import {
   removeTeamRole,
 } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
+import { getUserByNavIdent } from '~/db/user-mappings.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
@@ -174,11 +174,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       throw new Response('Du har ikke tilgang til å tildele denne rollen', { status: 403 })
     }
 
-    const userMapping = await getUserMappingByNavIdent(navIdent)
-    if (!userMapping) {
-      return fail(
-        `Brukeren ${navIdent} er ikke kjent i systemet. Opprett en brukerkobling først under Admin → Brukermappinger.`,
-      )
+    const knownUser = await getUserByNavIdent(navIdent)
+    if (!knownUser) {
+      return fail(`Brukeren ${navIdent} er ikke kjent i systemet. Opprett brukeren under Admin → Brukere.`)
     }
 
     const roleLabel = TEAM_ROLE_LABELS[role] ?? role
