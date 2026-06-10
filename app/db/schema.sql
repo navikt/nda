@@ -273,3 +273,22 @@ $$ language 'plpgsql';
 
 CREATE TRIGGER update_monitored_apps_updated_at BEFORE UPDATE ON monitored_applications
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TABLE IF NOT EXISTS user_github_accounts (
+  github_username        TEXT PRIMARY KEY CHECK (github_username = LOWER(github_username)),
+  display_github_username TEXT CHECK (
+    display_github_username IS NULL OR LOWER(display_github_username) = github_username
+  ),
+  nav_ident              TEXT NOT NULL REFERENCES users(nav_ident),
+  created_at             TIMESTAMPTZ DEFAULT NOW(),
+  updated_at             TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at             TIMESTAMPTZ NULL,
+  deleted_by             TEXT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_github_accounts_nav_ident
+  ON user_github_accounts(nav_ident);
+
+CREATE INDEX IF NOT EXISTS idx_user_github_accounts_active
+  ON user_github_accounts(github_username) WHERE deleted_at IS NULL;
+

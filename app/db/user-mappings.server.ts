@@ -3,6 +3,7 @@ import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
+import { upsertUserGithubAccount } from './user-github-accounts.server'
 
 export interface UserMapping {
   github_username: string
@@ -184,24 +185,32 @@ export async function upsertUserMapping(params: {
 
   const mapping: UserMapping = result.rows[0]
 
-  // Dual-write: keep users table in sync when we have all required fields.
-  // This ensures users are available for Step 2 (reading from users only).
+  // Dual-write: keep users and user_github_accounts in sync when we have all required fields.
   // Best-effort: a failure here must not break the existing user_mappings write.
-  if (mapping.nav_ident && mapping.display_name && mapping.nav_email) {
+  const { nav_ident, display_name, nav_email } = mapping
+  if (nav_ident && display_name && nav_email) {
     upsertUser({
-      navIdent: mapping.nav_ident,
-      displayName: mapping.display_name,
-      navEmail: mapping.nav_email,
+      navIdent: nav_ident,
+      displayName: display_name,
+      navEmail: nav_email,
       slackMemberId: mapping.slack_member_id,
-    }).catch((err) => {
-      logger.error('Failed to dual-write to users table', err)
     })
+      .then(() =>
+        upsertUserGithubAccount({
+          githubUsername: mapping.github_username,
+          displayGithubUsername: mapping.display_github_username,
+          navIdent: nav_ident,
+        }),
+      )
+      .catch((err) => {
+        logger.error('Failed to dual-write to users/user_github_accounts', err)
+      })
   }
 
   return mapping
 }
 
-export interface User {
+interface User {
   nav_ident: string
   display_name: string
   nav_email: string
@@ -249,7 +258,7 @@ export async function upsertUser(params: {
   return result.rows[0]
 }
 
-export interface PopulateResult {
+interface PopulateResult {
   success: number
   skipped: number
   errors: number
