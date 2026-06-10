@@ -6,6 +6,7 @@ import { CreateMappingModal } from '~/components/CreateMappingModal'
 import { pool } from '~/db/connection.server'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
+import { populateGithubAccountsFromMappings } from '~/db/user-github-accounts.server'
 import {
   deleteUserMapping,
   getAllUserMappings,
@@ -155,6 +156,20 @@ export async function action({ request }: Route.ActionArgs) {
     return { success: true }
   }
 
+  if (intent === 'populate-github-accounts') {
+    try {
+      const result = await populateGithubAccountsFromMappings()
+      return {
+        intent: 'populate-github-accounts',
+        success: true,
+        githubAccountsMessage: `Synkroniserte ${result.inserted} GitHub-kontoer fra brukermappinger (${result.skipped} hoppet over — mangler aktiv users-rad).`,
+      }
+    } catch (error) {
+      logger.error('populate-github-accounts action failed', error)
+      return { intent: 'populate-github-accounts', githubAccountsError: 'Kunne ikke synkronisere GitHub-kontoer' }
+    }
+  }
+
   if (intent === 'populate-users') {
     try {
       const result = await populateUsersFromGraph()
@@ -251,6 +266,8 @@ export default function AdminUsers() {
   }
 
   const isPopulating = navigation.state === 'submitting' && navigation.formData?.get('intent') === 'populate-users'
+  const isPopulatingGithub =
+    navigation.state === 'submitting' && navigation.formData?.get('intent') === 'populate-github-accounts'
 
   return (
     <>
@@ -275,6 +292,28 @@ export default function AdminUsers() {
                 </Button>
               </Form>
             </HStack>
+          </VStack>
+        </div>
+
+        <div>
+          <Heading level="2" size="small" spacing>
+            Synkroniser GitHub-kontoer
+          </Heading>
+          <VStack gap="space-8">
+            <p>
+              Seed <code>user_github_accounts</code>-tabellen fra eksisterende brukermappinger. Kobler GitHub-brukernavn
+              til brukere i <code>users</code>-tabellen. Idempotent — trygt å kjøre flere ganger.
+            </p>
+            <HStack>
+              <Form method="post">
+                <input type="hidden" name="intent" value="populate-github-accounts" />
+                <Button type="submit" variant="secondary" loading={isPopulatingGithub}>
+                  Synkroniser GitHub-kontoer
+                </Button>
+              </Form>
+            </HStack>
+            {actionData?.githubAccountsError && <Alert variant="error">{actionData.githubAccountsError}</Alert>}
+            {actionData?.githubAccountsMessage && <Alert variant="success">{actionData.githubAccountsMessage}</Alert>}
           </VStack>
         </div>
 
