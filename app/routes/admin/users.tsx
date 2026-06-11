@@ -1,4 +1,4 @@
-import { Alert, Button, Heading, HStack, Modal, TextField, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, Heading, HStack, Modal, TextField, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
 import { Form, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { AdminUsersPage } from '~/components/AdminUsersPage'
@@ -11,6 +11,7 @@ import {
   deleteUserMapping,
   getAllUserMappings,
   getUnmappedUsers,
+  getUsersWithoutGithub,
   populateUsersFromGraph,
   type UserMapping,
   upsertUser,
@@ -22,25 +23,35 @@ import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
+import styles from '~/styles/common.module.css'
 import type { Route } from './+types/users'
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const [mappings, unmappedUsers, allDevTeams, userRoleAssignments, userSectionRoleAssignments, usersCountResult] =
-    await Promise.all([
-      getAllUserMappings(),
-      getUnmappedUsers(),
-      getAllDevTeams(),
-      getAllUserRoleAssignments().catch(() => new Map<string, Array<{ dev_team_id: number; role: string }>>()),
-      getAllSectionRoleAssignments().catch(
-        () => new Map<string, Array<{ section_id: number; section_name: string; role: string }>>(),
-      ),
-      pool.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM users WHERE deleted_at IS NULL'),
-    ])
+  const [
+    mappings,
+    unmappedUsers,
+    usersWithoutGithub,
+    allDevTeams,
+    userRoleAssignments,
+    userSectionRoleAssignments,
+    usersCountResult,
+  ] = await Promise.all([
+    getAllUserMappings(),
+    getUnmappedUsers(),
+    getUsersWithoutGithub(),
+    getAllDevTeams(),
+    getAllUserRoleAssignments().catch(() => new Map<string, Array<{ dev_team_id: number; role: string }>>()),
+    getAllSectionRoleAssignments().catch(
+      () => new Map<string, Array<{ section_id: number; section_name: string; role: string }>>(),
+    ),
+    pool.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM users WHERE deleted_at IS NULL'),
+  ])
   return {
     mappings,
     unmappedUsers,
+    usersWithoutGithub,
     allDevTeams,
     userRoleAssignments: Object.fromEntries(userRoleAssignments),
     userSectionRoleAssignments: Object.fromEntries(userSectionRoleAssignments),
@@ -265,8 +276,15 @@ export function meta() {
 }
 
 export default function AdminUsers() {
-  const { mappings, unmappedUsers, allDevTeams, userRoleAssignments, userSectionRoleAssignments, usersCount } =
-    useLoaderData<typeof loader>()
+  const {
+    mappings,
+    unmappedUsers,
+    usersWithoutGithub,
+    allDevTeams,
+    userRoleAssignments,
+    userSectionRoleAssignments,
+    usersCount,
+  } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
@@ -413,6 +431,28 @@ export default function AdminUsers() {
             }
           }}
         />
+
+        {usersWithoutGithub.length > 0 && (
+          <div>
+            <Heading level="2" size="medium" spacing>
+              Brukere uten GitHub-konto ({usersWithoutGithub.length})
+            </Heading>
+            <div>
+              {usersWithoutGithub.map((u) => (
+                <Box key={u.nav_ident} padding="space-16" background="raised" className={styles.stackedListItem}>
+                  <HStack justify="space-between" align="center">
+                    <VStack gap="space-2">
+                      <BodyShort weight="semibold">{u.display_name}</BodyShort>
+                      <BodyShort size="small" textColor="subtle">
+                        {u.nav_ident} · {u.nav_email}
+                      </BodyShort>
+                    </VStack>
+                  </HStack>
+                </Box>
+              ))}
+            </div>
+          </div>
+        )}
       </VStack>
 
       {/* Add Modal */}
