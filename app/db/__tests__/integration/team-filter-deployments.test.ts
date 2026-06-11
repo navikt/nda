@@ -31,6 +31,14 @@ async function seedUser(navIdent: string, githubUsername: string) {
      VALUES ($1, $2, $3)`,
     [navIdent, githubUsername, navIdent],
   )
+  await pool.query(
+    `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+    [navIdent, navIdent, `${githubUsername}@nav.no`],
+  )
+  await pool.query(
+    `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [githubUsername, navIdent],
+  )
 }
 
 async function joinDevTeam(navIdent: string, devTeamId: number) {
@@ -205,7 +213,7 @@ describe('unmapped_deployers filter', () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
     await seedUser('B222222', 'soft-deleted-user')
-    await pool.query("UPDATE user_mappings SET deleted_at = NOW() WHERE github_username = 'soft-deleted-user'")
+    await pool.query("UPDATE user_github_accounts SET deleted_at = NOW() WHERE github_username = 'soft-deleted-user'")
 
     await seedDeployment(pool, {
       monitoredAppId: appId,

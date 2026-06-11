@@ -9,7 +9,7 @@ import { Alert, BodyShort, Box, Button, Heading, HStack, Switch, Tag, VStack } f
 import { Link, useSearchParams } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
 import { getDeploymentById } from '~/db/deployments.server'
-import { getUserMappings } from '~/db/user-mappings.server'
+import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
@@ -89,7 +89,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         if (review.username) usernames.push(review.username)
       }
     }
-    const mappings = usernames.length > 0 ? await getUserMappings(usernames) : new Map()
+    const mappings = usernames.length > 0 ? await getGithubUserLookups(usernames) : new Map()
 
     return {
       deployment,

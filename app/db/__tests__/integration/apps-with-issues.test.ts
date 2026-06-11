@@ -22,12 +22,20 @@ afterAll(async () => {
 
 afterEach(async () => {
   await truncateAllTables(pool)
+  navIdentCounter = 1
 })
 
-async function seedUserMapping(githubUsername: string): Promise<void> {
-  await pool.query(`INSERT INTO user_mappings (github_username, display_name) VALUES ($1, $2)`, [
-    githubUsername,
+let navIdentCounter = 1
+async function seedGithubAccount(githubUsername: string): Promise<void> {
+  const navIdent = `Z99${String(navIdentCounter++).padStart(4, '0')}`
+  await pool.query(`INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3)`, [
+    navIdent,
     `Name of ${githubUsername}`,
+    `${githubUsername}@nav.no`,
+  ])
+  await pool.query(`INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2)`, [
+    githubUsername.toLowerCase(),
+    navIdent,
   ])
 }
 
@@ -170,7 +178,7 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
       deployerUsername: 'mapped-user',
       fourEyesStatus: 'approved',
     })
-    await seedUserMapping('mapped-user')
+    await seedGithubAccount('mapped-user')
     const objectiveId = await seedObjective()
     // Add goal link with objective so app doesn't appear due to missing_goal_links
     await pool.query(
@@ -192,7 +200,7 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
       deployerUsername: 'Alice',
       fourEyesStatus: 'approved',
     })
-    await seedUserMapping('alice')
+    await seedGithubAccount('alice')
     const objectiveId = await seedObjective()
     // Add goal link with objective so app doesn't appear due to missing_goal_links
     await pool.query(
@@ -214,8 +222,8 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
       deployerUsername: 'alice',
       fourEyesStatus: 'approved',
     })
-    await seedUserMapping('alice')
-    await pool.query(`UPDATE user_mappings SET deleted_at = NOW() WHERE github_username = 'alice'`)
+    await seedGithubAccount('alice')
+    await pool.query(`UPDATE user_github_accounts SET deleted_at = NOW() WHERE github_username = 'alice'`)
 
     const result = await getDevTeamAppsWithIssues(['team-a'])
     expect(result).toHaveLength(1)
@@ -292,7 +300,7 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
 describe('getDevTeamAppsWithIssues - unrecognized four_eyes_status', () => {
   it('surfaces app as having issues when status is not in any known category', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-x', appName: 'mystery', environment: 'prod' })
-    await seedUserMapping('deployer1')
+    await seedGithubAccount('deployer1')
 
     // Seed a deployment with an unrecognized status value (e.g. a migrated/legacy value)
     await seedDeployment(pool, {
@@ -310,7 +318,7 @@ describe('getDevTeamAppsWithIssues - unrecognized four_eyes_status', () => {
 
   it('derives without_four_eyes correctly when mix of known and unknown statuses', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-y', appName: 'mixed', environment: 'prod' })
-    await seedUserMapping('deployer2')
+    await seedGithubAccount('deployer2')
 
     await seedDeployment(pool, {
       monitoredAppId: appId,

@@ -7,7 +7,8 @@ import { type DeploymentFilters as DeploymentFiltersType, getDeploymentsPaginate
 import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
-import { getUserMappingByNavIdent, getUserMappings } from '~/db/user-mappings.server'
+import { getGithubUserLookups } from '~/db/user-github-lookups.server'
+import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { serializeUserMappings } from '~/lib/user-display'
@@ -169,7 +170,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const allUsernamesForMapping = [
     ...new Set([...deployerUsernamesOnPage, ...prCreatorUsernames, ...prMergerUsernames, ...allDeployerUsernames]),
   ]
-  const userMappingsMap = allUsernamesForMapping.length > 0 ? await getUserMappings(allUsernamesForMapping) : new Map()
+  const userMappingsMap =
+    allUsernamesForMapping.length > 0 ? await getGithubUserLookups(allUsernamesForMapping) : new Map()
 
   const deployerOptions = allDeployerUsernames
     .map((username) => ({
@@ -181,9 +183,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const currentUserGithub = currentUserMapping?.github_username ?? null
 
   // Check for unmapped deployers
-  const hasUnmappedDeployers = allDeployerUsernames.some(
-    (u) => !userMappingsMap.has(u) || !userMappingsMap.get(u)?.display_name,
-  )
+  const hasUnmappedDeployers = allDeployerUsernames.some((u) => {
+    const m = userMappingsMap.get(u)
+    return !m || m.account_deleted_at !== null
+  })
 
   // Check for non-member deployers (deployers not in the team member list)
   const lowerMembers = new Set(deployerUsernames.map((u) => u.toLowerCase()))

@@ -10,7 +10,7 @@ import {
 import { createDeviation } from '~/db/deviations.server'
 import { getDeviationSlackChannel } from '~/db/global-settings.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
-import { getUserMappings } from '~/db/user-mappings.server'
+import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
 import { lookupLegacyByCommit, lookupLegacyByPR } from '~/lib/github'
@@ -148,7 +148,7 @@ export async function action({ request, params }: { request: Request; params: Re
       }
     }
 
-    const userMappings = await getUserMappings(usernamesToCheck)
+    const userMappings = await getGithubUserLookups(usernamesToCheck)
     const currentNavIdent = identity.navIdent.toUpperCase()
 
     // Check if user is PR creator

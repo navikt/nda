@@ -491,12 +491,12 @@ export async function getAuditReportData(
   if (identifiers.size > 0) {
     const identifierArray = Array.from(identifiers)
     const mappingsResult = await pool.query(
-      `SELECT um.github_username,
+      `SELECT uga.github_username,
               u.display_name,
-              um.nav_ident
-       FROM user_mappings um
-       LEFT JOIN users u ON u.nav_ident = um.nav_ident AND u.deleted_at IS NULL
-       WHERE um.github_username = ANY($1) OR um.nav_ident = ANY($2)`,
+              uga.nav_ident
+       FROM user_github_accounts uga
+       LEFT JOIN users u ON u.nav_ident = uga.nav_ident AND u.deleted_at IS NULL
+       WHERE uga.github_username = ANY($1) OR uga.nav_ident = ANY($2)`,
       [identifierArray.map((id) => id.toLowerCase()), identifierArray.map((id) => id.toUpperCase())],
     )
     for (const row of mappingsResult.rows) {
