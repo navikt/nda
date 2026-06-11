@@ -384,6 +384,27 @@ export async function getUnmappedUsers(): Promise<{ github_username: string; dep
 }
 
 /**
+ * Get active users from the `users` table that have no linked GitHub account
+ * in `user_github_accounts`. These are users added without a GitHub account
+ * (e.g. produktledere).
+ */
+export async function getUsersWithoutGithub(): Promise<
+  { nav_ident: string; display_name: string; nav_email: string }[]
+> {
+  const result = await pool.query<{ nav_ident: string; display_name: string; nav_email: string }>(
+    `SELECT u.nav_ident, u.display_name, u.nav_email
+     FROM users u
+     WHERE u.deleted_at IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM user_github_accounts uga
+         WHERE uga.nav_ident = u.nav_ident AND uga.deleted_at IS NULL
+       )
+     ORDER BY u.display_name`,
+  )
+  return result.rows
+}
+
+/**
  * Get user mapping by NAV-ident — current-state lookup, excludes soft-deleted.
  */
 export async function getUserMappingByNavIdent(navIdent: string): Promise<UserMapping | null> {
