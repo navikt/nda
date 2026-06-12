@@ -48,6 +48,8 @@ function renderPage(canAdmin: boolean) {
           is_active: true,
         },
       ]}
+      teamGroups={[]}
+      ungroupedTeamApps={[]}
       canAdmin={canAdmin}
       teamBasePath="/sections/pensjon/teams/starte-pensjon"
       isSubmitting={false}
