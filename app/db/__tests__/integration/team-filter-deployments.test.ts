@@ -90,6 +90,7 @@ describe('getMembersGithubUsernamesForDevTeamRoles', () => {
     await seedUser('A111111', 'alice')
     await seedUser('B222222', 'bob')
     await pool.query(`UPDATE user_mappings SET deleted_at = NOW() WHERE nav_ident = 'B222222'`)
+    await pool.query(`UPDATE user_github_accounts SET deleted_at = NOW() WHERE nav_ident = 'B222222'`)
     await joinDevTeam('A111111', team)
     await joinDevTeam('B222222', team)
 

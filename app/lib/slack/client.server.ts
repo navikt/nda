@@ -31,7 +31,7 @@ import {
   logSlackInteraction,
   updateSlackNotification,
 } from '~/db/slack-notifications.server'
-import { getUserMappingBySlackId } from '~/db/user-mappings.server'
+import { getUserBySlackMemberId } from '~/db/user-github-lookups.server'
 import { isApprovedStatus, isLegacyStatus, isNotApprovedStatus, isPendingStatus } from '~/lib/four-eyes-status'
 import { logger, logOutgoingHttp } from '~/lib/logger.server'
 import {
@@ -723,9 +723,9 @@ async function buildPersonalizedHomeTabInput({
   slackUserId: string
   baseUrl: string
 }): Promise<Parameters<typeof buildHomeTabBlocks>[0]> {
-  const userMapping = await getUserMappingBySlackId(slackUserId)
-  const navIdent = userMapping?.nav_ident ?? null
-  const githubUsername = userMapping?.github_username ?? null
+  const userData = await getUserBySlackMemberId(slackUserId)
+  const navIdent = userData?.nav_ident ?? null
+  const githubUsername = userData?.github_username ?? null
 
   // No NDA mapping at all → render onboarding-only home tab.
   if (!navIdent) {

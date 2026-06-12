@@ -58,6 +58,22 @@ function defined<T>(value: T | null | undefined): T {
   return value
 }
 
+async function seedGithubAccount(navIdent: string, githubUsername: string, displayName: string) {
+  await pool.query(
+    `INSERT INTO users (nav_ident, display_name, nav_email)
+     VALUES ($1, $2, LOWER($1) || '@nav.no') ON CONFLICT DO NOTHING`,
+    [navIdent, displayName],
+  )
+  await pool.query(
+    `INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ($1, LOWER($2), $3) ON CONFLICT DO NOTHING`,
+    [navIdent, githubUsername, displayName],
+  )
+  await pool.query(
+    `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES (LOWER($1), $2) ON CONFLICT DO NOTHING`,
+    [githubUsername, navIdent],
+  )
+}
+
 function makeAdmin(navIdent = 'A123456'): UserIdentity {
   return { navIdent, role: 'admin', entraGroups: [] }
 }
@@ -549,9 +565,8 @@ describe('role assignment CRUD', () => {
     await assignTeamRole('U222222', teamId, 'produktleder', 'admin')
 
     // Create user mappings
-    await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U111111', 'user1', 'User One'), ('U222222', 'user2', 'User Two')",
-    )
+    await seedGithubAccount('U111111', 'user1', 'User One')
+    await seedGithubAccount('U222222', 'user2', 'User Two')
 
     const usernames = await getMembersGithubUsernamesForDevTeamRoles([teamId])
     expect(usernames.sort()).toEqual(['user1', 'user2'])
@@ -562,9 +577,7 @@ describe('role assignment CRUD', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
     const assignment = await assignTeamRole('U333333', teamId, 'utvikler', 'admin')
-    await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U333333', 'user3', 'User Three')",
-    )
+    await seedGithubAccount('U333333', 'user3', 'User Three')
 
     await removeTeamRole(defined(assignment).id, 'admin')
 
@@ -577,9 +590,7 @@ describe('role assignment CRUD', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
     await assignTeamRole('U444444', teamId, 'utvikler', 'admin')
-    await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U444444', 'user4', 'User Four')",
-    )
+    await seedGithubAccount('U444444', 'user4', 'User Four')
 
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [teamId])
 
@@ -592,9 +603,7 @@ describe('role assignment CRUD', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
     await assignTeamRole('U555555', teamId, 'utvikler', 'admin')
-    await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U555555', 'user5', 'User Five')",
-    )
+    await seedGithubAccount('U555555', 'user5', 'User Five')
 
     const teams = await getDevTeamsForGithubUsernamesByRole(['user5'])
     expect(teams).toHaveLength(1)
@@ -606,9 +615,7 @@ describe('role assignment CRUD', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
 
     await assignTeamRole('U666666', teamId, 'utvikler', 'admin')
-    await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U666666', 'usersix', 'User Six')",
-    )
+    await seedGithubAccount('U666666', 'usersix', 'User Six')
 
     const teams = await getDevTeamsForGithubUsernamesByRole(['UserSix'])
     expect(teams).toHaveLength(1)
@@ -622,9 +629,7 @@ describe('role assignment CRUD', () => {
 
     const assignment1 = await assignTeamRole('U777777', team1, 'utvikler', 'admin')
     await assignTeamRole('U777777', team2, 'utvikler', 'admin')
-    await pool.query(
-      "INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ('U777777', 'user7', 'User Seven')",
-    )
+    await seedGithubAccount('U777777', 'user7', 'User Seven')
 
     // Soft-delete role in team1
     await removeTeamRole(defined(assignment1).id, 'admin')

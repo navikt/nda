@@ -1,6 +1,11 @@
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { getGithubUserLookup, getGithubUserLookups } from '../../user-github-lookups.server'
+import {
+  getActiveGithubAccountByNavIdent,
+  getGithubUserLookup,
+  getGithubUserLookups,
+  getUserBySlackMemberId,
+} from '../../user-github-lookups.server'
 import { truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -105,5 +110,90 @@ describe('getGithubUserLookups', () => {
     expect(result.size).toBe(1)
     expect(result.has('GladFjord')).toBe(true)
     expect(result.has('unknown-user')).toBe(false)
+  })
+})
+
+describe('getActiveGithubAccountByNavIdent', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+  })
+
+  it('returns null when no active account exists', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no')`,
+    )
+    const result = await getActiveGithubAccountByNavIdent('Z990001')
+    expect(result).toBeNull()
+  })
+
+  it('returns null when all accounts are soft-deleted', async () => {
+    await seedAccount('GladFjord', 'Z990001', { deleted: true })
+    const result = await getActiveGithubAccountByNavIdent('Z990001')
+    expect(result).toBeNull()
+  })
+
+  it('returns active account for known nav_ident', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    const result = await getActiveGithubAccountByNavIdent('Z990001')
+    expect(result).not.toBeNull()
+    expect(result?.github_username).toBe('gladfjord')
+  })
+
+  it('is case-insensitive on nav_ident input', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    expect(await getActiveGithubAccountByNavIdent('z990001')).not.toBeNull()
+    expect(await getActiveGithubAccountByNavIdent('Z990001')).not.toBeNull()
+  })
+
+  it('returns newest active account when multiple exist', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no') ON CONFLICT DO NOTHING`,
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('old-account', 'Z990001', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING`,
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('new-account', 'Z990001', NOW()) ON CONFLICT DO NOTHING`,
+    )
+    const result = await getActiveGithubAccountByNavIdent('Z990001')
+    expect(result?.github_username).toBe('new-account')
+  })
+})
+
+describe('getUserBySlackMemberId', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+  })
+
+  it('returns null for unknown slack_member_id', async () => {
+    const result = await getUserBySlackMemberId('U_UNKNOWN')
+    expect(result).toBeNull()
+  })
+
+  it('returns user with github_username when account is linked', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no', 'U_GLADFJORD')`,
+    )
+    await pool.query(`INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('gladfjord', 'Z990001')`)
+    const result = await getUserBySlackMemberId('U_GLADFJORD')
+    expect(result?.nav_ident).toBe('Z990001')
+    expect(result?.github_username).toBe('gladfjord')
+  })
+
+  it('returns user with null github_username when no GitHub account is linked', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no', 'U_GLADFJORD')`,
+    )
+    const result = await getUserBySlackMemberId('U_GLADFJORD')
+    expect(result?.nav_ident).toBe('Z990001')
+    expect(result?.github_username).toBeNull()
+  })
+
+  it('returns null for soft-deleted user', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id, deleted_at) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no', 'U_GLADFJORD', NOW())`,
+    )
+    const result = await getUserBySlackMemberId('U_GLADFJORD')
+    expect(result).toBeNull()
   })
 })
