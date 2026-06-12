@@ -321,10 +321,24 @@ export async function populateUsersFromGraph(): Promise<PopulateResult> {
  * conflict.
  */
 export async function deleteUserMapping(githubUsername: string, deletedBy: string | null = null): Promise<void> {
-  await pool.query(
-    'UPDATE user_mappings SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW() WHERE github_username = LOWER($1) AND deleted_at IS NULL',
-    [githubUsername.trim(), deletedBy],
-  )
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      'UPDATE user_mappings SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW() WHERE github_username = LOWER($1) AND deleted_at IS NULL',
+      [githubUsername.trim(), deletedBy],
+    )
+    await client.query(
+      'UPDATE user_github_accounts SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW() WHERE github_username = LOWER($1) AND deleted_at IS NULL',
+      [githubUsername.trim(), deletedBy],
+    )
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 /**

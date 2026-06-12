@@ -19,7 +19,7 @@ import {
   SYNC_INTERVAL_MS,
   updateSyncJobProgress,
 } from '~/db/sync-jobs.server'
-import { getUserMappings } from '~/db/user-mappings.server'
+import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { isValidSlackChannel } from '~/lib/form-validators'
@@ -168,7 +168,7 @@ export async function action({ request }: { request: Request; params: Record<str
       ...readiness.missing_approver_deployments.map((d) => d.deployer_username),
     ].filter((u): u is string => u != null)
     const uniqueDeployers = [...new Set(deployerUsernames)]
-    const userMappings = uniqueDeployers.length > 0 ? await getUserMappings(uniqueDeployers) : new Map()
+    const userMappings = uniqueDeployers.length > 0 ? await getGithubUserLookups(uniqueDeployers) : new Map()
 
     const readinessPeriodKey = `${periodTypeRaw}:${periodStart}`
 

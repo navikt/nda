@@ -12,7 +12,8 @@ import {
   getMembersGithubUsernamesForDevTeamRoles,
   getUserDevTeamsByRole,
 } from '~/db/role-assignments.server'
-import { getUserMappingByNavIdent, getUserMappings } from '~/db/user-mappings.server'
+import { getGithubUserLookups } from '~/db/user-github-lookups.server'
+import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
@@ -224,7 +225,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const allUsernamesForMapping = [
     ...new Set([...deployerUsernames, ...prCreatorUsernames, ...prMergerUsernames, ...allDeployers]),
   ]
-  const userMappings = await getUserMappings(allUsernamesForMapping)
+  const userMappings = await getGithubUserLookups(allUsernamesForMapping)
 
   // Build deployer options with display names
   const deployerOptions = allDeployers.map((username) => {
@@ -236,7 +237,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   // Check if any deployer in the audit window lacks an active mapping
   const hasUnmappedDeployers = allDeployers.some((u) => {
     const m = userMappings.get(u)
-    return !m || m.deleted_at !== null
+    return !m || m.account_deleted_at !== null
   })
 
   // Find current user's GitHub username for "Meg" shortcut

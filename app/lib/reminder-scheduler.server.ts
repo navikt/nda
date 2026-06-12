@@ -6,7 +6,7 @@
  */
 
 import { claimReminderSend, getAppsWithRemindersEnabled, getUnapprovedDeployments } from '~/db/deployments.server'
-import { getUserMapping } from '~/db/user-mappings.server'
+import { getGithubUserLookup } from '~/db/user-github-lookups.server'
 import { logger } from '~/lib/logger.server'
 import { getWeekdayKey, isBusinessDay } from './norwegian-holidays'
 import type { ReminderDeployment } from './slack'
@@ -86,7 +86,7 @@ export async function sendReminderForApp(
 
   const reminderDeployments: ReminderDeployment[] = await Promise.all(
     deployments.map(async (d) => {
-      const mapping = d.deployer_username ? await getUserMapping(d.deployer_username) : null
+      const mapping = d.deployer_username ? await getGithubUserLookup(d.deployer_username) : null
       return {
         id: d.id,
         commitSha: d.commit_sha || '',

@@ -45,6 +45,13 @@ describe('user_mappings soft delete', () => {
 
   it('soft-deletes by setting deleted_at and deleted_by', async () => {
     await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
+    // Ensure user_github_accounts row exists for the atomicity assertion below
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Octo Cat', 'octocat@nav.no') ON CONFLICT DO NOTHING`,
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('octocat', 'Z990001') ON CONFLICT DO NOTHING`,
+    )
     await deleteUserMapping('octocat', 'Z990002')
 
     const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1', [
@@ -53,6 +60,15 @@ describe('user_mappings soft delete', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].deleted_at).not.toBeNull()
     expect(rows[0].deleted_by).toBe('Z990002')
+
+    // Also verifies that user_github_accounts is soft-deleted atomically
+    const { rows: ugaRows } = await pool.query(
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
+      ['octocat'],
+    )
+    expect(ugaRows).toHaveLength(1)
+    expect(ugaRows[0].deleted_at).not.toBeNull()
+    expect(ugaRows[0].deleted_by).toBe('Z990002')
   })
 
   it('getUserMapping still returns soft-deleted mapping (audit history)', async () => {

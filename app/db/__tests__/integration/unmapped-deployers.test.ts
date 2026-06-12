@@ -22,17 +22,25 @@ afterAll(async () => {
 
 afterEach(async () => {
   await truncateAllTables(pool)
+  navIdentCounter = 1
 })
 
-async function seedUserMapping(githubUsername: string): Promise<void> {
-  await pool.query(`INSERT INTO user_mappings (github_username, display_name) VALUES ($1, $2)`, [
-    githubUsername,
+let navIdentCounter = 1
+async function seedGithubAccount(githubUsername: string): Promise<void> {
+  const navIdent = `Z99${String(navIdentCounter++).padStart(4, '0')}`
+  await pool.query(`INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3)`, [
+    navIdent,
     `Name of ${githubUsername}`,
+    `${githubUsername}@nav.no`,
+  ])
+  await pool.query(`INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2)`, [
+    githubUsername.toLowerCase(),
+    navIdent,
   ])
 }
 
 describe('getUnmappedContributors', () => {
-  it('returns deployer usernames that have no user_mappings row', async () => {
+  it('returns deployer usernames that have no user_github_accounts row', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod' })
     await seedDeployment(pool, {
       monitoredAppId: appId,
@@ -46,7 +54,7 @@ describe('getUnmappedContributors', () => {
       environment: 'prod',
       deployerUsername: 'bob',
     })
-    await seedUserMapping('alice')
+    await seedGithubAccount('alice')
 
     const result = await getUnmappedContributors(['team-a'])
     expect(result).toEqual(['bob'])
@@ -60,7 +68,7 @@ describe('getUnmappedContributors', () => {
       environment: 'prod',
       deployerUsername: 'alice',
     })
-    await seedUserMapping('alice')
+    await seedGithubAccount('alice')
 
     const result = await getUnmappedContributors(['team-a'])
     expect(result).toEqual([])
@@ -101,7 +109,7 @@ describe('getUnmappedContributors', () => {
       deployerUsername: 'deployer-1',
       githubPrData: { creator: { username: 'pr-author-1' } },
     })
-    await seedUserMapping('deployer-1')
+    await seedGithubAccount('deployer-1')
 
     const result = await getUnmappedContributors(['team-a'])
     // pr-author-1 is NOT included — only deployer_username is checked
@@ -127,7 +135,7 @@ describe('getUnmappedContributors', () => {
     expect(result).toEqual(['alice'])
   })
 
-  it('performs case-insensitive matching against user_mappings', async () => {
+  it('performs case-insensitive matching against user_github_accounts', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod' })
     await seedDeployment(pool, {
       monitoredAppId: appId,
@@ -135,7 +143,7 @@ describe('getUnmappedContributors', () => {
       environment: 'prod',
       deployerUsername: 'Alice',
     })
-    await seedUserMapping('alice')
+    await seedGithubAccount('alice')
 
     const result = await getUnmappedContributors(['team-a'])
     expect(result).toEqual([])
@@ -149,8 +157,8 @@ describe('getUnmappedContributors', () => {
       environment: 'prod',
       deployerUsername: 'alice',
     })
-    await seedUserMapping('alice')
-    await pool.query(`UPDATE user_mappings SET deleted_at = NOW() WHERE github_username = 'alice'`)
+    await seedGithubAccount('alice')
+    await pool.query(`UPDATE user_github_accounts SET deleted_at = NOW() WHERE github_username = 'alice'`)
 
     const result = await getUnmappedContributors(['team-a'])
     expect(result).toEqual(['alice'])

@@ -15,7 +15,7 @@ import { Alert, BodyShort, Box, Button, Heading, HStack, Switch, Tag, VStack } f
 import { Link, useSearchParams } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
 import { getDeploymentById } from '~/db/deployments.server'
-import { getUserMappings } from '~/db/user-mappings.server'
+import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
 import { getUserDisplayName, serializeUserMappings } from '~/lib/user-display'
@@ -100,7 +100,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       if (pr.mergedByUsername) usernames.add(pr.mergedByUsername)
     }
     const mappingUsernames = Array.from(usernames)
-    const mappings = mappingUsernames.length > 0 ? await getUserMappings(mappingUsernames) : new Map()
+    const mappings = mappingUsernames.length > 0 ? await getGithubUserLookups(mappingUsernames) : new Map()
 
     return {
       deployment,
