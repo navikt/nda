@@ -3,14 +3,16 @@ import type { AddableApp } from '~/components/AddAppsDialog'
 import { DevTeamAdminPage } from '~/components/DevTeamAdminPage'
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
 import {
-  addAppToGroup,
+  addTeamAppToGroupConditional,
   createApplicationGroup,
   deleteGroup,
   getGroupsForDevTeam,
   getUngroupedTeamApps,
   isTeamApp,
+  isTeamGroup,
   removeAppFromGroup,
   type UngroupedTeamApp,
+  verifyAllUngroupedTeamApps,
 } from '~/db/application-groups.server'
 import { type Board, createBoard, getBoardsByDevTeam } from '~/db/boards.server'
 import { pool } from '~/db/connection.server'
@@ -433,7 +435,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       })
       return ok('Tavle ble opprettet.')
     } catch (error) {
-      return fail(`Kunne ikke opprette tavle: ${error}`)
+      logger.error('create_board failed:', error)
+      return fail('Kunne ikke opprette tavle.')
     }
   }
 
@@ -441,24 +444,39 @@ export async function action({ request, params }: Route.ActionArgs) {
     const name = getFormString(formData, 'name')?.trim()
     if (!name) return fail('Gruppenavn er påkrevd.')
 
-    const appIds = formData
+    const rawAppIds = formData
       .getAll('app_id')
-      .map((v) => parseInt(String(v), 10))
-      .filter(Number.isFinite)
+      .map((v) => Number(String(v)))
+      .filter((n) => Number.isInteger(n) && n > 0)
+    const appIds = [...new Set(rawAppIds)]
     if (appIds.length === 0) return fail('Velg minst én applikasjon.')
 
-    for (const appId of appIds) {
-      if (!(await isTeamApp(devTeam.id, appId))) {
-        return fail('En eller flere applikasjoner tilhører ikke dette teamet.')
-      }
+    if (!(await verifyAllUngroupedTeamApps(devTeam.id, appIds))) {
+      return fail('En eller flere applikasjoner tilhører ikke dette teamet, er allerede gruppert, eller er inaktive.')
     }
 
+    let groupId: number | null = null
     try {
       const group = await createApplicationGroup(name)
-      await Promise.all(appIds.map((appId) => addAppToGroup(group.id, appId)))
+      groupId = group.id
+      const results = await Promise.all(
+        appIds.map((appId) => addTeamAppToGroupConditional(group.id, appId, devTeam.id)),
+      )
+      if (results.some((r) => !r)) {
+        await deleteGroup(group.id, user.navIdent)
+        return fail('En eller flere applikasjoner ble endret underveis. Prøv igjen.')
+      }
       return ok(`Gruppe "${name}" ble opprettet med ${appIds.length} applikasjon${appIds.length === 1 ? '' : 'er'}.`)
     } catch (error) {
-      return fail(`Kunne ikke opprette gruppe: ${error}`)
+      logger.error('create_team_group failed:', error)
+      if (groupId !== null) {
+        try {
+          await deleteGroup(groupId, user.navIdent)
+        } catch (cleanupError) {
+          logger.error('create_team_group cleanup failed:', cleanupError)
+        }
+      }
+      return fail('Kunne ikke opprette gruppe.')
     }
   }
 
@@ -468,37 +486,59 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     const ungrouped = await getUngroupedTeamApps(devTeam.id)
     const toGroup = ungrouped.filter((a) => a.app_name === appName)
-    if (toGroup.length < 2) return fail('Fant ikke nok applikasjoner å gruppere.')
+    const distinctEnvs = new Set(toGroup.map((a) => a.environment_name))
+    if (distinctEnvs.size < 2) return fail('Fant ikke apper med samme navn i minst to distinkte miljøer.')
 
+    let groupId: number | null = null
     try {
       const group = await createApplicationGroup(appName)
-      await Promise.all(toGroup.map((app) => addAppToGroup(group.id, app.id)))
+      groupId = group.id
+      const results = await Promise.all(
+        toGroup.map((app) => addTeamAppToGroupConditional(group.id, app.id, devTeam.id)),
+      )
+      if (results.some((r) => !r)) {
+        await deleteGroup(group.id, user.navIdent)
+        return fail('En eller flere applikasjoner ble endret underveis. Prøv igjen.')
+      }
       return ok(`Gruppe "${appName}" ble opprettet med ${toGroup.length} applikasjoner.`)
     } catch (error) {
-      return fail(`Kunne ikke opprette gruppe: ${error}`)
+      logger.error('create_from_team_suggestion failed:', error)
+      if (groupId !== null) {
+        try {
+          await deleteGroup(groupId, user.navIdent)
+        } catch (cleanupError) {
+          logger.error('create_from_team_suggestion cleanup failed:', cleanupError)
+        }
+      }
+      return fail('Kunne ikke opprette gruppe.')
     }
   }
 
   if (intent === 'add_team_app_to_group') {
-    const groupId = parseInt(getFormString(formData, 'group_id') ?? '', 10)
-    const appId = parseInt(getFormString(formData, 'app_id') ?? '', 10)
-    if (!Number.isFinite(groupId) || !Number.isFinite(appId)) return fail('Ugyldig gruppe- eller applikasjons-ID.')
+    const groupId = Number(getFormString(formData, 'group_id') ?? '')
+    const appId = Number(getFormString(formData, 'app_id') ?? '')
+    if (!Number.isInteger(groupId) || groupId <= 0 || !Number.isInteger(appId) || appId <= 0)
+      return fail('Ugyldig gruppe- eller applikasjons-ID.')
 
-    if (!(await isTeamApp(devTeam.id, appId))) {
-      return fail('Applikasjonen tilhører ikke dette teamet.')
+    if (!(await isTeamGroup(devTeam.id, groupId))) {
+      return fail('Gruppen tilhører ikke dette teamet.')
     }
 
     try {
-      await addAppToGroup(groupId, appId)
+      const updated = await addTeamAppToGroupConditional(groupId, appId, devTeam.id)
+      if (!updated) {
+        return fail('Applikasjonen tilhører ikke dette teamet, er allerede gruppert, eller er inaktiv.')
+      }
       return ok('Applikasjon lagt til i gruppen.')
     } catch (error) {
-      return fail(`Kunne ikke legge til applikasjon: ${error}`)
+      logger.error('add_team_app_to_group failed:', error)
+      return fail('Kunne ikke legge til applikasjon.')
     }
   }
 
   if (intent === 'remove_team_app_from_group') {
-    const appId = parseInt(getFormString(formData, 'app_id') ?? '', 10)
-    if (!Number.isFinite(appId)) return fail('Ugyldig applikasjons-ID.')
+    const appId = Number(getFormString(formData, 'app_id') ?? '')
+    if (!Number.isInteger(appId) || appId <= 0) return fail('Ugyldig applikasjons-ID.')
 
     if (!(await isTeamApp(devTeam.id, appId))) {
       return fail('Applikasjonen tilhører ikke dette teamet.')
@@ -508,19 +548,25 @@ export async function action({ request, params }: Route.ActionArgs) {
       await removeAppFromGroup(appId)
       return ok('Applikasjon fjernet fra gruppen.')
     } catch (error) {
-      return fail(`Kunne ikke fjerne applikasjon: ${error}`)
+      logger.error('remove_team_app_from_group failed:', error)
+      return fail('Kunne ikke fjerne applikasjon.')
     }
   }
 
   if (intent === 'delete_team_group') {
-    const groupId = parseInt(getFormString(formData, 'group_id') ?? '', 10)
-    if (!Number.isFinite(groupId)) return fail('Ugyldig gruppe-ID.')
+    const groupId = Number(getFormString(formData, 'group_id') ?? '')
+    if (!Number.isInteger(groupId) || groupId <= 0) return fail('Ugyldig gruppe-ID.')
+
+    if (!(await isTeamGroup(devTeam.id, groupId))) {
+      return fail('Gruppen tilhører ikke dette teamet.')
+    }
 
     try {
       await deleteGroup(groupId, user.navIdent)
       return ok('Gruppe slettet.')
     } catch (error) {
-      return fail(`Kunne ikke slette gruppe: ${error}`)
+      logger.error('delete_team_group failed:', error)
+      return fail('Kunne ikke slette gruppe.')
     }
   }
 

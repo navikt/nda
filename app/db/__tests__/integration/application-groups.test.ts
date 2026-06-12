@@ -6,7 +6,7 @@
 
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { seedApp, seedDeployment, truncateAllTables } from './helpers'
+import { seedApp, seedDeployment, seedDevTeam, seedSection, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -33,6 +33,17 @@ async function createGroup(name: string): Promise<number> {
 
 async function setAppGroup(appId: number, groupId: number | null): Promise<void> {
   await pool.query('UPDATE monitored_applications SET application_group_id = $1 WHERE id = $2', [groupId, appId])
+}
+
+async function linkAppToTeam(teamId: number, appId: number): Promise<void> {
+  await pool.query(
+    'INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+    [teamId, appId],
+  )
+}
+
+async function setAppInactive(appId: number): Promise<void> {
+  await pool.query('UPDATE monitored_applications SET is_active = false WHERE id = $1', [appId])
 }
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -308,6 +319,226 @@ describe('getGroupContext', () => {
     // dev-gcp comes before prod-gcp alphabetically
     expect(ctx.siblings[0].environment_name).toBe('dev-gcp')
     expect(ctx.siblings[1].environment_name).toBe('prod-gcp')
+  })
+})
+
+// ─── Team-scoped helpers ─────────────────────────────────────────────────────
+
+describe('getGroupsForDevTeam', () => {
+  it('returns groups containing at least one team app, marking is_team_app correctly', async () => {
+    const { createApplicationGroup, addAppToGroup, getGroupsForDevTeam } = await import(
+      '~/db/application-groups.server'
+    )
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appTeam = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const appOther = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-fss' })
+    const group = await createApplicationGroup('svc')
+    await addAppToGroup(group.id, appTeam)
+    await addAppToGroup(group.id, appOther)
+    await linkAppToTeam(teamId, appTeam)
+
+    const groups = await getGroupsForDevTeam(teamId)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].id).toBe(group.id)
+    const teamAppEntry = groups[0].apps.find((a) => a.id === appTeam)
+    const otherEntry = groups[0].apps.find((a) => a.id === appOther)
+    expect(teamAppEntry?.is_team_app).toBe(true)
+    expect(otherEntry?.is_team_app).toBe(false)
+  })
+
+  it('excludes groups where no app belongs to the team', async () => {
+    const { createApplicationGroup, addAppToGroup, getGroupsForDevTeam } = await import(
+      '~/db/application-groups.server'
+    )
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appOther = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+    const group = await createApplicationGroup('svc')
+    await addAppToGroup(group.id, appOther)
+
+    const groups = await getGroupsForDevTeam(teamId)
+    expect(groups).toHaveLength(0)
+  })
+
+  it('excludes soft-deleted groups', async () => {
+    const { createApplicationGroup, addAppToGroup, deleteGroup, getGroupsForDevTeam } = await import(
+      '~/db/application-groups.server'
+    )
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const app = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await linkAppToTeam(teamId, app)
+    const group = await createApplicationGroup('svc')
+    await addAppToGroup(group.id, app)
+    await deleteGroup(group.id, 'Z990001')
+
+    const groups = await getGroupsForDevTeam(teamId)
+    expect(groups).toHaveLength(0)
+  })
+})
+
+describe('getUngroupedTeamApps', () => {
+  it('returns active ungrouped apps belonging to the team', async () => {
+    const { getUngroupedTeamApps } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await linkAppToTeam(teamId, app1)
+    await linkAppToTeam(teamId, app2)
+
+    const ungrouped = await getUngroupedTeamApps(teamId)
+    expect(ungrouped.map((a) => a.id).sort()).toEqual([app1, app2].sort())
+  })
+
+  it('excludes apps already in a group', async () => {
+    const { createApplicationGroup, addAppToGroup, getUngroupedTeamApps } = await import(
+      '~/db/application-groups.server'
+    )
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await linkAppToTeam(teamId, app1)
+    await linkAppToTeam(teamId, app2)
+    const group = await createApplicationGroup('svc')
+    await addAppToGroup(group.id, app1)
+
+    const ungrouped = await getUngroupedTeamApps(teamId)
+    expect(ungrouped).toHaveLength(1)
+    expect(ungrouped[0].id).toBe(app2)
+  })
+
+  it('excludes inactive apps', async () => {
+    const { getUngroupedTeamApps } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const app = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await linkAppToTeam(teamId, app)
+    await setAppInactive(app)
+
+    const ungrouped = await getUngroupedTeamApps(teamId)
+    expect(ungrouped).toHaveLength(0)
+  })
+
+  it('excludes apps from other teams', async () => {
+    const { getUngroupedTeamApps } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+
+    const ungrouped = await getUngroupedTeamApps(teamId)
+    expect(ungrouped).toHaveLength(0)
+  })
+})
+
+describe('verifyAllTeamApps', () => {
+  it('returns true when all app IDs belong to the team', async () => {
+    const { verifyAllTeamApps } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await linkAppToTeam(teamId, app1)
+    await linkAppToTeam(teamId, app2)
+
+    expect(await verifyAllTeamApps(teamId, [app1, app2])).toBe(true)
+  })
+
+  it('returns false when one app does not belong to the team', async () => {
+    const { verifyAllTeamApps } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-b', appName: 'other', environment: 'prod-gcp' })
+    await linkAppToTeam(teamId, app1)
+
+    expect(await verifyAllTeamApps(teamId, [app1, app2])).toBe(false)
+  })
+
+  it('deduplicates app IDs before counting', async () => {
+    const { verifyAllTeamApps } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const app = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await linkAppToTeam(teamId, app)
+
+    expect(await verifyAllTeamApps(teamId, [app, app, app])).toBe(true)
+  })
+
+  it('returns true for empty list', async () => {
+    const { verifyAllTeamApps } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    expect(await verifyAllTeamApps(teamId, [])).toBe(true)
+  })
+})
+
+describe('isTeamApp', () => {
+  it('returns true for an app belonging to the team', async () => {
+    const { isTeamApp } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await linkAppToTeam(teamId, appId)
+
+    expect(await isTeamApp(teamId, appId)).toBe(true)
+  })
+
+  it('returns false for an app belonging to a different team', async () => {
+    const { isTeamApp } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+
+    expect(await isTeamApp(teamId, appId)).toBe(false)
+  })
+
+  it('returns false when the app link is soft-deleted', async () => {
+    const { isTeamApp } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await linkAppToTeam(teamId, appId)
+    await pool.query(
+      'UPDATE dev_team_applications SET deleted_at = now() WHERE dev_team_id = $1 AND monitored_app_id = $2',
+      [teamId, appId],
+    )
+
+    expect(await isTeamApp(teamId, appId)).toBe(false)
+  })
+})
+
+describe('isTeamGroup', () => {
+  it('returns true when group contains at least one team app', async () => {
+    const { createApplicationGroup, addAppToGroup, isTeamGroup } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await linkAppToTeam(teamId, appId)
+    const group = await createApplicationGroup('svc')
+    await addAppToGroup(group.id, appId)
+
+    expect(await isTeamGroup(teamId, group.id)).toBe(true)
+  })
+
+  it('returns false when group contains no team apps', async () => {
+    const { createApplicationGroup, addAppToGroup, isTeamGroup } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appOther = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+    const group = await createApplicationGroup('svc')
+    await addAppToGroup(group.id, appOther)
+
+    expect(await isTeamGroup(teamId, group.id)).toBe(false)
+  })
+
+  it('returns false for a non-existent group', async () => {
+    const { isTeamGroup } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'sec')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    expect(await isTeamGroup(teamId, 999999)).toBe(false)
   })
 })
 

@@ -497,9 +497,15 @@ function ApplicationGroupsTeamSection({
   const [showCreate, setShowCreate] = useState(false)
   const [selectedAppIds, setSelectedAppIds] = useState<number[]>([])
 
-  const suggestions = [...new Map(ungroupedTeamApps.map((a) => [a.app_name, a])).keys()].filter(
-    (appName) => ungroupedTeamApps.filter((a) => a.app_name === appName).length > 1,
-  )
+  const appEnvMap = ungroupedTeamApps.reduce<Map<string, Set<string>>>((acc, a) => {
+    const envs = acc.get(a.app_name) ?? new Set()
+    envs.add(a.environment_name)
+    acc.set(a.app_name, envs)
+    return acc
+  }, new Map())
+  const suggestions = [...appEnvMap.entries()]
+    .filter(([, envs]) => envs.size > 1)
+    .map(([name, envs]) => ({ name, envCount: envs.size }))
 
   function toggleApp(id: number) {
     setSelectedAppIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -535,19 +541,19 @@ function ApplicationGroupsTeamSection({
               Disse appene finnes i flere miljøer uten å være gruppert:
             </BodyShort>
             <VStack gap="space-8">
-              {suggestions.map((appName) => (
-                <HStack key={appName} gap="space-12" align="center" justify="space-between">
+              {suggestions.map(({ name, envCount }) => (
+                <HStack key={name} gap="space-12" align="center" justify="space-between">
                   <HStack gap="space-8" align="center">
                     <BodyShort size="small" weight="semibold">
-                      {appName}
+                      {name}
                     </BodyShort>
                     <Tag size="xsmall" variant="info">
-                      {ungroupedTeamApps.filter((a) => a.app_name === appName).length} miljøer
+                      {envCount} miljøer
                     </Tag>
                   </HStack>
                   <Form method="post">
                     <input type="hidden" name="intent" value="create_from_team_suggestion" />
-                    <input type="hidden" name="app_name" value={appName} />
+                    <input type="hidden" name="app_name" value={name} />
                     <Button variant="tertiary" size="xsmall" type="submit" icon={<PlusIcon aria-hidden />}>
                       Opprett gruppe
                     </Button>
@@ -562,17 +568,8 @@ function ApplicationGroupsTeamSection({
       {/* Create new group form */}
       {showCreate && (
         <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-          <Form
-            method="post"
-            onSubmit={() => {
-              setShowCreate(false)
-              setSelectedAppIds([])
-            }}
-          >
+          <Form method="post">
             <input type="hidden" name="intent" value="create_team_group" />
-            {selectedAppIds.map((id) => (
-              <input key={id} type="hidden" name="app_id" value={id} />
-            ))}
             <VStack gap="space-16">
               <Heading level="3" size="xsmall">
                 Opprett ny gruppe
@@ -607,8 +604,11 @@ function ApplicationGroupsTeamSection({
                           <Table.DataCell>
                             <input
                               type="checkbox"
+                              name="app_id"
+                              value={app.id}
                               checked={selectedAppIds.includes(app.id)}
                               onChange={() => toggleApp(app.id)}
+                              onClick={(e) => e.stopPropagation()}
                               aria-label={`Velg ${app.app_name} (${app.environment_name})`}
                             />
                           </Table.DataCell>
@@ -624,7 +624,7 @@ function ApplicationGroupsTeamSection({
                 )}
               </VStack>
               <HStack gap="space-8">
-                <Button type="submit" size="small" disabled={selectedAppIds.length === 0}>
+                <Button type="submit" size="small">
                   Opprett gruppe
                 </Button>
                 <Button

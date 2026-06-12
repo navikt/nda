@@ -43,6 +43,35 @@ const mockBoards = [
   },
 ]
 
+const mockTeamGroups = [
+  {
+    id: 1,
+    name: 'pensjon-pen',
+    created_at: new Date('2026-01-01'),
+    apps: [
+      {
+        id: 10,
+        team_slug: 'pensjondeployer',
+        environment_name: 'prod-fss',
+        app_name: 'pensjon-pen',
+        is_team_app: true,
+      },
+      {
+        id: 11,
+        team_slug: 'pensjondeployer',
+        environment_name: 'prod-gcp',
+        app_name: 'pensjon-pen',
+        is_team_app: true,
+      },
+    ],
+  },
+]
+
+const mockUngroupedTeamApps = [
+  { id: 20, team_slug: 'pensjondeployer', environment_name: 'dev-gcp', app_name: 'pensjon-selvbetjening' },
+  { id: 21, team_slug: 'pensjondeployer', environment_name: 'prod-gcp', app_name: 'pensjon-selvbetjening' },
+]
+
 const meta: Meta<typeof DevTeamAdminPage> = {
   title: 'Pages/DevTeamAdmin',
   component: DevTeamAdminPage,
@@ -71,6 +100,8 @@ export const Default: Story = {
     addableApps: [],
     naisCatalogFailed: false,
     boards: mockBoards,
+    teamGroups: mockTeamGroups,
+    ungroupedTeamApps: mockUngroupedTeamApps,
     canAdmin: true,
     teamBasePath: '/sections/pensjon/teams/starte-pensjon',
     isSubmitting: false,
@@ -87,6 +118,8 @@ export const EmptyTeam: Story = {
     addableApps: [],
     naisCatalogFailed: false,
     boards: [],
+    teamGroups: [],
+    ungroupedTeamApps: [],
     canAdmin: true,
     teamBasePath: '/sections/pensjon/teams/nytt-team',
     isSubmitting: false,
@@ -103,6 +136,8 @@ export const RoleOnlyAccess: Story = {
     addableApps: [],
     naisCatalogFailed: false,
     boards: mockBoards,
+    teamGroups: [],
+    ungroupedTeamApps: [],
     canAdmin: false,
     teamBasePath: '/sections/pensjon/teams/starte-pensjon',
     isSubmitting: false,
