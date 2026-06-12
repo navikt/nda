@@ -63,7 +63,7 @@ import { getDeviationsByDeploymentId } from '~/db/deviations.server'
 import { getLatestVerificationRun } from '~/db/github-data.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
-import { getUserMappings } from '~/db/user-mappings.server'
+import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
 import {
@@ -283,7 +283,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   for (const link of goalLinks) addId(link.linked_by)
 
   // Get all user mappings in one query
-  const userMappings = await getUserMappings([...identifierSet])
+  const userMappings = await getUsersByIdentifiers([...identifierSet])
 
   // Check if current user is involved in this deployment (for four-eyes validation)
   let isCurrentUserInvolved = false

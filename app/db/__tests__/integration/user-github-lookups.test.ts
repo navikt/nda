@@ -4,7 +4,9 @@ import {
   getActiveGithubAccountByNavIdent,
   getGithubUserLookup,
   getGithubUserLookups,
+  getUserByIdentifier,
   getUserBySlackMemberId,
+  getUsersByIdentifiers,
 } from '../../user-github-lookups.server'
 import { truncateAllTables } from './helpers'
 
@@ -195,5 +197,156 @@ describe('getUserBySlackMemberId', () => {
     )
     const result = await getUserBySlackMemberId('U_GLADFJORD')
     expect(result).toBeNull()
+  })
+})
+
+describe('getUserByIdentifier', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+  })
+
+  it('returns null for unknown GitHub username', async () => {
+    expect(await getUserByIdentifier('unknownuser')).toBeNull()
+  })
+
+  it('returns null for unknown NAV-ident', async () => {
+    expect(await getUserByIdentifier('Z990001')).toBeNull()
+  })
+
+  it('looks up user by GitHub username (case-insensitive)', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    const result = await getUserByIdentifier('GLADFJORD')
+    expect(result?.nav_ident).toBe('Z990001')
+    expect(result?.github_username).toBe('gladfjord')
+    expect(result?.display_name).toBe('Glad Fjord')
+  })
+
+  it('looks up user by NAV-ident (case-insensitive)', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    const result = await getUserByIdentifier('z990001')
+    expect(result?.nav_ident).toBe('Z990001')
+    expect(result?.github_username).toBe('gladfjord')
+    expect(result?.display_name).toBe('Glad Fjord')
+  })
+
+  it('returns null github_username when user has no GitHub account', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Rask Elv', 'rask.elv@nav.no')`,
+    )
+    const result = await getUserByIdentifier('Z990001')
+    expect(result?.nav_ident).toBe('Z990001')
+    expect(result?.github_username).toBeNull()
+  })
+
+  it('includes soft-deleted GitHub accounts for GitHub username lookups', async () => {
+    await seedAccount('GladFjord', 'Z990001', { deleted: true })
+    const result = await getUserByIdentifier('gladfjord')
+    expect(result).not.toBeNull()
+    expect(result?.nav_ident).toBe('Z990001')
+  })
+
+  it('returns null for GitHub username lookup when the user is soft-deleted', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    await pool.query(`UPDATE users SET deleted_at = NOW() WHERE nav_ident = 'Z990001'`)
+    const result = await getUserByIdentifier('gladfjord')
+    expect(result).toBeNull()
+  })
+
+  it('returns newest active GitHub account when NAV-ident has multiple', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Stille Skog', 'stille.skog@nav.no')`,
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('olduser', 'Z990001', NOW() - INTERVAL '1 day')`,
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('newuser', 'Z990001', NOW())`,
+    )
+    const result = await getUserByIdentifier('Z990001')
+    expect(result?.github_username).toBe('newuser')
+  })
+})
+
+describe('getUsersByIdentifiers', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+  })
+
+  it('returns empty map for empty input', async () => {
+    expect((await getUsersByIdentifiers([])).size).toBe(0)
+  })
+
+  it('resolves GitHub usernames', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    const result = await getUsersByIdentifiers(['gladfjord'])
+    expect(result.get('gladfjord')?.display_name).toBe('Glad Fjord')
+    expect(result.get('gladfjord')?.nav_ident).toBe('Z990001')
+  })
+
+  it('resolves NAV-idents', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990002', 'Modig Bjørk', 'modig.bjork@nav.no')`,
+    )
+    const result = await getUsersByIdentifiers(['Z990002'])
+    expect(result.get('Z990002')?.display_name).toBe('Modig Bjørk')
+    expect(result.get('Z990002')?.nav_ident).toBe('Z990002')
+  })
+
+  it('resolves mixed GitHub usernames and NAV-idents in one call', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990002', 'Rask Elv', 'rask.elv@nav.no')`,
+    )
+    const result = await getUsersByIdentifiers(['gladfjord', 'Z990002'])
+    expect(result.size).toBe(2)
+    expect(result.get('gladfjord')?.nav_ident).toBe('Z990001')
+    expect(result.get('Z990002')?.display_name).toBe('Rask Elv')
+  })
+
+  it('preserves original identifier casing as map key', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    const result = await getUsersByIdentifiers(['GladFjord'])
+    expect(result.has('GladFjord')).toBe(true)
+    expect(result.has('gladfjord')).toBe(false)
+  })
+
+  it('NAV-ident lookup returns newest active GitHub account when linked', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no')`,
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('olduser', 'Z990001', NOW() - INTERVAL '1 day')`,
+    )
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('newuser', 'Z990001', NOW())`,
+    )
+    const result = await getUsersByIdentifiers(['Z990001'])
+    expect(result.get('Z990001')?.github_username).toBe('newuser')
+  })
+
+  it('NAV-ident lookup returns null github_username when no GitHub account linked', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Rask Elv', 'rask.elv@nav.no')`,
+    )
+    const result = await getUsersByIdentifiers(['Z990001'])
+    expect(result.get('Z990001')?.github_username).toBeNull()
+  })
+
+  it('skips unknown identifiers', async () => {
+    const result = await getUsersByIdentifiers(['unknownuser', 'Z999999'])
+    expect(result.size).toBe(0)
+  })
+
+  it('includes soft-deleted GitHub accounts for historical lookups', async () => {
+    await seedAccount('GladFjord', 'Z990001', { deleted: true })
+    const result = await getUsersByIdentifiers(['gladfjord'])
+    expect(result.get('gladfjord')?.nav_ident).toBe('Z990001')
+  })
+
+  it('excludes soft-deleted users (users.deleted_at) from GitHub username lookups', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    await pool.query(`UPDATE users SET deleted_at = NOW() WHERE nav_ident = 'Z990001'`)
+    const result = await getUsersByIdentifiers(['gladfjord'])
+    expect(result.has('gladfjord')).toBe(false)
   })
 })
