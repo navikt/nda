@@ -2,6 +2,18 @@ import { useNavigation } from 'react-router'
 import type { AddableApp } from '~/components/AddAppsDialog'
 import { DevTeamAdminPage } from '~/components/DevTeamAdminPage'
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
+import {
+  addTeamAppToGroupConditional,
+  createApplicationGroup,
+  deleteGroup,
+  getGroupsForDevTeam,
+  getUngroupedTeamApps,
+  isTeamApp,
+  isTeamGroup,
+  removeAppFromGroup,
+  type UngroupedTeamApp,
+  verifyAllUngroupedTeamApps,
+} from '~/db/application-groups.server'
 import { type Board, createBoard, getBoardsByDevTeam } from '~/db/boards.server'
 import { pool } from '~/db/connection.server'
 import {
@@ -67,26 +79,33 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let addableApps: AddableApp[] = []
   let naisCatalogFailed = false
   let boards: Board[] = []
+  let teamGroups: Awaited<ReturnType<typeof getGroupsForDevTeam>> = []
+  let ungroupedTeamApps: UngroupedTeamApp[] = []
 
   if (canAdmin) {
-    const [adminLinkedApps, allApps, naisCatalogResult, adminBoards] = await Promise.all([
-      getDevTeamApplications(devTeam.id),
-      getAllMonitoredApplications(),
-      fetchAllTeamsAndApplications().then(
-        (catalog) => ({ ok: true as const, catalog }),
-        (err: unknown) => {
-          logger.error('Kunne ikke hente Nais-katalog:', err)
-          return {
-            ok: false as const,
-            catalog: [] as Array<{ teamSlug: string; appName: string; environmentName: string }>,
-          }
-        },
-      ),
-      getBoardsByDevTeam(devTeam.id),
-    ])
+    const [adminLinkedApps, allApps, naisCatalogResult, adminBoards, adminTeamGroups, adminUngroupedTeamApps] =
+      await Promise.all([
+        getDevTeamApplications(devTeam.id),
+        getAllMonitoredApplications(),
+        fetchAllTeamsAndApplications().then(
+          (catalog) => ({ ok: true as const, catalog }),
+          (err: unknown) => {
+            logger.error('Kunne ikke hente Nais-katalog:', err)
+            return {
+              ok: false as const,
+              catalog: [] as Array<{ teamSlug: string; appName: string; environmentName: string }>,
+            }
+          },
+        ),
+        getBoardsByDevTeam(devTeam.id),
+        getGroupsForDevTeam(devTeam.id),
+        getUngroupedTeamApps(devTeam.id),
+      ])
 
     linkedApps = adminLinkedApps
     boards = adminBoards
+    teamGroups = adminTeamGroups
+    ungroupedTeamApps = adminUngroupedTeamApps
     naisCatalogFailed = !naisCatalogResult.ok
 
     const naisCatalog = naisCatalogResult.catalog
@@ -125,6 +144,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     addableApps,
     naisCatalogFailed,
     boards,
+    teamGroups,
+    ungroupedTeamApps,
     canAdmin,
     sectionSlug: section.slug,
   }
@@ -414,7 +435,138 @@ export async function action({ request, params }: Route.ActionArgs) {
       })
       return ok('Tavle ble opprettet.')
     } catch (error) {
-      return fail(`Kunne ikke opprette tavle: ${error}`)
+      logger.error('create_board failed:', error)
+      return fail('Kunne ikke opprette tavle.')
+    }
+  }
+
+  if (intent === 'create_team_group') {
+    const name = getFormString(formData, 'name')?.trim()
+    if (!name) return fail('Gruppenavn er påkrevd.')
+
+    const rawAppIds = formData
+      .getAll('app_id')
+      .map((v) => Number(String(v)))
+      .filter((n) => Number.isInteger(n) && n > 0)
+    const appIds = [...new Set(rawAppIds)]
+    if (appIds.length === 0) return fail('Velg minst én applikasjon.')
+
+    if (!(await verifyAllUngroupedTeamApps(devTeam.id, appIds))) {
+      return fail('En eller flere applikasjoner tilhører ikke dette teamet, er allerede gruppert, eller er inaktive.')
+    }
+
+    let groupId: number | null = null
+    try {
+      const group = await createApplicationGroup(name)
+      groupId = group.id
+      const results = await Promise.all(
+        appIds.map((appId) => addTeamAppToGroupConditional(group.id, appId, devTeam.id)),
+      )
+      if (results.some((r) => !r)) {
+        await deleteGroup(group.id, user.navIdent)
+        return fail('En eller flere applikasjoner ble endret underveis. Prøv igjen.')
+      }
+      return ok(`Gruppe "${name}" ble opprettet med ${appIds.length} applikasjon${appIds.length === 1 ? '' : 'er'}.`)
+    } catch (error) {
+      logger.error('create_team_group failed:', error)
+      if (groupId !== null) {
+        try {
+          await deleteGroup(groupId, user.navIdent)
+        } catch (cleanupError) {
+          logger.error('create_team_group cleanup failed:', cleanupError)
+        }
+      }
+      return fail('Kunne ikke opprette gruppe.')
+    }
+  }
+
+  if (intent === 'create_from_team_suggestion') {
+    const appName = getFormString(formData, 'app_name')
+    if (!appName) return fail('Mangler applikasjonsnavn.')
+
+    const ungrouped = await getUngroupedTeamApps(devTeam.id)
+    const toGroup = ungrouped.filter((a) => a.app_name === appName)
+    const distinctEnvs = new Set(toGroup.map((a) => a.environment_name))
+    if (distinctEnvs.size < 2) return fail('Fant ikke apper med samme navn i minst to distinkte miljøer.')
+
+    let groupId: number | null = null
+    try {
+      const group = await createApplicationGroup(appName)
+      groupId = group.id
+      const results = await Promise.all(
+        toGroup.map((app) => addTeamAppToGroupConditional(group.id, app.id, devTeam.id)),
+      )
+      if (results.some((r) => !r)) {
+        await deleteGroup(group.id, user.navIdent)
+        return fail('En eller flere applikasjoner ble endret underveis. Prøv igjen.')
+      }
+      return ok(`Gruppe "${appName}" ble opprettet med ${toGroup.length} applikasjoner.`)
+    } catch (error) {
+      logger.error('create_from_team_suggestion failed:', error)
+      if (groupId !== null) {
+        try {
+          await deleteGroup(groupId, user.navIdent)
+        } catch (cleanupError) {
+          logger.error('create_from_team_suggestion cleanup failed:', cleanupError)
+        }
+      }
+      return fail('Kunne ikke opprette gruppe.')
+    }
+  }
+
+  if (intent === 'add_team_app_to_group') {
+    const groupId = Number(getFormString(formData, 'group_id') ?? '')
+    const appId = Number(getFormString(formData, 'app_id') ?? '')
+    if (!Number.isInteger(groupId) || groupId <= 0 || !Number.isInteger(appId) || appId <= 0)
+      return fail('Ugyldig gruppe- eller applikasjons-ID.')
+
+    if (!(await isTeamGroup(devTeam.id, groupId))) {
+      return fail('Gruppen tilhører ikke dette teamet.')
+    }
+
+    try {
+      const updated = await addTeamAppToGroupConditional(groupId, appId, devTeam.id)
+      if (!updated) {
+        return fail('Applikasjonen tilhører ikke dette teamet, er allerede gruppert, eller er inaktiv.')
+      }
+      return ok('Applikasjon lagt til i gruppen.')
+    } catch (error) {
+      logger.error('add_team_app_to_group failed:', error)
+      return fail('Kunne ikke legge til applikasjon.')
+    }
+  }
+
+  if (intent === 'remove_team_app_from_group') {
+    const appId = Number(getFormString(formData, 'app_id') ?? '')
+    if (!Number.isInteger(appId) || appId <= 0) return fail('Ugyldig applikasjons-ID.')
+
+    if (!(await isTeamApp(devTeam.id, appId))) {
+      return fail('Applikasjonen tilhører ikke dette teamet.')
+    }
+
+    try {
+      await removeAppFromGroup(appId)
+      return ok('Applikasjon fjernet fra gruppen.')
+    } catch (error) {
+      logger.error('remove_team_app_from_group failed:', error)
+      return fail('Kunne ikke fjerne applikasjon.')
+    }
+  }
+
+  if (intent === 'delete_team_group') {
+    const groupId = Number(getFormString(formData, 'group_id') ?? '')
+    if (!Number.isInteger(groupId) || groupId <= 0) return fail('Ugyldig gruppe-ID.')
+
+    if (!(await isTeamGroup(devTeam.id, groupId))) {
+      return fail('Gruppen tilhører ikke dette teamet.')
+    }
+
+    try {
+      await deleteGroup(groupId, user.navIdent)
+      return ok('Gruppe slettet.')
+    } catch (error) {
+      logger.error('delete_team_group failed:', error)
+      return fail('Kunne ikke slette gruppe.')
     }
   }
 
@@ -422,7 +574,18 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function DevTeamAdmin({ loaderData, actionData }: Route.ComponentProps) {
-  const { devTeam, roleMembers, linkedApps, addableApps, naisCatalogFailed, boards, sectionSlug, canAdmin } = loaderData
+  const {
+    devTeam,
+    roleMembers,
+    linkedApps,
+    addableApps,
+    naisCatalogFailed,
+    boards,
+    teamGroups,
+    ungroupedTeamApps,
+    sectionSlug,
+    canAdmin,
+  } = loaderData
   const navigation = useNavigation()
   const teamBasePath = `/sections/${sectionSlug}/teams/${devTeam.slug}`
 
@@ -434,6 +597,8 @@ export default function DevTeamAdmin({ loaderData, actionData }: Route.Component
       addableApps={addableApps}
       naisCatalogFailed={naisCatalogFailed}
       boards={boards}
+      teamGroups={teamGroups}
+      ungroupedTeamApps={ungroupedTeamApps}
       canAdmin={canAdmin}
       teamBasePath={teamBasePath}
       isSubmitting={navigation.state === 'submitting'}

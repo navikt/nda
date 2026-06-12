@@ -27,6 +27,23 @@ interface ApplicationGroupWithApps extends ApplicationGroup {
   }>
 }
 
+interface ApplicationGroupWithTeamApps extends ApplicationGroup {
+  apps: Array<{
+    id: number
+    team_slug: string
+    environment_name: string
+    app_name: string
+    is_team_app: boolean
+  }>
+}
+
+export interface UngroupedTeamApp {
+  id: number
+  team_slug: string
+  environment_name: string
+  app_name: string
+}
+
 interface ApplicationGroupSummary extends ApplicationGroup {
   app_count: number
 }
@@ -57,6 +74,34 @@ export async function addAppToGroup(groupId: number, monitoredAppId: number): Pr
     groupId,
     monitoredAppId,
   ])
+}
+
+/**
+ * Atomically add a team app to a group, verifying ungrouped+active+team-membership in the same SQL.
+ * Returns false if the app was already grouped, inactive, or no longer belongs to the team (TOCTOU-safe).
+ */
+export async function addTeamAppToGroupConditional(
+  groupId: number,
+  appId: number,
+  devTeamId: number,
+): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE monitored_applications
+     SET application_group_id = $1
+     WHERE id = $2
+       AND application_group_id IS NULL
+       AND is_active = true
+       AND EXISTS (
+         SELECT 1 FROM dev_team_applications
+         WHERE dev_team_id = $3 AND monitored_app_id = $2 AND deleted_at IS NULL
+       )
+       AND EXISTS (
+         SELECT 1 FROM application_groups
+         WHERE id = $1 AND deleted_at IS NULL
+       )`,
+    [groupId, appId, devTeamId],
+  )
+  return (result.rowCount ?? 0) > 0
 }
 
 export async function removeAppFromGroup(monitoredAppId: number): Promise<void> {
@@ -215,6 +260,162 @@ export async function getAllGroups(): Promise<ApplicationGroupSummary[]> {
      ORDER BY ag.name`,
   )
   return rows
+}
+
+/**
+ * Get all application groups that contain at least one app belonging to the given dev team.
+ * Returns each group with its full app list, where `is_team_app` marks apps owned by the team.
+ */
+export async function getGroupsForDevTeam(devTeamId: number): Promise<ApplicationGroupWithTeamApps[]> {
+  const { rows } = await pool.query<{
+    id: number
+    name: string
+    created_at: Date
+    apps: Array<{
+      id: number
+      team_slug: string
+      environment_name: string
+      app_name: string
+      is_team_app: boolean
+    }>
+  }>(
+    `SELECT ag.id, ag.name, ag.created_at,
+       json_agg(json_build_object(
+         'id', ma.id,
+         'team_slug', ma.team_slug,
+         'environment_name', ma.environment_name,
+         'app_name', ma.app_name,
+         'is_team_app', COALESCE((dta.dev_team_id = $1), false)
+       ) ORDER BY ma.environment_name, ma.team_slug, ma.app_name) AS apps
+     FROM application_groups ag
+     JOIN monitored_applications ma ON ma.application_group_id = ag.id
+     LEFT JOIN dev_team_applications dta
+       ON dta.monitored_app_id = ma.id
+       AND dta.dev_team_id = $1
+       AND dta.deleted_at IS NULL
+     WHERE ag.deleted_at IS NULL
+       AND ag.id IN (
+         SELECT ma2.application_group_id
+         FROM monitored_applications ma2
+         JOIN dev_team_applications dta2
+           ON dta2.monitored_app_id = ma2.id
+           AND dta2.dev_team_id = $1
+           AND dta2.deleted_at IS NULL
+         WHERE ma2.application_group_id IS NOT NULL
+       )
+     GROUP BY ag.id
+     ORDER BY ag.name`,
+    [devTeamId],
+  )
+  return rows
+}
+
+/**
+ * Get monitored applications that belong to the given dev team and are not in any group.
+ */
+export async function getUngroupedTeamApps(devTeamId: number): Promise<UngroupedTeamApp[]> {
+  const { rows } = await pool.query<UngroupedTeamApp>(
+    `SELECT ma.id, ma.team_slug, ma.environment_name, ma.app_name
+     FROM monitored_applications ma
+     JOIN dev_team_applications dta
+       ON dta.monitored_app_id = ma.id
+       AND dta.dev_team_id = $1
+       AND dta.deleted_at IS NULL
+     WHERE ma.application_group_id IS NULL
+       AND ma.is_active = true
+     ORDER BY ma.team_slug, ma.app_name, ma.environment_name`,
+    [devTeamId],
+  )
+  return rows
+}
+
+/**
+ * Verify that a monitored application belongs to a dev team AND is ungrouped and active.
+ * Used for IDOR protection before adding an app to a group.
+ */
+export async function isUngroupedTeamApp(devTeamId: number, monitoredAppId: number): Promise<boolean> {
+  const { rows } = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM monitored_applications ma
+       JOIN dev_team_applications dta ON dta.monitored_app_id = ma.id
+         AND dta.dev_team_id = $1 AND dta.deleted_at IS NULL
+       WHERE ma.id = $2
+         AND ma.application_group_id IS NULL
+         AND ma.is_active = true
+     ) AS exists`,
+    [devTeamId, monitoredAppId],
+  )
+  return rows[0]?.exists ?? false
+}
+
+/**
+ * Verify that ALL given monitored app IDs belong to a dev team AND are ungrouped and active.
+ * Used for IDOR protection before creating a group from manually selected apps.
+ */
+export async function verifyAllUngroupedTeamApps(devTeamId: number, appIds: number[]): Promise<boolean> {
+  const uniqueIds = [...new Set(appIds)]
+  if (uniqueIds.length === 0) return true
+  const { rows } = await pool.query<{ count: string }>(
+    `SELECT COUNT(DISTINCT ma.id)::int AS count
+     FROM monitored_applications ma
+     JOIN dev_team_applications dta ON dta.monitored_app_id = ma.id
+       AND dta.dev_team_id = $1 AND dta.deleted_at IS NULL
+     WHERE ma.id = ANY($2::int[])
+       AND ma.application_group_id IS NULL
+       AND ma.is_active = true`,
+    [devTeamId, uniqueIds],
+  )
+  return parseInt(String(rows[0]?.count ?? '0'), 10) === uniqueIds.length
+}
+
+/**
+ * Verify that ALL given monitored app IDs belong to a dev team in a single query.
+ * Handles duplicates by deduplicating before the count comparison.
+ */
+export async function verifyAllTeamApps(devTeamId: number, appIds: number[]): Promise<boolean> {
+  const uniqueIds = [...new Set(appIds)]
+  if (uniqueIds.length === 0) return true
+  const { rows } = await pool.query<{ count: string }>(
+    `SELECT COUNT(DISTINCT monitored_app_id)::int AS count
+     FROM dev_team_applications
+     WHERE dev_team_id = $1
+       AND monitored_app_id = ANY($2::int[])
+       AND deleted_at IS NULL`,
+    [devTeamId, uniqueIds],
+  )
+  return parseInt(String(rows[0]?.count ?? '0'), 10) === uniqueIds.length
+}
+
+/**
+ * Verify that a monitored application belongs to a dev team.
+ * Used for IDOR protection in team-scoped group mutations.
+ */
+export async function isTeamApp(devTeamId: number, monitoredAppId: number): Promise<boolean> {
+  const { rows } = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM dev_team_applications
+       WHERE dev_team_id = $1 AND monitored_app_id = $2 AND deleted_at IS NULL
+     ) AS exists`,
+    [devTeamId, monitoredAppId],
+  )
+  return rows[0]?.exists ?? false
+}
+
+/**
+ * Verify that an application group contains at least one app belonging to a dev team.
+ * Used for IDOR protection in team-scoped group mutations (add, delete).
+ */
+export async function isTeamGroup(devTeamId: number, groupId: number): Promise<boolean> {
+  const { rows } = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM monitored_applications ma
+       JOIN dev_team_applications dta ON dta.monitored_app_id = ma.id
+         AND dta.dev_team_id = $1 AND dta.deleted_at IS NULL
+       WHERE ma.application_group_id = $2
+     ) AS exists`,
+    [devTeamId, groupId],
+  )
+  return rows[0]?.exists ?? false
 }
 
 /** Get group names by IDs — lightweight lookup for UI labels */

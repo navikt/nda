@@ -36,6 +36,27 @@ type DevTeamApplicationView = {
   app_name: string
 }
 
+type TeamGroupApp = {
+  id: number
+  team_slug: string
+  environment_name: string
+  app_name: string
+  is_team_app: boolean
+}
+
+type TeamGroupView = {
+  id: number
+  name: string
+  apps: TeamGroupApp[]
+}
+
+type UngroupedTeamAppView = {
+  id: number
+  team_slug: string
+  environment_name: string
+  app_name: string
+}
+
 type DevTeamView = {
   name: string
   slug: string
@@ -54,6 +75,8 @@ interface DevTeamAdminPageProps {
   addableApps: AddableApp[]
   naisCatalogFailed: boolean
   boards: BoardView[]
+  teamGroups: TeamGroupView[]
+  ungroupedTeamApps: UngroupedTeamAppView[]
   canAdmin: boolean
   teamBasePath: string
   isSubmitting: boolean
@@ -67,6 +90,8 @@ export function DevTeamAdminPage({
   addableApps,
   naisCatalogFailed,
   boards,
+  teamGroups,
+  ungroupedTeamApps,
   canAdmin,
   teamBasePath,
   isSubmitting,
@@ -97,6 +122,7 @@ export function DevTeamAdminPage({
           isSubmitting={isSubmitting}
         />
       )}
+      {canAdmin && <ApplicationGroupsTeamSection teamGroups={teamGroups} ungroupedTeamApps={ungroupedTeamApps} />}
     </VStack>
   )
 }
@@ -457,6 +483,268 @@ function ApplicationsSection({
         naisCatalogFailed={naisCatalogFailed}
         isSubmitting={isSubmitting}
       />
+    </VStack>
+  )
+}
+
+function ApplicationGroupsTeamSection({
+  teamGroups,
+  ungroupedTeamApps,
+}: {
+  teamGroups: TeamGroupView[]
+  ungroupedTeamApps: UngroupedTeamAppView[]
+}) {
+  const [showCreate, setShowCreate] = useState(false)
+  const [selectedAppIds, setSelectedAppIds] = useState<number[]>([])
+
+  const appEnvMap = ungroupedTeamApps.reduce<Map<string, Set<string>>>((acc, a) => {
+    const envs = acc.get(a.app_name) ?? new Set()
+    envs.add(a.environment_name)
+    acc.set(a.app_name, envs)
+    return acc
+  }, new Map())
+  const suggestions = [...appEnvMap.entries()]
+    .filter(([, envs]) => envs.size > 1)
+    .map(([name, envs]) => ({ name, envCount: envs.size }))
+
+  function toggleApp(id: number) {
+    setSelectedAppIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  return (
+    <VStack gap="space-16">
+      <HStack justify="space-between" align="center">
+        <div>
+          <Heading level="2" size="medium">
+            Applikasjonsgrupper ({teamGroups.length})
+          </Heading>
+          <BodyShort size="small" textColor="subtle">
+            Grupper apper som er samme logiske app på tvers av NAIS-clustre. Verifikasjonsstatus propageres automatisk
+            innad i gruppen.
+          </BodyShort>
+        </div>
+        {!showCreate && ungroupedTeamApps.length > 0 && (
+          <Button variant="tertiary" size="small" icon={<PlusIcon aria-hidden />} onClick={() => setShowCreate(true)}>
+            Ny gruppe
+          </Button>
+        )}
+      </HStack>
+
+      {/* Suggestions */}
+      {suggestions.length > 0 && (
+        <Box padding="space-16" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
+          <VStack gap="space-12">
+            <Heading level="3" size="xsmall">
+              Foreslåtte grupper
+            </Heading>
+            <BodyShort size="small" textColor="subtle">
+              Disse appene finnes i flere miljøer uten å være gruppert:
+            </BodyShort>
+            <VStack gap="space-8">
+              {suggestions.map(({ name, envCount }) => (
+                <HStack key={name} gap="space-12" align="center" justify="space-between">
+                  <HStack gap="space-8" align="center">
+                    <BodyShort size="small" weight="semibold">
+                      {name}
+                    </BodyShort>
+                    <Tag size="xsmall" variant="info">
+                      {envCount} miljøer
+                    </Tag>
+                  </HStack>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="create_from_team_suggestion" />
+                    <input type="hidden" name="app_name" value={name} />
+                    <Button variant="tertiary" size="xsmall" type="submit" icon={<PlusIcon aria-hidden />}>
+                      Opprett gruppe
+                    </Button>
+                  </Form>
+                </HStack>
+              ))}
+            </VStack>
+          </VStack>
+        </Box>
+      )}
+
+      {/* Create new group form */}
+      {showCreate && (
+        <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
+          <Form method="post">
+            <input type="hidden" name="intent" value="create_team_group" />
+            <VStack gap="space-16">
+              <Heading level="3" size="xsmall">
+                Opprett ny gruppe
+              </Heading>
+              <TextField label="Gruppenavn" name="name" size="small" autoComplete="off" />
+              <VStack gap="space-8">
+                <BodyShort size="small" weight="semibold">
+                  Velg applikasjoner å inkludere:
+                </BodyShort>
+                {ungroupedTeamApps.length === 0 ? (
+                  <BodyShort size="small" textColor="subtle">
+                    Ingen ugrupperte applikasjoner tilgjengelig.
+                  </BodyShort>
+                ) : (
+                  <Table size="small">
+                    <Table.Header>
+                      <Table.Row>
+                        <Table.HeaderCell />
+                        <Table.HeaderCell>App</Table.HeaderCell>
+                        <Table.HeaderCell>Miljø</Table.HeaderCell>
+                        <Table.HeaderCell>Nais-team</Table.HeaderCell>
+                      </Table.Row>
+                    </Table.Header>
+                    <Table.Body>
+                      {ungroupedTeamApps.map((app) => (
+                        <Table.Row
+                          key={app.id}
+                          selected={selectedAppIds.includes(app.id)}
+                          onClick={() => toggleApp(app.id)}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <Table.DataCell>
+                            <input
+                              type="checkbox"
+                              name="app_id"
+                              value={app.id}
+                              checked={selectedAppIds.includes(app.id)}
+                              onChange={() => toggleApp(app.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Velg ${app.app_name} (${app.environment_name})`}
+                            />
+                          </Table.DataCell>
+                          <Table.DataCell>
+                            <code>{app.app_name}</code>
+                          </Table.DataCell>
+                          <Table.DataCell>{app.environment_name}</Table.DataCell>
+                          <Table.DataCell>{app.team_slug}</Table.DataCell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table>
+                )}
+              </VStack>
+              <HStack gap="space-8">
+                <Button type="submit" size="small">
+                  Opprett gruppe
+                </Button>
+                <Button
+                  variant="tertiary"
+                  size="small"
+                  type="button"
+                  onClick={() => {
+                    setShowCreate(false)
+                    setSelectedAppIds([])
+                  }}
+                >
+                  Avbryt
+                </Button>
+              </HStack>
+            </VStack>
+          </Form>
+        </Box>
+      )}
+
+      {/* Existing groups */}
+      {teamGroups.length === 0 && !showCreate && suggestions.length === 0 && (
+        <Alert variant="info" size="small">
+          Ingen applikasjonsgrupper er opprettet for dette teamets applikasjoner ennå.
+        </Alert>
+      )}
+
+      {teamGroups.map((group) => (
+        <Box
+          key={group.id}
+          padding="space-20"
+          borderRadius="8"
+          background="raised"
+          borderColor="neutral-subtle"
+          borderWidth="1"
+        >
+          <VStack gap="space-16">
+            <HStack align="center" justify="space-between">
+              <HStack gap="space-12" align="center">
+                <Heading level="3" size="xsmall">
+                  {group.name}
+                </Heading>
+                <Tag size="xsmall" variant="neutral">
+                  {group.apps.length} app{group.apps.length !== 1 ? 'er' : ''}
+                </Tag>
+              </HStack>
+              <Form method="post">
+                <input type="hidden" name="intent" value="delete_team_group" />
+                <input type="hidden" name="group_id" value={group.id} />
+                <Button variant="tertiary-neutral" size="xsmall" type="submit" icon={<TrashIcon aria-hidden />}>
+                  Slett gruppe
+                </Button>
+              </Form>
+            </HStack>
+
+            {/* Apps in group */}
+            <Table size="small">
+              <Table.Header>
+                <Table.Row>
+                  <Table.HeaderCell>App</Table.HeaderCell>
+                  <Table.HeaderCell>Miljø</Table.HeaderCell>
+                  <Table.HeaderCell>Nais-team</Table.HeaderCell>
+                  <Table.HeaderCell />
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {group.apps.map((app) => (
+                  <Table.Row key={app.id}>
+                    <Table.DataCell>
+                      <code>{app.app_name}</code>
+                    </Table.DataCell>
+                    <Table.DataCell>{app.environment_name}</Table.DataCell>
+                    <Table.DataCell>{app.team_slug}</Table.DataCell>
+                    <Table.DataCell>
+                      {app.is_team_app ? (
+                        <Form method="post" style={{ display: 'inline' }}>
+                          <input type="hidden" name="intent" value="remove_team_app_from_group" />
+                          <input type="hidden" name="app_id" value={app.id} />
+                          <Button
+                            variant="tertiary-neutral"
+                            size="xsmall"
+                            type="submit"
+                            icon={<TrashIcon aria-hidden />}
+                          >
+                            Fjern
+                          </Button>
+                        </Form>
+                      ) : (
+                        <Tag size="xsmall" variant="info">
+                          Annet team
+                        </Tag>
+                      )}
+                    </Table.DataCell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table>
+
+            {/* Add team app to group */}
+            {ungroupedTeamApps.length > 0 && (
+              <Form method="post">
+                <input type="hidden" name="intent" value="add_team_app_to_group" />
+                <input type="hidden" name="group_id" value={group.id} />
+                <HStack gap="space-12" align="end">
+                  <Select label="Legg til applikasjon fra teamet" name="app_id" size="small" style={{ flex: 1 }}>
+                    <option value="">Velg applikasjon...</option>
+                    {ungroupedTeamApps.map((app) => (
+                      <option key={app.id} value={app.id}>
+                        {app.app_name} ({app.team_slug} / {app.environment_name})
+                      </option>
+                    ))}
+                  </Select>
+                  <Button variant="tertiary" size="small" type="submit" icon={<PlusIcon aria-hidden />}>
+                    Legg til
+                  </Button>
+                </HStack>
+              </Form>
+            )}
+          </VStack>
+        </Box>
+      ))}
     </VStack>
   )
 }
