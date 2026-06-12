@@ -93,3 +93,50 @@ export async function getGithubUserLookups(githubUsernames: string[]): Promise<M
 
   return lookups
 }
+
+/**
+ * Get the active GitHub account for a user identified by NAV-ident.
+ *
+ * Returns null if the user has no active (non-deleted) GitHub account linked.
+ * When a user has multiple accounts, the most recently created one is returned.
+ */
+export async function getActiveGithubAccountByNavIdent(
+  navIdent: string,
+): Promise<{ github_username: string; display_github_username: string | null } | null> {
+  const result = await pool.query<{ github_username: string; display_github_username: string | null }>(
+    `SELECT uga.github_username, uga.display_github_username
+     FROM user_github_accounts uga
+     WHERE uga.nav_ident = UPPER($1) AND uga.deleted_at IS NULL
+     ORDER BY uga.created_at DESC, uga.github_username
+     LIMIT 1`,
+    [navIdent],
+  )
+  return result.rows[0] ?? null
+}
+
+/**
+ * Get a user by Slack member ID, including their active GitHub username if linked.
+ *
+ * Returns null if no active user with this Slack member ID exists.
+ * When the user has multiple GitHub accounts, the most recently created active one is returned.
+ */
+export async function getUserBySlackMemberId(
+  slackMemberId: string,
+): Promise<{ nav_ident: string; github_username: string | null } | null> {
+  const result = await pool.query<{ nav_ident: string; github_username: string | null }>(
+    `SELECT u.nav_ident, uga.github_username
+     FROM users u
+     LEFT JOIN LATERAL (
+       SELECT github_username
+       FROM user_github_accounts
+       WHERE nav_ident = u.nav_ident AND deleted_at IS NULL
+       ORDER BY created_at DESC, github_username
+       LIMIT 1
+     ) uga ON true
+     WHERE u.slack_member_id = $1 AND u.deleted_at IS NULL
+     ORDER BY u.nav_ident
+     LIMIT 1`,
+    [slackMemberId],
+  )
+  return result.rows[0] ?? null
+}

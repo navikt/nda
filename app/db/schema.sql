@@ -244,6 +244,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_nav_email ON users(nav_email);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(nav_ident) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_slack_member_id ON users(slack_member_id) WHERE slack_member_id IS NOT NULL AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS user_mappings (
   github_username TEXT PRIMARY KEY CHECK (github_username = LOWER(github_username)),

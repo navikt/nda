@@ -19,7 +19,7 @@ import {
   resolveDevTeamScope,
 } from '~/db/deployments/home.server'
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
-import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
+import { getActiveGithubAccountByNavIdent } from '~/db/user-github-lookups.server'
 import { endOfDay } from '~/lib/date-utils'
 import { groupAppCards } from '~/lib/group-app-cards'
 import { logger } from '~/lib/logger.server'
@@ -36,8 +36,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const identity = await requireUser(request)
 
   // Resolve the user's GitHub username for the personal goal-link query.
-  const userMapping = await getUserMappingByNavIdent(identity.navIdent)
-  const githubUsername = userMapping?.github_username ?? null
+  const githubAccount = await getActiveGithubAccountByNavIdent(identity.navIdent)
+  const githubUsername = githubAccount?.github_username ?? null
 
   // Personal "missing goal links" count — mirrors the Slack home tab section.
   // null means the user hasn't mapped a GitHub username yet.

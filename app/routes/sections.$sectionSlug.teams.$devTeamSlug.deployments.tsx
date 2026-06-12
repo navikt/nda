@@ -7,8 +7,7 @@ import { type DeploymentFilters as DeploymentFiltersType, getDeploymentsPaginate
 import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
-import { getGithubUserLookups } from '~/db/user-github-lookups.server'
-import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
+import { getActiveGithubAccountByNavIdent, getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { serializeUserMappings } from '~/lib/user-display'
@@ -144,7 +143,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
          WHERE monitored_app_id = ANY($1) AND deployer_username IS NOT NULL AND deployer_username != ''`,
       [teamAppIds],
     ),
-    currentUser?.navIdent ? getUserMappingByNavIdent(currentUser.navIdent) : Promise.resolve(null),
+    currentUser?.navIdent ? getActiveGithubAccountByNavIdent(currentUser.navIdent) : Promise.resolve(null),
     getLinkedObjectivesForApps(teamAppIds),
   ])
 
