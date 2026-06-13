@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from 'react'
 import { isRouteErrorResponse, Link, Outlet, useLocation, useNavigate, useRouteError } from 'react-router'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { SearchDialog } from '~/components/SearchDialog'
-import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
+import { getUserByIdentifier } from '~/db/user-github-lookups.server'
 import { useTheme } from '~/hooks/useTheme'
 import { getUserSections, requireUser } from '~/lib/auth.server'
 import styles from '../styles/common.module.css'
@@ -30,7 +30,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Resolve user's display name and section memberships in parallel
   const [userMapping, sections] = await Promise.all([
-    getUserMappingByNavIdent(identity.navIdent),
+    getUserByIdentifier(identity.navIdent),
     getUserSections(identity.entraGroups),
   ])
 

@@ -15,7 +15,7 @@ import {
 } from '@navikt/ds-react'
 import { Link, useLoaderData } from 'react-router'
 import { getAllAuditReports } from '~/db/audit-reports.server'
-import { getAllUserMappings } from '~/db/user-mappings.server'
+import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
 import { requireAdmin } from '~/lib/auth.server'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/audit-reports'
@@ -23,15 +23,10 @@ import type { Route } from './+types/audit-reports'
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const [reports, userMappings] = await Promise.all([getAllAuditReports(), getAllUserMappings()])
+  const [reports, userMappings] = await Promise.all([getAllAuditReports(), getAllUsersWithAccounts()])
 
   const displayNameMap: Record<string, string> = Object.fromEntries(
-    userMappings
-      .filter(
-        (u): u is typeof u & { nav_ident: string; display_name: string } =>
-          u.nav_ident != null && u.display_name != null,
-      )
-      .map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
+    userMappings.map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
   )
 
   return { reports, displayNameMap }

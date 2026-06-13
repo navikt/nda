@@ -1,6 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { searchDeployments } from '../../deployments.server'
+import { softDeleteGithubAccount } from '../../user-github-lookups.server'
 import {
   deleteUserMapping,
   getAllUserMappings,
@@ -144,19 +145,23 @@ describe('user_mappings soft delete', () => {
     expect(unmapped.map((u) => u.github_username)).toEqual(['octocat'])
   })
 
-  it('upsertUserMapping undeletes a soft-deleted row and updates fields', async () => {
+  it('upsertUserMapping undeletes a soft-deleted github account', async () => {
+    // Seed user (required for FK in user_github_accounts)
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Octo Cat', 'octocat@nav.no')`,
+    )
     await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
-    await deleteUserMapping('octocat', 'Z990002')
+    await softDeleteGithubAccount('octocat', 'Z990002')
 
-    const restored = await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat 2' })
+    // Re-upserting should undelete the user_github_accounts row
+    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat 2', navIdent: 'Z990001' })
 
-    expect(restored.deleted_at).toBeNull()
-    expect(restored.deleted_by).toBeNull()
-    expect(restored.display_name).toBe('Octo Cat 2')
-    // Pre-existing nav_ident is preserved by COALESCE merge semantics.
-    expect(restored.nav_ident).toBe('Z990001')
-
-    expect((await getAllUserMappings()).length).toBe(1)
+    const { rows } = await pool.query<{ deleted_at: Date | null; nav_ident: string }>(
+      'SELECT deleted_at, nav_ident FROM user_github_accounts WHERE github_username = $1',
+      ['octocat'],
+    )
+    expect(rows[0].deleted_at).toBeNull()
+    expect(rows[0].nav_ident).toBe('Z990001')
   })
 
   it('deleteUserMapping is idempotent (re-deleting does not change deleted_at/by)', async () => {

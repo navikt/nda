@@ -4,7 +4,7 @@ import { ActionAlert } from '~/components/ActionAlert'
 import { SectionRolesTable } from '~/components/SectionRolesTable'
 import { assignSectionRole, removeSectionRole } from '~/db/role-assignments.server'
 import type { Section } from '~/db/sections.server'
-import { getAllUserMappings, getUserMappingByNavIdent } from '~/db/user-mappings.server'
+import { getAllUsersWithAccounts, getUserByIdentifier } from '~/db/user-github-lookups.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireAdmin } from '~/lib/auth.server'
 import { SECTION_ROLES, type SectionRole } from '~/lib/authorization-types'
@@ -44,12 +44,8 @@ export async function loader({ request }: Route.LoaderArgs) {
      ORDER BY s.name, r.role, r.nav_ident`,
   )
 
-  const userMappings = await getAllUserMappings()
-  const displayNameMap = Object.fromEntries(
-    userMappings
-      .filter((u): u is typeof u & { nav_ident: string } => u.nav_ident != null)
-      .map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
-  )
+  const userMappings = await getAllUsersWithAccounts()
+  const displayNameMap = Object.fromEntries(userMappings.map((u) => [u.nav_ident.toUpperCase(), u.display_name]))
 
   return { sections, assignments: allAssignments, displayNameMap }
 }
@@ -68,10 +64,10 @@ export async function action({ request }: Route.ActionArgs) {
       return fail('Ugyldig NAV-ident. Forventet format: én bokstav etterfulgt av 6 siffer (f.eks. A123456).')
     }
 
-    const userMapping = await getUserMappingByNavIdent(navIdent)
+    const userMapping = await getUserByIdentifier(navIdent)
     if (!userMapping) {
       return fail(
-        `Brukeren ${navIdent} er ikke kjent i systemet. Opprett en brukerkobling først under Admin → Brukermappinger.`,
+        `Brukeren ${navIdent} er ikke kjent i systemet. Opprett brukeren først under Admin → Brukermappinger.`,
       )
     }
 

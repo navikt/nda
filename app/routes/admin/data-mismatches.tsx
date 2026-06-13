@@ -77,13 +77,6 @@ interface CommentMissingRegisteredBy {
   created_at: Date
 }
 
-interface MappingWithoutUser {
-  github_username: string
-  display_github_username: string | null
-  nav_ident: string
-  display_name_in_mapping: string | null
-}
-
 const MISSING_PAGE_SIZE = 50
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -93,15 +86,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const rawPage = parseInt(url.searchParams.get('missingPage') ?? '1', 10)
   const missingPage = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1
 
-  const [
-    mismatchResult,
-    missingResult,
-    baselineNoApproverResult,
-    commentsMissingRegisteredByResult,
-    mappingsWithoutUserResult,
-  ] = await Promise.all([
-    pool.query<TitleMismatch>(
-      `SELECT
+  const [mismatchResult, missingResult, baselineNoApproverResult, commentsMissingRegisteredByResult] =
+    await Promise.all([
+      pool.query<TitleMismatch>(
+        `SELECT
          d.id,
          ma.app_name,
          ma.team_slug,
@@ -118,9 +106,9 @@ export async function loader({ request }: Route.LoaderArgs) {
          AND d.title IS NOT NULL
          AND d.title != LEFT(BTRIM(d.github_pr_data->>'title', E' \t\r\n'), 500)
        ORDER BY d.id DESC`,
-    ),
-    pool.query<MissingSummary>(
-      `SELECT
+      ),
+      pool.query<MissingSummary>(
+        `SELECT
          (COUNT(*) FILTER (WHERE d.title IS NULL))::int AS total_missing,
          (COUNT(*) FILTER (
            WHERE d.title IS NULL
@@ -145,9 +133,9 @@ export async function loader({ request }: Route.LoaderArgs) {
          WHERE ma.audit_start_year IS NOT NULL
            AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
            AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})`,
-    ),
-    pool.query<BaselineNoApprover>(
-      `SELECT
+      ),
+      pool.query<BaselineNoApprover>(
+        `SELECT
          d.id,
          ma.app_name,
          ma.team_slug,
@@ -163,9 +151,9 @@ export async function loader({ request }: Route.LoaderArgs) {
                AND dsh.changed_by IS NOT NULL
          )
        ORDER BY d.created_at DESC`,
-    ),
-    pool.query<CommentMissingRegisteredBy>(
-      `SELECT
+      ),
+      pool.query<CommentMissingRegisteredBy>(
+        `SELECT
          dc.id AS comment_id,
          dc.deployment_id,
          ma.app_name,
@@ -179,20 +167,8 @@ export async function loader({ request }: Route.LoaderArgs) {
        WHERE dc.registered_by IS NULL
          AND dc.deleted_at IS NULL
        ORDER BY dc.created_at DESC`,
-    ),
-    pool.query<MappingWithoutUser>(
-      `SELECT um.github_username,
-               um.display_github_username,
-               um.nav_ident,
-               um.display_name AS display_name_in_mapping
-        FROM user_mappings um
-        LEFT JOIN users u ON u.nav_ident = um.nav_ident AND u.deleted_at IS NULL
-        WHERE um.deleted_at IS NULL
-          AND um.nav_ident IS NOT NULL
-          AND u.nav_ident IS NULL
-        ORDER BY um.github_username`,
-    ),
-  ])
+      ),
+    ])
 
   const missing = missingResult.rows[0] ?? {
     total_missing: 0,
@@ -241,7 +217,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     missingTotalPages,
     baselineNoApprover: baselineNoApproverResult.rows,
     commentsMissingRegisteredBy: commentsMissingRegisteredByResult.rows,
-    mappingsWithoutUser: mappingsWithoutUserResult.rows,
   }
 }
 
@@ -352,7 +327,6 @@ export default function DataMismatches() {
     missingTotalPages,
     baselineNoApprover,
     commentsMissingRegisteredBy,
-    mappingsWithoutUser,
   } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const navigate = useNavigate()
@@ -977,59 +951,6 @@ export default function DataMismatches() {
             </div>
           </>
         )}
-
-        <VStack gap="space-16">
-          <HStack gap="space-8" align="center">
-            <Heading level="2" size="medium">
-              Brukermappinger uten users-rad
-            </Heading>
-            {mappingsWithoutUser.length > 0 && (
-              <Tag variant="warning" size="small">
-                {mappingsWithoutUser.length}
-              </Tag>
-            )}
-          </HStack>
-          {mappingsWithoutUser.length === 0 ? (
-            <Alert variant="success" inline>
-              Alle aktive brukermappinger har en tilhørende rad i users-tabellen.
-            </Alert>
-          ) : (
-            <>
-              <Alert variant="warning" inline>
-                {mappingsWithoutUser.length} brukermapping
-                {mappingsWithoutUser.length === 1 ? '' : 'er'} mangler rad i <code>users</code>-tabellen. Disse vil
-                vises uten navn og e-post. <Link to="/admin/users">Gå til brukeroversikten</Link> for å importere
-                manglende brukere.
-              </Alert>
-              <div>
-                <Table size="small">
-                  <Table.Header>
-                    <Table.Row>
-                      <Table.HeaderCell>GitHub-brukernavn</Table.HeaderCell>
-                      <Table.HeaderCell>NAV-ident</Table.HeaderCell>
-                      <Table.HeaderCell>Navn i user_mappings</Table.HeaderCell>
-                    </Table.Row>
-                  </Table.Header>
-                  <Table.Body>
-                    {mappingsWithoutUser.map((m) => (
-                      <Table.Row key={m.github_username}>
-                        <Table.DataCell>
-                          <BodyShort size="small">{m.display_github_username ?? m.github_username}</BodyShort>
-                        </Table.DataCell>
-                        <Table.DataCell>
-                          <BodyShort size="small">{m.nav_ident ?? '—'}</BodyShort>
-                        </Table.DataCell>
-                        <Table.DataCell>
-                          <BodyShort size="small">{m.display_name_in_mapping ?? '—'}</BodyShort>
-                        </Table.DataCell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table>
-              </div>
-            </>
-          )}
-        </VStack>
       </VStack>
     </VStack>
   )

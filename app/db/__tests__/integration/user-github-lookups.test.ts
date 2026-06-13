@@ -2,13 +2,15 @@ import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   getActiveGithubAccountByNavIdent,
+  getAllUsersWithAccounts,
   getGithubUserLookup,
   getGithubUserLookups,
+  getUnmappedDeployers,
   getUserByIdentifier,
   getUserBySlackMemberId,
   getUsersByIdentifiers,
 } from '../../user-github-lookups.server'
-import { truncateAllTables } from './helpers'
+import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -348,5 +350,101 @@ describe('getUsersByIdentifiers', () => {
     await pool.query(`UPDATE users SET deleted_at = NOW() WHERE nav_ident = 'Z990001'`)
     const result = await getUsersByIdentifiers(['gladfjord'])
     expect(result.has('gladfjord')).toBe(false)
+  })
+})
+
+describe('getAllUsersWithAccounts', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+  })
+
+  it('returns active accounts joined with users', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    await seedAccount('RaskElv', 'Z990002')
+    const result = await getAllUsersWithAccounts()
+    expect(result.map((r) => r.github_username).sort()).toEqual(['gladfjord', 'raskelv'])
+    expect(result.find((r) => r.github_username === 'gladfjord')?.nav_ident).toBe('Z990001')
+  })
+
+  it('excludes soft-deleted github accounts', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    await seedAccount('RaskElv', 'Z990002', { deleted: true })
+    const result = await getAllUsersWithAccounts()
+    expect(result.map((r) => r.github_username)).toEqual(['gladfjord'])
+  })
+
+  it('excludes accounts whose user row is soft-deleted', async () => {
+    await seedAccount('GladFjord', 'Z990001')
+    await pool.query(`UPDATE users SET deleted_at = NOW() WHERE nav_ident = 'Z990001'`)
+    const result = await getAllUsersWithAccounts()
+    expect(result).toHaveLength(0)
+  })
+})
+
+describe('getUnmappedDeployers', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+  })
+
+  it('returns deployers without an active account link', async () => {
+    const appId = await seedApp(pool, { teamSlug: 't', appName: 'app1', environment: 'prod', auditStartYear: 2025 })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 't',
+      environment: 'prod',
+      deployerUsername: 'unmapped-user',
+      createdAt: new Date('2025-06-01'),
+    })
+    const result = await getUnmappedDeployers()
+    expect(result.map((r) => r.github_username)).toContain('unmapped-user')
+  })
+
+  it('excludes deployers that have an active account link', async () => {
+    const appId = await seedApp(pool, { teamSlug: 't', appName: 'app1', environment: 'prod', auditStartYear: 2025 })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 't',
+      environment: 'prod',
+      deployerUsername: 'mapped-user',
+      createdAt: new Date('2025-06-01'),
+    })
+    await seedAccount('mapped-user', 'Z990001')
+    const result = await getUnmappedDeployers()
+    expect(result.map((r) => r.github_username)).not.toContain('mapped-user')
+  })
+
+  it('includes deployers whose account link is soft-deleted', async () => {
+    const appId = await seedApp(pool, { teamSlug: 't', appName: 'app1', environment: 'prod', auditStartYear: 2025 })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 't',
+      environment: 'prod',
+      deployerUsername: 'deleted-user',
+      createdAt: new Date('2025-06-01'),
+    })
+    await seedAccount('deleted-user', 'Z990002', { deleted: true })
+    const result = await getUnmappedDeployers()
+    expect(result.map((r) => r.github_username)).toContain('deleted-user')
+  })
+
+  it('returns correct deployment_count', async () => {
+    const appId = await seedApp(pool, { teamSlug: 't', appName: 'app1', environment: 'prod', auditStartYear: 2025 })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 't',
+      environment: 'prod',
+      deployerUsername: 'count-user',
+      createdAt: new Date('2025-06-01'),
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 't',
+      environment: 'prod',
+      deployerUsername: 'count-user',
+      createdAt: new Date('2025-07-01'),
+    })
+    const result = await getUnmappedDeployers()
+    const found = result.find((r) => r.github_username === 'count-user')
+    expect(found?.deployment_count).toBe(2)
   })
 })

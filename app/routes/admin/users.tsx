@@ -8,15 +8,12 @@ import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
 import { populateGithubAccountsFromMappings } from '~/db/user-github-accounts.server'
 import {
-  deleteUserMapping,
-  getAllUserMappings,
-  getUnmappedUsers,
-  getUsersWithoutGithub,
-  populateUsersFromGraph,
-  type UserMapping,
-  upsertUser,
-  upsertUserMapping,
-} from '~/db/user-mappings.server'
+  getAllUsersWithAccounts,
+  getUnmappedDeployers,
+  softDeleteGithubAccount,
+  type UserWithAccount,
+} from '~/db/user-github-lookups.server'
+import { getUsersWithoutGithub, populateUsersFromGraph, upsertUser, upsertUserMapping } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { getFormString, isValidEmail, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
@@ -38,8 +35,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     userSectionRoleAssignments,
     usersCountResult,
   ] = await Promise.all([
-    getAllUserMappings(),
-    getUnmappedUsers(),
+    getAllUsersWithAccounts(),
+    getUnmappedDeployers(),
     getUsersWithoutGithub(),
     getAllDevTeams(),
     getAllUserRoleAssignments().catch(() => new Map<string, Array<{ dev_team_id: number; role: string }>>()),
@@ -71,7 +68,10 @@ export async function action({ request }: Route.ActionArgs) {
     if (!normalized) {
       return { fieldErrors: { github_username: 'GitHub brukernavn er påkrevd' } }
     }
-    await deleteUserMapping(normalized, admin.navIdent)
+    const deleted = await softDeleteGithubAccount(normalized, admin.navIdent)
+    if (!deleted) {
+      return { error: 'GitHub-kontoen ble ikke funnet eller er allerede slettet' }
+    }
     return { success: true }
   }
 
@@ -289,7 +289,7 @@ export default function AdminUsers() {
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
 
-  const [editMapping, setEditMapping] = useState<UserMapping | null>(null)
+  const [editMapping, setEditMapping] = useState<UserWithAccount | null>(null)
   const [addFormKey, setAddFormKey] = useState(0)
   const [prefillUsername, setPrefillUsername] = useState('')
   const modalRef = useRef<HTMLDialogElement>(null)
@@ -307,7 +307,7 @@ export default function AdminUsers() {
     }
   }, [actionData, navigation.state])
 
-  const openEdit = (mapping: UserMapping) => {
+  const openEdit = (mapping: UserWithAccount) => {
     setEditMapping(mapping)
     modalRef.current?.showModal()
   }
