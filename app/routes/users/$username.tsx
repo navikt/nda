@@ -18,7 +18,8 @@ import {
 } from '~/db/deployments.server'
 import { getUserDevTeamsByRole, getUserRolesForDisplay, type UserRoleDisplay } from '~/db/role-assignments.server'
 import { getAllSectionsWithTeams } from '~/db/sections.server'
-import { getUserMapping, upsertUserMapping } from '~/db/user-mappings.server'
+import { getUserByIdentifier } from '~/db/user-github-lookups.server'
+import { upsertUserMapping } from '~/db/user-mappings.server'
 import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
 import { canSearchUsers } from '~/lib/authorization.server'
@@ -64,11 +65,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const botDescription = getBotDescription(username)
 
   // Resolve user mapping first to check for canonical URL redirect
-  const mapping = isBot ? null : await getUserMapping(username)
+  const mapping = isBot ? null : await getUserByIdentifier(username)
 
   // Redirect to canonical GitHub username URL if nav-ident resolves to a different username
   if (
-    mapping &&
+    mapping?.github_username &&
     isValidGitHubUsername(mapping.github_username) &&
     mapping.github_username.toLowerCase() !== username.toLowerCase()
   ) {
@@ -85,8 +86,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Check if this is the logged-in user's own profile
   const isOwnProfile = !isBot && mapping?.nav_ident === identity.navIdent
 
-  // Check if the logged-in user is viewing their own nav-ident URL without a mapping
-  const canPrefillOwnMapping = !isBot && !mapping && username.toUpperCase() === identity.navIdent.toUpperCase()
+  // Check if the logged-in user is viewing their own nav-ident URL without a linked GitHub account
+  const canPrefillOwnMapping =
+    !isBot && !mapping?.github_username && username.toUpperCase() === identity.navIdent.toUpperCase()
 
   // Fetch dev teams if user has a nav_ident
   let devTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> = []
