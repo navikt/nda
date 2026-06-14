@@ -1,28 +1,28 @@
 /**
- * User display utilities for consistent username-to-display-name mapping
+ * User display utilities for consistent GitHub-username-to-user-identity lookup data
  */
 
 import { getBotDisplayName } from './github-bots'
 
-export type UserMappingRecord = {
+export type UserRecord = {
   display_name: string | null
   nav_ident?: string | null
   nav_email?: string | null
 }
 
-export type UserMappings = Record<string, UserMappingRecord>
+export type UserLookupMap = Record<string, UserRecord>
 
 /**
  * Get display name for a GitHub username, falling back to the username if no mapping exists.
  * Also handles GitHub bot accounts.
  *
  * @param githubUsername - The GitHub username to look up
- * @param userMappings - Record of username -> mapping data
+ * @param userMappings - Lookup record keyed by GitHub username
  * @returns Display name, bot name, nav_email, or the original username as fallback
  */
 export function getUserDisplayName(
   githubUsername: string | undefined | null,
-  userMappings: UserMappings,
+  userMappings: UserLookupMap,
 ): string | null {
   if (!githubUsername) return null
 
@@ -35,15 +35,15 @@ export function getUserDisplayName(
 }
 
 /**
- * Serialize a Map of user mappings to a plain object for client-side use.
+ * Serialize a Map of user lookup data to a plain object for client-side use.
  *
- * @param mappings - Map from getUserMappings()
+ * @param mappings - Map keyed by GitHub username with user identity data
  * @returns Plain object suitable for JSON serialization
  */
-export function serializeUserMappings(
+export function serializeUserLookups(
   mappings: Map<string, { display_name: string | null; nav_ident: string | null; nav_email?: string | null }>,
-): UserMappings {
-  const result: UserMappings = {}
+): UserLookupMap {
+  const result: UserLookupMap = {}
   for (const [username, mapping] of mappings) {
     result[username] = {
       display_name: mapping.display_name,

@@ -17,7 +17,7 @@ import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
 import { type ActionResult, fail, ok } from '~/lib/action-result'
 import { requireAdmin } from '~/lib/auth.server'
 import { isSafeHttpUrl, parseId } from '~/lib/route-helpers'
-import { serializeUserMappings, type UserMappings } from '~/lib/user-display'
+import { serializeUserLookups, type UserLookupMap } from '~/lib/user-display'
 import type { Route } from './+types/soft-deleted'
 
 export function meta(_args: Route.MetaArgs) {
@@ -31,7 +31,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Resolve display names for all "deleted_by" navIdents in one batch.
   const navIdents = new Set<string>()
   for (const list of [
-    summary.userMappings,
+    summary.githubAccounts,
     summary.deploymentComments,
     summary.devTeamApplications,
     summary.sectionTeams,
@@ -59,9 +59,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       navIdentToUsername[navIdent] = mapping.github_username
     }
   }
-  // serializeUserMappings strips fields the UI does not need (e.g. nav_email,
-  // slack_member_id, timestamps) before sending to the client.
-  const userMappings: UserMappings = serializeUserMappings(mappingsByUsername)
+  // serializeUserLookups converts the Map to a plain object for JSON transport;
+  // nav_email is included as a display fallback (see getUserDisplayName).
+  const userMappings: UserLookupMap = serializeUserLookups(mappingsByUsername)
 
   return { summary, userMappings, navIdentToUsername }
 }
@@ -145,7 +145,7 @@ function DeletedBy({
   navIdentToUsername,
 }: {
   navIdent: string | null
-  userMappings: UserMappings
+  userMappings: UserLookupMap
   navIdentToUsername: Record<string, string>
 }) {
   if (!navIdent) return <Detail textColor="subtle">Ukjent</Detail>
@@ -161,7 +161,7 @@ export default function AdminSoftDeleted() {
   const actionData = useActionData<typeof action>()
 
   const totalCount =
-    summary.userMappings.length +
+    summary.githubAccounts.length +
     summary.deploymentComments.length +
     summary.devTeamApplications.length +
     summary.sectionTeams.length +
@@ -184,8 +184,12 @@ export default function AdminSoftDeleted() {
 
       {totalCount === 0 && <Alert variant="info">Ingen slettede rader for øyeblikket.</Alert>}
 
-      <Section title="Brukermappinger" count={summary.userMappings.length} emptyText="Ingen slettede brukermappinger.">
-        {summary.userMappings.length > 0 && (
+      <Section
+        title="GitHub-kontokoblinger"
+        count={summary.githubAccounts.length}
+        emptyText="Ingen slettede GitHub-kontokoblinger."
+      >
+        {summary.githubAccounts.length > 0 && (
           <Table size="small">
             <Table.Header>
               <Table.Row>
@@ -198,7 +202,7 @@ export default function AdminSoftDeleted() {
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {summary.userMappings.map((row) => (
+              {summary.githubAccounts.map((row) => (
                 <Table.Row key={row.github_username}>
                   <Table.DataCell>{row.display_github_username || row.github_username}</Table.DataCell>
                   <Table.DataCell>{row.display_name ?? '—'}</Table.DataCell>

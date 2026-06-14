@@ -6,7 +6,7 @@ import { ErrorReasonWithLink } from '~/components/ErrorReasonWithLink'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
-import type { UserMappings } from '~/lib/user-display'
+import type { UserLookupMap } from '~/lib/user-display'
 import styles from '~/styles/common.module.css'
 
 interface DeploymentData {
@@ -33,7 +33,7 @@ interface DeploymentData {
 
 interface DeploymentRowProps {
   deployment: DeploymentData
-  userMappings: UserMappings
+  userMappings: UserLookupMap
   errorReason?: string
   showEnv?: boolean
   showApp?: boolean

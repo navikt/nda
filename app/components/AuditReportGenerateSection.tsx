@@ -24,7 +24,7 @@ import {
   type ReportPeriod,
   type ReportPeriodType,
 } from '~/lib/report-periods'
-import type { UserMappings } from '~/lib/user-display'
+import type { UserLookupMap } from '~/lib/user-display'
 import { UserName } from './UserName'
 
 interface AuditReportGenerateSectionProps {
@@ -35,7 +35,7 @@ interface AuditReportGenerateSectionProps {
   readinessData?: AuditReadinessCheck
   /** The period key (e.g. "yearly:2025-01-01") that readinessData was checked for. */
   readinessPeriodKey?: string
-  readinessUserMappings: UserMappings
+  readinessUserMappings: UserLookupMap
   isCheckingReadiness: boolean
   isGeneratingReport: boolean
   pendingJobId: string | null
@@ -164,7 +164,7 @@ function ReadinessResult({
 }: {
   readinessData: AuditReadinessCheck
   appUrl: string
-  userMappings: UserMappings
+  userMappings: UserLookupMap
 }) {
   return (
     <Box padding="space-16" borderRadius="4" background={readinessData.is_ready ? 'success-soft' : 'warning-soft'}>
@@ -245,7 +245,7 @@ function DeploymentList({
   label: string
   deployments: AuditReadinessCheck['pending_deployments']
   appUrl: string
-  userMappings: UserMappings
+  userMappings: UserLookupMap
 }) {
   return (
     <div>

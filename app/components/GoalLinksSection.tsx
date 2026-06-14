@@ -3,7 +3,7 @@ import { BodyShort, Box, Button, Detail, Heading, HStack, Tabs, Tag, VStack } fr
 import { useState } from 'react'
 import { Form, Link } from 'react-router'
 import type { DeploymentGoalLinkWithDetails } from '~/db/deployment-goal-links.server'
-import { getUserDisplayName, type UserMappings } from '~/lib/user-display'
+import { getUserDisplayName, type UserLookupMap } from '~/lib/user-display'
 import { ExternalLink } from './ExternalLink'
 import { type GoalSelectionBoard, GoalSelectionFields } from './GoalSelectionFields'
 
@@ -22,7 +22,7 @@ interface GoalLinksSectionProps {
   availableBoards?: AvailableBoard[]
   sectionBoards?: AvailableBoard[]
   canLinkGoal?: boolean
-  userMappings?: UserMappings
+  userMappings?: UserLookupMap
 }
 
 export function GoalLinksSection({
@@ -84,7 +84,7 @@ function GoalLinkItem({
 }: {
   link: DeploymentGoalLinkWithDetails
   canUnlink: boolean
-  userMappings: UserMappings
+  userMappings: UserLookupMap
 }) {
   const label = link.key_result_title
     ? `${link.objective_title} → ${link.key_result_title}`

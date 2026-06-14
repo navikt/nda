@@ -176,7 +176,7 @@ describe('getDeploymentsPaginated with deployer_usernames filter', () => {
 })
 
 describe('unmapped_deployers filter', () => {
-  it('returns only deployments where deployer has no active user_mapping', async () => {
+  it('returns only deployments where deployer has no active user_github_accounts entry', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
     // mapped deployer

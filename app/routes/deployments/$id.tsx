@@ -75,7 +75,7 @@ import { type FourEyesStatus, getFourEyesStatusLabel, isApprovedStatus } from '~
 import { mergeWithCurrentDeploy } from '~/lib/nearby-deploys'
 import { formatChangeSource, getFourEyesStatus } from '~/lib/status-display'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
-import { getUserDisplayName, serializeUserMappings } from '~/lib/user-display'
+import { getUserDisplayName, serializeUserLookups } from '~/lib/user-display'
 import { isVerificationDebugMode } from '~/lib/verification'
 import {
   UNVERIFIED_REASON_DESCRIPTIONS,
@@ -346,7 +346,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     previousDeployment,
     previousDeploymentForDiff,
     nextDeployment,
-    userMappings: serializeUserMappings(userMappings),
+    userMappings: serializeUserLookups(userMappings),
     appUrl,
     currentUserNavIdent: currentUser?.navIdent || null,
     isCurrentUserInvolved,

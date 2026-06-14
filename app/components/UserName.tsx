@@ -1,12 +1,12 @@
 import { Link } from 'react-router'
-import { getUserDisplayName, type UserMappings } from '~/lib/user-display'
+import { getUserDisplayName, type UserLookupMap } from '~/lib/user-display'
 import { ExternalLink } from './ExternalLink'
 
 interface UserNameProps {
   /** GitHub username to resolve */
   username: string | null | undefined
-  /** User mappings from loader (serialized via serializeUserMappings) */
-  userMappings: UserMappings
+  /** User mappings from loader (serialized via serializeUserLookups) */
+  userMappings: UserLookupMap
   /** Link behavior: 'internal' links to /users/:username, 'github' to github.com, false disables link */
   link?: 'internal' | 'github' | false
 }

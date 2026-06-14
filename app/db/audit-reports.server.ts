@@ -454,7 +454,7 @@ export async function getAuditReportData(
     }
   }
 
-  // Get user mappings for all deployers and reviewers
+  // Get user identities for all deployers and reviewers
   // Collect all identifiers (could be github usernames or nav-idents)
   const identifiers = new Set<string>()
   for (const d of deployments) {
@@ -481,7 +481,7 @@ export async function getAuditReportData(
   }
 
   // Fetch mappings where identifier matches github_username OR nav_ident
-  const user_mappings = new Map<
+  const userLookups = new Map<
     string,
     { display_name: string | null; nav_ident: string | null; github_username: string }
   >()
@@ -500,7 +500,7 @@ export async function getAuditReportData(
       [identifierArray.map((id) => id.toLowerCase()), identifierArray.map((id) => id.toUpperCase())],
     )
     for (const row of mappingsResult.rows) {
-      user_mappings.set(row.github_username, {
+      userLookups.set(row.github_username, {
         display_name: row.display_name,
         nav_ident: row.nav_ident,
         github_username: row.github_username,
@@ -583,7 +583,7 @@ export async function getAuditReportData(
     legacy_infos,
     baseline_approvals,
     reviewer_counts,
-    user_mappings,
+    user_mappings: userLookups,
     canonical_map,
     deviations,
     goal_links_by_deployment,
@@ -600,7 +600,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     legacy_infos,
     baseline_approvals,
     reviewer_counts,
-    user_mappings,
+    user_mappings: userLookups,
     canonical_map,
     deviations: rawDeviations,
     goal_links_by_deployment,
@@ -613,7 +613,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
   const getDisplayName = (identifier: string | null | undefined): string | undefined => {
     if (!identifier) return undefined
     const canonical = canonical_map.get(identifier) || identifier
-    return user_mappings.get(canonical)?.display_name || undefined
+    return userLookups.get(canonical)?.display_name || undefined
   }
 
   // Helper to get canonical username for aggregation
@@ -732,8 +732,8 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
   const contributors: ContributorEntry[] = Array.from(contributorCounts.entries())
     .map(([username, count]) => ({
       github_username: username,
-      display_name: user_mappings.get(username)?.display_name || null,
-      nav_ident: user_mappings.get(username)?.nav_ident || null,
+      display_name: userLookups.get(username)?.display_name || null,
+      nav_ident: userLookups.get(username)?.nav_ident || null,
       deployment_count: count,
     }))
     .sort((a, b) => b.deployment_count - a.deployment_count)
@@ -756,7 +756,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
   const reviewers: ReviewerEntry[] = Array.from(combinedReviewerCounts.entries())
     .map(([username, count]) => ({
       github_username: username,
-      display_name: user_mappings.get(username)?.display_name || null,
+      display_name: userLookups.get(username)?.display_name || null,
       review_count: count,
     }))
     .sort((a, b) => b.review_count - a.review_count)

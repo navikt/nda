@@ -16,7 +16,7 @@ import { pool } from './connection.server'
  * from this view (no audit info available for who/when).
  */
 
-interface SoftDeletedUserMapping {
+interface SoftDeletedGithubAccount {
   github_username: string
   display_github_username: string | null
   display_name: string | null
@@ -77,7 +77,7 @@ interface SoftDeletedExternalReference {
 }
 
 interface SoftDeletedSummary {
-  userMappings: SoftDeletedUserMapping[]
+  githubAccounts: SoftDeletedGithubAccount[]
   deploymentComments: SoftDeletedDeploymentComment[]
   devTeamApplications: SoftDeletedDevTeamApplication[]
   sectionTeams: SoftDeletedSectionTeam[]
@@ -86,9 +86,9 @@ interface SoftDeletedSummary {
 }
 
 export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
-  const [userMappings, deploymentComments, devTeamApplications, sectionTeams, devTeamNaisTeams, externalReferences] =
+  const [githubAccounts, deploymentComments, devTeamApplications, sectionTeams, devTeamNaisTeams, externalReferences] =
     await Promise.all([
-      pool.query<SoftDeletedUserMapping>(
+      pool.query<SoftDeletedGithubAccount>(
         `SELECT uga.github_username,
                 uga.display_github_username,
                 u.display_name,
@@ -185,7 +185,7 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
     ])
 
   return {
-    userMappings: userMappings.rows,
+    githubAccounts: githubAccounts.rows,
     deploymentComments: deploymentComments.rows,
     devTeamApplications: devTeamApplications.rows,
     sectionTeams: sectionTeams.rows,

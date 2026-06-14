@@ -89,9 +89,9 @@ export interface PersonalHomeTabTeamIssues {
 
 export interface HomeTabInput {
   slackUserId: string
-  /** Resolved from user_mappings; null = no mapping or mapping without GitHub username. */
+  /** GitHub username from user_github_accounts; null/undefined = no linked account. */
   githubUsername: string | null | undefined
-  /** Resolved from user_mappings; null = no mapping. */
+  /** NAV-ident from user_github_accounts; null/undefined = no linked account. */
   navIdent: string | null | undefined
   baseUrl: string
   /** Active boards (with goals + key results + keywords) for each dev team the user is on. */

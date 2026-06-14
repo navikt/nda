@@ -55,7 +55,7 @@ async function seedBoardWithObjectiveAndKr(prefix = 'b') {
 describe('soft-deleted: getAllSoftDeleted', () => {
   it('returns empty arrays when no rows are soft-deleted', async () => {
     const summary = await getAllSoftDeleted()
-    expect(summary.userMappings).toEqual([])
+    expect(summary.githubAccounts).toEqual([])
     expect(summary.deploymentComments).toEqual([])
     expect(summary.devTeamApplications).toEqual([])
     expect(summary.sectionTeams).toEqual([])
@@ -118,9 +118,9 @@ describe('soft-deleted: getAllSoftDeleted', () => {
 
     const summary = await getAllSoftDeleted()
 
-    expect(summary.userMappings).toHaveLength(1)
-    expect(summary.userMappings[0].github_username).toBe('gh-alice')
-    expect(summary.userMappings[0].deleted_by).toBe('Z990002')
+    expect(summary.githubAccounts).toHaveLength(1)
+    expect(summary.githubAccounts[0].github_username).toBe('gh-alice')
+    expect(summary.githubAccounts[0].deleted_by).toBe('Z990002')
 
     expect(summary.deploymentComments).toHaveLength(1)
     expect(summary.deploymentComments[0].id).toBe(commentId)

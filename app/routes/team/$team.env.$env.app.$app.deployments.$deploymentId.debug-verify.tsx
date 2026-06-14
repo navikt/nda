@@ -18,7 +18,7 @@ import { getDeploymentById } from '~/db/deployments.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
-import { getUserDisplayName, serializeUserMappings } from '~/lib/user-display'
+import { getUserDisplayName, serializeUserLookups } from '~/lib/user-display'
 import { type DebugVerificationResult, isVerificationDebugMode, runDebugVerification } from '~/lib/verification'
 import type { Route } from './+types/$team.env.$env.app.$app.deployments.$deploymentId.debug-verify'
 
@@ -107,7 +107,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       debugResult,
       error: null,
       useCache,
-      userMappings: serializeUserMappings(mappings),
+      userMappings: serializeUserLookups(mappings),
     }
   } catch (error) {
     logger.error('Debug verification failed:', error)

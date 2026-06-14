@@ -28,7 +28,7 @@ import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.s
 import { getLatestSyncJob, type SyncJob } from '~/db/sync-jobs.server'
 import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
 import { requireAdmin } from '~/lib/auth.server'
-import type { UserMappings } from '~/lib/user-display'
+import type { UserLookupMap } from '~/lib/user-display'
 import {
   IMPLICIT_APPROVAL_MODE_DESCRIPTIONS,
   IMPLICIT_APPROVAL_MODE_LABELS,
@@ -115,7 +115,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
   // Use action data for readiness (checked on demand)
   const readinessData = actionData?.readiness
   const readinessPeriodKey = actionData?.readinessPeriodKey as string | undefined
-  const readinessUserMappings = (actionData?.userMappings as UserMappings) ?? {}
+  const readinessUserMappings = (actionData?.userMappings as UserLookupMap) ?? {}
 
   // Start polling when fetch job is started
   useEffect(() => {
