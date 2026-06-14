@@ -38,13 +38,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const diffCount = parseInt(diffResult.rows[0].count, 10)
 
   // Count soft-deleted rows across the audit-relevant tables.
-  // user_mappings term includes legacy-only rows (no corresponding user_github_accounts row)
-  // to stay consistent with what getAllSoftDeleted() and the restore page show. Removed in step 5e.
   const softDeletedResult = await pool.query<{ total: string }>(`
     SELECT (
       (SELECT COUNT(*) FROM user_github_accounts WHERE deleted_at IS NOT NULL) +
-      (SELECT COUNT(*) FROM user_mappings um WHERE um.deleted_at IS NOT NULL
-         AND NOT EXISTS (SELECT 1 FROM user_github_accounts uga WHERE uga.github_username = um.github_username)) +
       (SELECT COUNT(*) FROM deployment_comments WHERE deleted_at IS NOT NULL AND comment_type NOT IN ('manual_approval', 'legacy_info')) +
       (SELECT COUNT(*) FROM dev_team_applications WHERE deleted_at IS NOT NULL) +
       (SELECT COUNT(*) FROM section_teams WHERE deleted_at IS NOT NULL) +

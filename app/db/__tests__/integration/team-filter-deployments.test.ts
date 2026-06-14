@@ -27,11 +27,6 @@ afterEach(async () => {
 
 async function seedUser(navIdent: string, githubUsername: string) {
   await pool.query(
-    `INSERT INTO user_mappings (nav_ident, github_username, display_name)
-     VALUES ($1, $2, $3)`,
-    [navIdent, githubUsername, navIdent],
-  )
-  await pool.query(
     `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
     [navIdent, navIdent, `${githubUsername}@nav.no`],
   )
@@ -76,7 +71,7 @@ describe('getMembersGithubUsernamesForDevTeamRoles', () => {
     const sectionId = await seedSection(pool, 'sec')
     const team = await seedDevTeam(pool, 'team-x', 'Team X', sectionId)
     await seedUser('A111111', 'alice')
-    // B222222 has no user_mappings row at all → excluded by inner join
+    // B222222 has no user_github_accounts row at all → excluded by inner join
     await joinDevTeam('A111111', team)
     await joinDevTeam('B222222', team)
 
@@ -89,7 +84,6 @@ describe('getMembersGithubUsernamesForDevTeamRoles', () => {
     const team = await seedDevTeam(pool, 'team-y', 'Team Y', sectionId)
     await seedUser('A111111', 'alice')
     await seedUser('B222222', 'bob')
-    await pool.query(`UPDATE user_mappings SET deleted_at = NOW() WHERE nav_ident = 'B222222'`)
     await pool.query(`UPDATE user_github_accounts SET deleted_at = NOW() WHERE nav_ident = 'B222222'`)
     await joinDevTeam('A111111', team)
     await joinDevTeam('B222222', team)

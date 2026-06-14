@@ -1,13 +1,11 @@
 /**
- * GitHub account lookup functions backed by `user_github_accounts JOIN users`.
- *
- * Historical note: previously this data came from the `user_mappings` table.
- * As part of the expand/contract migration (steps 5a–5c) all lookups are
- * being moved here.
+ * GitHub account lookup and write functions backed by `user_github_accounts JOIN users`.
  */
 
 import { isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
+import { logger } from '~/lib/logger.server'
+import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 
@@ -19,7 +17,7 @@ import { pool } from './connection.server'
  * `account_deleted_at` are still returned so that historical deployments can
  * resolve display names even after an account is unlinked.
  */
-export interface GithubUserLookup {
+interface GithubUserLookup {
   github_username: string
   display_github_username: string | null
   display_name: string | null
@@ -145,7 +143,7 @@ export async function getUserBySlackMemberId(
  * `github_username` is null when the user has no linked GitHub account.
  * Soft-deleted rows are included so historical deployment displays still work.
  */
-export interface UserRecord {
+interface UserRecord {
   github_username: string | null
   display_github_username: string | null
   nav_ident: string
@@ -184,8 +182,6 @@ export async function getUserByIdentifier(identifier: string): Promise<UserRecor
        WHERE u.nav_ident = UPPER($1) AND u.deleted_at IS NULL`,
       [identifier],
     )
-    // If found as a NAV-ident, return immediately. Otherwise fall through to GitHub
-    // username lookup: GitHub allows usernames that match NAV-ident format (e.g. "a123456").
     if (result.rows[0]) return result.rows[0]
   }
 
@@ -220,8 +216,6 @@ export async function getUsersByIdentifiers(identifiers: string[]): Promise<Map<
   if (identifiers.length === 0) return new Map()
 
   const navIdents = identifiers.filter((id) => isValidNavIdent(id)).map((id) => id.toUpperCase())
-  // All identifiers are searched as GitHub usernames to handle usernames that
-  // look like NAV-idents (e.g. "a123456").
   const allAsGithubUsernames = identifiers.map((id) => id.toLowerCase())
 
   const byNavIdent = new Map<string, UserRecord>()
@@ -271,9 +265,6 @@ export async function getUsersByIdentifiers(identifiers: string[]): Promise<Map<
 
   const mappings = new Map<string, UserRecord>()
   for (const identifier of identifiers) {
-    // Prefer NAV-ident match; fall back to GitHub username match so that
-    // identifiers like "a123456" that match NAV-ident format but are actually
-    // GitHub usernames are still resolved correctly.
     const record = byNavIdent.get(identifier.toUpperCase()) ?? byGithubUsername.get(identifier.toLowerCase())
     if (record) {
       mappings.set(identifier, record)
@@ -283,8 +274,7 @@ export async function getUsersByIdentifiers(identifiers: string[]): Promise<Map<
 }
 
 /**
- * Shape returned by getAllUsersWithAccounts — compatible with UserMapping for
- * admin list views that previously called getAllUserMappings().
+ * Shape returned by getAllUsersWithAccounts for admin list views.
  *
  * `github_username` is always set (INNER JOIN on user_github_accounts).
  * Users without a GitHub account appear in getUsersWithoutGithub() instead.
@@ -304,10 +294,7 @@ export interface UserWithAccount {
  * Get all active users that have at least one active GitHub account linked.
  *
  * Returns one row per active `user_github_accounts` entry so users with
- * multiple GitHub accounts appear multiple times (same behaviour as the old
- * `user_mappings` table).
- *
- * Replaces `getAllUserMappings()` from `user-mappings.server.ts`.
+ * multiple GitHub accounts appear multiple times.
  */
 export async function getAllUsersWithAccounts(): Promise<UserWithAccount[]> {
   const result = await pool.query<UserWithAccount>(
@@ -330,8 +317,6 @@ export async function getAllUsersWithAccounts(): Promise<UserWithAccount[]> {
 /**
  * Get GitHub usernames from deployments that don't have an active GitHub
  * account link in `user_github_accounts`. Excludes known bots.
- *
- * Replaces `getUnmappedUsers()` from `user-mappings.server.ts`.
  */
 export async function getUnmappedDeployers(): Promise<{ github_username: string; deployment_count: number }[]> {
   const result = await pool.query<{ github_username: string; deployment_count: string }>(`
@@ -359,51 +344,275 @@ export async function getUnmappedDeployers(): Promise<{ github_username: string;
 /**
  * Soft-delete a GitHub account link.
  *
- * Sets `deleted_at` and `deleted_by` on both `user_github_accounts` and
- * the legacy `user_mappings` row in a single transaction, mirroring the
- * approach in `deleteUserMapping()`. Both tables must be updated atomically
- * while `user_mappings` still exists (until step 5e), to prevent a later
- * `populateGithubAccountsFromMappings` sync run from silently re-activating
- * the account via the legacy table.
- *
  * The corresponding `users` row is left intact — the person still exists,
  * just without a GitHub account link.
  *
  * Returns true if a row was actually deleted, false if it was already deleted
  * or not found.
- *
- * Replaces `deleteUserMapping()` from `user-mappings.server.ts`.
  */
 export async function softDeleteGithubAccount(
   githubUsername: string,
   deletedBy: string | null = null,
 ): Promise<boolean> {
+  const result = await pool.query<{ github_username: string }>(
+    `UPDATE user_github_accounts
+     SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW()
+     WHERE github_username = LOWER($1) AND deleted_at IS NULL
+     RETURNING github_username`,
+    [githubUsername.trim(), deletedBy],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
+function normalize(value: string | null | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  return trimmed || null
+}
+
+function normalizeNavIdent(value: string | null | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim().toUpperCase()
+  return trimmed || null
+}
+
+function normalizeEmail(value: string | null | undefined): string | null {
+  if (!value) return null
+  const trimmed = value.trim().toLowerCase()
+  return trimmed || null
+}
+
+interface User {
+  nav_ident: string
+  display_name: string
+  nav_email: string
+  slack_member_id: string | null
+  created_at: Date
+  updated_at: Date
+  deleted_at: Date | null
+  deleted_by: string | null
+}
+
+/**
+ * Create or update a user in the `users` table.
+ */
+export async function upsertUser(params: {
+  navIdent: string
+  displayName: string
+  navEmail: string
+  slackMemberId?: string | null
+}): Promise<User> {
+  const navIdent = normalizeNavIdent(params.navIdent)
+  const displayName = normalize(params.displayName)
+  const navEmail = normalizeEmail(params.navEmail)
+  const slackMemberId = normalize(params.slackMemberId)
+
+  if (!navIdent) throw new Error('navIdent is required')
+  if (!displayName) throw new Error('displayName is required')
+  if (!navEmail) throw new Error('navEmail is required')
+
+  const result = await pool.query<User>(
+    `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (nav_ident) DO UPDATE SET
+       display_name    = EXCLUDED.display_name,
+       nav_email       = EXCLUDED.nav_email,
+       slack_member_id = COALESCE(EXCLUDED.slack_member_id, users.slack_member_id),
+       updated_at      = NOW(),
+       deleted_at      = NULL,
+       deleted_by      = NULL
+     RETURNING *`,
+    [navIdent, displayName, navEmail, slackMemberId],
+  )
+
+  return result.rows[0]
+}
+
+/**
+ * Create or update a user and GitHub account link.
+ *
+ * `displayGithubUsername` preserves original casing for display:
+ * - Pass a string to set/overwrite the display casing.
+ * - Pass `null` to preserve the existing stored value (uses COALESCE in SQL).
+ * - Omit to derive from `githubUsername` (uses original casing of that input).
+ */
+export async function upsertUserAndGithubAccount(params: {
+  githubUsername: string
+  displayGithubUsername?: string | null
+  displayName?: string | null
+  navEmail?: string | null
+  navIdent?: string | null
+  slackMemberId?: string | null
+}): Promise<void> {
+  const githubUsername = normalize(params.githubUsername)?.toLowerCase() ?? null
+  if (!githubUsername) {
+    throw new Error('GitHub username is required')
+  }
+
+  const displayGithubUsername =
+    params.displayGithubUsername !== undefined
+      ? (normalize(params.displayGithubUsername) ?? null)
+      : (normalize(params.githubUsername) ?? null)
+
+  if (displayGithubUsername && displayGithubUsername.toLowerCase() !== githubUsername) {
+    throw new Error(
+      `display_github_username '${displayGithubUsername}' does not match github_username '${githubUsername}'`,
+    )
+  }
+
+  const navIdent = normalizeNavIdent(params.navIdent)
+  const displayName = normalize(params.displayName)
+  const navEmail = normalizeEmail(params.navEmail)
+  const slackMemberId = normalize(params.slackMemberId)
+
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const result = await client.query(
-      `UPDATE user_github_accounts
-       SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW()
-       WHERE github_username = LOWER($1) AND deleted_at IS NULL
-       RETURNING github_username`,
-      [githubUsername.trim(), deletedBy],
-    )
-    // Legacy table: keep in sync while user_mappings still exists (step 5e will drop it).
-    // Capture its rowCount too — during migration a username may exist only in user_mappings
-    // (not yet backfilled to user_github_accounts), and the caller needs a truthful return value.
-    const legacyResult = await client.query(
-      `UPDATE user_mappings
-       SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW()
-       WHERE github_username = LOWER($1) AND deleted_at IS NULL
-       RETURNING github_username`,
-      [githubUsername.trim(), deletedBy],
-    )
+
+    if (navIdent && displayName && navEmail) {
+      await client.query(
+        `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (nav_ident) DO UPDATE SET
+           display_name    = EXCLUDED.display_name,
+           nav_email       = EXCLUDED.nav_email,
+           slack_member_id = COALESCE(EXCLUDED.slack_member_id, users.slack_member_id),
+           updated_at      = NOW(),
+           deleted_at      = NULL,
+           deleted_by      = NULL`,
+        [navIdent, displayName, navEmail, slackMemberId],
+      )
+      await client.query(
+        `INSERT INTO user_github_accounts (github_username, display_github_username, nav_ident, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (github_username) DO UPDATE SET
+           display_github_username = COALESCE(EXCLUDED.display_github_username, user_github_accounts.display_github_username),
+           nav_ident               = EXCLUDED.nav_ident,
+           updated_at              = NOW(),
+           deleted_at              = NULL,
+           deleted_by              = NULL`,
+        [githubUsername, displayGithubUsername, navIdent],
+      )
+    } else if (navIdent) {
+      const { rows } = await client.query<{ nav_ident: string }>(
+        'SELECT nav_ident FROM users WHERE nav_ident = $1 AND deleted_at IS NULL',
+        [navIdent],
+      )
+      if (rows.length > 0) {
+        await client.query(
+          `INSERT INTO user_github_accounts (github_username, display_github_username, nav_ident, updated_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (github_username) DO UPDATE SET
+             display_github_username = COALESCE(EXCLUDED.display_github_username, user_github_accounts.display_github_username),
+             nav_ident               = EXCLUDED.nav_ident,
+             updated_at              = NOW(),
+             deleted_at              = NULL,
+             deleted_by              = NULL`,
+          [githubUsername, displayGithubUsername, navIdent],
+        )
+      } else {
+        logger.warn('upsertUserAndGithubAccount: user row not found, skipping account link', {
+          githubUsername,
+          navIdent,
+        })
+      }
+    } else {
+      logger.warn('upsertUserAndGithubAccount called without navIdent — no GitHub account link created', {
+        githubUsername,
+      })
+    }
+
     await client.query('COMMIT')
-    return (result.rowCount ?? 0) > 0 || (legacyResult.rowCount ?? 0) > 0
   } catch (err) {
     await client.query('ROLLBACK')
     throw err
   } finally {
     client.release()
   }
+}
+
+interface PopulateResult {
+  success: number
+  skipped: number
+  errors: number
+}
+
+/**
+ * Refresh the `users` table from the MS Graph API.
+ *
+ * For every active `users` row that has a nav_ident, looks up the user
+ * in Graph and upserts the latest display_name, nav_email, and slack_member_id.
+ * Idempotent — safe to run multiple times.
+ */
+export async function populateUsersFromGraph(): Promise<PopulateResult> {
+  const { rows } = await pool.query<{ nav_ident: string }>(
+    `SELECT DISTINCT nav_ident FROM users WHERE deleted_at IS NULL`,
+  )
+
+  let success = 0
+  let skipped = 0
+  let errors = 0
+
+  for (const row of rows) {
+    const navIdent = normalizeNavIdent(row.nav_ident)
+    if (!navIdent) {
+      skipped++
+      continue
+    }
+    try {
+      const graphUsers = await searchGraphUsers(navIdent)
+      if (graphUsers.length !== 1) {
+        logger.warn('populate-users: skipping nav_ident — expected 1 Graph result', {
+          nav_ident: navIdent,
+          count: graphUsers.length,
+        })
+        skipped++
+        continue
+      }
+      const user = graphUsers[0]
+      if (!user.displayName || !user.email) {
+        logger.warn('populate-users: skipping nav_ident — missing displayName or email', { nav_ident: navIdent })
+        skipped++
+        continue
+      }
+      await upsertUser({ navIdent, displayName: user.displayName, navEmail: user.email })
+      success++
+    } catch (err) {
+      logger.error('populate-users: error processing nav_ident', err)
+      errors++
+    }
+  }
+
+  return { success, skipped, errors }
+}
+
+/**
+ * Get active users from the `users` table that have no linked GitHub account
+ * in `user_github_accounts`. These are users added without a GitHub account
+ * (e.g. produktledere).
+ */
+export async function getUsersWithoutGithub(): Promise<
+  { nav_ident: string; display_name: string; nav_email: string }[]
+> {
+  const result = await pool.query<{ nav_ident: string; display_name: string; nav_email: string }>(
+    `SELECT u.nav_ident, u.display_name, u.nav_email
+     FROM users u
+     WHERE u.deleted_at IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM user_github_accounts uga
+         WHERE uga.nav_ident = u.nav_ident AND uga.deleted_at IS NULL
+       )
+     ORDER BY u.display_name`,
+  )
+  return result.rows
+}
+
+/**
+ * Get a user from the `users` table by NAV-ident — excludes soft-deleted.
+ */
+export async function getUserByNavIdent(navIdent: string): Promise<User | null> {
+  const result = await pool.query<User>('SELECT * FROM users WHERE nav_ident = UPPER($1) AND deleted_at IS NULL', [
+    navIdent,
+  ])
+  return result.rows[0] ?? null
 }

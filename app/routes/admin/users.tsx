@@ -6,14 +6,16 @@ import { CreateMappingModal } from '~/components/CreateMappingModal'
 import { pool } from '~/db/connection.server'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { getAllSectionRoleAssignments, getAllUserRoleAssignments } from '~/db/role-assignments.server'
-import { populateGithubAccountsFromMappings } from '~/db/user-github-accounts.server'
 import {
   getAllUsersWithAccounts,
   getUnmappedDeployers,
+  getUsersWithoutGithub,
+  populateUsersFromGraph,
   softDeleteGithubAccount,
   type UserWithAccount,
+  upsertUser,
+  upsertUserAndGithubAccount,
 } from '~/db/user-github-lookups.server'
-import { getUsersWithoutGithub, populateUsersFromGraph, upsertUser, upsertUserMapping } from '~/db/user-mappings.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { getFormString, isValidEmail, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
@@ -159,7 +161,7 @@ export async function action({ request }: Route.ActionArgs) {
     const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
     const navEmail = graphUser.email ?? null
 
-    await upsertUserMapping({
+    await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: githubUsernameRaw,
       displayName,
@@ -197,31 +199,16 @@ export async function action({ request }: Route.ActionArgs) {
       return { fieldErrors }
     }
 
-    await upsertUserMapping({
+    await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: null,
-      displayName: (formData.get('display_name') as string) || null,
+      displayName: getFormString(formData, 'display_name') || null,
       navEmail,
       navIdent,
-      slackMemberId: (formData.get('slack_member_id') as string) || null,
+      slackMemberId: getFormString(formData, 'slack_member_id') || null,
     })
     return { success: true }
   }
-
-  if (intent === 'populate-github-accounts') {
-    try {
-      const result = await populateGithubAccountsFromMappings()
-      return {
-        intent: 'populate-github-accounts',
-        success: true,
-        githubAccountsMessage: `Synkroniserte ${result.inserted} GitHub-kontoer fra brukermappinger (${result.skipped} hoppet over — mangler aktiv users-rad).`,
-      }
-    } catch (error) {
-      logger.error('populate-github-accounts action failed', error)
-      return { intent: 'populate-github-accounts', githubAccountsError: 'Kunne ikke synkronisere GitHub-kontoer' }
-    }
-  }
-
   if (intent === 'populate-users') {
     try {
       const result = await populateUsersFromGraph()
@@ -251,13 +238,13 @@ export async function action({ request }: Route.ActionArgs) {
 
       let imported = 0
       for (const mapping of data.mappings) {
-        if (!mapping.github_username) continue
-        await upsertUserMapping({
+        if (!mapping.github_username || typeof mapping.github_username !== 'string') continue
+        await upsertUserAndGithubAccount({
           githubUsername: mapping.github_username,
-          displayName: mapping.display_name || null,
-          navEmail: mapping.nav_email || null,
-          navIdent: mapping.nav_ident || null,
-          slackMemberId: mapping.slack_member_id || null,
+          displayName: typeof mapping.display_name === 'string' ? mapping.display_name || null : null,
+          navEmail: typeof mapping.nav_email === 'string' ? mapping.nav_email || null : null,
+          navIdent: typeof mapping.nav_ident === 'string' ? mapping.nav_ident || null : null,
+          slackMemberId: typeof mapping.slack_member_id === 'string' ? mapping.slack_member_id || null : null,
         })
         imported++
       }
@@ -325,8 +312,6 @@ export default function AdminUsers() {
   }
 
   const isPopulating = navigation.state === 'submitting' && navigation.formData?.get('intent') === 'populate-users'
-  const isPopulatingGithub =
-    navigation.state === 'submitting' && navigation.formData?.get('intent') === 'populate-github-accounts'
 
   return (
     <>
@@ -337,8 +322,8 @@ export default function AdminUsers() {
           </Heading>
           <VStack gap="space-8">
             <p>
-              Henter alle aktive NAV-identer fra brukermappinger, slår opp i Graph API og fyller <code>users</code>
-              -tabellen. Idempotent — trygt å kjøre flere ganger.
+              Henter alle aktive NAV-identer fra <code>users</code>-tabellen, slår opp i Graph API og oppdaterer
+              brukerdata. Idempotent — trygt å kjøre flere ganger.
               {usersCount > 0 && ` (${usersCount} brukere i tabellen nå)`}
             </p>
             {actionData?.error && <Alert variant="error">{actionData.error}</Alert>}
@@ -351,28 +336,6 @@ export default function AdminUsers() {
                 </Button>
               </Form>
             </HStack>
-          </VStack>
-        </div>
-
-        <div>
-          <Heading level="2" size="small" spacing>
-            Synkroniser GitHub-kontoer
-          </Heading>
-          <VStack gap="space-8">
-            <p>
-              Seed <code>user_github_accounts</code>-tabellen fra eksisterende brukermappinger. Kobler GitHub-brukernavn
-              til brukere i <code>users</code>-tabellen. Idempotent — trygt å kjøre flere ganger.
-            </p>
-            <HStack>
-              <Form method="post">
-                <input type="hidden" name="intent" value="populate-github-accounts" />
-                <Button type="submit" variant="secondary" loading={isPopulatingGithub}>
-                  Synkroniser GitHub-kontoer
-                </Button>
-              </Form>
-            </HStack>
-            {actionData?.githubAccountsError && <Alert variant="error">{actionData.githubAccountsError}</Alert>}
-            {actionData?.githubAccountsMessage && <Alert variant="success">{actionData.githubAccountsMessage}</Alert>}
           </VStack>
         </div>
 

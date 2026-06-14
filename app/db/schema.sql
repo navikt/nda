@@ -246,23 +246,6 @@ CREATE INDEX IF NOT EXISTS idx_users_nav_email ON users(nav_email);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(nav_ident) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_users_slack_member_id ON users(slack_member_id) WHERE slack_member_id IS NOT NULL AND deleted_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS user_mappings (
-  github_username TEXT PRIMARY KEY CHECK (github_username = LOWER(github_username)),
-  display_github_username TEXT CHECK (display_github_username IS NULL OR LOWER(display_github_username) = github_username),
-  display_name TEXT,
-  nav_email TEXT,
-  nav_ident TEXT CHECK (nav_ident IS NULL OR nav_ident = UPPER(nav_ident)),
-  slack_member_id TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ NULL,
-  deleted_by TEXT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_mappings_slack ON user_mappings(slack_member_id);
-CREATE INDEX IF NOT EXISTS idx_user_mappings_email ON user_mappings(nav_email);
-CREATE INDEX IF NOT EXISTS idx_user_mappings_active ON user_mappings(github_username) WHERE deleted_at IS NULL;
-
 -- Triggers for updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$

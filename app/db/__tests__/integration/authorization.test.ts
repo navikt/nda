@@ -65,10 +65,6 @@ async function seedGithubAccount(navIdent: string, githubUsername: string, displ
     [navIdent, displayName],
   )
   await pool.query(
-    `INSERT INTO user_mappings (nav_ident, github_username, display_name) VALUES ($1, LOWER($2), $3) ON CONFLICT DO NOTHING`,
-    [navIdent, githubUsername, displayName],
-  )
-  await pool.query(
     `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES (LOWER($1), $2) ON CONFLICT DO NOTHING`,
     [githubUsername, navIdent],
   )

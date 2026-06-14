@@ -330,25 +330,6 @@ export async function getUngroupedTeamApps(devTeamId: number): Promise<Ungrouped
 }
 
 /**
- * Verify that a monitored application belongs to a dev team AND is ungrouped and active.
- * Used for IDOR protection before adding an app to a group.
- */
-export async function isUngroupedTeamApp(devTeamId: number, monitoredAppId: number): Promise<boolean> {
-  const { rows } = await pool.query<{ exists: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM monitored_applications ma
-       JOIN dev_team_applications dta ON dta.monitored_app_id = ma.id
-         AND dta.dev_team_id = $1 AND dta.deleted_at IS NULL
-       WHERE ma.id = $2
-         AND ma.application_group_id IS NULL
-         AND ma.is_active = true
-     ) AS exists`,
-    [devTeamId, monitoredAppId],
-  )
-  return rows[0]?.exists ?? false
-}
-
-/**
  * Verify that ALL given monitored app IDs belong to a dev team AND are ungrouped and active.
  * Used for IDOR protection before creating a group from manually selected apps.
  */

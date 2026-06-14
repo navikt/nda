@@ -37,11 +37,6 @@ async function seedUserMapping(github: string, navIdent: string, opts?: { delete
     [navIdent, `${github} Display`],
   )
   await pool.query(
-    `INSERT INTO user_mappings (github_username, nav_ident, display_name, deleted_at)
-     VALUES ($1, $2, $3, $4)`,
-    [github, navIdent, `${github} Display`, opts?.deletedAt ?? null],
-  )
-  await pool.query(
     `INSERT INTO user_github_accounts (github_username, nav_ident, deleted_at)
      VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
     [github, navIdent, opts?.deletedAt ?? null],
