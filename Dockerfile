@@ -1,5 +1,5 @@
 # Build stage with full Node.js
-FROM node:24-bookworm-slim AS builder
+FROM node:26-bookworm-slim AS builder
 
 RUN npm install -g pnpm@10
 
@@ -33,7 +33,7 @@ RUN mkdir -p /app/fonts && \
     apt-get remove -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # Production dependencies only
-FROM node:24-bookworm-slim AS prod-deps
+FROM node:26-bookworm-slim AS prod-deps
 
 RUN npm install -g pnpm@10
 
