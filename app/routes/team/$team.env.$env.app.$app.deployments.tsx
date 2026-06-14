@@ -12,8 +12,7 @@ import {
   getMembersGithubUsernamesForDevTeamRoles,
   getUserDevTeamsByRole,
 } from '~/db/role-assignments.server'
-import { getGithubUserLookups } from '~/db/user-github-lookups.server'
-import { getUserMappingByNavIdent } from '~/db/user-mappings.server'
+import { getGithubUserLookups, getUserByIdentifier } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
@@ -202,7 +201,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
        WHERE username IS NOT NULL AND username != ''`,
         [appIds],
       ),
-      currentUser?.navIdent ? getUserMappingByNavIdent(currentUser.navIdent) : Promise.resolve(null),
+      currentUser?.navIdent ? getUserByIdentifier(currentUser.navIdent) : Promise.resolve(null),
       getLinkedObjectivesForApps(appIds),
     ])
 

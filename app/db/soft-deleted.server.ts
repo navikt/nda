@@ -24,7 +24,6 @@ interface SoftDeletedUserMapping {
   deleted_at: Date
   deleted_by: string | null
 }
-
 interface SoftDeletedDeploymentComment {
   id: number
   deployment_id: number
@@ -90,9 +89,30 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
   const [userMappings, deploymentComments, devTeamApplications, sectionTeams, devTeamNaisTeams, externalReferences] =
     await Promise.all([
       pool.query<SoftDeletedUserMapping>(
-        `SELECT github_username, display_github_username, display_name, nav_ident, deleted_at, deleted_by
-         FROM user_mappings
-         WHERE deleted_at IS NOT NULL
+        `SELECT uga.github_username,
+                uga.display_github_username,
+                u.display_name,
+                uga.nav_ident,
+                uga.deleted_at,
+                uga.deleted_by
+         FROM user_github_accounts uga
+         LEFT JOIN users u ON u.nav_ident = uga.nav_ident
+         WHERE uga.deleted_at IS NOT NULL
+         UNION
+         -- Include legacy soft-deleted rows from user_mappings that predate the migration
+         -- (no corresponding user_github_accounts row). Removed in step 5e.
+         SELECT um.github_username,
+                um.display_github_username,
+                u.display_name,
+                um.nav_ident,
+                um.deleted_at,
+                um.deleted_by
+         FROM user_mappings um
+         LEFT JOIN users u ON u.nav_ident = um.nav_ident
+         WHERE um.deleted_at IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM user_github_accounts uga WHERE uga.github_username = um.github_username
+           )
          ORDER BY deleted_at DESC`,
       ),
       pool.query<SoftDeletedDeploymentComment>(
@@ -192,17 +212,35 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
 /**
  * Restore (undelete) a soft-deleted user mapping.
  *
+ * Restores in both user_github_accounts (primary) and user_mappings (legacy, removed in step 5e).
  * No-op if the row is missing or already active.
  */
 export async function restoreUserMapping(githubUsername: string): Promise<boolean> {
-  const result = await pool.query(
-    `UPDATE user_mappings
-     SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
-     WHERE github_username = LOWER($1) AND deleted_at IS NOT NULL
-     RETURNING github_username`,
-    [githubUsername.trim()],
-  )
-  return (result.rowCount ?? 0) > 0
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query(
+      `UPDATE user_github_accounts
+       SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
+       WHERE github_username = LOWER($1) AND deleted_at IS NOT NULL
+       RETURNING github_username`,
+      [githubUsername.trim()],
+    )
+    const legacyResult = await client.query(
+      `UPDATE user_mappings
+       SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
+       WHERE github_username = LOWER($1) AND deleted_at IS NOT NULL
+       RETURNING github_username`,
+      [githubUsername.trim()],
+    )
+    await client.query('COMMIT')
+    return (result.rowCount ?? 0) > 0 || (legacyResult.rowCount ?? 0) > 0
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 /**

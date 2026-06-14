@@ -26,7 +26,7 @@ import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getGitHubDataStatsForApp } from '~/db/github-data.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getLatestSyncJob, type SyncJob } from '~/db/sync-jobs.server'
-import { getAllUserMappings } from '~/db/user-mappings.server'
+import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { UserMappings } from '~/lib/user-display'
 import {
@@ -62,16 +62,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       getAuditReportsForAppAdmin(app.id),
       getLatestSyncJob(app.id, 'fetch_verification_data'),
       getGitHubDataStatsForApp(app.id, app.audit_start_year),
-      getAllUserMappings(),
+      getAllUsersWithAccounts(),
     ])
 
   const displayNameMap: Record<string, string> = Object.fromEntries(
-    userMappings
-      .filter(
-        (u): u is typeof u & { nav_ident: string; display_name: string } =>
-          u.nav_ident != null && u.display_name != null,
-      )
-      .map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
+    userMappings.map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
   )
 
   return {

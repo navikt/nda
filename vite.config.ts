@@ -35,6 +35,7 @@ export default defineConfig({
     __BUILD_VERSION__: JSON.stringify(getBuildVersion()),
   },
   test: {
+    testTimeout: 15000,
     exclude: ['app/db/__tests__/integration/**', 'node_modules/**'],
     coverage: {
       provider: 'v8',

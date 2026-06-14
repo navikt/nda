@@ -1,11 +1,11 @@
-import { getAllUserMappings } from '~/db/user-mappings.server'
+import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/users.export'
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const mappings = await getAllUserMappings()
+  const mappings = await getAllUsersWithAccounts()
 
   const exportData = {
     version: 1,

@@ -7,6 +7,8 @@
  */
 
 import { isValidNavIdent } from '~/lib/form-validators'
+import { isGitHubBot } from '~/lib/github-bots'
+import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 
 /**
@@ -278,4 +280,130 @@ export async function getUsersByIdentifiers(identifiers: string[]): Promise<Map<
     }
   }
   return mappings
+}
+
+/**
+ * Shape returned by getAllUsersWithAccounts — compatible with UserMapping for
+ * admin list views that previously called getAllUserMappings().
+ *
+ * `github_username` is always set (INNER JOIN on user_github_accounts).
+ * Users without a GitHub account appear in getUsersWithoutGithub() instead.
+ */
+export interface UserWithAccount {
+  github_username: string
+  display_github_username: string | null
+  nav_ident: string
+  display_name: string
+  nav_email: string
+  slack_member_id: string | null
+  created_at: Date
+  updated_at: Date
+}
+
+/**
+ * Get all active users that have at least one active GitHub account linked.
+ *
+ * Returns one row per active `user_github_accounts` entry so users with
+ * multiple GitHub accounts appear multiple times (same behaviour as the old
+ * `user_mappings` table).
+ *
+ * Replaces `getAllUserMappings()` from `user-mappings.server.ts`.
+ */
+export async function getAllUsersWithAccounts(): Promise<UserWithAccount[]> {
+  const result = await pool.query<UserWithAccount>(
+    `SELECT uga.github_username,
+            uga.display_github_username,
+            u.nav_ident,
+            u.display_name,
+            u.nav_email,
+            u.slack_member_id,
+            GREATEST(u.updated_at, uga.updated_at) AS updated_at,
+            LEAST(u.created_at, uga.created_at) AS created_at
+     FROM user_github_accounts uga
+     JOIN users u ON u.nav_ident = uga.nav_ident AND u.deleted_at IS NULL
+     WHERE uga.deleted_at IS NULL
+     ORDER BY uga.github_username`,
+  )
+  return result.rows
+}
+
+/**
+ * Get GitHub usernames from deployments that don't have an active GitHub
+ * account link in `user_github_accounts`. Excludes known bots.
+ *
+ * Replaces `getUnmappedUsers()` from `user-mappings.server.ts`.
+ */
+export async function getUnmappedDeployers(): Promise<{ github_username: string; deployment_count: number }[]> {
+  const result = await pool.query<{ github_username: string; deployment_count: string }>(`
+    SELECT LOWER(d.deployer_username) AS github_username, COUNT(*) AS deployment_count
+    FROM deployments d
+    INNER JOIN monitored_applications ma
+      ON d.monitored_app_id = ma.id AND ma.is_active = true
+    LEFT JOIN user_github_accounts uga
+      ON LOWER(d.deployer_username) = uga.github_username AND uga.deleted_at IS NULL
+    WHERE d.deployer_username IS NOT NULL
+      AND d.deployer_username != ''
+      AND uga.github_username IS NULL
+      AND ${AUDIT_START_YEAR_FILTER}
+    GROUP BY LOWER(d.deployer_username)
+    ORDER BY github_username
+  `)
+  return result.rows
+    .filter((r) => !isGitHubBot(r.github_username))
+    .map((r) => ({
+      github_username: r.github_username,
+      deployment_count: parseInt(r.deployment_count, 10),
+    }))
+}
+
+/**
+ * Soft-delete a GitHub account link.
+ *
+ * Sets `deleted_at` and `deleted_by` on both `user_github_accounts` and
+ * the legacy `user_mappings` row in a single transaction, mirroring the
+ * approach in `deleteUserMapping()`. Both tables must be updated atomically
+ * while `user_mappings` still exists (until step 5e), to prevent a later
+ * `populateGithubAccountsFromMappings` sync run from silently re-activating
+ * the account via the legacy table.
+ *
+ * The corresponding `users` row is left intact — the person still exists,
+ * just without a GitHub account link.
+ *
+ * Returns true if a row was actually deleted, false if it was already deleted
+ * or not found.
+ *
+ * Replaces `deleteUserMapping()` from `user-mappings.server.ts`.
+ */
+export async function softDeleteGithubAccount(
+  githubUsername: string,
+  deletedBy: string | null = null,
+): Promise<boolean> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query(
+      `UPDATE user_github_accounts
+       SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW()
+       WHERE github_username = LOWER($1) AND deleted_at IS NULL
+       RETURNING github_username`,
+      [githubUsername.trim(), deletedBy],
+    )
+    // Legacy table: keep in sync while user_mappings still exists (step 5e will drop it).
+    // Capture its rowCount too — during migration a username may exist only in user_mappings
+    // (not yet backfilled to user_github_accounts), and the caller needs a truthful return value.
+    const legacyResult = await client.query(
+      `UPDATE user_mappings
+       SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW()
+       WHERE github_username = LOWER($1) AND deleted_at IS NULL
+       RETURNING github_username`,
+      [githubUsername.trim(), deletedBy],
+    )
+    await client.query('COMMIT')
+    return (result.rowCount ?? 0) > 0 || (legacyResult.rowCount ?? 0) > 0
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }

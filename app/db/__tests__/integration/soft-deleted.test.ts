@@ -69,13 +69,16 @@ describe('soft-deleted: getAllSoftDeleted', () => {
     })
 
     // user_mappings
-    await upsertUserMapping({ githubUsername: 'gh-alice', navIdent: 'A111111' })
-    await deleteUserMapping('gh-alice', 'B222222')
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'z990001@nav.no')`,
+    )
+    await upsertUserMapping({ githubUsername: 'gh-alice', navIdent: 'Z990001' })
+    await deleteUserMapping('gh-alice', 'Z990002')
 
     // deployment_comments
     const { rows: commentRows } = await pool.query(
       `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, deleted_at, deleted_by)
-       VALUES ($1, 'note', 'hello world', NOW(), 'B222222') RETURNING id`,
+       VALUES ($1, 'note', 'hello world', NOW(), 'Z990002') RETURNING id`,
       [deploymentId],
     )
     const commentId = commentRows[0].id as number
@@ -83,21 +86,21 @@ describe('soft-deleted: getAllSoftDeleted', () => {
     // dev_team_applications
     await pool.query(
       `INSERT INTO dev_team_applications (dev_team_id, monitored_app_id, deleted_at, deleted_by)
-       VALUES ($1, $2, NOW(), 'B222222')`,
+       VALUES ($1, $2, NOW(), 'Z990002')`,
       [devTeamId, appId],
     )
 
     // section_teams
     await pool.query(
       `INSERT INTO section_teams (section_id, team_slug, deleted_at, deleted_by)
-       VALUES ($1, 'naisteam', NOW(), 'B222222')`,
+       VALUES ($1, 'naisteam', NOW(), 'Z990002')`,
       [sectionId],
     )
 
     // dev_team_nais_teams
     await pool.query(
       `INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug, deleted_at, deleted_by)
-       VALUES ($1, 'naisteam', NOW(), 'B222222')`,
+       VALUES ($1, 'naisteam', NOW(), 'Z990002')`,
       [devTeamId],
     )
 
@@ -109,13 +112,13 @@ describe('soft-deleted: getAllSoftDeleted', () => {
       title: 'JIRA-1',
       objective_id: objectiveId,
     })
-    await deleteExternalReference(ref.id, 'B222222')
+    await deleteExternalReference(ref.id, 'Z990002')
 
     const summary = await getAllSoftDeleted()
 
     expect(summary.userMappings).toHaveLength(1)
     expect(summary.userMappings[0].github_username).toBe('gh-alice')
-    expect(summary.userMappings[0].deleted_by).toBe('B222222')
+    expect(summary.userMappings[0].deleted_by).toBe('Z990002')
 
     expect(summary.deploymentComments).toHaveLength(1)
     expect(summary.deploymentComments[0].id).toBe(commentId)
@@ -145,7 +148,7 @@ describe('soft-deleted: getAllSoftDeleted', () => {
       title: 'JIRA-1',
       objective_id: objectiveId,
     })
-    await deleteExternalReference(ref.id, 'B222222')
+    await deleteExternalReference(ref.id, 'Z990002')
     await pool.query('UPDATE board_objectives SET is_active = false WHERE id = $1', [objectiveId])
 
     const summary = await getAllSoftDeleted()
@@ -156,11 +159,14 @@ describe('soft-deleted: getAllSoftDeleted', () => {
 
 describe('soft-deleted: restore', () => {
   it('restores a soft-deleted user mapping and clears the cache', async () => {
-    await upsertUserMapping({ githubUsername: 'gh-alice', navIdent: 'A111111' })
-    await deleteUserMapping('gh-alice', 'B222222')
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'z990001@nav.no')`,
+    )
+    await upsertUserMapping({ githubUsername: 'gh-alice', navIdent: 'Z990001' })
+    await deleteUserMapping('gh-alice', 'Z990002')
 
     // Warm the cache (query does not filter on deleted_at, so it returns the soft-deleted row).
-    const cached = await getUserMapping('A111111')
+    const cached = await getUserMapping('Z990001')
     expect(cached?.deleted_at).not.toBeNull()
 
     const restored = await restoreUserMapping('gh-alice')
@@ -173,7 +179,7 @@ describe('soft-deleted: restore', () => {
     expect(rows[0].deleted_by).toBeNull()
 
     // Cache cleared: re-read should reflect the restored state, not the stale soft-deleted entry.
-    const reread = await getUserMapping('A111111')
+    const reread = await getUserMapping('Z990001')
     expect(reread?.deleted_at).toBeNull()
   })
 
@@ -195,7 +201,7 @@ describe('soft-deleted: restore', () => {
     })
     const { rows } = await pool.query(
       `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, deleted_at, deleted_by)
-       VALUES ($1, 'note', 'gone', NOW(), 'B222222') RETURNING id`,
+       VALUES ($1, 'note', 'gone', NOW(), 'Z990002') RETURNING id`,
       [deploymentId],
     )
     const id = rows[0].id as number
@@ -224,12 +230,12 @@ describe('soft-deleted: restore', () => {
 
     const { rows: ma } = await pool.query<{ id: number }>(
       `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, deleted_at, deleted_by)
-       VALUES ($1, 'manual_approval', 'approved', NOW(), 'B222222') RETURNING id`,
+       VALUES ($1, 'manual_approval', 'approved', NOW(), 'Z990002') RETURNING id`,
       [deploymentId],
     )
     const { rows: li } = await pool.query<{ id: number }>(
       `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, deleted_at, deleted_by)
-       VALUES ($1, 'legacy_info', 'legacy', NOW(), 'B222222') RETURNING id`,
+       VALUES ($1, 'legacy_info', 'legacy', NOW(), 'Z990002') RETURNING id`,
       [deploymentId],
     )
 
@@ -256,7 +262,7 @@ describe('soft-deleted: restore', () => {
     const appId = await seedApp(pool, { teamSlug: 'naisteam', appName: 'app', environment: 'dev' })
     await pool.query(
       `INSERT INTO dev_team_applications (dev_team_id, monitored_app_id, deleted_at, deleted_by)
-       VALUES ($1, $2, NOW(), 'B222222')`,
+       VALUES ($1, $2, NOW(), 'Z990002')`,
       [devTeamId, appId],
     )
 
@@ -274,7 +280,7 @@ describe('soft-deleted: restore', () => {
     const sectionId = await seedSection(pool, 'sec')
     await pool.query(
       `INSERT INTO section_teams (section_id, team_slug, deleted_at, deleted_by)
-       VALUES ($1, 'naisteam', NOW(), 'B222222')`,
+       VALUES ($1, 'naisteam', NOW(), 'Z990002')`,
       [sectionId],
     )
 
@@ -292,7 +298,7 @@ describe('soft-deleted: restore', () => {
     const devTeamId = await seedDevTeam(pool, 'team', 'Team', sectionId)
     await pool.query(
       `INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug, deleted_at, deleted_by)
-       VALUES ($1, 'naisteam', NOW(), 'B222222')`,
+       VALUES ($1, 'naisteam', NOW(), 'Z990002')`,
       [devTeamId],
     )
 
@@ -313,7 +319,7 @@ describe('soft-deleted: restore', () => {
       title: 'JIRA-1',
       objective_id: objectiveId,
     })
-    await deleteExternalReference(ref.id, 'B222222')
+    await deleteExternalReference(ref.id, 'Z990002')
 
     expect(await restoreExternalReference(ref.id)).toBe(true)
     const { rows } = await pool.query('SELECT deleted_at FROM external_references WHERE id = $1', [ref.id])
@@ -330,7 +336,7 @@ describe('soft-deleted: restore', () => {
       title: 'JIRA-1',
       objective_id: objectiveId,
     })
-    await deleteExternalReference(ref.id, 'B222222')
+    await deleteExternalReference(ref.id, 'Z990002')
     await pool.query('UPDATE board_objectives SET is_active = false WHERE id = $1', [objectiveId])
 
     await expect(restoreExternalReference(ref.id)).rejects.toThrow(/deaktivert/)
@@ -347,7 +353,7 @@ describe('soft-deleted: restore', () => {
       title: 'GH-1',
       key_result_id: keyResultId,
     })
-    await deleteExternalReference(ref.id, 'B222222')
+    await deleteExternalReference(ref.id, 'Z990002')
     await pool.query('UPDATE board_objectives SET is_active = false WHERE id = $1', [objectiveId])
 
     await expect(restoreExternalReference(ref.id)).rejects.toThrow(/deaktivert/)

@@ -13,7 +13,7 @@ import {
   restoreSectionTeam,
   restoreUserMapping,
 } from '~/db/soft-deleted.server'
-import { getUserMappings, type UserMapping } from '~/db/user-mappings.server'
+import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
 import { type ActionResult, fail, ok } from '~/lib/action-result'
 import { requireAdmin } from '~/lib/auth.server'
 import { isSafeHttpUrl, parseId } from '~/lib/route-helpers'
@@ -42,13 +42,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       if (row.deleted_by) navIdents.add(row.deleted_by)
     }
   }
-  const mappingsByIdent = await getUserMappings(Array.from(navIdents))
+  const mappingsByIdent = await getUsersByIdentifiers(Array.from(navIdents))
 
   // Build a map keyed by github_username for <UserName>/getUserDisplayName,
   // and a navIdent → github_username lookup for resolving "deleted_by" ids.
-  // Re-keying is required: getUserMappings returns a Map keyed by the input
+  // Re-keying is required: getUsersByIdentifiers returns a Map keyed by the input
   // identifier (here the navIdent), but UserName expects keying by github_username.
-  const mappingsByUsername = new Map<string, UserMapping>()
+  const mappingsByUsername = new Map<
+    string,
+    { display_name: string | null; nav_ident: string; nav_email: string | null }
+  >()
   const navIdentToUsername: Record<string, string> = {}
   for (const [navIdent, mapping] of mappingsByIdent) {
     if (mapping.github_username) {

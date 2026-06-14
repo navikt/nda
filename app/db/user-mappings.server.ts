@@ -3,8 +3,8 @@ import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
-import { upsertUserGithubAccount } from './user-github-accounts.server'
 
+/** @public — returned by legacy read functions; remove in step 5e when user_mappings is dropped */
 export interface UserMapping {
   github_username: string
   display_github_username: string | null
@@ -140,7 +140,7 @@ export async function upsertUserMapping(params: {
   navEmail?: string | null
   navIdent?: string | null
   slackMemberId?: string | null
-}): Promise<UserMapping> {
+}): Promise<void> {
   const githubUsername = normalize(params.githubUsername)?.toLowerCase() ?? null
   if (!githubUsername) {
     throw new Error('GitHub username is required')
@@ -160,54 +160,96 @@ export async function upsertUserMapping(params: {
     )
   }
 
-  const result = await pool.query(
-    `INSERT INTO user_mappings (github_username, display_github_username, display_name, nav_email, nav_ident, slack_member_id, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, NOW())
-     ON CONFLICT (github_username) DO UPDATE SET
-       display_github_username = COALESCE(EXCLUDED.display_github_username, user_mappings.display_github_username),
-       display_name = COALESCE(EXCLUDED.display_name, user_mappings.display_name),
-       nav_email = COALESCE(EXCLUDED.nav_email, user_mappings.nav_email),
-       nav_ident = COALESCE(EXCLUDED.nav_ident, user_mappings.nav_ident),
-       slack_member_id = COALESCE(EXCLUDED.slack_member_id, user_mappings.slack_member_id),
-       updated_at = NOW(),
-       deleted_at = NULL,
-       deleted_by = NULL
-     RETURNING *`,
-    [
-      githubUsername,
-      displayGithubUsername,
-      normalize(params.displayName),
-      normalizeEmail(params.navEmail),
-      normalizeNavIdent(params.navIdent),
-      normalize(params.slackMemberId),
-    ],
-  )
+  const navIdent = normalizeNavIdent(params.navIdent)
+  const displayName = normalize(params.displayName)
+  const navEmail = normalizeEmail(params.navEmail)
+  const slackMemberId = normalize(params.slackMemberId)
 
-  const mapping: UserMapping = result.rows[0]
+  // Wrap all writes in a single transaction to prevent partial failures: if any
+  // write throws, all changes are rolled back together. Note that the primary
+  // tables (users + user_github_accounts) are only written when the required
+  // fields are present (navIdent + displayName + navEmail), so the transaction
+  // does not guarantee both tables always receive identical data — just that
+  // whichever writes do execute either all succeed or all roll back.
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
 
-  // Dual-write: keep users and user_github_accounts in sync when we have all required fields.
-  // Best-effort: a failure here must not break the existing user_mappings write.
-  const { nav_ident, display_name, nav_email } = mapping
-  if (nav_ident && display_name && nav_email) {
-    upsertUser({
-      navIdent: nav_ident,
-      displayName: display_name,
-      navEmail: nav_email,
-      slackMemberId: mapping.slack_member_id,
-    })
-      .then(() =>
-        upsertUserGithubAccount({
-          githubUsername: mapping.github_username,
-          displayGithubUsername: mapping.display_github_username,
-          navIdent: nav_ident,
-        }),
+    // Dual-write: user_mappings is the legacy table kept for backward compat until step 5e.
+    // Production routes read from users/user_github_accounts only (step 5d), but legacy
+    // integration tests and read functions still depend on user_mappings being in sync.
+    await client.query(
+      `INSERT INTO user_mappings (github_username, display_github_username, display_name, nav_email, nav_ident, slack_member_id, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (github_username) DO UPDATE SET
+         display_github_username = COALESCE(EXCLUDED.display_github_username, user_mappings.display_github_username),
+         display_name = COALESCE(EXCLUDED.display_name, user_mappings.display_name),
+         nav_email = COALESCE(EXCLUDED.nav_email, user_mappings.nav_email),
+         nav_ident = COALESCE(EXCLUDED.nav_ident, user_mappings.nav_ident),
+         slack_member_id = COALESCE(EXCLUDED.slack_member_id, user_mappings.slack_member_id),
+         updated_at = NOW(),
+         deleted_at = NULL,
+         deleted_by = NULL`,
+      [githubUsername, displayGithubUsername, displayName, navEmail, navIdent, slackMemberId],
+    )
+
+    // Dual-write to users + user_github_accounts (primary going forward).
+    if (navIdent && displayName && navEmail) {
+      await client.query(
+        `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (nav_ident) DO UPDATE SET
+           display_name    = EXCLUDED.display_name,
+           nav_email       = EXCLUDED.nav_email,
+           slack_member_id = COALESCE(EXCLUDED.slack_member_id, users.slack_member_id),
+           updated_at      = NOW(),
+           deleted_at      = NULL,
+           deleted_by      = NULL`,
+        [navIdent, displayName, navEmail, slackMemberId],
       )
-      .catch((err) => {
-        logger.error('Failed to dual-write to users/user_github_accounts', err)
-      })
-  }
+      await client.query(
+        `INSERT INTO user_github_accounts (github_username, display_github_username, nav_ident, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (github_username) DO UPDATE SET
+           display_github_username = COALESCE(EXCLUDED.display_github_username, user_github_accounts.display_github_username),
+           nav_ident               = EXCLUDED.nav_ident,
+           updated_at              = NOW(),
+           deleted_at              = NULL,
+           deleted_by              = NULL`,
+        [githubUsername, displayGithubUsername, navIdent],
+      )
+    } else if (navIdent) {
+      // Have NAV-ident but missing Graph API fields — only link account if user row already exists.
+      const { rows } = await client.query<{ nav_ident: string }>(
+        'SELECT nav_ident FROM users WHERE nav_ident = $1 AND deleted_at IS NULL',
+        [navIdent],
+      )
+      if (rows.length > 0) {
+        await client.query(
+          `INSERT INTO user_github_accounts (github_username, display_github_username, nav_ident, updated_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (github_username) DO UPDATE SET
+             display_github_username = COALESCE(EXCLUDED.display_github_username, user_github_accounts.display_github_username),
+             nav_ident               = EXCLUDED.nav_ident,
+             updated_at              = NOW(),
+             deleted_at              = NULL,
+             deleted_by              = NULL`,
+          [githubUsername, displayGithubUsername, navIdent],
+        )
+      } else {
+        logger.warn('upsertUserMapping: user row not found, skipping account link', { githubUsername, navIdent })
+      }
+    } else {
+      logger.warn('upsertUserMapping called without navIdent — no GitHub account link created', { githubUsername })
+    }
 
-  return mapping
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 interface User {
@@ -265,14 +307,15 @@ interface PopulateResult {
 }
 
 /**
- * Backfill the `users` table from `user_mappings` + MS Graph API.
+ * Refresh the `users` table from the MS Graph API.
  *
- * For every active user_mappings row that has a nav_ident, looks up the user
- * in Graph and upserts into `users`. Idempotent — safe to run multiple times.
+ * For every active `users` row that has a nav_ident, looks up the user
+ * in Graph and upserts the latest display_name, nav_email, and slack_member_id.
+ * Idempotent — safe to run multiple times.
  */
 export async function populateUsersFromGraph(): Promise<PopulateResult> {
   const { rows } = await pool.query<{ nav_ident: string }>(
-    `SELECT DISTINCT nav_ident FROM user_mappings WHERE nav_ident IS NOT NULL AND deleted_at IS NULL`,
+    `SELECT DISTINCT nav_ident FROM users WHERE deleted_at IS NULL`,
   )
 
   let success = 0
