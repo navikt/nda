@@ -1,14 +1,44 @@
 version: 2
 updates:
-  - package-ecosystem: npm
-    directory: /
+  - package-ecosystem: "npm"
+    directory: "/"
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
+      interval: "daily"
     cooldown:
       default-days: 7
     groups:
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
+      aksel:
+        applies-to: version-updates
+        patterns:
+          - "@navikt/aksel*"
+          - "@navikt/ds*"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      react-router:
+        applies-to: version-updates
+        patterns:
+          - "@react-router*"
+          - "react-router"
+      storybook:
+        patterns:
+          - 'storybook'
+          - '@storybook/*'
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
