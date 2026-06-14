@@ -7,10 +7,15 @@ import {
   restoreDevTeamApplication,
   restoreDevTeamNaisTeam,
   restoreExternalReference,
+  restoreGithubAccountLink,
   restoreSectionTeam,
-  restoreUserMapping,
 } from '../../soft-deleted.server'
-import { deleteUserMapping, getUserMapping, upsertUserMapping } from '../../user-mappings.server'
+import {
+  getGithubUserLookup,
+  softDeleteGithubAccount,
+  upsertUser,
+  upsertUserAndGithubAccount,
+} from '../../user-github-lookups.server'
 import { seedApp, seedDeployment, seedDevTeam, seedSection, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -68,14 +73,15 @@ describe('soft-deleted: getAllSoftDeleted', () => {
       environment: 'dev',
     })
 
-    // user_mappings
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'z990001@nav.no')`,
-    )
-    await upsertUserMapping({ githubUsername: 'gh-alice', navIdent: 'Z990001' })
-    await deleteUserMapping('gh-alice', 'Z990002')
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'z990001@nav.no' })
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gh-alice',
+      navIdent: 'Z990001',
+      displayName: 'Glad Fjord',
+      navEmail: 'z990001@nav.no',
+    })
+    await softDeleteGithubAccount('gh-alice', 'Z990002')
 
-    // deployment_comments
     const { rows: commentRows } = await pool.query(
       `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, deleted_at, deleted_by)
        VALUES ($1, 'note', 'hello world', NOW(), 'Z990002') RETURNING id`,
@@ -83,28 +89,24 @@ describe('soft-deleted: getAllSoftDeleted', () => {
     )
     const commentId = commentRows[0].id as number
 
-    // dev_team_applications
     await pool.query(
       `INSERT INTO dev_team_applications (dev_team_id, monitored_app_id, deleted_at, deleted_by)
        VALUES ($1, $2, NOW(), 'Z990002')`,
       [devTeamId, appId],
     )
 
-    // section_teams
     await pool.query(
       `INSERT INTO section_teams (section_id, team_slug, deleted_at, deleted_by)
        VALUES ($1, 'naisteam', NOW(), 'Z990002')`,
       [sectionId],
     )
 
-    // dev_team_nais_teams
     await pool.query(
       `INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug, deleted_at, deleted_by)
        VALUES ($1, 'naisteam', NOW(), 'Z990002')`,
       [devTeamId],
     )
 
-    // external_references
     const { objectiveId } = await seedBoardWithObjectiveAndKr('xr')
     const ref = await addExternalReference({
       ref_type: 'jira',
@@ -158,36 +160,44 @@ describe('soft-deleted: getAllSoftDeleted', () => {
 })
 
 describe('soft-deleted: restore', () => {
-  it('restores a soft-deleted user mapping and clears the cache', async () => {
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'z990001@nav.no')`,
-    )
-    await upsertUserMapping({ githubUsername: 'gh-alice', navIdent: 'Z990001' })
-    await deleteUserMapping('gh-alice', 'Z990002')
+  it('restores a soft-deleted GitHub account link', async () => {
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'z990001@nav.no' })
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gh-alice',
+      navIdent: 'Z990001',
+      displayName: 'Glad Fjord',
+      navEmail: 'z990001@nav.no',
+    })
+    await softDeleteGithubAccount('gh-alice', 'Z990002')
 
-    // Warm the cache (query does not filter on deleted_at, so it returns the soft-deleted row).
-    const cached = await getUserMapping('Z990001')
-    expect(cached?.deleted_at).not.toBeNull()
+    const deletedLookup = await getGithubUserLookup('gh-alice')
+    expect(deletedLookup?.account_deleted_at).not.toBeNull()
 
-    const restored = await restoreUserMapping('gh-alice')
+    const restored = await restoreGithubAccountLink('gh-alice')
     expect(restored).toBe(true)
 
-    const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1', [
-      'gh-alice',
-    ])
+    const { rows } = await pool.query(
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
+      ['gh-alice'],
+    )
     expect(rows[0].deleted_at).toBeNull()
     expect(rows[0].deleted_by).toBeNull()
 
-    // Cache cleared: re-read should reflect the restored state, not the stale soft-deleted entry.
-    const reread = await getUserMapping('Z990001')
-    expect(reread?.deleted_at).toBeNull()
+    const reread = await getGithubUserLookup('gh-alice')
+    expect(reread?.account_deleted_at).toBeNull()
   })
 
-  it('restoreUserMapping is a no-op for missing or already-active rows', async () => {
-    expect(await restoreUserMapping('does-not-exist')).toBe(false)
+  it('restoreGithubAccountLink is a no-op for missing or already-active rows', async () => {
+    expect(await restoreGithubAccountLink('does-not-exist')).toBe(false)
 
-    await upsertUserMapping({ githubUsername: 'gh-alice' })
-    expect(await restoreUserMapping('gh-alice')).toBe(false)
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'z990001@nav.no' })
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gh-alice',
+      navIdent: 'Z990001',
+      displayName: 'Glad Fjord',
+      navEmail: 'z990001@nav.no',
+    })
+    expect(await restoreGithubAccountLink('gh-alice')).toBe(false)
   })
 
   it('restores a deployment comment', async () => {
@@ -239,7 +249,6 @@ describe('soft-deleted: restore', () => {
       [deploymentId],
     )
 
-    // Both restore calls return false (refused), and the rows stay soft-deleted.
     expect(await restoreDeploymentComment(ma[0].id)).toBe(false)
     expect(await restoreDeploymentComment(li[0].id)).toBe(false)
 
@@ -249,7 +258,6 @@ describe('soft-deleted: restore', () => {
     expect(after).toHaveLength(2)
     for (const row of after) expect(row.deleted_at).not.toBeNull()
 
-    // And they are not surfaced in the listing.
     const summary = await getAllSoftDeleted()
     const listedIds = summary.deploymentComments.map((c) => c.id)
     expect(listedIds).not.toContain(ma[0].id)
@@ -360,7 +368,6 @@ describe('soft-deleted: restore', () => {
   })
 
   it('does not leak a transaction when external reference is already active or missing', async () => {
-    // Repeated calls must not exhaust the pool by leaving idle-in-transaction connections.
     const { objectiveId } = await seedBoardWithObjectiveAndKr('leak')
     const ref = await addExternalReference({
       ref_type: 'jira',
@@ -369,16 +376,13 @@ describe('soft-deleted: restore', () => {
       objective_id: objectiveId,
     })
 
-    // Already active — should return false cleanly.
     for (let i = 0; i < 5; i++) {
       expect(await restoreExternalReference(ref.id)).toBe(false)
     }
-    // Missing id — should return false cleanly.
     for (let i = 0; i < 5; i++) {
       expect(await restoreExternalReference(999_000 + i)).toBe(false)
     }
 
-    // No backend should be left "idle in transaction" by these calls.
     const { rows } = await pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM pg_stat_activity
        WHERE state = 'idle in transaction' AND datname = current_database()`,

@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { upsertUserGithubAccount } from '../../user-github-accounts.server'
-import { getUsersWithoutGithub, upsertUser } from '../../user-mappings.server'
+import { getUsersWithoutGithub, upsertUser } from '../../user-github-lookups.server'
 import { truncateAllTables } from './helpers'
 
 let pool: Pool

@@ -18,8 +18,7 @@ import {
 } from '~/db/deployments.server'
 import { getUserDevTeamsByRole, getUserRolesForDisplay, type UserRoleDisplay } from '~/db/role-assignments.server'
 import { getAllSectionsWithTeams } from '~/db/sections.server'
-import { getUserByIdentifier } from '~/db/user-github-lookups.server'
-import { upsertUserMapping } from '~/db/user-mappings.server'
+import { getUserByIdentifier, upsertUserAndGithubAccount } from '~/db/user-github-lookups.server'
 import { getUserLandingPage, setUserLandingPage } from '~/db/user-settings.server'
 import { requireUser } from '~/lib/auth.server'
 import { canSearchUsers } from '~/lib/authorization.server'
@@ -297,7 +296,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
     const navEmail = graphUser.email ?? null
 
-    await upsertUserMapping({
+    await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: isSelfService ? githubUsernameRaw : null,
       displayName,

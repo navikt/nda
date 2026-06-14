@@ -33,7 +33,7 @@ import {
   removeTeamRole,
 } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import { getUserByNavIdent } from '~/db/user-mappings.server'
+import { getUserByNavIdent } from '~/db/user-github-lookups.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'

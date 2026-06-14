@@ -10,8 +10,8 @@ import {
   restoreDevTeamApplication,
   restoreDevTeamNaisTeam,
   restoreExternalReference,
+  restoreGithubAccountLink,
   restoreSectionTeam,
-  restoreUserMapping,
 } from '~/db/soft-deleted.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
 import { type ActionResult, fail, ok } from '~/lib/action-result'
@@ -76,10 +76,10 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionResul
       case 'restore-user-mapping': {
         const githubUsername = String(formData.get('github_username') ?? '').trim()
         if (!githubUsername) return fail('Mangler GitHub-brukernavn.')
-        const restored = await restoreUserMapping(githubUsername)
+        const restored = await restoreGithubAccountLink(githubUsername)
         return restored
-          ? ok(`Brukermapping for ${githubUsername} er gjenopprettet.`)
-          : fail('Mappingen finnes ikke eller er allerede aktiv.')
+          ? ok(`GitHub-kontokoblingen for ${githubUsername} er gjenopprettet.`)
+          : fail('GitHub-kontokoblingen finnes ikke eller er allerede aktiv.')
       }
       case 'restore-deployment-comment': {
         const id = parseId(formData.get('id'))

@@ -1,18 +1,17 @@
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { searchDeployments } from '../../deployments.server'
-import { softDeleteGithubAccount } from '../../user-github-lookups.server'
 import {
-  deleteUserMapping,
-  getAllUserMappings,
-  getUnmappedUsers,
-  getUserMapping,
-  getUserMappingByNavIdent,
-  getUserMappingBySlackId,
-  getUserMappings,
+  getActiveGithubAccountByNavIdent,
+  getAllUsersWithAccounts,
+  getGithubUserLookup,
+  getGithubUserLookups,
+  getUnmappedDeployers,
+  getUserBySlackMemberId,
+  softDeleteGithubAccount,
   upsertUser,
-  upsertUserMapping,
-} from '../../user-mappings.server'
+  upsertUserAndGithubAccount,
+} from '../../user-github-lookups.server'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -39,183 +38,223 @@ async function seedDeploy(pool: Pool, deployer: string) {
   )
 }
 
-describe('user_mappings soft delete', () => {
+describe('user_github_accounts soft delete', () => {
   beforeEach(async () => {
     await truncateAllTables(pool)
   })
 
   it('soft-deletes by setting deleted_at and deleted_by', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
-    // Ensure user_github_accounts row exists for the atomicity assertion below
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Octo Cat', 'octocat@nav.no') ON CONFLICT DO NOTHING`,
-    )
-    await pool.query(
-      `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('octocat', 'Z990001') ON CONFLICT DO NOTHING`,
-    )
-    await deleteUserMapping('octocat', 'Z990002')
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+    })
+    await softDeleteGithubAccount('gladfjord', 'Z990002')
 
-    const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1', [
-      'octocat',
-    ])
+    const { rows } = await pool.query(
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
+      ['gladfjord'],
+    )
     expect(rows).toHaveLength(1)
     expect(rows[0].deleted_at).not.toBeNull()
     expect(rows[0].deleted_by).toBe('Z990002')
-
-    // Also verifies that user_github_accounts is soft-deleted atomically
-    const { rows: ugaRows } = await pool.query(
-      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
-      ['octocat'],
-    )
-    expect(ugaRows).toHaveLength(1)
-    expect(ugaRows[0].deleted_at).not.toBeNull()
-    expect(ugaRows[0].deleted_by).toBe('Z990002')
   })
 
-  it('getUserMapping still returns soft-deleted mapping (audit history)', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Octo Cat', navEmail: 'octocat@nav.no' })
-    await deleteUserMapping('octocat', 'Z990002')
+  it('getGithubUserLookup still returns soft-deleted mapping (audit history)', async () => {
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+    })
+    await softDeleteGithubAccount('gladfjord', 'Z990002')
 
-    const mapping = await getUserMapping('octocat')
-    expect(mapping?.display_name).toBe('Octo Cat')
-    expect(mapping?.deleted_at).not.toBeNull()
+    const lookup = await getGithubUserLookup('gladfjord')
+    expect(lookup?.display_name).toBe('Glad Fjord')
+    expect(lookup?.account_deleted_at).not.toBeNull()
   })
 
-  it('getUserMappings still returns soft-deleted mappings', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990003' })
-    await upsertUser({ navIdent: 'Z990003', displayName: 'Octo Cat', navEmail: 'octocat@nav.no' })
-    await deleteUserMapping('octocat', null)
+  it('getGithubUserLookups still returns soft-deleted mappings', async () => {
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990003',
+      navEmail: 'glad.fjord@nav.no',
+    })
+    await softDeleteGithubAccount('gladfjord', null)
 
-    const mappings = await getUserMappings(['octocat'])
-    expect(mappings.get('octocat')?.display_name).toBe('Octo Cat')
+    const lookups = await getGithubUserLookups(['gladfjord'])
+    expect(lookups.get('gladfjord')?.display_name).toBe('Glad Fjord')
+    expect(lookups.get('gladfjord')?.account_deleted_at).not.toBeNull()
   })
 
-  it('getUserMapping resolves case-insensitively for GitHub usernames', async () => {
-    await upsertUserMapping({ githubUsername: 'OctoCat', displayName: 'Octo Cat', navIdent: 'Z990001' })
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Octo Cat', navEmail: 'octocat@nav.no' })
+  it('getGithubUserLookup resolves case-insensitively for GitHub usernames', async () => {
+    await upsertUserAndGithubAccount({
+      githubUsername: 'GladFjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+    })
 
-    const byMixedCase = await getUserMapping('OctoCat')
-    expect(byMixedCase?.display_name).toBe('Octo Cat')
+    const byMixedCase = await getGithubUserLookup('GladFjord')
+    expect(byMixedCase?.display_name).toBe('Glad Fjord')
 
-    const byUpperCase = await getUserMapping('OCTOCAT')
-    expect(byUpperCase?.display_name).toBe('Octo Cat')
+    const byUpperCase = await getGithubUserLookup('GLADFJORD')
+    expect(byUpperCase?.display_name).toBe('Glad Fjord')
   })
 
-  it('getUserMappings resolves case-insensitively for GitHub usernames', async () => {
-    await upsertUserMapping({ githubUsername: 'OctoCat', displayName: 'Octo Cat', navIdent: 'Z990002' })
-    await upsertUser({ navIdent: 'Z990002', displayName: 'Octo Cat', navEmail: 'octocat@nav.no' })
+  it('getGithubUserLookups resolves case-insensitively for GitHub usernames', async () => {
+    await upsertUserAndGithubAccount({
+      githubUsername: 'GladFjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990002',
+      navEmail: 'glad.fjord@nav.no',
+    })
 
-    const mappings = await getUserMappings(['OCTOCAT', 'OctoCat'])
-    expect(mappings.get('OCTOCAT')?.display_name).toBe('Octo Cat')
-    expect(mappings.get('OctoCat')?.display_name).toBe('Octo Cat')
+    const lookups = await getGithubUserLookups(['GLADFJORD', 'GladFjord'])
+    expect(lookups.get('GLADFJORD')?.display_name).toBe('Glad Fjord')
+    expect(lookups.get('GladFjord')?.display_name).toBe('Glad Fjord')
   })
 
-  it('getAllUserMappings excludes soft-deleted', async () => {
-    await upsertUserMapping({ githubUsername: 'alive', displayName: 'Alive' })
-    await upsertUserMapping({ githubUsername: 'dead', displayName: 'Dead' })
-    await deleteUserMapping('dead', null)
+  it('getAllUsersWithAccounts excludes soft-deleted accounts', async () => {
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+    })
+    await upsertUserAndGithubAccount({
+      githubUsername: 'raskelv',
+      displayName: 'Rask Elv',
+      navIdent: 'Z990002',
+      navEmail: 'rask.elv@nav.no',
+    })
+    await softDeleteGithubAccount('raskelv', null)
 
-    const all = await getAllUserMappings()
-    expect(all.map((m) => m.github_username).sort()).toEqual(['alive'])
+    const all = await getAllUsersWithAccounts()
+    expect(all.map((m) => m.github_username).sort()).toEqual(['gladfjord'])
   })
 
-  it('getUserMappingByNavIdent excludes soft-deleted (current-state lookup)', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', navIdent: 'Z990001' })
-    await deleteUserMapping('octocat', null)
+  it('getActiveGithubAccountByNavIdent excludes soft-deleted accounts (current-state lookup)', async () => {
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+    })
+    await softDeleteGithubAccount('gladfjord', null)
 
-    expect(await getUserMappingByNavIdent('Z990001')).toBeNull()
+    expect(await getActiveGithubAccountByNavIdent('Z990001')).toBeNull()
   })
 
-  it('getUserMappingBySlackId excludes soft-deleted (current-state lookup)', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat', slackMemberId: 'U001' })
-    await deleteUserMapping('octocat', null)
+  it('getUserBySlackMemberId excludes soft-deleted accounts from current-state lookup', async () => {
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+      slackMemberId: 'U001GLAD',
+    })
+    await softDeleteGithubAccount('gladfjord', null)
 
-    expect(await getUserMappingBySlackId('U001')).toBeNull()
+    expect(await getUserBySlackMemberId('U001GLAD')).toEqual({ nav_ident: 'Z990001', github_username: null })
   })
 
-  it('getUnmappedUsers treats soft-deleted as missing mapping', async () => {
-    await seedDeploy(pool, 'octocat')
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat' })
+  it('getUnmappedDeployers treats soft-deleted as missing mapping', async () => {
+    await seedDeploy(pool, 'gladfjord')
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+    })
 
-    expect(await getUnmappedUsers()).toEqual([])
+    expect(await getUnmappedDeployers()).toEqual([])
 
-    await deleteUserMapping('octocat', null)
-    const unmapped = await getUnmappedUsers()
-    expect(unmapped.map((u) => u.github_username)).toEqual(['octocat'])
+    await softDeleteGithubAccount('gladfjord', null)
+    const unmapped = await getUnmappedDeployers()
+    expect(unmapped.map((u) => u.github_username)).toEqual(['gladfjord'])
   })
 
-  it('upsertUserMapping undeletes a soft-deleted github account', async () => {
-    // Seed user (required for FK in user_github_accounts)
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Octo Cat', 'octocat@nav.no')`,
-    )
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat', navIdent: 'Z990001' })
-    await softDeleteGithubAccount('octocat', 'Z990002')
+  it('upsertUserAndGithubAccount undeletes a soft-deleted github account', async () => {
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+    })
+    await softDeleteGithubAccount('gladfjord', 'Z990002')
 
-    // Re-upserting should undelete the user_github_accounts row
-    await upsertUserMapping({ githubUsername: 'octocat', displayName: 'Octo Cat 2', navIdent: 'Z990001' })
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord2@nav.no',
+    })
 
     const { rows } = await pool.query<{ deleted_at: Date | null; nav_ident: string }>(
       'SELECT deleted_at, nav_ident FROM user_github_accounts WHERE github_username = $1',
-      ['octocat'],
+      ['gladfjord'],
     )
     expect(rows[0].deleted_at).toBeNull()
     expect(rows[0].nav_ident).toBe('Z990001')
   })
 
-  it('deleteUserMapping is idempotent (re-deleting does not change deleted_at/by)', async () => {
-    await upsertUserMapping({ githubUsername: 'octocat' })
-    await deleteUserMapping('octocat', 'A111111')
+  it('softDeleteGithubAccount is idempotent (re-deleting does not change deleted_at/by)', async () => {
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
+      navIdent: 'Z990001',
+      navEmail: 'glad.fjord@nav.no',
+    })
+    await softDeleteGithubAccount('gladfjord', 'Z990011')
 
     const { rows: first } = await pool.query<{ deleted_at: Date; deleted_by: string }>(
-      'SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1',
-      ['octocat'],
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
+      ['gladfjord'],
     )
 
-    // Second delete with a different actor should be a no-op (WHERE deleted_at IS NULL guards).
-    await deleteUserMapping('octocat', 'B222222')
+    await softDeleteGithubAccount('gladfjord', 'Z990012')
 
     const { rows: second } = await pool.query<{ deleted_at: Date; deleted_by: string }>(
-      'SELECT deleted_at, deleted_by FROM user_mappings WHERE github_username = $1',
-      ['octocat'],
+      'SELECT deleted_at, deleted_by FROM user_github_accounts WHERE github_username = $1',
+      ['gladfjord'],
     )
 
     expect(second[0].deleted_at.getTime()).toBe(first[0].deleted_at.getTime())
-    expect(second[0].deleted_by).toBe('A111111')
+    expect(second[0].deleted_by).toBe('Z990011')
   })
 
   it('searchDeployments excludes soft-deleted mappings from user search', async () => {
-    await seedDeploy(pool, 'octocat')
-    await upsertUserMapping({
-      githubUsername: 'octocat',
-      displayName: 'Octo Cat',
+    await seedDeploy(pool, 'gladfjord')
+    await upsertUserAndGithubAccount({
+      githubUsername: 'gladfjord',
+      displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'octo.cat@nav.no',
-      slackMemberId: 'U001OCTO',
+      navEmail: 'glad.fjord@nav.no',
+      slackMemberId: 'U001GLAD',
     })
 
-    // Active mapping is discoverable by every joined field.
-    expect((await searchDeployments('Octo Cat')).some((r) => r.type === 'user')).toBe(true)
+    expect((await searchDeployments('Glad Fjord')).some((r) => r.type === 'user')).toBe(true)
     expect((await searchDeployments('Z990001')).some((r) => r.type === 'user')).toBe(true)
-    expect((await searchDeployments('octo.cat')).some((r) => r.type === 'user')).toBe(true)
-    expect((await searchDeployments('U001OCTO')).some((r) => r.type === 'user')).toBe(true)
+    expect((await searchDeployments('glad.fjord')).some((r) => r.type === 'user')).toBe(true)
+    expect((await searchDeployments('U001GLAD')).some((r) => r.type === 'user')).toBe(true)
 
-    await deleteUserMapping('octocat', 'Z990002')
+    await softDeleteGithubAccount('gladfjord', 'Z990002')
 
-    // Soft-deleted mapping no longer matches via mapping fields.
-    expect((await searchDeployments('Octo Cat')).some((r) => r.type === 'user')).toBe(false)
+    expect((await searchDeployments('Glad Fjord')).some((r) => r.type === 'user')).toBe(false)
     expect((await searchDeployments('Z990001')).some((r) => r.type === 'user')).toBe(false)
-    expect((await searchDeployments('octo.cat')).some((r) => r.type === 'user')).toBe(false)
-    expect((await searchDeployments('U001OCTO')).some((r) => r.type === 'user')).toBe(false)
+    expect((await searchDeployments('glad.fjord')).some((r) => r.type === 'user')).toBe(false)
+    expect((await searchDeployments('U001GLAD')).some((r) => r.type === 'user')).toBe(false)
 
-    // Direct deployer_username search still finds the deployment activity.
-    const byUsername = await searchDeployments('octocat')
-    expect(byUsername.some((r) => r.type === 'user' && r.url === '/users/octocat')).toBe(true)
+    const byUsername = await searchDeployments('gladfjord')
+    expect(byUsername.some((r) => r.type === 'user' && r.url === '/users/gladfjord')).toBe(true)
   })
 })
 
-describe('getUnmappedUsers audit_start_year filtering', () => {
+describe('getUnmappedDeployers audit_start_year filtering', () => {
   beforeEach(async () => {
     await truncateAllTables(pool)
   })
@@ -235,7 +274,7 @@ describe('getUnmappedUsers audit_start_year filtering', () => {
       createdAt: new Date('2025-06-01'),
     })
 
-    const unmapped = await getUnmappedUsers()
+    const unmapped = await getUnmappedDeployers()
     expect(unmapped.map((u) => u.github_username)).not.toContain('old-deployer')
   })
 
@@ -254,7 +293,7 @@ describe('getUnmappedUsers audit_start_year filtering', () => {
       createdAt: new Date('2026-03-15'),
     })
 
-    const unmapped = await getUnmappedUsers()
+    const unmapped = await getUnmappedDeployers()
     expect(unmapped.map((u) => u.github_username)).toContain('new-deployer')
   })
 
@@ -265,7 +304,6 @@ describe('getUnmappedUsers audit_start_year filtering', () => {
       environment: 'prod',
       auditStartYear: 2026,
     })
-    // 2 before audit window, 1 after
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 't',
@@ -288,7 +326,7 @@ describe('getUnmappedUsers audit_start_year filtering', () => {
       createdAt: new Date('2026-02-01'),
     })
 
-    const unmapped = await getUnmappedUsers()
+    const unmapped = await getUnmappedDeployers()
     const mixed = unmapped.find((u) => u.github_username === 'mixed-deployer')
     expect(mixed).toBeDefined()
     expect(mixed?.deployment_count).toBe(1)
@@ -307,7 +345,7 @@ describe('getUnmappedUsers audit_start_year filtering', () => {
       createdAt: new Date('2026-03-15'),
     })
 
-    const unmapped = await getUnmappedUsers()
+    const unmapped = await getUnmappedDeployers()
     expect(unmapped.map((u) => u.github_username)).not.toContain('inactive-deployer')
   })
 })
