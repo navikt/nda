@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Lint, typecheck and test
@@ -42,47 +45,17 @@ jobs:
       contents: read
       id-token: write
     outputs:
-      image: ${{ steps.meta.outputs.tags }}
-      digest: ${{ steps.build-push.outputs.digest }}
-      image_ref: ${{ steps.login.outputs.registry }}/${{ steps.setup.outputs.REPO_NAME }}@${{ steps.build-push.outputs.digest }}
+      image: ${{ steps.docker-push.outputs.image }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: NAIS login
-        uses: nais/login@5b34cb6e280f8eda678746fcbe14cba7636e6129 # v0
-        id: login
+      - uses: nais/docker-build-push@05dbb6091b30bd84279c6d64a45ef8782fd410a5 # v0
+        id: docker-push
         with:
-          project_id: ${{ vars.NAIS_MANAGEMENT_PROJECT_ID }}
-          identity_provider: ${{ secrets.NAIS_WORKLOAD_IDENTITY_PROVIDER }}
           team: pensjon-revisjon
-
-      - name: Setup environment
-        id: setup
-        shell: bash
-        run: |
-          repo_name="${GITHUB_REPOSITORY/$GITHUB_REPOSITORY_OWNER\//}"
-          repo_name="$(tr '[:upper:]' '[:lower:]' <<< "$repo_name")"
-          echo "REPO_NAME=$repo_name" >> $GITHUB_OUTPUT
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
-        with:
-          images: ${{ steps.login.outputs.registry }}/${{ steps.setup.outputs.REPO_NAME }}
-          tags: type=sha,prefix={{date 'YYYY.MM.DD-HH.mm'}}-,priority=9002
-
-      - name: Build and push
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        id: build-push
-        with:
-          context: .
-          push: true
-          pull: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: GITHUB_SHA=${{ github.sha }}
+          identity_provider: ${{ secrets.NAIS_WORKLOAD_IDENTITY_PROVIDER }}
+          project_id: ${{ vars.NAIS_MANAGEMENT_PROJECT_ID }}
+          build_args: GITHUB_SHA=${{ github.sha }}
 
   deploy:
     if: github.ref == 'refs/heads/main'
@@ -101,24 +74,3 @@ jobs:
           CLUSTER: prod-gcp
           RESOURCE: .nais/prod.yaml
           VAR: image=${{ needs.build.outputs.image }}
-
-  attest-sign:
-    if: github.ref == 'refs/heads/main'
-    name: Attest and sign image
-    needs: [test, build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: NAIS login
-        uses: nais/login@5b34cb6e280f8eda678746fcbe14cba7636e6129 # v0
-        with:
-          project_id: ${{ vars.NAIS_MANAGEMENT_PROJECT_ID }}
-          identity_provider: ${{ secrets.NAIS_WORKLOAD_IDENTITY_PROVIDER }}
-          team: pensjon-revisjon
-
-      - name: Generate SBOM, attest and sign image
-        uses: nais/attest-sign@c839bd87ba71207e36341b6e9b6d8aabdcbc86c2 # v2
-        with:
-          image_ref: ${{ needs.build.outputs.image_ref }}
