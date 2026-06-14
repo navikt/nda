@@ -117,6 +117,6 @@ jobs:
           team: pensjon-revisjon
 
       - name: Generate SBOM, attest and sign image
-        uses: nais/attest-sign@9f718bc53c1379a59982d425d1e7456f632af881 # v2
+        uses: nais/attest-sign@c839bd87ba71207e36341b6e9b6d8aabdcbc86c2 # v2
         with:
           image_ref: ${{ needs.build.outputs.image_ref }}
