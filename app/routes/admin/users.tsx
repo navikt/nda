@@ -278,6 +278,7 @@ export default function AdminUsers() {
 
   const [editMapping, setEditMapping] = useState<UserWithAccount | null>(null)
   const [addFormKey, setAddFormKey] = useState(0)
+  const [addModalTrigger, setAddModalTrigger] = useState(0)
   const [prefillUsername, setPrefillUsername] = useState('')
   const modalRef = useRef<HTMLDialogElement>(null)
   const addModalRef = useRef<HTMLDialogElement>(null)
@@ -294,6 +295,13 @@ export default function AdminUsers() {
     }
   }, [actionData, navigation.state])
 
+  // Open add modal after remount triggered by key change
+  useEffect(() => {
+    if (addModalTrigger > 0) {
+      addModalRef.current?.showModal()
+    }
+  }, [addModalTrigger])
+
   const openEdit = (mapping: UserWithAccount) => {
     setEditMapping(mapping)
     modalRef.current?.showModal()
@@ -302,13 +310,13 @@ export default function AdminUsers() {
   const openAdd = () => {
     setPrefillUsername('')
     setAddFormKey((k) => k + 1)
-    addModalRef.current?.showModal()
+    setAddModalTrigger((t) => t + 1)
   }
 
   const openAddWithUsername = (username: string) => {
     setPrefillUsername(username)
     setAddFormKey((k) => k + 1)
-    addModalRef.current?.showModal()
+    setAddModalTrigger((t) => t + 1)
   }
 
   const isPopulating = navigation.state === 'submitting' && navigation.formData?.get('intent') === 'populate-users'
