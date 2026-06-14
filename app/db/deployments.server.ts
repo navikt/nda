@@ -225,7 +225,7 @@ export interface DeploymentFilters {
    * Used for "Fra andre" filter — shows non-member board-linked deployments.
    */
   exclude_deployer_usernames?: string[]
-  /** Show only deployments where the deployer has no active user_mapping. */
+  /** Show only deployments where the deployer has no active user_github_accounts entry. */
   unmapped_deployers?: boolean
   commit_sha?: string
   method?: 'pr' | 'direct_push' | 'legacy'

@@ -26,7 +26,7 @@ import { isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
 import { processReportJobAsync } from '~/lib/report-job-processor.server'
 import { isValidReportPeriodType } from '~/lib/report-periods'
-import { serializeUserMappings } from '~/lib/user-display'
+import { serializeUserLookups } from '~/lib/user-display'
 import { fetchVerificationDataForAllDeployments } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
 import { isImplicitApprovalMode } from '~/lib/verification/types'
@@ -172,7 +172,7 @@ export async function action({ request }: { request: Request; params: Record<str
 
     const readinessPeriodKey = `${periodTypeRaw}:${periodStart}`
 
-    return { readiness, readinessPeriodKey, userMappings: serializeUserMappings(userMappings) }
+    return { readiness, readinessPeriodKey, userMappings: serializeUserLookups(userMappings) }
   }
 
   if (action === 'generate_report') {

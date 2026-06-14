@@ -2,7 +2,7 @@
  * Integration test: getUnmappedContributors
  *
  * Verifies that the function correctly identifies GitHub usernames from
- * a team's deployments that lack a corresponding user_mappings row.
+ * a team's deployments that lack a corresponding user_github_accounts row.
  */
 
 import { Pool } from 'pg'

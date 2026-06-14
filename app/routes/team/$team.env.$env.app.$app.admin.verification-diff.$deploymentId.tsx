@@ -13,7 +13,7 @@ import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
-import { getUserDisplayName, serializeUserMappings } from '~/lib/user-display'
+import { getUserDisplayName, serializeUserLookups } from '~/lib/user-display'
 import { type DebugVerificationResult, isVerificationDebugMode, runDebugVerification } from '~/lib/verification'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.verification-diff.$deploymentId'
 
@@ -97,7 +97,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       error: null,
       useCache,
       params,
-      userMappings: serializeUserMappings(mappings),
+      userMappings: serializeUserLookups(mappings),
     }
   } catch (error) {
     logger.error('Debug verification failed:', error)

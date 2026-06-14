@@ -17,7 +17,7 @@ import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
-import { serializeUserMappings } from '~/lib/user-display'
+import { serializeUserLookups } from '~/lib/user-display'
 import type { Route } from './+types/$team.env.$env.app.$app.deployments'
 
 export function meta({ data }: Route.MetaArgs) {
@@ -271,7 +271,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   return {
     app,
-    userMappings: serializeUserMappings(userMappings),
+    userMappings: serializeUserLookups(userMappings),
     deployerOptions,
     currentUserGithub,
     hasGroup,

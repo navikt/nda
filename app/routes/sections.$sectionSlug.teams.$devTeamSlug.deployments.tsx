@@ -10,7 +10,7 @@ import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.
 import { getActiveGithubAccountByNavIdent, getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
-import { serializeUserMappings } from '~/lib/user-display'
+import { serializeUserLookups } from '~/lib/user-display'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.deployments'
 
 export function meta({ data }: Route.MetaArgs) {
@@ -60,7 +60,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       total: 0,
       page: 1,
       total_pages: 0,
-      userMappings: {} as ReturnType<typeof serializeUserMappings>,
+      userMappings: {} as ReturnType<typeof serializeUserLookups>,
       deployerOptions: [] as { value: string; label: string }[],
       currentUserGithub: null as string | null,
       errorReasons: {} as Record<number, string>,
@@ -207,7 +207,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     total: result.total,
     page: result.page,
     total_pages: result.total_pages,
-    userMappings: serializeUserMappings(userMappingsMap),
+    userMappings: serializeUserLookups(userMappingsMap),
     deployerOptions,
     currentUserGithub,
     errorReasons,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDisplayNameNatural, getUserDisplayName, serializeUserMappings, type UserMappings } from '../user-display'
+import { formatDisplayNameNatural, getUserDisplayName, serializeUserLookups, type UserLookupMap } from '../user-display'
 
 /**
  * Tests for user display name resolution.
@@ -11,7 +11,7 @@ import { formatDisplayNameNatural, getUserDisplayName, serializeUserMappings, ty
  */
 
 describe('getUserDisplayName — resolves GitHub username to display name with fallback chain', () => {
-  const mappings: UserMappings = {
+  const mappings: UserLookupMap = {
     'modig.bjork': { display_name: 'Modig Bjørk', nav_ident: 'Z990007', nav_email: 'modig.bjork@nav.no' },
     'kari.hansen': { display_name: null, nav_email: 'kari@nav.no' },
     'per.person': { display_name: null, nav_email: null },
@@ -49,21 +49,21 @@ describe('getUserDisplayName — resolves GitHub username to display name with f
   })
 })
 
-describe('serializeUserMappings — converts Map to plain object for JSON transport', () => {
+describe('serializeUserLookups — converts Map to plain object for JSON transport', () => {
   it('converts empty Map to empty object', () => {
-    const result = serializeUserMappings(new Map())
+    const result = serializeUserLookups(new Map())
     expect(result).toEqual({})
   })
 
   it('preserves all fields from Map entries', () => {
     const map = new Map([
-      ['alice', { display_name: 'Alice A', nav_ident: 'A1', nav_email: 'alice@nav.no' }],
+      ['alice', { display_name: 'Alice A', nav_ident: 'Z990001', nav_email: 'alice@nav.no' }],
       ['bob', { display_name: null, nav_ident: null, nav_email: undefined }],
     ])
 
-    const result = serializeUserMappings(map)
+    const result = serializeUserLookups(map)
     expect(result).toEqual({
-      alice: { display_name: 'Alice A', nav_ident: 'A1', nav_email: 'alice@nav.no' },
+      alice: { display_name: 'Alice A', nav_ident: 'Z990001', nav_email: 'alice@nav.no' },
       bob: { display_name: null, nav_ident: null, nav_email: undefined },
     })
   })
