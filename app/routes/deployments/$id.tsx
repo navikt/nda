@@ -3,17 +3,12 @@ import {
   ChatIcon,
   CheckmarkCircleIcon,
   CheckmarkIcon,
-  CircleIcon,
-  ClockIcon,
   DownloadIcon,
   ExclamationmarkTriangleIcon,
-  MinusCircleIcon,
   TrashIcon,
   XMarkIcon,
-  XMarkOctagonIcon,
 } from '@navikt/aksel-icons'
 import {
-  Accordion,
   Alert,
   BodyShort,
   Box,
@@ -30,8 +25,6 @@ import { useRef } from 'react'
 import { Form, Link, useNavigation, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
-import { CheckAnnotations } from '~/components/CheckAnnotations'
-import { CheckLogViewer } from '~/components/CheckLogViewer'
 import { ExternalLink } from '~/components/ExternalLink'
 import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
@@ -50,6 +43,7 @@ import { FourEyesAlert } from '~/routes/deployments/$id/FourEyesAlert'
 import { LegacyLookupSection } from '~/routes/deployments/$id/LegacyLookupSection'
 import { LegacyPendingApproval } from '~/routes/deployments/$id/LegacyPendingApproval'
 import { ManualApprovalSection } from '~/routes/deployments/$id/ManualApprovalSection'
+import { PrDetailsAccordion } from '~/routes/deployments/$id/PrDetailsAccordion'
 import type { Route } from './+types/$id'
 
 export { action } from './$id.actions.server'
@@ -654,279 +648,11 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
       )}
       {/* PR Details Accordion - Reviewers, Checks, Commits */}
       {deployment.github_pr_data && (
-        <Accordion>
-          {/* Reviewers - includes requested and completed reviews */}
-          {((deployment.github_pr_data.reviewers && deployment.github_pr_data.reviewers.length > 0) ||
-            (deployment.github_pr_data.requested_reviewers &&
-              deployment.github_pr_data.requested_reviewers.length > 0) ||
-            (deployment.github_pr_data.requested_teams && deployment.github_pr_data.requested_teams.length > 0)) && (
-            <Accordion.Item>
-              <Accordion.Header>
-                Reviewers (
-                {(deployment.github_pr_data.reviewers?.length || 0) +
-                  (deployment.github_pr_data.requested_reviewers?.length || 0) +
-                  (deployment.github_pr_data.requested_teams?.length || 0)}
-                )
-              </Accordion.Header>
-              <Accordion.Content>
-                <VStack gap="space-8">
-                  {/* Completed reviews */}
-                  {deployment.github_pr_data.reviewers?.map((reviewer) => (
-                    <HStack key={`${reviewer.username}:${reviewer.submitted_at}`} gap="space-8" align="center">
-                      {reviewer.state === 'APPROVED' && (
-                        <CheckmarkIcon aria-hidden style={{ color: 'var(--ax-text-success)' }} />
-                      )}
-                      {reviewer.state === 'CHANGES_REQUESTED' && (
-                        <XMarkIcon aria-hidden style={{ color: 'var(--ax-text-danger)' }} />
-                      )}
-                      {reviewer.state === 'COMMENTED' && (
-                        <ChatIcon aria-hidden style={{ color: 'var(--ax-text-neutral-subtle)' }} />
-                      )}
-                      <ExternalLink href={`https://github.com/${reviewer.username}`}>
-                        {getUserDisplay(reviewer.username)}
-                      </ExternalLink>
-                      <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
-                        {new Date(reviewer.submitted_at).toLocaleString('no-NO', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </span>
-                    </HStack>
-                  ))}
-
-                  {/* Requested reviewers (pending) */}
-                  {deployment.github_pr_data.requested_reviewers?.map((r) => (
-                    <HStack key={`pending:${r.username}`} gap="space-8" align="center">
-                      <CircleIcon aria-hidden style={{ color: 'var(--ax-text-warning)' }} />
-                      <ExternalLink href={`https://github.com/${r.username}`}>
-                        {getUserDisplay(r.username)}
-                      </ExternalLink>
-                    </HStack>
-                  ))}
-
-                  {/* Requested teams (pending) */}
-                  {deployment.github_pr_data.requested_teams?.map((t) => (
-                    <HStack key={`team:${t.slug}`} gap="space-8" align="center">
-                      <CircleIcon aria-hidden style={{ color: 'var(--ax-text-warning)' }} />
-                      <span>{t.name}</span>
-                    </HStack>
-                  ))}
-                </VStack>
-              </Accordion.Content>
-            </Accordion.Item>
-          )}
-
-          {/* GitHub Checks */}
-          {deployment.github_pr_data.checks && deployment.github_pr_data.checks.length > 0 && (
-            <Accordion.Item>
-              <Accordion.Header>GitHub Checks ({deployment.github_pr_data.checks.length})</Accordion.Header>
-              <Accordion.Content>
-                <VStack gap="space-12">
-                  {deployment.github_pr_data.checks.map((check) => {
-                    const isSuccess = check.conclusion === 'success'
-                    const isFailure =
-                      check.conclusion === 'failure' ||
-                      check.conclusion === 'timed_out' ||
-                      check.conclusion === 'action_required'
-                    const isSkipped =
-                      check.conclusion === 'skipped' ||
-                      check.conclusion === 'neutral' ||
-                      check.conclusion === 'cancelled'
-                    const isInProgress = check.status === 'in_progress' || check.status === 'queued'
-
-                    const duration =
-                      check.started_at && check.completed_at
-                        ? Math.round(
-                            (new Date(check.completed_at).getTime() - new Date(check.started_at).getTime()) / 1000,
-                          )
-                        : null
-                    const durationStr =
-                      duration !== null
-                        ? duration >= 60
-                          ? `${Math.floor(duration / 60)}m ${duration % 60}s`
-                          : `${duration}s`
-                        : null
-
-                    return (
-                      <VStack key={check.html_url ?? check.name} gap="space-4">
-                        <HStack gap="space-8" align="center" wrap>
-                          {isSuccess && <CheckmarkCircleIcon style={{ color: 'var(--ax-text-success)' }} />}
-                          {isFailure && <XMarkOctagonIcon style={{ color: 'var(--ax-text-danger)' }} />}
-                          {isSkipped && <MinusCircleIcon style={{ color: 'var(--ax-text-neutral-subtle)' }} />}
-                          {isInProgress && <ClockIcon style={{ color: 'var(--ax-text-warning)' }} />}
-
-                          {check.html_url ? (
-                            <ExternalLink href={check.html_url}>{check.name}</ExternalLink>
-                          ) : (
-                            <span>{check.name}</span>
-                          )}
-
-                          <Tag
-                            variant={isSuccess ? 'success' : isFailure ? 'error' : isSkipped ? 'neutral' : 'warning'}
-                            size="small"
-                          >
-                            {check.conclusion || check.status}
-                          </Tag>
-
-                          {check.app?.name && <Detail textColor="subtle">{check.app.name}</Detail>}
-
-                          {durationStr && <Detail textColor="subtle">{durationStr}</Detail>}
-
-                          {check.output?.annotations_count != null && check.output.annotations_count > 0 && (
-                            <Tag variant="warning" size="small">
-                              {check.output.annotations_count} annotation
-                              {check.output.annotations_count !== 1 ? 's' : ''}
-                            </Tag>
-                          )}
-
-                          {check.details_url && check.details_url !== check.html_url && (
-                            <ExternalLink href={check.details_url}>
-                              <Detail textColor="subtle">detaljer</Detail>
-                            </ExternalLink>
-                          )}
-
-                          {check.log_cached && (
-                            <Tag variant="info" size="small">
-                              Logg lagret
-                            </Tag>
-                          )}
-                        </HStack>
-
-                        {check.output?.title && (
-                          <Detail textColor="subtle" style={{ paddingLeft: 'var(--ax-space-24)' }}>
-                            {check.output.title}
-                          </Detail>
-                        )}
-
-                        {check.output?.summary && isFailure && (
-                          <Box
-                            paddingInline="space-24"
-                            paddingBlock="space-4"
-                            style={{ maxHeight: '200px', overflow: 'auto' }}
-                          >
-                            <pre style={{ margin: 0, fontSize: '0.75rem', whiteSpace: 'pre-wrap' }}>
-                              {check.output.summary}
-                            </pre>
-                          </Box>
-                        )}
-
-                        {check.id && (
-                          <CheckLogViewer
-                            owner={deployment.detected_github_owner}
-                            repo={deployment.detected_github_repo_name}
-                            jobId={check.id}
-                            appSlug={check.app?.slug ?? null}
-                            conclusion={check.conclusion}
-                          />
-                        )}
-
-                        {check.output?.annotations_count != null && check.output.annotations_count > 0 && check.id && (
-                          <CheckAnnotations
-                            owner={deployment.detected_github_owner}
-                            repo={deployment.detected_github_repo_name}
-                            checkRunId={check.id}
-                            storedAnnotations={check.annotations ?? null}
-                          />
-                        )}
-                      </VStack>
-                    )
-                  })}
-                </VStack>
-              </Accordion.Content>
-            </Accordion.Item>
-          )}
-
-          {/* PR Commits */}
-          {deployment.github_pr_data.commits && deployment.github_pr_data.commits.length > 0 && (
-            <Accordion.Item>
-              <Accordion.Header>Commits ({deployment.github_pr_data.commits.length})</Accordion.Header>
-              <Accordion.Content>
-                <VStack gap="space-12">
-                  {deployment.github_pr_data.commits.map((commit) => (
-                    <HStack key={commit.sha} gap="space-12" align="start">
-                      {commit.author?.avatar_url && (
-                        <img
-                          src={commit.author.avatar_url}
-                          alt={getUserDisplay(commit.author.username) ?? ''}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            flexShrink: 0,
-                          }}
-                        />
-                      )}
-                      <VStack gap="space-4">
-                        <HStack gap="space-8" align="baseline" wrap>
-                          <ExternalLink
-                            href={commit.html_url}
-                            style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-                          >
-                            {commit.sha.substring(0, 7)}
-                          </ExternalLink>
-                          <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
-                            {getUserDisplay(commit.author?.username)}
-                          </span>
-                          <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
-                            {new Date(commit.date).toLocaleString('no-NO', {
-                              dateStyle: 'short',
-                              timeStyle: 'short',
-                            })}
-                          </span>
-                        </HStack>
-                        <BodyShort>{commit.message.split('\n')[0]}</BodyShort>
-                      </VStack>
-                    </HStack>
-                  ))}
-                </VStack>
-              </Accordion.Content>
-            </Accordion.Item>
-          )}
-
-          {/* GitHub Comments */}
-          {deployment.github_pr_data.comments && deployment.github_pr_data.comments.length > 0 && (
-            <Accordion.Item>
-              <Accordion.Header>Kommentarer ({deployment.github_pr_data.comments.length})</Accordion.Header>
-              <Accordion.Content>
-                <VStack gap="space-12">
-                  {deployment.github_pr_data.comments.map((comment) => (
-                    <HStack key={comment.id} gap="space-12" align="start">
-                      {comment.user?.avatar_url && (
-                        <img
-                          src={comment.user.avatar_url}
-                          alt={getUserDisplay(comment.user?.username) ?? ''}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            flexShrink: 0,
-                          }}
-                        />
-                      )}
-                      <VStack gap="space-4" style={{ flex: 1 }}>
-                        <HStack gap="space-8" align="baseline" wrap>
-                          <ExternalLink href={`https://github.com/${comment.user?.username ?? ''}`}>
-                            {getUserDisplay(comment.user?.username) ?? 'ukjent'}
-                          </ExternalLink>
-                          <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
-                            {new Date(comment.created_at).toLocaleString('no-NO', {
-                              dateStyle: 'short',
-                              timeStyle: 'short',
-                            })}
-                          </span>
-                          <ExternalLink href={comment.html_url} style={{ color: 'var(--ax-text-neutral-subtle)' }}>
-                            vis på GitHub
-                          </ExternalLink>
-                        </HStack>
-                        <BodyShort style={{ whiteSpace: 'pre-wrap' }}>{comment.body}</BodyShort>
-                      </VStack>
-                    </HStack>
-                  ))}
-                </VStack>
-              </Accordion.Content>
-            </Accordion.Item>
-          )}
-        </Accordion>
+        <PrDetailsAccordion
+          deployment={deployment}
+          githubPrData={deployment.github_pr_data}
+          userMappings={userMappings}
+        />
       )}
       {/* Resources section */}
       {deployment.resources && deployment.resources.length > 0 && (
