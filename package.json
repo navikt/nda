@@ -50,7 +50,7 @@
     "express": "^4.22.1",
     "graphql": "^16.13.1",
     "graphql-request": "^7.4.0",
-    "helmet": "^8.1.0",
+    "helmet": "^8.2.0",
     "isbot": "^5.1.36",
     "jose": "^6.2.3",
     "node-pg-migrate": "^8.0.4",
