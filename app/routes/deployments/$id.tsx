@@ -24,11 +24,9 @@ import {
   HGrid,
   HStack,
   Tag,
-  Textarea,
-  TextField,
   VStack,
 } from '@navikt/ds-react'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { Form, Link, useNavigation, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
@@ -51,6 +49,7 @@ import { DeviationModal } from '~/routes/deployments/$id/DeviationModal'
 import { FourEyesAlert } from '~/routes/deployments/$id/FourEyesAlert'
 import { LegacyLookupSection } from '~/routes/deployments/$id/LegacyLookupSection'
 import { LegacyPendingApproval } from '~/routes/deployments/$id/LegacyPendingApproval'
+import { ManualApprovalSection } from '~/routes/deployments/$id/ManualApprovalSection'
 import type { Route } from './+types/$id'
 
 export { action } from './$id.actions.server'
@@ -91,9 +90,6 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
   const [searchParams] = useSearchParams()
   const navigation = useNavigation()
   const isVerifying = navigation.state !== 'idle' && navigation.formData?.get('intent') === 'verify_four_eyes'
-  const [approvalReason, setApprovalReason] = useState('')
-  const [approvalSlackLink, setApprovalSlackLink] = useState('')
-  const [showApprovalForm, setShowApprovalForm] = useState(false)
 
   // Statuses that require manual approval (when no manualApproval exists).
   // Note: 'pending' is excluded — it means the verifier hasn't run yet, not that manual action is needed.
@@ -1110,78 +1106,14 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
         )}
       {/* Manual approval section - for deployments needing manual approval */}
       {requiresManualApproval && (
-        <Box background="warning-moderate" padding="space-24" borderRadius="8">
-          <VStack gap="space-16">
-            <Heading size="small" level="3">
-              <ExclamationmarkTriangleIcon aria-hidden /> Krever manuell godkjenning
-            </Heading>
-            <BodyShort>
-              Dette deploymentet har status "{status.text}" og krever manuell godkjenning for å oppfylle
-              fire-øyne-prinsippet.
-              {previousDeploymentForDiff?.commit_sha && deployment.commit_sha && (
-                <>
-                  {' '}
-                  <ExternalLink
-                    href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
-                  >
-                    Se endringer på GitHub
-                  </ExternalLink>
-                </>
-              )}
-            </BodyShort>
-
-            {isCurrentUserInvolved ? (
-              <Alert variant="warning">
-                <Heading size="xsmall" level="4" spacing>
-                  Du kan ikke godkjenne dette deploymentet
-                </Heading>
-                <BodyShort>{involvementReason}</BodyShort>
-                <BodyShort style={{ marginTop: 'var(--ax-space-8)' }}>
-                  Fire-øyne-prinsippet krever at en annen person godkjenner.
-                </BodyShort>
-              </Alert>
-            ) : !capabilities.canApprove ? (
-              <Alert variant="info">
-                <BodyShort>Du har ikke tilgang til å godkjenne denne deploymenten.</BodyShort>
-              </Alert>
-            ) : !showApprovalForm ? (
-              <Button variant="primary" onClick={() => setShowApprovalForm(true)}>
-                Godkjenn manuelt
-              </Button>
-            ) : (
-              <Form method="post">
-                <input type="hidden" name="intent" value="manual_approval" />
-                <VStack gap="space-16">
-                  <TextField
-                    label="Slack-lenke (valgfritt)"
-                    name="slack_link"
-                    value={approvalSlackLink}
-                    onChange={(e) => setApprovalSlackLink(e.target.value)}
-                    description="Lenke til Slack-tråd hvor kode-review er dokumentert"
-                    size="small"
-                  />
-                  <Textarea
-                    label="Begrunnelse (valgfritt)"
-                    name="reason"
-                    value={approvalReason}
-                    onChange={(e) => setApprovalReason(e.target.value)}
-                    description="F.eks: 'Hotfix reviewet i Slack av kollega'"
-                    size="small"
-                    rows={2}
-                  />
-                  <HStack gap="space-8">
-                    <Button type="submit" variant="primary" size="small">
-                      Godkjenn
-                    </Button>
-                    <Button type="button" variant="secondary" size="small" onClick={() => setShowApprovalForm(false)}>
-                      Avbryt
-                    </Button>
-                  </HStack>
-                </VStack>
-              </Form>
-            )}
-          </VStack>
-        </Box>
+        <ManualApprovalSection
+          status={status}
+          deployment={deployment}
+          previousDeploymentForDiff={previousDeploymentForDiff}
+          isCurrentUserInvolved={isCurrentUserInvolved}
+          involvementReason={involvementReason}
+          capabilities={capabilities}
+        />
       )}
 
       {/* Legacy deployment - GitHub lookup section */}
