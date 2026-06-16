@@ -3,7 +3,6 @@ import {
   ChatIcon,
   CheckmarkCircleIcon,
   CheckmarkIcon,
-  DownloadIcon,
   ExclamationmarkTriangleIcon,
   TrashIcon,
 } from '@navikt/aksel-icons'
@@ -21,7 +20,7 @@ import {
   DEVIATION_SEVERITY_LABELS,
 } from '~/lib/deviation-constants'
 import { type FourEyesStatus, isApprovedStatus } from '~/lib/four-eyes-status'
-import { formatChangeSource, getFourEyesStatus } from '~/lib/status-display'
+import { getFourEyesStatus } from '~/lib/status-display'
 import { getUserDisplayName } from '~/lib/user-display'
 import { UNVERIFIED_REASON_LABELS, type UnverifiedReason } from '~/lib/verification/types'
 import { CommentModal } from '~/routes/deployments/$id/CommentModal'
@@ -32,6 +31,7 @@ import { LegacyLookupSection } from '~/routes/deployments/$id/LegacyLookupSectio
 import { LegacyPendingApproval } from '~/routes/deployments/$id/LegacyPendingApproval'
 import { ManualApprovalSection } from '~/routes/deployments/$id/ManualApprovalSection'
 import { PrDetailsAccordion } from '~/routes/deployments/$id/PrDetailsAccordion'
+import { StatusHistorySection } from '~/routes/deployments/$id/StatusHistorySection'
 import type { Route } from './+types/$id'
 
 export { action } from './$id.actions.server'
@@ -659,99 +659,18 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           )}
         </Alert>
       )}
-      {/* Status history section */}
+
       {statusHistory.length > 0 && (
-        <VStack gap="space-16">
-          <HStack justify="space-between" align="center">
-            <Heading size="medium" level="2">
-              Statushistorikk
-            </Heading>
-            {isAdmin && verificationRun && (
-              <Button
-                variant="tertiary"
-                size="small"
-                icon={<DownloadIcon aria-hidden />}
-                onClick={() => {
-                  const data = {
-                    deploymentId: deployment.id,
-                    commitSha: deployment.commit_sha,
-                    previousDeployment: previousDeployment
-                      ? {
-                          id: previousDeployment.id,
-                          commitSha: previousDeployment.commit_sha,
-                          createdAt: previousDeployment.created_at,
-                          fourEyesStatus: previousDeployment.four_eyes_status,
-                        }
-                      : null,
-                    nearbyDeployments: nearbyDeployments.map((nd) => ({
-                      id: nd.id,
-                      commitSha: nd.commit_sha,
-                      createdAt: nd.created_at,
-                      fourEyesStatus: nd.four_eyes_status,
-                      deployerUsername: nd.deployer_username,
-                    })),
-                    verification: {
-                      status: verificationRun.status,
-                      runAt: verificationRun.runAt,
-                      schemaVersion: verificationRun.schemaVersion,
-                      result: verificationRun.result,
-                    },
-                  }
-                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `begrunnelse-deployment-${deployment.id}.json`
-                  a.click()
-                  URL.revokeObjectURL(url)
-                }}
-              >
-                Last ned begrunnelse
-              </Button>
-            )}
-          </HStack>
-          <VStack gap="space-8">
-            {statusHistory.map((transition) => (
-              <Box key={transition.id} padding="space-12" borderRadius="4" borderColor="neutral-subtle" borderWidth="1">
-                <HStack gap="space-8" align="center" wrap>
-                  <Tag variant="neutral" size="small">
-                    {formatChangeSource(transition.change_source)}
-                  </Tag>
-                  <BodyShort size="small">
-                    {transition.from_status ? (
-                      <>
-                        <Tag
-                          variant={isApprovedStatus(transition.from_status as FourEyesStatus) ? 'success' : 'warning'}
-                          size="xsmall"
-                        >
-                          {transition.from_status}
-                        </Tag>
-                        {' → '}
-                      </>
-                    ) : (
-                      'Satt til '
-                    )}
-                    <Tag
-                      variant={isApprovedStatus(transition.to_status as FourEyesStatus) ? 'success' : 'warning'}
-                      size="xsmall"
-                    >
-                      {transition.to_status}
-                    </Tag>
-                  </BodyShort>
-                  {transition.changed_by && <Detail textColor="subtle">av {transition.changed_by}</Detail>}
-                  <Detail textColor="subtle">
-                    {new Date(transition.created_at).toLocaleString('no-NO', {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    })}
-                  </Detail>
-                </HStack>
-              </Box>
-            ))}
-          </VStack>
-        </VStack>
+        <StatusHistorySection
+          statusHistory={statusHistory}
+          deployment={deployment}
+          previousDeployment={previousDeployment}
+          nearbyDeployments={nearbyDeployments}
+          verificationRun={verificationRun}
+          isAdmin={isAdmin}
+        />
       )}
-      {/* Goal links / origin of change section */}
+
       <GoalLinksSection
         goalLinks={goalLinks}
         availableBoards={availableBoards}
