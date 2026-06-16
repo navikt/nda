@@ -52,7 +52,7 @@ export function DeploymentDetailsGrid({ deployment, userMappings }: DeploymentDe
             <Detail>Branch</Detail>
             <BodyShort>
               <ExternalLink
-                href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/tree/${deployment.branch_name}`}
+                href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/tree/${encodeURIComponent(deployment.branch_name)}`}
                 style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
               >
                 {deployment.branch_name}
