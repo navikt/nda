@@ -42,7 +42,7 @@
     "@react-router/node": "7.17.0",
     "@react-router/serve": "7.17.0",
     "@slack/bolt": "^4.6.0",
-    "@slack/types": "^2.20.1",
+    "@slack/types": "^2.21.1",
     "@types/pg": "^8.18.0",
     "chart.js": "^4.5.1",
     "compression": "^1.8.1",
