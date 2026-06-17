@@ -1,7 +1,9 @@
 # Build stage with full Node.js
-FROM node:26-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 
-RUN npm install -g pnpm@10
+# Bruk pnpm-versjonen som er pinnet i "packageManager" i package.json
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 
 WORKDIR /app
 
@@ -33,9 +35,11 @@ RUN mkdir -p /app/fonts && \
     apt-get remove -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # Production dependencies only
-FROM node:26-bookworm-slim AS prod-deps
+FROM node:24-bookworm-slim AS prod-deps
 
-RUN npm install -g pnpm@10
+# Bruk pnpm-versjonen som er pinnet i "packageManager" i package.json
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 
 WORKDIR /app
 
