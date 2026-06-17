@@ -13,7 +13,7 @@ import {
 } from '@navikt/ds-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useRevalidator } from 'react-router'
-import type { SyncJob, SyncJobLog } from '~/db/sync-jobs.server'
+import type { SyncJob, SyncJobLog } from '~/db/sync-job-types'
 
 interface SyncJobDetailViewProps {
   job: SyncJob

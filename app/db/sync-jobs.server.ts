@@ -8,25 +8,10 @@ export {
   type SyncJobType,
 } from './sync-job-types'
 
-import type { SyncJobStatus, SyncJobType } from './sync-job-types'
+import type { SyncJob, SyncJobLog, SyncJobStatus, SyncJobType, SyncJobWithApp } from './sync-job-types'
 
 /** Interval between sync cycles (used by both scheduler and cooldown check) */
 export const SYNC_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
-
-export interface SyncJob {
-  id: number
-  job_type: SyncJobType
-  monitored_app_id: number | null
-  status: SyncJobStatus
-  started_at: string | null
-  completed_at: string | null
-  locked_by: string | null
-  lock_expires_at: string | null
-  result: Record<string, unknown> | null
-  error: string | null
-  options: Record<string, unknown> | null
-  created_at: string
-}
 
 // Get pod identifier from environment or generate one
 const POD_ID = process.env.HOSTNAME || `local-${process.pid}`
@@ -133,12 +118,6 @@ export async function cleanupOldSyncJobs(keepPerApp: number = 50): Promise<numbe
     [keepPerApp],
   )
   return result.rowCount || 0
-}
-
-interface SyncJobWithApp extends SyncJob {
-  app_name: string | null
-  team_slug: string | null
-  environment_name: string | null
 }
 
 /**
@@ -372,15 +351,6 @@ export async function forceReleaseSyncJob(jobId: number): Promise<boolean> {
 // =============================================================================
 // Sync Job Logs
 // =============================================================================
-
-export interface SyncJobLog {
-  id: number
-  job_id: number
-  level: 'info' | 'warn' | 'error' | 'debug'
-  message: string
-  details: Record<string, unknown> | null
-  created_at: string
-}
 
 /**
  * Log a message for a sync job

@@ -29,3 +29,33 @@ export const SYNC_JOB_STATUS_LABELS: Record<SyncJobStatus, string> = {
   failed: 'Feilet',
   cancelled: 'Avbrutt',
 }
+
+export interface SyncJob {
+  id: number
+  job_type: SyncJobType
+  monitored_app_id: number | null
+  status: SyncJobStatus
+  started_at: string | null
+  completed_at: string | null
+  locked_by: string | null
+  lock_expires_at: string | null
+  result: Record<string, unknown> | null
+  error: string | null
+  options: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface SyncJobWithApp extends SyncJob {
+  app_name: string | null
+  team_slug: string | null
+  environment_name: string | null
+}
+
+export interface SyncJobLog {
+  id: number
+  job_id: number
+  level: 'info' | 'warn' | 'error' | 'debug'
+  message: string
+  details: Record<string, unknown> | null
+  created_at: string
+}

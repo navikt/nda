@@ -14,7 +14,7 @@ import {
 } from '@navikt/ds-react'
 import { useEffect, useState } from 'react'
 import { Form, Link } from 'react-router'
-import type { SyncJob } from '~/db/sync-jobs.server'
+import type { SyncJob } from '~/db/sync-job-types'
 import type { Route } from '../+types/$team.env.$env.app.$app.admin'
 
 type LoaderData = Route.ComponentProps['loaderData']
