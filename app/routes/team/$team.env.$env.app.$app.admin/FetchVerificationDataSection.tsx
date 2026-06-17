@@ -12,6 +12,7 @@ import {
   Switch,
   VStack,
 } from '@navikt/ds-react'
+import { useEffect, useState } from 'react'
 import { Form, Link } from 'react-router'
 import type { SyncJob } from '~/db/sync-jobs.server'
 import type { Route } from '../+types/$team.env.$env.app.$app.admin'
@@ -29,6 +30,14 @@ export function FetchVerificationDataSection({
   githubDataStats,
   fetchJobStatus,
 }: FetchVerificationDataSectionProps) {
+  const [hasMounted, setHasMounted] = useState(false)
+  useEffect(() => {
+    setHasMounted(true)
+  }, [])
+
+  const lockExpired =
+    hasMounted && fetchJobStatus?.lock_expires_at != null && new Date(fetchJobStatus.lock_expires_at) < new Date()
+
   return (
     <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
       <VStack gap="space-16">
@@ -120,17 +129,15 @@ export function FetchVerificationDataSection({
               </Button>
             </Form>
           )}
-          {fetchJobStatus?.status === 'running' &&
-            fetchJobStatus.lock_expires_at &&
-            new Date(fetchJobStatus.lock_expires_at) < new Date() && (
-              <Form method="post">
-                <input type="hidden" name="action" value="force_release_job" />
-                <input type="hidden" name="job_id" value={fetchJobStatus.id} />
-                <Button type="submit" size="small" variant="danger">
-                  Tvangsfrigjør
-                </Button>
-              </Form>
-            )}
+          {fetchJobStatus?.status === 'running' && lockExpired && (
+            <Form method="post">
+              <input type="hidden" name="action" value="force_release_job" />
+              <input type="hidden" name="job_id" value={fetchJobStatus.id} />
+              <Button type="submit" size="small" variant="danger">
+                Tvangsfrigjør
+              </Button>
+            </Form>
+          )}
         </HStack>
 
         {fetchJobStatus && (
