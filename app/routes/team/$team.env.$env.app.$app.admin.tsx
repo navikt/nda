@@ -1,20 +1,16 @@
-import { ChatIcon, CogIcon } from '@navikt/aksel-icons'
+import { CogIcon } from '@navikt/aksel-icons'
 import {
   Link as AkselLink,
   Alert,
   BodyShort,
   Box,
   Button,
-  Checkbox,
-  CheckboxGroup,
   Detail,
   Heading,
   HStack,
   Label,
   Loader,
   Select,
-  Switch,
-  TextField,
   VStack,
 } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
@@ -35,8 +31,13 @@ import {
   IMPLICIT_APPROVAL_MODE_LABELS,
   IMPLICIT_APPROVAL_MODES,
 } from '~/lib/verification/types'
+import { AuditStartYearSettings } from '~/routes/team/$team.env.$env.app.$app.admin/AuditStartYearSettings'
 import { DefaultBranchSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DefaultBranchSettings'
+import { DeployNotificationSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DeployNotificationSettings'
 import { FetchVerificationDataSection } from '~/routes/team/$team.env.$env.app.$app.admin/FetchVerificationDataSection'
+import { ReminderSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ReminderSettings'
+import { SlackConfigSettings } from '~/routes/team/$team.env.$env.app.$app.admin/SlackConfigSettings'
+import { TestRequirementSettings } from '~/routes/team/$team.env.$env.app.$app.admin/TestRequirementSettings'
 import type { Route } from './+types/$team.env.$env.app.$app.admin'
 
 export { action } from './$team.env.$env.app.$app.admin.actions.server'
@@ -278,32 +279,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
 
       <DefaultBranchSettings app={app} />
 
-      {/* Audit Start Year */}
-      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-16">
-          <Heading size="small" level="2">
-            Startår for revisjon
-          </Heading>
-          <Form method="post">
-            <input type="hidden" name="action" value="update_audit_start_year" />
-            <input type="hidden" name="app_id" value={app.id} />
-            <HStack gap="space-16" align="end" wrap>
-              <TextField
-                label="År"
-                description="Deployments før dette året ignoreres i statistikk og rapporter"
-                name="audit_start_year"
-                type="number"
-                defaultValue={app.audit_start_year ?? ''}
-                size="small"
-                style={{ minWidth: '120px' }}
-              />
-              <Button type="submit" size="small" variant="secondary">
-                Lagre
-              </Button>
-            </HStack>
-          </Form>
-        </VStack>
-      </Box>
+      <AuditStartYearSettings app={app} />
 
       {/* Implicit Approval Settings */}
       <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
@@ -350,205 +326,13 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
         </VStack>
       </Box>
 
-      {/* Test Requirements */}
-      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-16">
-          <div>
-            <Heading size="small" level="2">
-              Testkrav for leveranser
-            </Heading>
-            <BodyShort textColor="subtle" size="small">
-              Spesifiser hvilke tester som må være vellykket før en leveranse kan gjennomføres.
-            </BodyShort>
-          </div>
+      <TestRequirementSettings app={app} />
 
-          <Form method="post">
-            <input type="hidden" name="action" value="update_test_requirement" />
-            <input type="hidden" name="app_id" value={app.id} />
-            <VStack gap="space-12">
-              <Select
-                label="Testkrav"
-                name="test_requirement"
-                defaultValue={app.test_requirement || 'none'}
-                size="small"
-                style={{ maxWidth: '300px' }}
-              >
-                <option value="none">Ingen</option>
-                <option value="unit_tests">Enhetstester</option>
-                <option value="integration_tests">Integrasjonstester</option>
-              </Select>
+      <SlackConfigSettings app={app} />
 
-              <BodyShort size="small" textColor="subtle">
-                Dette valget dokumenteres i rapporten under «Sikkerhet og dataintegritet».
-              </BodyShort>
+      <DeployNotificationSettings app={app} />
 
-              <Button type="submit" size="small" variant="secondary">
-                Lagre testkrav
-              </Button>
-            </VStack>
-          </Form>
-        </VStack>
-      </Box>
-
-      {/* Slack Configuration */}
-      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-16">
-          <HStack gap="space-8" align="center" justify="space-between">
-            <HStack gap="space-8" align="center">
-              <ChatIcon aria-hidden fontSize="1.25rem" />
-              <div>
-                <Heading size="small" level="2">
-                  Slack-varsler
-                </Heading>
-                <BodyShort textColor="subtle" size="small">
-                  Konfigurer Slack-varsler for ikke-godkjente deployments.
-                </BodyShort>
-              </div>
-            </HStack>
-            <Button
-              as={Link}
-              to={`/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}/slack`}
-              variant="tertiary"
-              size="small"
-            >
-              Se meldingshistorikk
-            </Button>
-          </HStack>
-
-          <Form method="post">
-            <input type="hidden" name="action" value="update_slack_config" />
-            <input type="hidden" name="app_id" value={app.id} />
-            <VStack gap="space-16">
-              <Switch name="slack_notifications_enabled" value="true" defaultChecked={app.slack_notifications_enabled}>
-                Aktiver Slack-varsler for denne appen
-              </Switch>
-
-              <TextField
-                label="Slack-kanal"
-                name="slack_channel_id"
-                defaultValue={app.slack_channel_id || ''}
-                description="Kanal-ID (f.eks. C01234567) eller kanalnavn (f.eks. #min-kanal)"
-                size="small"
-                style={{ maxWidth: '300px' }}
-              />
-
-              <Button type="submit" size="small" variant="secondary">
-                Lagre Slack-innstillinger
-              </Button>
-            </VStack>
-          </Form>
-        </VStack>
-      </Box>
-
-      {/* Deploy Notification Configuration */}
-      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-16">
-          <div>
-            <Heading size="small" level="2">
-              Deployment-varsler
-            </Heading>
-            <BodyShort textColor="subtle" size="small">
-              Send automatiske varsler til Slack når nye deployments oppdages. Inkluderer PR-tittel, hvem som opprettet,
-              godkjente og merget PR-en.
-            </BodyShort>
-          </div>
-
-          <Form method="post">
-            <input type="hidden" name="action" value="update_slack_deploy_config" />
-            <input type="hidden" name="app_id" value={app.id} />
-            <VStack gap="space-16">
-              <Switch name="slack_deploy_notify_enabled" value="true" defaultChecked={app.slack_deploy_notify_enabled}>
-                Aktiver deployment-varsler for denne appen
-              </Switch>
-
-              <TextField
-                label="Slack-kanal for deployment-varsler"
-                name="slack_deploy_channel_id"
-                defaultValue={app.slack_deploy_channel_id || ''}
-                description="Kanal-ID (f.eks. C01234567) eller kanalnavn (f.eks. #min-kanal). Kan være en annen kanal enn for avviksvarsler."
-                size="small"
-                style={{ maxWidth: '300px' }}
-              />
-
-              <Button type="submit" size="small" variant="secondary">
-                Lagre deployment-varsler
-              </Button>
-            </VStack>
-          </Form>
-        </VStack>
-      </Box>
-
-      {/* Reminder Configuration */}
-      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-16">
-          <div>
-            <Heading size="small" level="2">
-              Purring for ikke-godkjente deployments
-            </Heading>
-            <BodyShort textColor="subtle" size="small">
-              Send automatiske påminnelser i Slack for deployments som mangler godkjenning.
-            </BodyShort>
-          </div>
-
-          <Form method="post">
-            <input type="hidden" name="action" value="update_reminder_config" />
-            <input type="hidden" name="app_id" value={app.id} />
-            <VStack gap="space-16">
-              <Switch name="reminder_enabled" value="true" defaultChecked={app.reminder_enabled}>
-                Aktiver automatisk purring
-              </Switch>
-
-              <TextField
-                label="Tidspunkt"
-                name="reminder_time"
-                defaultValue={app.reminder_time || '09:00'}
-                description="Klokkeslett for purring (HH:mm)"
-                size="small"
-                style={{ maxWidth: '150px' }}
-              />
-
-              <CheckboxGroup
-                legend="Ukedager"
-                description="Velg hvilke dager purringen skal sendes. Sendes kun på hverdager (ikke helligdager)."
-                size="small"
-                defaultValue={app.reminder_days || ['mon', 'tue', 'wed', 'thu', 'fri']}
-              >
-                <Checkbox name="reminder_days" value="mon">
-                  Mandag
-                </Checkbox>
-                <Checkbox name="reminder_days" value="tue">
-                  Tirsdag
-                </Checkbox>
-                <Checkbox name="reminder_days" value="wed">
-                  Onsdag
-                </Checkbox>
-                <Checkbox name="reminder_days" value="thu">
-                  Torsdag
-                </Checkbox>
-                <Checkbox name="reminder_days" value="fri">
-                  Fredag
-                </Checkbox>
-              </CheckboxGroup>
-
-              <Button type="submit" size="small" variant="secondary">
-                Lagre purre-innstillinger
-              </Button>
-            </VStack>
-          </Form>
-
-          <HStack gap="space-8">
-            <Form method="post">
-              <input type="hidden" name="action" value="send_reminder" />
-              <input type="hidden" name="team_slug" value={app.team_slug} />
-              <input type="hidden" name="environment_name" value={app.environment_name} />
-              <input type="hidden" name="app_name" value={app.app_name} />
-              <Button type="submit" size="small" variant="tertiary">
-                Send purring nå
-              </Button>
-            </Form>
-          </HStack>
-        </VStack>
-      </Box>
+      <ReminderSettings app={app} />
 
       <FetchVerificationDataSection app={app} githubDataStats={githubDataStats} fetchJobStatus={fetchJobStatus} />
 
