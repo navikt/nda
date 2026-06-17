@@ -1,20 +1,7 @@
 import { CogIcon } from '@navikt/aksel-icons'
-import {
-  Link as AkselLink,
-  Alert,
-  BodyShort,
-  Box,
-  Button,
-  Detail,
-  Heading,
-  HStack,
-  Label,
-  Loader,
-  Select,
-  VStack,
-} from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Heading, HStack, Loader, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
-import { Form, Link, useFetcher, useNavigation, useRevalidator } from 'react-router'
+import { useFetcher, useNavigation, useRevalidator } from 'react-router'
 import { AuditReportGenerateSection } from '~/components/AuditReportGenerateSection'
 import { AuditReportList } from '~/components/AuditReportList'
 import { getAppConfigAuditLog, getImplicitApprovalSettings } from '~/db/app-settings.server'
@@ -26,16 +13,15 @@ import { getLatestSyncJob } from '~/db/sync-jobs.server'
 import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { UserLookupMap } from '~/lib/user-display'
-import {
-  IMPLICIT_APPROVAL_MODE_DESCRIPTIONS,
-  IMPLICIT_APPROVAL_MODE_LABELS,
-  IMPLICIT_APPROVAL_MODES,
-} from '~/lib/verification/types'
 import { AuditStartYearSettings } from '~/routes/team/$team.env.$env.app.$app.admin/AuditStartYearSettings'
+import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
 import { DefaultBranchSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DefaultBranchSettings'
 import { DeployNotificationSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DeployNotificationSettings'
 import { FetchVerificationDataSection } from '~/routes/team/$team.env.$env.app.$app.admin/FetchVerificationDataSection'
+import { ImplicitApprovalSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ImplicitApprovalSettings'
+import { RecentConfigChanges } from '~/routes/team/$team.env.$env.app.$app.admin/RecentConfigChanges'
 import { ReminderSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ReminderSettings'
+import { Reverifisering } from '~/routes/team/$team.env.$env.app.$app.admin/Reverifisering'
 import { SlackConfigSettings } from '~/routes/team/$team.env.$env.app.$app.admin/SlackConfigSettings'
 import { TestRequirementSettings } from '~/routes/team/$team.env.$env.app.$app.admin/TestRequirementSettings'
 import type { Route } from './+types/$team.env.$env.app.$app.admin'
@@ -281,50 +267,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
 
       <AuditStartYearSettings app={app} />
 
-      {/* Implicit Approval Settings */}
-      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-16">
-          <div>
-            <Heading size="small" level="2">
-              Implisitt godkjenning
-            </Heading>
-            <BodyShort textColor="subtle" size="small">
-              Godkjenner automatisk en PR hvis den som merger ikke er PR-oppretteren og ikke har siste commit.
-            </BodyShort>
-          </div>
-
-          <Form method="post">
-            <input type="hidden" name="action" value="update_implicit_approval" />
-            <input type="hidden" name="app_id" value={app.id} />
-            <VStack gap="space-12">
-              <Select
-                label="Modus"
-                name="mode"
-                defaultValue={implicitApprovalSettings.mode}
-                size="small"
-                style={{ maxWidth: '300px' }}
-              >
-                {IMPLICIT_APPROVAL_MODES.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {IMPLICIT_APPROVAL_MODE_LABELS[mode]}
-                  </option>
-                ))}
-              </Select>
-
-              <BodyShort size="small" textColor="subtle">
-                <strong>{IMPLICIT_APPROVAL_MODE_LABELS.dependabot_only}:</strong>{' '}
-                {IMPLICIT_APPROVAL_MODE_DESCRIPTIONS.dependabot_only}.
-                <br />
-                <strong>{IMPLICIT_APPROVAL_MODE_LABELS.all}:</strong> {IMPLICIT_APPROVAL_MODE_DESCRIPTIONS.all}.
-              </BodyShort>
-
-              <Button type="submit" size="small" variant="secondary">
-                Lagre innstillinger
-              </Button>
-            </VStack>
-          </Form>
-        </VStack>
-      </Box>
+      <ImplicitApprovalSettings app={app} implicitApprovalSettings={implicitApprovalSettings} />
 
       <TestRequirementSettings app={app} />
 
@@ -336,74 +279,11 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
 
       <FetchVerificationDataSection app={app} githubDataStats={githubDataStats} fetchJobStatus={fetchJobStatus} />
 
-      {/* Reverifisering */}
-      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-16">
-          <div>
-            <Heading size="small" level="2">
-              Reverifisering
-            </Heading>
-            <BodyShort textColor="subtle" size="small">
-              Sammenlign cached data med gjeldende verifiseringslogikk. Avvik kan godkjennes enkeltvis.
-            </BodyShort>
-          </div>
-          <AkselLink
-            as={Link}
-            to={`/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}/admin/verification-diff`}
-          >
-            Se verifiseringsavvik →
-          </AkselLink>
-          <AkselLink
-            as={Link}
-            to={`/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}/admin/status-history`}
-          >
-            Se statusoverganger →
-          </AkselLink>
-          <AkselLink
-            as={Link}
-            to={`/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}/admin/sync-jobs`}
-          >
-            Se synk-jobber →
-          </AkselLink>
-        </VStack>
-      </Box>
+      <Reverifisering app={app} />
 
-      {/* Avvik */}
-      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-16">
-          <div>
-            <Heading size="small" level="2">
-              Avvik
-            </Heading>
-            <BodyShort textColor="subtle" size="small">
-              Se og administrer registrerte avvik for deployments.
-            </BodyShort>
-          </div>
-          <AkselLink
-            as={Link}
-            to={`/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}/admin/deviations`}
-          >
-            Se avviksliste →
-          </AkselLink>
-        </VStack>
-      </Box>
+      <Avvik app={app} />
 
-      {/* Recent config changes */}
-      {recentConfigChanges.length > 0 && (
-        <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-          <VStack gap="space-16">
-            <Label>Siste endringer</Label>
-            <VStack gap="space-4">
-              {recentConfigChanges.map((change) => (
-                <Detail key={change.id} textColor="subtle">
-                  {new Date(change.created_at).toLocaleString('no-NO')} -{' '}
-                  {change.changed_by_name || change.changed_by_nav_ident}: {change.setting_key}
-                </Detail>
-              ))}
-            </VStack>
-          </VStack>
-        </Box>
-      )}
+      {recentConfigChanges.length > 0 && <RecentConfigChanges recentConfigChanges={recentConfigChanges} />}
     </VStack>
   )
 }
