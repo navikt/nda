@@ -1,4 +1,4 @@
-import { getAuditReportById } from '~/db/audit-reports.server'
+import { getAuditReportById, getAuditReportFile } from '~/db/audit-reports.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/audit-reports.$id.pdf'
 
@@ -17,12 +17,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('Rapport ikke funnet', { status: 404 })
   }
 
-  // Return stored PDF
-  if (!report.pdf_data) {
+  const pdfData = await getAuditReportFile(reportId, 'pdf')
+
+  if (!pdfData) {
     throw new Response('PDF ikke generert ennå. Generer rapporten på nytt.', { status: 404 })
   }
 
-  return new Response(new Uint8Array(report.pdf_data), {
+  return new Response(pdfData as unknown as BodyInit, {
     headers: {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${report.report_id}.pdf"`,

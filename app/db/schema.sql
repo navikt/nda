@@ -276,3 +276,54 @@ CREATE INDEX IF NOT EXISTS idx_user_github_accounts_nav_ident
 CREATE INDEX IF NOT EXISTS idx_user_github_accounts_active
   ON user_github_accounts(github_username) WHERE deleted_at IS NULL;
 
+-- Audit reports (current state — pdf_data stored in audit_report_files)
+CREATE TABLE IF NOT EXISTS audit_reports (
+  id SERIAL PRIMARY KEY,
+  report_id TEXT UNIQUE NOT NULL,
+  monitored_app_id INTEGER REFERENCES monitored_applications(id) ON DELETE CASCADE,
+  app_name TEXT NOT NULL,
+  team_slug TEXT NOT NULL,
+  environment_name TEXT NOT NULL,
+  repository TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  period_type TEXT NOT NULL DEFAULT 'yearly' CHECK (period_type IN ('yearly', 'tertiary', 'quarterly', 'monthly')),
+  period_label TEXT NOT NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  total_deployments INTEGER NOT NULL,
+  pr_approved_count INTEGER NOT NULL,
+  manually_approved_count INTEGER NOT NULL,
+  unique_deployers INTEGER NOT NULL,
+  unique_reviewers INTEGER NOT NULL,
+  report_data JSONB NOT NULL,
+  content_hash TEXT NOT NULL,
+  change_origin_count INTEGER,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  generated_by TEXT,
+  generated_by_app TEXT,
+  archived_at TIMESTAMPTZ,
+  archived_by TEXT,
+  archive_reason TEXT,
+  restored_at TIMESTAMPTZ,
+  restored_by TEXT,
+  superseded_at TIMESTAMPTZ,
+  superseded_by TEXT,
+  supersede_reason TEXT,
+  superseded_by_report_id INTEGER REFERENCES audit_reports(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_reports_app ON audit_reports(monitored_app_id);
+CREATE INDEX IF NOT EXISTS idx_audit_reports_year ON audit_reports(year);
+CREATE INDEX IF NOT EXISTS idx_audit_reports_report_id ON audit_reports(report_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_reports_active_period
+  ON audit_reports(monitored_app_id, period_type, period_start)
+  WHERE superseded_at IS NULL AND archived_at IS NULL;
+
+-- Audit report file attachments (pdf, xlsx) — child of audit_reports
+CREATE TABLE IF NOT EXISTS audit_report_files (
+  audit_report_id INTEGER NOT NULL REFERENCES audit_reports(id) ON DELETE CASCADE,
+  format          TEXT    NOT NULL CHECK (format IN ('pdf', 'xlsx')),
+  data            BYTEA   NOT NULL,
+  PRIMARY KEY (audit_report_id, format)
+);
+

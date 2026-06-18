@@ -8,7 +8,7 @@
  * GET /api/v1/apps/:team/:env/:app/audit-reports/:reportId/download?format=pdf
  */
 
-import { getReportByReportIdForApp } from '~/db/audit-reports.server'
+import { getAuditReportFile, getReportByReportIdForApp } from '~/db/audit-reports.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { jsonError, validateProdEnvironment } from '~/lib/api/errors'
 import { requireM2MToken } from '~/lib/m2m-auth.server'
@@ -43,11 +43,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw jsonError('Report has been archived', 404)
   }
 
-  if (!report.pdf_data) {
+  const pdfData = await getAuditReportFile(report.id, 'pdf')
+
+  if (!pdfData) {
     throw jsonError('PDF not yet generated for this report', 404)
   }
 
-  const pdfBuffer = Buffer.isBuffer(report.pdf_data) ? report.pdf_data : Buffer.from(report.pdf_data)
+  const pdfBuffer = Buffer.isBuffer(pdfData) ? pdfData : Buffer.from(pdfData)
   const filename = `${report.report_id}.pdf`
 
   // Buffer extends Uint8Array; cast avoids TS BodyInit strictness without copying
