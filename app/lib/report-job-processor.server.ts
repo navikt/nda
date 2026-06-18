@@ -9,7 +9,7 @@ import {
   buildReportData,
   getAuditReportData,
   saveAuditReport,
-  updateAuditReportPdf,
+  saveAuditReportFile,
 } from '~/db/audit-reports.server'
 import { claimReportJob, setReportJobAuditReportId, updateReportJobStatus } from '~/db/report-jobs.server'
 import { generateAuditReportPdf } from '~/lib/audit-report-pdf'
@@ -93,7 +93,7 @@ export async function processReportJobAsync(params: ReportJobParams) {
       testRequirement: rawData.app.test_requirement as 'none' | 'unit_tests' | 'integration_tests',
     })
 
-    await updateAuditReportPdf(report.id, Buffer.from(pdfBuffer))
+    await saveAuditReportFile(report.id, 'pdf', pdfBuffer)
     await updateReportJobStatus(jobId, 'completed', pdfBuffer)
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error'

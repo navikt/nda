@@ -60,7 +60,6 @@ interface AuditReport {
   unique_reviewers: number
   report_data: AuditReportData
   content_hash: string
-  pdf_data: Buffer | null
   generated_at: Date
   generated_by: string | null
   generated_by_app: string | null
@@ -1009,10 +1008,26 @@ export async function getAuditReportsForAppAdmin(monitoredAppId: number): Promis
 }
 
 /**
- * Update PDF data for an audit report
+ * Upsert a file attachment (pdf or xlsx) for an audit report.
  */
-export async function updateAuditReportPdf(reportId: number, pdfData: Buffer): Promise<void> {
-  await pool.query('UPDATE audit_reports SET pdf_data = $1 WHERE id = $2', [pdfData, reportId])
+export async function saveAuditReportFile(reportId: number, format: 'pdf' | 'xlsx', data: Buffer): Promise<void> {
+  await pool.query(
+    `INSERT INTO audit_report_files (audit_report_id, format, data)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (audit_report_id, format) DO UPDATE SET data = EXCLUDED.data`,
+    [reportId, format, data],
+  )
+}
+
+/**
+ * Get a file attachment for an audit report by format.
+ */
+export async function getAuditReportFile(reportId: number, format: 'pdf' | 'xlsx'): Promise<Buffer | null> {
+  const result = await pool.query<{ data: Buffer }>(
+    'SELECT data FROM audit_report_files WHERE audit_report_id = $1 AND format = $2',
+    [reportId, format],
+  )
+  return result.rows[0]?.data ?? null
 }
 
 /**
@@ -1122,7 +1137,8 @@ export async function getActiveReportsForAppM2M(monitoredAppId: number): Promise
             total_deployments, pr_approved_count, manually_approved_count,
             change_origin_count, content_hash
      FROM audit_reports
-     WHERE monitored_app_id = $1 AND archived_at IS NULL AND superseded_at IS NULL AND pdf_data IS NOT NULL
+     WHERE monitored_app_id = $1 AND archived_at IS NULL AND superseded_at IS NULL
+       AND EXISTS (SELECT 1 FROM audit_report_files arf WHERE arf.audit_report_id = audit_reports.id AND arf.format = 'pdf')
      ORDER BY period_start DESC`,
     [monitoredAppId],
   )
@@ -1146,7 +1162,8 @@ export async function getActiveReportsForPeriodM2M(
      WHERE monitored_app_id = $1
        AND period_type = $2
        AND period_start = $3::date
-       AND archived_at IS NULL AND superseded_at IS NULL AND pdf_data IS NOT NULL
+       AND archived_at IS NULL AND superseded_at IS NULL
+       AND EXISTS (SELECT 1 FROM audit_report_files arf WHERE arf.audit_report_id = audit_reports.id AND arf.format = 'pdf')
      ORDER BY generated_at DESC`,
     [monitoredAppId, periodType, toDateString(periodStart)],
   )
@@ -1160,9 +1177,9 @@ export async function getActiveReportsForPeriodM2M(
 export async function getReportByReportIdForApp(
   reportId: string,
   monitoredAppId: number,
-): Promise<{ id: number; pdf_data: Buffer | null; report_id: string; archived_at: Date | null } | null> {
+): Promise<{ id: number; report_id: string; archived_at: Date | null } | null> {
   const result = await pool.query(
-    `SELECT id, pdf_data, report_id, archived_at
+    `SELECT id, report_id, archived_at
      FROM audit_reports
      WHERE report_id = $1 AND monitored_app_id = $2`,
     [reportId, monitoredAppId],
