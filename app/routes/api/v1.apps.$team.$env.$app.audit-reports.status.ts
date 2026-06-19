@@ -88,7 +88,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       changeOriginPercent: changeOrigin.coveragePercent,
     },
     existingReports: existingReports.map(toReportSummaryM2M),
-    availableFormats: ['pdf'],
+    availableFormats: ['pdf', 'xlsx'],
   }
 
   return Response.json(response)

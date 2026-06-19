@@ -98,6 +98,7 @@ const existingReport: AuditReportSummary = {
   superseded_by: null,
   supersede_reason: null,
   superseded_by_report_id: null,
+  formats: ['pdf', 'xlsx'],
 }
 
 /** Før kontroll — bare periode-velgere og "Kontroller grunnlag"-knapp. */

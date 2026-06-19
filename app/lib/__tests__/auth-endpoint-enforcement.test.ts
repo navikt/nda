@@ -105,6 +105,7 @@ const ALL_ROUTES: { path: string; description: string }[] = [
   { path: '/admin/audit-reports', description: 'Admin audit reports' },
   { path: '/admin/audit-reports/1/pdf', description: 'Audit report PDF' },
   { path: '/admin/audit-reports/1/view', description: 'Audit report view' },
+  { path: '/admin/audit-reports/1/xlsx', description: 'Audit report XLSX' },
   { path: '/admin/global-settings', description: 'Global settings' },
   { path: '/admin/application-groups', description: 'Application groups' },
   { path: '/admin/verification-diffs', description: 'Verification diffs' },

@@ -20,6 +20,7 @@ const activeReport: AuditReportItem = {
   superseded_at: null,
   superseded_by: null,
   supersede_reason: null,
+  formats: ['pdf', 'xlsx'],
 }
 
 const archivedReport: AuditReportItem = {
@@ -32,6 +33,7 @@ const archivedReport: AuditReportItem = {
   superseded_at: null,
   superseded_by: null,
   supersede_reason: null,
+  formats: ['pdf'],
 }
 
 const quarterlyReport: AuditReportItem = {
@@ -44,6 +46,7 @@ const quarterlyReport: AuditReportItem = {
   superseded_at: null,
   superseded_by: null,
   supersede_reason: null,
+  formats: ['pdf', 'xlsx'],
 }
 
 const supersededReport: AuditReportItem = {
@@ -56,6 +59,7 @@ const supersededReport: AuditReportItem = {
   superseded_at: new Date('2026-05-10T14:00:00Z'),
   superseded_by: 'L123456',
   supersede_reason: 'Korrigert etter oppdatering av verifiseringsdata for tre leveranser',
+  formats: ['pdf'],
 }
 
 const mockDisplayNameMap: Record<string, string> = {

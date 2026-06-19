@@ -1,4 +1,4 @@
-import { DownloadIcon, EyeIcon } from '@navikt/aksel-icons'
+import { DownloadIcon, EyeIcon, FileExcelIcon } from '@navikt/aksel-icons'
 import {
   Link as AkselLink,
   BodyShort,
@@ -142,6 +142,7 @@ export default function AdminAuditReports() {
                               as="a"
                               href={`/admin/audit-reports/${report.id}/view`}
                               target="_blank"
+                              rel="noopener noreferrer"
                               size="small"
                               variant="tertiary"
                               icon={<EyeIcon aria-hidden />}
@@ -155,8 +156,19 @@ export default function AdminAuditReports() {
                               variant="tertiary"
                               icon={<DownloadIcon aria-hidden />}
                             >
-                              Last ned
+                              PDF
                             </Button>
+                            {report.formats.includes('xlsx') && (
+                              <Button
+                                as="a"
+                                href={`/admin/audit-reports/${report.id}/xlsx`}
+                                size="small"
+                                variant="tertiary"
+                                icon={<FileExcelIcon aria-hidden />}
+                              >
+                                Excel
+                              </Button>
+                            )}
                           </HStack>
                         </Table.DataCell>
                       </Table.Row>
@@ -218,6 +230,7 @@ export default function AdminAuditReports() {
                             as="a"
                             href={`/admin/audit-reports/${report.id}/view`}
                             target="_blank"
+                            rel="noopener noreferrer"
                             size="small"
                             variant="secondary"
                             icon={<EyeIcon aria-hidden />}
@@ -231,8 +244,19 @@ export default function AdminAuditReports() {
                             variant="secondary"
                             icon={<DownloadIcon aria-hidden />}
                           >
-                            Last ned
+                            PDF
                           </Button>
+                          {report.formats.includes('xlsx') && (
+                            <Button
+                              as="a"
+                              href={`/admin/audit-reports/${report.id}/xlsx`}
+                              size="small"
+                              variant="secondary"
+                              icon={<FileExcelIcon aria-hidden />}
+                            >
+                              Excel
+                            </Button>
+                          )}
                         </HStack>
                       </VStack>
                     </Box>

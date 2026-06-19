@@ -7,7 +7,7 @@
  * POST /api/v1/apps/:team/:env/:app/audit-reports/generate
  *
  * Request body:
- *   { periodType, periodStart, format?, reason? }
+ *   { periodType, periodStart, reason? }
  */
 
 import { getReportSummaryById, hasActiveReportForPeriod } from '~/db/audit-reports.server'
@@ -31,14 +31,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   const envError = validateProdEnvironment(env)
   if (envError) throw envError
 
-  let body: { periodType?: string; periodStart?: string; format?: string; reason?: string }
+  let body: { periodType?: string; periodStart?: string; reason?: string }
   try {
     body = await request.json()
   } catch {
     throw jsonError('Invalid JSON in request body', 400)
   }
 
-  const { periodType, periodStart: periodStartParam, format = 'pdf', reason: rawReason } = body
+  const { periodType, periodStart: periodStartParam, reason: rawReason } = body
   const reason = rawReason?.trim() || undefined
 
   if (!periodType || !periodStartParam) {
@@ -47,10 +47,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (!isValidReportPeriodType(periodType)) {
     throw jsonError(`Invalid periodType: ${periodType}. Valid values: yearly, tertiary, quarterly, monthly`, 400)
-  }
-
-  if (format !== 'pdf') {
-    throw jsonError(`Invalid format: ${format}. Only "pdf" is currently supported.`, 400)
   }
 
   let periodStartDate: Date
