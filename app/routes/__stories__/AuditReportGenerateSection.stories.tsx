@@ -87,6 +87,7 @@ const existingReport: AuditReportSummary = {
   period_type: 'yearly',
   period_label: '2025',
   period_start: new Date(2025, 0, 1),
+  period_end: new Date(2025, 11, 31),
   total_deployments: 42,
   pr_approved_count: 38,
   manually_approved_count: 2,

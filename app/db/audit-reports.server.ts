@@ -187,6 +187,7 @@ export interface AuditReportSummary {
   period_type: ReportPeriodType
   period_label: string
   period_start: Date
+  period_end: Date
   total_deployments: number
   pr_approved_count: number
   manually_approved_count: number
@@ -887,6 +888,7 @@ export async function saveAuditReport(params: {
       monitoredAppId,
       periodType,
       periodStart,
+      periodEnd,
       generatedBy ?? generatedByApp,
       supersedeReason,
     )
@@ -964,7 +966,7 @@ export async function getAuditReportById(id: number): Promise<AuditReport | null
  */
 export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
+    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
             superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
@@ -980,7 +982,7 @@ export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
  */
 export async function getAuditReportsForApp(monitoredAppId: number): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
+    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
             superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
@@ -998,7 +1000,7 @@ export async function getAuditReportsForApp(monitoredAppId: number): Promise<Aud
  */
 export async function getAuditReportsForAppAdmin(monitoredAppId: number): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start,
+    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
             superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
@@ -1072,6 +1074,7 @@ async function supersedeExistingReports(
   monitoredAppId: number,
   periodType: ReportPeriodType,
   periodStart: Date,
+  periodEnd: Date,
   supersededBy?: string,
   supersedeReason?: string,
 ): Promise<number[]> {
@@ -1083,10 +1086,18 @@ async function supersedeExistingReports(
      WHERE monitored_app_id = $3
        AND period_type = $4
        AND period_start = $5::date
+       AND period_end = $6::date
        AND superseded_at IS NULL
        AND archived_at IS NULL
      RETURNING id`,
-    [supersededBy || null, supersedeReason || null, monitoredAppId, periodType, toDateString(periodStart)],
+    [
+      supersededBy || null,
+      supersedeReason || null,
+      monitoredAppId,
+      periodType,
+      toDateString(periodStart),
+      toDateString(periodEnd),
+    ],
   )
   return result.rows.map((r) => r.id)
 }
@@ -1098,16 +1109,18 @@ export async function hasActiveReportForPeriod(
   monitoredAppId: number,
   periodType: ReportPeriodType,
   periodStart: Date,
+  periodEnd: Date,
 ): Promise<boolean> {
   const result = await pool.query(
     `SELECT 1 FROM audit_reports
      WHERE monitored_app_id = $1
        AND period_type = $2
        AND period_start = $3::date
+       AND period_end = $4::date
        AND superseded_at IS NULL
        AND archived_at IS NULL
      LIMIT 1`,
-    [monitoredAppId, periodType, toDateString(periodStart)],
+    [monitoredAppId, periodType, toDateString(periodStart), toDateString(periodEnd)],
   )
   return result.rows.length > 0
 }

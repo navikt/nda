@@ -66,7 +66,7 @@ describe('audit report superseding', () => {
     expect(report1.id).toBeDefined()
 
     // Verify the period has an active report
-    expect(await hasActiveReportForPeriod(appId, 'yearly', periodStart)).toBe(true)
+    expect(await hasActiveReportForPeriod(appId, 'yearly', periodStart, periodEnd)).toBe(true)
 
     // Create second report for same period with supersede reason
     const report2 = await saveAuditReport({
@@ -113,7 +113,7 @@ describe('audit report superseding', () => {
 
   it('hasActiveReportForPeriod returns false when no report exists', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-b', appName: 'app-b', environment: 'prod-fss' })
-    expect(await hasActiveReportForPeriod(appId, 'yearly', new Date('2025-01-01'))).toBe(false)
+    expect(await hasActiveReportForPeriod(appId, 'yearly', new Date('2025-01-01'), new Date('2025-12-31'))).toBe(false)
   })
 
   it('does not supersede reports from different period types', async () => {

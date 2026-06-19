@@ -16,7 +16,7 @@ export async function createReportJob(
   const result = await pool.query(
     `INSERT INTO report_jobs (monitored_app_id, year, period_type, period_label, period_start, period_end, status)
      VALUES ($1, $2, $3, $4, $5::date, $6::date, 'pending')
-     ON CONFLICT (monitored_app_id, period_type, period_start) WHERE status IN ('pending', 'processing')
+     ON CONFLICT (monitored_app_id, period_type, period_start, period_end) WHERE status IN ('pending', 'processing')
      DO UPDATE SET status = report_jobs.status
      RETURNING job_id, (xmax = 0) AS created, status, created_at, started_at`,
     [monitoredAppId, year, periodType, periodLabel, toDateString(periodStart), toDateString(periodEnd)],
