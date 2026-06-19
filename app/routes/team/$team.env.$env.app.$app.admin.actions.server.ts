@@ -170,7 +170,8 @@ export async function action({ request }: { request: Request; params: Record<str
     const uniqueDeployers = [...new Set(deployerUsernames)]
     const userMappings = uniqueDeployers.length > 0 ? await getGithubUserLookups(uniqueDeployers) : new Map()
 
-    const readinessPeriodKey = `${periodTypeRaw}:${periodStart}`
+    const readinessPeriodKey =
+      periodTypeRaw === 'custom' ? `${periodTypeRaw}:${periodStart}:${periodEnd}` : `${periodTypeRaw}:${periodStart}`
 
     return { readiness, readinessPeriodKey, userMappings: serializeUserLookups(userMappings) }
   }
@@ -207,7 +208,7 @@ export async function action({ request }: { request: Request; params: Record<str
     }
 
     // Require reason when superseding an existing report
-    const hasExisting = await hasActiveReportForPeriod(appId, periodType, periodStart)
+    const hasExisting = await hasActiveReportForPeriod(appId, periodType, periodStart, periodEnd)
     if (hasExisting && !supersedeReason) {
       return { error: 'Du må oppgi en begrunnelse når du erstatter en eksisterende rapport.' }
     }
@@ -228,7 +229,10 @@ export async function action({ request }: { request: Request; params: Record<str
       return {
         error: `Kan ikke generere rapport: ${reasons.join('; ')}.`,
         readiness,
-        readinessPeriodKey: `${periodType}:${periodStartStr}`,
+        readinessPeriodKey:
+          periodType === 'custom'
+            ? `${periodType}:${periodStartStr}:${periodEndStr}`
+            : `${periodType}:${periodStartStr}`,
       }
     }
 

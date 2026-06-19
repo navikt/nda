@@ -286,7 +286,7 @@ CREATE TABLE IF NOT EXISTS audit_reports (
   environment_name TEXT NOT NULL,
   repository TEXT NOT NULL,
   year INTEGER NOT NULL,
-  period_type TEXT NOT NULL DEFAULT 'yearly' CHECK (period_type IN ('yearly', 'tertiary', 'quarterly', 'monthly')),
+  period_type TEXT NOT NULL DEFAULT 'yearly' CONSTRAINT audit_reports_period_type_check CHECK (period_type IN ('yearly', 'tertiary', 'quarterly', 'monthly', 'custom')),
   period_label TEXT NOT NULL,
   period_start DATE NOT NULL,
   period_end DATE NOT NULL,
@@ -316,7 +316,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_reports_app ON audit_reports(monitored_app_
 CREATE INDEX IF NOT EXISTS idx_audit_reports_year ON audit_reports(year);
 CREATE INDEX IF NOT EXISTS idx_audit_reports_report_id ON audit_reports(report_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_reports_active_period
-  ON audit_reports(monitored_app_id, period_type, period_start)
+  ON audit_reports(monitored_app_id, period_type, period_start, period_end)
   WHERE superseded_at IS NULL AND archived_at IS NULL;
 
 -- Audit report file attachments (pdf, xlsx) — child of audit_reports
@@ -326,4 +326,31 @@ CREATE TABLE IF NOT EXISTS audit_report_files (
   data            BYTEA   NOT NULL,
   PRIMARY KEY (audit_report_id, format)
 );
+
+-- Async report generation jobs
+CREATE TABLE IF NOT EXISTS report_jobs (
+  id                 SERIAL PRIMARY KEY,
+  job_id             UUID         UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+  monitored_app_id   INTEGER      REFERENCES monitored_applications(id) ON DELETE CASCADE,
+  year               INTEGER      NOT NULL,
+  status             TEXT         NOT NULL DEFAULT 'pending', -- pending, processing, completed, failed
+  period_type        TEXT         NOT NULL DEFAULT 'yearly'
+                       CONSTRAINT report_jobs_period_type_check
+                       CHECK (period_type IN ('yearly', 'tertiary', 'quarterly', 'monthly', 'custom')),
+  period_label       TEXT,
+  period_start       DATE,
+  period_end         DATE,
+  audit_report_id    INTEGER      REFERENCES audit_reports(id),
+  pdf_data           BYTEA,
+  error              TEXT,
+  started_at         TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ  DEFAULT NOW(),
+  completed_at       TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_report_jobs_job_id      ON report_jobs(job_id);
+CREATE INDEX IF NOT EXISTS idx_report_jobs_created_at  ON report_jobs(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_report_jobs_inflight
+  ON report_jobs(monitored_app_id, period_type, period_start, period_end)
+  WHERE status IN ('pending', 'processing');
 

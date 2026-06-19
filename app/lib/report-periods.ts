@@ -5,13 +5,14 @@
 
 import { toDateString } from './date-utils'
 
-export type ReportPeriodType = 'yearly' | 'tertiary' | 'quarterly' | 'monthly'
+export type ReportPeriodType = 'yearly' | 'tertiary' | 'quarterly' | 'monthly' | 'custom'
 
 const VALID_PERIOD_TYPES: ReadonlySet<string> = new Set<ReportPeriodType>([
   'yearly',
   'tertiary',
   'quarterly',
   'monthly',
+  'custom',
 ])
 
 export function isValidReportPeriodType(value: string): value is ReportPeriodType {
@@ -126,6 +127,7 @@ export function getCompletedPeriods(
       }
     }
   }
+  // 'custom' has no predefined periods — use buildCustomPeriod() instead
 
   return periods
 }
@@ -158,10 +160,61 @@ export const REPORT_PERIOD_TYPE_LABELS: Record<ReportPeriodType, string> = {
   tertiary: 'Tertialsvis',
   quarterly: 'Kvartalsvis',
   monthly: 'Månedlig',
+  custom: 'Egendefinert',
 }
 
 /**
- * Resolve a period from periodType and periodStart date.
+ * Build a custom period spanning from the start of one month to the end of another.
+ * Both startMonthIndex and endMonthIndex are 0-based (0 = January).
+ * Returns null if the period has not ended yet, if start is after end, or if
+ * any argument is out of range.
+ */
+export function buildCustomPeriod(
+  startYear: number,
+  startMonthIndex: number,
+  endYear: number,
+  endMonthIndex: number,
+): ReportPeriod | null {
+  if (
+    !Number.isInteger(startYear) ||
+    !Number.isInteger(endYear) ||
+    !Number.isInteger(startMonthIndex) ||
+    !Number.isInteger(endMonthIndex) ||
+    startMonthIndex < 0 ||
+    startMonthIndex > 11 ||
+    endMonthIndex < 0 ||
+    endMonthIndex > 11
+  ) {
+    return null
+  }
+  const startDate = new Date(startYear, startMonthIndex, 1)
+  const endDate = new Date(endYear, endMonthIndex + 1, 0, 23, 59, 59, 999)
+
+  if (startDate > new Date(endYear, endMonthIndex, 1)) return null
+  if (endDate >= new Date()) return null
+
+  const sameYear = startYear === endYear
+  const sameMonth = sameYear && startMonthIndex === endMonthIndex
+
+  let label: string
+  if (sameMonth) {
+    label = `${MONTH_LABELS[startMonthIndex]} ${startYear}`
+  } else if (sameYear) {
+    label = `${MONTH_LABELS[startMonthIndex]} - ${MONTH_LABELS[endMonthIndex]} ${startYear}`
+  } else {
+    label = `${MONTH_LABELS[startMonthIndex]} ${startYear} - ${MONTH_LABELS[endMonthIndex]} ${endYear}`
+  }
+
+  return {
+    type: 'custom',
+    label,
+    year: startYear,
+    startDate,
+    endDate,
+  }
+}
+
+/**
  * Returns the full period with label and endDate derived server-side,
  * or an error string if the input is invalid.
  *
@@ -172,6 +225,13 @@ export function resolvePeriod(
   periodStart: Date,
   auditStartYear: number | null,
 ): { period: ReportPeriod; error: null } | { period: null; error: string } {
+  if (periodType === 'custom') {
+    return {
+      period: null,
+      error: 'Custom period type is not supported via API. Use the admin UI to generate custom-range reports.',
+    }
+  }
+
   const year = periodStart.getFullYear()
   const month = periodStart.getMonth()
   const day = periodStart.getDate()
@@ -248,6 +308,7 @@ export function resolvePeriod(
 interface ReportForPeriodMatch {
   period_type: ReportPeriodType
   period_start: Date
+  period_end: Date
   archived_at: Date | null
   superseded_at: Date | null
 }
@@ -255,6 +316,7 @@ interface ReportForPeriodMatch {
 /**
  * Find an active (non-archived, non-superseded) report that matches a selected period.
  * Used by the app admin UI to detect existing reports and offer superseding.
+ * For custom periods, both period_start and period_end must match.
  */
 export function findExistingReportForPeriod<T extends ReportForPeriodMatch>(
   reports: T[],
@@ -264,6 +326,7 @@ export function findExistingReportForPeriod<T extends ReportForPeriodMatch>(
     (r) =>
       r.period_type === selectedPeriod.type &&
       toDateString(r.period_start) === toDateString(selectedPeriod.startDate) &&
+      (selectedPeriod.type !== 'custom' || toDateString(r.period_end) === toDateString(selectedPeriod.endDate)) &&
       !r.archived_at &&
       !r.superseded_at,
   )

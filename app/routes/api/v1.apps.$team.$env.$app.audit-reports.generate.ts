@@ -109,7 +109,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // Check if superseding is needed
-  const hasExisting = await hasActiveReportForPeriod(monitoredApp.id, period.type, period.startDate)
+  const hasExisting = await hasActiveReportForPeriod(monitoredApp.id, period.type, period.startDate, period.endDate)
   if (hasExisting && !reason) {
     throw jsonError('An active report already exists for this period. Provide "reason" to supersede it.', 409)
   }

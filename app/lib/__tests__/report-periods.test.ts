@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { toDateString } from '../date-utils'
 import {
+  buildCustomPeriod,
   findExistingReportForPeriod,
   generateReportId,
   getCompletedPeriods,
@@ -402,17 +403,18 @@ describe('resolvePeriod', () => {
 })
 
 describe('findExistingReportForPeriod', () => {
-  const makePeriod = (type: ReportPeriod['type'], startDate: Date): ReportPeriod => ({
+  const makePeriod = (type: ReportPeriod['type'], startDate: Date, endDate?: Date): ReportPeriod => ({
     type,
     label: 'Test',
     year: startDate.getFullYear(),
     startDate,
-    endDate: new Date(startDate.getFullYear(), 11, 31),
+    endDate: endDate ?? new Date(startDate.getFullYear(), 11, 31),
   })
 
   const makeReport = (overrides: {
     period_type: ReportPeriod['type']
     period_start: Date
+    period_end?: Date
     archived_at?: Date | null
     superseded_at?: Date | null
   }) => ({
@@ -420,6 +422,7 @@ describe('findExistingReportForPeriod', () => {
     report_id: 'test-report',
     period_type: overrides.period_type,
     period_start: overrides.period_start,
+    period_end: overrides.period_end ?? new Date(overrides.period_start.getFullYear(), 11, 31),
     archived_at: overrides.archived_at ?? null,
     superseded_at: overrides.superseded_at ?? null,
   })
@@ -469,6 +472,22 @@ describe('findExistingReportForPeriod', () => {
     expect(findExistingReportForPeriod(reports, period)).toBeUndefined()
   })
 
+  it('matches custom period on both period_start and period_end', () => {
+    const reports = [
+      makeReport({ period_type: 'custom', period_start: new Date(2025, 0, 1), period_end: new Date(2025, 2, 31) }),
+    ]
+    const period = makePeriod('custom', new Date(2025, 0, 1), new Date(2025, 2, 31))
+    expect(findExistingReportForPeriod(reports, period)).toBe(reports[0])
+  })
+
+  it('does not match custom period with same start but different end', () => {
+    const reports = [
+      makeReport({ period_type: 'custom', period_start: new Date(2025, 0, 1), period_end: new Date(2025, 2, 31) }),
+    ]
+    const period = makePeriod('custom', new Date(2025, 0, 1), new Date(2025, 5, 30))
+    expect(findExistingReportForPeriod(reports, period)).toBeUndefined()
+  })
+
   it('old .slice() approach crashes on Date objects from node-postgres', () => {
     // This test documents the bug: the old inline code in the admin route used
     // r.period_start.slice(0, 10) assuming period_start was a string.
@@ -477,5 +496,77 @@ describe('findExistingReportForPeriod', () => {
     expect(() => (pgDate as unknown as { slice: (start: number, end: number) => string }).slice(0, 10)).toThrow(
       /slice is not a function/,
     )
+  })
+})
+
+describe('buildCustomPeriod', () => {
+  it('returns null for a period that has not ended yet', () => {
+    const now = new Date()
+    expect(buildCustomPeriod(now.getFullYear(), now.getMonth(), now.getFullYear(), now.getMonth())).toBeNull()
+  })
+
+  it('returns null when start is after end', () => {
+    expect(buildCustomPeriod(2025, 5, 2025, 3)).toBeNull() // June → April
+  })
+
+  it('returns null for out-of-range month index', () => {
+    expect(buildCustomPeriod(2025, -1, 2025, 0)).toBeNull()
+    expect(buildCustomPeriod(2025, 0, 2025, 12)).toBeNull()
+    expect(buildCustomPeriod(2025, 13, 2025, 13)).toBeNull()
+  })
+
+  it('returns null for non-integer arguments', () => {
+    expect(buildCustomPeriod(2025.5, 0, 2025, 0)).toBeNull()
+    expect(buildCustomPeriod(2025, 0.5, 2025, 0)).toBeNull()
+    expect(buildCustomPeriod(2025, 0, 2025, Number.NaN)).toBeNull()
+  })
+
+  it('single month: label matches monthly format', () => {
+    const period = buildCustomPeriod(2025, 0, 2025, 0) // January 2025
+    expect(period).not.toBeNull()
+    expect(period?.label).toBe('Januar 2025')
+    expect(period?.type).toBe('custom')
+    expect(period?.year).toBe(2025)
+    expect(period?.startDate).toEqual(new Date(2025, 0, 1))
+    expect(period?.endDate).toEqual(new Date(2025, 0, 31, 23, 59, 59, 999))
+  })
+
+  it('same year range: label is "Month - Month YYYY"', () => {
+    const period = buildCustomPeriod(2025, 0, 2025, 4) // January - May 2025
+    expect(period).not.toBeNull()
+    expect(period?.label).toBe('Januar - Mai 2025')
+    expect(period?.startDate).toEqual(new Date(2025, 0, 1))
+    expect(period?.endDate).toEqual(new Date(2025, 4, 31, 23, 59, 59, 999))
+  })
+
+  it('cross-year range: label is "Month YYYY - Month YYYY"', () => {
+    const period = buildCustomPeriod(2024, 10, 2025, 1) // November 2024 - February 2025
+    expect(period).not.toBeNull()
+    expect(period?.label).toBe('November 2024 - Februar 2025')
+    expect(period?.startDate).toEqual(new Date(2024, 10, 1))
+    expect(period?.endDate).toEqual(new Date(2025, 1, 28, 23, 59, 59, 999))
+    expect(period?.year).toBe(2024)
+  })
+
+  it('end month date is last day of the month', () => {
+    const period = buildCustomPeriod(2024, 0, 2024, 1) // January - February 2024 (leap year)
+    expect(period).not.toBeNull()
+    expect(period?.endDate.getDate()).toBe(29) // 2024 is a leap year
+  })
+})
+
+describe('getCompletedPeriods (custom)', () => {
+  it('returns empty array for custom type', () => {
+    const ref = new Date(2026, 5, 15)
+    const periods = getCompletedPeriods('custom', ref)
+    expect(periods).toEqual([])
+  })
+})
+
+describe('resolvePeriod (custom)', () => {
+  it('returns error for custom period type', () => {
+    const result = resolvePeriod('custom', new Date(2025, 0, 1), null)
+    expect(result.error).toContain('Custom period type is not supported via API')
+    expect(result.period).toBeNull()
   })
 })

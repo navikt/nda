@@ -18,6 +18,7 @@ import type { AuditReadinessCheck, AuditReportSummary } from '~/db/audit-reports
 import { toDateString } from '~/lib/date-utils'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import {
+  buildCustomPeriod,
   findExistingReportForPeriod,
   getCompletedPeriods,
   REPORT_PERIOD_TYPE_LABELS,
@@ -41,6 +42,11 @@ interface AuditReportGenerateSectionProps {
   pendingJobId: string | null
 }
 
+/** Returns "YYYY-MM" key for a completed monthly period. */
+function monthKey(period: ReportPeriod): string {
+  return toDateString(period.startDate).slice(0, 7)
+}
+
 export function AuditReportGenerateSection({
   appId,
   appUrl,
@@ -56,13 +62,52 @@ export function AuditReportGenerateSection({
   const [periodType, setPeriodType] = useState<ReportPeriodType>('yearly')
   const availablePeriods = getCompletedPeriods(periodType, new Date(), auditStartYear)
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0)
-  const selectedPeriod = availablePeriods[selectedPeriodIndex] || availablePeriods[0]
+
+  // All completed months, used as options for the custom period selectors
+  const completedMonths = getCompletedPeriods('monthly', new Date(), auditStartYear)
+  const latestMonthKey = completedMonths[0] ? monthKey(completedMonths[0]) : ''
+  const earliestMonth = completedMonths.at(-1)
+  const earliestMonthKey = earliestMonth ? monthKey(earliestMonth) : ''
+
+  const [customFromKey, setCustomFromKey] = useState(earliestMonthKey)
+  const [customToKey, setCustomToKey] = useState(latestMonthKey)
+
+  // Re-clamp custom keys if auditStartYear changes and the available months shrink
+  // biome-ignore lint/correctness/useExhaustiveDependencies: completedMonths/keys are derived from auditStartYear
+  useEffect(() => {
+    if (completedMonths.length === 0) return
+    const keys = new Set(completedMonths.map((p) => monthKey(p)))
+    if (!keys.has(customFromKey)) setCustomFromKey(earliestMonthKey)
+    if (!keys.has(customToKey)) setCustomToKey(latestMonthKey)
+  }, [auditStartYear])
+
+  const selectedPeriod: ReportPeriod | undefined = (() => {
+    if (periodType === 'custom') {
+      const fromPeriod = completedMonths.find((p) => monthKey(p) === customFromKey)
+      const toPeriod = completedMonths.find((p) => monthKey(p) === customToKey)
+      if (!fromPeriod || !toPeriod) return undefined
+      return (
+        buildCustomPeriod(
+          fromPeriod.startDate.getFullYear(),
+          fromPeriod.startDate.getMonth(),
+          toPeriod.startDate.getFullYear(),
+          toPeriod.startDate.getMonth(),
+        ) ?? undefined
+      )
+    }
+    return availablePeriods[selectedPeriodIndex] || availablePeriods[0]
+  })()
 
   const existingReportForPeriod = selectedPeriod ? findExistingReportForPeriod(auditReports, selectedPeriod) : undefined
   const [supersedeReason, setSupersedeReason] = useState('')
 
   // Reset supersede reason when period selection changes
-  const currentPeriodKey = selectedPeriod ? `${selectedPeriod.type}:${toDateString(selectedPeriod.startDate)}` : ''
+  // For custom periods the key must include period_end — same start, different end = different period
+  const currentPeriodKey = selectedPeriod
+    ? selectedPeriod.type === 'custom'
+      ? `${selectedPeriod.type}:${toDateString(selectedPeriod.startDate)}:${toDateString(selectedPeriod.endDate)}`
+      : `${selectedPeriod.type}:${toDateString(selectedPeriod.startDate)}`
+    : ''
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset side-effect on period change
   useEffect(() => {
     setSupersedeReason('')
@@ -103,7 +148,60 @@ export function AuditReportGenerateSection({
             ))}
           </Select>
 
-          {availablePeriods.length > 0 ? (
+          {periodType === 'custom' ? (
+            <>
+              <Select
+                label="Fra og med"
+                value={customFromKey}
+                onChange={(e) => {
+                  const newFrom = e.target.value
+                  setCustomFromKey(newFrom)
+                  if (customToKey < newFrom) setCustomToKey(newFrom)
+                }}
+                size="small"
+                style={{ minWidth: '180px' }}
+                disabled={completedMonths.length === 0}
+              >
+                {completedMonths.length === 0 ? (
+                  <option value="">Ingen fullførte måneder</option>
+                ) : (
+                  [...completedMonths].reverse().map((period) => {
+                    const key = monthKey(period)
+                    return (
+                      <option key={key} value={key}>
+                        {period.label}
+                      </option>
+                    )
+                  })
+                )}
+              </Select>
+              <Select
+                label="Til og med"
+                value={customToKey}
+                onChange={(e) => {
+                  const newTo = e.target.value
+                  setCustomToKey(newTo)
+                  if (customFromKey > newTo) setCustomFromKey(newTo)
+                }}
+                size="small"
+                style={{ minWidth: '180px' }}
+                disabled={completedMonths.length === 0}
+              >
+                {completedMonths.length === 0 ? (
+                  <option value="">Ingen fullførte måneder</option>
+                ) : (
+                  [...completedMonths].reverse().map((period) => {
+                    const key = monthKey(period)
+                    return (
+                      <option key={key} value={key}>
+                        {period.label}
+                      </option>
+                    )
+                  })
+                )}
+              </Select>
+            </>
+          ) : availablePeriods.length > 0 ? (
             <Select
               label="Periode"
               value={String(selectedPeriodIndex)}
