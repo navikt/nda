@@ -127,8 +127,8 @@ importers:
         specifier: ^10.4.4
         version: 10.4.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(esbuild@0.28.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.60.1)(storybook@10.4.4(@testing-library/dom@10.4.1)(@types/react@19.2.17)(prettier@3.8.4)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.3)(vite@7.3.2(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
       '@testcontainers/postgresql':
-        specifier: ^12.0.1
-        version: 12.0.1
+        specifier: ^12.0.2
+        version: 12.0.2
       '@types/compression':
         specifier: ^1.8.1
         version: 1.8.1
@@ -1865,8 +1865,8 @@ packages:
     resolution: {integrity: sha512-r5bClKrcIusDoo049dSL8CawnHR6mRdDwhlQuIgZRNty68q0x8k3Lf1BtPAMxRf/GgnHBnIO4ujd3+GQdLWzxQ==}
     engines: {node: '>=16.0.0'}
 
-  '@testcontainers/postgresql@12.0.1':
-    resolution: {integrity: sha512-6SyyduUM6lTAo4UwKG1aCochP6wTe0k7/W/m5uODZQMUrV3STk6/28Km3474JLGZdw/P793BUEF2IeU7rDyoEg==}
+  '@testcontainers/postgresql@12.0.2':
+    resolution: {integrity: sha512-dHBi6H2+op11hd2EwSdsEKJpf0BTHvtOkNoh/CBLxFrla1kTIqsm3se4CuMma7+yraIdEblW91sSaH9xeV6UOA==}
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -6078,7 +6078,7 @@ snapshots:
 
   '@tabby_ai/hijri-converter@1.0.5': {}
 
-  '@testcontainers/postgresql@12.0.1':
+  '@testcontainers/postgresql@12.0.2':
     dependencies:
       testcontainers: 12.0.2
     transitivePeerDependencies:
