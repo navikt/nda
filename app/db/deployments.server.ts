@@ -115,6 +115,7 @@ export interface GitHubPRData {
     submitted_at: string
   }>
   checks_passed: boolean | null
+  checks_ref?: 'merge_commit' | 'head' | null // Which SHA the checks were fetched for
   checks: Array<{
     id?: number
     name: string

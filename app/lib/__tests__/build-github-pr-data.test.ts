@@ -301,4 +301,81 @@ describe('buildGithubPrDataFromSnapshots', () => {
       merge_method: 'squash',
     })
   })
+
+  describe('checks_ref derivation', () => {
+    const makeCheckRun = (headSha?: string) => ({
+      id: 1,
+      name: 'build',
+      status: 'completed' as const,
+      conclusion: 'success',
+      startedAt: null,
+      completedAt: null,
+      ...(headSha !== undefined ? { headSha } : {}),
+    })
+
+    it('returns merge_commit when first check headSha matches mergeCommitSha', () => {
+      const mergeChecks: PrChecks = {
+        conclusion: 'success',
+        checkRuns: [makeCheckRun('merge789')],
+        statuses: [],
+      }
+      const result = buildGithubPrDataFromSnapshots(metadata, null, null, mergeChecks, null)
+      expect(result.checks_ref).toBe('merge_commit')
+    })
+
+    it('returns head when first check headSha matches headSha (feature branch)', () => {
+      const branchChecks: PrChecks = {
+        conclusion: 'success',
+        checkRuns: [makeCheckRun('def456')],
+        statuses: [],
+      }
+      const result = buildGithubPrDataFromSnapshots(metadata, null, null, branchChecks, null)
+      expect(result.checks_ref).toBe('head')
+    })
+
+    it('returns null when headSha matches neither mergeCommitSha nor headSha', () => {
+      const unknownChecks: PrChecks = {
+        conclusion: 'success',
+        checkRuns: [makeCheckRun('unknown999')],
+        statuses: [],
+      }
+      const result = buildGithubPrDataFromSnapshots(metadata, null, null, unknownChecks, null)
+      expect(result.checks_ref).toBeNull()
+    })
+
+    it('returns null when checks is null', () => {
+      const result = buildGithubPrDataFromSnapshots(metadata, null, null, null, null)
+      expect(result.checks_ref).toBeNull()
+    })
+
+    it('returns null when checkRuns is empty', () => {
+      const emptyChecks: PrChecks = { conclusion: null, checkRuns: [], statuses: [] }
+      const result = buildGithubPrDataFromSnapshots(metadata, null, null, emptyChecks, null)
+      expect(result.checks_ref).toBeNull()
+    })
+
+    it('returns null when PR has no mergeCommitSha (open PR)', () => {
+      const openPrMetadata: PrMetadata = { ...metadata, mergeCommitSha: null, mergedAt: null }
+      const branchChecks: PrChecks = {
+        conclusion: 'success',
+        checkRuns: [makeCheckRun('def456')],
+        statuses: [],
+      }
+      const result = buildGithubPrDataFromSnapshots(openPrMetadata, null, null, branchChecks, null)
+      expect(result.checks_ref).toBeNull()
+    })
+
+    it('skips check runs without headSha and uses the first one that has it', () => {
+      const mixedChecks: PrChecks = {
+        conclusion: 'success',
+        checkRuns: [
+          makeCheckRun(), // no headSha
+          makeCheckRun('merge789'),
+        ],
+        statuses: [],
+      }
+      const result = buildGithubPrDataFromSnapshots(metadata, null, null, mixedChecks, null)
+      expect(result.checks_ref).toBe('merge_commit')
+    })
+  })
 })

@@ -8,7 +8,7 @@ import {
   XMarkIcon,
   XMarkOctagonIcon,
 } from '@navikt/aksel-icons'
-import { Accordion, BodyShort, Box, Detail, HStack, Tag, VStack } from '@navikt/ds-react'
+import { Accordion, Alert, BodyShort, Box, Detail, HStack, Tag, VStack } from '@navikt/ds-react'
 import { CheckAnnotations } from '~/components/CheckAnnotations'
 import { CheckLogViewer } from '~/components/CheckLogViewer'
 import { ExternalLink } from '~/components/ExternalLink'
@@ -94,6 +94,12 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
           <Accordion.Header>GitHub Checks ({githubPrData.checks.length})</Accordion.Header>
           <Accordion.Content>
             <VStack gap="space-12">
+              {githubPrData.checks_ref === 'head' && githubPrData.merged_at && (
+                <Alert variant="info" size="small">
+                  Sjekkene er hentet fra PR-branchen. Fra 20. juni 2026 hentes sjekker primært fra merge-commiten på
+                  main når tilgjengelig. For eldre data vises sjekker fra PR-branchen.
+                </Alert>
+              )}
               {githubPrData.checks.map((check) => {
                 const isSuccess = check.conclusion === 'success'
                 const isFailure =
