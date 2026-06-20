@@ -913,11 +913,14 @@ export async function getDetailedPullRequestInfo(
     }> = []
 
     try {
-      const checksResponse = await client.checks.listForRef({
-        owner,
-        repo,
-        ref: pr.head.sha,
-      })
+      // Prefer merge commit checks (what was actually built on main) when available
+      const primaryRef = pr.merge_commit_sha ?? pr.head.sha
+      let checksResponse = await client.checks.listForRef({ owner, repo, ref: primaryRef })
+
+      // Fall back to feature branch head if merge commit has no checks
+      if (checksResponse.data.total_count === 0 && pr.merge_commit_sha) {
+        checksResponse = await client.checks.listForRef({ owner, repo, ref: pr.head.sha })
+      }
 
       if (checksResponse.data.total_count > 0) {
         // All checks must have conclusion 'success' or 'skipped'

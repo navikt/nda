@@ -7,6 +7,26 @@
 import type { GitHubPRData } from '~/db/deployments.server'
 import type { PrChecks, PrComment, PrCommit, PrMetadata, PrReview } from './types'
 
+/**
+ * Determines which SHA the checks were fetched for by comparing a check run's
+ * headSha against the PR's merge commit SHA and head SHA.
+ * Uses the first check run that actually has headSha populated.
+ * Works for both freshly fetched and cached check data.
+ */
+function deriveChecksRef(
+  checks: PrChecks | null,
+  mergeCommitSha: string | null | undefined,
+  headSha: string,
+): 'merge_commit' | 'head' | null {
+  if (!checks || checks.checkRuns.length === 0) return null
+  if (!mergeCommitSha) return null // open PR — not relevant
+  const refSha = checks.checkRuns.find((cr) => cr.headSha)?.headSha
+  if (!refSha) return null
+  if (refSha === mergeCommitSha) return 'merge_commit'
+  if (refSha === headSha) return 'head'
+  return null
+}
+
 export function buildGithubPrDataFromSnapshots(
   metadata: PrMetadata,
   reviews: PrReview[] | null,
@@ -54,6 +74,7 @@ export function buildGithubPrDataFromSnapshots(
     requested_teams: (metadata.requestedTeams ?? []).map((t) => ({ name: t.name, slug: t.slug })),
     milestone: metadata.milestone ?? null,
     checks_passed: metadata.checksPassed ?? (checks ? checks.conclusion === 'success' : null),
+    checks_ref: deriveChecksRef(checks, metadata.mergeCommitSha, metadata.headSha),
     reviewers: (reviews ?? []).map((r) => ({
       username: r.username,
       avatar_url: '',
