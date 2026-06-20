@@ -63,7 +63,6 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
         authorDate: '2026-01-15T10:00:00Z',
         committerDate: '2026-01-15T10:00:00Z',
       })
-      // Review between the two commits — only before the LAST one
       const review = makeReview({ submittedAt: '2026-01-12T10:00:00Z' })
 
       const result = verifyFourEyesFromPrData({
@@ -82,7 +81,6 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
         authorDate: '2026-01-10T10:00:00Z',
         committerDate: '2026-01-15T10:00:00Z', // Later
       })
-      // Review after authorDate but before committerDate
       const review = makeReview({ submittedAt: '2026-01-12T10:00:00Z' })
 
       const result = verifyFourEyesFromPrData({
@@ -90,7 +88,6 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
         commits: [commit],
         baseBranch: 'main',
       })
-      // Should NOT pass because committerDate is later than the review
       expect(result.hasFourEyes).toBe(false)
     })
 
@@ -99,7 +96,6 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
         authorDate: '2026-01-15T10:00:00Z', // Later
         committerDate: '2026-01-10T10:00:00Z',
       })
-      // Review after committerDate but before authorDate
       const review = makeReview({ submittedAt: '2026-01-12T10:00:00Z' })
 
       const result = verifyFourEyesFromPrData({
@@ -140,7 +136,6 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
         committerDate: '2026-01-15T10:00:00Z',
         isMergeCommit: true,
       })
-      // Review after real commit but before merge commit
       const review = makeReview({ submittedAt: '2026-01-14T12:00:00Z' })
 
       const result = verifyFourEyesFromPrData({
@@ -160,7 +155,6 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
         authorDate: '2026-01-15T10:00:00Z',
         committerDate: '2026-01-15T10:00:00Z',
       })
-      // Approval before last commit
       const review = makeReview({ submittedAt: '2026-01-14T10:00:00Z' })
 
       const result = verifyFourEyesFromPrData({

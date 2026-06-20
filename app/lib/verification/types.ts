@@ -1,58 +1,12 @@
-/**
- * Types for the verification system
- *
- * This module defines all types used for:
- * - Fetching data from GitHub
- * - Storing data in database snapshots
- * - Stateless verification logic
- * - Verification results
- */
-
-// =============================================================================
-// Schema Version
-// =============================================================================
-
-/**
- * Current schema version for GitHub data snapshots.
- * Increment this when the data structure changes and re-fetching is needed.
- */
 export const CURRENT_SCHEMA_VERSION = 4
 
-// =============================================================================
-// Exhaustive Check Helper
-// =============================================================================
-
-/**
- * Helper function for exhaustive switch checks.
- * If TypeScript complains that the argument is not of type `never`,
- * it means you've forgotten to handle a case in your switch statement.
- *
- * @example
- * switch (mode) {
- *   case 'off': return ...
- *   case 'dependabot_only': return ...
- *   case 'all': return ...
- *   default: return assertNever(mode) // Error if new mode added but not handled
- * }
- */
 export function assertNever(value: never, message?: string): never {
   throw new Error(message ?? `Unhandled value: ${JSON.stringify(value)}`)
 }
 
-// =============================================================================
-// Implicit Approval Mode
-// =============================================================================
-
-/**
- * All valid implicit approval modes.
- * Add new modes here - TypeScript will enforce handling in all switch statements.
- */
 export const IMPLICIT_APPROVAL_MODES = ['off', 'dependabot_only', 'all'] as const
 export type ImplicitApprovalMode = (typeof IMPLICIT_APPROVAL_MODES)[number]
 
-/**
- * Human-readable labels for implicit approval modes
- */
 const _IMPLICIT_APPROVAL_MODE_LABELS: Record<ImplicitApprovalMode, string> = {
   off: 'Av',
   dependabot_only: 'Kun Dependabot',
@@ -60,9 +14,6 @@ const _IMPLICIT_APPROVAL_MODE_LABELS: Record<ImplicitApprovalMode, string> = {
 }
 export const IMPLICIT_APPROVAL_MODE_LABELS = _IMPLICIT_APPROVAL_MODE_LABELS
 
-/**
- * Descriptions for implicit approval modes
- */
 const _IMPLICIT_APPROVAL_MODE_DESCRIPTIONS: Record<ImplicitApprovalMode, string> = {
   off: 'Ingen implisitt godkjenning - krever eksplisitt review-godkjenning',
   dependabot_only: 'Dependabot-PRer med kun Dependabot-commits godkjennes når merget av annen bruker',
@@ -74,14 +25,6 @@ export function isImplicitApprovalMode(value: string): value is ImplicitApproval
   return IMPLICIT_APPROVAL_MODES.includes(value as ImplicitApprovalMode)
 }
 
-// =============================================================================
-// Verification Status
-// =============================================================================
-
-/**
- * All valid verification statuses.
- * Add new statuses here - TypeScript will enforce handling in all switch statements.
- */
 export const VERIFICATION_STATUSES = [
   'approved',
   'implicitly_approved',
@@ -96,9 +39,6 @@ export const VERIFICATION_STATUSES = [
 ] as const
 export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number]
 
-/**
- * Human-readable labels for verification statuses
- */
 const _VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   approved: 'Godkjent',
   implicitly_approved: 'Implisitt godkjent',
@@ -112,27 +52,9 @@ const _VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   error: 'Feil',
 }
 
-// =============================================================================
-// Repository Status
-// =============================================================================
-
-/**
- * Status of the repository relative to the monitored application.
- * - active: The repo is the current, approved source
- * - historical: The repo was previously used but has been superseded
- * - pending_approval: The repo was detected but not yet approved
- * - unknown: No repository record exists for this deployment's repo
- */
 export const REPOSITORY_STATUSES = ['active', 'historical', 'pending_approval', 'unknown'] as const
 export type RepositoryStatus = (typeof REPOSITORY_STATUSES)[number]
 
-// =============================================================================
-// Unverified Commit Reasons
-// =============================================================================
-
-/**
- * All valid reasons for unverified commits.
- */
 export const UNVERIFIED_REASONS = [
   'no_pr',
   'no_approved_reviews',
@@ -141,9 +63,6 @@ export const UNVERIFIED_REASONS = [
 ] as const
 export type UnverifiedReason = (typeof UNVERIFIED_REASONS)[number]
 
-/**
- * Human-readable labels for unverified reasons
- */
 const _UNVERIFIED_REASON_LABELS: Record<UnverifiedReason, string> = {
   no_pr: 'Ingen PR funnet',
   no_approved_reviews: 'Ingen godkjent review',
@@ -152,10 +71,6 @@ const _UNVERIFIED_REASON_LABELS: Record<UnverifiedReason, string> = {
 }
 export const UNVERIFIED_REASON_LABELS = _UNVERIFIED_REASON_LABELS
 
-/**
- * Longer human-readable explanations for each unverified reason.
- * Used on the deployment detail page to help users understand what happened.
- */
 export const UNVERIFIED_REASON_DESCRIPTIONS: Record<UnverifiedReason, string> = {
   no_pr: 'Committen ble pushet direkte til main uten en pull request.',
   no_approved_reviews: 'Pull requesten har ingen godkjent code review.',
@@ -164,37 +79,13 @@ export const UNVERIFIED_REASON_DESCRIPTIONS: Record<UnverifiedReason, string> = 
   pr_not_approved: 'Pull requesten er ikke godkjent.',
 }
 
-// =============================================================================
-// Approval Methods
-// =============================================================================
-
-/**
- * All valid approval methods.
- */
 export const APPROVAL_METHODS = ['pr_review', 'implicit', 'base_merge', 'no_changes', 'pending_baseline'] as const
 export type ApprovalMethod = (typeof APPROVAL_METHODS)[number] | null
 
-// =============================================================================
-// Data Types for Granular Storage
-// =============================================================================
-
-/**
- * Types of PR data that can be fetched/stored separately
- */
 export type PrDataType = 'metadata' | 'reviews' | 'commits' | 'comments' | 'checks' | 'files'
 
-/**
- * Types of commit data that can be fetched/stored separately
- */
 export type CommitDataType = 'metadata' | 'status' | 'checks' | 'prs'
 
-// =============================================================================
-// Snapshot Types (Database Storage)
-// =============================================================================
-
-/**
- * Base interface for all snapshots
- */
 export interface SnapshotBase {
   id: number
   schemaVersion: number
@@ -203,9 +94,6 @@ export interface SnapshotBase {
   githubAvailable: boolean
 }
 
-/**
- * PR data snapshot from database
- */
 export interface PrSnapshot extends SnapshotBase {
   owner: string
   repo: string
@@ -214,9 +102,6 @@ export interface PrSnapshot extends SnapshotBase {
   data: unknown
 }
 
-/**
- * Commit data snapshot from database
- */
 export interface CommitSnapshot extends SnapshotBase {
   owner: string
   repo: string
@@ -225,9 +110,6 @@ export interface CommitSnapshot extends SnapshotBase {
   data: unknown
 }
 
-/**
- * Compare snapshot from database (commits between two SHAs)
- */
 export interface CompareSnapshot extends SnapshotBase {
   owner: string
   repo: string
@@ -236,9 +118,6 @@ export interface CompareSnapshot extends SnapshotBase {
   data: CompareData
 }
 
-/**
- * Data stored in compare snapshots
- */
 export interface CompareSummary {
   status: string
   aheadBy: number
@@ -262,13 +141,6 @@ export interface CompareData {
   }>
 }
 
-// =============================================================================
-// PR Data Types (what's stored in snapshots)
-// =============================================================================
-
-/**
- * PR metadata (stored in 'metadata' snapshot)
- */
 export interface PrMetadata {
   number: number
   title: string
@@ -298,7 +170,6 @@ export interface PrMetadata {
   changedFiles: number
   additions: number
   deletions: number
-  // Extended fields (schema version 2+)
   commentsCount?: number
   reviewCommentsCount?: number
   locked?: boolean
@@ -334,9 +205,6 @@ export interface PrMetadata {
   checksPassed?: boolean | null
 }
 
-/**
- * PR review (stored in 'reviews' snapshot as array)
- */
 export interface PrReview {
   id: number
   username: string
@@ -345,9 +213,6 @@ export interface PrReview {
   body: string | null
 }
 
-/**
- * PR commit (stored in 'commits' snapshot as array)
- */
 export interface PrCommit {
   sha: string
   message: string
@@ -358,9 +223,6 @@ export interface PrCommit {
   parentShas: string[]
 }
 
-/**
- * PR comment (stored in 'comments' snapshot as array)
- */
 export interface PrComment {
   id: number
   username: string
@@ -369,9 +231,6 @@ export interface PrComment {
   updatedAt: string
 }
 
-/**
- * PR check/status (stored in 'checks' snapshot)
- */
 export interface PrChecks {
   conclusion: 'success' | 'failure' | 'neutral' | 'cancelled' | 'timed_out' | 'action_required' | null
   checkRuns: Array<{
@@ -405,51 +264,29 @@ export interface PrChecks {
   }>
 }
 
-// =============================================================================
-// Commit Data Types
-// =============================================================================
-
-// Verification Input (what the stateless verifier receives)
-// =============================================================================
-
-/**
- * Complete input for verifying a deployment
- * This contains ALL data needed - no database/API calls during verification
- */
 export interface VerificationInput {
-  // Deployment info
   deploymentId: number
   commitSha: string
   repository: string
   environmentName: string
   baseBranch: string
 
-  // Repository status (active, historical, pending_approval, unknown)
   repositoryStatus: RepositoryStatus
 
-  // Whether the deployed commit is on the base branch (null = unknown/API error)
   commitOnBaseBranch: boolean | null
 
-  // Actual branch the deployment was made from. Populated for all verified deployments
-  // where branch can be detected: from deployedPr.metadata.headBranch (no extra API call)
-  // or from the GitHub Actions workflow run API (for deployments without a PR).
   detectedBranchName?: string
 
-  // Fallback title derived from the first line of the first commit message in
-  // commitsBetween when there is no associated PR. Stored with precedence:
-  // PR title first, then detectedTitle, then keep existing value.
   detectedTitle?: string
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
 
-  // Previous deployment (for determining commit range)
   previousDeployment: {
     id: number
     commitSha: string
     createdAt: string
   } | null
 
-  // The deployed commit's PR (if any)
   deployedPr: {
     number: number
     url: string
@@ -458,7 +295,6 @@ export interface VerificationInput {
     commits: PrCommit[]
   } | null
 
-  // All commits between previous and current deployment
   commitsBetween: Array<{
     sha: string
     message: string
@@ -467,7 +303,6 @@ export interface VerificationInput {
     isMergeCommit: boolean
     parentShas: string[]
     htmlUrl: string
-    // PR info for this commit (if found)
     pr: {
       number: number
       title: string
@@ -477,47 +312,31 @@ export interface VerificationInput {
       baseBranch: string
       rebaseMatched?: boolean
     } | null
-    // Base branches of PRs associated with this commit but NOT matching the
-    // configured base branch. Populated when the commit has PRs that were
-    // filtered out because their `base.ref` differs from the app's
-    // `default_branch`. Used to surface a branch-mismatch warning.
     mismatchedBaseBranches?: string[]
     mismatchedPrNumbers?: number[]
   }>
 
-  // Compare metadata for the deployment's commit range
   compareSummary: CompareSummary | null
 
-  // Metadata about data freshness
   dataFreshness: {
     deployedPrFetchedAt: Date | null
     commitsFetchedAt: Date | null
     schemaVersion: number
   }
 
-  // Whether the GitHub compare API failed (404, network error, etc.)
   compareFailed?: boolean
 
-  // Nearby deployment with the same commit SHA that has approved status (within ±30 min)
-  // Used to handle rapid-fire deploys where GitHub compare transiently returns 0 commits
   nearbyApprovedDeployWithSameCommit?: {
     deploymentId: number
     status: string
   }
 
-  // Nearby deployment with ANY approved status (within ±30 min), regardless of commit SHA.
-  // Used to handle superseded deploys: when compare returns 0 commits between different SHAs,
-  // and a nearby approved deploy exists, this deploy's commit is an ancestor of the approved one.
   nearbyApprovedDeploy?: {
     deploymentId: number
     commitSha: string
     status: string
   }
 
-  // Branch mismatch warning: aggregated across the deployed PR and all
-  // commitsBetween. Set when one or more PRs targeting `default_branch` were
-  // not found, but PRs targeting a DIFFERENT base branch exist for the same
-  // commit(s). Indicates a misconfigured `monitored_applications.default_branch`.
   branchMismatch?: {
     expectedBranch: string
     detectedBranches: string[]
@@ -525,26 +344,14 @@ export interface VerificationInput {
   }
 }
 
-/**
- * Settings for implicit approval (single-author PRs, etc.)
- */
 export interface ImplicitApprovalSettings {
   mode: ImplicitApprovalMode
 }
 
-// =============================================================================
-// Verification Result (what the stateless verifier returns)
-// =============================================================================
-
-/**
- * Result from verifying a deployment
- */
 export interface VerificationResult {
-  // Overall result
   hasFourEyes: boolean
   status: VerificationStatus
 
-  // Details about the deployed PR
   deployedPr: {
     number: number
     url: string
@@ -552,44 +359,28 @@ export interface VerificationResult {
     author: string
   } | null
 
-  // Unverified commits (if any)
   unverifiedCommits: UnverifiedCommit[]
 
-  // Approval details
   approvalDetails: {
     method: ApprovalMethod
     approvers: string[]
     reason: string
   }
 
-  // Metadata
   verifiedAt: Date
   schemaVersion: number
 
-  // Branch mismatch warning (passthrough from VerificationInput).
-  // Populated by the orchestrator (`runVerification`), not by `verifyDeployment`,
-  // since mismatch detection is a data-fetch concern, not a verification decision.
   branchMismatch?: {
     expectedBranch: string
     detectedBranches: string[]
     prNumbers: number[]
   }
 
-  // Actual branch the deployment was made from. Populated for all verified deployments
-  // where branch can be detected: from deployedPr.metadata.headBranch (no extra API call)
-  // or from the GitHub Actions workflow run API (for deployments without a PR).
-  // Passthrough from VerificationInput; populated by the orchestrator.
   detectedBranchName?: string
 
-  // Fallback title from the first line of the first commit message when no PR is associated.
-  // Stored with precedence: PR title first, then detectedTitle, then keep existing value.
-  // Passthrough from VerificationInput; populated by the orchestrator.
   detectedTitle?: string
 }
 
-/**
- * An unverified commit
- */
 export interface UnverifiedCommit {
   sha: string
   message: string
@@ -599,10 +390,3 @@ export interface UnverifiedCommit {
   prNumber: number | null
   reason: UnverifiedReason
 }
-
-// Note: UnverifiedReason and VerificationStatus are defined at the top of this file
-// using const arrays for exhaustive checking support
-
-// =============================================================================
-// Verification Run (stored in database)
-// =============================================================================

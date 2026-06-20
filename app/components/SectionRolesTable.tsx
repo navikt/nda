@@ -25,10 +25,6 @@ const ROLE_LABELS: Record<SectionRole, string> = {
   leveranseleder: 'Leveranseleder',
 }
 
-/**
- * Section role assignments table with assign/remove functionality.
- * Used on the admin section roles page.
- */
 export function SectionRolesTable({
   sections,
   assignments,

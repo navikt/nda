@@ -1,23 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-/**
- * Tests for commit verification when commits are pushed directly to main.
- *
- * Scenario: Accidental merge to main followed by immediate revert
- * - User accidentally merges an unapproved PR (#18196) directly to main
- * - User immediately pushes a revert commit directly to main
- * - Later, an approved PR (#18220) is merged to main
- *
- * Expected behavior:
- * - Commits from unapproved PR (#18196) should be unverified
- * - Direct push revert commit should be unverified (no PR)
- * - Commits in approved PR (#18220) should be verified
- *
- * The key insight: Commits with their own unapproved PR should NOT be
- * "covered" by a later approved PR. Each commit needs its own approval.
- */
-
-// Test data based on real scenario (anonymized)
 const COMMITS_BETWEEN_DEPLOYMENTS = [
   {
     sha: 'edf1b1ff84ae3e508fa989c189a62ecbf44dd5aa',
@@ -77,7 +59,6 @@ const COMMITS_BETWEEN_DEPLOYMENTS = [
   },
 ]
 
-// Approved PR that was deployed
 const APPROVED_PR = {
   number: 18220,
   title: 'Feature: Approved changes',
@@ -93,7 +74,6 @@ const APPROVED_PR = {
   reviews: [{ user: 'reviewer-c', state: 'APPROVED', submitted_at: '2026-01-26T10:50:00Z' }],
 }
 
-// Unapproved PR that was accidentally merged
 const UNAPPROVED_PR = {
   number: 18196,
   title: 'Feature: Unapproved changes',
@@ -105,64 +85,50 @@ const UNAPPROVED_PR = {
   reviews: [], // No reviews!
 }
 
-// Simulate PR lookup by commit SHA
 function getPRForCommit(sha: string, baseBranch: string): typeof APPROVED_PR | typeof UNAPPROVED_PR | null {
-  // Check if commit is in approved PR
   if (APPROVED_PR.commits.some((c) => sha.startsWith(c.sha.substring(0, 7)))) {
     if (APPROVED_PR.base_ref === baseBranch) {
       return APPROVED_PR
     }
   }
 
-  // Check if commit is in unapproved PR
   if (UNAPPROVED_PR.commits.some((c) => sha.startsWith(c.sha.substring(0, 7)))) {
     if (UNAPPROVED_PR.base_ref === baseBranch) {
       return UNAPPROVED_PR
     }
   }
 
-  // Direct push - no PR
   return null
 }
 
-// Simulate PR approval check
 function isPRApproved(pr: typeof APPROVED_PR | typeof UNAPPROVED_PR): boolean {
   return pr.reviews.some((r) => r.state === 'APPROVED')
 }
 
-// Simulate commit verification logic (matches sync.server.ts behavior)
 function verifyCommit(
   commit: (typeof COMMITS_BETWEEN_DEPLOYMENTS)[0],
   deployedPR: typeof APPROVED_PR,
   baseBranch: string,
 ): { verified: boolean; reason: string; pr_number: number | null } {
-  // Skip merge commits
   if (commit.parents.length >= 2) {
     return { verified: true, reason: 'merge_commit_skipped', pr_number: null }
   }
 
-  // Fast path: commit is directly in deployed PR and PR is approved
   const deployedPrCommitShas = new Set(deployedPR.commits.map((c) => c.sha))
   if (deployedPrCommitShas.has(commit.sha) && isPRApproved(deployedPR)) {
     return { verified: true, reason: 'in_approved_pr', pr_number: deployedPR.number }
   }
 
-  // Look up PR for this commit
   const pr = getPRForCommit(commit.sha, baseBranch)
 
   if (!pr) {
-    // No PR found - direct push to main
     return { verified: false, reason: 'no_pr', pr_number: null }
   }
 
-  // Check if PR is approved
   if (isPRApproved(pr)) {
     return { verified: true, reason: 'pr_approved', pr_number: pr.number }
   }
 
-  // PR exists but is not approved
-  // IMPORTANT: We do NOT cover this with deployed PR!
-  // Each commit needs its own approved PR.
   return { verified: false, reason: 'pr_not_approved', pr_number: pr.number }
 }
 
@@ -266,17 +232,12 @@ describe('Direct Push and Unapproved PR Verification', () => {
 
       const unverifiedCommits = results.filter((r) => !r.verified)
 
-      // Two from unapproved PR
       expect(unverifiedCommits.filter((c) => c.reason === 'pr_not_approved')).toHaveLength(2)
 
-      // One direct push (no PR)
       expect(unverifiedCommits.filter((c) => c.reason === 'no_pr')).toHaveLength(1)
     })
 
     it('should NOT cover unapproved commits with deployed PR approval', () => {
-      // This is the key test - even though PR #18220 is approved,
-      // commits from PR #18196 and direct pushes should remain unverified
-
       const commitFromUnapprovedPR = COMMITS_BETWEEN_DEPLOYMENTS.find((c) => c.sha.startsWith('edf1b1f'))
       const directPushCommit = COMMITS_BETWEEN_DEPLOYMENTS.find((c) => c.sha.startsWith('55a83e7'))
 
@@ -287,11 +248,9 @@ describe('Direct Push and Unapproved PR Verification', () => {
       const result1 = verifyCommit(commitFromUnapprovedPR, APPROVED_PR, 'main')
       const result2 = verifyCommit(directPushCommit, APPROVED_PR, 'main')
 
-      // Even though APPROVED_PR is approved, these commits should be unverified
       expect(result1.verified).toBe(false)
       expect(result2.verified).toBe(false)
 
-      // They should NOT have reason "covered_by_merge_pr"
       expect(result1.reason).not.toBe('covered_by_merge_pr')
       expect(result2.reason).not.toBe('covered_by_merge_pr')
     })

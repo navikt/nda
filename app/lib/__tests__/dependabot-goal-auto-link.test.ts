@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
-// Mock DB modules
 vi.mock('~/db/boards.server', () => ({
   loadDependabotTargets: vi.fn(),
 }))

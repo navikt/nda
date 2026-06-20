@@ -33,11 +33,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     (d) => isPendingStatus(d.four_eyes_status ?? 'unknown') || d.four_eyes_status === 'error',
   ).length
 
-  // Count verification diffs across all apps
   const diffResult = await pool.query('SELECT COUNT(*) as count FROM verification_diffs')
   const diffCount = parseInt(diffResult.rows[0].count, 10)
 
-  // Count soft-deleted rows across the audit-relevant tables.
   const softDeletedResult = await pool.query<{ total: string }>(`
     SELECT (
       (SELECT COUNT(*) FROM user_github_accounts WHERE deleted_at IS NOT NULL) +
@@ -50,7 +48,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   `)
   const softDeletedCount = parseInt(softDeletedResult.rows[0].total, 10)
 
-  // Count title mismatches
   const titleMismatchResult = await pool.query<{ count: string }>(`
     SELECT COUNT(*)::text AS count
     FROM deployments
@@ -62,7 +59,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   `)
   const titleMismatchCount = parseInt(titleMismatchResult.rows[0].count, 10)
 
-  // Count baseline deployments missing an approver
   const baselineNoApproverResult = await pool.query<{ count: string }>(`
     SELECT COUNT(*)::text AS count
     FROM deployments d

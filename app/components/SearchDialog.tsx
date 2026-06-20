@@ -75,11 +75,9 @@ export function SearchDialog() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Keep refs in sync with state
   resultsRef.current = results
   selectedIndexRef.current = selectedIndex
 
-  // Close dialog on navigation
   // biome-ignore lint/correctness/useExhaustiveDependencies: We want this to run when pathname changes
   useEffect(() => {
     setOpen(false)
@@ -87,7 +85,6 @@ export function SearchDialog() {
     setResults([])
   }, [location.pathname])
 
-  // Keyboard shortcut to open dialog (Cmd/Ctrl + K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -99,7 +96,6 @@ export function SearchDialog() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // Arrow key navigation when dialog is open
   useEffect(() => {
     if (!open) return
 
@@ -125,7 +121,6 @@ export function SearchDialog() {
     return () => window.removeEventListener('keydown', handleArrowKeys)
   }, [open, navigate])
 
-  // Debounced search
   useEffect(() => {
     if (!query.trim()) {
       setResults([])

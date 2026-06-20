@@ -1,10 +1,3 @@
-/**
- * Integration test: getExclusivelyOwnedAppIds.
- *
- * Verifies that the function correctly identifies apps owned by exactly one
- * dev team across all three ownership paths (direct link, nais team slug,
- * application group).
- */
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { getExclusivelyOwnedAppIds } from '../../dev-teams.server'
@@ -79,12 +72,10 @@ describe('getExclusivelyOwnedAppIds', () => {
     const teamB = await seedDevTeam(pool, 'team-b', 'Team B', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'shared-nais', appName: 'shared-app', environment: 'prod' })
 
-    // Team A owns via direct link
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       teamA,
       appId,
     ])
-    // Team B owns via nais team slug
     await pool.query(`INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug) VALUES ($1, $2)`, [
       teamB,
       'shared-nais',
@@ -117,12 +108,10 @@ describe('getExclusivelyOwnedAppIds', () => {
     const exclusiveApp = await seedApp(pool, { teamSlug: 'nais-a', appName: 'exclusive', environment: 'prod' })
     const sharedApp = await seedApp(pool, { teamSlug: 'nais-b', appName: 'shared', environment: 'prod' })
 
-    // exclusiveApp owned only by teamA
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       teamA,
       exclusiveApp,
     ])
-    // sharedApp owned by both teams
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $3), ($2, $3)`, [
       teamA,
       teamB,
@@ -140,12 +129,10 @@ describe('getExclusivelyOwnedAppIds', () => {
     const teamB = await seedDevTeam(pool, 'team-b', 'Team B', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'nais-x', appName: 'app1', environment: 'prod' })
 
-    // Team A has active link
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       teamA,
       appId,
     ])
-    // Team B has soft-deleted link
     await pool.query(
       `INSERT INTO dev_team_applications (dev_team_id, monitored_app_id, deleted_at) VALUES ($1, $2, NOW())`,
       [teamB, appId],
@@ -160,12 +147,10 @@ describe('getExclusivelyOwnedAppIds', () => {
     const activeTeam = await seedDevTeam(pool, 'active-team', 'Active', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'nais-x', appName: 'app1', environment: 'prod' })
 
-    // Active team owns via direct link
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       activeTeam,
       appId,
     ])
-    // Create inactive team that also claims ownership via nais slug
     const { rows } = await pool.query<{ id: number }>(
       `INSERT INTO dev_teams (section_id, slug, name, is_active) VALUES ($1, $2, $3, false) RETURNING id`,
       [sectionId, 'inactive-team', 'Inactive'],
@@ -185,12 +170,10 @@ describe('getExclusivelyOwnedAppIds', () => {
     const teamB = await seedDevTeam(pool, 'team-b', 'Team B', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'my-slug', appName: 'app1', environment: 'prod' })
 
-    // Team A active nais team link
     await pool.query(`INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug) VALUES ($1, $2)`, [
       teamA,
       'my-slug',
     ])
-    // Team B soft-deleted nais team link
     await pool.query(
       `INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug, deleted_at) VALUES ($1, $2, NOW())`,
       [teamB, 'my-slug'],
@@ -209,12 +192,10 @@ describe('getExclusivelyOwnedAppIds', () => {
 
     await assignAppToGroup(pool, appId, groupId)
 
-    // Team A active group link
     await pool.query(`INSERT INTO dev_team_application_groups (dev_team_id, application_group_id) VALUES ($1, $2)`, [
       teamA,
       groupId,
     ])
-    // Team B soft-deleted group link
     await pool.query(
       `INSERT INTO dev_team_application_groups (dev_team_id, application_group_id, deleted_at) VALUES ($1, $2, NOW())`,
       [teamB, groupId],
@@ -229,7 +210,6 @@ describe('getExclusivelyOwnedAppIds', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'my-nais', appName: 'app1', environment: 'prod' })
 
-    // Same team owns via direct link AND nais team
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       teamId,
       appId,
@@ -258,13 +238,11 @@ describe('getExclusivelyOwnedAppIds', () => {
     const teamB = await seedDevTeam(pool, 'team-b', 'Team B', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'nais-x', appName: 'app1', environment: 'prod' })
 
-    // Only Team B owns the app
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       teamB,
       appId,
     ])
 
-    // Team A queries — should NOT get this app as exclusive
     const result = await getExclusivelyOwnedAppIds(teamA, [appId])
     expect(result.has(appId)).toBe(false)
   })

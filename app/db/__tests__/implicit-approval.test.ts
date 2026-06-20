@@ -2,22 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { checkImplicitApproval } from '../../lib/verification/verify'
 import { DEFAULT_IMPLICIT_APPROVAL_SETTINGS, type ImplicitApprovalSettings } from '../app-settings.server'
 
-/**
- * Tests for implicit approval logic.
- *
- * Based on real Dependabot PR data from pensjon-verdande#410:
- * - PR created by: dependabot[bot]
- * - PR merged by: developer-a
- * - Commit SHA: c94209111727c9e9b3e6e65839177f03174c280e
- * - All commits authored by: dependabot[bot]
- *
- * The implicit approval feature allows automatic approval when:
- * - mode='dependabot_only': PR created by Dependabot with only Dependabot commits
- * - mode='all': Merger is not the PR creator AND not the last commit author
- */
-
 describe('checkImplicitApproval', () => {
-  // Test data based on real Dependabot PR (pensjon-verdande#410)
   const DEPENDABOT_PR = {
     prCreator: 'dependabot[bot]',
     mergedBy: 'developer-a',
@@ -27,7 +12,6 @@ describe('checkImplicitApproval', () => {
     title: 'Bump isbot from 5.1.32 to 5.1.33',
   }
 
-  // Test data for a regular human PR
   const HUMAN_PR = {
     prCreator: 'developer-a',
     mergedBy: 'developer-b',
@@ -35,7 +19,6 @@ describe('checkImplicitApproval', () => {
     allCommitAuthors: ['developer-a', 'developer-a'],
   }
 
-  // Test data for a PR where creator also merges
   const SELF_MERGE_PR = {
     prCreator: 'developer-a',
     mergedBy: 'developer-a',
@@ -43,7 +26,6 @@ describe('checkImplicitApproval', () => {
     allCommitAuthors: ['developer-a'],
   }
 
-  // Test data for mixed PR (Dependabot + human commits)
   const MIXED_DEPENDABOT_PR = {
     prCreator: 'dependabot[bot]',
     mergedBy: 'developer-a',
@@ -174,8 +156,6 @@ describe('checkImplicitApproval', () => {
     })
 
     it('should qualify when merger is different but not reviewer', () => {
-      // This tests the core principle: if someone different merges,
-      // they implicitly reviewed it by agreeing to merge
       const result = checkImplicitApproval({
         settings,
         prCreator: 'developer-a',
@@ -212,7 +192,7 @@ describe('checkImplicitApproval', () => {
         lastCommitAuthor: '',
         allCommitAuthors: [],
       })
-      expect(result.qualifies).toBe(true) // Merger is different from both
+      expect(result.qualifies).toBe(true)
     })
 
     it('should handle single commit PR', () => {

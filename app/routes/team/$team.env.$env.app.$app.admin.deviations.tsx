@@ -1,9 +1,3 @@
-/**
- * App-level deviation list page
- *
- * Shows all registered deviations for the app, filterable by status (open/resolved).
- */
-
 import { ExclamationmarkTriangleIcon } from '@navikt/aksel-icons'
 import { Link as AkselLink, BodyShort, Box, Detail, Heading, HStack, Tag, ToggleGroup, VStack } from '@navikt/ds-react'
 import { Link, useLoaderData, useSearchParams } from 'react-router'

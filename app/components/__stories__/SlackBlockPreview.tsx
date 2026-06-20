@@ -8,10 +8,6 @@ interface SlackBlockPreviewProps {
   mode?: 'message' | 'modal'
 }
 
-/**
- * Storybook helper component that renders a "Open in Block Kit Builder" button
- * for a set of Slack Block Kit blocks.
- */
 export function SlackBlockPreview({ blocks, mode = 'message' }: SlackBlockPreviewProps) {
   const url = buildBlockKitBuilderUrl(blocks, mode)
   const tooLong = isUrlTooLong(url)

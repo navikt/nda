@@ -1,12 +1,3 @@
-/**
- * Per-endpoint auth enforcement tests.
- *
- * Verifies that every route in routes.ts is covered by the auth middleware:
- * - Health checks (/api/isalive, /api/isready) are explicitly public
- * - M2M routes (/api/v1/*) have self-managed auth (skipped by middleware)
- * - All other routes require a valid JWT (middleware blocks without token)
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockJwtVerify = vi.fn()
@@ -44,16 +35,10 @@ function mockRes() {
   }
 }
 
-/**
- * All routes registered in app/routes.ts.
- * Each entry is a representative URL for the route pattern.
- */
 const ALL_ROUTES: { path: string; description: string }[] = [
-  // Health checks (should be public)
   { path: '/api/isalive', description: 'Health: isalive' },
   { path: '/api/isready', description: 'Health: isready' },
 
-  // API routes outside layout
   { path: '/api/reports/generate', description: 'API: reports generate' },
   { path: '/api/reports/download', description: 'API: reports download' },
   { path: '/api/reports/status', description: 'API: reports status' },
@@ -61,7 +46,6 @@ const ALL_ROUTES: { path: string; description: string }[] = [
   { path: '/api/checks/logs', description: 'API: check logs' },
   { path: '/api/checks/annotations', description: 'API: check annotations' },
 
-  // M2M route (self-authenticated)
   { path: '/api/v1/apps/team/prod/myapp/verification-summary', description: 'M2M: verification summary' },
   { path: '/api/v1/apps/team/prod/myapp/audit-reports', description: 'M2M: audit reports list' },
   { path: '/api/v1/apps/team/prod/myapp/audit-reports/status', description: 'M2M: audit reports status' },
@@ -75,7 +59,6 @@ const ALL_ROUTES: { path: string; description: string }[] = [
     description: 'M2M: audit reports download',
   },
 
-  // Browser routes inside layout
   { path: '/', description: 'Home' },
   { path: '/my-teams', description: 'My teams' },
   { path: '/my-apps', description: 'My apps' },

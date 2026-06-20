@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock jose before importing the middleware
 const mockJwtVerify = vi.fn()
 vi.mock('jose', () => ({
   createRemoteJWKSet: vi.fn(() => 'mock-jwks'),
@@ -14,7 +13,6 @@ import {
   SELF_AUTHENTICATED_PREFIXES,
 } from '../../../auth-middleware'
 
-/** Helper to create a mock Express request */
 function mockReq(overrides: { path?: string; originalUrl?: string; accept?: string; authorization?: string } = {}) {
   return {
     path: overrides.path ?? '/',
@@ -26,7 +24,6 @@ function mockReq(overrides: { path?: string; originalUrl?: string; accept?: stri
   } as import('express').Request
 }
 
-/** Helper to create a mock Express response */
 function mockRes() {
   const res = {
     status: vi.fn().mockReturnThis(),

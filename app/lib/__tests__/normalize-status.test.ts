@@ -1,16 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeStatus } from '../verification/compute-diffs.server'
 
-/**
- * Tests for verification status normalization.
- *
- * WHY: The verification diff system compares old (stored) status with newly computed status.
- * Some statuses are equivalent (approved_pr ≡ approved, pending_approval ≡ pending).
- * If this normalization is wrong, the diff system reports false positives ("status changed!")
- * when nothing actually changed, or misses real changes. This creates noise in the
- * verification dashboard that undermines trust in the tool.
- */
-
 describe('normalizeStatus — maps equivalent statuses to canonical form for diff comparison', () => {
   it('normalizes approved_pr → approved (same meaning, different name)', () => {
     expect(normalizeStatus('approved_pr')).toBe('approved')

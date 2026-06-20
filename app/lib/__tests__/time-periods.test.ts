@@ -14,7 +14,7 @@ describe('getDateRangeForPeriod', () => {
 
   describe('last-week', () => {
     it('returns 7 days before now', () => {
-      vi.useFakeTimers({ now: new Date(2026, 2, 15, 12, 0, 0) }) // March 15
+      vi.useFakeTimers({ now: new Date(2026, 2, 15, 12, 0, 0) })
       const result = expectRange('last-week')
       expect(result.startDate.getDate()).toBe(8)
       expect(result.startDate.getMonth()).toBe(2)
@@ -23,9 +23,9 @@ describe('getDateRangeForPeriod', () => {
     })
 
     it('handles month boundary', () => {
-      vi.useFakeTimers({ now: new Date(2026, 2, 3) }) // March 3
+      vi.useFakeTimers({ now: new Date(2026, 2, 3) })
       const result = expectRange('last-week')
-      expect(result.startDate.getMonth()).toBe(1) // February
+      expect(result.startDate.getMonth()).toBe(1)
       expect(result.startDate.getDate()).toBe(24)
       vi.useRealTimers()
     })
@@ -33,7 +33,7 @@ describe('getDateRangeForPeriod', () => {
 
   describe('current-month', () => {
     it('starts at first of current month', () => {
-      vi.useFakeTimers({ now: new Date(2026, 5, 20) }) // June 20
+      vi.useFakeTimers({ now: new Date(2026, 5, 20) })
       const result = expectRange('current-month')
       expect(result.startDate).toEqual(new Date(2026, 5, 1))
       vi.useRealTimers()
@@ -42,17 +42,17 @@ describe('getDateRangeForPeriod', () => {
 
   describe('last-month', () => {
     it('returns previous month range', () => {
-      vi.useFakeTimers({ now: new Date(2026, 5, 15) }) // June 15
+      vi.useFakeTimers({ now: new Date(2026, 5, 15) })
       const result = expectRange('last-month')
-      expect(result.startDate).toEqual(new Date(2026, 4, 1)) // May 1
-      expect(result.endDate.getMonth()).toBe(4) // May
-      expect(result.endDate.getDate()).toBe(31) // May has 31 days
+      expect(result.startDate).toEqual(new Date(2026, 4, 1))
+      expect(result.endDate.getMonth()).toBe(4)
+      expect(result.endDate.getDate()).toBe(31)
     })
 
     it('wraps to previous year in January', () => {
-      vi.useFakeTimers({ now: new Date(2026, 0, 15) }) // Jan 15
+      vi.useFakeTimers({ now: new Date(2026, 0, 15) })
       const result = expectRange('last-month')
-      expect(result.startDate).toEqual(new Date(2025, 11, 1)) // Dec 1, 2025
+      expect(result.startDate).toEqual(new Date(2025, 11, 1))
       expect(result.endDate.getFullYear()).toBe(2025)
       expect(result.endDate.getMonth()).toBe(11)
       expect(result.endDate.getDate()).toBe(31)
@@ -79,29 +79,29 @@ describe('getDateRangeForPeriod', () => {
 
   describe('last-tertial', () => {
     it('T1 → previous year T3 (Sep-Dec)', () => {
-      vi.useFakeTimers({ now: new Date(2026, 1, 10) }) // Feb = T1
+      vi.useFakeTimers({ now: new Date(2026, 1, 10) })
       const result = expectRange('last-tertial')
-      expect(result.startDate).toEqual(new Date(2025, 8, 1)) // Sep 1 2025
-      expect(result.endDate.getMonth()).toBe(11) // December
+      expect(result.startDate).toEqual(new Date(2025, 8, 1))
+      expect(result.endDate.getMonth()).toBe(11)
       expect(result.endDate.getDate()).toBe(31)
       expect(result.endDate.getFullYear()).toBe(2025)
       vi.useRealTimers()
     })
 
     it('T2 → T1 (Jan-Apr)', () => {
-      vi.useFakeTimers({ now: new Date(2026, 5, 10) }) // Jun = T2
+      vi.useFakeTimers({ now: new Date(2026, 5, 10) })
       const result = expectRange('last-tertial')
-      expect(result.startDate).toEqual(new Date(2026, 0, 1)) // Jan 1
-      expect(result.endDate.getMonth()).toBe(3) // April
-      expect(result.endDate.getDate()).toBe(30) // April has 30 days
+      expect(result.startDate).toEqual(new Date(2026, 0, 1))
+      expect(result.endDate.getMonth()).toBe(3)
+      expect(result.endDate.getDate()).toBe(30)
       vi.useRealTimers()
     })
 
     it('T3 → T2 (May-Aug)', () => {
-      vi.useFakeTimers({ now: new Date(2026, 9, 10) }) // Oct = T3
+      vi.useFakeTimers({ now: new Date(2026, 9, 10) })
       const result = expectRange('last-tertial')
-      expect(result.startDate).toEqual(new Date(2026, 4, 1)) // May 1
-      expect(result.endDate.getMonth()).toBe(7) // August
+      expect(result.startDate).toEqual(new Date(2026, 4, 1))
+      expect(result.endDate.getMonth()).toBe(7)
       expect(result.endDate.getDate()).toBe(31)
       vi.useRealTimers()
     })

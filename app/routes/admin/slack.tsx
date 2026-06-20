@@ -1,9 +1,3 @@
-/**
- * Slack Integration Admin Page
- *
- * Allows testing Slack notifications and configuring channels.
- */
-
 import { Alert, BodyShort, Box, Button, Heading, HStack, TextField, VStack } from '@navikt/ds-react'
 import { Form, useActionData, useLoaderData } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
@@ -36,7 +30,6 @@ export async function action({ request }: Route.ActionArgs) {
       return { success: false, error: 'Kanal-ID er påkrevd' }
     }
 
-    // Create a test notification
     const testNotification: DeploymentNotification = {
       deploymentId: 0,
       appName: 'test-app',

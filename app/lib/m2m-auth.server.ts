@@ -1,18 +1,3 @@
-/**
- * Machine-to-Machine (M2M) Authentication
- *
- * Validates Bearer tokens from service-to-service calls using the
- * NAIS token introspection endpoint. This is separate from user authentication
- * (auth.server.ts) which validates tokens from Wonderwall with NAVident claims.
- *
- * M2M tokens are issued via client_credentials flow and contain:
- * - idtyp: "app" (identity type)
- * - roles: ["access_as_application"] (default role)
- * - No NAVident or groups claims
- *
- * @see https://doc.nais.io/auth/entra-id/how-to/secure/
- */
-
 import { fetchWithLogging, logger } from '~/lib/logger.server'
 
 interface IntrospectionSuccessResponse {
@@ -38,17 +23,11 @@ interface IntrospectionErrorResponse {
 type IntrospectionResponse = IntrospectionSuccessResponse | IntrospectionErrorResponse
 
 interface M2MTokenPayload {
-  /** Client ID of the calling application */
   azp: string
-  /** Human-readable name of the calling application */
   azpName?: string
-  /** Roles assigned to the calling application */
   roles: string[]
 }
 
-/**
- * Extract Bearer token from Authorization header.
- */
 function extractBearerToken(request: Request): string | null {
   const authHeader = request.headers.get('Authorization')
   if (!authHeader || authHeader.length < 8) return null
@@ -56,11 +35,6 @@ function extractBearerToken(request: Request): string | null {
   return authHeader.slice(7)
 }
 
-/**
- * Validate an M2M token using the NAIS token introspection endpoint.
- *
- * @returns The validated token payload, or null if invalid
- */
 async function introspectToken(token: string): Promise<IntrospectionResponse | null> {
   const introspectionEndpoint = process.env.NAIS_TOKEN_INTROSPECTION_ENDPOINT
 
@@ -91,15 +65,6 @@ async function introspectToken(token: string): Promise<IntrospectionResponse | n
   }
 }
 
-/**
- * Require a valid M2M token on the request.
- *
- * Validates the Bearer token via NAIS token introspection and checks
- * that the token has the `access_as_application` role.
- *
- * @throws {Response} 401 if token is missing or invalid
- * @throws {Response} 403 if token lacks required role
- */
 export async function requireM2MToken(request: Request): Promise<M2MTokenPayload> {
   const token = extractBearerToken(request)
 

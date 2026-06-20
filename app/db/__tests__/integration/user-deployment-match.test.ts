@@ -1,13 +1,3 @@
-/**
- * Integration tests for the «mine deployments»-matching helper used both in
- * Slack home tab og på `/users/:username`-siden. Bekrefter at
- * `getDeployerDeploymentsPaginated`, `getDeploymentCountByDeployer`,
- * `getDeployerMonthlyStats`, `getDeployerApps`,
- * `getUnlinkedDependabotDeploymentIds` og
- * `getPersonalDeploymentsMissingGoalLinks` matcher samme deployments —
- * deployer ELLER PR-skaper, case-insensitivt.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getUnlinkedDependabotDeploymentIds } from '../../deployment-goal-links.server'
@@ -43,7 +33,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       auditStartYear: 2026,
     })
     const now = new Date('2026-03-15T10:00:00Z')
-    // 1: pcmoen er deployer (eksakt case)
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -51,7 +40,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       createdAt: now,
       deployerUsername: 'pcmoen',
     })
-    // 2: PCMOEN er deployer (annen case)
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -59,7 +47,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       createdAt: now,
       deployerUsername: 'PCMOEN',
     })
-    // 3: bot deployet, pcmoen er PR-skaper
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -68,7 +55,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       deployerUsername: 'github-actions[bot]',
       githubPrData: { creator: { username: 'pcmoen' } },
     })
-    // 4: irrelevant — annen bruker
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -116,7 +102,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       environment: 'prod',
       auditStartYear: 2026,
     })
-    // dependabot deployer, pcmoen er PR-skaper
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -125,7 +110,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       deployerUsername: 'github-actions[bot]',
       githubPrData: { creator: { username: 'dependabot[bot]' } },
     })
-    // pcmoen deployer dependabot-PR direkte
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -135,9 +119,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       githubPrData: { creator: { username: 'dependabot[bot]' } },
     })
     const ids = await getUnlinkedDependabotDeploymentIds('pcmoen')
-    // Forventet: kun den andre, siden den første har ingen kobling til pcmoen
-    // (verken deployer eller PR-skaper). Den andre har pcmoen som deployer,
-    // og dependabot som PR-skaper — så begge filtrene treffer.
     expect(ids.length).toBe(1)
   })
 
@@ -149,7 +130,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       auditStartYear: 2026,
     })
     const now = new Date('2026-03-15T10:00:00Z')
-    // pcmoen deployer, NULL pr_data (manuell deploy)
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -158,7 +138,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       deployerUsername: 'pcmoen',
       githubPrData: null,
     })
-    // pcmoen deployer, tom pr_data
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -167,7 +146,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       deployerUsername: 'pcmoen',
       githubPrData: {},
     })
-    // pcmoen deployer, creator uten username
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -176,7 +154,6 @@ describe('user deployment match — deployer ELLER PR-skaper, case-insensitive',
       deployerUsername: 'pcmoen',
       githubPrData: { creator: {} },
     })
-    // bot deployer, NULL pr_data — skal IKKE matche
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -199,7 +176,6 @@ describe('user deployment match — team-aggregate queries', () => {
       auditStartYear: 2026,
     })
     const now = new Date('2026-03-15T10:00:00Z')
-    // alice deployer
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -208,7 +184,6 @@ describe('user deployment match — team-aggregate queries', () => {
       deployerUsername: 'alice',
       fourEyesStatus: 'approved',
     })
-    // bot deployer, alice er PR-skaper — skal også telles
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -218,7 +193,6 @@ describe('user deployment match — team-aggregate queries', () => {
       githubPrData: { creator: { username: 'alice' } },
       fourEyesStatus: 'approved',
     })
-    // ikke-medlem — skal ikke telles
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',

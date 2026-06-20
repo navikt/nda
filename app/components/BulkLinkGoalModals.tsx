@@ -98,7 +98,6 @@ export const SelectLinkGoalModal = forwardRef<
   useImperativeHandle(ref, () => internalRef.current as HTMLDialogElement)
   const [hasObjective, setHasObjective] = useState(false)
 
-  // Filter boards to those covering any of the selected deployment dates
   const relevantBoards = useMemo(() => {
     if (selectedDates.length === 0) return availableBoards
     return availableBoards.filter((board) => {
@@ -111,7 +110,6 @@ export const SelectLinkGoalModal = forwardRef<
     })
   }, [availableBoards, selectedDates])
 
-  // Check if selected deployments span multiple board periods
   const spansMultiplePeriods = useMemo(() => {
     if (selectedDates.length <= 1 || relevantBoards.length === 0) return false
     return !relevantBoards.some((board) => {

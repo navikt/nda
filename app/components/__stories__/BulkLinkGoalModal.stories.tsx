@@ -44,7 +44,6 @@ const mockBoards: BulkLinkAvailableBoard[] = [
   },
 ]
 
-// Wrapper to auto-open the modal
 function AutoOpenModal({
   children,
 }: {

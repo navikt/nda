@@ -1,10 +1,5 @@
 import { pool } from './connection.server'
 
-/**
- * Advisory-lock namespace (first key for pg_advisory_xact_lock(int4, int4)).
- * Arbitrary stable integer that scopes the per-section lock to this table's
- * write path so it cannot collide with future advisory-lock callers.
- */
 const SECTION_TEAMS_LOCK_NAMESPACE = 1772500001
 
 export interface Section {
@@ -72,10 +67,6 @@ export async function getAllSectionsWithTeams(): Promise<SectionWithTeams[]> {
   return result.rows
 }
 
-/**
- * Find sections a user belongs to based on their Entra ID groups.
- * Returns sections where the user's groups match either admin or user group.
- */
 export async function getSectionsForEntraGroups(
   groupIds: string[],
 ): Promise<Array<Section & { role: 'admin' | 'user' }>> {
@@ -96,9 +87,6 @@ export async function getSectionsForEntraGroups(
   return result.rows
 }
 
-/**
- * Get all team_slugs that belong to the given sections.
- */
 async function _getTeamSlugsForSections(sectionIds: number[]): Promise<string[]> {
   if (sectionIds.length === 0) return []
 
@@ -154,27 +142,13 @@ export async function updateSection(
   return result.rows[0] ?? null
 }
 
-/**
- * Replace the full set of Nais teams owned by a section.
- *
- * Soft-deletes any existing active link not in `teamSlugs` (recording
- * `deletedBy`), and undeletes / inserts the requested links in a single
- * transaction. Existing active links present in the new set are left
- * untouched to avoid unnecessary row-version churn and preserve the
- * existing row.
- */
 export async function setSectionTeams(sectionId: number, teamSlugs: string[], deletedBy: string): Promise<void> {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
 
-    // Serialize concurrent replace-all writes for the same section to avoid
-    // deadlocks (parallel UPDATE+UPSERT lock orderings) and lost updates
-    // (two transactions each soft-deleting the other's set, then both
-    // inserting their own → union of both sets active).
     await client.query('SELECT pg_advisory_xact_lock($1, $2)', [SECTION_TEAMS_LOCK_NAMESPACE, sectionId])
 
-    // Soft-delete active links no longer present in the new set.
     await client.query(
       `UPDATE section_teams
        SET deleted_at = NOW(), deleted_by = $2
@@ -184,9 +158,6 @@ export async function setSectionTeams(sectionId: number, teamSlugs: string[], de
       [sectionId, deletedBy, teamSlugs],
     )
 
-    // Insert / undelete each requested link. The WHERE guard on the
-    // DO UPDATE branch prevents already-active rows from being rewritten,
-    // so unchanged links produce no row-version churn.
     for (const slug of teamSlugs) {
       await client.query(
         `INSERT INTO section_teams (section_id, team_slug)

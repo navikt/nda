@@ -123,7 +123,6 @@ describe('getPeriodsForYear', () => {
     for (let i = 1; i < periods.length; i++) {
       const prevEnd = new Date(periods[i - 1].end)
       const currStart = new Date(periods[i].start)
-      // Next day after end should equal next period's start
       prevEnd.setDate(prevEnd.getDate() + 1)
       expect(prevEnd.toISOString().split('T')[0]).toBe(currStart.toISOString().split('T')[0])
     }
@@ -150,7 +149,6 @@ describe('getPeriodsForYear', () => {
   it('has continuous date ranges for monthly (no gaps)', () => {
     const periods = getPeriodsForYear('monthly', 2026)
     for (let i = 1; i < periods.length; i++) {
-      // Use string-based date math to avoid UTC/local timezone issues
       const [y, m, d] = periods[i - 1].end.split('-').map(Number)
       const nextDay = new Date(Date.UTC(y, m - 1, d + 1))
       const nextDayStr = nextDay.toISOString().split('T')[0]
@@ -161,8 +159,6 @@ describe('getPeriodsForYear', () => {
 
 describe('toDateInputValue', () => {
   it('converts a Date object to YYYY-MM-DD (reproduces pg DATE column behavior)', () => {
-    // PostgreSQL DATE columns are returned as JS Date objects by the pg driver.
-    // Calling .split('T') on a Date crashes with "split is not a function".
     const dateObj = new Date('2026-04-30T00:00:00')
     expect(toDateInputValue(dateObj)).toBe('2026-04-30')
   })

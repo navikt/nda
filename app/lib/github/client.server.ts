@@ -6,10 +6,6 @@ import { withGitHubSpan } from '~/lib/tracing.server'
 let octokit: Octokit | null = null
 let requestCount = 0
 
-/**
- * Get GitHub client - supports both GitHub App and PAT authentication
- * GitHub App is preferred (higher rate limits, better security)
- */
 export function getGitHubClient(): Octokit {
   if (!octokit) {
     const appId = process.env.GITHUB_APP_ID
@@ -17,14 +13,11 @@ export function getGitHubClient(): Octokit {
     const installationId = process.env.GITHUB_APP_INSTALLATION_ID
     const pat = process.env.GITHUB_TOKEN
 
-    // Prefer GitHub App authentication
     if (appId && privateKey && installationId) {
       logger.info('🔐 Using GitHub App authentication')
 
-      // Handle private key - can be base64 encoded or raw PEM
       let decodedPrivateKey = privateKey
       if (!privateKey.includes('-----BEGIN')) {
-        // Assume base64 encoded
         decodedPrivateKey = Buffer.from(privateKey, 'base64').toString('utf-8')
       }
 
@@ -43,7 +36,6 @@ export function getGitHubClient(): Octokit {
         },
       })
     } else if (pat) {
-      // Fallback to Personal Access Token
       logger.info('🔑 Using Personal Access Token authentication')
 
       octokit = new Octokit({
@@ -61,12 +53,10 @@ export function getGitHubClient(): Octokit {
       )
     }
 
-    // Track total request count across all GitHub calls
     octokit.hook.before('request', (_options) => {
       requestCount++
     })
 
-    // Warn when approaching GitHub rate limit
     octokit.hook.after('request', (response, _options) => {
       const remaining = response.headers['x-ratelimit-remaining']
       const limit = response.headers['x-ratelimit-limit']
@@ -78,9 +68,7 @@ export function getGitHubClient(): Octokit {
       }
     })
 
-    // Wrap each request in an OTel span and log as structured outgoing HTTP entry
     octokit.hook.wrap('request', async (request, options) => {
-      // Capture counter before the await — concurrent requests can increment it mid-flight
       const thisRequestNumber = requestCount
       const method = options.method || 'GET'
       let path = options.url?.replace('https://api.github.com', '') || ''
@@ -94,7 +82,6 @@ export function getGitHubClient(): Octokit {
         path = path.replace('{base}', (options.base as string).substring(0, 7))
         path = path.replace('{head}', (options.head as string).substring(0, 7))
       }
-      // Strip query string — Octokit may append ?page=N etc.
       path = path.split('?')[0]
 
       const start = Date.now()

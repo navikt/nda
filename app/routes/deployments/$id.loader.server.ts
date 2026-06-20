@@ -34,15 +34,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Deployment not found', { status: 404 })
   }
 
-  // Get app info for building semantic URLs
   const app = await getMonitoredApplicationById(deployment.monitored_app_id)
   if (!app) {
     throw new Response('Application not found', { status: 404 })
   }
   const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 
-  // Redirect to app-scoped URL if accessed via /deployments/:id directly
-  // Check if this is a direct request (not from the app-scoped re-export)
   const url = new URL(request.url)
   if (url.pathname === `/deployments/${deploymentId}`) {
     const searchParams = url.searchParams.toString()
@@ -50,7 +47,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     return Response.redirect(new URL(redirectUrl, url.origin), 302)
   }
 
-  // Parse filter params for navigation
   const status = url.searchParams.get('status') || undefined
   const method = url.searchParams.get('method') as 'pr' | 'direct_push' | 'legacy' | undefined
   const deployer = url.searchParams.get('deployer') || undefined
@@ -69,7 +65,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     audit_start_year: app.audit_start_year,
   }
 
-  // ── Phase 2: Fetch all independent data in parallel ──────────────────────
   const deploymentDate = new Date(deployment.created_at).toISOString().split('T')[0]
 
   const nearbyDeploymentsPromise =
@@ -143,9 +138,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       : Promise.resolve([]),
   ])
 
-  // ── Phase 3: Queries that depend on Phase 2 results ─────────────────────
-
-  // Resolve deployment capabilities for the current user (single-pass auth)
   const capabilities: DeploymentCapabilities = currentUser
     ? await resolveDeploymentCapabilities(currentUser, deployment.monitored_app_id)
     : {
@@ -157,12 +149,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         canLookupLegacy: false,
       }
 
-  // Fetch boards only when user can link goals (avoids unnecessary DB queries)
   let availableBoards: AvailableBoard[] = []
   let sectionBoards: AvailableBoard[] = []
 
   if (capabilities.canLinkGoal) {
-    // Filter to teams the current user has a role in
     let devTeams = allDevTeams
     if (currentUser?.navIdent) {
       try {
@@ -177,7 +167,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       }
     }
 
-    // Fetch boards for user's teams and other section teams in parallel
     const devTeamIds = new Set(devTeams.map((dt) => dt.id))
     const sectionIds = [...new Set(allDevTeams.map((dt) => dt.section_id))]
 
@@ -199,7 +188,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     )
   }
 
-  // Collect all identifiers (GitHub usernames and NAV idents) we need to look up
   const identifierSet = new Set<string>()
   const addId = (id: string | null | undefined) => {
     if (id) identifierSet.add(id)
@@ -222,17 +210,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
   for (const link of goalLinks) addId(link.linked_by)
 
-  // Get all user mappings in one query
   const userMappings = await getUsersByIdentifiers([...identifierSet])
 
-  // Check if current user is involved in this deployment (for four-eyes validation)
   let isCurrentUserInvolved = false
   let involvementReason: string | null = null
 
   if (currentUser?.navIdent) {
     const currentNavIdent = currentUser.navIdent.toUpperCase()
 
-    // Check if user is PR creator
     const prCreatorUsername = deployment.github_pr_data?.creator?.username
     if (prCreatorUsername) {
       const prCreatorMapping = userMappings.get(prCreatorUsername)
@@ -242,7 +227,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       }
     }
 
-    // Check if user is author of the last unverified commit (relaxed four-eyes check)
     if (!isCurrentUserInvolved && deployment.unverified_commits && deployment.unverified_commits.length > 0) {
       const lastCommit = deployment.unverified_commits[deployment.unverified_commits.length - 1]
       const lastCommitAuthorMapping = userMappings.get(lastCommit.author)
@@ -255,7 +239,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const isAdmin = currentUser?.role === 'admin'
 
-  // Strip verification run data for non-admins
   const verificationRun = isAdmin
     ? fullVerificationRun
     : fullVerificationRun

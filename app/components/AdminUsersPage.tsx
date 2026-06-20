@@ -72,7 +72,6 @@ export function AdminUsersPage<T extends UserMapping = UserMapping>({
   const [deleteTarget, setDeleteTarget] = useState<UserMapping | null>(null)
   const deleteModalRef = useRef<HTMLDialogElement>(null)
 
-  // Close delete modal and clear target when action succeeds
   useEffect(() => {
     if (actionData?.success && !isSubmitting) {
       deleteModalRef.current?.close()

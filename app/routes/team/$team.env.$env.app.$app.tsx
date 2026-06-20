@@ -180,7 +180,6 @@ export async function action({ request }: Route.ActionArgs) {
       const appId = parseInt(formData.get('app_id') as string, 10)
       const startYearValue = formData.get('audit_start_year') as string
 
-      // Allow empty value to clear the start year
       const auditStartYear = startYearValue?.trim() ? parseInt(startYearValue, 10) : null
 
       if (auditStartYear !== null && (Number.isNaN(auditStartYear) || auditStartYear < 2000 || auditStartYear > 2100)) {
@@ -227,7 +226,6 @@ export default function AppDetail() {
     setResolveModalOpen(true)
   }
 
-  // Helper to generate app URLs with the new structure
   const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 
   const naisConsoleUrl = `https://console.nav.cloud.nais.io/team/${app.team_slug}/${app.environment_name}/app/${app.app_name}`

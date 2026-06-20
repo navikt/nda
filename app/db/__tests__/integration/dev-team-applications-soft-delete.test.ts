@@ -1,10 +1,3 @@
-/**
- * Integration test: Soft-delete behavior for dev_team_applications.
- *
- * Verifies that direct dev-team ↔ application links are soft-deleted (preserving
- * the team-ownership audit trail), that current-state queries exclude soft-deleted
- * links, and that re-adding a previously soft-deleted link undeletes it in place.
- */
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -66,7 +59,6 @@ describe('dev_team_applications soft delete', () => {
     const { teamId, app1, app2 } = await setup()
 
     await setDevTeamApplications(teamId, [app1, app2], 'A111111')
-    // Re-running with the same set must not modify the existing active rows.
     await setDevTeamApplications(teamId, [app1, app2], 'A999999')
 
     const { rows } = await pool.query(
@@ -85,7 +77,6 @@ describe('dev_team_applications soft delete', () => {
 
     await setDevTeamApplications(teamId, [app1, app2], 'A111111')
     await setDevTeamApplications(teamId, [app1], 'A999999')
-    // Re-add app2.
     await setDevTeamApplications(teamId, [app1, app2], 'A111111')
 
     const active = await getDevTeamApplications(teamId)
@@ -94,7 +85,6 @@ describe('dev_team_applications soft delete', () => {
     const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM dev_team_applications WHERE dev_team_id = $1`, [
       teamId,
     ])
-    // Composite PK + ON CONFLICT DO UPDATE → still exactly 2 rows.
     expect(rows[0].n).toBe(2)
 
     const { rows: app2Rows } = await pool.query(
@@ -183,9 +173,6 @@ describe('dev_team_applications soft delete', () => {
   })
 
   it('setDevTeamApplications does not bump xmin for unchanged active rows', async () => {
-    // Guards against the ON CONFLICT branch firing on already-active rows
-    // (which would silently rewrite them and produce churn on any future
-    // updated_at trigger / replication / pg_audit policy).
     const { teamId, app1, app2 } = await setup()
 
     await setDevTeamApplications(teamId, [app1, app2], 'A111111')
@@ -224,9 +211,6 @@ describe('dev_team_applications soft delete', () => {
   })
 
   it('concurrent setDevTeamApplications calls for the same team serialize via advisory lock', async () => {
-    // Without the per-team advisory lock, two parallel "replace all" calls
-    // can each soft-delete the other's set then upsert their own, leaving
-    // the union of both sets active. The lock forces them to run in series.
     const { teamId, app1, app2 } = await setup()
 
     await Promise.all([
@@ -235,7 +219,6 @@ describe('dev_team_applications soft delete', () => {
     ])
 
     const active = await getDevTeamApplications(teamId)
-    // Exactly one of the two "replace all" calls won — never both, never neither.
     expect(active).toHaveLength(1)
     expect([app1, app2]).toContain(active[0].monitored_app_id)
   })
@@ -277,7 +260,6 @@ describe('removeAppFromDevTeam', () => {
     )
     expect(before[0].deleted_by).toBe('A222222')
 
-    // Second call should be a no-op (deleted_by unchanged)
     await removeAppFromDevTeam(teamId, app1, 'A333333')
 
     const { rows: after } = await pool.query(

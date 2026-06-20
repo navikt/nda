@@ -74,10 +74,8 @@ describe('deployment_comments soft delete', () => {
     const depB = await seedDeployment(pool, 'idor-b')
     const comment = await createComment({ deployment_id: depA, comment_text: 'on dep A', registered_by: 'Z990001' })
 
-    // Attempt to delete with wrong deploymentId
     expect(await deleteComment(comment.id, 'Z990001', depB)).toBe(false)
 
-    // Comment should still be active
     const { rows } = await pool.query('SELECT deleted_at FROM deployment_comments WHERE id = $1', [comment.id])
     expect(rows[0].deleted_at).toBeNull()
   })

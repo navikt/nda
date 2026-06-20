@@ -1,17 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-/**
- * Tests for review priority logic
- *
- * When a user submits multiple reviews, we should prioritize APPROVED state
- * over other states like COMMENTED or CHANGES_REQUESTED.
- *
- * This prevents a scenario where:
- * 1. User approves PR at 13:55
- * 2. User adds a comment at 14:00
- * 3. System incorrectly thinks PR is not approved because COMMENTED is newer
- */
-
 interface Review {
   username: string
   avatar_url: string
@@ -19,9 +7,6 @@ interface Review {
   submitted_at: string
 }
 
-/**
- * Simulates the review priority logic from getDetailedPullRequestInfo
- */
 function processReviews(
   reviews: Array<{ user: { login: string; avatar_url: string }; state: string; submitted_at: string }>,
 ): Map<string, Review> {
@@ -34,16 +19,12 @@ function processReviews(
     if (!existing) {
       shouldUpdate = true
     } else if (review.state === 'APPROVED' && existing.state !== 'APPROVED') {
-      // New review is APPROVED but existing is not - always prefer APPROVED
       shouldUpdate = true
     } else if (review.state === 'APPROVED' && existing.state === 'APPROVED') {
-      // Both are APPROVED - keep the latest one
       shouldUpdate = new Date(review.submitted_at) > new Date(existing.submitted_at)
     } else if (review.state !== 'APPROVED' && existing.state !== 'APPROVED') {
-      // Neither is APPROVED - keep the latest one
       shouldUpdate = new Date(review.submitted_at) > new Date(existing.submitted_at)
     }
-    // If existing is APPROVED and new is not, don't update (shouldUpdate stays false)
 
     if (shouldUpdate) {
       reviewsByUser.set(review.user.login, {
@@ -210,7 +191,6 @@ describe('Review Priority Logic', () => {
 
   describe('Real-world scenario: approval with later comments', () => {
     it('correctly identifies approval despite later comments', () => {
-      // Simulates a real scenario where a reviewer approves, then adds comments later
       const reviews = [
         { user: { login: 'reviewer1', avatar_url: '' }, state: 'APPROVED', submitted_at: '2025-11-13T12:29:05Z' },
         { user: { login: 'reviewer1', avatar_url: '' }, state: 'DISMISSED', submitted_at: '2025-11-13T12:31:15Z' },
@@ -223,7 +203,6 @@ describe('Review Priority Logic', () => {
       const result = processReviews(reviews)
       const review = result.get('reviewer1')
 
-      // Should keep the latest APPROVED (13:55:17), not the later COMMENTED
       expect(review?.state).toBe('APPROVED')
       expect(review?.submitted_at).toBe('2025-11-13T13:55:17Z')
     })

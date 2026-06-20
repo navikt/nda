@@ -3,24 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GraphUserResult } from '~/lib/microsoft-graph.server'
 
 interface UserSearchProps {
-  /** Label for the search field */
   label?: string
-  /** Called when a user is selected. Receives the NAV-ident. */
   onSelect: (navIdent: string) => void
-  /** Called with the full user result when a user is selected */
   onSelectUser?: (user: GraphUserResult) => void
-  /** Called when the selection is cleared */
   onClear?: () => void
-  /** Change this value to reset the component (clears input and selection) */
   resetKey?: string | number
-  /** Placeholder text */
   description?: string
 }
 
-/**
- * User search component that queries Microsoft Graph API.
- * Searches by name, email, or NAV-ident and shows matching results.
- */
 export function UserSearch({
   label = 'Søk etter bruker',
   onSelect,

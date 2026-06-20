@@ -31,7 +31,6 @@ import { fetchVerificationDataForAllDeployments } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
 import { isImplicitApprovalMode } from '~/lib/verification/types'
 
-// Async function to process data fetch job in background
 async function processFetchDataJobAsync(jobId: number, appId: number) {
   const options = await getSyncJobOptions(jobId)
   const debug = options?.debug === true
@@ -39,7 +38,6 @@ async function processFetchDataJobAsync(jobId: number, appId: number) {
   await runWithJobContext(jobId, 'fetch_verification_data', appId, debug, async () => {
     try {
       const result = await fetchVerificationDataForAllDeployments(appId, { jobId })
-      // Only release as completed if not cancelled
       const job = await getSyncJobById(jobId)
       if (job?.status === 'cancelled') {
         return
@@ -47,7 +45,6 @@ async function processFetchDataJobAsync(jobId: number, appId: number) {
       await releaseSyncLock(jobId, 'completed', result as unknown as Record<string, unknown>)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      // Don't overwrite cancelled status
       const job = await getSyncJobById(jobId)
       if (job?.status !== 'cancelled') {
         await releaseSyncLock(jobId, 'failed', undefined, errorMessage)
@@ -57,7 +54,6 @@ async function processFetchDataJobAsync(jobId: number, appId: number) {
   })
 }
 
-// Async function to compute verification diffs in background
 async function processComputeDiffsJobAsync(jobId: number, appId: number) {
   await runWithJobContext(jobId, 'reverify_app', appId, false, async () => {
     try {
@@ -162,7 +158,6 @@ export async function action({ request }: { request: Request; params: Record<str
     }
     const readiness = await checkAuditReadiness(appId, parsedStart, readinessEnd)
 
-    // Resolve display names for deployers in pending and missing approver lists
     const deployerUsernames = [
       ...readiness.pending_deployments.map((d) => d.deployer_username),
       ...readiness.missing_approver_deployments.map((d) => d.deployer_username),
@@ -202,18 +197,15 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Ugyldig datoformat for periode (forventet YYYY-MM-DD)' }
     }
 
-    // Block incomplete periods
     if (periodEnd > new Date()) {
       return { error: 'Kan ikke generere rapport for ufullstendige perioder' }
     }
 
-    // Require reason when superseding an existing report
     const hasExisting = await hasActiveReportForPeriod(appId, periodType, periodStart, periodEnd)
     if (hasExisting && !supersedeReason) {
       return { error: 'Du må oppgi en begrunnelse når du erstatter en eksisterende rapport.' }
     }
 
-    // Check readiness first
     const readiness = await checkAuditReadiness(appId, periodStart, periodEnd)
     if (!readiness.is_ready) {
       const reasons: string[] = []
@@ -236,13 +228,11 @@ export async function action({ request }: { request: Request; params: Record<str
       }
     }
 
-    // Create background job for PDF generation
     let jobId: string
     try {
       const job = await createReportJob(appId, year, periodType, periodLabel, periodStart, periodEnd)
       jobId = job.jobId
       if (!job.created) {
-        // Re-trigger stale pending jobs that were never picked up
         if (isStaleJob({ status: job.status, created_at: job.createdAt, started_at: job.startedAt })) {
           processReportJobAsync({
             jobId: job.jobId,
@@ -265,7 +255,6 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Kunne ikke opprette rapportjobb. Sjekk serverloggen for detaljer.' }
     }
 
-    // Start async processing (fire and forget)
     processReportJobAsync({
       jobId,
       appId,
@@ -285,13 +274,11 @@ export async function action({ request }: { request: Request; params: Record<str
 
   if (action === 'fetch_verification_data') {
     const debug = formData.get('debug') === 'on'
-    // Try to acquire lock for this job
-    const jobId = await acquireSyncLock('fetch_verification_data', appId, 5, debug ? { debug: true } : undefined) // 5 min timeout, extended by heartbeat
+    const jobId = await acquireSyncLock('fetch_verification_data', appId, 5, debug ? { debug: true } : undefined)
     if (!jobId) {
       return { error: 'En datahenting kjører allerede for denne appen' }
     }
 
-    // Start async processing (fire and forget)
     processFetchDataJobAsync(jobId, appId).catch((err) => {
       logger.error(`Fetch data job ${jobId} failed`, err instanceof Error ? err : new Error(String(err)))
     })
@@ -371,7 +358,6 @@ export async function action({ request }: { request: Request; params: Record<str
     const slackChannelId = (formData.get('slack_channel_id') as string)?.trim() || null
     const slackNotificationsEnabled = formData.get('slack_notifications_enabled') === 'true'
 
-    // Validate channel ID format if provided (C followed by alphanumeric, or #channel-name)
     if (slackChannelId && !isValidSlackChannel(slackChannelId)) {
       return { error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)' }
     }

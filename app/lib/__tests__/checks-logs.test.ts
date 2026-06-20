@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest'
 
-// Mock modules before importing the loader
 vi.mock('~/lib/gcs.server', () => ({
   isGcsConfigured: vi.fn(() => false),
   logExists: vi.fn(),
@@ -28,7 +27,6 @@ function makeRequest(params: Record<string, string> = {}) {
   return new Request(url.toString())
 }
 
-/** Simulates Octokit RequestError (has .status property, .message is "Not Found") */
 function makeOctokitError(status: number, message: string) {
   const error = new Error(message)
   ;(error as Error & { status: number }).status = status
@@ -85,7 +83,6 @@ describe('checks.logs loader', () => {
       const data = await response.json()
       expect(data.errorType).toBe('not_found')
       expect(data.error).toBeDefined()
-      // Should NOT show the generic "Kunne ikke hente logger." message
       expect(data.error).not.toBe('Kunne ikke hente logger.')
     })
 

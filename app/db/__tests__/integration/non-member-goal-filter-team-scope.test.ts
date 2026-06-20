@@ -1,14 +1,3 @@
-/**
- * Integration test: goal_filter='linked' with exclude_deployer_usernames
- * should only match goal links to the specified team's board when
- * goal_dev_team_id is provided.
- *
- * Bug: On the team deployments page with deployer=__non_member__ & goal=linked,
- * the query returned deployments linked to ANY team's board — not just the
- * current team's board. This caused the count (750) to not match the team
- * page's "Fra andre" count (8).
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDeploymentsPaginated } from '~/db/deployments.server'
@@ -47,14 +36,11 @@ describe('non-member goal filter should be scoped to team board', () => {
     const teamA = await seedDevTeam(pool, 'starte-pensjon', 'Starte pensjon', sectionId)
     const teamB = await seedDevTeam(pool, 'other-team', 'Other Team', sectionId)
 
-    // Shared app (both teams use it)
     const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'shared-app', environment: 'prod' })
 
-    // Create boards for each team
     const boardA = await seedBoardWithObjective(pool, teamA, 'Board A')
     const boardB = await seedBoardWithObjective(pool, teamB, 'Board B')
 
-    // Non-member deploys
     const d1 = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'nais-team',
@@ -68,20 +54,17 @@ describe('non-member goal filter should be scoped to team board', () => {
       deployerUsername: 'outsider',
     })
 
-    // Link d1 to teamA's board
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
        VALUES ($1, $2, 'manual', 'someone', true)`,
       [d1, boardA.objectiveId],
     )
-    // Link d2 to teamB's board
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
        VALUES ($1, $2, 'manual', 'someone', true)`,
       [d2, boardB.objectiveId],
     )
 
-    // Without goal_dev_team_id, goal_filter=linked returns BOTH
     const result = await getDeploymentsPaginated({
       monitored_app_ids: [appId],
       goal_filter: 'linked',
@@ -100,7 +83,6 @@ describe('non-member goal filter should be scoped to team board', () => {
     const boardA = await seedBoardWithObjective(pool, teamA, 'Board A')
     const boardB = await seedBoardWithObjective(pool, teamB, 'Board B')
 
-    // Non-member deploys
     const d1 = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'nais-team',
@@ -120,21 +102,17 @@ describe('non-member goal filter should be scoped to team board', () => {
       deployerUsername: 'outsider',
     })
 
-    // Link d1 to teamA's board
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
        VALUES ($1, $2, 'manual', 'someone', true)`,
       [d1, boardA.objectiveId],
     )
-    // Link d2 to teamB's board
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
        VALUES ($1, $2, 'manual', 'someone', true)`,
       [d2, boardB.objectiveId],
     )
-    // d3 has no link
 
-    // With goal_dev_team_id=teamA, goal_filter=linked should only return d1
     const result = await getDeploymentsPaginated({
       monitored_app_ids: [appId],
       goal_filter: 'linked',
@@ -168,20 +146,17 @@ describe('non-member goal filter should be scoped to team board', () => {
       deployerUsername: 'outsider',
     })
 
-    // d1 linked to teamA
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
        VALUES ($1, $2, 'manual', 'someone', true)`,
       [d1, boardA.objectiveId],
     )
-    // d2 linked to teamB (should count as "missing" for teamA)
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by, is_active)
        VALUES ($1, $2, 'manual', 'someone', true)`,
       [d2, boardB.objectiveId],
     )
 
-    // goal_filter=missing with goal_dev_team_id=teamA should return d2 (not linked to A's board)
     const result = await getDeploymentsPaginated({
       monitored_app_ids: [appId],
       goal_filter: 'missing',
@@ -201,7 +176,6 @@ describe('non-member goal filter should be scoped to team board', () => {
     const boardA = await seedBoardWithObjective(pool, teamA, 'Board A')
     const boardB = await seedBoardWithObjective(pool, teamB, 'Board B')
 
-    // Add key results
     const { rows: krARows } = await pool.query(
       "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'KR A', 0) RETURNING id",
       [boardA.objectiveId],
@@ -227,13 +201,11 @@ describe('non-member goal filter should be scoped to team board', () => {
       deployerUsername: 'outsider',
     })
 
-    // d1 linked via key result to teamA's board
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method, linked_by, is_active)
        VALUES ($1, $2, 'manual', 'someone', true)`,
       [d1, krA],
     )
-    // d2 linked via key result to teamB's board
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method, linked_by, is_active)
        VALUES ($1, $2, 'manual', 'someone', true)`,
@@ -259,7 +231,6 @@ describe('non-member goal filter should be scoped to team board', () => {
     const boardA = await seedBoardWithObjective(pool, teamA, 'Board A')
     const boardB = await seedBoardWithObjective(pool, teamB, 'Board B')
 
-    // d1 linked to teamA's board, d2 linked to teamB's board, d3 not linked at all
     const d1 = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'nais-team',
@@ -290,9 +261,6 @@ describe('non-member goal filter should be scoped to team board', () => {
       [d2, boardB.objectiveId],
     )
 
-    // Without goal_dev_team_id, goal=missing must use the global definition:
-    // only d3 (linked to NO board) is "missing". d2 (linked to another team's
-    // board) must NOT appear here, matching the row badge and dashboard count.
     const result = await getDeploymentsPaginated({
       monitored_app_ids: [appId],
       goal_filter: 'missing',
@@ -311,7 +279,6 @@ describe('non-member goal filter should be scoped to team board', () => {
     const boardA = await seedBoardWithObjective(pool, teamA, 'Board A')
     const boardB = await seedBoardWithObjective(pool, teamB, 'Board B')
 
-    // All deploys by a non-member ("outsider"); d1 linked to teamA, d2 to teamB, d3 unlinked
     const d1 = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'nais-team',
@@ -342,9 +309,6 @@ describe('non-member goal filter should be scoped to team board', () => {
       [d2, boardB.objectiveId],
     )
 
-    // goal=missing + non-member must NOT be team-scoped: only d3 (no link on any
-    // board) is missing. d2 (linked to another team's board) carries a goal badge
-    // and must not appear here.
     const result = await getDeploymentsPaginated({
       monitored_app_ids: [appId],
       goal_filter: 'missing',

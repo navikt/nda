@@ -3,7 +3,6 @@ export function getFourEyesStatus(deployment: any): {
   variant: 'success' | 'warning' | 'error' | 'info'
   description: string
 } {
-  // Map four_eyes_status to user-visible labels
   switch (deployment.four_eyes_status) {
     case 'approved':
     case 'approved_pr':

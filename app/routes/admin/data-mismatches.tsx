@@ -178,7 +178,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   const missingTotalPages = Math.max(1, Math.ceil(Number(missing.total_missing) / MISSING_PAGE_SIZE))
 
-  // Redirect to last valid page if requested page is out of range
   const clampedPage = Math.min(missingPage, missingTotalPages)
   if (clampedPage !== missingPage) {
     url.searchParams.set('missingPage', String(clampedPage))
@@ -254,15 +253,8 @@ export async function action({ request }: Route.ActionArgs) {
     return { success: `Fylte inn ${count} manglende titler fra PR-data.` }
   }
 
-  // ONE-TIME BACKFILL — safe to remove once all historical titles are populated
   if (intent === 'backfill_from_cache') {
     const result = await pool.query(
-      // Pass 3: compare-cache backfill. Mirrors migration priority — only touches rows
-      // that Pass 1 (PR title) and Pass 2 (unverified_commits) could not fill.
-      // Pre-aggregates snapshots once (DISTINCT ON per head_sha) to avoid per-row lookups.
-      // ONE-TIME BACKFILL: matches snapshots by head_sha only (not base_sha).
-      // A snapshot may have been fetched for a different range (e.g. different env
-      // or prior deployment). Acceptable for a best-effort historical backfill.
       `WITH latest_snapshots AS (
          SELECT DISTINCT ON (head_sha)
            head_sha,

@@ -15,10 +15,6 @@ import { logger } from '~/lib/logger.server'
 import { fetchApplicationDeployments, fetchNewDeployments } from '~/lib/nais.server'
 import { syncDefaultBranchForApp } from './default-branch-sync.server'
 
-/**
- * Step 1: Sync deployments from Nais API to database
- * This ONLY fetches from Nais and stores to DB - no GitHub calls
- */
 async function syncDeploymentsFromNais(
   teamSlug: string,
   environmentName: string,
@@ -35,13 +31,11 @@ async function syncDeploymentsFromNais(
     app: appName,
   })
 
-  // Get the monitored application
   const monitoredApp = await getMonitoredApplicationByIdentity(teamSlug, environmentName, appName)
   if (!monitoredApp) {
     throw new Error(`Application not found in monitored applications: ${teamSlug}/${environmentName}/${appName}`)
   }
 
-  // Fetch deployments from Nais
   const naisDeployments = await fetchApplicationDeployments(teamSlug, environmentName, appName)
 
   logger.info(`📦 Processing ${naisDeployments.length} deployments from Nais`)
@@ -54,14 +48,12 @@ async function syncDeploymentsFromNais(
   for (const naisDep of naisDeployments) {
     totalProcessed++
 
-    // Skip deployments without repository info
     if (!naisDep.repository) {
       logger.warn(`⚠️  Skipping deployment without repository: ${naisDep.id}`)
       skippedCount++
       continue
     }
 
-    // Extract GitHub owner/repo from repository field
     const repoParts = naisDep.repository.split('/')
     if (repoParts.length !== 2) {
       logger.warn(`⚠️  Invalid repository format: ${naisDep.repository}`)
@@ -71,7 +63,6 @@ async function syncDeploymentsFromNais(
 
     const [detectedOwner, detectedRepoName] = repoParts
 
-    // Check if deployment already exists
     const existingDep = await getDeploymentByNaisId(naisDep.id)
 
     if (existingDep) {
@@ -80,7 +71,6 @@ async function syncDeploymentsFromNais(
       continue
     }
 
-    // Create deployment record first (WITHOUT four-eyes verification)
     logger.info(`➕ Creating new deployment: ${naisDep.id}`)
 
     const deploymentParams: CreateDeploymentParams = {
@@ -101,7 +91,6 @@ async function syncDeploymentsFromNais(
     await createDeployment(deploymentParams)
     newCount++
 
-    // Skip repository checks for legacy deployments (before 2025-01-01 without commit SHA)
     const legacyCutoffDate = new Date('2025-01-01T00:00:00Z')
     const isLegacyDeployment = new Date(naisDep.createdAt) < legacyCutoffDate && !naisDep.commitSha
     if (isLegacyDeployment) {
@@ -109,18 +98,14 @@ async function syncDeploymentsFromNais(
       continue
     }
 
-    // Check repository status using application_repositories
     const repoCheck = await findRepositoryForApp(monitoredApp.id, detectedOwner, detectedRepoName)
 
     if (!repoCheck.repository) {
-      // Repository not found - create pending approval entry
       logger.warn(`🆕 New repository detected for app ${appName}: ${detectedOwner}/${detectedRepoName}`)
 
-      // Check if this is the first repo for this app
       const existingRepos = await getRepositoriesByAppId(monitoredApp.id)
 
       if (existingRepos.length === 0) {
-        // First repo - auto-approve as active
         logger.info(`📝 Auto-approving first repository as active`)
         await upsertApplicationRepository({
           monitoredAppId: monitoredApp.id,
@@ -130,7 +115,6 @@ async function syncDeploymentsFromNais(
           approvedBy: 'system',
         })
       } else {
-        // Additional repo - require approval
         logger.info(`⏸️  Creating pending approval entry`)
         await upsertApplicationRepository({
           monitoredAppId: monitoredApp.id,
@@ -139,7 +123,6 @@ async function syncDeploymentsFromNais(
           status: 'pending_approval',
         })
 
-        // Create alert
         await createRepositoryAlert({
           monitoredApplicationId: monitoredApp.id,
           deploymentNaisId: naisDep.id,
@@ -151,7 +134,6 @@ async function syncDeploymentsFromNais(
         alertsCreated++
       }
     } else if (repoCheck.repository.status === 'pending_approval') {
-      // Repository exists but pending approval
       logger.warn(`⏸️  Deployment from pending approval repository: ${detectedOwner}/${detectedRepoName}`)
 
       await createRepositoryAlert({
@@ -164,10 +146,8 @@ async function syncDeploymentsFromNais(
 
       alertsCreated++
     } else if (repoCheck.repository.status === 'historical') {
-      // Repository is historical (not active)
       logger.warn(`⚠️  Deployment from historical repository: ${detectedOwner}/${detectedRepoName}`)
 
-      // Get active repo for context
       const activeRepo = (await getRepositoriesByAppId(monitoredApp.id)).find((r) => r.status === 'active')
 
       await createRepositoryAlert({
@@ -202,11 +182,6 @@ async function syncDeploymentsFromNais(
   }
 }
 
-/**
- * Incremental sync - only fetches new deployments since last sync
- * Stops as soon as it finds a deployment already in the database
- * Much faster for periodic syncs
- */
 export async function syncNewDeploymentsFromNais(
   teamSlug: string,
   environmentName: string,
@@ -223,11 +198,9 @@ export async function syncNewDeploymentsFromNais(
     app: appName,
   })
 
-  // Get the latest deployment we have for this app
   const latestDeployment = await getLatestDeploymentForApp(monitoredAppId)
 
   if (!latestDeployment) {
-    // No deployments yet - fall back to full sync
     logger.info('📋 No existing deployments - performing full sync instead')
     const result = await syncDeploymentsFromNais(teamSlug, environmentName, appName)
     return {
@@ -239,7 +212,6 @@ export async function syncNewDeploymentsFromNais(
 
   logger.info(`🔍 Looking for deployments newer than ${latestDeployment.nais_deployment_id.substring(0, 20)}...`)
 
-  // Fetch only new deployments
   const { deployments, stoppedEarly } = await fetchNewDeployments(
     teamSlug,
     environmentName,
@@ -260,14 +232,12 @@ export async function syncNewDeploymentsFromNais(
   let detectedRepository: { owner: string; repo: string } | null = null
 
   for (const deployment of deployments) {
-    // Double-check it doesn't exist (in case of race condition)
     const existing = await getDeploymentByNaisId(deployment.id)
     if (existing) {
       logger.info(`⏭️  Already exists: ${deployment.id}`)
       continue
     }
 
-    // Parse repository from Nais data
     if (deployment.repository) {
       const match = deployment.repository.match(/github\.com\/([^/]+)\/([^/]+)/)
       if (match) {
@@ -278,7 +248,6 @@ export async function syncNewDeploymentsFromNais(
       }
     }
 
-    // Extract resources
     const resources = deployment.resources?.nodes?.map((r) => ({
       id: r.id,
       kind: r.kind,
@@ -303,7 +272,6 @@ export async function syncNewDeploymentsFromNais(
     newCount++
   }
 
-  // Check for repository mismatches if we detected a repo
   if (detectedRepository) {
     const existingRepos = await getRepositoriesByAppId(monitoredAppId)
     const matchingRepo = existingRepos.find(
@@ -311,7 +279,6 @@ export async function syncNewDeploymentsFromNais(
     )
 
     if (!matchingRepo) {
-      // New repository detected - create it (but skip alert for incremental sync)
       await upsertApplicationRepository({
         monitoredAppId,
         githubOwner: detectedRepository.owner,
@@ -329,12 +296,6 @@ export async function syncNewDeploymentsFromNais(
   return { newCount, alertsCreated, stoppedEarly }
 }
 
-/**
- * Trigger a default_branch sync for the app using its currently active repository.
- *
- * Best-effort: failures are logged but don't break the calling sync. The
- * helper itself enforces a 24h cooldown to keep GitHub API usage predictable.
- */
 async function runDefaultBranchSync(monitoredAppId: number): Promise<void> {
   try {
     const repos = await getRepositoriesByAppId(monitoredAppId)

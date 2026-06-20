@@ -1,14 +1,10 @@
-/**
- * Board period helpers — compute tertial/quarterly/monthly start/end dates and labels.
- */
-
 export type BoardPeriodType = 'tertiary' | 'quarterly' | 'monthly'
 
 interface BoardPeriod {
   type: BoardPeriodType
   label: string
-  start: string // ISO date (YYYY-MM-DD)
-  end: string // ISO date (YYYY-MM-DD)
+  start: string
+  end: string
 }
 
 function getTertial(month: number): 1 | 2 | 3 {
@@ -28,10 +24,6 @@ function formatLocalDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/**
- * Convert a Date or ISO string to a `YYYY-MM-DD` string suitable for `<input type="date">`.
- * Handles PostgreSQL DATE columns which the `pg` driver returns as JS Date objects.
- */
 export function toDateInputValue(value: string | Date): string {
   if (value instanceof Date) return formatLocalDate(value)
   if (typeof value === 'string' && value.includes('T')) return value.split('T')[0]
@@ -89,10 +81,6 @@ export function getCurrentPeriod(type: BoardPeriodType, date = new Date()): Boar
   }
 }
 
-/**
- * Format a board's display label as `{teamName} - {periodLabel}`.
- * Brukes alle steder hvor en måltavle vises i UI, slik at vi har én sannhet for visningsnavnet.
- */
 export function formatBoardLabel(input: { teamName: string; periodLabel: string }): string {
   const teamName = input.teamName.trim()
   const periodLabel = input.periodLabel.trim()
@@ -107,7 +95,6 @@ export const BOARD_PERIOD_TYPE_LABELS: Record<BoardPeriodType, string> = {
   monthly: 'Måned',
 }
 
-/** Get a list of periods for the given year and type. */
 export function getPeriodsForYear(type: BoardPeriodType, year: number): BoardPeriod[] {
   if (type === 'monthly') {
     return Array.from({ length: 12 }, (_, i) => getCurrentPeriod('monthly', new Date(year, i, 15)))

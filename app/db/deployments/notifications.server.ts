@@ -4,11 +4,6 @@ import { pool } from '../connection.server'
 import type { AppReminderConfig, DeploymentWithApp } from '../deployments.server'
 import { getDeploymentById } from '../deployments.server'
 
-/**
- * Atomically claim a deployment for Slack notification.
- * Returns the deployment only if this call successfully claimed it (no prior slack_message_ts).
- * This ensures only one pod sends the notification even with multiple replicas.
- */
 export async function claimDeploymentForSlackNotification(
   deploymentId: number,
   channelId: string,
@@ -23,17 +18,12 @@ export async function claimDeploymentForSlackNotification(
   )
 
   if (result.rows.length === 0) {
-    return null // Already claimed by another pod
+    return null
   }
 
-  // Get the full deployment with app info
   return getDeploymentById(deploymentId)
 }
 
-/**
- * Get deployments that need Slack notification (no slack_message_ts set)
- * for apps that have Slack notifications enabled
- */
 async function _getDeploymentsNeedingSlackNotification(limit = 50): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*, 
@@ -55,11 +45,6 @@ async function _getDeploymentsNeedingSlackNotification(limit = 50): Promise<Depl
   return result.rows
 }
 
-/**
- * Atomically claim a deployment for deploy notification.
- * Returns the deployment only if this call successfully claimed it (no prior slack_deploy_message_ts).
- * This ensures only one pod sends the notification even with multiple replicas.
- */
 export async function claimDeploymentForDeployNotify(
   deploymentId: number,
   _channelId: string,
@@ -74,17 +59,12 @@ export async function claimDeploymentForDeployNotify(
   )
 
   if (result.rows.length === 0) {
-    return null // Already claimed by another pod
+    return null
   }
 
   return getDeploymentById(deploymentId)
 }
 
-/**
- * Get deployments that need deploy notification (no slack_deploy_message_ts set)
- * for apps that have deploy notifications enabled.
- * Only includes deployments that have been verified (not in a pending status).
- */
 export async function getDeploymentsNeedingDeployNotify(limit = 50): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*, 
@@ -107,9 +87,6 @@ export async function getDeploymentsNeedingDeployNotify(limit = 50): Promise<Dep
   return result.rows
 }
 
-/**
- * Get all apps with reminders enabled and Slack configured
- */
 export async function getAppsWithRemindersEnabled(): Promise<AppReminderConfig[]> {
   const result = await pool.query<AppReminderConfig>(
     `SELECT id, team_slug, environment_name, app_name, slack_channel_id,
@@ -123,9 +100,6 @@ export async function getAppsWithRemindersEnabled(): Promise<AppReminderConfig[]
   return result.rows
 }
 
-/**
- * Get unapproved deployments for a specific app (for reminders)
- */
 export async function getUnapprovedDeployments(monitoredAppId: number): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*,
@@ -141,9 +115,6 @@ export async function getUnapprovedDeployments(monitoredAppId: number): Promise<
   return result.rows
 }
 
-/**
- * Atomically update reminder_last_sent_at (returns true if claimed)
- */
 export async function claimReminderSend(appId: number, minIntervalHours: number): Promise<boolean> {
   const result = await pool.query(
     `UPDATE monitored_applications

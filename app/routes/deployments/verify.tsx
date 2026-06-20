@@ -17,7 +17,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url)
   const appId = url.searchParams.get('app')
 
-  // Get stats on unverified deployments using dedicated stats query
   const stats = await getVerificationStats(appId ? parseInt(appId, 10) : undefined)
 
   return {
@@ -34,7 +33,6 @@ export async function action({ request }: Route.ActionArgs) {
   try {
     logger.info(`🔍 Starting batch verification (limit: ${limit})`)
 
-    // If specific app, use locking for that app
     if (appIdParam) {
       const appId = parseInt(appIdParam as string, 10)
       const lockResult = await verifyDeploymentsWithLock(appId, limit)
@@ -55,7 +53,6 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
-    // For all apps, iterate through each and use locking
     const apps = await getAllMonitoredApplications()
     let totalVerified = 0
     let totalFailed = 0
@@ -107,7 +104,6 @@ export default function DeploymentsVerify({ loaderData, actionData }: Route.Comp
   const navigation = useNavigation()
   const isVerifying = navigation.state === 'submitting'
 
-  // Simulate progress based on typical verification time
   const [progress, setProgress] = useState(0)
 
   useEffect(() => {
@@ -116,15 +112,14 @@ export default function DeploymentsVerify({ loaderData, actionData }: Route.Comp
       return
     }
 
-    // Estimate: ~1 second per deployment, progress updates every second
     const formData = navigation.formData
     const limit = formData ? Number(formData.get('limit')) || 50 : 50
-    const estimatedSeconds = limit * 1 // 1 second per deployment estimate
+    const estimatedSeconds = limit * 1
 
     let elapsed = 0
     const interval = setInterval(() => {
       elapsed += 1
-      const percentage = Math.min((elapsed / estimatedSeconds) * 100, 95) // Cap at 95% until done
+      const percentage = Math.min((elapsed / estimatedSeconds) * 100, 95)
       setProgress(percentage)
     }, 1000)
 

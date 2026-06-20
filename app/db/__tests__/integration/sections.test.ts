@@ -49,7 +49,6 @@ describe('sections', () => {
     const sectionId = await seedSection(pool, 'sec-replace')
     await pool.query('INSERT INTO section_teams (section_id, team_slug) VALUES ($1, $2)', [sectionId, 'old-team'])
 
-    // Replace with new teams
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -75,7 +74,6 @@ describe('sections', () => {
       "INSERT INTO sections (slug, name, entra_group_admin, entra_group_user) VALUES ('s2', 'Section 2', 'admin-g2', 'user-g2')",
     )
 
-    // User with admin group for s1
     const { rows: adminRows } = await pool.query(
       `SELECT s.*, CASE WHEN s.entra_group_admin = ANY($1) THEN 'admin' ELSE 'user' END as role
        FROM sections s WHERE s.is_active = true AND (s.entra_group_admin = ANY($1) OR s.entra_group_user = ANY($1))`,
@@ -84,7 +82,6 @@ describe('sections', () => {
     expect(adminRows).toHaveLength(1)
     expect(adminRows[0].role).toBe('admin')
 
-    // User with user group for s2
     const { rows: userRows } = await pool.query(
       `SELECT s.*, CASE WHEN s.entra_group_admin = ANY($1) THEN 'admin' ELSE 'user' END as role
        FROM sections s WHERE s.is_active = true AND (s.entra_group_admin = ANY($1) OR s.entra_group_user = ANY($1))`,

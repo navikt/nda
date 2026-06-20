@@ -1,9 +1,3 @@
-/**
- * Integration test: Application group database queries.
- * Tests CRUD operations for application groups and verification propagation
- * against a real PostgreSQL instance.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { seedApp, seedDeployment, seedDevTeam, seedSection, truncateAllTables } from './helpers'
@@ -21,8 +15,6 @@ afterAll(async () => {
 afterEach(async () => {
   await truncateAllTables(pool)
 })
-
-// ─── Helper ──────────────────────────────────────────────────────────────────
 
 async function createGroup(name: string): Promise<number> {
   const { rows } = await pool.query<{ id: number }>('INSERT INTO application_groups (name) VALUES ($1) RETURNING id', [
@@ -45,8 +37,6 @@ async function linkAppToTeam(teamId: number, appId: number): Promise<void> {
 async function setAppInactive(appId: number): Promise<void> {
   await pool.query('UPDATE monitored_applications SET is_active = false WHERE id = $1', [appId])
 }
-
-// ─── Schema ──────────────────────────────────────────────────────────────────
 
 describe('application_groups schema', () => {
   it('should create an application group', async () => {
@@ -95,8 +85,6 @@ describe('application_groups schema', () => {
     expect(rows.map((r) => r.id)).toEqual([app1, app2])
   })
 })
-
-// ─── CRUD functions ──────────────────────────────────────────────────────────
 
 describe('application-groups CRUD', () => {
   it('createApplicationGroup should return the new group', async () => {
@@ -205,11 +193,9 @@ describe('application-groups CRUD', () => {
     expect(group1).toBeNull()
     expect(group2).toBeNull()
 
-    // getGroupWithApps also filters soft-deleted groups.
     const { getGroupWithApps } = await import('~/db/application-groups.server')
     expect(await getGroupWithApps(group.id)).toBeNull()
 
-    // Group row is preserved (soft delete) with audit fields populated.
     const { rows } = await pool.query<{ deleted_at: Date | null; deleted_by: string | null }>(
       'SELECT deleted_at, deleted_by FROM application_groups WHERE id = $1',
       [group.id],
@@ -218,7 +204,6 @@ describe('application-groups CRUD', () => {
     expect(rows[0].deleted_at).not.toBeNull()
     expect(rows[0].deleted_by).toBe('A123456')
 
-    // Soft-deleted group is filtered out of current-state listings.
     const all = await getAllGroups()
     expect(all.find((g) => g.id === group.id)).toBeUndefined()
   })
@@ -245,8 +230,6 @@ describe('application-groups CRUD', () => {
     expect(g2?.app_count).toBe(1)
   })
 })
-
-// ─── getGroupContext (single-query helper) ───────────────────────────────────
 
 describe('getGroupContext', () => {
   it('should return group and siblings for a grouped app', async () => {
@@ -316,13 +299,10 @@ describe('getGroupContext', () => {
     await addAppToGroup(group.id, app3)
 
     const ctx = await getGroupContext(app1)
-    // dev-gcp comes before prod-gcp alphabetically
     expect(ctx.siblings[0].environment_name).toBe('dev-gcp')
     expect(ctx.siblings[1].environment_name).toBe('prod-gcp')
   })
 })
-
-// ─── Team-scoped helpers ─────────────────────────────────────────────────────
 
 describe('getGroupsForDevTeam', () => {
   it('returns groups containing at least one team app, marking is_team_app correctly', async () => {

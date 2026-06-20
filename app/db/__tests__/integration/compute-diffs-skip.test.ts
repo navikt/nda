@@ -1,11 +1,3 @@
-/**
- * Integration test: computeVerificationDiffs baseline / manually_approved skip.
- *
- * Verifies that deployments approved via explicit admin actions are skipped
- * during diff computation. V2 cannot reproduce these statuses, so without
- * the skip they would always show up as false-positive diffs.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'

@@ -15,10 +15,6 @@ export interface RoleMember {
   assigned_at: string | Date
 }
 
-/**
- * Team role management section with table and assign modal.
- * Used on the team admin page.
- */
 export function RoleMembersSection({ roleMembers }: { roleMembers: RoleMember[] }) {
   const modalRef = useRef<HTMLDialogElement>(null)
   const [selectedNavIdent, setSelectedNavIdent] = useState('')

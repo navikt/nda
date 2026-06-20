@@ -2,22 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { PrCommit, PrMetadata, PrReview, VerificationInput } from '../verification/types'
 import { verifyDeployment, verifyFourEyesFromPrData } from '../verification/verify'
 
-/**
- * Tests closing coverage gaps in verifyDeployment.
- *
- * Covers:
- * - Case 1: pending_baseline (no previousDeployment)
- * - Case 2a: no_changes (empty commitsBetween, same SHA)
- * - Case 2b: compare error (empty commitsBetween, different SHAs)
- * - Case 5: approved via base branch merge (integration)
- * - Case 6: implicitly_approved via mode 'all' (integration)
- * - Deployed PR with approval_before_last_commit reason propagation
- */
-
-// =============================================================================
-// Test Helpers (same shape as four-eyes-verification.test.ts)
-// =============================================================================
-
 function makePrCommit(overrides: Partial<PrCommit> = {}): PrCommit {
   return {
     sha: 'default-commit-sha',
@@ -98,10 +82,6 @@ function makeBaseInput(overrides: Partial<VerificationInput> = {}): Verification
   }
 }
 
-// =============================================================================
-// Case 1: pending_baseline
-// =============================================================================
-
 describe('verifyDeployment - Case 1: pending_baseline', () => {
   it('should return pending_baseline when there is no previous deployment', () => {
     const input = makeBaseInput({ previousDeployment: null })
@@ -133,10 +113,6 @@ describe('verifyDeployment - Case 1: pending_baseline', () => {
     expect(result.deployedPr?.number).toBe(100)
   })
 })
-
-// =============================================================================
-// Case 2: no_changes / compare error
-// =============================================================================
 
 describe('verifyDeployment - Case 2a: no_changes (same commit SHA)', () => {
   it('should return no_changes when commitsBetween is empty and SHAs match', () => {
@@ -237,8 +213,6 @@ describe('verifyDeployment - Case 2b: zero-commit handling', () => {
   })
 
   it('should recognize diverged branches with no actual diff (tree comparison worked)', () => {
-    // Scenario: Different SHAs, compare says 0 commits, 0 files, status='diverged' (different branch)
-    // Tree comparison confirms both commits have identical tree → true no-diff
     const input = makeBaseInput({
       commitSha: 'branch-x-tip',
       previousDeployment: {
@@ -264,8 +238,6 @@ describe('verifyDeployment - Case 2b: zero-commit handling', () => {
   })
 
   it('should return error when SHAs differ but commitsBetween is empty and no compare metadata', () => {
-    // Scenario: SHAs differ, 0 commits, no compare metadata, no noDiffDetected flag
-    // This is ambiguous — could be API error, rollback, or branch divergence
     const input = makeBaseInput({
       commitSha: 'deploy-sha-new',
       previousDeployment: {
@@ -286,8 +258,6 @@ describe('verifyDeployment - Case 2b: zero-commit handling', () => {
   })
 
   it('should return error when SHAs differ and tree comparison found real diff', () => {
-    // Scenario: Different SHAs, 0 commits in compare, but tree comparison shows different trees
-    // This indicates rollback or branch divergence with actual code changes
     const input = makeBaseInput({
       commitSha: 'older-sha-abc',
       previousDeployment: {
@@ -363,14 +333,8 @@ describe('verifyDeployment - Case 2b: zero-commit handling', () => {
   })
 })
 
-// =============================================================================
-// GitHub API Failures and Access Issues
-// =============================================================================
-
 describe('verifyDeployment - GitHub API and access failures', () => {
   it('should return error when GitHub compare API fails with 403 (access denied)', () => {
-    // Scenario: GitHub returns 403 Forbidden (repo access issue, PAT expired, etc.)
-    // This must be surfaced as error, not treated as "no commits"
     const input = makeBaseInput({
       commitSha: 'deploy-sha-new',
       previousDeployment: {
@@ -410,7 +374,6 @@ describe('verifyDeployment - GitHub API and access failures', () => {
   })
 
   it('should return error when GitHub compare API fails with 500 (server error)', () => {
-    // Temporary GitHub outage or transient error
     const input = makeBaseInput({
       commitSha: 'deploy-sha-new',
       previousDeployment: {
@@ -430,8 +393,6 @@ describe('verifyDeployment - GitHub API and access failures', () => {
   })
 
   it('should return error when tree comparison fallback also fails', () => {
-    // Scenario: Compare returns 0 commits (ambiguous), tree comparison fallback also fails
-    // noDiffDetected=false (fallback failed or found diff), no nearby approved deploy
     const input = makeBaseInput({
       commitSha: 'deploy-sha-new',
       previousDeployment: {
@@ -507,7 +468,6 @@ describe('verifyDeployment - GitHub API and access failures', () => {
         createdAt: '2026-02-19T07:46:34Z',
       },
       commitsBetween: [],
-      // No same-commit sibling, but a nearby approved deploy with different commit
       nearbyApprovedDeploy: {
         deploymentId: 10450,
         commitSha: 'ab169e8',
@@ -552,20 +512,8 @@ describe('verifyDeployment - GitHub API and access failures', () => {
   })
 })
 
-// =============================================================================
-// Case 5: approved via base branch merge (integration through verifyDeployment)
-// =============================================================================
-
 describe('verifyDeployment - Case 5: base branch merge approval', () => {
   it('should return approved when unverified commits are explained by base merge', () => {
-    // Scenario:
-    // 1. Developer makes feature commit at 09:00
-    // 2. Reviewer approves at 10:00
-    // 3. Main is merged into feature branch at 12:00, bringing a commit from 11:00
-    // 4. verifyFourEyesFromPrData sees last real commit (from-main) at 11:00 > approval at 10:00
-    //    → hasFourEyes = false (approval_before_last_commit)
-    // 5. shouldApproveWithBaseMerge sees all unverified commits are before merge at 12:00
-    //    → approved via base_merge
     const input = makeBaseInput({
       deployedPr: {
         number: 200,
@@ -584,14 +532,12 @@ describe('verifyDeployment - Case 5: base branch merge approval', () => {
             authorDate: '2026-02-25T09:00:00Z',
             message: 'Feature work',
           }),
-          // Commit from main brought in by merge — date is AFTER approval
           makePrCommit({
             sha: 'from-main-1',
             authorUsername: 'other-dev',
             authorDate: '2026-02-25T11:00:00Z',
             message: 'Other feature from main',
           }),
-          // The merge commit bringing main into feature
           makePrCommit({
             sha: 'base-merge-commit',
             authorUsername: 'developer-a',
@@ -642,10 +588,6 @@ describe('verifyDeployment - Case 5: base branch merge approval', () => {
     expect(result.unverifiedCommits).toHaveLength(0)
   })
 })
-
-// =============================================================================
-// Case 6: implicitly_approved via mode 'all' (integration through verifyDeployment)
-// =============================================================================
 
 describe('verifyDeployment - Case 6: implicit approval mode all', () => {
   it('should return implicitly_approved when merger differs from creator and last committer', () => {
@@ -733,16 +675,8 @@ describe('verifyDeployment - Case 6: implicit approval mode all', () => {
   })
 })
 
-// =============================================================================
-// Case 6b: implicitly_approved via mode 'dependabot_only' (integration)
-// =============================================================================
-
 describe('verifyDeployment - Case 6: implicit approval mode dependabot_only', () => {
   it('should return implicitly_approved for dependabot PR merged by another user', () => {
-    // Dependabot PR with no reviews, merged by a human.
-    // The commit in commitsBetween does NOT match mergeCommitSha or PR commit SHAs,
-    // so it falls through to commit.pr path → no reviews → unverified.
-    // Then implicit approval (dependabot_only) kicks in.
     const input = makeBaseInput({
       implicitApprovalSettings: { mode: 'dependabot_only' },
       deployedPr: {
@@ -829,8 +763,6 @@ describe('verifyDeployment - Case 6: implicit approval mode dependabot_only', ()
 
 describe('verifyDeployment - deployed PR approval before last commit', () => {
   it('should propagate approval_before_last_commit reason for deployed PR commits', () => {
-    // Deployed PR was approved, then a new commit was pushed.
-    // Commits matched via deployedPrCommitShas should get the correct reason.
     const input = makeBaseInput({
       deployedPr: {
         number: 400,
@@ -898,15 +830,8 @@ describe('verifyDeployment - deployed PR approval before last commit', () => {
   })
 })
 
-// =============================================================================
-// Security: merge-commit with code changes is invisible
-// =============================================================================
-
 describe('verifyDeployment - Security: merge-commit bypass', () => {
   it('should flag non-base-branch merge commits without a PR as unverified', () => {
-    // Scenario: Someone pushes a merge commit directly to main that contains
-    // code changes (e.g., conflict resolution with malicious code).
-    // This merge commit is NOT a base-branch merge and has no PR.
     const input = makeBaseInput({
       commitsBetween: [
         {
@@ -941,8 +866,6 @@ describe('verifyDeployment - Security: merge-commit bypass', () => {
 
     const result = verifyDeployment(input)
 
-    // This test documents the EXPECTED behavior after the fix:
-    // Non-base-branch merge commits without a PR should be flagged
     expect(result.unverifiedCommits.some((c) => c.sha === 'sneaky-merge-commit')).toBe(true)
     expect(result.status).toBe('unverified_commits')
   })
@@ -993,16 +916,8 @@ describe('verifyDeployment - Security: merge-commit bypass', () => {
   })
 })
 
-// =============================================================================
-// Security: git date manipulation (backdated authorDate)
-// =============================================================================
-
 describe('verifyFourEyesFromPrData - Security: date manipulation', () => {
   it('should reject when authorDate is backdated but committerDate reveals truth', () => {
-    // Scenario: Attacker sets authorDate to before the approval,
-    // but committerDate (set at push time) is after the approval.
-    // The approval should NOT be considered valid because the commit
-    // was actually pushed after the approval.
     const result = verifyFourEyesFromPrData({
       reviewers: [
         {
@@ -1036,15 +951,10 @@ describe('verifyFourEyesFromPrData - Security: date manipulation', () => {
       baseBranch: 'main',
     })
 
-    // After fix: should detect that committerDate is after approval
     expect(result.hasFourEyes).toBe(false)
     expect(result.reason).toBe('approval_before_last_commit')
   })
 })
-
-// =============================================================================
-// Repository Status Validation
-// =============================================================================
 
 describe('verifyDeployment - Repository status validation', () => {
   it('should return unauthorized_repository when repo status is pending_approval', () => {
@@ -1103,14 +1013,9 @@ describe('verifyDeployment - Repository status validation', () => {
 
     const result = verifyDeployment(input)
 
-    // Should proceed to normal logic (pending_baseline since no previous deployment)
     expect(result.status).toBe('pending_baseline')
   })
 })
-
-// =============================================================================
-// Branch Validation
-// =============================================================================
 
 describe('verifyDeployment - Branch validation', () => {
   it('should return unauthorized_branch when commit is not on base branch', () => {

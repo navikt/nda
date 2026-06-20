@@ -6,10 +6,6 @@ import { withDbSpan } from '~/lib/tracing.server'
 
 let poolInstance: Pool | null = null
 
-// ─── Retry helper for transient PostgreSQL connection errors ─────────────────
-// PG error 53300 ("too_many_connections") is transient — connections free up
-// within milliseconds as other requests finish. Retrying with backoff avoids
-// surfacing a hard 500 to users during brief traffic spikes.
 const MAX_RETRIES = 3
 const BASE_DELAY_MS = 200
 
@@ -32,7 +28,6 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 function buildConnectionConfig() {
-  // Nais injects individual DB_* variables with envVarPrefix: DB
   const dbHost = process.env.DB_HOST
   const dbPort = process.env.DB_PORT
   const dbDatabase = process.env.DB_DATABASE
@@ -47,7 +42,6 @@ function buildConnectionConfig() {
       rejectUnauthorized: false,
     }
 
-    // Add client certificates if available
     if (dbSslRootCert) {
       sslConfig.ca = readFileSync(dbSslRootCert, 'utf-8')
     }
@@ -68,7 +62,6 @@ function buildConnectionConfig() {
     }
   }
 
-  // Fall back to DATABASE_URL for local development
   const connectionString = process.env.DATABASE_URL
   if (connectionString) {
     return { connectionString }
@@ -96,28 +89,14 @@ export function getPool(): Pool {
   return poolInstance
 }
 
-// ─── Sync-dedicated connection (AsyncLocalStorage) ───────────────────────────
-// During periodic sync, a single PoolClient is checked out and stored in ALS.
-// The pool proxy routes query() and connect() through this client so that all
-// sync DB work uses a single Postgres connection for the sync cycle within the
-// pod that holds the advisory lock.
-
 const syncClientStore = new AsyncLocalStorage<PoolClient>()
 
-/** Fixed advisory lock key for the global periodic sync lock. */
 export const SYNC_ADVISORY_LOCK_KEY = 839_201_471
 
-/** Returns the sync-dedicated client if the current async context is inside withSyncClient. */
 export function getSyncClient(): PoolClient | undefined {
   return syncClientStore.getStore()
 }
 
-/**
- * Run `fn` using a single dedicated Postgres connection for all DB operations.
- * Acquires a global advisory lock so only one pod syncs at a time.
- *
- * Returns `null` if the advisory lock is already held by another pod.
- */
 export async function withSyncClient<T>(fn: () => Promise<T>): Promise<T | null> {
   const client = await getPool().connect()
   let destroyed = false
@@ -135,8 +114,6 @@ export async function withSyncClient<T>(fn: () => Promise<T>): Promise<T | null>
       try {
         await client.query(`SELECT pg_advisory_unlock(${SYNC_ADVISORY_LOCK_KEY})`)
       } catch (unlockError) {
-        // If unlock fails, destroy the connection so the advisory lock cannot
-        // remain held on a pooled session (which would block all future sync cycles).
         logger.error('Failed to release advisory lock, destroying connection', unlockError)
         destroyed = true
         client.release(true)
@@ -149,9 +126,6 @@ export async function withSyncClient<T>(fn: () => Promise<T>): Promise<T | null>
   }
 }
 
-// Lazy pool proxy — defers creation until first use and instruments queries with OTel spans.
-// When running inside withSyncClient(), query() and connect() are routed through the
-// dedicated sync client so that all sync DB work uses a single Postgres connection.
 export const pool: Pool = new Proxy({} as Pool, {
   get(_target, prop) {
     const instance = getPool()
@@ -172,8 +146,6 @@ export const pool: Pool = new Proxy({} as Pool, {
       return (...args: any[]) => {
         const syncClient = getSyncClient()
         if (syncClient) {
-          // Return a proxy that delegates to the sync client but makes release() a no-op.
-          // The sync client is owned by withSyncClient() and released there.
           const client = new Proxy(syncClient, {
             get(target, clientProp) {
               if (clientProp === 'release') return () => {}
@@ -182,7 +154,6 @@ export const pool: Pool = new Proxy({} as Pool, {
             },
           }) as PoolClient
 
-          // Support callback-style: pool.connect((err, client, done) => ...)
           const callback = typeof args[0] === 'function' ? args[0] : undefined
           if (callback) {
             callback(null, client, client.release.bind(client))

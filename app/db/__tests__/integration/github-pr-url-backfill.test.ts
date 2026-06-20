@@ -1,10 +1,3 @@
-/**
- * Integration test for github_pr_url backfill migration
- *
- * Tests that the migration correctly populates missing github_pr_url
- * from github_pr_number and repo info when github_pr_url is NULL.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest'
 import { seedApp, truncateAllTables } from './helpers'
@@ -25,7 +18,6 @@ describe('GitHub PR URL backfill migration', () => {
   })
 
   test('should populate github_pr_url when NULL but github_pr_number exists', async () => {
-    // Setup: Create app and deployment with PR number but no URL
     const appId = await seedApp(pool, { teamSlug: 'test-team', appName: 'test-app', environment: 'prod-gcp' })
 
     const { rows: insertRows } = await pool.query<{ id: number }>(
@@ -60,14 +52,12 @@ describe('GitHub PR URL backfill migration', () => {
     )
     const deploymentId = insertRows[0].id
 
-    // Verify initial state
     const beforeResult = await pool.query('SELECT github_pr_number, github_pr_url FROM deployments WHERE id = $1', [
       deploymentId,
     ])
     expect(beforeResult.rows[0].github_pr_number).toBe(123)
     expect(beforeResult.rows[0].github_pr_url).toBeNull()
 
-    // Execute the migration logic (what the migration does)
     await pool.query(`
       UPDATE deployments
       SET github_pr_url = 'https://github.com/' || detected_github_owner || '/' || detected_github_repo_name || '/pull/' || github_pr_number::text
@@ -77,7 +67,6 @@ describe('GitHub PR URL backfill migration', () => {
         AND detected_github_repo_name IS NOT NULL
     `)
 
-    // Verify URL was populated
     const afterResult = await pool.query('SELECT github_pr_number, github_pr_url FROM deployments WHERE id = $1', [
       deploymentId,
     ])
@@ -86,7 +75,6 @@ describe('GitHub PR URL backfill migration', () => {
   })
 
   test('should not overwrite existing github_pr_url', async () => {
-    // Setup: Create app and deployment with both PR number and URL
     const appId = await seedApp(pool, { teamSlug: 'test-team', appName: 'test-app', environment: 'prod-gcp' })
     const existingUrl = 'https://github.com/navikt/existing-repo/pull/456'
 
@@ -122,7 +110,6 @@ describe('GitHub PR URL backfill migration', () => {
     )
     const deploymentId = insertRows[0].id
 
-    // Execute the migration logic
     await pool.query(`
       UPDATE deployments
       SET github_pr_url = 'https://github.com/' || detected_github_owner || '/' || detected_github_repo_name || '/pull/' || github_pr_number::text
@@ -132,7 +119,6 @@ describe('GitHub PR URL backfill migration', () => {
         AND detected_github_repo_name IS NOT NULL
     `)
 
-    // Verify URL was NOT changed
     const afterResult = await pool.query('SELECT github_pr_number, github_pr_url FROM deployments WHERE id = $1', [
       deploymentId,
     ])
@@ -141,7 +127,6 @@ describe('GitHub PR URL backfill migration', () => {
   })
 
   test('should not populate github_pr_url when github_pr_number is NULL', async () => {
-    // Setup: Create app and deployment without PR number
     const appId = await seedApp(pool, { teamSlug: 'test-team', appName: 'test-app', environment: 'prod-gcp' })
 
     const { rows: insertRows } = await pool.query<{ id: number }>(
@@ -176,7 +161,6 @@ describe('GitHub PR URL backfill migration', () => {
     )
     const deploymentId = insertRows[0].id
 
-    // Execute the migration logic
     await pool.query(`
       UPDATE deployments
       SET github_pr_url = 'https://github.com/' || detected_github_owner || '/' || detected_github_repo_name || '/pull/' || github_pr_number::text
@@ -186,7 +170,6 @@ describe('GitHub PR URL backfill migration', () => {
         AND detected_github_repo_name IS NOT NULL
     `)
 
-    // Verify URL was NOT populated (no PR number means no URL)
     const afterResult = await pool.query('SELECT github_pr_number, github_pr_url FROM deployments WHERE id = $1', [
       deploymentId,
     ])
@@ -195,7 +178,6 @@ describe('GitHub PR URL backfill migration', () => {
   })
 
   test('should not populate github_pr_url when repo info is missing', async () => {
-    // Setup: Create app and deployment with PR number but no repo info
     const appId = await seedApp(pool, { teamSlug: 'test-team', appName: 'test-app', environment: 'prod-gcp' })
 
     const { rows: insertRows } = await pool.query<{ id: number }>(
@@ -230,7 +212,6 @@ describe('GitHub PR URL backfill migration', () => {
     )
     const deploymentId = insertRows[0].id
 
-    // Execute the migration logic
     await pool.query(`
       UPDATE deployments
       SET github_pr_url = 'https://github.com/' || detected_github_owner || '/' || detected_github_repo_name || '/pull/' || github_pr_number::text
@@ -240,7 +221,6 @@ describe('GitHub PR URL backfill migration', () => {
         AND detected_github_repo_name IS NOT NULL
     `)
 
-    // Verify URL was NOT populated (missing repo info)
     const afterResult = await pool.query('SELECT github_pr_number, github_pr_url FROM deployments WHERE id = $1', [
       deploymentId,
     ])

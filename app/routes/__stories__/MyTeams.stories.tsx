@@ -160,11 +160,6 @@ function PersonalGoalStatus({
   )
 }
 
-/**
- * Presentational copy of the `/my-teams` page used for Storybook. Mirrors the
- * JSX in `app/routes/my-teams.tsx` but without the `loader`/`useLoaderData`
- * coupling so stories can drive it with mock data directly.
- */
 function MyTeamsPage({
   selectedDevTeams,
   teamStats,

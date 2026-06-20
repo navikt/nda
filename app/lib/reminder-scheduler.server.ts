@@ -1,10 +1,3 @@
-/**
- * Reminder scheduler for deployment approval reminders.
- *
- * Checks every minute if any app needs a reminder sent.
- * Uses atomic DB updates to prevent duplicate sends across pods.
- */
-
 import { claimReminderSend, getAppsWithRemindersEnabled, getUnapprovedDeployments } from '~/db/deployments.server'
 import { getGithubUserLookup } from '~/db/user-github-lookups.server'
 import { logger } from '~/lib/logger.server'
@@ -12,23 +5,17 @@ import { getWeekdayKey, isBusinessDay } from './norwegian-holidays'
 import type { ReminderDeployment } from './slack'
 import { sendReminder } from './slack/client.server'
 
-const SCHEDULER_INTERVAL_MS = 60 * 1000 // 1 minute
-const MIN_INTERVAL_HOURS = 23 // Minimum hours between reminders per app
+const SCHEDULER_INTERVAL_MS = 60 * 1000
+const MIN_INTERVAL_HOURS = 23
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null
 
-/**
- * Start the reminder scheduler. Checks every minute for apps needing reminders.
- */
 export function startReminderScheduler(): void {
   if (schedulerInterval) return
   logger.info('⏰ Starting reminder scheduler (1 min interval)')
   schedulerInterval = setInterval(checkAndSendReminders, SCHEDULER_INTERVAL_MS)
 }
 
-/**
- * Stop the reminder scheduler.
- */
 function _stopReminderScheduler(): void {
   if (schedulerInterval) {
     clearInterval(schedulerInterval)
@@ -37,9 +24,6 @@ function _stopReminderScheduler(): void {
   }
 }
 
-/**
- * Check all apps and send reminders where needed.
- */
 async function checkAndSendReminders(): Promise<void> {
   try {
     const now = new Date()
@@ -62,10 +46,6 @@ async function checkAndSendReminders(): Promise<void> {
   }
 }
 
-/**
- * Send a reminder for a specific app (called by scheduler or manual trigger).
- * Returns true if a reminder was sent.
- */
 export async function sendReminderForApp(
   appId: number,
   teamSlug: string,
@@ -73,7 +53,6 @@ export async function sendReminderForApp(
   appName: string,
   channelId: string,
 ): Promise<boolean> {
-  // Atomically claim the send (prevents duplicates across pods)
   const claimed = await claimReminderSend(appId, MIN_INTERVAL_HOURS)
   if (!claimed) {
     return false
@@ -123,9 +102,6 @@ export async function sendReminderForApp(
   return false
 }
 
-/**
- * Check if current time matches configured time (±2 minute window)
- */
 export function isTimeMatch(configured: string, current: string): boolean {
   const [confH, confM] = configured.split(':').map(Number)
   const [curH, curM] = current.split(':').map(Number)

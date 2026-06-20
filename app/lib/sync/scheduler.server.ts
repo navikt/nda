@@ -10,16 +10,8 @@ import { withSyncLock } from './with-sync-lock.server'
 let periodicSyncInterval: ReturnType<typeof setInterval> | null = null
 let isPeriodicSyncRunning = false
 
-const VERIFY_LIMIT_PER_APP = 20 // Limit verifications per app per cycle
+const VERIFY_LIMIT_PER_APP = 20
 
-// ============================================================================
-// Locked sync functions - for distributed execution across multiple pods
-// ============================================================================
-
-/**
- * Incremental sync from Nais with distributed locking (for periodic sync).
- * Only fetches new deployments - much faster than full sync.
- */
 async function syncNewDeploymentsWithLock(
   monitoredAppId: number,
   teamSlug: string,
@@ -43,10 +35,6 @@ async function syncNewDeploymentsWithLock(
   )
 }
 
-/**
- * Verify deployments with distributed locking.
- * Only one pod will run verification for a given app at a time.
- */
 export async function verifyDeploymentsWithLock(monitoredAppId: number, limit?: number) {
   return withSyncLock(
     'github_verify',
@@ -66,16 +54,6 @@ export async function verifyDeploymentsWithLock(monitoredAppId: number, limit?: 
   )
 }
 
-// ============================================================================
-// Periodic sync scheduler
-// ============================================================================
-
-/**
- * Run periodic sync for all monitored applications.
- *
- * Acquires a global advisory lock via `withSyncClient()` so that only one pod
- * syncs at a time, and all DB work uses a single dedicated Postgres connection.
- */
 async function runPeriodicSync(): Promise<void> {
   if (isPeriodicSyncRunning) {
     logger.info('⏳ Periodic sync already running, skipping...')
@@ -98,7 +76,6 @@ async function runPeriodicSync(): Promise<void> {
       let lockedCount = 0
 
       for (const app of apps) {
-        // Try incremental Nais sync (only fetches new deployments)
         const syncResult = await syncNewDeploymentsWithLock(app.id, app.team_slug, app.environment_name, app.app_name)
 
         if (syncResult.locked) {
@@ -108,31 +85,26 @@ async function runPeriodicSync(): Promise<void> {
           newDeploymentsCount += syncResult.result?.newCount || 0
         }
 
-        // Try GitHub verification
         const verifyResult = await verifyDeploymentsWithLock(app.id, VERIFY_LIMIT_PER_APP)
 
         if (verifyResult.success && verifyResult.result) {
           verifiedCount += verifyResult.result.verified
         }
 
-        // Try caching check logs
         const cacheResult = await cacheCheckLogsWithLock(app.id)
 
         if (cacheResult.success && cacheResult.result) {
           cachedLogsCount += cacheResult.result.cached
         }
 
-        // Small delay between apps to be nice to APIs
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // Cleanup old job records periodically
       const cleaned = await cleanupOldSyncJobs(50)
       if (cleaned > 0) {
         logger.info(`🧹 Cleaned up ${cleaned} old sync job records`)
       }
 
-      // Send deploy notifications for newly verified deployments
       try {
         const baseUrl = process.env.BASE_URL || 'https://nda.ansatt.nav.no'
         const { sendPendingDeployNotifications } = await import('~/lib/slack/client.server')
@@ -159,9 +131,6 @@ async function runPeriodicSync(): Promise<void> {
   }
 }
 
-/**
- * Start the periodic sync scheduler.
- */
 export function startPeriodicSync(): void {
   if (periodicSyncInterval) {
     logger.warn('⚠️ Periodic sync already started')
@@ -170,12 +139,10 @@ export function startPeriodicSync(): void {
 
   logger.info(`🚀 Starting periodic sync scheduler (interval: ${SYNC_INTERVAL_MS / 1000}s)`)
 
-  // Run first sync after a short delay (allow server to fully start)
   setTimeout(() => {
     runPeriodicSync().catch((err) => logger.error('❌ Periodic sync failed:', err))
-  }, 10_000) // 10 second delay
+  }, 10_000)
 
-  // Schedule recurring syncs
   periodicSyncInterval = setInterval(() => {
     runPeriodicSync().catch((err) => logger.error('❌ Periodic sync failed:', err))
   }, SYNC_INTERVAL_MS)

@@ -1,19 +1,3 @@
-/**
- * Integration test: getPreviousDeploymentForDiff query logic.
- *
- * Verifies that the cache-path query used by compute-diffs and
- * reverifyDeployment respects the same filters as the canonical
- * getPreviousDeployment query in fetch-data.server.ts:
- *   - audit_start_year
- *   - legacy / legacy_pending
- *   - refs/* commit shas
- *
- * Without these filters, the first deployment in an audit window will
- * incorrectly find a pre-audit deployment as its "previous", leading to
- * wrong verification statuses (e.g. unverified_commits instead of
- * pending_baseline).
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
@@ -44,7 +28,6 @@ describe('getPreviousDeploymentForDiff', () => {
       environment: 'prod-gcp',
       auditStartYear: 2026,
     })
-    // Pre-audit deployment (2025)
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'pensjonselvbetjening',
@@ -54,7 +37,6 @@ describe('getPreviousDeploymentForDiff', () => {
       githubOwner: owner,
       githubRepo: repo,
     })
-    // First deployment in audit window (2026)
     const firstId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'pensjonselvbetjening',
@@ -172,8 +154,6 @@ describe('getPreviousDeploymentForDiff', () => {
   })
 
   it('does not respect environment for monitored_app_id (only the deployment table env)', async () => {
-    // The current query joins via monitored_app_id and filters env on deployments table,
-    // matching the existing behavior. Documents that prev lookup is per (app, env).
     const appId = await seedApp(pool, {
       teamSlug: 'pensjonselvbetjening',
       appName: 'pensjon-app',

@@ -29,8 +29,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const boards = await getBoardsByDevTeam(devTeam.id)
   const currentBoard = boards.find((b) => b.period_label === selectedPeriod.label && b.period_type === periodType)
 
-  // Use board's actual dates when available, otherwise fall back to calculated period.
-  // This ensures the dashboard matches the team page's board section.
   const startDate = currentBoard ? new Date(currentBoard.period_start) : new Date(selectedPeriod.start)
   const endDate = currentBoard ? new Date(currentBoard.period_end) : new Date(selectedPeriod.end)
   endDate.setDate(endDate.getDate() + 1)
@@ -40,7 +38,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     objectiveProgress = (await getBoardObjectiveProgress(currentBoard.id, undefined, { startDate })).objectives
   }
 
-  // Use board-based team stats for consistent counting with the team page and section page
   const teamStats = await getDevTeamStats(devTeam.id, startDate, endDate)
   const coverage = {
     total: teamStats.total_deployments,

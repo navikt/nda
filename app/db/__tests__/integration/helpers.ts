@@ -1,12 +1,5 @@
-/**
- * Shared test helpers for integration tests.
- */
 import type { Pool } from 'pg'
 
-/**
- * Truncate all application tables (preserving pgmigrations).
- * Uses RESTART IDENTITY to reset serial counters.
- */
 export async function truncateAllTables(pool: Pool): Promise<void> {
   const { rows } = await pool.query<{ tablename: string }>(`
     SELECT tablename FROM pg_tables
@@ -19,9 +12,6 @@ export async function truncateAllTables(pool: Pool): Promise<void> {
   await pool.query(`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`)
 }
 
-/**
- * Insert a section and return its id.
- */
 export async function seedSection(pool: Pool, slug: string, name?: string): Promise<number> {
   const { rows } = await pool.query<{ id: number }>(`INSERT INTO sections (slug, name) VALUES ($1, $2) RETURNING id`, [
     slug,
@@ -30,13 +20,6 @@ export async function seedSection(pool: Pool, slug: string, name?: string): Prom
   return rows[0].id
 }
 
-/**
- * Insert a monitored application and return its id.
- *
- * When `auditStartYear` is omitted, defaults to the current year
- * (matches production behavior). Pass `null` explicitly to opt out
- * of any audit window; pass a number to override.
- */
 export async function seedApp(
   pool: Pool,
   opts: { teamSlug: string; appName: string; environment: string; auditStartYear?: number | null },
@@ -50,9 +33,6 @@ export async function seedApp(
   return rows[0].id
 }
 
-/**
- * Insert a dev team and return its id.
- */
 export async function seedDevTeam(pool: Pool, slug: string, name?: string, sectionId?: number): Promise<number> {
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO dev_teams (slug, name, section_id) VALUES ($1, $2, $3) RETURNING id`,
@@ -61,9 +41,6 @@ export async function seedDevTeam(pool: Pool, slug: string, name?: string, secti
   return rows[0].id
 }
 
-/**
- * Insert a deployment and return its id.
- */
 export async function seedDeployment(
   pool: Pool,
   opts: {
@@ -109,9 +86,6 @@ export async function seedDeployment(
   return rows[0].id
 }
 
-/**
- * Create an application group and return its id.
- */
 export async function seedApplicationGroup(pool: Pool, name: string): Promise<number> {
   const { rows } = await pool.query<{ id: number }>(`INSERT INTO application_groups (name) VALUES ($1) RETURNING id`, [
     name,
@@ -119,9 +93,6 @@ export async function seedApplicationGroup(pool: Pool, name: string): Promise<nu
   return rows[0].id
 }
 
-/**
- * Assign a monitored application to an application group.
- */
 export async function assignAppToGroup(pool: Pool, appId: number, groupId: number): Promise<void> {
   await pool.query(`UPDATE monitored_applications SET application_group_id = $1 WHERE id = $2`, [groupId, appId])
 }

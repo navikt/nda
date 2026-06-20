@@ -27,17 +27,6 @@ export async function logStatusTransition(
   )
 }
 
-/**
- * Record a baseline approval for a deployment that already has four_eyes_status = 'baseline'
- * but is missing an attributed approver in its status history (historical data gap).
- *
- * Idempotent at the DB level: a partial UNIQUE index on (deployment_id) WHERE
- * change_source = 'baseline_approval' AND changed_by IS NOT NULL ensures at most one
- * attributed row per deployment. ON CONFLICT DO NOTHING handles concurrent submissions.
- *
- * Returns true if a row was inserted, false if one already existed (no-op).
- * Does NOT change the deployment's four_eyes_status — use updateDeploymentFourEyes for that.
- */
 export async function recordBaselineApproval(deploymentId: number, changedBy: string): Promise<boolean> {
   const result = await pool.query(
     `INSERT INTO deployment_status_history

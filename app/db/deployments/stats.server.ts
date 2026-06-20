@@ -9,16 +9,6 @@ interface StatsOptions {
   endDate?: Date
 }
 
-/**
- * Get deployment stats for a single app.
- *
- * Delegates to {@link getAppDeploymentStatsBatch} so there is a single SQL
- * implementation for all stats queries — deployer filtering, date ranges,
- * audit year, and goal-link counting all behave identically everywhere.
- *
- * If you need deployer-scoped stats (e.g. "stats for team X's deploys"),
- * call `getAppDeploymentStatsBatch` directly with `deployerUsernames`.
- */
 export async function getAppDeploymentStats(
   monitoredAppId: number,
   startDate?: Date,
@@ -29,25 +19,10 @@ export async function getAppDeploymentStats(
     startDate,
     endDate,
   })
-  // Batch always pre-initializes the Map for every requested app ID
   // biome-ignore lint/style/noNonNullAssertion: guaranteed by getAppDeploymentStatsBatch
   return map.get(monitoredAppId)!
 }
 
-/**
- * Get deployment stats for multiple apps in a single query.
- *
- * When `deployerUsernames` is provided, count columns (total, with_four_eyes,
- * without_four_eyes, etc.) are filtered to deployments where a given username
- * is the deployer **or** PR creator — via `userDeploymentMatchAnySql`. This
- * is the same matching logic used in `getDeploymentsPaginated`'s
- * `deployer_usernames` filter, ensuring stat counts agree with list results.
- *
- * `last_deployment` is intentionally **not** filtered by deployer so AppCard
- * always shows the chronologically latest deploy to the app.
- *
- * @returns Map of appId → AppDeploymentStats
- */
 export async function getAppDeploymentStatsBatch(
   apps: Array<{ id: number; audit_start_year?: number | null }>,
   deployerUsernames?: string[],
@@ -59,7 +34,6 @@ export async function getAppDeploymentStatsBatch(
 
   const appIds = apps.map((a) => a.id)
 
-  // Build the audit year filter as a CASE expression
   const auditYearCases = apps
     .filter((a) => a.audit_start_year)
     .map((a) => `WHEN monitored_app_id = ${a.id} THEN EXTRACT(YEAR FROM created_at) >= ${a.audit_start_year}`)
@@ -67,15 +41,9 @@ export async function getAppDeploymentStatsBatch(
 
   const auditYearFilter = auditYearCases ? `AND (CASE ${auditYearCases} ELSE true END)` : ''
 
-  // Build base params and track param index dynamically so deployer/date
-  // placeholders bind to the correct $N regardless of which optional
-  // filters are active.
-  // without_four_eyes is derived as (total - with_four_eyes - pending) in JS,
-  // so we only need APPROVED and PENDING status arrays.
   const baseParams: any[] = [appIds, APPROVED_STATUSES, PENDING_STATUSES]
   let paramIndex = 4
 
-  // Date range filter — applied to the main WHERE clause (affects all aggregates).
   let dateFilter = ''
   if (options?.startDate) {
     dateFilter += ` AND created_at >= $${paramIndex}`
@@ -88,13 +56,6 @@ export async function getAppDeploymentStatsBatch(
     paramIndex++
   }
 
-  // Deployer filter is applied only to count/aggregate columns, not to last_deployment.
-  // The "last deployment" timestamp/id should always reflect the most recent deploy
-  // to the app (regardless of deployer), so AppCard's "last deployment" link/timestamp
-  // doesn't silently change meaning when filtering by team members.
-  // Empty array ⇒ counts are 0 (FILTER clause matches nothing).
-  // Matches both deployer_username and PR creator (case-insensitive) so a team
-  // member's PR deployed by a bot still counts toward the team's stats.
   const hasDeployerFilter = deployerUsernames !== undefined
   const deployerFilterClause = hasDeployerFilter ? ` AND ${userDeploymentMatchAnySql(paramIndex, 'deployments')}` : ''
   if (hasDeployerFilter) {
@@ -116,11 +77,6 @@ export async function getAppDeploymentStatsBatch(
     baseParams,
   )
 
-  // baseline_action_count is intentionally not date-filtered (it reflects
-  // outstanding compliance items regardless of viewing period) and not
-  // deployer-filtered (baseline compliance is app-level, not per-member).
-  // A separate query avoids forcing the main aggregation to scan all rows
-  // outside the requested date range just to count baseline items.
   const baselineResult = await pool.query(
     `SELECT monitored_app_id, COUNT(*) AS baseline_action_count
      FROM deployments
@@ -135,7 +91,6 @@ export async function getAppDeploymentStatsBatch(
     baselineByApp.set(row.monitored_app_id, parseInt(row.baseline_action_count, 10) || 0)
   }
 
-  // last_deployment_id is intentionally unfiltered by deployer (see note above).
   const lastDeploymentResult = await pool.query(
     `SELECT DISTINCT ON (monitored_app_id) monitored_app_id, id
      FROM deployments
@@ -151,7 +106,6 @@ export async function getAppDeploymentStatsBatch(
 
   const statsMap = new Map<number, AppDeploymentStats>()
 
-  // Initialize with empty stats for all apps
   for (const app of apps) {
     statsMap.set(app.id, {
       total: 0,
@@ -166,14 +120,11 @@ export async function getAppDeploymentStatsBatch(
     })
   }
 
-  // Fill in actual stats
   for (const row of result.rows) {
     const appId = row.monitored_app_id
     const total = parseInt(row.total, 10) || 0
     const withFourEyes = parseInt(row.with_four_eyes, 10) || 0
     const pending = parseInt(row.pending_verification, 10) || 0
-    // Derive without_four_eyes as remainder so numbers always sum to total,
-    // even if the DB contains unexpected/unknown status values.
     const withoutFourEyes = Math.max(0, total - withFourEyes - pending)
     const percentage = total > 0 ? Math.round((withFourEyes / total) * 100) : 0
 
@@ -190,9 +141,6 @@ export async function getAppDeploymentStatsBatch(
     })
   }
 
-  // Apply baseline_action_count to every app — done in a separate pass because
-  // the baseline query has no date filter, so apps with no in-period deployments
-  // (i.e. no rows in the main result) must still receive their baseline count.
   for (const [appId, stats] of statsMap) {
     stats.baseline_action_count = baselineByApp.get(appId) ?? 0
   }

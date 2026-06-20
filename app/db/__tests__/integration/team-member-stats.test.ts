@@ -1,11 +1,3 @@
-/**
- * Integration tests: filtering deployment stats by team-member GitHub usernames.
- *
- * Covers:
- *   - getAppDeploymentStatsBatch with `deployerUsernames` filter
- *   - getDevTeamCoverageStats (new aggregated team coverage)
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDevTeamCoverageStats } from '../../deployment-goal-links.server'
@@ -55,7 +47,6 @@ async function linkDeploymentToObjective(deploymentId: number, objectiveId: numb
 }
 
 async function seedBoardObjective(): Promise<number> {
-  // Minimal board + objective so we can link deployments
   const sectionId = (
     await pool.query<{ id: number }>(`INSERT INTO sections (slug, name) VALUES ('s1-${Date.now()}', 's1') RETURNING id`)
   ).rows[0].id
@@ -89,7 +80,7 @@ describe('getAppDeploymentStatsBatch with deployerUsernames filter', () => {
     await seedDeploy(appId, 'tx', 'alice', 'approved_pr', now)
     await seedDeploy(appId, 'tx', 'alice', 'approved_pr', now)
     await seedDeploy(appId, 'tx', 'bob', 'direct_push', now)
-    await seedDeploy(appId, 'tx', 'mallory', 'approved_pr', now) // not a member
+    await seedDeploy(appId, 'tx', 'mallory', 'approved_pr', now)
 
     const stats = await getAppDeploymentStatsBatch([{ id: appId }], ['alice', 'bob'])
     const s = stats.get(appId)
@@ -110,9 +101,6 @@ describe('getAppDeploymentStatsBatch with deployerUsernames filter', () => {
 
     expect(s.total).toBe(0)
     expect(s.with_four_eyes).toBe(0)
-    // last_deployment_id is intentionally not filtered by deployer — it always
-    // reflects the most recent deploy to the app so the AppCard "last deployment"
-    // link doesn't mislead users into thinking the app is stale.
     expect(s.last_deployment_id).toBe(depId)
   })
 
@@ -127,8 +115,8 @@ describe('getAppDeploymentStatsBatch with deployerUsernames filter', () => {
     const s = stats.get(appId)
     if (!s) throw new Error('expected stats for appId')
 
-    expect(s.total).toBe(1) // only alice's deploy counted
-    expect(s.last_deployment_id).toBe(nonMemberLatest) // but link points to most recent overall
+    expect(s.total).toBe(1)
+    expect(s.last_deployment_id).toBe(nonMemberLatest)
   })
 
   it('preserves backwards-compatible behavior when deployerUsernames is undefined', async () => {
@@ -146,9 +134,9 @@ describe('stats and paginated list consistency', () => {
     const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod' })
     const now = new Date()
 
-    await seedDeploy(appId, 'tx', 'alice', 'direct_push', now) // not approved, by member
-    await seedDeploy(appId, 'tx', 'bob', 'approved_pr', now) // approved, by member
-    await seedDeploy(appId, 'tx', 'mallory', 'direct_push', now) // not approved, NOT member
+    await seedDeploy(appId, 'tx', 'alice', 'direct_push', now)
+    await seedDeploy(appId, 'tx', 'bob', 'approved_pr', now)
+    await seedDeploy(appId, 'tx', 'mallory', 'direct_push', now)
 
     const teamMembers = ['alice', 'bob']
 
@@ -173,7 +161,6 @@ describe('stats and paginated list consistency', () => {
     const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod' })
     const now = new Date()
 
-    // Deployment by bot where team member is the PR creator
     const naisId = `deploy-pr-creator-${Date.now()}`
     await pool.query(
       `INSERT INTO deployments (
@@ -182,7 +169,6 @@ describe('stats and paginated list consistency', () => {
        ) VALUES ($1, $2, 'tx', 'a', 'prod', $3, $4, 'direct_push', 'deploy-bot', $5)`,
       [appId, naisId, `sha-${naisId}`, now, JSON.stringify({ creator: { username: 'alice' } })],
     )
-    // Another deployment by a non-member
     await seedDeploy(appId, 'tx', 'mallory', 'direct_push', now)
 
     const teamMembers = ['alice']
@@ -198,7 +184,6 @@ describe('stats and paginated list consistency', () => {
       per_page: 100,
     })
 
-    // Both should count 1 (the deploy-bot deployment where alice is PR creator)
     expect(s.total).toBe(1)
     expect(list.total).toBe(1)
     expect(s.without_four_eyes).toBe(list.total)
@@ -227,7 +212,6 @@ describe('getAppDeploymentStats / batch parity', () => {
     expect(single.four_eyes_percentage).toBe(batch.four_eyes_percentage)
     expect(single.last_deployment_id).toBe(batch.last_deployment_id)
     expect(single.missing_goal_links).toBe(batch.missing_goal_links)
-    // No goal links seeded, so missing_goal_links should equal total
     expect(single.missing_goal_links).toBe(single.total)
   })
 
@@ -259,7 +243,7 @@ describe('getAppDeploymentStats / batch parity', () => {
 
     await seedDeploy(appId, 'tx', 'alice', 'approved_pr', recent)
     await seedDeploy(appId, 'tx', 'bob', 'direct_push', recent)
-    await seedDeploy(appId, 'tx', 'alice', 'approved_pr', new Date('2023-01-01')) // out of range
+    await seedDeploy(appId, 'tx', 'alice', 'approved_pr', new Date('2023-01-01'))
 
     const startDate = new Date('2025-01-01')
     const endDate = new Date('2025-12-31')
@@ -285,9 +269,8 @@ describe('getDevTeamCoverageStats', () => {
     const d1 = await seedDeploy(appId, 'tx', 'alice', 'approved_pr', now)
     const d2 = await seedDeploy(appId, 'tx', 'alice', 'direct_push', now)
     const d3 = await seedDeploy(appId, 'tx', 'bob', 'approved_pr', now)
-    await seedDeploy(appId, 'tx', 'mallory', 'approved_pr', now) // excluded
+    await seedDeploy(appId, 'tx', 'mallory', 'approved_pr', now)
 
-    // Link two of the three member deploys to an objective
     await linkDeploymentToObjective(d1, objectiveId)
     await linkDeploymentToObjective(d3, objectiveId)
     void d2
@@ -350,7 +333,6 @@ describe('baseline_action_count in getAppDeploymentStatsBatch', () => {
   it('counts baseline deployments missing an attributed baseline_approval', async () => {
     const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
     const noApprover = await seedDeploy(appId, 'tx', 'alice', 'baseline', new Date())
-    // No deployment_status_history row → missing approver
     void noApprover
 
     const stats = await getAppDeploymentStatsBatch([{ id: appId }])
@@ -371,25 +353,21 @@ describe('baseline_action_count in getAppDeploymentStatsBatch', () => {
     const old = new Date('2023-01-15')
     await seedDeploy(appId, 'tx', 'alice', 'pending_baseline', old)
 
-    // Applying a recent date range should NOT suppress the baseline_action_count
     const startDate = new Date('2025-01-01')
     const endDate = new Date('2025-12-31')
     const stats = await getAppDeploymentStatsBatch([{ id: appId }], undefined, { startDate, endDate })
     expect(stats.get(appId)?.baseline_action_count).toBe(1)
 
-    // But total (date-filtered) should be 0 — proving the date filter applies to other counts
     expect(stats.get(appId)?.total).toBe(0)
   })
 
   it('is not deployer-filtered — counts baseline actions regardless of who deployed', async () => {
     const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
-    // Deployed by a non-member
     await seedDeploy(appId, 'tx', 'outsider', 'pending_baseline', new Date())
 
     const stats = await getAppDeploymentStatsBatch([{ id: appId }], ['alice', 'bob'])
     expect(stats.get(appId)?.baseline_action_count).toBe(1)
 
-    // But total (deployer-filtered) should be 0
     expect(stats.get(appId)?.total).toBe(0)
   })
 })
@@ -413,7 +391,6 @@ describe('getDeploymentsPaginated with baseline_action filter', () => {
   it('returns baseline deployments missing an attributed baseline_approval', async () => {
     const appId = await seedApp(pool, { teamSlug: 'tx', appName: 'a', environment: 'prod', auditStartYear: null })
     await seedDeploy(appId, 'tx', 'alice', 'baseline', new Date())
-    // No deployment_status_history row → missing approver
 
     const result = await getDeploymentsPaginated({
       monitored_app_id: appId,

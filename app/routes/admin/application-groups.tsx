@@ -23,13 +23,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [groups, allApps] = await Promise.all([getAllGroups(), getAllMonitoredApplications()])
 
-  // Fetch details for each group
   const groupDetails = await Promise.all(groups.map((g) => getGroupWithApps(g.id)))
 
-  // Find apps that could be grouped (same app_name, different environment/team, not in a group)
   const ungroupedApps = allApps.filter((app) => app.is_active && !app.application_group_id)
 
-  // Suggest groups: apps with same app_name deployed to multiple environments
   const appNameCounts = new Map<string, number>()
   for (const app of ungroupedApps) {
     appNameCounts.set(app.app_name, (appNameCounts.get(app.app_name) ?? 0) + 1)

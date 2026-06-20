@@ -63,10 +63,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const botDisplayName = getBotDisplayName(username)
   const botDescription = getBotDescription(username)
 
-  // Resolve user mapping first to check for canonical URL redirect
   const mapping = isBot ? null : await getUserByIdentifier(username)
 
-  // Redirect to canonical GitHub username URL if nav-ident resolves to a different username
   if (
     mapping?.github_username &&
     isValidGitHubUsername(mapping.github_username) &&
@@ -82,14 +80,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     getDeployerApps(username),
   ])
 
-  // Check if this is the logged-in user's own profile
   const isOwnProfile = !isBot && mapping?.nav_ident === identity.navIdent
 
-  // Check if the logged-in user is viewing their own nav-ident URL without a linked GitHub account
   const canPrefillOwnMapping =
     !isBot && !mapping?.github_username && username.toUpperCase() === identity.navIdent.toUpperCase()
 
-  // Fetch dev teams if user has a nav_ident
   let devTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> = []
   let userRoles: UserRoleDisplay = { sectionRoles: [], teamRoles: [] }
   if (mapping?.nav_ident) {
@@ -101,7 +96,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (rolesResult.status === 'fulfilled') userRoles = rolesResult.value
   }
 
-  // Load available boards for bulk goal linking
   type BoardWithGoals = Awaited<ReturnType<typeof getBoardsWithGoalsForDevTeam>>[number] & { dev_team_name: string }
   let availableBoards: BoardWithGoals[] = []
   if (devTeams.length > 0) {
@@ -111,7 +105,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     )
   }
 
-  // Check if there are unlinked dependabot deployments (for bulk link button)
   let hasUnlinkedDependabotDeployments = false
   if (availableBoards.length > 0) {
     hasUnlinkedDependabotDeployments = await checkHasUnlinkedDependabot(
@@ -249,9 +242,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { fieldErrors: { nav_ident: 'Du har ikke tilgang til å opprette mapping for andre brukere' } }
     }
 
-    // Server-side ownership enforcement:
-    // - Self-service (own nav-ident URL): allow free-form GitHub username, force nav_ident
-    // - Other profiles: derive GitHub username from route param, allow free-form nav_ident
     const githubUsernameRaw = isSelfService ? getFormString(formData, 'github_username') || '' : routeUsername
     const githubUsername = githubUsernameRaw.toLowerCase()
     const navIdentRaw = isSelfService ? identity.navIdent : getFormString(formData, 'nav_ident') || null
@@ -277,8 +267,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { fieldErrors }
     }
 
-    // Fetch user data from Graph API to ensure display_name and nav_email are authoritative
-    // navIdentInput is guaranteed non-null here (validated above)
     const navIdent = navIdentInput as string
     let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
     try {
@@ -346,7 +334,6 @@ export default function UserPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [pendingLinkIds, setPendingLinkIds] = useState<number[]>([])
 
-  // Close create-mapping modal when mapping transitions from null to non-null
   const prevMappingRef = useRef(mapping)
   useEffect(() => {
     if (!prevMappingRef.current && mapping) {
@@ -355,14 +342,12 @@ export default function UserPage() {
     prevMappingRef.current = mapping
   }, [mapping])
 
-  // Open select-link modal when pendingLinkIds is populated
   useEffect(() => {
     if (pendingLinkIds.length > 0) {
       selectLinkRef.current?.showModal()
     }
   }, [pendingLinkIds])
 
-  // Close goal modals and clear selection when action completes
   useEffect(() => {
     if ((actionData?.success || actionData?.error) && navigation.state === 'idle') {
       bulkLinkRef.current?.close()

@@ -38,7 +38,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const range = getDateRangeForPeriod(period)
 
-  // Resolve team apps
   const [directApps, groupAppIds, allApps, deployerUsernames] = await Promise.all([
     getDevTeamApplications(devTeam.id),
     getGroupAppIdsForDevTeams([devTeam.id]),
@@ -75,10 +74,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const parsedAppFilter = appFilter ? parseInt(appFilter, 10) : undefined
   const filteredAppIds = parsedAppFilter && teamAppIds.includes(parsedAppFilter) ? [parsedAppFilter] : teamAppIds
 
-  // Resolve current user
   const currentUser = await getUserIdentity(request)
 
-  // Deployer filter: default shows only team members' deployments
   let deployerUsernamesFilter: string[] | undefined = deployerUsernames
   let teamFilterEmptyReason: string | null = null
   if (deployerUsernames.length === 0) {
@@ -86,7 +83,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 
   if (deployer) {
-    // If a specific deployer is selected, override the team filter
     deployerUsernamesFilter = undefined
   }
 
@@ -102,11 +98,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
     goal_filter: goal && ['missing', 'linked'].includes(goal) ? goal : undefined,
     goal_objective_id: goalObjectiveId && !Number.isNaN(goalObjectiveId) ? goalObjectiveId : undefined,
-    // Scope goal links to this team's board ONLY for the "Fra andre" (non-member)
-    // + linked drill-down, where the count must match the team's
-    // `non_member_deployments`. Every other case — including goal=missing — uses
-    // the global definition (any active board link) so it matches the row badge
-    // and the dashboard's linked_to_goal count.
     goal_dev_team_id: isNonMemberFilter && goal === 'linked' ? devTeam.id : undefined,
     deployer_username: isUnmappedFilter || isNonMemberFilter ? undefined : deployer,
     unmapped_deployers: isUnmappedFilter || undefined,
@@ -119,13 +110,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const result = await getDeploymentsPaginated(filters)
 
-  // Redirect to last valid page if requested page exceeds total pages
   if (page > result.total_pages && result.total_pages > 0) {
     url.searchParams.set('page', String(result.total_pages))
     throw redirect(url.pathname + url.search)
   }
 
-  // Parallel: error reasons, all deployers, current user GitHub mapping, goal options
   const errorDeploymentIds = result.deployments.filter((d) => d.four_eyes_status === 'error').map((d) => d.id)
 
   const [errorReasonsResult, allDeployersResult, currentUserMapping, goalOptions] = await Promise.all([
@@ -153,10 +142,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       .map((row) => [row.deployment_id, row.result.approvalDetails.reason as string]),
   )
 
-  // Build deployer options with display names
   const allDeployerUsernames = allDeployersResult.rows.map((r) => r.deployer_username)
 
-  // Get display names for deployers, PR creators, and mergers
   const deployerUsernamesOnPage = [
     ...new Set(result.deployments.map((d) => d.deployer_username).filter(Boolean)),
   ] as string[]
@@ -181,18 +168,15 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const currentUserGithub = currentUserMapping?.github_username ?? null
 
-  // Check for unmapped deployers
   const hasUnmappedDeployers = allDeployerUsernames.some((u) => {
     const m = userMappingsMap.get(u)
     return !m || m.account_deleted_at !== null
   })
 
-  // Check for non-member deployers (deployers not in the team member list)
   const lowerMembers = new Set(deployerUsernames.map((u) => u.toLowerCase()))
   const hasNonMemberDeployers =
     deployerUsernames.length > 0 && allDeployerUsernames.some((u) => !lowerMembers.has(u.toLowerCase()))
 
-  // App filter options
   const appOptions = teamApps
     .map((a) => ({
       value: String(a.id),

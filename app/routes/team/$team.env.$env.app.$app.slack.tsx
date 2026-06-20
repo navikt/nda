@@ -14,7 +14,6 @@ import type { Route } from './+types/$team.env.$env.app.$app.slack'
 export async function loader({ params, request }: Route.LoaderArgs) {
   const { team, env, app: appName } = requireTeamEnvAppParams(params)
 
-  // Check admin access
   const identity = await getUserIdentity(request)
   if (!identity || identity.role !== 'admin') {
     return redirect(`/team/${team}/env/${env}/app/${appName}`)
@@ -27,7 +26,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const notifications = await getSlackNotificationsByApp(app.id, 100)
 
-  // Get details for each notification
   const notificationsWithDetails = await Promise.all(
     notifications.map(async (notification) => {
       const [updates, interactions] = await Promise.all([

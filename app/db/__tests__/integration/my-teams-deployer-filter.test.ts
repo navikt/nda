@@ -1,14 +1,3 @@
-/**
- * Integration test: getDevTeamAppsWithIssues — deployer filter (person-scope).
- *
- * Locks in the behaviour exercised by /my-teams: when the optional
- * `deployerUsernames` is provided, deployment-derived counts
- * (without_four_eyes, pending_verification, missing_goal_links) reflect only
- * deployments by those users, while repository alerts and app-scope inclusion
- * remain unchanged. Without the filter (or with `undefined`) the function
- * keeps its original app-scope semantics — used by the Slack home tab.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDevTeamAppsWithIssues } from '~/db/deployments/home.server'
@@ -71,7 +60,6 @@ describe('getDevTeamAppsWithIssues deployer filter', () => {
 
   it('person-scope filters missing_goal_links the same way', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-x', appName: 'svc', environment: 'prod' })
-    // None of these have goal links → all count as missing_goal_links
     await seedDeployment(appId, 'team-x', 'approved_pr', 'alice')
     await seedDeployment(appId, 'team-x', 'approved_pr', 'alice')
     await seedDeployment(appId, 'team-x', 'approved_pr', 'outsider')
@@ -86,7 +74,6 @@ describe('getDevTeamAppsWithIssues deployer filter', () => {
   it('empty deployerUsernames array yields zero deployment counts', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-x', appName: 'svc', environment: 'prod' })
     await seedDeployment(appId, 'team-x', 'direct_push', 'alice')
-    // Insert an unresolved alert so the app still surfaces (alerts aren't deployer-scoped).
     await pool.query(
       `INSERT INTO repository_alerts (monitored_app_id, new_owner, new_repo, status)
        VALUES ($1, 'navikt', 'svc', 'open')`,

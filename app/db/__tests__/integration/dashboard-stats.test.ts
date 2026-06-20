@@ -1,8 +1,3 @@
-/**
- * Integration test: Dashboard statistics SQL queries.
- * Tests the exact SQL used in dashboard-stats.server.ts against a real PostgreSQL instance.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
@@ -33,7 +28,6 @@ describe('getSectionOverallStats SQL', () => {
   it('should count deployments by four_eyes status', async () => {
     const sectionId = await seedSection(pool, 'sec-stats')
 
-    // Link a nais team to the section
     await pool.query(`INSERT INTO section_teams (section_id, team_slug) VALUES ($1, $2)`, [sectionId, 'team-a'])
 
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app1', environment: 'prod' })
@@ -41,7 +35,6 @@ describe('getSectionOverallStats SQL', () => {
     const startDate = new Date(now.getFullYear(), now.getMonth(), 1)
     const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
 
-    // Create deployments with various statuses
     await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'approved_pr')
     await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'approved_pr')
     await seedDeploymentWithStatus(pool, appId, 'team-a', now, 'direct_push')
@@ -82,7 +75,6 @@ describe('getSectionOverallStats SQL', () => {
     const depId2 = await seedDeploymentWithStatus(pool, appId, 'team-b', now, 'approved_pr')
     await seedDeploymentWithStatus(pool, appId, 'team-b', now, 'approved_pr')
 
-    // Create a board + objective to link to
     const {
       rows: [devTeam],
     } = await pool.query(`INSERT INTO dev_teams (section_id, slug, name) VALUES ($1, $2, $3) RETURNING id`, [
@@ -104,7 +96,6 @@ describe('getSectionOverallStats SQL', () => {
       'Objective 1',
     ])
 
-    // Link 2 deployments to the objective
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method) VALUES ($1, $2, 'manual'), ($3, $2, 'manual')`,
       [depId1, objective.id, depId2],
@@ -154,9 +145,7 @@ describe('getSectionOverallStats SQL', () => {
 
 describe('getDevTeamSummaryStats SQL', () => {
   it('unions naisTeamSlugs and directAppIds when both are provided', async () => {
-    // App reachable only via nais team slug
     const naisAppId = await seedApp(pool, { teamSlug: 'team-nais', appName: 'nais-app', environment: 'prod' })
-    // App reachable only via direct attachment
     const directAppId = await seedApp(pool, { teamSlug: 'other-team', appName: 'direct-app', environment: 'prod' })
 
     const now = new Date()
@@ -203,7 +192,6 @@ describe('getDevTeamSummaryStats SQL', () => {
 
   it('restricts deployment counts to the given deployerUsernames (person-scope)', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-scope', appName: 'scoped', environment: 'prod' })
-    // 3 deployments by team member, 2 by an outsider
     await seedDeploymentWithStatus(pool, appId, 'team-scope', new Date(), 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, appId, 'team-scope', new Date(), 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, appId, 'team-scope', new Date(), 'direct_push', 'alice')
@@ -211,17 +199,15 @@ describe('getDevTeamSummaryStats SQL', () => {
     await seedDeploymentWithStatus(pool, appId, 'team-scope', new Date(), 'direct_push', 'outsider')
 
     const personScope = await getDevTeamSummaryStats(['team-scope'], undefined, undefined, ['alice'])
-    expect(personScope.total_apps).toBe(1) // app-scope: app is still in scope
-    expect(personScope.total_deployments).toBe(3) // person-scope: only alice's
+    expect(personScope.total_apps).toBe(1)
+    expect(personScope.total_deployments).toBe(3)
     expect(personScope.with_four_eyes).toBe(2)
     expect(personScope.without_four_eyes).toBe(1)
 
-    // Empty array ⇒ no team members mapped ⇒ deployment counts are 0.
     const emptyScope = await getDevTeamSummaryStats(['team-scope'], undefined, undefined, [])
     expect(emptyScope.total_apps).toBe(1)
     expect(emptyScope.total_deployments).toBe(0)
 
-    // undefined ⇒ no filter ⇒ all 5 deployments.
     const noFilter = await getDevTeamSummaryStats(['team-scope'])
     expect(noFilter.total_deployments).toBe(5)
   })
@@ -279,7 +265,6 @@ describe('getBoardObjectiveProgress', () => {
       "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'O2-no-kr', 1) RETURNING id",
       [boardId],
     )
-    // inactive objective should be skipped
     await pool.query(
       "INSERT INTO board_objectives (board_id, title, sort_order, is_active) VALUES ($1, 'O-inactive', 2, false)",
       [boardId],
@@ -292,7 +277,6 @@ describe('getBoardObjectiveProgress', () => {
       "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'KR2', 1) RETURNING id",
       [o1[0].id],
     )
-    // inactive KR should be skipped
     await pool.query(
       "INSERT INTO board_key_results (objective_id, title, sort_order, is_active) VALUES ($1, 'KR-inactive', 2, false)",
       [o1[0].id],
@@ -303,7 +287,6 @@ describe('getBoardObjectiveProgress', () => {
     const d2 = await seedDeploymentWithStatus(pool, appId, 'team-bop', new Date(), 'approved_pr')
     const d3 = await seedDeploymentWithStatus(pool, appId, 'team-bop', new Date(), 'approved_pr')
 
-    // 2 deployments linked to KR1, 1 to KR2, 1 directly to objective O1
     await pool.query(
       "INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method) VALUES ($1, $2, 'manual')",
       [d1, kr1[0].id],
@@ -320,7 +303,6 @@ describe('getBoardObjectiveProgress', () => {
       "INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method) VALUES ($1, $2, 'manual')",
       [d3, o1[0].id],
     )
-    // inactive link should be ignored
     await pool.query(
       "INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method, is_active) VALUES ($1, $2, 'manual', false)",
       [d1, kr2[0].id],
@@ -336,8 +318,6 @@ describe('getBoardObjectiveProgress', () => {
       { id: kr1[0].id, linked: 2 },
       { id: kr2[0].id, linked: 1 },
     ])
-    // 1 (objective-direct d3) + 2 distinct deployments via KRs (d1, d2) = 3
-    // d2 is linked to both KR1 and KR2, but counts only once at objective level
     expect(r1.total_linked_deployments).toBe(3)
 
     const r2 = result.find((r) => r.objective_id === o2[0].id)
@@ -345,12 +325,10 @@ describe('getBoardObjectiveProgress', () => {
     expect(r2.key_results).toEqual([])
     expect(r2.total_linked_deployments).toBe(0)
 
-    // Total distinct deployments linked to this board = d1 (KR1), d2 (KR1+KR2), d3 (O1) = 3
     expect(totalDistinctDeployments).toBe(3)
   })
 
   it('returns key results with zero deployments when startDate filter is active', async () => {
-    // Regression: the deployment INNER JOIN filtered out KRs with no linked deployments
     const sectionId = await seedSection(pool, 'sec-bop-kr0')
     const devTeamId = await seedDevTeam(pool, 'team-bop-kr0', 'KR0', sectionId)
     const { rows: br } = await pool.query(
@@ -364,12 +342,10 @@ describe('getBoardObjectiveProgress', () => {
       "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Forvaltning', 0) RETURNING id",
       [boardId],
     )
-    // KR with linked deployment
     const { rows: kr1 } = await pool.query(
       "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'KR-med-leveranse', 0) RETURNING id",
       [o1[0].id],
     )
-    // KR with NO linked deployments (should still be returned)
     const { rows: kr2 } = await pool.query(
       "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'Dependabot-oppdatering', 1) RETURNING id",
       [o1[0].id],
@@ -381,9 +357,7 @@ describe('getBoardObjectiveProgress', () => {
       "INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method) VALUES ($1, $2, 'manual')",
       [d1, kr1[0].id],
     )
-    // kr2 deliberately has NO links
 
-    // Call with startDate (this triggers the deployment join)
     const { objectives } = await getBoardObjectiveProgress(boardId, undefined, {
       startDate: new Date('2026-01-01'),
     })
@@ -396,7 +370,6 @@ describe('getBoardObjectiveProgress', () => {
   })
 
   it('returns key results with zero deployments when deployerUsernames filter is active', async () => {
-    // Regression: deployer filter also triggers the deployment join
     const sectionId = await seedSection(pool, 'sec-bop-kr0-dep')
     const devTeamId = await seedDevTeam(pool, 'team-bop-kr0-dep', 'KR0D', sectionId)
     const { rows: br } = await pool.query(
@@ -426,7 +399,6 @@ describe('getBoardObjectiveProgress', () => {
       [d1, kr1[0].id],
     )
 
-    // Call with deployerUsernames filter (triggers deployment join)
     const { objectives } = await getBoardObjectiveProgress(boardId, ['alice'])
 
     expect(objectives).toHaveLength(1)
@@ -438,9 +410,6 @@ describe('getBoardObjectiveProgress', () => {
 })
 
 describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () => {
-  /**
-   * Helper: seed a dev team with nais team link, team members, and user mappings.
-   */
   async function seedTeamWithMembers(
     sectionId: number,
     opts: {
@@ -507,11 +476,9 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // 2 approved by alice, 1 direct_push by bob
     await seedDeploymentWithStatus(pool, appId, 'nais-team-c', now, 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, appId, 'nais-team-c', now, 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, appId, 'nais-team-c', now, 'direct_push', 'bob')
-    // outsider — should not be counted by either query
     await seedDeploymentWithStatus(pool, appId, 'nais-team-c', now, 'direct_push', 'mallory')
 
     const batchMap = await getDevTeamStatsBatch([devTeamId], startDate)
@@ -523,7 +490,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     expect(teamStats).toBeDefined()
     expect(appStats).toBeDefined()
 
-    // Both queries should agree on totals and four-eyes counts
     expect(teamStats?.total_deployments).toBe(3)
     expect(appStats?.total).toBe(3)
     expect(teamStats?.without_four_eyes).toBe(appStats?.without_four_eyes)
@@ -547,10 +513,7 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Deployment where deployer=alice AND pr_creator=bob — both are team members.
-    // This must be counted exactly once, not twice.
     await seedDeployWithPrCreator(appId, 'nais-team-d', now, 'direct_push', 'alice', 'bob')
-    // A normal deployment by alice (no PR creator overlap)
     await seedDeploymentWithStatus(pool, appId, 'nais-team-d', now, 'approved_pr', 'alice')
 
     const batchMap = await getDevTeamStatsBatch([devTeamId], startDate)
@@ -562,11 +525,9 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     expect(teamStats).toBeDefined()
     expect(appStats).toBeDefined()
 
-    // Both should count exactly 2 deployments total
     expect(teamStats?.total_deployments).toBe(2)
     expect(appStats?.total).toBe(2)
 
-    // Both should agree: 1 without four-eyes, 1 with four-eyes
     expect(teamStats?.without_four_eyes).toBe(1)
     expect(teamStats?.with_four_eyes).toBe(1)
     expect(teamStats?.without_four_eyes).toBe(appStats?.without_four_eyes)
@@ -574,8 +535,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
   })
 
   it('legacy deployments are counted as without_four_eyes in both queries', async () => {
-    // Legacy/error/mismatch statuses must count as failures (without_four_eyes)
-    // so app cards show them and match the top card's gap.
     const sectionId = await seedSection(pool, 'sec-legacy-gap')
     const { devTeamId, githubUsernames } = await seedTeamWithMembers(sectionId, {
       teamSlug: 'team-legacy-gap',
@@ -587,7 +546,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // 3 approved + 2 legacy → legacy should count as failures
     await seedDeploymentWithStatus(pool, appId, 'nais-team-lg', now, 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, appId, 'nais-team-lg', now, 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, appId, 'nais-team-lg', now, 'approved_pr', 'alice')
@@ -600,7 +558,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const appStatsMap = await getAppDeploymentStatsBatch([{ id: appId }], githubUsernames, { startDate })
     const appStats = appStatsMap.get(appId)
 
-    // Both should count 5 total, 3 approved, 2 without four-eyes (legacy)
     expect(teamStats?.total_deployments).toBe(5)
     expect(teamStats?.with_four_eyes).toBe(3)
     expect(teamStats?.without_four_eyes).toBe(2)
@@ -611,7 +568,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     expect(appStats?.without_four_eyes).toBe(2)
     expect(appStats?.pending_verification).toBe(0)
 
-    // No gap: total = with_four_eyes + without_four_eyes + pending
     const total = teamStats?.total_deployments ?? 0
     const covered =
       (teamStats?.with_four_eyes ?? 0) + (teamStats?.without_four_eyes ?? 0) + (teamStats?.pending_verification ?? 0)
@@ -619,8 +575,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
   })
 
   it('bot deployer with team member PR creator: both queries agree', async () => {
-    // Production scenario: CI bot deploys, but PR was created by a team member.
-    // Both queries should match via PR creator.
     const sectionId = await seedSection(pool, 'sec-bot')
     const { devTeamId, githubUsernames } = await seedTeamWithMembers(sectionId, {
       teamSlug: 'team-bot',
@@ -632,9 +586,7 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Bot deploys, but alice created the PR. Status = legacy (not approved).
     await seedDeployWithPrCreator(appId, 'nais-team-bot', now, 'legacy', 'github-actions[bot]', 'alice')
-    // Bot deploys approved PR by alice
     await seedDeployWithPrCreator(appId, 'nais-team-bot', now, 'approved_pr', 'github-actions[bot]', 'alice')
 
     const batchMap = await getDevTeamStatsBatch([devTeamId], startDate)
@@ -643,7 +595,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const appStatsMap = await getAppDeploymentStatsBatch([{ id: appId }], githubUsernames, { startDate })
     const appStats = appStatsMap.get(appId)
 
-    // Both should find 2 deployments (matched via PR creator)
     expect(teamStats?.total_deployments).toBe(2)
     expect(appStats?.total).toBe(2)
     expect(teamStats?.without_four_eyes).toBe(1)
@@ -653,8 +604,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
   })
 
   it('multiple apps across nais teams: team total equals sum of app totals', async () => {
-    // Production scenario: team has apps across multiple nais teams.
-    // Top card total must equal sum of all app card totals.
     const sectionId = await seedSection(pool, 'sec-multi')
     const { devTeamId, githubUsernames } = await seedTeamWithMembers(sectionId, {
       teamSlug: 'team-multi',
@@ -664,7 +613,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
         { navIdent: 'B200005', githubUsername: 'bob' },
       ],
     })
-    // Add a second nais team
     await pool.query(`INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug) VALUES ($1, $2)`, [
       devTeamId,
       'nais-team-m2',
@@ -675,13 +623,11 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // App1: 3 approved by alice, 1 legacy by bob
     await seedDeploymentWithStatus(pool, app1, 'nais-team-m1', now, 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, app1, 'nais-team-m1', now, 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, app1, 'nais-team-m1', now, 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, app1, 'nais-team-m1', now, 'legacy', 'bob')
 
-    // App2: 2 approved by bob, 1 error by alice
     await seedDeploymentWithStatus(pool, app2, 'nais-team-m2', now, 'approved_pr', 'bob')
     await seedDeploymentWithStatus(pool, app2, 'nais-team-m2', now, 'approved_pr', 'bob')
     await seedDeploymentWithStatus(pool, app2, 'nais-team-m2', now, 'error', 'alice')
@@ -693,7 +639,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const app1Stats = appStatsMap.get(app1)
     const app2Stats = appStatsMap.get(app2)
 
-    // Team total must equal sum of app totals
     const sumTotal = (app1Stats?.total ?? 0) + (app2Stats?.total ?? 0)
     const sumWithout = (app1Stats?.without_four_eyes ?? 0) + (app2Stats?.without_four_eyes ?? 0)
     const sumWith = (app1Stats?.with_four_eyes ?? 0) + (app2Stats?.with_four_eyes ?? 0)
@@ -708,9 +653,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
   })
 
   it('NULL four_eyes_status deployments are counted in totals consistently', async () => {
-    // Regression test: NULL four_eyes_status must be treated as 'unknown' (pending).
-    // The DB column allows NULL (DEFAULT 'unknown' without NOT NULL constraint).
-    // Without COALESCE, NULL falls through all category FILTERs, causing total > sum.
     const sectionId = await seedSection(pool, 'sec-null-status')
     const { githubUsernames } = await seedTeamWithMembers(sectionId, {
       teamSlug: 'team-null-status',
@@ -726,11 +668,9 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // 2 approved + 1 with NULL four_eyes_status
     await seedDeploymentWithStatus(pool, appId, 'nais-team-null', now, 'approved_pr', 'alice')
     await seedDeploymentWithStatus(pool, appId, 'nais-team-null', now, 'approved_pr', 'alice')
 
-    // Insert deployment with NULL four_eyes_status
     const naisId = `deploy-null-${Date.now()}`
     await pool.query(
       `INSERT INTO deployments (
@@ -746,7 +686,6 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
     expect(appStats).toBeDefined()
     expect(appStats?.total).toBe(3)
 
-    // NULL is treated as 'unknown' (pending), so categories must sum to total
     const sumCategories =
       (appStats?.with_four_eyes ?? 0) + (appStats?.without_four_eyes ?? 0) + (appStats?.pending_verification ?? 0)
     expect(sumCategories).toBe(appStats?.total)
@@ -768,9 +707,7 @@ describe('Regression: unrecognized four_eyes_status values sum correctly', () =>
     expect(stats.total_deployments).toBe(3)
     expect(stats.with_four_eyes).toBe(1)
     expect(stats.pending_verification).toBe(1)
-    // The unrecognized status is captured by remainder derivation
     expect(stats.without_four_eyes).toBe(1)
-    // Categories must always sum to total
     const sum = stats.with_four_eyes + stats.without_four_eyes + stats.pending_verification
     expect(sum).toBe(stats.total_deployments)
   })
@@ -780,12 +717,10 @@ describe('Regression: unrecognized four_eyes_status values sum correctly', () =>
     const devTeamId = await seedDevTeam(pool, 'team-batch-unrec', 'BatchUnrec', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'team-batch-unrec', appName: 'app-batch-unrec', environment: 'prod' })
 
-    // Link app to dev team
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       devTeamId,
       appId,
     ])
-    // Add team member via user_github_accounts + dev_team_role_assignments
     await pool.query(`INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3)`, [
       'A123456',
       'Alice',
@@ -993,7 +928,6 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Non-member deployment linked to the team's board
     const depId = await seedDeploymentWithStatus(pool, appId, 'nais-board-nm', now, 'approved_pr', 'outsider')
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active)
@@ -1018,12 +952,11 @@ describe('getDevTeamStatsBatch board-based counting', () => {
       members: [{ navIdent: 'A300002', githubUsername: 'bob' }],
     })
     const appId = await seedApp(pool, { teamSlug: 'nais-board-ul', appName: 'app-board-ul', environment: 'prod' })
-    await seedBoardWithObjectiveAndKr(devTeamId) // board exists, but no deployments are linked
+    await seedBoardWithObjectiveAndKr(devTeamId)
 
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Member deployment not linked to any board
     await seedDeploymentWithStatus(pool, appId, 'nais-board-ul', now, 'approved_pr', 'bob')
 
     const map = await getDevTeamStatsBatch([devTeamId], startDate)
@@ -1046,7 +979,6 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Non-member deployment NOT linked to any board — should NOT count
     await seedDeploymentWithStatus(pool, appId, 'nais-board-ex', now, 'approved_pr', 'outsider')
 
     const map = await getDevTeamStatsBatch([devTeamId], startDate)
@@ -1065,7 +997,6 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     })
     const appId = await seedApp(pool, { teamSlug: 'nais-board-dd', appName: 'app-board-dd', environment: 'prod' })
 
-    // Two boards for the same team
     const { objectiveId: obj1 } = await seedBoardWithObjectiveAndKr(devTeamId)
     const board2Id = (
       await pool.query<{ id: number }>(
@@ -1084,7 +1015,6 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Deployment linked to objectives on both boards
     const depId = await seedDeploymentWithStatus(pool, appId, 'nais-board-dd', now, 'approved_pr', 'dave')
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active)
@@ -1095,7 +1025,6 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     const map = await getDevTeamStatsBatch([devTeamId], startDate)
     const stats = map.get(devTeamId)
 
-    // Should be counted exactly once despite being on two boards of same team
     expect(stats?.total_deployments).toBe(1)
   })
 
@@ -1112,9 +1041,7 @@ describe('getDevTeamStatsBatch board-based counting', () => {
       members: [{ navIdent: 'A300006', githubUsername: 'frank' }],
     })
 
-    // App belongs to BOTH teams (via respective nais teams)
     const appId = await seedApp(pool, { teamSlug: 'nais-cross-a', appName: 'shared-app', environment: 'prod' })
-    // Also add app to teamB
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       teamB,
       appId,
@@ -1138,7 +1065,6 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Deployment linked to boards of BOTH teams
     const depId = await seedDeploymentWithStatus(pool, appId, 'nais-cross-a', now, 'approved_pr', 'eve')
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active)
@@ -1150,7 +1076,6 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     const statsA = map.get(teamA)
     const statsB = map.get(teamB)
 
-    // Should count for BOTH teams
     expect(statsA?.total_deployments).toBe(1)
     expect(statsB?.total_deployments).toBe(1)
   })
@@ -1168,29 +1093,26 @@ describe('getDevTeamStatsBatch board-based counting', () => {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Member deployment linked to board
     const dep1 = await seedDeploymentWithStatus(pool, appId, 'nais-board-nm-mix', now, 'approved_pr', 'grace')
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active)
        VALUES ($1, $2, 'manual', true)`,
       [dep1, objectiveId],
     )
-    // Non-member deployment linked to board
     const dep2 = await seedDeploymentWithStatus(pool, appId, 'nais-board-nm-mix', now, 'approved_pr', 'outsider')
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active)
        VALUES ($1, $2, 'manual', true)`,
       [dep2, objectiveId],
     )
-    // Member deployment unlinked
     await seedDeploymentWithStatus(pool, appId, 'nais-board-nm-mix', now, 'direct_push', 'grace')
 
     const map = await getDevTeamStatsBatch([devTeamId], startDate)
     const stats = map.get(devTeamId)
 
     expect(stats?.total_deployments).toBe(3)
-    expect(stats?.non_member_deployments).toBe(1) // only the outsider
-    expect(stats?.linked_to_goal).toBe(2) // the two linked ones
+    expect(stats?.non_member_deployments).toBe(1)
+    expect(stats?.linked_to_goal).toBe(2)
   })
 })
 
@@ -1200,12 +1122,10 @@ describe('getDevTeamSummaryStats board-based counting', () => {
     const devTeamId = await seedDevTeam(pool, 'summary-team', 'summary-team', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'nais-summary', appName: 'summary-app', environment: 'prod' })
 
-    // Link app to team
     await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
       devTeamId,
       appId,
     ])
-    // Add team member via user_github_accounts + dev_team_role_assignments
     await pool.query("INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('S123456', 'Sam', 'sam@nav.no')")
     await pool.query("INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('sam', 'S123456')")
     await pool.query(
@@ -1213,7 +1133,6 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       [devTeamId],
     )
 
-    // Create board with objective
     const boardId = (
       await pool.query(
         `INSERT INTO boards (dev_team_id, title, period_type, period_label, period_start, period_end, is_active)
@@ -1232,14 +1151,12 @@ describe('getDevTeamSummaryStats board-based counting', () => {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Board-linked deployment by non-member
     const dep1 = await seedDeploymentWithStatus(pool, appId, 'nais-summary', now, 'approved_pr', 'outsider')
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active)
        VALUES ($1, $2, 'manual', true)`,
       [dep1, objectiveId],
     )
-    // Unlinked deployment by team member
     await seedDeploymentWithStatus(pool, appId, 'nais-summary', now, 'approved_pr', 'sam')
 
     const result = await getDevTeamSummaryStats(['nais-summary'], [], startDate, ['sam'], devTeamId)
@@ -1255,13 +1172,11 @@ describe('getDevTeamSummaryStats board-based counting', () => {
     const teamBId = await seedDevTeam(pool, 'team-b', 'team-b', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'nais-shared', appName: 'shared-app', environment: 'prod' })
 
-    // Both teams own the app
     await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2), ($3, $2)', [
       teamAId,
       appId,
       teamBId,
     ])
-    // Member in both teams via user_github_accounts + dev_team_role_assignments
     await pool.query("INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('X123456', 'Xena', 'xena@nav.no')")
     await pool.query("INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('xena', 'X123456')")
     await pool.query(
@@ -1270,7 +1185,6 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       [teamAId, teamBId],
     )
 
-    // Board on team A
     const boardAId = (
       await pool.query(
         `INSERT INTO boards (dev_team_id, title, period_type, period_label, period_start, period_end, is_active)
@@ -1285,7 +1199,6 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       )
     ).rows[0].id
 
-    // Board on team B
     const boardBId = (
       await pool.query(
         `INSERT INTO boards (dev_team_id, title, period_type, period_label, period_start, period_end, is_active)
@@ -1303,7 +1216,6 @@ describe('getDevTeamSummaryStats board-based counting', () => {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // One deployment linked to BOTH boards
     const depId = await seedDeploymentWithStatus(pool, appId, 'nais-shared', now, 'approved_pr', 'xena')
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active)
@@ -1311,11 +1223,9 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       [depId, objA, objB],
     )
 
-    // When asking for both teams together, should deduplicate
     const result = await getDevTeamSummaryStats(['nais-shared'], [], startDate, ['xena'], [teamAId, teamBId])
-    expect(result.total_deployments).toBe(1) // deduplicated
+    expect(result.total_deployments).toBe(1)
 
-    // Individually each team should also show 1
     const resultA = await getDevTeamSummaryStats(['nais-shared'], [], startDate, ['xena'], teamAId)
     expect(resultA.total_deployments).toBe(1)
   })
@@ -1330,7 +1240,6 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       appId,
     ])
 
-    // Board with objective
     const boardId = (
       await pool.query(
         `INSERT INTO boards (dev_team_id, title, period_type, period_label, period_start, period_end, is_active)
@@ -1348,18 +1257,15 @@ describe('getDevTeamSummaryStats board-based counting', () => {
     const now = new Date()
     const startDate = new Date(now.getFullYear(), 0, 1)
 
-    // Board-linked deployment
     const depId = await seedDeploymentWithStatus(pool, appId, 'nais-nodep', now, 'direct_push', 'anyone')
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active)
        VALUES ($1, $2, 'manual', true)`,
       [depId, objectiveId],
     )
-    // Unlinked deployment (won't be counted since no deployer list)
     await seedDeploymentWithStatus(pool, appId, 'nais-nodep', now, 'direct_push', 'someone')
 
-    // Pass undefined for deployerUsernames — should still use board-based path
     const result = await getDevTeamSummaryStats(['nais-nodep'], [], startDate, undefined, devTeamId)
-    expect(result.total_deployments).toBe(1) // only the board-linked one
+    expect(result.total_deployments).toBe(1)
   })
 })

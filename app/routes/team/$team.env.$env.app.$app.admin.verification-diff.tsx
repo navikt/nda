@@ -1,11 +1,3 @@
-/**
- * Verification Diff Page (App-specific)
- *
- * Shows pre-computed differences between stored verification status and
- * what V2 verification would produce. Diffs are computed by the
- * reverify_app sync job and stored in the verification_diffs table.
- */
-
 import {
   Link as AkselLink,
   Alert,
@@ -69,7 +61,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     monitoredAppId: monitoredApp.id,
   }
 
-  // Read pre-computed diffs from database
   const result = await pool.query(
     `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.error_reason,
             vd.computed_at,
@@ -94,7 +85,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     githubRepoName: row.detected_github_repo_name,
   }))
 
-  // Get last computation time from the latest completed job, not from diffs
   const [latestJob, missingApproverRows] = await Promise.all([
     getLatestSyncJob(monitoredApp.id, 'reverify_app'),
     getApprovedDeploymentsMissingApprover(monitoredApp.id),
@@ -130,7 +120,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { error: `Deployment ${deploymentId} ble hoppet over (manuelt godkjent, legacy, eller mangler data)` }
       }
       if (result.changed) {
-        // Remove the diff row since we've applied the change
         await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [deploymentId])
         return {
           applied: deploymentId,
@@ -212,7 +201,6 @@ export async function action({ request, params }: Route.ActionArgs) {
           monitoredAppId: monitoredApp.id,
           forceRefresh: true,
         })
-        // Remove stale verification_diffs row if it exists
         await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [dep.id])
         refreshed++
       } catch (err) {
@@ -241,7 +229,6 @@ export default function VerificationDiffPage() {
   const submittingId = navigation.state === 'submitting' ? navigation.formData?.get('deployment_id')?.toString() : null
   const isApplyingAll = navigation.state === 'submitting' && navigation.formData?.get('action') === 'apply_all'
 
-  // Job polling state
   const computeFetcher = useFetcher()
   const [activeJobId, setActiveJobId] = useState<number | null>(latestJob?.status === 'running' ? latestJob.id : null)
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -250,7 +237,6 @@ export default function VerificationDiffPage() {
   const revalidatorRef = useRef(revalidator)
   revalidatorRef.current = revalidator
 
-  // Start polling when job becomes active
   useEffect(() => {
     if (activeJobId) {
       pollInterval.current = setInterval(() => {
@@ -265,7 +251,6 @@ export default function VerificationDiffPage() {
     }
   }, [activeJobId])
 
-  // Handle poll responses
   const [jobProgress, setJobProgress] = useState<{ processed: number; total: number; diffsFound: number } | null>(null)
   useEffect(() => {
     const data = computeFetcher.data as
@@ -290,7 +275,6 @@ export default function VerificationDiffPage() {
     }
   }, [computeFetcher.data])
 
-  // Handle compute_diffs trigger response from admin page
   const triggerFetcher = useFetcher()
   const triggerData = triggerFetcher.data as { computeDiffsJobStarted?: number; error?: string } | undefined
   useEffect(() => {
@@ -303,7 +287,6 @@ export default function VerificationDiffPage() {
 
   const isComputing = !!activeJobId || triggerFetcher.state !== 'idle'
 
-  // Multi-select state
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const toggleId = (id: number) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -312,7 +295,6 @@ export default function VerificationDiffPage() {
     setSelectedIds((prev) => (prev.length === diffs.length ? [] : diffs.map((d) => d.id)))
   }
 
-  // Clear selection when diffs change (after revalidation)
   const prevDiffCount = useRef(diffs.length)
   useEffect(() => {
     if (diffs.length !== prevDiffCount.current) {
@@ -521,10 +503,6 @@ export default function VerificationDiffPage() {
     </Box>
   )
 }
-
-// =============================================================================
-// Missing Approver Section
-// =============================================================================
 
 type LoaderData = Awaited<ReturnType<typeof loader>>
 type MissingApproverClient = LoaderData['missingApproverDeployments'][number]

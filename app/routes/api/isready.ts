@@ -3,7 +3,6 @@ import { logger } from '~/lib/logger.server'
 
 export async function loader() {
   try {
-    // Check database connectivity
     await query('SELECT 1')
     return new Response('OK', {
       status: 200,

@@ -8,7 +8,6 @@ import { logger } from '~/lib/logger.server'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import type { Route } from './+types/reports.generate'
 
-// POST: Create a new report generation job
 export async function action({ request }: Route.ActionArgs) {
   await requireAdmin(request)
 
@@ -30,7 +29,6 @@ export async function action({ request }: Route.ActionArgs) {
   const job = await createReportJob(monitoredAppId, year, periodType, periodLabel, periodStart, periodEnd)
 
   if (job.created || isStaleJob({ status: job.status, created_at: job.createdAt, started_at: job.startedAt })) {
-    // Start async processing for new jobs or stale pending jobs (fire and forget)
     processReportJob(job.jobId, monitoredAppId, periodStart, periodEnd).catch((err) => {
       logger.error(`Report job ${job.jobId} failed:`, err)
     })
@@ -39,12 +37,11 @@ export async function action({ request }: Route.ActionArgs) {
   return data({ jobId: job.jobId })
 }
 
-// Async function to process the report job
 async function processReportJob(jobId: string, monitoredAppId: number, periodStart: Date, periodEnd: Date) {
   try {
     const claimed = await claimReportJob(jobId)
     if (!claimed) {
-      return // Another processor already claimed this job
+      return
     }
 
     const rawData = await getAuditReportData(monitoredAppId, periodStart, periodEnd)

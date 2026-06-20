@@ -1,8 +1,3 @@
-/**
- * Integration test: Deployment SQL queries.
- * Tests insert, query, and update operations on the deployments table.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
@@ -66,12 +61,10 @@ describe('deployment queries', () => {
       title: 'Original title',
     })
 
-    // Update with new title
     await pool.query(`UPDATE deployments SET title = COALESCE($2, title) WHERE id = $1`, [depId, 'New title'])
     const { rows: r1 } = await pool.query('SELECT title FROM deployments WHERE id = $1', [depId])
     expect(r1[0].title).toBe('New title')
 
-    // Update with null title (should preserve existing)
     await pool.query(`UPDATE deployments SET title = COALESCE($2, title) WHERE id = $1`, [depId, null])
     const { rows: r2 } = await pool.query('SELECT title FROM deployments WHERE id = $1', [depId])
     expect(r2[0].title).toBe('New title')
@@ -106,7 +99,6 @@ describe('deployment queries', () => {
   it('should count deployments using FILTER clause correctly', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-x', appName: 'app-x', environment: 'prod' })
 
-    // Insert various four_eyes_status values
     for (const status of ['approved_pr', 'approved_pr', 'direct_push', 'pending']) {
       const naisId = `dep-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       await pool.query(
@@ -116,7 +108,6 @@ describe('deployment queries', () => {
       )
     }
 
-    // This is the exact pattern from getSectionOverallStats that uses four_eyes_status
     const { rows } = await pool.query(`
       SELECT
         COUNT(id)::int AS total,
@@ -238,21 +229,17 @@ describe('title fallback chain (COALESCE)', () => {
       [sha],
     )
 
-    // With all sources: d.title wins
     const { rows: r1 } = await pool.query(titleQuery, [depId])
     expect(r1[0].title).toBe('Explicit title')
 
-    // Remove d.title: github_pr_data wins
     await pool.query('UPDATE deployments SET title = NULL WHERE id = $1', [depId])
     const { rows: r2 } = await pool.query(titleQuery, [depId])
     expect(r2[0].title).toBe('PR data title')
 
-    // Remove github_pr_data: commits.original_pr_title wins
     await pool.query('UPDATE deployments SET github_pr_data = NULL WHERE id = $1', [depId])
     const { rows: r3 } = await pool.query(titleQuery, [depId])
     expect(r3[0].title).toBe('Original PR title')
 
-    // Remove original_pr_title: commits.message wins
     await pool.query(
       "UPDATE commits SET original_pr_title = NULL WHERE sha = $1 AND repo_owner = 'navikt' AND repo_name = 'my-repo'",
       [sha],
@@ -274,7 +261,6 @@ describe('manual approval preserves existing data', () => {
       githubPrData: { title: 'Legg til oversetting for AFP Stat kontroll', number: 579 },
     })
 
-    // Set unverified_commits JSON
     await pool.query(
       `UPDATE deployments 
        SET github_pr_number = 579,
@@ -289,7 +275,6 @@ describe('manual approval preserves existing data', () => {
       ],
     )
 
-    // Simulate manual approval that preserves existing data (the fixed behavior)
     const before = await pool.query('SELECT * FROM deployments WHERE id = $1', [depId])
     const existing = before.rows[0]
 
@@ -328,7 +313,6 @@ describe('not_approved filter includes unrecognized statuses', () => {
   it('should include deployments with unrecognized four_eyes_status in not_approved filter', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-filter', appName: 'app-filter', environment: 'prod' })
 
-    // Seed deployments with various statuses
     const statuses = ['approved_pr', 'pending', 'direct_push', 'some_unknown_status', null]
     for (const status of statuses) {
       const naisId = `dep-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -339,7 +323,6 @@ describe('not_approved filter includes unrecognized statuses', () => {
       )
     }
 
-    // Query using the same exclusion logic as getDeploymentsPaginated
     const { rows } = await pool.query(`
       SELECT d.four_eyes_status
       FROM deployments d
@@ -350,7 +333,6 @@ describe('not_approved filter includes unrecognized statuses', () => {
       ORDER BY d.four_eyes_status
     `)
 
-    // Should include direct_push and the unknown status
     expect(rows).toHaveLength(2)
     const statuses_found = rows.map((r: { four_eyes_status: string | null }) => r.four_eyes_status)
     expect(statuses_found).toContain('direct_push')
@@ -374,7 +356,6 @@ describe('not_approved filter includes unrecognized statuses', () => {
         AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${PENDING_STATUSES_SQL})
     `)
 
-    // NULL coalesces to 'unknown' which is in PENDING_STATUSES, so excluded from not_approved
     expect(rows).toHaveLength(0)
   })
 })
@@ -478,7 +459,6 @@ describe('getDeploymentById backfills checks_ref for legacy data', () => {
 
     const { getDeploymentById } = await import('~/db/deployments.server')
     const result = await getDeploymentById(depId)
-    // head_sha matches headabc, but stored checks_ref='merge_commit' must be kept
     expect(result?.github_pr_data?.checks_ref).toBe('merge_commit')
   })
 })

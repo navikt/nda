@@ -15,16 +15,10 @@ export interface GoalSelectionBoard {
 
 interface GoalSelectionFieldsProps {
   boards: GoalSelectionBoard[]
-  /** Render hidden inputs with name attributes for form submission (default: true) */
   includeNameAttributes?: boolean
-  /** Called when the selected objective changes (id or empty string) */
   onObjectiveChange?: (objectiveId: string) => void
 }
 
-/**
- * Shared goal-selection fields: Tavle → Mål → Nøkkelresultat + optional link/comment.
- * All selects are always visible; Mål and Nøkkelresultat are disabled until parent is selected.
- */
 export function GoalSelectionFields({
   boards,
   includeNameAttributes = true,

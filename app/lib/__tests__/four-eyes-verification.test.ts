@@ -2,32 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { PrCommit, PrMetadata, PrReview, VerificationInput } from '../verification/types'
 import { verifyDeployment, verifyFourEyesFromPrData } from '../verification/verify'
 
-/**
- * Tests for four-eyes verification logic.
- *
- * Covers two bugs found in real deployment (pensjon-psak deployment #10632):
- *
- * 1. Squash merge commit not recognized as deployed PR commit:
- *    GitHub creates a new SHA when squash-merging a PR. This SHA differs from
- *    the PR's head commit SHA. The verification must match the merge commit SHA
- *    to the deployed PR via `mergeCommitSha`.
- *
- * 2. Dependabot rebase after approval invalidates four-eyes:
- *    Dependabot may rebase (creating a new commit) after a reviewer approves.
- *    If the merger is someone other than the commit author, the merge action
- *    itself validates four-eyes because the merger saw the final state.
- *
- * Test data based on real PR pensjon-psak#2565 (dependabot storybook bump):
- * - PR author: dependabot[bot]
- * - Reviewer: walbo (APPROVED at 13:55:27)
- * - Dependabot commit: 83289528 at 13:57:06 (rebased after approval)
- * - Merge commit (squash): 158024d6 at 14:00:13 (merged by walbo)
- */
-
-// =============================================================================
-// Test Helpers
-// =============================================================================
-
 function makePrCommit(overrides: Partial<PrCommit> = {}): PrCommit {
   return {
     sha: 'default-commit-sha',
@@ -108,10 +82,6 @@ function makeBaseInput(overrides: Partial<VerificationInput> = {}): Verification
   }
 }
 
-// =============================================================================
-// verifyFourEyesFromPrData - Unit Tests
-// =============================================================================
-
 describe('verifyFourEyesFromPrData', () => {
   describe('basic approval after last commit', () => {
     it('should approve when review is after last commit', () => {
@@ -157,7 +127,6 @@ describe('verifyFourEyesFromPrData', () => {
 
   describe('merger validates four-eyes (dependabot rebase scenario)', () => {
     it('should approve when merger is not a commit author and there are approvals', () => {
-      // Scenario: dependabot rebases after approval, walbo merges
       const result = verifyFourEyesFromPrData({
         reviewers: [makePrReview({ username: 'walbo', submittedAt: '2026-02-27T13:55:27Z' })],
         commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:57:06Z' })],
@@ -217,7 +186,6 @@ describe('verifyFourEyesFromPrData', () => {
     })
 
     it('should still prefer review-after-commit when both conditions are met', () => {
-      // Review is after last commit — should use the standard path, not merger path
       const result = verifyFourEyesFromPrData({
         reviewers: [makePrReview({ username: 'walbo', submittedAt: '2026-02-27T14:00:00Z' })],
         commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:00:00Z' })],
@@ -226,7 +194,6 @@ describe('verifyFourEyesFromPrData', () => {
       })
       expect(result.hasFourEyes).toBe(true)
       expect(result.reason).toContain('after last commit')
-      // Should NOT mention merger since the standard path handled it
       expect(result.reason).not.toContain('merged by')
     })
   })
@@ -244,21 +211,14 @@ describe('verifyFourEyesFromPrData', () => {
         ],
         baseBranch: 'main',
       })
-      // Review at 13:30 is after real commit at 13:00, merge commit at 14:00 is ignored
       expect(result.hasFourEyes).toBe(true)
       expect(result.reason).toContain('after ignoring 1 base-merge commit(s)')
     })
   })
 })
 
-// =============================================================================
-// verifyDeployment - Squash Merge Commit Matching Tests
-// =============================================================================
-
 describe('verifyDeployment - squash merge commit matching', () => {
   it('should match squash merge commit to deployed PR via mergeCommitSha', () => {
-    // Real scenario: pensjon-psak#2565
-    // Deployed SHA is 158024d6 (squash merge), PR head is 83289528
     const input = makeBaseInput({
       commitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
       deployedPr: {
@@ -301,7 +261,6 @@ describe('verifyDeployment - squash merge commit matching', () => {
   })
 
   it('should still match PR commits by direct SHA', () => {
-    // Standard case: commitsBetween SHA matches a PR commit SHA directly
     const input = makeBaseInput({
       deployedPr: {
         number: 100,
@@ -334,7 +293,6 @@ describe('verifyDeployment - squash merge commit matching', () => {
   })
 
   it('should not match random commits to deployed PR via mergeCommitSha', () => {
-    // A commit that is neither in PR commits nor the merge commit SHA
     const input = makeBaseInput({
       deployedPr: {
         number: 100,
@@ -369,18 +327,7 @@ describe('verifyDeployment - squash merge commit matching', () => {
   })
 })
 
-// =============================================================================
-// verifyDeployment - Full Dependabot Rebase Scenario (E2E)
-// =============================================================================
-
 describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
-  /**
-   * Reproduces the exact scenario from pensjon-psak deployment #10632:
-   * 1. dependabot creates PR #2565 with commit 83289528 at 13:57:06
-   * 2. walbo approves at 13:55:27 (BEFORE the commit - dependabot rebased after)
-   * 3. walbo merges at 14:00:13, creating squash merge commit 158024d6
-   * 4. Deployment uses 158024d6 as the deployed commit
-   */
   const realWorldInput = makeBaseInput({
     commitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
     deployedPr: {
@@ -456,7 +403,6 @@ describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
   })
 
   it('should NOT approve if implicit approval is off and mergedBy is not available', () => {
-    // If mergeCommitSha didn't match AND mergedBy was not set, should fail
     const deployedPr = realWorldInput.deployedPr
     if (!deployedPr) throw new Error('Test setup error')
     const input = makeBaseInput({
@@ -474,14 +420,10 @@ describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
 
     const result = verifyDeployment(input)
 
-    // Without mergeCommitSha match, falls to commit.pr path
-    // Without mergedBy, can't validate via merger
-    // Should be unverified
     expect(result.hasFourEyes).toBe(false)
   })
 
   it('should approve via implicit approval (dependabot_only mode) as alternative', () => {
-    // Even without the merger fix, implicit approval should work
     const input = makeBaseInput({
       ...realWorldInput,
       implicitApprovalSettings: { mode: 'dependabot_only' },
@@ -492,22 +434,8 @@ describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
   })
 })
 
-// =============================================================================
-// verifyDeployment - verification-diff page scenario
-// =============================================================================
-
 describe('verifyDeployment - verification-diff page (implicit approval off)', () => {
-  /**
-   * The verification-diff page (team.$team.env.$env.app.$app.admin.verification-diff.tsx)
-   * always runs with implicitApprovalSettings: { mode: 'off' }.
-   * These tests verify that the squash merge + merger-validates fixes work
-   * even without implicit approval enabled, matching the verification-diff behavior.
-   */
-
   it('should approve dependabot squash merge with implicit approval off', () => {
-    // This is exactly the scenario verification-diff encounters:
-    // - metadata comes from snapshot (includes mergeCommitSha + mergedBy)
-    // - implicitApprovalSettings is hardcoded to { mode: 'off' }
     const input = makeBaseInput({
       implicitApprovalSettings: { mode: 'off' },
       commitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
@@ -551,7 +479,6 @@ describe('verifyDeployment - verification-diff page (implicit approval off)', ()
   })
 
   it('should detect diff when old result was unverified but new result is approved', () => {
-    // Simulates the comparison verification-diff performs
     const input = makeBaseInput({
       implicitApprovalSettings: { mode: 'off' },
       deployedPr: {
@@ -588,20 +515,15 @@ describe('verifyDeployment - verification-diff page (implicit approval off)', ()
 
     const newResult = verifyDeployment(input)
 
-    // Old result would have been: hasFourEyes=false (before the fix)
-    // New result should be: hasFourEyes=true (merger validates)
     expect(newResult.hasFourEyes).toBe(true)
     expect(newResult.status).toBe('approved')
 
-    // This is the comparison verification-diff does:
-    const oldHasFourEyes = false // simulated old stored result
+    const oldHasFourEyes = false
     const statusChanged = oldHasFourEyes !== newResult.hasFourEyes
-    expect(statusChanged).toBe(true) // diff detected
+    expect(statusChanged).toBe(true)
   })
 
   it('should not approve when commit.pr is used and mergedBy is unavailable', () => {
-    // When commitsBetween SHA doesn't match mergeCommitSha,
-    // and the commit falls to commit.pr path without mergedBy
     const input = makeBaseInput({
       implicitApprovalSettings: { mode: 'off' },
       deployedPr: null, // no deployed PR
@@ -630,7 +552,6 @@ describe('verifyDeployment - verification-diff page (implicit approval off)', ()
     })
 
     const result = verifyDeployment(input)
-    // commit.pr path doesn't pass mergedBy, so merger-validates fix doesn't apply
     expect(result.hasFourEyes).toBe(false)
     expect(result.unverifiedCommits).toHaveLength(1)
     expect(result.unverifiedCommits[0].reason).toBe('approval_before_last_commit')

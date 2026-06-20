@@ -1,13 +1,3 @@
-/**
- * Integration tests for recordBaselineApproval().
- *
- * Verifies that:
- * - A row is inserted when no attributed baseline_approval exists (no history rows)
- * - A row is inserted when a baseline_approval row exists but changed_by IS NULL
- * - No row is inserted (returns false) when an attributed approver already exists
- * - Concurrent submissions are handled safely (ON CONFLICT DO NOTHING)
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { recordBaselineApproval } from '../../deployments/status-history.server'
@@ -66,7 +56,6 @@ describe('recordBaselineApproval', () => {
       fourEyesStatus: 'baseline',
     })
 
-    // Existing row with no approver — simulates historical data gap
     await pool.query(
       `INSERT INTO deployment_status_history (deployment_id, from_status, to_status, changed_by, change_source)
        VALUES ($1, 'pending_baseline', 'baseline', NULL, 'baseline_approval')`,
@@ -96,7 +85,6 @@ describe('recordBaselineApproval', () => {
       fourEyesStatus: 'baseline',
     })
 
-    // First attribution
     await pool.query(
       `INSERT INTO deployment_status_history (deployment_id, from_status, to_status, changed_by, change_source)
        VALUES ($1, 'pending_baseline', 'baseline', 'Z990003', 'baseline_approval')`,
@@ -107,7 +95,6 @@ describe('recordBaselineApproval', () => {
 
     expect(inserted).toBe(false)
 
-    // Original approver must be unchanged
     const { rows } = await pool.query(
       `SELECT changed_by FROM deployment_status_history
        WHERE deployment_id = $1 AND change_source = 'baseline_approval' AND changed_by IS NOT NULL`,
@@ -127,13 +114,11 @@ describe('recordBaselineApproval', () => {
       fourEyesStatus: 'baseline',
     })
 
-    // Simulate two concurrent requests racing
     const [first, second] = await Promise.all([
       recordBaselineApproval(deploymentId, 'Z990004'),
       recordBaselineApproval(deploymentId, 'Z990005'),
     ])
 
-    // Exactly one should have inserted
     expect([first, second].filter(Boolean)).toHaveLength(1)
 
     const { rows } = await pool.query(

@@ -1,14 +1,3 @@
-/**
- * Integration tests for baseline deployment handling in audit report data.
- *
- * Verifies that:
- * - A deployment with four_eyes_status='baseline' gets method='baseline' in report data
- * - The approver is fetched from deployment_status_history (change_source='baseline_approval')
- * - baseline_count is correctly counted
- * - A baseline deployment with no status history row causes buildReportData to throw
- *   (report generation is blocked until the baseline is re-approved via the UI)
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildReportData, getAuditReportData } from '../../audit-reports.server'
@@ -47,7 +36,6 @@ describe('baseline deployment in audit report', () => {
       },
     })
 
-    // Seed the baseline approval in status history
     await pool.query(
       `INSERT INTO deployment_status_history
          (deployment_id, from_status, to_status, changed_by, change_source, created_at)
@@ -63,7 +51,6 @@ describe('baseline deployment in audit report', () => {
 
     const entry = report.deployments[0]
     expect(entry.method).toBe('baseline')
-    // Approver should come from status history (nav-ident), not from PR reviewers
     expect(entry.approver).toBe('Z990001')
   })
 
@@ -82,14 +69,12 @@ describe('baseline deployment in audit report', () => {
 
     const rawData = await getAuditReportData(appId, PERIOD_START, PERIOD_END)
 
-    // Generating a report for a baseline without an approver is invalid — must throw
     expect(() => buildReportData(rawData)).toThrow(/missing an approver/)
   })
 
   it('counts baseline_count correctly alongside pr deployments', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-d', appName: 'app-d', environment: 'prod-gcp' })
 
-    // One baseline
     const baselineId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-d',
@@ -104,7 +89,6 @@ describe('baseline deployment in audit report', () => {
       [baselineId, new Date('2026-02-01T11:00:00Z')],
     )
 
-    // Two PR-approved deployments
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-d',

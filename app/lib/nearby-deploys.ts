@@ -10,10 +10,6 @@ interface NearbyDeployWithCurrent extends NearbyDeploy {
   isCurrent: boolean
 }
 
-/**
- * Merges nearby deployments with the current deployment, sorts chronologically,
- * and marks which entry is the current deploy.
- */
 export function mergeWithCurrentDeploy(
   nearbyDeployments: NearbyDeploy[],
   currentDeploy: NearbyDeploy,

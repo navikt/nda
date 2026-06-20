@@ -1,8 +1,3 @@
-/**
- * Integration test: Dev team database queries.
- * Tests CRUD operations and application linking against a real PostgreSQL instance.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { seedApp, seedSection, truncateAllTables } from './helpers'
@@ -34,7 +29,6 @@ describe('dev_teams queries', () => {
     expect(created[0].name).toBe('Team Alpha')
     expect(created[0].is_active).toBe(true)
 
-    // Retrieve with nais teams (empty)
     const { rows: teams } = await pool.query(
       `SELECT dt.*,
          COALESCE(array_agg(dn.nais_team_slug ORDER BY dn.nais_team_slug)
@@ -60,7 +54,6 @@ describe('dev_teams queries', () => {
       'Team Beta',
     ])
 
-    // Link nais teams
     await pool.query(`INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug) VALUES ($1, $2), ($1, $3)`, [
       team.id,
       'nais-team-a',
@@ -93,13 +86,11 @@ describe('dev_teams queries', () => {
     const app1Id = await seedApp(pool, { teamSlug: 'nais-1', appName: 'app-one', environment: 'prod' })
     const app2Id = await seedApp(pool, { teamSlug: 'nais-2', appName: 'app-two', environment: 'prod' })
 
-    // Link app1 to the dev team
     await pool.query(`INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)`, [
       team.id,
       app1Id,
     ])
 
-    // Query linked apps
     const { rows: linked } = await pool.query(
       `SELECT ma.id AS monitored_app_id, ma.team_slug, ma.environment_name, ma.app_name
        FROM dev_team_applications dta
@@ -111,7 +102,6 @@ describe('dev_teams queries', () => {
     expect(linked).toHaveLength(1)
     expect(linked[0].app_name).toBe('app-one')
 
-    // Query all apps with link status
     const { rows: available } = await pool.query(
       `SELECT ma.id, ma.team_slug, ma.environment_name, ma.app_name,
               (dta.dev_team_id IS NOT NULL) AS is_linked
@@ -182,7 +172,6 @@ describe('dev_teams queries', () => {
       environment: 'prod-gcp',
     })
 
-    // Create dev team "motta-pensjon" that only owns pensjon-penny (not psak)
     const { rows: teamRows } = await pool.query(
       `INSERT INTO dev_teams (section_id, slug, name) VALUES ($1, 'motta-pensjon', 'Motta pensjon') RETURNING id`,
       [sectionId],
@@ -193,7 +182,6 @@ describe('dev_teams queries', () => {
       appPenny,
     ])
 
-    // Single-app lookup for psak should NOT find motta-pensjon
     const singleResult = await pool.query(
       `SELECT DISTINCT dt.*, s.slug AS section_slug FROM dev_teams dt
        JOIN sections s ON s.id = dt.section_id
@@ -204,10 +192,8 @@ describe('dev_teams queries', () => {
        ORDER BY dt.name`,
       [[appPsak], ['pensjondeployer']],
     )
-    // Only found via nais team, not via direct app link to penny
     const singleSlugs = singleResult.rows.map((r: { slug: string }) => r.slug)
 
-    // Multi-app lookup including both apps should find motta-pensjon
     const multiResult = await pool.query(
       `SELECT DISTINCT dt.*, s.slug AS section_slug FROM dev_teams dt
        JOIN sections s ON s.id = dt.section_id
@@ -221,12 +207,8 @@ describe('dev_teams queries', () => {
     const multiSlugs = multiResult.rows.map((r: { slug: string }) => r.slug)
     expect(multiSlugs).toContain('motta-pensjon')
 
-    // motta-pensjon should only appear in multi (via penny), or single if nais team matches
-    // The point: multi-app lookup finds the team that single-app missed via direct app ownership
     const foundViaSingle = singleSlugs.includes('motta-pensjon')
     const foundViaMulti = multiSlugs.includes('motta-pensjon')
-    // Since motta-pensjon only owns penny (not psak) and has no nais_team link,
-    // it should only be found in multi-app lookup
     if (!foundViaSingle) {
       expect(foundViaMulti).toBe(true)
     }

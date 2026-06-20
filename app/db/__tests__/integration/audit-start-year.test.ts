@@ -1,10 +1,3 @@
-/**
- * Integration tests for `audit_start_year` filter behavior across user-facing queries.
- *
- * Bekrefter at deployments fra før en applikasjons `audit_start_year` blir
- * ekskludert fra tellinger og lister som vises som "mangler" eller mangelrate.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { checkAuditReadiness } from '../../audit-reports.server'
@@ -49,7 +42,6 @@ describe('audit_start_year filter — grenseverdier', () => {
       environment: 'prod',
       auditStartYear: 2026,
     })
-    // Deployment ved nøyaktig grensen — skal inkluderes (>= make_date(2026,1,1))
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -57,7 +49,6 @@ describe('audit_start_year filter — grenseverdier', () => {
       createdAt: new Date('2026-01-01T00:00:00Z'),
       deployerUsername: 'alice',
     })
-    // Deployment ett millisekund før grensen — skal ekskluderes
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',

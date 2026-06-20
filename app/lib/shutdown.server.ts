@@ -1,10 +1,3 @@
-/**
- * Graceful shutdown handler
- *
- * Registers SIGTERM/SIGINT handlers that cancel running sync jobs
- * owned by this pod before the process exits.
- */
-
 import { cancelRunningJobsForPod } from '~/db/sync-jobs.server'
 import { logger } from '~/lib/logger.server'
 

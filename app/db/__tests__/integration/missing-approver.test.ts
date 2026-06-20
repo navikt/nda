@@ -1,16 +1,3 @@
-/**
- * Integration tests for missing-approver detection in audit readiness
- * and verification diff queries.
- *
- * Covers:
- * - Approved deployment with no reviewers and no manual approval → blocked
- * - Approved deployment with APPROVED reviewer → passes
- * - Approved deployment with manual_approval comment → passes
- * - Excluded statuses (no_changes, baseline, implicitly_approved) → not blocked
- * - getApprovedDeploymentsMissingApprover query (per-app)
- * - getAllApprovedDeploymentsMissingApprover query (global, cross-app)
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { checkAuditReadiness } from '../../audit-reports.server'
@@ -98,7 +85,6 @@ describe('missing approver detection — checkAuditReadiness', () => {
       githubPrData: { reviewers: [] },
     })
 
-    // Insert manual approval comment
     await pool.query(
       `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, approved_by)
        VALUES ($1, 'manual_approval', 'Godkjent manuelt', 'admin-user')`,
@@ -210,7 +196,6 @@ describe('missing approver detection — getApprovedDeploymentsMissingApprover',
       githubPrData: { reviewers: [] },
     })
 
-    // Insert soft-deleted manual approval — should NOT count
     await pool.query(
       `INSERT INTO deployment_comments (deployment_id, comment_type, comment_text, approved_by, deleted_at)
        VALUES ($1, 'manual_approval', 'Slettet godkjenning', 'admin-user', NOW())`,

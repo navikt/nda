@@ -69,8 +69,6 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
   const navigation = useNavigation()
   const isVerifying = navigation.state !== 'idle' && navigation.formData?.get('intent') === 'verify_four_eyes'
 
-  // Statuses that require manual approval (when no manualApproval exists).
-  // Note: 'pending' is excluded — it means the verifier hasn't run yet, not that manual action is needed.
   const statusesRequiringApproval = [
     'direct_push',
     'missing',
@@ -332,7 +330,6 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
 
       {/* Unverified commits section */}
       {(() => {
-        // Filter out commits that are already shown in the PR commits accordion or are the merge commit
         const prCommitShas = new Set(deployment.github_pr_data?.commits?.map((c: any) => c.sha) || [])
         const mergeCommitSha = deployment.github_pr_data?.merge_commit_sha
         const filteredUnverifiedCommits =

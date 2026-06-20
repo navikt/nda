@@ -1,16 +1,3 @@
-/**
- * Fetch Verification Data
- *
- * This module handles fetching all data needed for verification.
- * Flow: GitHub API → Database → VerificationInput
- *
- * Key features:
- * - Checks database for cached data first
- * - Fetches from GitHub only if needed (outdated schema or forced refresh)
- * - Stores all fetched data to database before returning
- * - Handles GitHub retention (404/410) gracefully
- */
-
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import {
@@ -49,19 +36,11 @@ import {
   type VerificationInput,
 } from './types'
 
-// =============================================================================
-// Main Fetch Function
-// =============================================================================
-
 interface FetchOptions {
   forceRefresh?: boolean
   dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[]
 }
 
-/**
- * Fetch all data needed for verifying a deployment.
- * Always stores data to database before returning.
- */
 export async function fetchVerificationData(
   deploymentId: number,
   commitSha: string,
@@ -77,19 +56,15 @@ export async function fetchVerificationData(
     throw new Error(`Invalid repository format: ${repository}`)
   }
 
-  // Get app settings
   const appSettings = await getAppSettings(monitoredAppId)
 
-  // Check repository status
   const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
   const repositoryStatus: RepositoryStatus = repoCheck.repository
     ? (repoCheck.repository.status as RepositoryStatus)
     : 'unknown'
 
-  // Check if deployed commit is on the base branch
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
-  // Get previous deployment (with group fallback)
   const previousDeployment = await getPreviousDeployment(
     deploymentId,
     owner,
@@ -99,14 +74,9 @@ export async function fetchVerificationData(
     monitoredAppId,
   )
 
-  // Get deployed commit's PR
   const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, options)
   const deployedPr = deployedPrResult.deployedPr
 
-  // Track branch mismatches for the deployed PR. We ONLY aggregate mismatch
-  // when no PR was found on the configured baseBranch — having a matching PR
-  // means the data is valid for verification, even if other associated PRs
-  // exist (e.g. cherry-picks or backports to release branches).
   const mismatchedSet = new Map<string, Set<number>>()
   if (deployedPr === null) {
     for (let i = 0; i < deployedPrResult.mismatchedBaseBranches.length; i++) {
@@ -117,7 +87,6 @@ export async function fetchVerificationData(
     }
   }
 
-  // Get commits between deployments
   let commitsBetween: VerificationInput['commitsBetween'] = []
   let compareSummary: CompareSummary | null = null
   let compareFailed = false
@@ -140,9 +109,6 @@ export async function fetchVerificationData(
   }
   const noDiffAlreadyConfirmed = compareSummary?.noDiffDetected === true
 
-  // Aggregate base-branch mismatches discovered during commitsBetween enrichment.
-  // Only aggregate for commits where NO matching PR was found on baseBranch —
-  // a present `commit.pr` means we have valid data for the configured branch.
   for (const commit of commitsBetween) {
     if (commit.pr) continue
     if (commit.mismatchedBaseBranches) {
@@ -169,8 +135,6 @@ export async function fetchVerificationData(
     }
   }
 
-  // Check for nearby approved deploy with same commit when compare returns 0 commits
-  // between different SHAs (possible transient GitHub API failure during rapid deploys)
   let nearbyApprovedDeployWithSameCommit: VerificationInput['nearbyApprovedDeployWithSameCommit']
   if (
     previousDeployment &&
@@ -203,9 +167,6 @@ export async function fetchVerificationData(
     }
   }
 
-  // Broader fallback: find ANY nearby approved deploy (regardless of commit SHA).
-  // When compare returns 0 commits between different SHAs and no same-commit sibling exists,
-  // this deploy's commit is likely an ancestor of a nearby approved deploy (superseded deploy).
   let nearbyApprovedDeploy: VerificationInput['nearbyApprovedDeploy']
   if (
     previousDeployment &&
@@ -239,18 +200,9 @@ export async function fetchVerificationData(
     }
   }
 
-  // Detect which branch the deployment was made from.
-  // Prefer head_branch from the deployed PR (no extra API call),
-  // fall back to the GitHub Actions workflow run API.
   const detectedBranchName: string | undefined =
     deployedPr?.metadata.headBranch ?? (await getBranchFromWorkflowRun(owner, repo, triggerUrl)) ?? undefined
 
-  // Derive a fallback title from the first commit message when there is no PR.
-  // This covers deployments from non-default branches (e.g. unauthorized_branch)
-  // where unverifiedCommits is empty and no PR title is available.
-  // For baseline deployments (no previousDeployment), commitsBetween is empty, so we
-  // fetch the commit message directly from GitHub as an additional fallback.
-  // Use only the first line, trimmed and capped at 500 chars (matching the DB column limit).
   const rawFirstCommitMessage = await resolveRawCommitMessage({
     deployedPr,
     commitsBetween,
@@ -291,15 +243,10 @@ export async function fetchVerificationData(
   }
 }
 
-// =============================================================================
-// App Settings
-// =============================================================================
-
 async function getAppSettings(monitoredAppId: number): Promise<{
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
 }> {
-  // Get audit_start_year from monitored_applications
   const appResult = await pool.query(`SELECT audit_start_year FROM monitored_applications WHERE id = $1`, [
     monitoredAppId,
   ])
@@ -311,7 +258,6 @@ async function getAppSettings(monitoredAppId: number): Promise<{
     }
   }
 
-  // Get implicit approval settings from app_settings
   const settingsResult = await pool.query(
     `SELECT setting_value FROM app_settings 
      WHERE monitored_app_id = $1 AND setting_key = 'implicit_approval'`,
@@ -332,10 +278,6 @@ async function getAppSettings(monitoredAppId: number): Promise<{
   }
 }
 
-// =============================================================================
-// Previous Deployment
-// =============================================================================
-
 async function getPreviousDeployment(
   currentDeploymentId: number,
   owner: string,
@@ -344,9 +286,6 @@ async function getPreviousDeployment(
   auditStartYear: number | null,
   monitoredAppId: number,
 ): Promise<{ id: number; commitSha: string; createdAt: string } | null> {
-  // VIKTIG: Bruk created_at for å finne forrige deployment, IKKE id.
-  // Deployment-IDer korrelerer ikke med kronologisk rekkefølge fordi
-  // deployments kan legges til systemet i vilkårlig rekkefølge.
   let query = `
     SELECT d.id, d.commit_sha, d.created_at
     FROM deployments d
@@ -378,17 +317,9 @@ async function getPreviousDeployment(
     }
   }
 
-  // Fallback: look for a previous deployment from the same repo in a sibling
-  // environment within the same application group. This avoids unnecessary
-  // pending_baseline when a new environment variant is added to an existing group.
   return getPreviousDeploymentFromGroupSibling(currentDeploymentId, owner, repo, auditStartYear, monitoredAppId)
 }
 
-/**
- * Fallback for `getPreviousDeployment`: when no prior deployment exists in the
- * same environment, look across sibling apps in the same application group.
- * Returns null immediately when the app has no group (avoids unnecessary query).
- */
 async function getPreviousDeploymentFromGroupSibling(
   currentDeploymentId: number,
   owner: string,
@@ -396,7 +327,6 @@ async function getPreviousDeploymentFromGroupSibling(
   auditStartYear: number | null,
   monitoredAppId: number,
 ): Promise<{ id: number; commitSha: string; createdAt: string } | null> {
-  // Early return: check if app belongs to a group
   const groupCheck = await pool.query<{ application_group_id: number | null }>(
     `SELECT application_group_id FROM monitored_applications WHERE id = $1`,
     [monitoredAppId],
@@ -438,10 +368,6 @@ async function getPreviousDeploymentFromGroupSibling(
   }
 }
 
-// =============================================================================
-// PR Data Fetching
-// =============================================================================
-
 async function fetchDeployedPrData(
   owner: string,
   repo: string,
@@ -453,7 +379,6 @@ async function fetchDeployedPrData(
   mismatchedBaseBranches: string[]
   mismatchedPrNumbers: number[]
 }> {
-  // First, find PR number for this commit
   const { prNumber, mismatchedBaseBranches, mismatchedPrNumbers } = await findPrForCommit(
     owner,
     repo,
@@ -465,7 +390,6 @@ async function fetchDeployedPrData(
     return { deployedPr: null, mismatchedBaseBranches, mismatchedPrNumbers }
   }
 
-  // Check if we have cached data
   if (!options?.forceRefresh) {
     const cachedData = await getAllLatestPrSnapshots(owner, repo, prNumber)
 
@@ -474,7 +398,6 @@ async function fetchDeployedPrData(
       const reviews = cachedData.get('reviews')?.data as PrReview[]
       const commits = cachedData.get('commits')?.data as PrCommit[]
 
-      // If checks/comments are missing (schema v1 data), fetch fresh data
       if (!cachedData.has('checks') || !cachedData.has('comments')) {
         // Fall through to GitHub fetch to get complete data
       } else {
@@ -493,10 +416,8 @@ async function fetchDeployedPrData(
     }
   }
 
-  // Fetch from GitHub
   const { metadata, reviews, commits, checks, comments } = await fetchPrFromGitHub(owner, repo, prNumber)
 
-  // Store to database
   await savePrSnapshotsBatch(owner, repo, prNumber, [
     { dataType: 'metadata', data: metadata },
     { dataType: 'reviews', data: reviews },
@@ -518,23 +439,6 @@ async function fetchDeployedPrData(
   }
 }
 
-/**
- * Find the PR number for a commit and detect any base-branch mismatches.
- *
- * Returns:
- *  - prNumber: the PR number matching `baseBranch` (or any associated PR if
- *    baseBranch is not specified). null if no matching PR.
- *  - mismatchedBaseBranches: the actual base branches of PRs associated with
- *    this commit but NOT matching `baseBranch`. Used to surface a warning
- *    when, e.g., the configured `default_branch` doesn't match the actual
- *    repo default branch.
- *  - mismatchedPrNumbers: the PR numbers of those mismatched PRs (parallel to
- *    mismatchedBaseBranches by index).
- *
- * Cache shape (schema v3+) stores all associated PRs with their actual base
- * branches. Schema v2 stored only the requested base branch and is treated as
- * unusable for mismatch detection — refetched on demand.
- */
 async function findPrForCommit(
   owner: string,
   repo: string,
@@ -549,11 +453,7 @@ async function findPrForCommit(
   const cacheOnly = options?.cacheOnly ?? false
   const forceRefresh = options?.forceRefresh ?? false
 
-  // When forceRefresh is true, skip cache entirely to handle stale empty
-  // PR associations (e.g. cached `{ prs: [] }` from a race condition where
-  // GitHub hadn't indexed the merge commit yet).
   if (!forceRefresh) {
-    // First check our cached PR associations
     const cached = await getLatestCommitSnapshot(owner, repo, commitSha, 'prs')
     if (cached && cached.schemaVersion >= CURRENT_SCHEMA_VERSION) {
       const prs = (cached.data as { prs: Array<{ number: number; baseBranch: string }> }).prs
@@ -566,7 +466,6 @@ async function findPrForCommit(
           mismatchedPrNumbers: mismatchedPrs.map((p) => p.number),
         }
       }
-      // Cache hit but no match for this baseBranch
       if (cacheOnly || prs.length === 0) {
         return {
           prNumber: null,
@@ -579,15 +478,12 @@ async function findPrForCommit(
     }
   }
 
-  // In cache-only mode, don't fetch from GitHub
   if (cacheOnly) {
     return { prNumber: null, mismatchedBaseBranches: [], mismatchedPrNumbers: [] }
   }
 
-  // Fetch from GitHub API
   const { pr, allAssociatedPrs } = await getPullRequestForCommit(owner, repo, commitSha, true, baseBranch)
 
-  // Persist all associated PRs with their actual base branches (schema v3 shape)
   await saveCommitSnapshot(owner, repo, commitSha, 'prs', {
     prs: allAssociatedPrs.map((p) => ({ number: p.number, baseBranch: p.baseBranch })),
   })
@@ -618,7 +514,6 @@ async function fetchPrFromGitHub(
     throw new Error(`Failed to fetch PR #${prNumber} from ${owner}/${repo}`)
   }
 
-  // Transform to our schema types
   const metadata: PrMetadata = {
     number: prNumber,
     title: prData.title,
@@ -650,7 +545,6 @@ async function fetchPrFromGitHub(
     changedFiles: prData.changed_files,
     additions: prData.additions,
     deletions: prData.deletions,
-    // Extended fields (schema version 2+)
     commentsCount: prData.comments_count,
     reviewCommentsCount: prData.review_comments_count,
     locked: prData.locked,
@@ -742,20 +636,6 @@ async function fetchPrFromGitHub(
   return { metadata, reviews, commits, checks, comments }
 }
 
-// =============================================================================
-// Commits Between Deployments
-// =============================================================================
-
-/**
- * Resolve the raw first commit message used to derive a deployment title.
- *
- * Priority:
- * 1. If there is a deployed PR → no title derived from commit message (PR title is used instead)
- * 2. If commitsBetween is non-empty → use the first commit message
- * 3. If this is a baseline deployment (no previousDeployment) → fetch commit message directly from GitHub
- *
- * Exported for unit testing.
- */
 export async function resolveRawCommitMessage({
   deployedPr,
   commitsBetween,
@@ -803,7 +683,6 @@ async function fetchCommitsBetween(
   _previousDeploymentDate: string,
   options?: FetchOptions,
 ): Promise<{ commitsBetween: VerificationInput['commitsBetween']; compareSummary: CompareSummary } | null> {
-  // Check cache first
   if (!options?.forceRefresh) {
     const cachedCompare = await getLatestCompareSnapshot(owner, repo, fromSha, toSha)
     if (cachedCompare) {
@@ -817,7 +696,6 @@ async function fetchCommitsBetween(
     }
   }
 
-  // Fetch from GitHub API
   logger.info(`   🌐 Fetching compare from GitHub: ${fromSha.substring(0, 7)}...${toSha.substring(0, 7)}`)
   const compareData = await getCommitsBetween(owner, repo, fromSha, toSha)
 
@@ -844,7 +722,6 @@ async function fetchCommitsBetween(
   }
 
   if (shouldPersistCompare) {
-    // Save compare snapshot to database
     await saveCompareSnapshot(owner, repo, fromSha, toSha, storedCompareData)
   } else {
     logger.warn(
@@ -852,22 +729,16 @@ async function fetchCommitsBetween(
     )
   }
 
-  // Also store individual commit snapshots
   for (const commit of storedCompareData.commits) {
     await saveCommitSnapshot(owner, repo, commit.sha, 'metadata', commit)
   }
 
-  // Build the result with PR data
   return {
     commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, storedCompareData, options),
     compareSummary: storedCompareData.compare,
   }
 }
 
-/**
- * Build commitsBetween result from cached compare data.
- * If cacheOnly is true, only uses cached data (no GitHub API calls).
- */
 export async function buildCommitsBetweenFromCache(
   owner: string,
   repo: string,
@@ -890,7 +761,6 @@ export async function buildCommitsBetweenFromCache(
     let prData: VerificationInput['commitsBetween'][0]['pr'] = null
 
     if (prNumber && !options?.forceRefresh) {
-      // Try to get PR data from cache first
       const cachedData = await getAllLatestPrSnapshots(owner, repo, prNumber)
 
       if (cachedData.has('metadata') && cachedData.has('reviews') && cachedData.has('commits')) {
@@ -910,7 +780,6 @@ export async function buildCommitsBetweenFromCache(
     }
 
     if (prNumber && !prData && !cacheOnly) {
-      // Fetch from GitHub (only if not cache-only mode)
       try {
         const {
           metadata,
@@ -920,7 +789,6 @@ export async function buildCommitsBetweenFromCache(
           comments,
         } = await fetchPrFromGitHub(owner, repo, prNumber)
 
-        // Store to database
         await savePrSnapshotsBatch(owner, repo, prNumber, [
           { dataType: 'metadata', data: metadata },
           { dataType: 'reviews', data: reviews },
@@ -959,15 +827,6 @@ export async function buildCommitsBetweenFromCache(
   return result
 }
 
-// =============================================================================
-// GitHub API Integration (to be connected)
-// =============================================================================
-
-/**
- * These functions will be connected to the existing github.server.ts module.
- * They handle the actual GitHub API calls and error handling.
- */
-
 async function _refreshPrData(
   owner: string,
   repo: string,
@@ -977,10 +836,8 @@ async function _refreshPrData(
   const typesToFetch = dataTypes ?? ['metadata', 'reviews', 'commits', 'checks', 'comments']
 
   try {
-    // Fetch from GitHub
     const { metadata, reviews, commits, checks, comments } = await fetchPrFromGitHub(owner, repo, prNumber)
 
-    // Store to database
     const snapshots: Array<{ dataType: 'metadata' | 'reviews' | 'commits' | 'checks' | 'comments'; data: unknown }> = []
 
     if (typesToFetch.includes('metadata')) {
@@ -1001,7 +858,6 @@ async function _refreshPrData(
 
     await savePrSnapshotsBatch(owner, repo, prNumber, snapshots)
   } catch (error) {
-    // Handle GitHub 404/410 - data no longer available
     if (
       error instanceof Error &&
       'status' in error &&
@@ -1015,10 +871,6 @@ async function _refreshPrData(
   }
 }
 
-// =============================================================================
-// Bulk Data Fetching for All Deployments
-// =============================================================================
-
 interface BulkFetchProgress {
   total: number
   processed: number
@@ -1031,15 +883,6 @@ interface BulkFetchResult extends BulkFetchProgress {
   errorDetails: Array<{ deploymentId: number; error: string }>
 }
 
-/**
- * Fetch verification data for all deployments of an app.
- * Only fetches if schema version is outdated or no data exists.
- *
- * @param monitoredAppId - The app to fetch data for
- * @param options - Optional job tracking options (jobId for progress/cancel/heartbeat/logging)
- * @param onProgress - Optional callback for progress updates
- * @returns Summary of the fetch operation
- */
 export async function fetchVerificationDataForAllDeployments(
   monitoredAppId: number,
   options?: { jobId?: number },
@@ -1047,7 +890,6 @@ export async function fetchVerificationDataForAllDeployments(
 ): Promise<BulkFetchResult> {
   const jobId = options?.jobId
 
-  // Get app settings first to know the audit start year
   const settingsStart = performance.now()
   const appSettings = await getAppSettings(monitoredAppId)
   logger.debug('Hentet app-innstillinger', {
@@ -1055,10 +897,6 @@ export async function fetchVerificationDataForAllDeployments(
     durationMs: Math.round(performance.now() - settingsStart),
   })
 
-  // Build query that pre-computes which deployments already have data,
-  // avoiding N individual hasCurrentSchemaData calls (2-3 queries each).
-  // Uses window function LAG() to find previous deployment's commit_sha,
-  // then LEFT JOINs to check for existing PR and compare snapshots.
   let query = `
     WITH ordered_deployments AS (
       SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
@@ -1130,7 +968,6 @@ export async function fetchVerificationDataForAllDeployments(
   }
 
   for (const deployment of deployments) {
-    // Check for cancellation
     if (jobId && (await isSyncJobCancelled(jobId))) {
       await logSyncJobMessage(jobId, 'info', `Jobb avbrutt etter ${result.processed} av ${result.total} deployments`)
       break
@@ -1148,7 +985,6 @@ export async function fetchVerificationDataForAllDeployments(
       }
       const baseBranch = deployment.default_branch
 
-      // Use pre-computed snapshot existence from the query
       const hasCurrentData = deployment.has_pr_snapshot && deployment.has_compare_snapshot
 
       if (hasCurrentData) {
@@ -1158,7 +994,6 @@ export async function fetchVerificationDataForAllDeployments(
           repo: `${owner}/${repo}`,
         })
       } else {
-        // Fetch data (this will store to database)
         const fetchStart = performance.now()
         await fetchVerificationData(
           deployment.id,
@@ -1187,7 +1022,6 @@ export async function fetchVerificationDataForAllDeployments(
       result.processed++
       onProgress?.(result)
 
-      // Update progress and heartbeat
       if (jobId) {
         await updateSyncJobProgress(jobId, result)
         await heartbeatSyncJob(jobId)

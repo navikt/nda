@@ -23,7 +23,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('PDF ikke generert ennå. Generer rapporten på nytt.', { status: 404 })
   }
 
-  // Return PDF for inline viewing (not as attachment)
   return new Response(pdfData as unknown as BodyInit, {
     headers: {
       'Content-Type': 'application/pdf',

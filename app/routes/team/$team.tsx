@@ -29,7 +29,6 @@ export async function loader({ params: { team } }: Route.LoaderArgs) {
     alertCount: alertCountsByApp.get(app.id) || 0,
   }))
 
-  // Group applications by environment
   const appsByEnv = appsWithData.reduce(
     (acc, app) => {
       if (!acc[app.environment_name]) {

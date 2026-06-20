@@ -22,19 +22,6 @@ interface UserGithubAccount {
   deleted_by: string | null
 }
 
-/**
- * Create or update a GitHub account link in the `user_github_accounts` table.
- * The users row for nav_ident must already exist (FK constraint).
- *
- * displayGithubUsername semantics:
- * - Omitted (undefined): defaults to githubUsername (preserves original casing from the caller).
- * - Explicitly null: stored as null (clears display casing on INSERT; on conflict COALESCE
- *   preserves the existing value rather than overwriting with null).
- * - Provided string: must match githubUsername case-insensitively, or an error is thrown.
- *
- * On conflict (same github_username already exists), display_github_username is only updated
- * when the new value is non-null — a null value leaves the existing display casing intact.
- */
 export async function upsertUserGithubAccount(params: {
   githubUsername: string
   displayGithubUsername?: string | null

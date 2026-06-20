@@ -1,11 +1,3 @@
-/**
- * Integration test: Baseline status protection from re-verification.
- *
- * Verifies that deployments with status 'baseline' (manually approved)
- * cannot be overwritten by re-verification, just like 'manually_approved'
- * and 'legacy' statuses are protected.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
@@ -36,7 +28,6 @@ describe('baseline protection from re-verification overwrite', () => {
       commitSha: 'abc123',
     })
 
-    // Simulate what updateDeploymentVerification does — the SQL should NOT update
     await pool.query(
       `UPDATE deployments
        SET four_eyes_status = $1

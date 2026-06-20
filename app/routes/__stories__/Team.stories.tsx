@@ -65,7 +65,6 @@ export default meta
 
 type Story = StoryObj<typeof TeamPage>
 
-// Group mock apps by environment for pensjondeployer team
 const pensjondeployerApps = mockApps.filter((app) => app.team_slug === 'pensjondeployer')
 const appsByEnvPensjondeployer = pensjondeployerApps.reduce(
   (acc, app) => {

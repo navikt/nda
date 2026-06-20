@@ -11,12 +11,6 @@ import type {
 } from '~/db/audit-reports.server'
 import { AuditReportPdfDocument } from '~/lib/audit-report-pdf'
 
-/**
- * PDF-forhåndsvisning av leveranserapport.
- * Bruker PDFViewer fra @react-pdf/renderer for live-rendering i nettleseren.
- * Første lasting kan ta 2–5 sekunder (WebAssembly).
- */
-
 const PdfWrapper = (props: ComponentProps<typeof AuditReportPdfDocument>) => (
   <PDFViewer width="100%" height="900px" style={{ border: 'none' }}>
     <AuditReportPdfDocument {...props} />
@@ -33,8 +27,6 @@ const meta: Meta<typeof PdfWrapper> = {
 }
 export default meta
 type Story = StoryObj<typeof PdfWrapper>
-
-// --- Mock data ---
 
 const prDeployments: AuditDeploymentEntry[] = [
   {
@@ -186,9 +178,6 @@ const baseProps = {
   testRequirement: 'integration_tests' as const,
 }
 
-// --- Stories ---
-
-/** Standard årsrapport med kun PR-godkjente deployments */
 export const PrGodkjente: Story = {
   args: {
     ...baseProps,
@@ -196,7 +185,6 @@ export const PrGodkjente: Story = {
   },
 }
 
-/** Rapport med baseline-deployment (første deployment etter aktivering av NDA) */
 export const MedBaseline: Story = {
   args: {
     ...baseProps,
@@ -207,7 +195,6 @@ export const MedBaseline: Story = {
   },
 }
 
-/** Rapport med manuelt godkjent deployment og avvik */
 export const MedManuelOgAvvik: Story = {
   args: {
     ...baseProps,
@@ -220,7 +207,6 @@ export const MedManuelOgAvvik: Story = {
   },
 }
 
-/** Rapport med alle typer: baseline, PR, manuell og avvik */
 export const AlleTyper: Story = {
   args: {
     ...baseProps,
@@ -233,7 +219,6 @@ export const AlleTyper: Story = {
   },
 }
 
-/** Rapport uten deploymenter (tom periode) */
 export const TomPeriode: Story = {
   args: {
     ...baseProps,

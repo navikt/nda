@@ -1,21 +1,5 @@
 import { pool } from './connection.server'
 
-/**
- * Soft-deleted row management for the admin restore page.
- *
- * Covers the six tables that use the deleted_at/deleted_by pattern:
- *   - user_github_accounts
- *   - deployment_comments
- *   - dev_team_applications
- *   - section_teams
- *   - dev_team_nais_teams
- *   - external_references
- *
- * Boards/objectives/key_results/deployment_goal_links use the older `is_active`
- * pattern without deleted_by/deleted_at metadata and are intentionally excluded
- * from this view (no audit info available for who/when).
- */
-
 interface SoftDeletedGithubAccount {
   github_username: string
   display_github_username: string | null
@@ -194,11 +178,6 @@ export async function getAllSoftDeleted(): Promise<SoftDeletedSummary> {
   }
 }
 
-/**
- * Restore (undelete) a soft-deleted GitHub account link.
- *
- * No-op if the row is missing or already active.
- */
 export async function restoreGithubAccountLink(githubUsername: string): Promise<boolean> {
   const result = await pool.query(
     `UPDATE user_github_accounts
@@ -210,15 +189,6 @@ export async function restoreGithubAccountLink(githubUsername: string): Promise<
   return (result.rowCount ?? 0) > 0
 }
 
-/**
- * Restore a soft-deleted deployment comment.
- *
- * Refuses to restore `manual_approval` and `legacy_info` comment types: those
- * are coupled to deployment state (four_eyes_status / legacy metadata) which
- * is updated atomically by the dedicated create/delete flows. Restoring just
- * the comment row would leave the deployment in an inconsistent state.
- * Such comments are also filtered out of the listing in `getAllSoftDeleted`.
- */
 export async function restoreDeploymentComment(id: number): Promise<boolean> {
   const result = await pool.query(
     `UPDATE deployment_comments
@@ -265,22 +235,11 @@ export async function restoreDevTeamNaisTeam(devTeamId: number, naisTeamSlug: st
   return (result.rowCount ?? 0) > 0
 }
 
-/**
- * Restore an external reference. Refuses to restore if the parent objective or
- * key result is deactivated, mirroring the same business rule as
- * deleteExternalReference: deactivated goals must not gain new active links.
- *
- * Runs in a transaction with `SELECT ... FOR UPDATE` on the parent rows so a
- * concurrent deactivation cannot interleave between the parent-active check
- * and the restore (mirroring `addExternalReference`'s locking pattern).
- */
 export async function restoreExternalReference(id: number): Promise<boolean> {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
 
-    // Look up the reference's parent ids; lock the row to serialize against a
-    // concurrent restore of the same reference.
     const refRow = await client.query<{
       objective_id: number | null
       key_result_id: number | null
@@ -296,8 +255,6 @@ export async function restoreExternalReference(id: number): Promise<boolean> {
       return false
     }
 
-    // Lock + validate parent activity. Held until COMMIT so a concurrent
-    // deactivation cannot win between the check and the UPDATE.
     if (ref.objective_id !== null) {
       const obj = await client.query<{ is_active: boolean }>(
         'SELECT is_active FROM board_objectives WHERE id = $1 FOR UPDATE',

@@ -6,14 +6,12 @@ let client: GraphQLClient | null = null
 function getNaisClient(): GraphQLClient {
   if (!client) {
     const baseUrl = process.env.NAIS_GRAPHQL_URL || 'http://localhost:4242'
-    // Ensure we're pointing to the GraphQL endpoint, not the playground
     const url = baseUrl.endsWith('/graphql') ? baseUrl : `${baseUrl}/graphql`
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
 
-    // Add API key as Bearer token if available (required in production)
     const apiKey = process.env.NAIS_API_KEY
     if (apiKey) {
       headers.Authorization = `Bearer ${apiKey}`
@@ -27,7 +25,6 @@ function getNaisClient(): GraphQLClient {
   return client
 }
 
-// Types based on Nais API structure
 interface NaisResource {
   id: string
   kind: string
@@ -106,7 +103,6 @@ interface TeamApplicationsResponse {
   }
 }
 
-// Query for fetching deployments for a specific app in an environment
 const APP_DEPLOYMENTS_QUERY = `
   query AppDeploys(
     $team: Slug!
@@ -155,8 +151,6 @@ const APP_DEPLOYMENTS_QUERY = `
   }
 `
 
-// Query for discovering available environments and applications in a team
-// Note: We query team.applications to get all apps, then check their environments
 const TEAM_ENVIRONMENTS_QUERY = `
   query TeamEnvironments($team: Slug!, $first: Int!) {
     team(slug: $team) {
@@ -178,9 +172,6 @@ const TEAM_ENVIRONMENTS_QUERY = `
   }
 `
 
-/**
- * Fetch all deployments for a specific application in an environment
- */
 export async function fetchApplicationDeployments(
   teamSlug: string,
   environmentName: string,
@@ -230,7 +221,6 @@ export async function fetchApplicationDeployments(
 
       allDeployments.push(...deployments.nodes)
 
-      // Check if there are more pages
       after = deployments.pageInfo.endCursor
       hasMore = deployments.pageInfo.hasNextPage
 
@@ -244,7 +234,6 @@ export async function fetchApplicationDeployments(
   } catch (error) {
     logger.error('❌ Error fetching deployments from Nais:', error)
 
-    // Check if the error is because we got HTML instead of JSON
     if (error instanceof Error && error.message.includes('Unexpected token')) {
       throw new Error(
         'Nais GraphQL API returnerte HTML i stedet for JSON. ' +
@@ -257,10 +246,6 @@ export async function fetchApplicationDeployments(
   }
 }
 
-/**
- * Fetch new deployments incrementally - stops when finding a known deployment
- * Returns only deployments newer than the stopAtDeploymentId
- */
 export async function fetchNewDeployments(
   teamSlug: string,
   environmentName: string,
@@ -305,7 +290,6 @@ export async function fetchNewDeployments(
 
       const deployments = response.team.environment.application.deployments
 
-      // Check each deployment - stop when we find a known one
       for (const deployment of deployments.nodes) {
         if (deployment.id === stopAtDeploymentId) {
           logger.info(`🛑 Found known deployment ${stopAtDeploymentId.substring(0, 20)}... - stopping`)
@@ -332,18 +316,14 @@ export async function fetchNewDeployments(
   }
 }
 
-/**
- * Discover available environments and applications for a team
- */
 export async function discoverTeamApplications(teamSlug: string): Promise<{
-  environments: Map<string, string[]> // environmentName -> [appNames]
+  environments: Map<string, string[]>
 }> {
   const client = getNaisClient()
 
   logger.info('🔍 Discovering applications for team:', { teamSlug })
 
   try {
-    // Fetch all applications with pagination
     const allApps: ApplicationWithEnv[] = []
     let after: string | undefined
     let hasMore = true
@@ -365,7 +345,6 @@ export async function discoverTeamApplications(teamSlug: string): Promise<{
       hasMore = response.team.applications.pageInfo.hasNextPage
     }
 
-    // Group by environment
     const environments = new Map<string, string[]>()
 
     for (const app of allApps) {
@@ -375,7 +354,6 @@ export async function discoverTeamApplications(teamSlug: string): Promise<{
       environments.set(envName, existing)
     }
 
-    // Log summary
     for (const [envName, appNames] of environments.entries()) {
       logger.info(`  📁 ${envName}: ${appNames.length} applications`)
     }
@@ -388,9 +366,6 @@ export async function discoverTeamApplications(teamSlug: string): Promise<{
   }
 }
 
-/**
- * Get basic info about a specific application
- */
 export async function getApplicationInfo(
   teamSlug: string,
   environmentName: string,
@@ -404,7 +379,6 @@ export async function getApplicationInfo(
   const client = getNaisClient()
 
   try {
-    // Fetch just the first deployment to get repository info
     const response: TeamEnvironmentResponse = await client.request(APP_DEPLOYMENTS_QUERY, {
       team: teamSlug,
       env: environmentName,
@@ -432,10 +406,6 @@ export async function getApplicationInfo(
   }
 }
 
-/**
- * Teams and Applications query for interactive search
- * Includes environment info via teamEnvironment
- */
 const TEAMS_AND_APPLICATIONS_QUERY = `
   query TeamsAndApplications(
     $teamsFirst: Int!
@@ -488,10 +458,6 @@ interface TeamsAndApplicationsResponse {
   }
 }
 
-/**
- * Fetch all teams and their applications for interactive search
- * Returns flattened list of team + app + environment combinations
- */
 export async function fetchAllTeamsAndApplications(): Promise<
   Array<{
     teamSlug: string
@@ -518,7 +484,6 @@ export async function fetchAllTeamsAndApplications(): Promise<
         break
       }
 
-      // Flatten the results
       for (const team of response.teams.nodes) {
         for (const app of team.applications.nodes) {
           allResults.push({

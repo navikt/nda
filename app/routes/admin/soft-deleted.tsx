@@ -28,7 +28,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
   const summary = await getAllSoftDeleted()
 
-  // Resolve display names for all "deleted_by" navIdents in one batch.
   const navIdents = new Set<string>()
   for (const list of [
     summary.githubAccounts,
@@ -44,10 +43,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   const mappingsByIdent = await getUsersByIdentifiers(Array.from(navIdents))
 
-  // Build a map keyed by github_username for <UserName>/getUserDisplayName,
-  // and a navIdent → github_username lookup for resolving "deleted_by" ids.
-  // Re-keying is required: getUsersByIdentifiers returns a Map keyed by the input
-  // identifier (here the navIdent), but UserName expects keying by github_username.
   const mappingsByUsername = new Map<
     string,
     { display_name: string | null; nav_ident: string; nav_email: string | null }
@@ -59,8 +54,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       navIdentToUsername[navIdent] = mapping.github_username
     }
   }
-  // serializeUserLookups converts the Map to a plain object for JSON transport;
-  // nav_email is included as a display fallback (see getUserDisplayName).
   const userMappings: UserLookupMap = serializeUserLookups(mappingsByUsername)
 
   return { summary, userMappings, navIdentToUsername }

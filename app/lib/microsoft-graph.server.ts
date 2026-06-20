@@ -1,10 +1,3 @@
-/**
- * Microsoft Graph API client for user search.
- *
- * Uses Client Credentials flow via NAIS Token Endpoint (Texas) to acquire tokens.
- * Requires the application permission User.Read.All with admin consent.
- */
-
 import { fetchWithLogging, logger } from '~/lib/logger.server'
 
 interface GraphToken {
@@ -57,7 +50,6 @@ async function getAccessToken(): Promise<string> {
 
   const data: GraphToken = await response.json()
 
-  // Cache with 5 minute buffer before expiry, clamped to avoid negative values
   const bufferSeconds = Math.max(0, Math.min(300, data.expires_in - 60))
   cachedToken = {
     token: data.access_token,
@@ -67,17 +59,12 @@ async function getAccessToken(): Promise<string> {
   return data.access_token
 }
 
-/**
- * Search for users in Microsoft Graph by name, email, or NAV-ident.
- * Returns up to 10 matching users.
- */
 export async function searchGraphUsers(query: string): Promise<GraphUserResult[]> {
   const trimmed = query.trim()
   if (!trimmed) return []
 
   const token = await getAccessToken()
 
-  // Build search/filter depending on input pattern
   const isNavIdent = /^[A-Za-z]\d{6}$/.test(trimmed)
   const isEmail = trimmed.includes('@')
 
@@ -101,8 +88,6 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
     return fetchGraphUsers(url, headers)
   }
 
-  // Name search: Graph $search supports implicit AND between clauses.
-  // "displayName:word1 displayName:word2" matches users with ALL words in displayName.
   const words = escapeSearchValue(trimmed).split(/\s+/).filter(Boolean)
   const search = words.map((w) => `"displayName:${w}"`).join(' ')
   const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=10`
@@ -126,7 +111,6 @@ async function fetchGraphUsers(url: string, headers: Record<string, string>): Pr
   }))
 }
 
-/** Escape characters that are reserved in Graph $search query values. */
 function escapeSearchValue(value: string): string {
   return value.replace(/["\\]/g, '')
 }

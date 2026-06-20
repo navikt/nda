@@ -1,7 +1,3 @@
-/**
- * Helpers for formatting audit report data for M2M API responses.
- */
-
 import type { AuditReportSummaryM2M } from '~/lib/api/types'
 import { toDateString } from '~/lib/date-utils'
 

@@ -2,13 +2,6 @@ import { acquireSyncLock, logSyncJobMessage, releaseSyncLock } from '~/db/sync-j
 import { runWithJobContext } from '~/lib/logger.server'
 import { cacheCheckLogs } from './log-cache.server'
 
-/**
- * Cache check logs with distributed locking.
- * Only one pod will cache logs for a given app at a time.
- *
- * Uses direct lock management instead of withSyncLock because it needs
- * per-job diagnostic logging via logSyncJobMessage.
- */
 export async function cacheCheckLogsWithLock(
   monitoredAppId: number,
 ): Promise<{ success: boolean; result?: { cached: number }; locked?: boolean }> {

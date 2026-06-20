@@ -2,9 +2,6 @@ import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
 import { getPullRequestForCommit, getPullRequestReviews } from './pr.server'
 
-/**
- * Result of looking up GitHub data for a legacy deployment
- */
 interface LegacyLookupResult {
   success: boolean
   error?: string
@@ -25,9 +22,6 @@ interface LegacyLookupResult {
   }
 }
 
-/**
- * Look up GitHub data for a legacy deployment by commit SHA
- */
 export async function lookupLegacyByCommit(
   owner: string,
   repo: string,
@@ -39,7 +33,6 @@ export async function lookupLegacyByCommit(
 
     logger.info(`🔍 Legacy lookup: Fetching commit ${sha} in ${owner}/${repo}`)
 
-    // Get commit details
     const commitResponse = await client.repos.getCommit({
       owner,
       repo,
@@ -50,7 +43,6 @@ export async function lookupLegacyByCommit(
     const commitDate = new Date(commit.commit.author?.date || commit.commit.committer?.date || '')
     const commitAuthor = commit.author?.login || commit.commit.author?.name || 'unknown'
 
-    // Calculate time difference
     const timeDiffMs = Math.abs(deploymentTime.getTime() - commitDate.getTime())
     const timeDifferenceMinutes = Math.round(timeDiffMs / (1000 * 60))
     const isWithinThreshold = timeDifferenceMinutes <= 30
@@ -59,7 +51,6 @@ export async function lookupLegacyByCommit(
     logger.info(`   📅 Deployment date: ${deploymentTime.toISOString()}`)
     logger.info(`   ⏱️  Time difference: ${timeDifferenceMinutes} minutes (threshold: 30)`)
 
-    // Try to find associated PR
     const { pr: prInfo } = await getPullRequestForCommit(owner, repo, sha, true)
 
     let reviewers: Array<{ username: string; state: string }> | undefined
@@ -99,9 +90,6 @@ export async function lookupLegacyByCommit(
   }
 }
 
-/**
- * Look up GitHub data for a legacy deployment by PR number
- */
 export async function lookupLegacyByPR(
   owner: string,
   repo: string,
@@ -113,7 +101,6 @@ export async function lookupLegacyByPR(
 
     logger.info(`🔍 Legacy lookup: Fetching PR #${prNumber} in ${owner}/${repo}`)
 
-    // Get PR details
     const prResponse = await client.pulls.get({
       owner,
       repo,
@@ -131,7 +118,6 @@ export async function lookupLegacyByPR(
 
     const prMergedAt = new Date(pr.merged_at)
 
-    // Calculate time difference from merge
     const timeDiffMs = Math.abs(deploymentTime.getTime() - prMergedAt.getTime())
     const timeDifferenceMinutes = Math.round(timeDiffMs / (1000 * 60))
     const isWithinThreshold = timeDifferenceMinutes <= 30
@@ -140,11 +126,9 @@ export async function lookupLegacyByPR(
     logger.info(`   📅 Deployment date: ${deploymentTime.toISOString()}`)
     logger.info(`   ⏱️  Time difference: ${timeDifferenceMinutes} minutes (threshold: 30)`)
 
-    // Get reviews
     const reviews = await getPullRequestReviews(owner, repo, prNumber)
     const reviewers = reviews.map((r) => ({ username: r.user?.login || 'unknown', state: r.state }))
 
-    // Get merge commit SHA
     const commitSha = pr.merge_commit_sha || ''
     const mergedBy = pr.merged_by?.login
 

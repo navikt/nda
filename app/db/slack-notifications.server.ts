@@ -1,11 +1,5 @@
-/**
- * Slack notification history database functions
- * Stores and retrieves Slack message history, updates, and interactions
- */
-
 import { pool } from './connection.server'
 
-// Types
 interface SlackNotification {
   id: number
   deployment_id: number | null
@@ -38,9 +32,6 @@ interface SlackInteraction {
   created_at: Date
 }
 
-/**
- * Create a new Slack notification record
- */
 export async function createSlackNotification(data: {
   deploymentId: number
   channelId: string
@@ -64,7 +55,6 @@ export async function createSlackNotification(data: {
     ],
   )
 
-  // Also log the 'sent' action
   await pool.query(
     `INSERT INTO slack_notification_updates 
      (notification_id, action, new_blocks, triggered_by)
@@ -75,17 +65,11 @@ export async function createSlackNotification(data: {
   return result.rows[0]
 }
 
-/**
- * Get notification by deployment ID
- */
 async function _getSlackNotificationByDeployment(deploymentId: number): Promise<SlackNotification | null> {
   const result = await pool.query('SELECT * FROM slack_notifications WHERE deployment_id = $1', [deploymentId])
   return result.rows[0] || null
 }
 
-/**
- * Get notification by channel and message timestamp
- */
 export async function getSlackNotificationByMessage(
   channelId: string,
   messageTs: string,
@@ -97,9 +81,6 @@ export async function getSlackNotificationByMessage(
   return result.rows[0] || null
 }
 
-/**
- * Update notification content and log the change
- */
 export async function updateSlackNotification(
   notificationId: number,
   data: {
@@ -108,11 +89,9 @@ export async function updateSlackNotification(
     triggeredBy?: string
   },
 ): Promise<SlackNotification> {
-  // Get current state for audit log
   const current = await pool.query('SELECT message_blocks FROM slack_notifications WHERE id = $1', [notificationId])
   const oldBlocks = current.rows[0]?.message_blocks
 
-  // Update the notification
   const result = await pool.query(
     `UPDATE slack_notifications 
      SET message_blocks = $1, message_text = $2, updated_at = NOW()
@@ -121,7 +100,6 @@ export async function updateSlackNotification(
     [JSON.stringify(data.messageBlocks), data.messageText, notificationId],
   )
 
-  // Log the update
   await pool.query(
     `INSERT INTO slack_notification_updates 
      (notification_id, action, old_blocks, new_blocks, triggered_by)
@@ -132,9 +110,6 @@ export async function updateSlackNotification(
   return result.rows[0]
 }
 
-/**
- * Log a message deletion
- */
 async function _logSlackNotificationDeleted(notificationId: number, triggeredBy?: string): Promise<void> {
   const current = await pool.query('SELECT message_blocks FROM slack_notifications WHERE id = $1', [notificationId])
   const oldBlocks = current.rows[0]?.message_blocks
@@ -147,9 +122,6 @@ async function _logSlackNotificationDeleted(notificationId: number, triggeredBy?
   )
 }
 
-/**
- * Log a Slack interaction (button click etc)
- */
 export async function logSlackInteraction(data: {
   notificationId: number
   actionId: string
@@ -167,9 +139,6 @@ export async function logSlackInteraction(data: {
   return result.rows[0]
 }
 
-/**
- * Get all updates for a notification
- */
 export async function getSlackNotificationUpdates(notificationId: number): Promise<SlackNotificationUpdate[]> {
   const result = await pool.query(
     'SELECT * FROM slack_notification_updates WHERE notification_id = $1 ORDER BY created_at ASC',
@@ -178,9 +147,6 @@ export async function getSlackNotificationUpdates(notificationId: number): Promi
   return result.rows
 }
 
-/**
- * Get all interactions for a notification
- */
 export async function getSlackInteractions(notificationId: number): Promise<SlackInteraction[]> {
   const result = await pool.query(
     'SELECT * FROM slack_interactions WHERE notification_id = $1 ORDER BY created_at ASC',
@@ -189,9 +155,6 @@ export async function getSlackInteractions(notificationId: number): Promise<Slac
   return result.rows
 }
 
-/**
- * Get recent notifications with optional filters
- */
 async function _getRecentSlackNotifications(options?: {
   limit?: number
   deploymentId?: number
@@ -210,9 +173,6 @@ async function _getRecentSlackNotifications(options?: {
   return result.rows
 }
 
-/**
- * Get Slack notifications for an application (via deployments)
- */
 export async function getSlackNotificationsByApp(
   appId: number,
   limit = 50,

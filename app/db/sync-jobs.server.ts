@@ -10,16 +10,11 @@ export {
 
 import type { SyncJob, SyncJobLog, SyncJobStatus, SyncJobType, SyncJobWithApp } from './sync-job-types'
 
-/** Interval between sync cycles (used by both scheduler and cooldown check) */
-export const SYNC_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+export const SYNC_INTERVAL_MS = 5 * 60 * 1000
 
-// Get pod identifier from environment or generate one
 const POD_ID = process.env.HOSTNAME || `local-${process.pid}`
 const APP_VERSION = typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : 'unknown'
 
-/**
- * Release expired locks - should be called periodically
- */
 export async function releaseExpiredLocks(): Promise<number> {
   const result = await pool.query(
     `UPDATE sync_jobs 
@@ -32,17 +27,12 @@ export async function releaseExpiredLocks(): Promise<number> {
   return result.rowCount || 0
 }
 
-/**
- * Try to acquire a lock for a sync job
- * Returns job ID if successful, null if lock is already held
- */
 export async function acquireSyncLock(
   jobType: SyncJobType,
   appId: number,
   timeoutMinutes: number = 10,
   options?: Record<string, unknown>,
 ): Promise<number | null> {
-  // Skip if a job for this app+type was started within the last sync interval
   const cooldown = await pool.query(
     `SELECT 1 FROM sync_jobs
      WHERE job_type = $1 AND monitored_app_id = $2
@@ -54,13 +44,11 @@ export async function acquireSyncLock(
     return null
   }
 
-  // Release any expired locks
   const released = await releaseExpiredLocks()
   if (released > 0) {
     logger.info(`🔓 Released ${released} expired lock(s)`)
   }
 
-  // Try to create a new job with lock
   try {
     const result = await pool.query(
       `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, locked_by, lock_expires_at, options)
@@ -71,7 +59,6 @@ export async function acquireSyncLock(
     logger.info(`🔒 Acquired ${jobType} lock for app ${appId} (job ${result.rows[0].id})`)
     return result.rows[0].id
   } catch (e: unknown) {
-    // Unique constraint violation = lock already held
     if (e instanceof Error && 'code' in e && e.code === '23505') {
       logger.info(`⏳ ${jobType} lock for app ${appId} already held by another process`)
       return null
@@ -80,9 +67,6 @@ export async function acquireSyncLock(
   }
 }
 
-/**
- * Release a sync job lock
- */
 export async function releaseSyncLock(
   jobId: number,
   status: 'completed' | 'failed',
@@ -101,9 +85,6 @@ export async function releaseSyncLock(
   logger.info(`🔓 Released lock for job ${jobId} with status ${status}`)
 }
 
-/**
- * Clean up old sync jobs (keep last N per app)
- */
 export async function cleanupOldSyncJobs(keepPerApp: number = 50): Promise<number> {
   const result = await pool.query(
     `DELETE FROM sync_jobs 
@@ -120,9 +101,6 @@ export async function cleanupOldSyncJobs(keepPerApp: number = 50): Promise<numbe
   return result.rowCount || 0
 }
 
-/**
- * Get all sync jobs with app information for admin view
- */
 export async function getAllSyncJobs(filters?: {
   status?: SyncJobStatus
   jobType?: SyncJobType
@@ -170,9 +148,6 @@ export async function getAllSyncJobs(filters?: {
   return result.rows
 }
 
-/**
- * Get distinct app names that have sync jobs
- */
 export async function getSyncJobAppNames(): Promise<string[]> {
   const result = await pool.query(`
     SELECT DISTINCT ma.app_name
@@ -183,9 +158,6 @@ export async function getSyncJobAppNames(): Promise<string[]> {
   return result.rows.map((row: { app_name: string }) => row.app_name)
 }
 
-/**
- * Get sync job stats
- */
 export async function getSyncJobStats(): Promise<{
   total: number
   running: number
@@ -214,9 +186,6 @@ export async function getSyncJobStats(): Promise<{
   }
 }
 
-/**
- * Get recent sync jobs for a specific app, ordered by most recent first.
- */
 export async function getSyncJobsForApp(
   appId: number,
   options?: { limit?: number; jobType?: SyncJobType },
@@ -246,9 +215,6 @@ export async function getSyncJobsForApp(
   return result.rows
 }
 
-/**
- * Get the latest job of a specific type for an app
- */
 export async function getLatestSyncJob(appId: number, jobType: SyncJobType): Promise<SyncJob | null> {
   const result = await pool.query(
     `SELECT id, job_type, monitored_app_id, status, started_at, completed_at,
@@ -262,9 +228,6 @@ export async function getLatestSyncJob(appId: number, jobType: SyncJobType): Pro
   return result.rows[0] || null
 }
 
-/**
- * Get a sync job by ID
- */
 export async function getSyncJobById(jobId: number): Promise<SyncJob | null> {
   const result = await pool.query(
     `SELECT id, job_type, monitored_app_id, status, started_at, completed_at,
@@ -276,13 +239,6 @@ export async function getSyncJobById(jobId: number): Promise<SyncJob | null> {
   return result.rows[0] || null
 }
 
-// =============================================================================
-// Progress, Cancellation, Heartbeat, and Force Release
-// =============================================================================
-
-/**
- * Update sync job progress (stores progress in result JSONB field)
- */
 export async function updateSyncJobProgress(jobId: number, progress: Record<string, unknown> | object): Promise<void> {
   await pool.query(`UPDATE sync_jobs SET result = $2 WHERE id = $1 AND status = 'running'`, [
     jobId,
@@ -290,9 +246,6 @@ export async function updateSyncJobProgress(jobId: number, progress: Record<stri
   ])
 }
 
-/**
- * Cancel a running sync job (cooperative cancellation via DB signal)
- */
 export async function cancelSyncJob(jobId: number): Promise<boolean> {
   const result = await pool.query(
     `UPDATE sync_jobs 
@@ -308,17 +261,11 @@ export async function cancelSyncJob(jobId: number): Promise<boolean> {
   return false
 }
 
-/**
- * Check if a sync job has been cancelled
- */
 export async function isSyncJobCancelled(jobId: number): Promise<boolean> {
   const result = await pool.query(`SELECT status FROM sync_jobs WHERE id = $1`, [jobId])
   return result.rows[0]?.status === 'cancelled'
 }
 
-/**
- * Extend lock expiration (heartbeat) for a running sync job
- */
 export async function heartbeatSyncJob(jobId: number, extendMinutes: number = 5): Promise<void> {
   await pool.query(
     `UPDATE sync_jobs 
@@ -328,9 +275,6 @@ export async function heartbeatSyncJob(jobId: number, extendMinutes: number = 5)
   )
 }
 
-/**
- * Force-release a sync job lock (admin action for stale jobs)
- */
 export async function forceReleaseSyncJob(jobId: number): Promise<boolean> {
   const result = await pool.query(
     `UPDATE sync_jobs 
@@ -348,13 +292,6 @@ export async function forceReleaseSyncJob(jobId: number): Promise<boolean> {
   return false
 }
 
-// =============================================================================
-// Sync Job Logs
-// =============================================================================
-
-/**
- * Log a message for a sync job
- */
 export async function logSyncJobMessage(
   jobId: number,
   level: 'info' | 'warn' | 'error' | 'debug',
@@ -369,17 +306,11 @@ export async function logSyncJobMessage(
   ])
 }
 
-/**
- * Get options for a sync job (used to check debug flag etc.)
- */
 export async function getSyncJobOptions(jobId: number): Promise<Record<string, unknown> | null> {
   const result = await pool.query(`SELECT options FROM sync_jobs WHERE id = $1`, [jobId])
   return result.rows[0]?.options || null
 }
 
-/**
- * Get logs for a sync job (supports incremental fetching via afterId)
- */
 export async function getSyncJobLogs(
   jobId: number,
   options?: { afterId?: number; limit?: number },
@@ -398,10 +329,6 @@ export async function getSyncJobLogs(
   return result.rows
 }
 
-/**
- * Cancel all running sync jobs owned by a specific pod.
- * Used during graceful shutdown to mark jobs as cancelled before the pod exits.
- */
 export async function cancelRunningJobsForPod(podId: string): Promise<number> {
   const result = await pool.query(
     `UPDATE sync_jobs
@@ -412,7 +339,6 @@ export async function cancelRunningJobsForPod(podId: string): Promise<number> {
   )
   const count = result.rowCount || 0
 
-  // Log a message for each cancelled job
   for (const row of result.rows) {
     await logSyncJobMessage(row.id, 'warn', `Jobb avbrutt pga. pod shutdown (${podId})`)
   }

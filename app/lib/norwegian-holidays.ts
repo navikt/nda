@@ -1,10 +1,3 @@
-/**
- * Norwegian public holidays calculator
- *
- * Computes fixed and movable Norwegian public holidays.
- * Movable holidays are based on Easter (Gregorian algorithm).
- */
-
 import { toDateString } from './date-utils'
 
 interface HolidayMap {
@@ -13,10 +6,6 @@ interface HolidayMap {
 
 const holidayCache = new Map<number, HolidayMap>()
 
-/**
- * Calculate Easter Sunday using the Anonymous Gregorian algorithm.
- * https://en.wikipedia.org/wiki/Date_of_Easter#Anonymous_Gregorian_algorithm
- */
 function calculateEasterSunday(year: number): Date {
   const a = year % 19
   const b = Math.floor(year / 100)
@@ -74,33 +63,21 @@ function getHolidaysForYear(year: number): HolidayMap {
   return holidays
 }
 
-/**
- * Get all Norwegian public holidays for a given year.
- */
 export function getPublicHolidays(year: number): Map<string, string> {
   return new Map(Object.entries(getHolidaysForYear(year)))
 }
 
-/**
- * Check if a date is a Norwegian public holiday.
- */
 export function isPublicHoliday(date: Date): boolean {
   const day = date.getDay()
-  if (day === 0 || day === 6) return true // Saturday or Sunday
+  if (day === 0 || day === 6) return true
   const key = toDateString(date)
   return key in getHolidaysForYear(date.getFullYear())
 }
 
-/**
- * Check if a date is a business day (not weekend, not public holiday).
- */
 export function isBusinessDay(date: Date): boolean {
   return !isPublicHoliday(date)
 }
 
-/**
- * Get the weekday key for a date (mon, tue, wed, thu, fri, sat, sun).
- */
 export function getWeekdayKey(date: Date): string {
   const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
   return days[date.getDay()]

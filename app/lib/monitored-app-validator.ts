@@ -1,9 +1,3 @@
-/**
- * Pure classifier for `monitored_applications` rows against a snapshot of
- * teams/apps/environments from Nais. Lives outside `*.server.ts` so it can be
- * unit-tested without DB or network.
- */
-
 export interface MonitoredRow {
   id: number
   team_slug: string
@@ -23,18 +17,11 @@ interface ValidationResult {
   id: number
   stored: { team_slug: string; environment_name: string; app_name: string }
   status: ValidationStatus
-  /**
-   * Suggested fix when status !== 'ok' and a unique correct combination
-   * exists in Nais. `null` if the row is `missing` or the situation is
-   * ambiguous (e.g. swap matches in multiple environments).
-   */
   suggested: { team_slug: string; environment_name: string; app_name: string } | null
 }
 
 interface NaisIndex {
-  /** Set of "team|env|app" tuples that exist in Nais. */
   exact: Set<string>
-  /** Map of "team|app" -> list of envs the pair exists in. */
   envsForPair: Map<string, string[]>
 }
 
@@ -67,9 +54,7 @@ export function classifyRow(row: MonitoredRow, index: NaisIndex): ValidationResu
     return { id: row.id, stored, status: 'ok', suggested: null }
   }
 
-  // Try same orientation in another env.
   const sameOrientationEnvs = index.envsForPair.get(`${row.team_slug}|${row.app_name}`)
-  // Try swapped orientation in the stored env first.
   const swapKeySameEnv = `${row.app_name}|${row.environment_name}|${row.team_slug}`
   const swapOrientationEnvs = index.envsForPair.get(`${row.app_name}|${row.team_slug}`)
 
@@ -86,8 +71,6 @@ export function classifyRow(row: MonitoredRow, index: NaisIndex): ValidationResu
         },
       }
     }
-    // Ambiguous — multiple envs match. Surface as wrong_env without a single
-    // suggested fix so the operator picks manually.
     return { id: row.id, stored, status: 'wrong_env', suggested: null }
   }
 

@@ -18,7 +18,6 @@ import { logger } from '~/lib/logger.server'
 import { notifyDeploymentIfNeeded, sendDeviationNotification } from '~/lib/slack/client.server'
 import { runVerification } from '~/lib/verification'
 
-/** Map intent to the required capability. Intents not listed here are rejected (fail-closed). `add_comment` is handled separately above the auth gate. */
 const INTENT_CAPABILITY: Record<string, keyof DeploymentCapabilities> = {
   manual_approval: 'canApprove',
   confirm_legacy_lookup: 'canApprove',
@@ -43,8 +42,6 @@ export async function action({ request, params }: { request: Request; params: Re
   const formData = await request.formData()
   const intent = formData.get('intent')
 
-  // add_comment is open to all authenticated users — no capability check needed,
-  // but we still verify the user is authenticated
   if (intent === 'add_comment') {
     const identity = await getUserIdentity(request)
     if (!identity) {
@@ -70,8 +67,6 @@ export async function action({ request, params }: { request: Request; params: Re
     }
   }
 
-  // ── Authorization gate ──────────────────────────────────────────────────────
-  // All intents below require a deployment lookup and capability check.
   const identity = await getUserIdentity(request)
   if (!identity?.navIdent) {
     return { error: 'Kunne ikke identifisere bruker. Vennligst logg inn på nytt.' }
@@ -82,7 +77,6 @@ export async function action({ request, params }: { request: Request; params: Re
     return { error: 'Deployment ikke funnet' }
   }
 
-  // Fail-closed: deny unknown intents by default
   const requiredCapability = typeof intent === 'string' ? INTENT_CAPABILITY[intent] : undefined
   if (!requiredCapability) {
     return { error: 'Ugyldig handling' }
@@ -135,7 +129,6 @@ export async function action({ request, params }: { request: Request; params: Re
     const reason = formData.get('reason') as string
     const slackLink = formData.get('slack_link') as string
 
-    // Validate four-eyes principle: user cannot approve their own work
     const usernamesToCheck: string[] = []
     if (deployment.github_pr_data?.creator?.username) {
       usernamesToCheck.push(deployment.github_pr_data.creator.username)
@@ -151,7 +144,6 @@ export async function action({ request, params }: { request: Request; params: Re
     const userMappings = await getGithubUserLookups(usernamesToCheck)
     const currentNavIdent = identity.navIdent.toUpperCase()
 
-    // Check if user is PR creator
     const prCreatorUsername = deployment.github_pr_data?.creator?.username
     if (prCreatorUsername) {
       const prCreatorMapping = userMappings.get(prCreatorUsername)
@@ -163,7 +155,6 @@ export async function action({ request, params }: { request: Request; params: Re
       }
     }
 
-    // Check if user is author of the last unverified commit (relaxed four-eyes check)
     if (deployment.unverified_commits && deployment.unverified_commits.length > 0) {
       const lastCommit = deployment.unverified_commits[deployment.unverified_commits.length - 1]
       const lastCommitAuthorMapping = userMappings.get(lastCommit.author)
@@ -176,7 +167,6 @@ export async function action({ request, params }: { request: Request; params: Re
     }
 
     try {
-      // Create manual approval comment with slack link
       await createComment({
         deployment_id: deploymentId,
         comment_text: reason || 'Manuelt godkjent etter gjennomgang',
@@ -186,7 +176,6 @@ export async function action({ request, params }: { request: Request; params: Re
         registered_by: identity.navIdent,
       })
 
-      // Update deployment to mark as manually approved, preserving existing GitHub data
       await updateDeploymentFourEyes(
         deploymentId,
         {
@@ -200,7 +189,6 @@ export async function action({ request, params }: { request: Request; params: Re
         { changeSource: 'manual_approval', changedBy: identity.navIdent },
       )
 
-      // Propagate to sibling deployments in the same application group
       if (deployment.commit_sha) {
         await propagateVerificationToSiblings(
           deploymentId,
@@ -241,7 +229,6 @@ export async function action({ request, params }: { request: Request; params: Re
         registered_by_name: identity.name,
       })
 
-      // Send Slack notification to deviation channel
       const deviationChannelConfig = await getDeviationSlackChannel()
       if (deviationChannelConfig.channel_id) {
         const appUrl = app ? `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}` : ''
@@ -271,7 +258,6 @@ export async function action({ request, params }: { request: Request; params: Re
     }
   }
 
-  // Step 1: Look up GitHub data for legacy deployment
   if (intent === 'lookup_legacy_github') {
     const searchType = formData.get('search_type') as string
     const searchValue = formData.get('search_value') as string
@@ -302,7 +288,6 @@ export async function action({ request, params }: { request: Request; params: Re
         return { error: result.error || 'Kunne ikke finne data på GitHub' }
       }
 
-      // Return the lookup data for preview
       return {
         legacyLookup: {
           ...result.data,
@@ -316,7 +301,6 @@ export async function action({ request, params }: { request: Request; params: Re
     }
   }
 
-  // Step 2: Confirm and save the looked up data
   if (intent === 'confirm_legacy_lookup') {
     const slackLink = formData.get('slack_link') as string
     const commitSha = formData.get('commit_sha') as string
@@ -331,10 +315,8 @@ export async function action({ request, params }: { request: Request; params: Re
     const reviewersJson = formData.get('reviewers') as string
 
     try {
-      // Parse reviewers
       const reviewers = reviewersJson ? JSON.parse(reviewersJson) : []
 
-      // Build description - use mergedBy as deployer if available
       const effectiveDeployer = mergedBy || commitAuthor
       const parts: string[] = []
       if (effectiveDeployer) parts.push(`Deployer: ${effectiveDeployer}`)
@@ -342,7 +324,6 @@ export async function action({ request, params }: { request: Request; params: Re
       if (prNumber) parts.push(`PR: #${prNumber}`)
       const infoText = parts.length > 0 ? `GitHub-verifisert: ${parts.join(', ')}` : 'Legacy info fra GitHub'
 
-      // Create comment with legacy info
       await createComment({
         deployment_id: deploymentId,
         comment_text: infoText,
@@ -351,7 +332,6 @@ export async function action({ request, params }: { request: Request; params: Re
         registered_by: identity.navIdent,
       })
 
-      // Update deployment with GitHub data (mergedBy will be used as deployer)
       await updateDeploymentLegacyData(deploymentId, {
         commitSha: commitSha || null,
         commitMessage: commitMessage || null,
@@ -365,7 +345,6 @@ export async function action({ request, params }: { request: Request; params: Re
         reviewers,
       })
 
-      // Run full GitHub verification to fetch all PR data (comments, reviews, etc.)
       let updatedDeployment = await getDeploymentById(deploymentId)
       if (updatedDeployment && commitSha && updatedDeployment.default_branch) {
         logger.info(`🔄 Running full GitHub verification for legacy deployment ${deploymentId}`)
@@ -379,18 +358,15 @@ export async function action({ request, params }: { request: Request; params: Re
           forceRefresh: true,
         })
 
-        // Reload deployment to get the updated PR data from verification
         updatedDeployment = await getDeploymentById(deploymentId)
       }
 
-      // Set status to legacy_pending but PRESERVE the github_pr_data from verification
       await updateDeploymentFourEyes(
         deploymentId,
         {
           fourEyesStatus: 'legacy_pending',
           githubPrNumber: updatedDeployment?.github_pr_number || (prNumber ? parseInt(prNumber, 10) : null),
           githubPrUrl: updatedDeployment?.github_pr_url || prUrl || null,
-          // Keep the PR data from verifyDeploymentFourEyes - don't overwrite it
           githubPrData: updatedDeployment?.github_pr_data || undefined,
           title: updatedDeployment?.title || prTitle || commitMessage || null,
         },
@@ -404,7 +380,6 @@ export async function action({ request, params }: { request: Request; params: Re
     }
   }
 
-  // Legacy: Manual registration without GitHub lookup (keep for backwards compatibility)
   if (intent === 'register_legacy_info') {
     const slackLink = formData.get('slack_link') as string
     const deployer = formData.get('deployer') as string
@@ -416,7 +391,6 @@ export async function action({ request, params }: { request: Request; params: Re
     }
 
     try {
-      // Build description of what was registered
       const parts: string[] = []
       if (deployer) parts.push(`Deployer: ${deployer.trim()}`)
       if (commitSha) parts.push(`SHA: ${commitSha.trim()}`)
@@ -431,7 +405,6 @@ export async function action({ request, params }: { request: Request; params: Re
         registered_by: identity.navIdent,
       })
 
-      // Update deployment with provided info
       await updateDeploymentFourEyes(
         deploymentId,
         {
@@ -455,13 +428,11 @@ export async function action({ request, params }: { request: Request; params: Re
       return { error: 'Ingen legacy info å godkjenne' }
     }
 
-    // Check that approver is different from registerer
     if (legacyInfo.registered_by?.toLowerCase() === identity.navIdent.toLowerCase()) {
       return { error: 'Godkjenner kan ikke være samme person som registrerte info' }
     }
 
     try {
-      // Get current deployment to preserve GitHub data
       const currentDeployment = await getDeploymentById(deploymentId)
 
       await createComment({
@@ -473,7 +444,6 @@ export async function action({ request, params }: { request: Request; params: Re
         registered_by: identity.navIdent,
       })
 
-      // Preserve existing GitHub data when approving
       await updateDeploymentFourEyes(
         deploymentId,
         {
@@ -486,7 +456,6 @@ export async function action({ request, params }: { request: Request; params: Re
         { changeSource: 'legacy', changedBy: identity.navIdent },
       )
 
-      // Propagate to sibling deployments in the same application group
       if (currentDeployment?.commit_sha) {
         await propagateVerificationToSiblings(
           deploymentId,
@@ -506,10 +475,8 @@ export async function action({ request, params }: { request: Request; params: Re
     const reason = formData.get('reason') as string
 
     try {
-      // Delete the legacy_info comment
       await deleteLegacyInfo(deploymentId, identity.navIdent)
 
-      // Add a rejection comment
       await createComment({
         deployment_id: deploymentId,
         comment_text: `Legacy-verifisering avvist av ${identity.navIdent}${reason ? `: ${reason}` : ''}`,
@@ -517,7 +484,6 @@ export async function action({ request, params }: { request: Request; params: Re
         registered_by: identity.navIdent,
       })
 
-      // Reset status back to legacy
       await updateDeploymentFourEyes(
         deploymentId,
         {
@@ -550,8 +516,6 @@ export async function action({ request, params }: { request: Request; params: Re
   if (intent === 'approve_baseline') {
     try {
       if (deployment.four_eyes_status === 'baseline') {
-        // Status is already correct — just record the missing approver attribution.
-        // recordBaselineApproval is idempotent: no-ops if a non-null changed_by already exists.
         await recordBaselineApproval(deploymentId, identity.navIdent)
       } else {
         await updateDeploymentFourEyes(

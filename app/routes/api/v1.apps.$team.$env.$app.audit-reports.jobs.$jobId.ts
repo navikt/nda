@@ -1,13 +1,3 @@
-/**
- * API: Check report generation job status
- *
- * Returns job status and report summary when completed.
- * App-scoped for IDOR protection.
- * Secured with M2M token validation.
- *
- * GET /api/v1/apps/:team/:env/:app/audit-reports/jobs/:jobId
- */
-
 import { getReportSummaryById } from '~/db/audit-reports.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getReportJobStatusForApp } from '~/db/report-jobs.server'

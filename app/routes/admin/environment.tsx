@@ -1,10 +1,3 @@
-/**
- * Environment Variables Admin Page
- *
- * Shows all environment variable names available to the application.
- * Values are intentionally hidden for security.
- */
-
 import { BodyShort, Box, Heading, Search, Table, VStack } from '@navikt/ds-react'
 import { useState } from 'react'
 import { useLoaderData } from 'react-router'

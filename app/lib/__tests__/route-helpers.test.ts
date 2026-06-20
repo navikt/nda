@@ -13,7 +13,7 @@ describe('parseId', () => {
     expect(parseId('-1')).toBeNull()
     expect(parseId('1.5')).toBeNull()
     expect(parseId('abc')).toBeNull()
-    expect(parseId('1e3')).toBe(1000) // valid integer-coercion via Number()
+    expect(parseId('1e3')).toBe(1000)
     expect(parseId('NaN')).toBeNull()
     expect(parseId('Infinity')).toBeNull()
   })
@@ -25,8 +25,6 @@ describe('parseId', () => {
   })
 
   it('does not silently accept Number(null) === 0', () => {
-    // This is the regression: Number(null) === 0 would previously be
-    // accepted by Number.isFinite() and fall through to the DB call.
     expect(parseId(null)).toBeNull()
   })
 })

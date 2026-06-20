@@ -38,13 +38,9 @@ interface UpsertCommitParams {
   htmlUrl?: string | null
 }
 
-/**
- * Batch upsert multiple commits
- */
 async function _upsertCommits(commits: UpsertCommitParams[]): Promise<number> {
   if (commits.length === 0) return 0
 
-  // Use a transaction for batch insert
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -100,9 +96,6 @@ async function _upsertCommits(commits: UpsertCommitParams[]): Promise<number> {
   }
 }
 
-/**
- * Get a commit by SHA
- */
 async function _getCommit(repoOwner: string, repoName: string, sha: string): Promise<Commit | null> {
   const result = await pool.query(`SELECT * FROM commits WHERE repo_owner = $1 AND repo_name = $2 AND sha = $3`, [
     repoOwner,
@@ -112,9 +105,6 @@ async function _getCommit(repoOwner: string, repoName: string, sha: string): Pro
   return result.rows[0] || null
 }
 
-/**
- * Update PR verification result for a commit
- */
 export async function updateCommitPrVerification(
   repoOwner: string,
   repoName: string,
@@ -138,9 +128,6 @@ export async function updateCommitPrVerification(
   )
 }
 
-/**
- * Check if we have commits cached for a range
- */
 async function _hasCommitsCached(repoOwner: string, repoName: string, sha: string): Promise<boolean> {
   const result = await pool.query(
     `SELECT 1 FROM commits WHERE repo_owner = $1 AND repo_name = $2 AND sha = $3 LIMIT 1`,

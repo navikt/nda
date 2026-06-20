@@ -1,10 +1,3 @@
-/**
- * Integration test: Team-based filtering on the deployments list.
- *
- * Covers `getMembersGithubUsernamesForDevTeamRoles` and the
- * `deployer_usernames` filter on `getDeploymentsPaginated`.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDeploymentsPaginated } from '~/db/deployments.server'
@@ -57,7 +50,6 @@ describe('getMembersGithubUsernamesForDevTeamRoles', () => {
     await seedUser('A111111', 'alice')
     await seedUser('B222222', 'bob')
     await seedUser('C333333', 'carol')
-    // Alice is in both teams — should only appear once
     await joinDevTeam('A111111', teamA)
     await joinDevTeam('A111111', teamB)
     await joinDevTeam('B222222', teamA)
@@ -71,7 +63,6 @@ describe('getMembersGithubUsernamesForDevTeamRoles', () => {
     const sectionId = await seedSection(pool, 'sec')
     const team = await seedDevTeam(pool, 'team-x', 'Team X', sectionId)
     await seedUser('A111111', 'alice')
-    // B222222 has no user_github_accounts row at all → excluded by inner join
     await joinDevTeam('A111111', team)
     await joinDevTeam('B222222', team)
 
@@ -156,7 +147,6 @@ describe('getDeploymentsPaginated with deployer_usernames filter', () => {
       deployerUsername: 'bob',
     })
 
-    // Both filters: only deployments by alice that are also in {alice,bob}
     const result = await getDeploymentsPaginated({
       monitored_app_id: appId,
       deployer_username: 'alice',
@@ -165,7 +155,6 @@ describe('getDeploymentsPaginated with deployer_usernames filter', () => {
     expect(result.total).toBe(1)
     expect(result.deployments[0].deployer_username).toBe('alice')
 
-    // Conflicting filters: deployer_username not in deployer_usernames
     const conflict = await getDeploymentsPaginated({
       monitored_app_id: appId,
       deployer_username: 'alice',
@@ -179,7 +168,6 @@ describe('unmapped_deployers filter', () => {
   it('returns only deployments where deployer has no active user_github_accounts entry', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
-    // mapped deployer
     await seedUser('A111111', 'mapped-user')
     await seedDeployment(pool, {
       monitoredAppId: appId,
@@ -188,7 +176,6 @@ describe('unmapped_deployers filter', () => {
       deployerUsername: 'mapped-user',
     })
 
-    // unmapped deployer
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -324,8 +311,6 @@ describe('exclude_deployer_usernames filter', () => {
       monitored_app_id: appId,
       exclude_deployer_usernames: ['alice', 'deploy-bot'],
     })
-    // First deployment: deploy-bot is excluded (deployer match)
-    // Second deployment: deploy-bot is excluded (deployer match)
     expect(result.total).toBe(0)
   })
 })

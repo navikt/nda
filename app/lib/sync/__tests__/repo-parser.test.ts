@@ -44,7 +44,6 @@ describe('parseRepository', () => {
     })
 
     it('parses URL without protocol prefix', () => {
-      // The regex matches github.com anywhere in the string
       expect(parseRepository('github.com/navikt/pensjon-pen')).toEqual({
         owner: 'navikt',
         repo: 'pensjon-pen',
@@ -54,7 +53,6 @@ describe('parseRepository', () => {
 
   describe('edge cases matching original behavior', () => {
     it('simple owner/repo still works when URL parsing fails', () => {
-      // This is what the original syncNewDeploymentsFromNais fallback does
       expect(parseRepository('navikt/deployment-audit')).toEqual({
         owner: 'navikt',
         repo: 'deployment-audit',

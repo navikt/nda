@@ -1,6 +1,5 @@
 import type { AppCardData } from '~/components/AppCard'
 
-// Base mock app data
 export const mockApp: AppCardData = {
   id: 1,
   team_slug: 'pensjondeployer',

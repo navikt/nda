@@ -24,7 +24,6 @@ export type AddableApp = {
   team_slug: string
   environment_name: string
   app_name: string
-  /** null = app is not yet monitored (will be created). number = existing monitored_app id (just linked). */
   monitored_id: number | null
 }
 

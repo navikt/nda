@@ -61,11 +61,6 @@ interface GoalFilterOption {
   period_label: string | null
 }
 
-/**
- * Get distinct objectives that are linked to deployments for the given app IDs.
- * Used to populate the goal filter dropdown on the deployment list page.
- * Returns team name and period label to disambiguate goals with the same title.
- */
 export async function getLinkedObjectivesForApps(appIds: number[]): Promise<GoalFilterOption[]> {
   if (appIds.length === 0) return []
   const result = await pool.query<GoalFilterOption>(
@@ -110,7 +105,6 @@ export async function addDeploymentGoalLink(data: AddDeploymentGoalLinkParams): 
   try {
     await client.query('BEGIN')
 
-    // Reject linking to inactive objectives or key results (atomic with row locks)
     if (data.objective_id) {
       const obj = await client.query('SELECT is_active FROM board_objectives WHERE id = $1 FOR UPDATE', [
         data.objective_id,
@@ -178,7 +172,6 @@ export async function addDeploymentGoalLink(data: AddDeploymentGoalLinkParams): 
 }
 
 export async function removeDeploymentGoalLink(id: number, deploymentId: number): Promise<boolean> {
-  // First check if the link exists and its current state
   const link = await pool.query(
     `SELECT dgl.id, dgl.is_active,
        COALESCE(bo.is_active, bo_via_kr.is_active, true) AS objective_is_active,
@@ -194,7 +187,7 @@ export async function removeDeploymentGoalLink(id: number, deploymentId: number)
   if (link.rowCount === 0) return false
   const row = link.rows[0]
 
-  if (!row.is_active) return false // Already deactivated
+  if (!row.is_active) return false
 
   if (!row.objective_is_active || !row.kr_is_active) {
     throw new Error('Kan ikke fjerne kobling til et deaktivert mål eller nøkkelresultat.')
@@ -207,10 +200,6 @@ export async function removeDeploymentGoalLink(id: number, deploymentId: number)
   return true
 }
 
-/**
- * Get IDs of deployments by a deployer that are Dependabot PRs without goal links.
- * Respects time period and app name filters.
- */
 export async function getUnlinkedDependabotDeploymentIds(
   deployerUsername: string,
   startDate?: Date | null,
@@ -281,10 +270,6 @@ function buildUnlinkedDependabotWhere(
   return { whereSql, params }
 }
 
-/**
- * Bulk-create goal links for multiple deployments.
- * Skips deployments that already have a link to the same objective/key result.
- */
 export async function bulkAddDeploymentGoalLinks(
   deploymentIds: number[],
   goal: { objective_id?: number; key_result_id?: number },
@@ -300,7 +285,6 @@ export async function bulkAddDeploymentGoalLinks(
   try {
     await client.query('BEGIN')
 
-    // Reject linking to inactive objectives or key results (inside transaction with row locks)
     if (goal.objective_id) {
       const obj = await client.query('SELECT is_active FROM board_objectives WHERE id = $1 FOR UPDATE', [
         goal.objective_id,
@@ -360,7 +344,6 @@ export async function bulkAddDeploymentGoalLinks(
   }
 }
 
-/** Get origin-of-change coverage stats for a dev team in a date range. */
 export async function getOriginOfChangeCoverage(
   naisTeamSlugs: string[],
   startDate: Date,
@@ -370,7 +353,6 @@ export async function getOriginOfChangeCoverage(
   if (naisTeamSlugs.length === 0 && (!directAppIds || directAppIds.length === 0))
     return { total: 0, linked: 0, coverage: 0 }
 
-  // If direct app IDs are provided, use them; otherwise fall back to nais team slugs
   if (directAppIds && directAppIds.length > 0) {
     const placeholders = directAppIds.map((_, i) => `$${i + 1}`).join(', ')
     const result = await pool.query(
@@ -421,12 +403,6 @@ interface DevTeamCoverageStats {
   origin_percentage: number
 }
 
-/**
- * Aggregated stats for a dev team filtered to deployments performed by team members.
- * - `monitoredAppIds`: applications belonging to the team (direct + nais-team)
- * - `deployerUsernames`: GitHub usernames of team members
- * Empty member list ⇒ zero stats. Empty app list ⇒ zero stats.
- */
 export async function getDevTeamCoverageStats(
   monitoredAppIds: number[],
   deployerUsernames: string[],

@@ -71,7 +71,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   const boardId = Number(params.boardId)
   if (!Number.isFinite(boardId)) throw new Response('Ugyldig tavle-ID', { status: 400 })
 
-  // Verify that the board belongs to this dev team (lightweight query)
   const boardDevTeamId = await getBoardDevTeamId(boardId)
   if (boardDevTeamId == null || boardDevTeamId !== devTeam.id) throw new Response('Tavle ikke funnet', { status: 404 })
 

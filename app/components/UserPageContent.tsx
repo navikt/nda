@@ -153,7 +153,6 @@ export function UserPageContent({
 }: UserPageContentProps) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
-  // Clear selection when action completes successfully
   useEffect(() => {
     if (actionData?.success && typeof actionData.success === 'string') {
       setSelectedIds(new Set())

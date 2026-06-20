@@ -5,10 +5,9 @@ import { formatBoardLabel } from '~/lib/board-periods'
 
 interface BreadcrumbConfig {
   label: string
-  labelKey?: string // Key to look for in loader data for dynamic label
+  labelKey?: string
 }
 
-// Static breadcrumb configuration
 const breadcrumbConfig: Record<string, BreadcrumbConfig> = {
   '/': { label: 'Hjem' },
   '/my-teams': { label: 'Mine team' },
@@ -19,14 +18,12 @@ const breadcrumbConfig: Record<string, BreadcrumbConfig> = {
   '/admin/audit-reports': { label: 'Leveranserapport' },
 }
 
-// Pattern-based config for dynamic routes
 const dynamicBreadcrumbs: Array<{
   pattern: RegExp
   getLabel: (matches: ReturnType<typeof useMatches>, pathname: string) => string
   parent: string
   getParentLabel?: (matches: ReturnType<typeof useMatches>, pathname: string) => string
 }> = [
-  // Admin sync job detail: /admin/sync-jobs/:jobId
   {
     pattern: /^\/admin\/sync-jobs\/(\d+)$/,
     getLabel: (_matches, pathname) => {
@@ -35,7 +32,6 @@ const dynamicBreadcrumbs: Array<{
     },
     parent: '/admin/sync-jobs',
   },
-  // Team page: /team/:team
   {
     pattern: /^\/team\/([^/]+)$/,
     getLabel: (_matches, pathname) => {
@@ -44,7 +40,6 @@ const dynamicBreadcrumbs: Array<{
     },
     parent: '/',
   },
-  // Team/env page: /team/:team/env/:env
   {
     pattern: /^\/team\/([^/]+)\/env\/([^/]+)$/,
     getLabel: (_matches, pathname) => {
@@ -53,7 +48,6 @@ const dynamicBreadcrumbs: Array<{
     },
     parent: '/team/:team',
   },
-  // New semantic URL structure: /team/:team/env/:env/app/:app
   {
     pattern: /^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)$/,
     getLabel: (_matches, pathname) => {
@@ -138,7 +132,6 @@ const dynamicBreadcrumbs: Array<{
     },
     parent: '/admin/users',
   },
-  // Section overview: /sections/:slug
   {
     pattern: /^\/sections\/([^/]+)$/,
     getLabel: (matches) => {
@@ -148,13 +141,11 @@ const dynamicBreadcrumbs: Array<{
     },
     parent: '/sections',
   },
-  // Section edit: /sections/:slug/edit
   {
     pattern: /^\/sections\/([^/]+)\/edit$/,
     getLabel: () => 'Rediger',
     parent: '/sections/:slug',
   },
-  // Team page: /sections/:slug/teams/:team
   {
     pattern: /^\/sections\/([^/]+)\/teams\/([^/]+)$/,
     getLabel: (matches) => {
@@ -164,7 +155,6 @@ const dynamicBreadcrumbs: Array<{
     },
     parent: '/sections/:slug',
   },
-  // Board page: /sections/:slug/teams/:team/:boardId
   {
     pattern: /^\/sections\/([^/]+)\/teams\/([^/]+)\/(\d+)$/,
     getLabel: (matches) => {
@@ -179,19 +169,16 @@ const dynamicBreadcrumbs: Array<{
     },
     parent: '/sections/:slug/teams/:team',
   },
-  // Boards list: /sections/:slug/teams/:team/boards
   {
     pattern: /^\/sections\/([^/]+)\/teams\/([^/]+)\/boards$/,
     getLabel: () => 'Tidligere tavler',
     parent: '/sections/:slug/teams/:team',
   },
-  // Dashboard: /sections/:slug/teams/:team/dashboard
   {
     pattern: /^\/sections\/([^/]+)\/teams\/([^/]+)\/dashboard$/,
     getLabel: () => 'Dashboard',
     parent: '/sections/:slug/teams/:team',
   },
-  // Admin: /sections/:slug/teams/:team/admin
   {
     pattern: /^\/sections\/([^/]+)\/teams\/([^/]+)\/admin$/,
     getLabel: () => 'Administrer',
@@ -200,21 +187,18 @@ const dynamicBreadcrumbs: Array<{
 ]
 
 interface Crumb {
-  path: string | null // null = not clickable
+  path: string | null
   label: string
 }
 
 function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatches>): Crumb[] {
   const crumbs: Crumb[] = []
 
-  // Always start with home (but we'll show icon instead of "Hjem")
   if (pathname !== '/') {
     crumbs.push({ path: '/', label: 'Hjem' })
   }
 
-  // Check static config first
   if (breadcrumbConfig[pathname]) {
-    // Build path segments
     const segments = pathname.split('/').filter(Boolean)
     let currentPath = ''
 
@@ -228,7 +212,6 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
     return crumbs
   }
 
-  // Helper to add team/env/app crumbs with team and env clickable
   function addSemanticCrumbs(pathname: string, includeApp = true, includeDeployments = false, deploymentId?: string) {
     const semanticMatch = pathname.match(/^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)/)
     if (semanticMatch) {
@@ -250,14 +233,12 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
     }
   }
 
-  // Helper to add section hierarchy crumbs
   function addSectionCrumbs(includeTeam = false) {
     const sectionMatch = pathname.match(/^\/sections\/([^/]+)/)
     if (!sectionMatch) return
     const sectionSlug = sectionMatch[1]
     const sectionPath = `/sections/${sectionSlug}`
 
-    // Get section name from loader data
     const sectionData = matches.find(
       (m) => (m.data as Record<string, unknown>)?.section || (m.data as Record<string, unknown>)?.sectionName,
     )
@@ -281,11 +262,8 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
     }
   }
 
-  // Check dynamic patterns
   for (const dynamic of dynamicBreadcrumbs) {
     if (dynamic.pattern.test(pathname)) {
-      // Add parent breadcrumbs first
-      // Handle: /team/:team/env/:env/app/:app/deployments/:id/debug-verify
       if (dynamic.parent === '/team/:team/env/:env/app/:app/deployments/:id') {
         const match = pathname.match(/\/deployments\/(\d+)/)
         addSemanticCrumbs(pathname, true, true, match?.[1])
@@ -325,7 +303,6 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
       } else if (dynamic.parent === '/team/:team/env/:env/app/:app') {
         addSemanticCrumbs(pathname, true)
       } else if (dynamic.parent === '/team/:team/env/:env') {
-        // App page with team/env as parent
         const semanticMatch = pathname.match(/^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)/)
         if (semanticMatch) {
           const [, team, env] = semanticMatch
@@ -335,7 +312,6 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
           crumbs.push({ path: envPath, label: env })
         }
       } else if (dynamic.parent === '/team/:team') {
-        // Team/env page or app page with team as parent
         const envMatch = pathname.match(/^\/team\/([^/]+)\/env\/([^/]+)$/)
         if (envMatch) {
           const [, team] = envMatch
@@ -348,7 +324,6 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
       } else if (dynamic.parent === '/sections/:slug') {
         addSectionCrumbs(false)
       } else if (dynamic.parent && dynamic.parent !== '/' && breadcrumbConfig[dynamic.parent]) {
-        // Add static parent (but not home, that's already added)
         const parentSegments = dynamic.parent.split('/').filter(Boolean)
         let parentPath = ''
         for (const seg of parentSegments) {
@@ -359,7 +334,6 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
         }
       }
 
-      // Add current dynamic crumb
       crumbs.push({ path: pathname, label: dynamic.getLabel(matches, pathname) })
       return crumbs
     }

@@ -16,10 +16,6 @@ interface VerificationDiffDeployment {
   audit_start_year: number | null
 }
 
-/**
- * Get deployments eligible for verification diff analysis.
- * Includes all valid deployments regardless of whether they have compare snapshots.
- */
 export async function getDeploymentsForDiffComputation(monitoredAppId: number): Promise<VerificationDiffDeployment[]> {
   const result = await pool.query(
     `SELECT 
@@ -47,16 +43,6 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
   return result.rows
 }
 
-/**
- * Get the previous deployment for a given deployment in the same app/env.
- *
- * Mirrors the filters in getPreviousDeployment (fetch-data.server.ts) so the
- * cache-path used by compute-diffs and reverifyDeployment produces the same
- * `previousDeployment` value as a fresh fetch:
- *   - audit_start_year (when set on the monitored app)
- *   - excludes legacy / legacy_pending deployments
- *   - excludes refs/* sha values
- */
 export async function getPreviousDeploymentForDiff(
   deploymentId: number,
   environmentName: string,
@@ -79,9 +65,6 @@ export async function getPreviousDeploymentForDiff(
   return result.rows[0] || null
 }
 
-/**
- * Get the latest compare snapshot for a commit SHA
- */
 export async function getCompareSnapshotForCommit(
   commitSha: string,
 ): Promise<{ data: unknown; base_sha: string } | null> {
@@ -94,9 +77,6 @@ export async function getCompareSnapshotForCommit(
   return result.rows[0] || null
 }
 
-/**
- * Get PR snapshots for a given PR number, latest of each data_type
- */
 export async function getPrSnapshotsForDiff(prNumber: number): Promise<Map<string, unknown>> {
   const result = await pool.query(
     `SELECT data_type, data FROM github_pr_snapshots 
@@ -127,17 +107,6 @@ interface MissingApproverDeployment {
   default_branch: string | null
 }
 
-/**
- * Shared SQL conditions for detecting deployments missing approver data.
- * A deployment is missing approver data when it has neither:
- *   - PR reviewers with state='APPROVED' in github_pr_data, nor
- *   - An active (non-deleted) manual_approval comment
- *
- * Excludes no_changes, baseline, and implicitly_approved — the first two
- * don't require a separate approver, and implicitly_approved uses the PR merger.
- *
- * Requires the deployments table to be aliased as `d`.
- */
 const MISSING_APPROVER_STATUS_EXCLUSIONS = `d.four_eyes_status NOT IN ('no_changes', 'baseline', 'implicitly_approved')`
 
 const MISSING_APPROVER_CONDITIONS = `
@@ -153,10 +122,6 @@ const MISSING_APPROVER_CONDITIONS = `
       AND dc.deleted_at IS NULL
   )`
 
-/**
- * Find deployment IDs from a given set that are missing approver data.
- * Used by checkAuditReadiness to check a pre-filtered set of approved deployments.
- */
 export async function findDeploymentIdsMissingApprover(deploymentIds: number[]): Promise<Set<number>> {
   if (deploymentIds.length === 0) return new Set()
   const result = await pool.query<{ id: number }>(
@@ -167,10 +132,6 @@ export async function findDeploymentIdsMissingApprover(deploymentIds: number[]):
   return new Set(result.rows.map((r) => r.id))
 }
 
-/**
- * Find approved deployments that have no approver data for a monitored app.
- * Used by the verification diff page to show a warning.
- */
 export async function getApprovedDeploymentsMissingApprover(
   monitoredAppId: number,
 ): Promise<MissingApproverDeployment[]> {
@@ -196,10 +157,6 @@ interface GlobalMissingApproverDeployment extends MissingApproverDeployment {
   app_name: string
 }
 
-/**
- * Find approved deployments missing approver data across ALL monitored applications.
- * Used by the global admin verification-diffs page.
- */
 export async function getAllApprovedDeploymentsMissingApprover(): Promise<GlobalMissingApproverDeployment[]> {
   const result = await pool.query<GlobalMissingApproverDeployment>(
     `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
@@ -225,10 +182,6 @@ interface MissingApproverSummary {
   count: number
 }
 
-/**
- * Get aggregated counts of missing-approver deployments grouped by app.
- * Lightweight alternative to getAllApprovedDeploymentsMissingApprover for loader use.
- */
 export async function getMissingApproverSummary(): Promise<{
   total: number
   byApp: MissingApproverSummary[]

@@ -42,7 +42,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  // Check if this is a production app (audit reports only make sense for prod)
   const isProdApp = app.environment_name.startsWith('prod-')
 
   const [implicitApprovalSettings, recentConfigChanges, auditReports, latestFetchJob, githubDataStats, userMappings] =
@@ -86,7 +85,6 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
   const revalidator = useRevalidator()
   const isSubmitting = navigation.state === 'submitting'
 
-  // Polling state for report background job (using useFetcher)
   const jobFetcher = useFetcher<{ status: string; error?: string }>()
   const [pendingJobId, setPendingJobId] = useState<string | null>(null)
   const [jobError, setJobError] = useState<string | null>(null)
@@ -96,32 +94,27 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     ? ((jobFetcher.data?.status as 'pending' | 'processing' | 'completed' | 'failed' | null) ?? 'pending')
     : null
 
-  // Polling state for fetch data job
   const [fetchJobId, setFetchJobId] = useState<number | null>(null)
   const [fetchJobStatus, setFetchJobStatus] = useState<SyncJob | null>(latestFetchJob)
 
   const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 
-  // Use action data for readiness (checked on demand)
   const readinessData = actionData?.readiness
   const readinessPeriodKey = actionData?.readinessPeriodKey as string | undefined
   const readinessUserMappings = (actionData?.userMappings as UserLookupMap) ?? {}
 
-  // Start polling when fetch job is started
   useEffect(() => {
     if (actionData?.fetchJobStarted) {
       setFetchJobId(actionData.fetchJobStarted)
     }
   }, [actionData?.fetchJobStarted])
 
-  // Update fetch job status from action
   useEffect(() => {
     if (actionData?.fetchJobStatus) {
       setFetchJobStatus(actionData.fetchJobStatus)
     }
   }, [actionData?.fetchJobStatus])
 
-  // Poll fetch job status
   useEffect(() => {
     if (!fetchJobId) return
     if (
@@ -138,14 +131,12 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     return () => clearInterval(interval)
   }, [fetchJobId, fetchJobStatus?.status, revalidator])
 
-  // Update fetch job status from loader
   useEffect(() => {
     if (latestFetchJob) {
       setFetchJobStatus(latestFetchJob)
     }
   }, [latestFetchJob])
 
-  // Start polling when job is started
   useEffect(() => {
     if (actionData?.jobStarted) {
       setPendingJobId(actionData.jobStarted)
@@ -154,17 +145,14 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     }
   }, [actionData?.jobStarted])
 
-  // Stable ref for fetcher.load to avoid infinite re-renders in polling effect
   const jobFetcherLoadRef = useRef(jobFetcher.load)
   jobFetcherLoadRef.current = jobFetcher.load
 
-  // Poll for job status using useFetcher
   useEffect(() => {
     if (!pendingJobId) return
 
     const load = () => jobFetcherLoadRef.current(`/api/reports/status?jobId=${pendingJobId}`)
 
-    // Load immediately
     load()
 
     const interval = setInterval(load, 2000)
@@ -172,7 +160,6 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     return () => clearInterval(interval)
   }, [pendingJobId])
 
-  // React to fetcher data changes
   useEffect(() => {
     if (!jobFetcher.data || !pendingJobId) return
 

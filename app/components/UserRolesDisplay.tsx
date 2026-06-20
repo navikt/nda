@@ -7,10 +7,6 @@ interface UserRoleDisplayData {
   teamRoles: Array<{ role: string; teamName: string; teamSlug: string; sectionSlug: string | null }>
 }
 
-/**
- * Read-only display of a user's roles (section + team).
- * Used on user profile pages.
- */
 export function UserRolesDisplay({ userRoles }: { userRoles: UserRoleDisplayData }) {
   if (userRoles.sectionRoles.length === 0 && userRoles.teamRoles.length === 0) {
     return null

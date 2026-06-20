@@ -1,15 +1,3 @@
-/**
- * API: Generate (order) an audit report
- *
- * Creates an async report generation job. Deduplicates against in-flight jobs.
- * Secured with M2M token validation.
- *
- * POST /api/v1/apps/:team/:env/:app/audit-reports/generate
- *
- * Request body:
- *   { periodType, periodStart, reason? }
- */
-
 import { getReportSummaryById, hasActiveReportForPeriod } from '~/db/audit-reports.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { createReportJob, findInFlightJob, isStaleJob } from '~/db/report-jobs.server'
@@ -68,10 +56,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const period = resolved.period
 
-  // Check for existing in-flight job (deduplication for pending/processing only)
   const existingJob = await findInFlightJob(monitoredApp.id, period.type, period.startDate)
   if (existingJob && (existingJob.status !== 'completed' || !reason)) {
-    // Re-trigger stale pending jobs that were never picked up
     if (isStaleJob(existingJob)) {
       processReportJobAsync({
         jobId: existingJob.job_id,
@@ -90,7 +76,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     const appMetadata = await buildAppMetadata(monitoredApp)
 
-    // For completed jobs, find the report_id via audit_report_id
     let reportId: string | null = null
     if (existingJob.status === 'completed' && existingJob.audit_report_id) {
       const report = await getReportSummaryById(existingJob.audit_report_id)
@@ -108,13 +93,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json(response, { status: 200 })
   }
 
-  // Check if superseding is needed
   const hasExisting = await hasActiveReportForPeriod(monitoredApp.id, period.type, period.startDate, period.endDate)
   if (hasExisting && !reason) {
     throw jsonError('An active report already exists for this period. Provide "reason" to supersede it.', 409)
   }
 
-  // Create new job
   const job = await createReportJob(
     monitoredApp.id,
     period.year,
@@ -124,7 +107,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     period.endDate,
   )
 
-  // If we hit the unique constraint (race condition), return existing job without starting processing
   if (!job.created) {
     const appMetadata = await buildAppMetadata(monitoredApp)
     const response: AuditReportGenerateResponse = {
@@ -137,7 +119,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json(response, { status: 200 })
   }
 
-  // Fire-and-forget async generation
   processReportJobAsync({
     jobId: job.jobId,
     appId: monitoredApp.id,

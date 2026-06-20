@@ -1,7 +1,6 @@
 import { index, layout, type RouteConfig, route } from '@react-router/dev/routes'
 
 export default [
-  // Health check endpoints (outside layout)
   route('api/isalive', 'routes/api/isalive.ts'),
   route('api/isready', 'routes/api/isready.ts'),
   route('api/reports/generate', 'routes/api/reports.generate.ts'),
@@ -38,7 +37,6 @@ export default [
     route('my-teams', 'routes/my-teams.tsx'),
     route('my-apps', 'routes/my-apps.tsx'),
     route('search', 'routes/search.tsx'),
-    // Semantic URL structure
     route('team/:team', 'routes/team/$team.tsx'),
     route('team/:team/env/:env', 'routes/team/$team.env.$env.tsx'),
     route('team/:team/env/:env/app/:app', 'routes/team/$team.env.$env.app.$app.tsx'),

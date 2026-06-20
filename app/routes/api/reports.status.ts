@@ -3,7 +3,6 @@ import { getReportJobStatus } from '~/db/report-jobs.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/reports.status'
 
-// GET: Check status of a report generation job
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 

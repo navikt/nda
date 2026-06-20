@@ -1,10 +1,3 @@
-/**
- * Integration test: getDevTeamAppsWithIssues - unmapped deployer count
- *
- * Verifies that apps with unmapped deployers are returned by the query
- * and that the unmapped_deployer_count is correct.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDevTeamAppsWithIssues } from '~/db/deployments/home.server'
@@ -97,7 +90,6 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
       deployerUsername: 'bob',
       fourEyesStatus: 'approved',
     })
-    // Same user again — should not double-count
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -180,14 +172,12 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
     })
     await seedGithubAccount('mapped-user')
     const objectiveId = await seedObjective()
-    // Add goal link with objective so app doesn't appear due to missing_goal_links
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active) VALUES ($1, $2, 'manual', true)`,
       [deployId, objectiveId],
     )
 
     const result = await getDevTeamAppsWithIssues(['team-a'])
-    // App has no issues (deployer is mapped, status is approved, has goal link)
     expect(result).toHaveLength(0)
   })
 
@@ -202,14 +192,12 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
     })
     await seedGithubAccount('alice')
     const objectiveId = await seedObjective()
-    // Add goal link with objective so app doesn't appear due to missing_goal_links
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, is_active) VALUES ($1, $2, 'manual', true)`,
       [deployId, objectiveId],
     )
 
     const result = await getDevTeamAppsWithIssues(['team-a'])
-    // Alice is mapped (case-insensitive), so no unmapped deployers or other issues
     expect(result).toHaveLength(0)
   })
 
@@ -238,7 +226,6 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
       environment: 'prod',
       auditStartYear: currentYear,
     })
-    // Deployment before audit start year — should be excluded
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -247,7 +234,6 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
       fourEyesStatus: 'approved',
       createdAt: new Date(currentYear - 1, 6, 1),
     })
-    // Deployment in audit year
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -263,7 +249,6 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
 
   it('combines unmapped count with other issue types', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod' })
-    // Unmapped deployer with four-eyes issue (direct_push is a NOT_APPROVED status)
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -280,7 +265,6 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
 
   it('unmapped_deployer_count is not affected by deployerUsernames filter', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod' })
-    // Deployer NOT in the filter list
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -289,11 +273,10 @@ describe('getDevTeamAppsWithIssues - unmapped_deployer_count', () => {
       fourEyesStatus: 'approved',
     })
 
-    // Pass deployer filter — four_eyes counts are filtered, but unmapped count is NOT
     const result = await getDevTeamAppsWithIssues(['team-a'], undefined, ['team-member'])
     expect(result).toHaveLength(1)
-    expect(result[0].without_four_eyes).toBe(0) // filtered by deployer
-    expect(result[0].unmapped_deployer_count).toBe(1) // NOT filtered
+    expect(result[0].without_four_eyes).toBe(0)
+    expect(result[0].unmapped_deployer_count).toBe(1)
   })
 })
 
@@ -302,7 +285,6 @@ describe('getDevTeamAppsWithIssues - unrecognized four_eyes_status', () => {
     const appId = await seedApp(pool, { teamSlug: 'team-x', appName: 'mystery', environment: 'prod' })
     await seedGithubAccount('deployer1')
 
-    // Seed a deployment with an unrecognized status value (e.g. a migrated/legacy value)
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-x',
@@ -344,7 +326,6 @@ describe('getDevTeamAppsWithIssues - unrecognized four_eyes_status', () => {
 
     const result = await getDevTeamAppsWithIssues(['team-y'], undefined)
     expect(result).toHaveLength(1)
-    // 3 total - 1 approved - 1 pending = 1 without four eyes (the unknown status)
     expect(result[0].without_four_eyes).toBe(1)
     expect(result[0].pending_verification).toBe(1)
   })

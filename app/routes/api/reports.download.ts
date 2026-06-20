@@ -3,7 +3,6 @@ import { getReportJobWithPdf } from '~/db/report-jobs.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/reports.download'
 
-// GET: Download a completed report PDF
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 

@@ -2,31 +2,16 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-/**
- * The Dockerfile compiles a fixed set of root TypeScript files (server.ts and
- * any helpers it imports) with `tsc` and copies the resulting `.js` artifacts
- * into the runtime image. Files that aren't in that list never get a `.js`
- * sibling, and the production server crashes at startup with
- * `ERR_MODULE_NOT_FOUND` when it tries to import them.
- *
- * This test parses the Dockerfile to discover which files are compiled+copied,
- * then walks the relative-import graph from `server.ts` to assert every
- * transitively-imported source file is part of that set. It catches regressions
- * like importing a new helper into `server.ts` without updating the Dockerfile.
- */
-
 const REPO_ROOT = path.resolve(__dirname, '../../..')
 
 function readDockerfile(): string {
   return readFileSync(path.join(REPO_ROOT, 'Dockerfile'), 'utf-8')
 }
 
-/** Parse the `RUN pnpm exec tsc <files...>` lines and collect every TS file passed to tsc. */
 function getCompiledTsFiles(dockerfile: string): Set<string> {
   const compiled = new Set<string>()
   const tscRunLines = dockerfile.match(/RUN pnpm exec tsc[^\n]*/g) ?? []
   for (const line of tscRunLines) {
-    // Split off "RUN pnpm exec tsc" and any trailing flags; collect tokens that look like .ts paths.
     const tokens = line.split(/\s+/)
     for (const token of tokens) {
       if (token.endsWith('.ts')) {
@@ -37,7 +22,6 @@ function getCompiledTsFiles(dockerfile: string): Set<string> {
   return compiled
 }
 
-/** Parse `COPY --from=builder /app/<src> <dst>` lines and collect every source path copied. */
 function getCopiedPaths(dockerfile: string): string[] {
   const copied: string[] = []
   const copyLines = dockerfile.match(/COPY --from=builder \/app\/[^\s]+/g) ?? []
@@ -48,10 +32,6 @@ function getCopiedPaths(dockerfile: string): string[] {
   return copied
 }
 
-/**
- * Extract relative `import ... from './...'` and `from '../...'` specifiers.
- * Only relative imports matter — bare specifiers come from node_modules.
- */
 function extractRelativeImports(source: string): string[] {
   const out: string[] = []
   const re = /^\s*import\s+[^'"\n]+from\s+['"](\.[^'"\n]+)['"]/gm
@@ -63,11 +43,9 @@ function extractRelativeImports(source: string): string[] {
   return out
 }
 
-/** Resolve a `./foo.js` import (NodeNext style) back to the `.ts` source on disk, relative to repo root. */
 function resolveImportToTsFile(fromFile: string, importSpec: string): string | null {
   const fromDir = path.dirname(path.join(REPO_ROOT, fromFile))
   const resolvedJs = path.resolve(fromDir, importSpec)
-  // Try .ts, .tsx, /index.ts
   for (const ext of ['.ts', '.tsx']) {
     const tsCandidate = resolvedJs.replace(/\.js$/, ext)
     if (existsSync(tsCandidate)) {
@@ -81,7 +59,6 @@ function resolveImportToTsFile(fromFile: string, importSpec: string): string | n
   return null
 }
 
-/** Walk the relative-import graph starting from the given entry files. */
 function collectRelativeImportClosure(entries: string[]): Set<string> {
   const visited = new Set<string>()
   const queue = [...entries]
@@ -106,7 +83,6 @@ describe('Dockerfile server import graph', () => {
     const compiled = getCompiledTsFiles(dockerfile)
     const copied = getCopiedPaths(dockerfile)
 
-    // Sanity check: server.ts is compiled.
     expect(compiled.has('server.ts')).toBe(true)
 
     const closure = collectRelativeImportClosure(['server.ts'])
@@ -114,7 +90,6 @@ describe('Dockerfile server import graph', () => {
     const missing: string[] = []
     for (const file of closure) {
       if (compiled.has(file)) continue
-      // Files under app/ that the build pipeline copies wholesale (e.g. app/db/migrations) are fine.
       const isInsideCopiedDir = copied.some((c) => file === c || file.startsWith(`${c}${path.sep}`))
       if (isInsideCopiedDir) continue
       missing.push(file)
@@ -134,7 +109,6 @@ describe('Dockerfile server import graph', () => {
     const missing: string[] = []
     for (const tsFile of compiled) {
       const jsFile = tsFile.replace(/\.ts$/, '.js')
-      // Either the .js file itself is COPY'd, or it lives under a directory that's COPY'd.
       const isCopied = copied.has(jsFile) || [...copied].some((c) => jsFile.startsWith(`${c}${path.sep}`))
       if (!isCopied) missing.push(jsFile)
     }

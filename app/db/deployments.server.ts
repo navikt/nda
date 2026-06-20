@@ -11,10 +11,6 @@ import { pool } from './connection.server'
 import { logStatusTransition } from './deployments/status-history.server'
 import { lowerUsernames, userDeploymentMatchAnySql, userDeploymentMatchSql } from './user-deployment-match'
 
-/**
- * Shared SQL fragment for resolving deployment title with fallbacks.
- * Requires a LEFT JOIN to commits as alias `c`.
- */
 export const TITLE_COALESCE_SQL = `COALESCE(d.title, d.github_pr_data->>'title', c.original_pr_title, c.message, d.unverified_commits->0->>'message')`
 
 export interface UnverifiedCommit {
@@ -24,7 +20,7 @@ export interface UnverifiedCommit {
   date: string
   html_url: string
   pr_number: number | null
-  reason: string // 'no_pr' | 'pr_not_approved' | 'pr_not_found'
+  reason: string
 }
 
 export interface Deployment {
@@ -44,7 +40,7 @@ export interface Deployment {
   branch_name: string | null
   parent_commits: Array<{ sha: string }> | null
   unverified_commits: UnverifiedCommit[] | null
-  resources: any // JSONB
+  resources: any
   synced_at: Date
   title: string | null
   slack_message_ts: string | null
@@ -59,10 +55,10 @@ export interface GitHubPRData {
   created_at: string
   merged_at: string | null
   base_branch: string
-  base_sha: string // Base commit SHA that PR branched from
-  head_branch: string // PR branch name
-  head_sha: string // Latest commit SHA in PR
-  merge_commit_sha: string | null // SHA of merge/squash commit
+  base_sha: string
+  head_branch: string
+  head_sha: string
+  merge_commit_sha: string | null
   commits_count: number
   changed_files: number
   additions: number
@@ -71,13 +67,13 @@ export interface GitHubPRData {
   review_comments_count: number
   draft: boolean
   mergeable: boolean | null
-  mergeable_state: string | null // 'clean', 'dirty', 'blocked', 'behind', 'unstable'
+  mergeable_state: string | null
   rebaseable: boolean | null
   locked: boolean
   maintainer_can_modify: boolean
   auto_merge: {
     enabled_by: string
-    merge_method: string // 'merge', 'squash', 'rebase'
+    merge_method: string
   } | null
   creator: {
     username: string
@@ -111,16 +107,16 @@ export interface GitHubPRData {
   reviewers: Array<{
     username: string
     avatar_url: string
-    state: string // 'APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'
+    state: string
     submitted_at: string
   }>
   checks_passed: boolean | null
-  checks_ref?: 'merge_commit' | 'head' | null // Which SHA the checks were fetched for
+  checks_ref?: 'merge_commit' | 'head' | null
   checks: Array<{
     id?: number
     name: string
-    status: string // 'queued', 'in_progress', 'completed'
-    conclusion: string | null // 'success', 'failure', 'cancelled', 'skipped', 'timed_out', 'action_required', 'neutral'
+    status: string
+    conclusion: string | null
     started_at: string | null
     completed_at: string | null
     html_url: string | null
@@ -167,7 +163,7 @@ export interface GitHubPRData {
     author: string
     date: string
     html_url: string
-    reason: string // Why it's unreviewed: 'no_pr', 'pr_not_approved', etc
+    reason: string
   }>
   comments: Array<{
     id: number
@@ -214,38 +210,17 @@ export interface DeploymentFilters {
   four_eyes_status?: string
   only_missing_four_eyes?: boolean
   deployer_username?: string
-  /**
-   * Filter to deployments where a team member is the deployer **or** PR creator.
-   * Uses `userDeploymentMatchAnySql` — consistent with `getAppDeploymentStatsBatch`
-   * so stat counts agree with list results. An empty array forces zero results
-   * (selected team has no GitHub-mapped members).
-   */
   deployer_usernames?: string[]
-  /**
-   * Exclude deployments where the deployer/PR-creator is one of these usernames.
-   * Used for "Fra andre" filter — shows non-member board-linked deployments.
-   */
   exclude_deployer_usernames?: string[]
-  /** Show only deployments where the deployer has no active user_github_accounts entry. */
   unmapped_deployers?: boolean
   commit_sha?: string
   method?: 'pr' | 'direct_push' | 'legacy'
   goal_filter?: 'missing' | 'linked'
-  /** Filter to deployments linked to a specific objective (directly or via key result). */
   goal_objective_id?: number
-  /**
-   * Scope goal_filter to only consider links to boards owned by this dev team.
-   * Without this, goal_filter='linked' matches links to ANY team's board.
-   */
   goal_dev_team_id?: number
   page?: number
   per_page?: number
   audit_start_year?: number | null
-  /**
-   * Apply audit_start_year per-row from `monitored_applications.audit_start_year`.
-   * Use for group views where sibling apps may have different audit years.
-   * Takes precedence over `audit_start_year`.
-   */
   per_app_audit_start_year?: boolean
 }
 
@@ -291,7 +266,6 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     paramIndex++
   }
 
-  // Filter by audit start year — per-row (group view) or single value
   if (filters?.per_app_audit_start_year) {
     whereSql += ` AND (ma.audit_start_year IS NULL OR d.created_at >= make_date(ma.audit_start_year, 1, 1))`
   } else if (filters?.audit_start_year) {
@@ -334,12 +308,8 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
 
   if (filters?.deployer_usernames !== undefined) {
     if (filters.deployer_usernames.length === 0) {
-      // Empty list means "no members matched" — force zero rows so the UI
-      // can show an explanatory empty state without producing false positives.
       whereSql += ' AND FALSE'
     } else {
-      // Match deployer_username OR PR creator — consistent with
-      // getAppDeploymentStatsBatch so stat counts agree with list results.
       whereSql += ` AND ${userDeploymentMatchAnySql(paramIndex)}`
       params.push(lowerUsernames(filters.deployer_usernames))
       paramIndex++
@@ -355,8 +325,6 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   }
 
   if (filters?.exclude_deployer_usernames !== undefined && filters.exclude_deployer_usernames.length > 0) {
-    // Exclude deployments where deployer/PR-creator matches any of these usernames.
-    // COALESCE handles NULL deployer/PR-creator: treats them as non-matching (included).
     whereSql += ` AND NOT COALESCE(${userDeploymentMatchAnySql(paramIndex)}, FALSE)`
     params.push(lowerUsernames(filters.exclude_deployer_usernames))
     paramIndex++
@@ -379,7 +347,6 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   const needsGoalJoin = filters?.goal_filter != null || filters?.goal_objective_id != null
   let goalJoinSql = ''
   if (needsGoalJoin && filters?.goal_objective_id) {
-    // Filter by specific objective (directly linked or via key result) using EXISTS to avoid duplicates
     whereSql += ` AND EXISTS (
       SELECT 1 FROM deployment_goal_links dgl
       LEFT JOIN board_key_results bkr_f ON bkr_f.id = dgl.key_result_id
@@ -389,9 +356,6 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     params.push(filters.goal_objective_id)
     paramIndex++
   } else if (needsGoalJoin && filters?.goal_dev_team_id) {
-    // Scope goal links to only those pointing to objectives/key-results on
-    // boards owned by the specified team. This ensures "Fra andre" (non-member
-    // linked) counts match between the team page and the deployments list.
     goalJoinSql = `LEFT JOIN (
       SELECT DISTINCT dgl.deployment_id
       FROM deployment_goal_links dgl
@@ -418,7 +382,6 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     whereSql += ' AND dgl.deployment_id IS NOT NULL'
   }
 
-  // Count total
   const countSql = `
     SELECT COUNT(*) as total
     FROM deployments d
@@ -429,7 +392,6 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   const countResult = await pool.query(countSql, params)
   const total = parseInt(countResult.rows[0].total, 10)
 
-  // Pagination
   const page = filters?.page || 1
   const per_page = filters?.per_page || 20
   const offset = (page - 1) * per_page
@@ -466,12 +428,6 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   }
 }
 
-/**
- * Derives checks_ref from stored GitHubPRData when it hasn't been computed yet.
- * Matches the same logic as deriveChecksRef in build-github-pr-data.ts, but
- * operates on the snake_case DB format. Needed for data stored before checks_ref
- * was introduced (pre 2026-06-20).
- */
 function backfillChecksRef(prData: GitHubPRData): GitHubPRData {
   if (prData.checks_ref !== undefined) return prData
   if (!prData.merged_at || !prData.merge_commit_sha || !prData.checks?.length) {
@@ -514,9 +470,6 @@ export async function getDeploymentByNaisId(naisDeploymentId: string): Promise<D
 }
 
 export async function createDeployment(data: CreateDeploymentParams): Promise<Deployment> {
-  // Check if this is a legacy deployment:
-  // - Before 2025-01-01 without commit SHA, OR
-  // - Any deployment without commit SHA (cannot be verified)
   const legacyCutoffDate = new Date('2025-01-01T00:00:00Z')
   const isLegacyDeployment = !data.commitSha || (data.createdAt < legacyCutoffDate && !data.commitSha)
 
@@ -550,10 +503,6 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
   return result.rows[0]
 }
 
-/**
- * Get the latest (most recent) deployment for an app by Nais deployment ID
- * Used for incremental sync to know where to stop
- */
 export async function getLatestDeploymentForApp(
   monitoredAppId: number,
 ): Promise<{ nais_deployment_id: string; created_at: string } | null> {
@@ -618,7 +567,6 @@ export async function updateDeploymentFourEyes(
     details?: Record<string, unknown>
   },
 ): Promise<Deployment> {
-  // Get current status before update for history logging
   const current = await pool.query(`SELECT four_eyes_status FROM deployments WHERE id = $1`, [deploymentId])
 
   const result = await pool.query(
@@ -650,7 +598,6 @@ export async function updateDeploymentFourEyes(
     throw new Error('Deployment not found')
   }
 
-  // Log status transition if status actually changed
   if (current.rows.length > 0) {
     const prev = current.rows[0]
     if (prev.four_eyes_status !== data.fourEyesStatus) {
@@ -668,9 +615,6 @@ export async function updateDeploymentFourEyes(
   return result.rows[0]
 }
 
-/**
- * Update deployment with data fetched from GitHub for legacy verification
- */
 export async function updateDeploymentLegacyData(
   deploymentId: number,
   data: {
@@ -686,14 +630,10 @@ export async function updateDeploymentLegacyData(
     reviewers: Array<{ username: string; state: string }>
   },
 ): Promise<Deployment> {
-  // Use mergedBy as deployer if available, otherwise fall back to deployer/commitAuthor
   const effectiveDeployer = data.mergedBy || data.deployer
 
-  // For legacy, we store reviewers directly in a simplified github_pr_data
-  // Build a minimal structure that matches type requirements
   let githubPrDataStr: string | null = null
   if (data.prNumber || data.reviewers.length > 0) {
-    // Store all available data for legacy verification
     const prData = {
       title: data.prTitle || data.commitMessage || '',
       number: data.prNumber,
@@ -707,7 +647,6 @@ export async function updateDeploymentLegacyData(
         state: r.state,
         submitted_at: new Date().toISOString(),
       })),
-      // Mark as legacy-verified data
       _legacy_verified: true,
     }
     githubPrDataStr = JSON.stringify(prData)
@@ -741,10 +680,6 @@ export async function updateDeploymentLegacyData(
   return result.rows[0]
 }
 
-/**
- * Get the deployment that happened before this one for the same repo/environment
- * Uses created_at for ordering (not id, which isn't guaranteed chronological)
- */
 async function _getPreviousDeployment(
   currentDeploymentId: number,
   repoOwner: string,
@@ -764,7 +699,6 @@ async function _getPreviousDeployment(
 
   const params: any[] = [repoOwner, repoName, environmentName, currentDeploymentId]
 
-  // Filter out deployments before audit start year
   if (auditStartYear) {
     sql += ` AND EXTRACT(YEAR FROM prev_dep.created_at) >= $5`
     params.push(auditStartYear)
@@ -777,9 +711,6 @@ async function _getPreviousDeployment(
   return result.rows[0] || null
 }
 
-/**
- * Navigation filter options for prev/next deployment
- */
 export interface DeploymentNavFilters {
   four_eyes_status?: string
   method?: 'pr' | 'direct_push' | 'legacy'
@@ -790,9 +721,6 @@ export interface DeploymentNavFilters {
   audit_start_year?: number | null
 }
 
-/**
- * Build WHERE clause conditions for navigation filters
- */
 function buildNavFilterConditions(
   filters: DeploymentNavFilters,
   startParamIndex: number,
@@ -802,7 +730,6 @@ function buildNavFilterConditions(
   let idx = startParamIndex
 
   if (filters.four_eyes_status) {
-    // Handle meta-statuses that map to multiple four_eyes_status values
     if (filters.four_eyes_status === 'not_approved') {
       conditions.push(notApprovedWhereClause('nav_dep.four_eyes_status'))
     } else if (filters.four_eyes_status === 'pending') {
@@ -857,10 +784,6 @@ function buildNavFilterConditions(
   return { conditions, params, nextIndex: idx }
 }
 
-/**
- * Get the next deployment (chronologically newer) for navigation
- * Next = deployment that happened AFTER this one (newer created_at)
- */
 export async function getNextDeployment(
   currentDeploymentId: number,
   monitoredAppId: number,
@@ -885,10 +808,6 @@ export async function getNextDeployment(
   return result.rows[0] || null
 }
 
-/**
- * Get the previous deployment (chronologically older) for navigation
- * Previous = deployment that happened BEFORE this one (older created_at)
- */
 export async function getPreviousDeploymentForNav(
   currentDeploymentId: number,
   monitoredAppId: number,
@@ -913,12 +832,6 @@ export async function getPreviousDeploymentForNav(
   return result.rows[0] || null
 }
 
-/**
- * Get the true chronologically previous deployment for GitHub diff links.
- * Unlike getPreviousDeploymentForNav, this ignores user filters (status, method, etc.)
- * to always return the actual previous deployment — deployments can arrive out of order,
- * so we use created_at, not id.
- */
 export async function getPreviousDeploymentForDiff(
   currentDeploymentId: number,
   monitoredAppId: number,
@@ -955,23 +868,9 @@ export interface AppDeploymentStats {
   last_deployment_id: number | null
   four_eyes_percentage: number
   missing_goal_links?: number
-  /** Deployments in pending_baseline state, or baseline state with no attributed approver. */
   baseline_action_count?: number
 }
 
-/**
- * Tell deployments hvor en GitHub-bruker er involvert — enten som
- * deployer eller som PR-skaper. Match er case-insensitivt
- * (GitHub-brukernavn er case-insensitive). Brukes på `/users/:username`
- * og må holdes konsistent med Slack home tab via felles
- * {@link userDeploymentMatchSql}-helper.
- *
- * Funksjonsnavnet beholdes (`*Deployer*`) av historiske grunner —
- * semantikken er «mine deployments», ikke strengt deployer-only.
- *
- * @param deployerUsername GitHub-brukernavn som matches mot både
- *   `deployer_username` og `github_pr_data.creator.username`.
- */
 export async function getDeploymentCountByDeployer(deployerUsername: string): Promise<number> {
   const result = await pool.query(
     `SELECT COUNT(*) as count
@@ -984,14 +883,6 @@ export async function getDeploymentCountByDeployer(deployerUsername: string): Pr
   return parseInt(result.rows[0].count, 10) || 0
 }
 
-/**
- * Månedlige deployment-tellinger for en GitHub-bruker, gruppert på
- * målkobling og Dependabot. Matcher deployments hvor brukeren enten
- * er deployer eller PR-skaper (case-insensitivt) — se
- * {@link userDeploymentMatchSql}.
- *
- * Funksjonsnavnet beholdes (`*Deployer*`) av historiske grunner.
- */
 export interface DeployerMonthlyStats {
   month: string
   total: number
@@ -1068,16 +959,6 @@ export interface DeployerTableFilters {
   appName?: string
 }
 
-/**
- * Paginert liste over deployments hvor en GitHub-bruker er involvert
- * — enten som deployer eller som PR-skaper (case-insensitivt). Drives
- * av {@link userDeploymentMatchSql} og må stemme overens med tellingene
- * i Slack home tab og {@link getDeploymentCountByDeployer}.
- *
- * Støtter filtrering på målkobling, Dependabot-status, godkjenning og
- * applikasjonsnavn. Funksjonsnavnet beholdes (`*Deployer*`) av
- * historiske grunner — semantikken er «mine deployments».
- */
 export async function getDeployerDeploymentsPaginated(
   deployerUsername: string,
   page = 1,
@@ -1171,14 +1052,6 @@ export async function getDeployerDeploymentsPaginated(
   }
 }
 
-/**
- * Distinkte applikasjonsnavn for deployments hvor en GitHub-bruker er
- * involvert — enten som deployer eller som PR-skaper (case-insensitivt).
- * Brukes som datakilde til app-filteret på `/users/:username`-siden.
- *
- * Funksjonsnavnet beholdes (`*Deployer*`) av historiske grunner — se
- * {@link userDeploymentMatchSql} for matche-semantikken.
- */
 export async function getDeployerApps(deployerUsername: string): Promise<string[]> {
   const result = await pool.query(
     `SELECT DISTINCT ma.app_name
@@ -1192,9 +1065,6 @@ export async function getDeployerApps(deployerUsername: string): Promise<string[
   return result.rows.map((r: { app_name: string }) => r.app_name)
 }
 
-/**
- * Search result types for global search
- */
 export interface SearchResult {
   type: 'deployment' | 'user' | 'team' | 'app' | 'group' | 'dev_team'
   id?: number
@@ -1203,16 +1073,12 @@ export interface SearchResult {
   subtitle?: string
 }
 
-/**
- * Search deployments by ID, commit SHA, or deployer username
- */
 export async function searchDeployments(query: string, limit = 10): Promise<SearchResult[]> {
   const results: SearchResult[] = []
   const trimmedQuery = query.trim()
 
   if (!trimmedQuery) return results
 
-  // Check if query is a Nais deployment ID (starts with DI_)
   if (/^DI_/i.test(trimmedQuery)) {
     const naisResult = await pool.query(
       `SELECT d.id, d.nais_deployment_id, d.commit_sha, d.deployer_username, d.created_at,
@@ -1236,7 +1102,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     return results
   }
 
-  // Check if query is a deployment ID (pure number)
   if (/^\d+$/.test(trimmedQuery)) {
     const deploymentId = parseInt(trimmedQuery, 10)
     const result = await pool.query(
@@ -1260,7 +1125,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     return results
   }
 
-  // Check if query looks like a SHA (hex characters only, at least 3 chars for typeahead)
   const looksLikeSha = /^[0-9a-f]{3,40}$/i.test(trimmedQuery)
 
   if (looksLikeSha) {
@@ -1283,14 +1147,11 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
         subtitle: `${row.app_name} • ${row.deployer_username || 'ukjent'}`,
       })
     }
-    // If we found SHA matches, return them (don't mix with user results)
     if (results.length > 0) {
       return results
     }
   }
 
-  // Otherwise, search by deployer username OR user mapping fields (nav_ident, nav_email, display_name, slack_member_id)
-  // Also search for teams, applications, and application groups
   const [userResult, teamResult, appResult, groupResult, devTeamResult] = await Promise.all([
     pool.query(
       `SELECT DISTINCT d.deployer_username, 
@@ -1355,7 +1216,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     ),
   ])
 
-  // Application groups first
   for (const row of groupResult.rows) {
     const appNames: string[] = row.app_names ?? []
     const maxShown = 3
@@ -1370,7 +1230,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     })
   }
 
-  // Dev teams
   for (const row of devTeamResult.rows) {
     results.push({
       type: 'dev_team',
@@ -1390,7 +1249,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     })
   }
 
-  // Deduplicate apps across environments — show one result per app_name+team_slug
   const seenApps = new Set<string>()
   for (const row of appResult.rows) {
     const key = `${row.team_slug}/${row.app_name}`
@@ -1404,7 +1262,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     })
   }
   for (const row of userResult.rows) {
-    // Show the most relevant matching field in the subtitle
     let matchInfo = ''
     const queryLower = trimmedQuery.toLowerCase()
     if (row.display_name?.toLowerCase().includes(queryLower)) {
@@ -1442,10 +1299,6 @@ export interface AppWithIssues {
   baseline_action_count: number
 }
 
-// =============================================================================
-// Deployment Status History
-// =============================================================================
-
 export interface StatusTransition {
   id: number
   deployment_id: number
@@ -1456,10 +1309,6 @@ export interface StatusTransition {
   details: Record<string, unknown> | null
   created_at: Date
 }
-
-// =============================================================================
-// Reminder queries
-// =============================================================================
 
 export interface AppReminderConfig {
   id: number
@@ -1472,7 +1321,6 @@ export interface AppReminderConfig {
   reminder_last_sent_at: Date | null
 }
 
-// Re-exports from submodules
 export { getAppChangeOriginCoverage, getLastDeploymentSummary } from './deployments/api.server'
 export { getPersonalDeploymentsMissingGoalLinks } from './deployments/home.server'
 export {

@@ -1,16 +1,3 @@
-/**
- * Integration tests for RBAC authorization helpers.
- *
- * Tests cover:
- * - Section role assignment authorization (admin-only)
- * - Team role assignment authorization (admin, section leaders, produktleder)
- * - Deployment authorization via all 3 app linkage paths
- * - Deviation authorization (produktleder-only)
- * - Team administration authorization
- * - Team membership checks
- * - Soft-delete behavior (deleted roles should not grant access)
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -51,8 +38,6 @@ afterEach(async () => {
   await truncateAllTables(pool)
 })
 
-// ─── Test helpers ────────────────────────────────────────────────────────────
-
 function defined<T>(value: T | null | undefined): T {
   if (value == null) throw new Error('Expected value to be defined')
   return value
@@ -78,8 +63,6 @@ function makeUser(navIdent = 'B654321'): UserIdentity {
   return { navIdent, role: 'user', entraGroups: [] }
 }
 
-// ─── Section role assignment authorization ───────────────────────────────────
-
 describe('canAssignSectionRole', () => {
   it('allows admin', () => {
     expect(canAssignSectionRole(makeAdmin())).toBe(true)
@@ -89,8 +72,6 @@ describe('canAssignSectionRole', () => {
     expect(canAssignSectionRole(makeUser())).toBe(false)
   })
 })
-
-// ─── Team role assignment authorization ──────────────────────────────────────
 
 describe('canAssignTeamRole', () => {
   it('allows admin for any role', async () => {
@@ -193,8 +174,6 @@ describe('canAssignTeamRole', () => {
   })
 })
 
-// ─── Deployment authorization ────────────────────────────────────────────────
-
 describe('canApproveDeployment', () => {
   it('allows admin', async () => {
     const _sectionId = await seedSection(pool, 'pensjon')
@@ -208,7 +187,6 @@ describe('canApproveDeployment', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
 
-    // Link app to team
     await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
       teamId,
       appId,
@@ -225,7 +203,6 @@ describe('canApproveDeployment', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'my-nais-team', appName: 'myapp', environment: 'prod-gcp' })
 
-    // Link nais team to dev team
     await pool.query('INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug) VALUES ($1, $2)', [
       teamId,
       'my-nais-team',
@@ -242,7 +219,6 @@ describe('canApproveDeployment', () => {
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
 
-    // Create application group and link
     const {
       rows: [group],
     } = await pool.query<{ id: number }>('INSERT INTO application_groups (name) VALUES ($1) RETURNING id', ['my-group'])
@@ -293,7 +269,6 @@ describe('canApproveDeployment', () => {
     const team2 = await seedDevTeam(pool, 'team-2', 'Team 2', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
 
-    // Both teams manage the app
     await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
       team1,
       appId,
@@ -303,7 +278,6 @@ describe('canApproveDeployment', () => {
       appId,
     ])
 
-    // User is only in team2
     const dev = makeUser('D888888')
     await assignTeamRole(dev.navIdent, team2, 'utvikler', 'admin')
 
@@ -324,7 +298,6 @@ describe('canApproveDeployment', () => {
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
     expect(await canApproveDeployment(dev, appId)).toBe(true)
 
-    // Soft-delete the linkage
     await pool.query(
       "UPDATE dev_team_applications SET deleted_at = NOW(), deleted_by = 'admin' WHERE dev_team_id = $1 AND monitored_app_id = $2",
       [teamId, appId],
@@ -345,13 +318,10 @@ describe('canApproveDeployment', () => {
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
     expect(await canApproveDeployment(dev, appId)).toBe(true)
 
-    // Deactivate the team
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [teamId])
     expect(await canApproveDeployment(dev, appId)).toBe(false)
   })
 })
-
-// ─── Deviation authorization ─────────────────────────────────────────────────
 
 describe('canDeviateDeployment', () => {
   it('allows admin', async () => {
@@ -405,8 +375,6 @@ describe('canDeviateDeployment', () => {
   })
 })
 
-// ─── Team administration ─────────────────────────────────────────────────────
-
 describe('canAdministerTeam', () => {
   it('allows admin', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
@@ -445,8 +413,6 @@ describe('canAdministerTeam', () => {
   })
 })
 
-// ─── Team membership ─────────────────────────────────────────────────────────
-
 describe('isTeamMember', () => {
   it('returns true for member with active role', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
@@ -469,8 +435,6 @@ describe('isTeamMember', () => {
     expect(await isTeamMember('X999999', teamId)).toBe(false)
   })
 })
-
-// ─── CRUD operations ─────────────────────────────────────────────────────────
 
 describe('role assignment CRUD', () => {
   it('assigns and retrieves section roles', async () => {
@@ -536,7 +500,6 @@ describe('role assignment CRUD', () => {
     const removed = await removeTeamRole(defined(assignment).id, 'remover-ident')
     expect(removed).toBe(true)
 
-    // Verify the row still exists with deletion info
     const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM dev_team_role_assignments WHERE id = $1', [
       defined(assignment).id,
     ])
@@ -560,7 +523,6 @@ describe('role assignment CRUD', () => {
     await assignTeamRole('U111111', teamId, 'utvikler', 'admin')
     await assignTeamRole('U222222', teamId, 'produktleder', 'admin')
 
-    // Create user mappings
     await seedGithubAccount('U111111', 'user1', 'User One')
     await seedGithubAccount('U222222', 'user2', 'User Two')
 
@@ -627,9 +589,7 @@ describe('role assignment CRUD', () => {
     await assignTeamRole('U777777', team2, 'utvikler', 'admin')
     await seedGithubAccount('U777777', 'user7', 'User Seven')
 
-    // Soft-delete role in team1
     await removeTeamRole(defined(assignment1).id, 'admin')
-    // Deactivate team2
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [team2])
 
     const teams = await getDevTeamsForGithubUsernamesByRole(['user7'])
@@ -645,13 +605,10 @@ describe('role assignment CRUD', () => {
 
     const members = await getDevTeamMembersWithRoles(teamId)
     expect(members).toHaveLength(2)
-    // produktleder sorts before utvikler alphabetically
     expect(members[0].role).toBe('produktleder')
     expect(members[1].role).toBe('utvikler')
   })
 })
-
-// ─── canAccessTeamAdmin ──────────────────────────────────────────────────────
 
 describe('canAccessTeamAdmin', () => {
   it('allows admin', async () => {
@@ -725,8 +682,6 @@ describe('canAccessTeamAdmin', () => {
   })
 })
 
-// ─── getTeamRoleAssignmentById ───────────────────────────────────────────────
-
 describe('getTeamRoleAssignmentById', () => {
   it('returns assignment when id and devTeamId match', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
@@ -763,8 +718,6 @@ describe('getTeamRoleAssignmentById', () => {
     expect(result).toBeNull()
   })
 })
-
-// ─── resolveTeamAdminCapabilities ────────────────────────────────────────────
 
 describe('resolveTeamAdminCapabilities', () => {
   it('returns canAccess=true, canAdmin=true for admin', async () => {
@@ -828,8 +781,6 @@ describe('resolveTeamAdminCapabilities', () => {
     expect(result).toEqual({ canAccess: false, canAdmin: false })
   })
 })
-
-// ─── Deployment capabilities (single-pass) ──────────────────────────────────
 
 describe('resolveDeploymentCapabilities', () => {
   it('grants all capabilities to admin', async () => {
@@ -943,7 +894,6 @@ describe('resolveDeploymentCapabilities', () => {
     const dev = makeUser('D444444')
     const assignment = await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
 
-    // Verify access before removal
     expect((await resolveDeploymentCapabilities(dev, appId)).canApprove).toBe(true)
 
     await removeTeamRole(defined(assignment).id, 'admin')

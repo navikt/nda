@@ -34,7 +34,6 @@ interface AuditReportGenerateSectionProps {
   auditReports: AuditReportSummary[]
   auditStartYear?: number
   readinessData?: AuditReadinessCheck
-  /** The period key (e.g. "yearly:2025-01-01") that readinessData was checked for. */
   readinessPeriodKey?: string
   readinessUserMappings: UserLookupMap
   isCheckingReadiness: boolean
@@ -42,7 +41,6 @@ interface AuditReportGenerateSectionProps {
   pendingJobId: string | null
 }
 
-/** Returns "YYYY-MM" key for a completed monthly period. */
 function monthKey(period: ReportPeriod): string {
   return toDateString(period.startDate).slice(0, 7)
 }
@@ -63,7 +61,6 @@ export function AuditReportGenerateSection({
   const availablePeriods = getCompletedPeriods(periodType, new Date(), auditStartYear)
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0)
 
-  // All completed months, used as options for the custom period selectors
   const completedMonths = getCompletedPeriods('monthly', new Date(), auditStartYear)
   const latestMonthKey = completedMonths[0] ? monthKey(completedMonths[0]) : ''
   const earliestMonth = completedMonths.at(-1)
@@ -72,7 +69,6 @@ export function AuditReportGenerateSection({
   const [customFromKey, setCustomFromKey] = useState(earliestMonthKey)
   const [customToKey, setCustomToKey] = useState(latestMonthKey)
 
-  // Re-clamp custom keys if auditStartYear changes and the available months shrink
   // biome-ignore lint/correctness/useExhaustiveDependencies: completedMonths/keys are derived from auditStartYear
   useEffect(() => {
     if (completedMonths.length === 0) return
@@ -101,8 +97,6 @@ export function AuditReportGenerateSection({
   const existingReportForPeriod = selectedPeriod ? findExistingReportForPeriod(auditReports, selectedPeriod) : undefined
   const [supersedeReason, setSupersedeReason] = useState('')
 
-  // Reset supersede reason when period selection changes
-  // For custom periods the key must include period_end — same start, different end = different period
   const currentPeriodKey = selectedPeriod
     ? selectedPeriod.type === 'custom'
       ? `${selectedPeriod.type}:${toDateString(selectedPeriod.startDate)}:${toDateString(selectedPeriod.endDate)}`
@@ -113,7 +107,6 @@ export function AuditReportGenerateSection({
     setSupersedeReason('')
   }, [currentPeriodKey])
 
-  // Only show readiness data if it matches the currently selected period
   const readinessMatchesPeriod = readinessPeriodKey === currentPeriodKey
 
   return (

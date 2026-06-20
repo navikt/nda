@@ -33,7 +33,6 @@ export interface AppCardData {
   alertCount: number
   siblingEnvironments?: string[]
   groupName?: string
-  /** All apps in the group (including primary) — used to show all names when they differ */
   groupApps?: { app_name: string; environment_name: string }[]
 }
 
@@ -45,10 +44,6 @@ interface IssueBadgeProps {
   children: ReactNode
 }
 
-/**
- * Consistent badge used in AppCard tag rows.
- * Standardizes size, link wrapping, and styling across all issue indicators.
- */
 function IssueBadge({ to, icon, color, variant = 'outline', children }: IssueBadgeProps) {
   const tag = (
     <Tag data-color={color} variant={variant} size="xsmall" icon={icon}>
@@ -102,12 +97,6 @@ function getAppUrl(app: { team_slug: string; environment_name: string; app_name:
 interface AppCardProps {
   app: AppCardData
   showEnvironment?: boolean
-  /**
-   * Extra query string fragment appended to the deployment-list links rendered
-   * inside the card (the "uten opphav" and "mangler" tags). Used to preset
-   * the team filter — e.g. `team=mine` from /my-teams or `team=<slug>` from
-   * a dev-team page. Must NOT include a leading `?` or `&`.
-   */
   appendSearchParams?: string
 }
 
@@ -119,7 +108,6 @@ export function AppCard({ app, showEnvironment = true, appendSearchParams }: App
   const extraParams = appendSearchParams ? `&${appendSearchParams}` : ''
   const groupParam = app.groupName ? '&group=true' : ''
 
-  // Show all member app names when the group contains apps with different names
   const uniqueAppNames = app.groupApps ? [...new Set(app.groupApps.map((a) => a.app_name))] : []
   const hasDistinctNames = uniqueAppNames.length > 1
   const displayName = app.groupName ?? app.app_name

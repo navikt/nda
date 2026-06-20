@@ -1,6 +1,3 @@
-// This route provides app-scoped deployment view with proper breadcrumbs
-// Re-exports the deployment detail page with additional app context
-
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { requireParams } from '~/lib/route-params.server'
 import { default as DeploymentDetail, action as deploymentAction, loader as deploymentLoader } from '../deployments/$id'
@@ -14,18 +11,15 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  // Call the original deployment loader
   const result = await deploymentLoader({
     params: { id: deploymentId },
     request,
   } as Parameters<typeof deploymentLoader>[0])
 
-  // If it's a redirect response, return it as-is
   if (result instanceof Response) {
     return result
   }
 
-  // Add app context for breadcrumbs
   return {
     ...result,
     app,
@@ -38,7 +32,6 @@ export function meta({ data }: Route.MetaArgs) {
   return [{ title: deployment ? `Deployment #${deployment.id} - NDA` : 'Deployment' }]
 }
 
-// Wrap the action to pass deploymentId as id
 export async function action({ params, request }: Route.ActionArgs) {
   return deploymentAction({
     params: { id: params.deploymentId },

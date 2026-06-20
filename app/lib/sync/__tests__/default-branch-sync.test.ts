@@ -26,7 +26,7 @@ describe('syncDefaultBranchForApp', () => {
   })
 
   test('skips when last sync was within cooldown (24h)', async () => {
-    const recentSync = new Date(Date.now() - 1 * 60 * 60 * 1000) // 1h ago
+    const recentSync = new Date(Date.now() - 1 * 60 * 60 * 1000)
 
     await syncDefaultBranchForApp({
       monitoredAppId: 1,

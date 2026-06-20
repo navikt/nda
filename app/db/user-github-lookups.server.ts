@@ -1,7 +1,3 @@
-/**
- * GitHub account lookup and write functions backed by `user_github_accounts JOIN users`.
- */
-
 import { isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
@@ -9,14 +5,6 @@ import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 
-/**
- * Resolved GitHub account with associated user data.
- *
- * `account_deleted_at` reflects `user_github_accounts.deleted_at` — non-null
- * means the GitHub account link has been removed. Rows with a non-null
- * `account_deleted_at` are still returned so that historical deployments can
- * resolve display names even after an account is unlinked.
- */
 interface GithubUserLookup {
   github_username: string
   display_github_username: string | null
@@ -27,13 +15,6 @@ interface GithubUserLookup {
   account_deleted_at: Date | null
 }
 
-/**
- * Get a single user by GitHub username.
- *
- * Includes soft-deleted `user_github_accounts` rows so that historical
- * deployment lookups can still resolve a display name even after a GitHub
- * account has been unlinked.
- */
 export async function getGithubUserLookup(githubUsername: string): Promise<GithubUserLookup | null> {
   const result = await pool.query<GithubUserLookup>(
     `SELECT uga.github_username,
@@ -51,12 +32,6 @@ export async function getGithubUserLookup(githubUsername: string): Promise<Githu
   return result.rows[0] ?? null
 }
 
-/**
- * Get multiple users by GitHub username.
- *
- * Returns a Map keyed by the original identifier (preserving casing).
- * Includes soft-deleted `user_github_accounts` rows for historical lookups.
- */
 export async function getGithubUserLookups(githubUsernames: string[]): Promise<Map<string, GithubUserLookup>> {
   if (githubUsernames.length === 0) return new Map()
 
@@ -90,12 +65,6 @@ export async function getGithubUserLookups(githubUsernames: string[]): Promise<M
   return lookups
 }
 
-/**
- * Get the active GitHub account for a user identified by NAV-ident.
- *
- * Returns null if the user has no active (non-deleted) GitHub account linked.
- * When a user has multiple accounts, the most recently created one is returned.
- */
 export async function getActiveGithubAccountByNavIdent(
   navIdent: string,
 ): Promise<{ github_username: string; display_github_username: string | null } | null> {
@@ -110,12 +79,6 @@ export async function getActiveGithubAccountByNavIdent(
   return result.rows[0] ?? null
 }
 
-/**
- * Get a user by Slack member ID, including their active GitHub username if linked.
- *
- * Returns null if no active user with this Slack member ID exists.
- * When the user has multiple GitHub accounts, the most recently created active one is returned.
- */
 export async function getUserBySlackMemberId(
   slackMemberId: string,
 ): Promise<{ nav_ident: string; github_username: string | null } | null> {
@@ -137,12 +100,6 @@ export async function getUserBySlackMemberId(
   return result.rows[0] ?? null
 }
 
-/**
- * User record resolved from `users` + `user_github_accounts`.
- *
- * `github_username` is null when the user has no linked GitHub account.
- * Soft-deleted rows are included so historical deployment displays still work.
- */
 interface UserRecord {
   github_username: string | null
   display_github_username: string | null
@@ -152,16 +109,6 @@ interface UserRecord {
   slack_member_id: string | null
 }
 
-/**
- * Get a user by GitHub username or NAV-ident.
- *
- * Uses the identifier format to decide which table to query:
- * - NAV-ident (one letter + 6 digits): looks up `users` and joins the newest
- *   active GitHub account (if any).
- * - Anything else: treated as a GitHub username and looked up in
- *   `user_github_accounts` (including soft-deleted rows so historical
- *   deployments can still resolve display names).
- */
 export async function getUserByIdentifier(identifier: string): Promise<UserRecord | null> {
   if (isValidNavIdent(identifier)) {
     const result = await pool.query<UserRecord>(
@@ -200,18 +147,6 @@ export async function getUserByIdentifier(identifier: string): Promise<UserRecor
   return result.rows[0] ?? null
 }
 
-/**
- * Get multiple users by a mix of GitHub usernames and NAV-idents.
- *
- * Returns a Map keyed by the original identifier (preserving casing).
- * Soft-deleted users (users.deleted_at IS NOT NULL) are excluded, consistent
- * with getUserByIdentifier(). Soft-deleted account links (user_github_accounts.deleted_at)
- * are still searched when looking up by GitHub username.
- *
- * Both queries run for all identifiers regardless of format to handle GitHub
- * usernames that look like NAV-idents (e.g. "a123456"). NAV-ident results
- * take precedence; GitHub username results are used as fallback.
- */
 export async function getUsersByIdentifiers(identifiers: string[]): Promise<Map<string, UserRecord>> {
   if (identifiers.length === 0) return new Map()
 
@@ -273,12 +208,6 @@ export async function getUsersByIdentifiers(identifiers: string[]): Promise<Map<
   return mappings
 }
 
-/**
- * Shape returned by getAllUsersWithAccounts for admin list views.
- *
- * `github_username` is always set (INNER JOIN on user_github_accounts).
- * Users without a GitHub account appear in getUsersWithoutGithub() instead.
- */
 export interface UserWithAccount {
   github_username: string
   display_github_username: string | null
@@ -290,12 +219,6 @@ export interface UserWithAccount {
   updated_at: Date
 }
 
-/**
- * Get all active users that have at least one active GitHub account linked.
- *
- * Returns one row per active `user_github_accounts` entry so users with
- * multiple GitHub accounts appear multiple times.
- */
 export async function getAllUsersWithAccounts(): Promise<UserWithAccount[]> {
   const result = await pool.query<UserWithAccount>(
     `SELECT uga.github_username,
@@ -314,10 +237,6 @@ export async function getAllUsersWithAccounts(): Promise<UserWithAccount[]> {
   return result.rows
 }
 
-/**
- * Get GitHub usernames from deployments that don't have an active GitHub
- * account link in `user_github_accounts`. Excludes known bots.
- */
 export async function getUnmappedDeployers(): Promise<{ github_username: string; deployment_count: number }[]> {
   const result = await pool.query<{ github_username: string; deployment_count: string }>(`
     SELECT LOWER(d.deployer_username) AS github_username, COUNT(*) AS deployment_count
@@ -341,15 +260,6 @@ export async function getUnmappedDeployers(): Promise<{ github_username: string;
     }))
 }
 
-/**
- * Soft-delete a GitHub account link.
- *
- * The corresponding `users` row is left intact — the person still exists,
- * just without a GitHub account link.
- *
- * Returns true if a row was actually deleted, false if it was already deleted
- * or not found.
- */
 export async function softDeleteGithubAccount(
   githubUsername: string,
   deletedBy: string | null = null,
@@ -393,9 +303,6 @@ interface User {
   deleted_by: string | null
 }
 
-/**
- * Create or update a user in the `users` table.
- */
 export async function upsertUser(params: {
   navIdent: string
   displayName: string
@@ -428,14 +335,6 @@ export async function upsertUser(params: {
   return result.rows[0]
 }
 
-/**
- * Create or update a user and GitHub account link.
- *
- * `displayGithubUsername` preserves original casing for display:
- * - Pass a string to set/overwrite the display casing.
- * - Pass `null` to preserve the existing stored value (uses COALESCE in SQL).
- * - Omit to derive from `githubUsername` (uses original casing of that input).
- */
 export async function upsertUserAndGithubAccount(params: {
   githubUsername: string
   displayGithubUsername?: string | null
@@ -537,13 +436,6 @@ interface PopulateResult {
   errors: number
 }
 
-/**
- * Refresh the `users` table from the MS Graph API.
- *
- * For every active `users` row that has a nav_ident, looks up the user
- * in Graph and upserts the latest display_name, nav_email, and slack_member_id.
- * Idempotent — safe to run multiple times.
- */
 export async function populateUsersFromGraph(): Promise<PopulateResult> {
   const { rows } = await pool.query<{ nav_ident: string }>(
     `SELECT DISTINCT nav_ident FROM users WHERE deleted_at IS NULL`,
@@ -586,11 +478,6 @@ export async function populateUsersFromGraph(): Promise<PopulateResult> {
   return { success, skipped, errors }
 }
 
-/**
- * Get active users from the `users` table that have no linked GitHub account
- * in `user_github_accounts`. These are users added without a GitHub account
- * (e.g. produktledere).
- */
 export async function getUsersWithoutGithub(): Promise<
   { nav_ident: string; display_name: string; nav_email: string }[]
 > {
@@ -607,9 +494,6 @@ export async function getUsersWithoutGithub(): Promise<
   return result.rows
 }
 
-/**
- * Get a user from the `users` table by NAV-ident — excludes soft-deleted.
- */
 export async function getUserByNavIdent(navIdent: string): Promise<User | null> {
   const result = await pool.query<User>('SELECT * FROM users WHERE nav_ident = UPPER($1) AND deleted_at IS NULL', [
     navIdent,

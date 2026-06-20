@@ -10,9 +10,6 @@ export default meta
 
 type Story = StoryObj
 
-/**
- * MethodTag viser hvordan en deployment ble gjort (PR, Direct Push, Legacy)
- */
 export const MethodTagVariants: Story = {
   name: 'MethodTag - Alle varianter',
   render: () => (
@@ -25,9 +22,6 @@ export const MethodTagVariants: Story = {
   ),
 }
 
-/**
- * StatusTag viser godkjenningsstatus for en deployment
- */
 export const StatusTagApproved: Story = {
   name: 'StatusTag - Godkjent',
   render: () => <StatusTag four_eyes_status="approved" />,

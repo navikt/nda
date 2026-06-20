@@ -1,11 +1,3 @@
-/**
- * Integration test: Filtering deployments by goal objective ID.
- *
- * Covers the `goal_objective_id` filter on `getDeploymentsPaginated`,
- * verifying correct results for direct objective links, indirect links
- * via key results, and no duplicate rows when multiple links exist.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDeploymentsPaginated } from '~/db/deployments.server'
@@ -65,13 +57,11 @@ describe('getDeploymentsPaginated with goal_objective_id filter', () => {
     const dep1 = await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team', environment: 'prod' })
     const dep2 = await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team', environment: 'prod' })
 
-    // dep1 linked to objective A directly
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by)
        VALUES ($1, $2, 'manual', 'alice')`,
       [dep1, objectiveA.id],
     )
-    // dep2 linked to objective B directly
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by)
        VALUES ($1, $2, 'manual', 'bob')`,
@@ -91,7 +81,6 @@ describe('getDeploymentsPaginated with goal_objective_id filter', () => {
 
     const dep1 = await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team', environment: 'prod' })
 
-    // dep1 linked via key result belonging to objective A
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method, linked_by)
        VALUES ($1, $2, 'commit_keyword', 'system')`,
@@ -111,7 +100,6 @@ describe('getDeploymentsPaginated with goal_objective_id filter', () => {
 
     const dep1 = await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team', environment: 'prod' })
 
-    // dep1 linked both directly to objective A and via key result of objective A
     await pool.query(
       `INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method, linked_by)
        VALUES ($1, $2, 'manual', 'alice')`,
@@ -135,7 +123,6 @@ describe('getDeploymentsPaginated with goal_objective_id filter', () => {
   it('does not return unlinked deployments', async () => {
     const { appId, objectiveA } = await seedGoalStructure(pool)
 
-    // dep1 has no goal link
     await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team', environment: 'prod' })
 
     const result = await getDeploymentsPaginated({

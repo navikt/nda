@@ -17,13 +17,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const allSections = await getAllSectionsWithTeams()
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
 
-  // Get all dev teams and batch-compute stats with team-member filtering
   const { getAllDevTeams } = await import('~/db/dev-teams.server')
   const allDevTeams = await getAllDevTeams()
   const allDevTeamIds = allDevTeams.map((t) => t.id)
   const teamStatsMap = await getDevTeamStatsBatch(allDevTeamIds, ytdStart)
 
-  // Group dev teams by section_id
   const teamsBySection = new Map<number, typeof allDevTeams>()
   for (const team of allDevTeams) {
     const list = teamsBySection.get(team.section_id) ?? []
@@ -31,7 +29,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     teamsBySection.set(team.section_id, list)
   }
 
-  // Compute per-section stats by aggregating team stats
   const sections = allSections.map((s) => {
     const sectionTeams = teamsBySection.get(s.id) ?? []
     let totalDeployments = 0
@@ -57,7 +54,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   })
 
-  // Aggregate across all sections
   const aggregate = sections.reduce(
     (acc, s) => ({
       total_deployments: acc.total_deployments + s.stats.total_deployments,

@@ -1,23 +1,3 @@
-/**
- * Verification System
- *
- * This is the main entry point for the new verification system.
- * It orchestrates: Fetch → Store → Verify → Save Result
- *
- * Usage:
- * ```typescript
- * import { runVerification } from '~/lib/verification'
- *
- * const result = await runVerification(deploymentId, {
- *   commitSha: 'abc123',
- *   repository: 'owner/repo',
- *   environmentName: 'prod',
- *   baseBranch: 'main',
- *   monitoredAppId: 42,
- * })
- * ```
- */
-
 import { getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { pool } from '~/db/connection.server'
@@ -36,35 +16,15 @@ import { storeVerificationResult, updateDeploymentVerification } from './store-d
 import type { CompareData, PrCommit, PrMetadata, PrReview, VerificationInput, VerificationResult } from './types'
 import { verifyDeployment } from './verify'
 
-// Re-export individual modules
 export { fetchVerificationDataForAllDeployments } from './fetch-data.server'
 
-// Re-export types and constants for convenience
 export type {
   VerificationInput,
   VerificationResult,
 } from './types'
 
-// =============================================================================
-// Debug Mode
-// =============================================================================
-
-/**
- * Check if verification debug mode is enabled.
- * Set VERIFICATION_DEBUG=true to enable.
- */
 export const isVerificationDebugMode = process.env.VERIFICATION_DEBUG === 'true'
 
-// =============================================================================
-// Helpers
-// =============================================================================
-
-/**
- * Copy data-fetch artifacts (branchMismatch, detectedBranchName, detectedTitle)
- * from the input onto the result so they get persisted and surfaced to consumers.
- * These fields are not decisions made by verifyDeployment — they come from the
- * data-fetch phase and must be forwarded explicitly.
- */
 function applyPassthroughFields(result: VerificationResult, input: VerificationInput): void {
   if (input.branchMismatch) {
     result.branchMismatch = input.branchMismatch
@@ -77,11 +37,6 @@ function applyPassthroughFields(result: VerificationResult, input: VerificationI
   }
 }
 
-/**
- * Derive a title from the first commit message when no PR is present.
- * Takes only the first line, trims whitespace, and caps at 500 chars (VARCHAR(500) column limit).
- * Returns undefined for empty results so no blank title is persisted.
- */
 function deriveDetectedTitle(
   deployedPr: VerificationInput['deployedPr'],
   commitsBetween: VerificationInput['commitsBetween'],
@@ -91,10 +46,6 @@ function deriveDetectedTitle(
   if (!raw) return undefined
   return raw.split('\n')[0].trim().slice(0, 500) || undefined
 }
-
-// =============================================================================
-// Main Verification Function
-// =============================================================================
 
 interface RunVerificationOptions {
   commitSha: string
@@ -106,26 +57,12 @@ interface RunVerificationOptions {
   triggerUrl?: string | null
 }
 
-/**
- * Run the complete verification flow for a deployment.
- *
- * Flow:
- * 1. Fetch all data needed (from cache or GitHub)
- * 2. Store fetched data to database
- * 3. Run stateless verification
- * 4. Store verification result
- *
- * @param deploymentId - The deployment ID to verify
- * @param options - Verification options
- * @returns The verification result
- */
 export async function runVerification(
   deploymentId: number,
   options: RunVerificationOptions,
 ): Promise<VerificationResult> {
   logger.info(`🔍 Starting verification for deployment ${deploymentId}`)
 
-  // Step 1: Fetch all data needed for verification
   logger.info(`   📥 Fetching data from GitHub/cache...`)
   const input = await fetchVerificationData(
     deploymentId,
@@ -143,7 +80,6 @@ export async function runVerification(
   logger.info(`      - Commits between: ${input.commitsBetween.length}`)
   logger.info(`      - Previous deployment: ${input.previousDeployment?.id || 'none'}`)
 
-  // Step 2: Run stateless verification
   logger.info(`   🧪 Running verification logic...`)
   const result = verifyDeployment(input)
   applyPassthroughFields(result, input)
@@ -152,11 +88,8 @@ export async function runVerification(
   logger.info(`      - Status: ${result.status}`)
   logger.info(`      - Unverified commits: ${result.unverifiedCommits.length}`)
 
-  // Step 3: Store the result
   logger.info(`   💾 Storing verification result...`)
 
-  // Collect snapshot IDs from the fetched data
-  // In a full implementation, fetchVerificationData would return these
   const snapshotIds = {
     prSnapshotIds: [], // Would be populated by fetch-data
     commitSnapshotIds: [], // Would be populated by fetch-data
@@ -167,7 +100,6 @@ export async function runVerification(
     commitsBetween: input.commitsBetween,
   })
 
-  // Step 4: Propagate to sibling deployments in the same application group
   const propagated = await propagateVerificationToSiblings(
     deploymentId,
     result.status,
@@ -184,13 +116,6 @@ export async function runVerification(
   return result
 }
 
-// =============================================================================
-// Debug Verification (does NOT store result to deployment)
-// =============================================================================
-
-/**
- * Existing verification status from the deployment table
- */
 export interface ExistingVerificationStatus {
   status: string | null
   prNumber: number | null
@@ -199,9 +124,6 @@ export interface ExistingVerificationStatus {
   unverifiedCommits: unknown[]
 }
 
-/**
- * Result from debug verification - includes all data for comparison
- */
 export interface DebugVerificationResult {
   existingStatus: ExistingVerificationStatus
   fetchedData: VerificationInput
@@ -261,27 +183,19 @@ export interface DebugVerificationResult {
     statusChanged: boolean
     oldStatus: string | null
     newStatus: string
-    statusEquivalent: boolean // True if statuses differ in name only
+    statusEquivalent: boolean
   }
 }
 
-/**
- * Run verification in debug mode.
- *
- * This fetches data from GitHub (storing snapshots), runs verification,
- * but does NOT update the deployment record. Used for comparing V1 vs V2.
- */
 export async function runDebugVerification(
   deploymentId: number,
   options: RunVerificationOptions,
 ): Promise<DebugVerificationResult> {
   logger.info(`🔬 [DEBUG] Starting debug verification for deployment ${deploymentId}`)
 
-  // Step 1: Get existing status from deployment
   const existingStatus = await getExistingVerificationStatus(deploymentId)
   logger.info(`   📋 Existing status: ${existingStatus.status}`)
 
-  // Step 2: Fetch data from GitHub (this stores to snapshots table)
   const useCache = options.forceRefresh === false
   logger.info(`   📥 Fetching data${useCache ? ' (using cache if available)' : ' from GitHub'}...`)
   const fetchedData = await fetchVerificationData(
@@ -298,18 +212,14 @@ export async function runDebugVerification(
   logger.info(`      - Deployed PR: ${fetchedData.deployedPr?.number || 'none'}`)
   logger.info(`      - Commits between: ${fetchedData.commitsBetween.length}`)
 
-  // Step 3: Run verification (but don't store result)
   logger.info(`   🧪 Running verification logic...`)
   const newResult = verifyDeployment(fetchedData)
 
   logger.info(`   ✅ New verification result:`)
   logger.info(`      - Status: ${newResult.status}`)
 
-  // Step 4: Build comparison
-  // Normalize equivalent statuses for comparison
   const normalizeStatus = (status: string | null): string | null => {
     if (!status) return status
-    // These status pairs are semantically equivalent
     const equivalentStatuses: Record<string, string> = {
       approved_pr: 'approved',
       pending_approval: 'pending',
@@ -539,9 +449,6 @@ async function getDeploymentCreatedAt(deploymentId: number): Promise<Date | null
   return result.rows[0].created_at as Date
 }
 
-/**
- * Get the existing verification status from the deployment table
- */
 async function getExistingVerificationStatus(deploymentId: number): Promise<ExistingVerificationStatus> {
   const result = await pool.query(
     `SELECT 
@@ -575,26 +482,11 @@ async function getExistingVerificationStatus(deploymentId: number): Promise<Exis
   }
 }
 
-// =============================================================================
-// Reverification
-// =============================================================================
-
-/**
- * Re-run verification for a single deployment using cached GitHub data,
- * and apply the new result to the database.
- *
- * Returns the comparison, or null if the deployment was skipped:
- *   - missing GitHub compare snapshot
- *   - `manually_approved` (admin action — V2 cannot reproduce)
- *   - `baseline` (admin action — V2 cannot reproduce)
- *   - `legacy` (pre-audit historic data)
- */
 export async function reverifyDeployment(deploymentId: number): Promise<{
   changed: boolean
   oldStatus: string | null
   newStatus: string
 } | null> {
-  // Get deployment with app context
   const row = await pool.query(
     `SELECT
        d.id, d.commit_sha, d.four_eyes_status,
@@ -613,7 +505,6 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const dep = row.rows[0]
 
-  // Skip protected statuses (manually approved, baseline, legacy)
   if (isProtectedStatus(dep.four_eyes_status ?? '')) {
     return null
   }
@@ -636,8 +527,6 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   let input: VerificationInput
   const cacheBaseMismatch = previousDeployment && compareSnapshot.base_sha !== previousDeployment.commitSha
   if (cacheBaseMismatch) {
-    // Snapshot lookup is by head_sha only; a base mismatch means cache is for
-    // another deployment range and must not be reused.
     logger.warn(
       `reverifyDeployment(${dep.id}): cache snapshot base_sha ${compareSnapshot.base_sha} ≠ previousDeployment ${previousDeployment.commitSha} — refetching`,
     )
@@ -670,7 +559,6 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       }
     }
 
-    // Guard against missing compare metadata (v3 snapshots only have 'commits')
     const hasCompareMetadata = compareData.compare !== undefined
     input = {
       deploymentId: dep.id,
@@ -697,12 +585,9 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   const statusChanged = dep.four_eyes_status !== newResult.status
 
   if (statusChanged) {
-    // Full store: save verification run history + update deployment record
     await storeVerificationResult(dep.id, newResult, { prSnapshotIds: [], commitSnapshotIds: [] }, 'reverification')
-    // Propagate to sibling deployments in the same application group
     await propagateVerificationToSiblings(dep.id, newResult.status, dep.commit_sha, dep.monitored_app_id)
   } else {
-    // Metadata-only update: refresh title, PR data, unverified commits without creating history rows
     await updateDeploymentVerification(dep.id, newResult, 'reverification')
   }
 

@@ -13,7 +13,7 @@ describe('endOfDay', () => {
   it('preserves the date', () => {
     const result = endOfDay(new Date('2026-04-30'))
     expect(result.getFullYear()).toBe(2026)
-    expect(result.getMonth()).toBe(3) // April is 3 (zero-indexed)
+    expect(result.getMonth()).toBe(3)
     expect(result.getDate()).toBe(30)
   })
 

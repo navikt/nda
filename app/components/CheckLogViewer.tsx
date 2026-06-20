@@ -52,7 +52,6 @@ export function CheckLogViewer({ owner, repo, jobId, appSlug, conclusion }: Chec
     }
   }
 
-  // Auto-download when logs arrive after clicking download
   if (pendingDownload && fetcher.data?.logs) {
     setPendingDownload(false)
     triggerDownload(fetcher.data.logs)
