@@ -1,12 +1,3 @@
-/**
- * API: List audit reports for an application
- *
- * Returns all active (non-archived, non-superseded) reports.
- * Secured with M2M token validation.
- *
- * GET /api/v1/apps/:team/:env/:app/audit-reports
- */
-
 import { getActiveReportsForAppM2M } from '~/db/audit-reports.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { buildAppMetadata } from '~/lib/api/app-metadata.server'

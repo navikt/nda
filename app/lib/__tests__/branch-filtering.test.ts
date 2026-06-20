@@ -1,18 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-/**
- * Tests for branch filtering in PR lookups.
- *
- * When a commit exists in multiple PRs (e.g., one to a feature branch, one to main),
- * we should only consider PRs targeting the configured default branch (usually main).
- *
- * Test Case: PR #18316 (pensjon-pen)
- * - Commits were originally authored in feature branch PRs (#18333, #18339, #18346)
- * - Those feature branch PRs targeted a shared feature branch, not main
- * - PR #18316 merged the shared feature branch into main
- * - When verifying, we should only use PR #18316 (targets main), not the feature PRs
- */
-
 const MAIN_PR = {
   number: 18316,
   title: 'Feature/integration',
@@ -37,7 +24,6 @@ const MAIN_PR = {
   ],
 }
 
-// Feature branch PRs that should be filtered out (they don't target main)
 const FEATURE_BRANCH_PRS = [
   {
     number: 18333,
@@ -76,12 +62,10 @@ const FEATURE_BRANCH_PRS = [
   },
 ]
 
-// All PRs that GitHub API would return for a commit lookup
-const ALL_PRS_FOR_COMMIT_1 = [FEATURE_BRANCH_PRS[0], MAIN_PR] // Returns both feature PR and main PR
+const ALL_PRS_FOR_COMMIT_1 = [FEATURE_BRANCH_PRS[0], MAIN_PR]
 
 describe('Branch Filtering', () => {
   describe('filterPRsByBaseBranch', () => {
-    // Simulate the filtering logic from getPullRequestForCommit
     function filterPRsByBaseBranch(
       prs: Array<{ number: number; base_ref: string }>,
       baseBranch: string,
@@ -103,16 +87,13 @@ describe('Branch Filtering', () => {
     })
 
     it('should return all PRs if no base branch filter is applied', () => {
-      const filtered = filterPRsByBaseBranch(ALL_PRS_FOR_COMMIT_1, '') // No filter
+      const filtered = filterPRsByBaseBranch(ALL_PRS_FOR_COMMIT_1, '')
 
-      // When baseBranch is empty, we'd want all PRs (default behavior)
-      // But our implementation filters, so empty string matches nothing
       expect(filtered).toHaveLength(0)
     })
   })
 
   describe('verifyFourEyesFromPrData', () => {
-    // Simulate the verifyFourEyesFromPrData function
     function verifyFourEyesFromPrData(prData: {
       creator?: { username: string }
       reviewers?: Array<{ username: string; state: string; submitted_at: string }>
@@ -240,7 +221,6 @@ describe('Branch Filtering', () => {
     })
 
     it('should find commits in main PR even if they were originally in feature branch PRs', () => {
-      // Commit-1 exists in both PR #18333 (feature) and PR #18316 (main)
       const commitSha = 'commit-1'
 
       const featurePrContainsCommit = FEATURE_BRANCH_PRS[0].commits.some((c) => c.sha === commitSha)
@@ -249,7 +229,6 @@ describe('Branch Filtering', () => {
       expect(featurePrContainsCommit).toBe(true)
       expect(mainPrContainsCommit).toBe(true)
 
-      // When filtering by base branch, only main PR should be considered
       const prsContainingCommit = [...FEATURE_BRANCH_PRS, MAIN_PR].filter((pr) =>
         pr.commits.some((c) => c.sha === commitSha),
       )

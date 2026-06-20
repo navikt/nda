@@ -24,7 +24,6 @@ export function meta(_args: Route.MetaArgs) {
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  // Import here to avoid circular dependency issues
   const { pool } = await import('~/db/connection.server')
   const sectionsResult = await pool.query<Section>('SELECT * FROM sections WHERE is_active = true ORDER BY name')
   const sections = sectionsResult.rows

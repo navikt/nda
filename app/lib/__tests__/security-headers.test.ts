@@ -111,9 +111,7 @@ describe('createSecurityHeadersMiddleware', () => {
   it('CSP nonce has at least 128 bits of entropy (base64-encoded)', () => {
     const { locals } = callMiddleware({ isProd: true })
     const nonce = locals.cspNonce as string
-    // 16 bytes → base64 length 24 (with padding); we accept anything >= 22
     expect(nonce.length).toBeGreaterThanOrEqual(22)
-    // Must be base64-y so it's safe to embed as `'nonce-…'` in the CSP header
     expect(nonce).toMatch(/^[A-Za-z0-9+/]+=*$/)
   })
 })

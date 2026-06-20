@@ -1,11 +1,3 @@
-/**
- * Integration tests for audit report superseding.
- *
- * Verifies that when a new report is generated for a period that already has
- * an active report, the old report is marked as superseded and the new one
- * becomes the active report.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -47,7 +39,6 @@ describe('audit report superseding', () => {
     const periodStart = new Date('2025-01-01')
     const periodEnd = new Date('2025-12-31')
 
-    // Create first report
     const report1 = await saveAuditReport({
       monitoredAppId: appId,
       appName: 'app-a',
@@ -65,10 +56,8 @@ describe('audit report superseding', () => {
 
     expect(report1.id).toBeDefined()
 
-    // Verify the period has an active report
     expect(await hasActiveReportForPeriod(appId, 'yearly', periodStart, periodEnd)).toBe(true)
 
-    // Create second report for same period with supersede reason
     const report2 = await saveAuditReport({
       monitoredAppId: appId,
       appName: 'app-a',
@@ -87,7 +76,6 @@ describe('audit report superseding', () => {
 
     expect(report2.id).not.toBe(report1.id)
 
-    // Verify old report is superseded
     const { rows: allReports } = await pool.query(
       'SELECT id, superseded_at, superseded_by, supersede_reason, superseded_by_report_id FROM audit_reports WHERE id = $1',
       [report1.id],
@@ -97,16 +85,13 @@ describe('audit report superseding', () => {
     expect(allReports[0].supersede_reason).toBe('Korrigert etter oppdaterte verifiseringsdata')
     expect(allReports[0].superseded_by_report_id).toBe(report2.id)
 
-    // Verify new report is not superseded
     const { rows: newReport } = await pool.query('SELECT superseded_at FROM audit_reports WHERE id = $1', [report2.id])
     expect(newReport[0].superseded_at).toBeNull()
 
-    // Verify only active report appears in public view
     const publicReports = await getAuditReportsForApp(appId)
     expect(publicReports).toHaveLength(1)
     expect(publicReports[0].id).toBe(report2.id)
 
-    // Verify both appear in admin view
     const adminReports = await getAuditReportsForAppAdmin(appId)
     expect(adminReports).toHaveLength(2)
   })
@@ -121,7 +106,6 @@ describe('audit report superseding', () => {
 
     const periodStart = new Date('2025-01-01')
 
-    // Create yearly report
     await saveAuditReport({
       monitoredAppId: appId,
       appName: 'app-c',
@@ -137,7 +121,6 @@ describe('audit report superseding', () => {
       generatedBy: 'S111111',
     })
 
-    // Create tertiary report for same start date — should NOT supersede the yearly
     await saveAuditReport({
       monitoredAppId: appId,
       appName: 'app-c',
@@ -153,7 +136,6 @@ describe('audit report superseding', () => {
       generatedBy: 'S222222',
     })
 
-    // Both should be active
     const { rows } = await pool.query(
       'SELECT id, period_type, superseded_at FROM audit_reports WHERE monitored_app_id = $1 ORDER BY id',
       [appId],

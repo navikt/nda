@@ -4,10 +4,6 @@ import type { SyncJobType } from '~/db/sync-job-types'
 import { logSyncJobMessage } from '~/db/sync-jobs.server'
 import { getTraceId } from '~/lib/tracing.server'
 
-// =============================================================================
-// Job Context via AsyncLocalStorage
-// =============================================================================
-
 interface JobContext {
   jobId: number
   jobType: SyncJobType
@@ -17,11 +13,6 @@ interface JobContext {
 
 const jobContextStorage = new AsyncLocalStorage<JobContext>()
 
-/**
- * Run a function within a sync job context.
- * All logger calls within this context will also write to the job's DB log,
- * and will include job_id, job_type and app_id as structured fields in Winston.
- */
 export function runWithJobContext<T>(
   jobId: number,
   jobType: SyncJobType,
@@ -41,10 +32,6 @@ function getJobMeta(): Record<string, unknown> {
   return ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
 }
 
-// =============================================================================
-// Winston Configuration
-// =============================================================================
-
 const isProd = process.env.NODE_ENV === 'production'
 
 const applicationVersion = typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : 'unknown'
@@ -58,10 +45,6 @@ const winstonLogger = winston.createLogger({
   transports: [new winston.transports.Console()],
 })
 
-// =============================================================================
-// Dual Logger (console + DB when in job context)
-// =============================================================================
-
 function stripEmoji(message: string): string {
   return message.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*/gu, '').trim()
 }
@@ -71,21 +54,11 @@ function logToDb(level: 'info' | 'warn' | 'error' | 'debug', message: string, de
   if (!ctx) return
   if (level === 'debug' && !ctx.debug) return
 
-  // Fire-and-forget to avoid slowing down the sync loop
   logSyncJobMessage(ctx.jobId, level, stripEmoji(message), details).catch(() => {})
 }
 
-// =============================================================================
-// Outgoing HTTP Logging
-// =============================================================================
-
 type OutgoingHttpArea = 'github' | 'slack' | 'microsoft_graph' | 'nais_auth' | 'nais_graphql'
 
-/**
- * Log a structured entry for an outgoing HTTP request.
- * Always sets log_type: 'outgoing_http' — use this field in ELK to filter all outgoing calls.
- * Query strings are never included in `path` to avoid logging user data.
- */
 export function logOutgoingHttp(details: {
   area: OutgoingHttpArea
   method: string
@@ -96,30 +69,20 @@ export function logOutgoingHttp(details: {
   error?: string
   [key: string]: unknown
 }): void {
-  // log_type is set last so callers cannot accidentally override it via the index signature
   logger.info('Outgoing HTTP request', { ...details, log_type: 'outgoing_http' })
 }
 
-/** Parse host and pathname from a URL that may be a string or URL object. */
 function parseUrl(url: string | URL): { hostname: string; pathname: string } {
   try {
     const parsed = new URL(url)
     return { hostname: parsed.hostname, pathname: parsed.pathname }
   } catch {
-    // Relative URL or unparseable — log what we can
     const str = url.toString()
     const pathOnly = str.split('?')[0]
     return { hostname: '(relative)', pathname: pathOnly }
   }
 }
 
-/**
- * Drop-in replacement for `fetch` that logs the request and response as a
- * structured outgoing HTTP entry. Query strings are stripped from the logged
- * path to avoid capturing user-supplied data (e.g. Graph $filter values).
- * Accepts `RequestInfo | URL` to match the native fetch signature exactly,
- * including `Request` objects from library adapters (e.g. graphql-request).
- */
 export async function fetchWithLogging(
   area: OutgoingHttpArea,
   url: RequestInfo | URL,

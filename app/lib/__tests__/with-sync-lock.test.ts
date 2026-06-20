@@ -1,13 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
-// Mock the DB sync-jobs module
 vi.mock('~/db/sync-jobs.server', () => ({
   acquireSyncLock: vi.fn(),
   releaseSyncLock: vi.fn(),
   logSyncJobMessage: vi.fn(),
 }))
 
-// Mock the logger module
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   runWithJobContext: vi.fn((_lockId: number, _jobType: string, _appId: number, _verbose: boolean, fn: () => unknown) =>

@@ -4,15 +4,6 @@ interface AppWithGroup extends AppCardData {
   application_group_id?: number | null
 }
 
-/**
- * Group app cards by application_group_id.
- * Apps in the same group are merged into a single card with aggregated stats
- * and a list of sibling environments.
- * Apps without a group are returned as-is.
- *
- * @param groupNames Optional map from group ID → display name. When provided,
- *   the merged card's `groupName` is set so the UI can show the group label.
- */
 export function groupAppCards(apps: AppWithGroup[], groupNames?: Map<number, string>): AppCardData[] {
   const grouped = new Map<number, AppWithGroup[]>()
   const ungrouped: AppCardData[] = []
@@ -44,7 +35,6 @@ export function groupAppCards(apps: AppWithGroup[], groupNames?: Map<number, str
       continue
     }
 
-    // Use the first app as the "primary" — merge stats from siblings
     const primary = groupApps[0]
     const siblingEnvs = groupApps.slice(1).map((a) => a.environment_name)
 
@@ -59,7 +49,6 @@ export function groupAppCards(apps: AppWithGroup[], groupNames?: Map<number, str
 
     const totalAlerts = groupApps.reduce((sum, a) => sum + a.alertCount, 0)
 
-    // Collect all member apps for display when names differ
     const allGroupApps = groupApps.map((a) => ({
       app_name: a.app_name,
       environment_name: a.environment_name,

@@ -27,10 +27,6 @@ interface CacheCheckLogsResult {
   }
 }
 
-/**
- * Find recent deployments with completed checks whose logs haven't been cached yet.
- * Limits to deployments from the last 7 days to stay within API quotas.
- */
 async function getUncachedChecks(monitoredAppId: number): Promise<{
   checks: CheckToCache[]
   diagnostics: CacheCheckLogsResult['diagnostics']
@@ -146,10 +142,6 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
   return { checks, diagnostics }
 }
 
-/**
- * Cache logs for all completed checks for a specific app to GCS.
- * Returns the number of logs successfully cached.
- */
 export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheckLogsResult> {
   if (!isGcsConfigured()) {
     return {
@@ -179,7 +171,6 @@ export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheck
 
   for (const check of checks) {
     try {
-      // Skip if already in GCS
       if (await logExists(check.owner, check.repo, check.check_id)) {
         await markLogCached(check.deployment_id, check.check_id)
         cached++
@@ -198,7 +189,6 @@ export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheck
     } catch (error) {
       const is404 = error instanceof Error && 'status' in error && (error as { status: number }).status === 404
       if (is404) {
-        // Log not available on GitHub (expired or not generated) — mark as cached to skip future retries
         await markLogCached(check.deployment_id, check.check_id)
         logger.info(
           `Log not found (404) for ${check.owner}/${check.repo} check ${check.check_name} (${check.check_id}) — marked as cached`,
@@ -214,9 +204,6 @@ export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheck
   return { cached, diagnostics }
 }
 
-/**
- * Mark a check's log as cached in the deployment's github_pr_data.
- */
 async function markLogCached(deploymentId: number, checkId: number): Promise<void> {
   await pool.query(
     `UPDATE deployments

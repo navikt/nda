@@ -30,13 +30,11 @@ describe('commits', () => {
   })
 
   it('upsert with ON CONFLICT updates fields using COALESCE', async () => {
-    // Insert initial commit with pr_approved = null
     await pool.query(
       `INSERT INTO commits (sha, repo_owner, repo_name, author_username, message, is_merge_commit, parent_shas)
        VALUES ('sha1', 'navikt', 'repo', 'alice', 'initial', false, '[]')`,
     )
 
-    // Upsert with pr verification data
     await pool.query(
       `INSERT INTO commits (sha, repo_owner, repo_name, author_username, message, is_merge_commit, parent_shas,
          pr_approved, pr_approval_reason, original_pr_number, updated_at)
@@ -61,7 +59,6 @@ describe('commits', () => {
        VALUES ('sha2', 'navikt', 'repo', 'bob', 'existing', false, '[]', true, 'review')`,
     )
 
-    // Upsert with pr_approved = null — should NOT overwrite existing true
     await pool.query(
       `INSERT INTO commits (sha, repo_owner, repo_name, author_username, message, is_merge_commit, parent_shas, updated_at)
        VALUES ('sha2', 'navikt', 'repo', 'bob', 'existing', false, '[]', NOW())
@@ -81,7 +78,6 @@ describe('commits', () => {
       `INSERT INTO commits (sha, repo_owner, repo_name, message, is_merge_commit, parent_shas)
        VALUES ('dup', 'navikt', 'repo', 'first', false, '[]')`,
     )
-    // Direct insert without ON CONFLICT should fail
     await expect(
       pool.query(
         `INSERT INTO commits (sha, repo_owner, repo_name, message, is_merge_commit, parent_shas)

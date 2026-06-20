@@ -45,7 +45,6 @@ export interface BoardObjectiveProgress {
 
 interface BoardProgressResult {
   objectives: BoardObjectiveProgress[]
-  /** Total distinct deployments linked to any objective/KR on the board (no double-counting) */
   totalDistinctDeployments: number
 }
 
@@ -63,10 +62,6 @@ interface DevTeamSummaryStats {
   apps_with_issues: number
 }
 
-/**
- * Get overall section stats using section_teams for the full picture.
- * This includes ALL deployments for nais teams in the section, regardless of dev team assignment.
- */
 export async function getSectionOverallStats(
   sectionId: number,
   startDate?: Date,
@@ -107,12 +102,6 @@ export async function getSectionOverallStats(
   }
 }
 
-/**
- * Get dashboard stats for all dev teams in a section within a date range.
- * The per-team scope is the **union** of direct app links
- * (dev_team_applications) and nais team links (dev_team_nais_teams), so a
- * deployment is counted if it matches either side.
- */
 export async function getSectionDashboardStats(
   sectionId: number,
   startDate?: Date,
@@ -173,35 +162,6 @@ export async function getSectionDashboardStats(
   }))
 }
 
-/**
- * Get summary stats for dev team(s).
- *
- * Operates in two modes depending on whether `devTeamId` is provided:
- *
- * ## Board-based mode (when `devTeamId` is set)
- * A deployment belongs to the team if:
- * 1. It is linked (via deployment_goal_links) to an active objective/KR on one
- *    of the team's active boards, OR
- * 2. It is NOT linked to any active board and the deployer/PR-creator is a team
- *    member (identified via `deployerUsernames`)
- *
- * When `devTeamId` is an array, boards from ALL provided teams are considered
- * and deployments are deduplicated (counted once even if linked to multiple
- * teams' boards). This is used by `/my-teams`.
- *
- * `deployerUsernames` is optional in this mode — if undefined/empty, only
- * board-linked deployments are counted (the unlinked-member path is skipped).
- *
- * ## Legacy deployer-based mode (when `devTeamId` is omitted)
- * Falls back to counting all deployments on team apps filtered by deployer
- * usernames. Used by the Slack home tab where board context is unavailable.
- *
- * @param naisTeamSlugs - NAIS team slugs that define app ownership
- * @param directAppIds - Additional directly-linked app IDs
- * @param startDate - Optional start date filter (e.g. YTD)
- * @param deployerUsernames - Team member GitHub usernames (for unlinked-member path)
- * @param devTeamId - Single or multiple dev team IDs to enable board-based counting
- */
 export async function getDevTeamSummaryStats(
   naisTeamSlugs: string[],
   directAppIds?: number[],
@@ -214,7 +174,6 @@ export async function getDevTeamSummaryStats(
   const hasDeployerFilter = deployerUsernames !== undefined
   const params: unknown[] = [naisTeamSlugs, ids, startDate ?? null]
 
-  // If we have devTeamId(s), use board-based counting
   const devTeamIds = devTeamId !== undefined ? (Array.isArray(devTeamId) ? devTeamId : [devTeamId]) : undefined
   if (devTeamIds !== undefined) {
     params.push(devTeamIds)
@@ -320,7 +279,6 @@ export async function getDevTeamSummaryStats(
     }
   }
 
-  // Fallback: original deployer-based logic when no devTeamId provided
   const deployerFilterClause = hasDeployerFilter ? ` AND ${userDeploymentMatchAnySql(4, 'd')}` : ''
   if (hasDeployerFilter) params.push(lowerUsernames(deployerUsernames))
 
@@ -385,17 +343,6 @@ export async function getDevTeamSummaryStats(
   }
 }
 
-/**
- * Get objective progress for a board — how many deployments are linked to each objective/key result.
- *
- * When `deployerUsernames` is provided, only deployments made by those users
- * (deployer or PR creator) are counted. This keeps counts consistent with the
- * team-member-filtered stats shown on team pages and section pages.
- *
- * Implementation: 3 queries total (objectives, all KR-linked deployment
- * counts via ANY($1::int[]), all objective-linked deployment counts via
- * ANY($1::int[])) regardless of objective/key-result count.
- */
 export async function getBoardObjectiveProgress(
   boardId: number,
   deployerUsernames?: string[],
@@ -410,7 +357,6 @@ export async function getBoardObjectiveProgress(
   if (objectiveIds.length === 0) return { objectives: [], totalDistinctDeployments: 0 }
 
   const hasDeployerFilter = deployerUsernames !== undefined && deployerUsernames.length > 0
-  // Always join deployments when we need deployer filter OR date filter
   const needsDeploymentJoin = hasDeployerFilter || options?.startDate
   const deployerJoin = needsDeploymentJoin ? ' JOIN deployments d ON d.id = dgl.deployment_id' : ''
 
@@ -429,11 +375,6 @@ export async function getBoardObjectiveProgress(
     paramIndex++
   }
 
-  // For the KR query we need all key results (even those with 0 links).
-  // When filtering by deployer or date, the deployment join and filters
-  // must be inside the LEFT JOIN condition — otherwise the INNER JOIN on
-  // deployments converts the LEFT JOIN into an effective INNER JOIN,
-  // hiding KRs with no matching deployments.
   const krLeftJoin = needsDeploymentJoin
     ? `LEFT JOIN (deployment_goal_links dgl JOIN deployments d ON d.id = dgl.deployment_id) ON dgl.key_result_id = bkr.id AND dgl.is_active = true${filterWhere}`
     : 'LEFT JOIN deployment_goal_links dgl ON dgl.key_result_id = bkr.id AND dgl.is_active = true'
@@ -450,7 +391,6 @@ export async function getBoardObjectiveProgress(
     baseParams,
   )
 
-  // Count distinct deployments linked to objectives directly
   const objLinksResult = await pool.query(
     `SELECT dgl.objective_id, COUNT(DISTINCT dgl.deployment_id) AS cnt
      FROM deployment_goal_links dgl${deployerJoin}
@@ -459,8 +399,6 @@ export async function getBoardObjectiveProgress(
     baseParams,
   )
 
-  // Count distinct deployments linked via KRs per objective (avoids double-counting
-  // when a deployment is linked to multiple KRs under the same objective)
   const krDistinctResult = await pool.query(
     `SELECT bkr.objective_id, COUNT(DISTINCT dgl.deployment_id) AS cnt
      FROM deployment_goal_links dgl
@@ -497,7 +435,6 @@ export async function getBoardObjectiveProgress(
     krDistinctByObjective.set(row.objective_id as number, Number(row.cnt))
   }
 
-  // Total distinct deployments linked to this board (across all objectives and KRs, no double-counting)
   const totalDistinctResult = await pool.query(
     `SELECT COUNT(DISTINCT dgl.deployment_id)::int AS cnt
      FROM deployment_goal_links dgl${deployerJoin}
@@ -538,20 +475,6 @@ export interface DevTeamBatchStats {
   goal_coverage: number
 }
 
-/**
- * Batch-compute per-team deployment stats using board-based ownership.
- *
- * A deployment belongs to a team if:
- * 1. It is linked (via deployment_goal_links) to one of the team's boards, OR
- * 2. It is NOT linked to ANY board and the deployer/PR-creator is a team member
- *
- * Deduplication: a deployment linked to multiple boards of the same team
- * is counted only once. Cross-team: a deployment linked to boards of multiple
- * teams counts for each team.
- *
- * Returns a Map keyed by dev_team_id. Also includes `non_member_deployments`
- * (deployments counted because of board-linking but deployer is NOT a team member).
- */
 export async function getDevTeamStatsBatch(
   devTeamIds: number[],
   startDate: Date,
@@ -736,10 +659,6 @@ export async function getDevTeamStatsBatch(
   return map
 }
 
-/**
- * Get deployment stats for a single team using board-based ownership.
- * Convenience wrapper around `getDevTeamStatsBatch` for use on team pages.
- */
 export async function getDevTeamStats(devTeamId: number, startDate: Date, endDate?: Date): Promise<DevTeamBatchStats> {
   const map = await getDevTeamStatsBatch([devTeamId], startDate, endDate)
   return (
@@ -769,10 +688,6 @@ interface ContributedBoard {
   linked_deployment_count: number
 }
 
-/**
- * Find active boards from other teams where the given deployers have
- * deployments linked via `deployment_goal_links`.
- */
 export async function getContributedBoards(
   excludeDevTeamId: number,
   deployerUsernames: string[],

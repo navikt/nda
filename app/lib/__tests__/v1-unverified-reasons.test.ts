@@ -2,28 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { PrCommit, PrReview, VerificationInput } from '../verification/types'
 import { verifyDeployment, verifyFourEyesFromPrData } from '../verification/verify'
 
-/**
- * Tests for unverified commit reason codes.
- *
- * V1 verification (sync.server.ts) must detect unverified commits with the
- * same granular reason codes as V2 (verify.ts). These tests exercise V2's
- * verifyDeployment and verifyFourEyesFromPrData to define the expected
- * behavior that V1 must match after refactoring.
- *
- * Key reason codes:
- * - 'no_pr': Commit has no associated pull request (direct push)
- * - 'no_approved_reviews': PR exists but has zero approved reviews
- * - 'approval_before_last_commit': PR has approvals but all before last commit
- * - 'pr_not_approved': Generic fallback (PR not approved for other reasons)
- *
- * Based on real deployment 151 scenario where V1 produced 'approved' status
- * while V2 correctly found 3 unverified commits with specific reasons.
- */
-
-// =============================================================================
-// Test Helpers
-// =============================================================================
-
 function makePrCommit(overrides: Partial<PrCommit> = {}): PrCommit {
   return {
     sha: 'default-commit-sha',
@@ -76,10 +54,6 @@ function makeBaseInput(overrides: Partial<VerificationInput> = {}): Verification
   }
 }
 
-// =============================================================================
-// verifyFourEyesFromPrData — reason code tests
-// =============================================================================
-
 describe('verifyFourEyesFromPrData - reason codes for V1 consistency', () => {
   it('should return "no_approved_reviews" when PR has no reviews', () => {
     const result = verifyFourEyesFromPrData({
@@ -124,8 +98,6 @@ describe('verifyFourEyesFromPrData - reason codes for V1 consistency', () => {
       baseBranch: 'main',
     })
 
-    // V1 bug: returns 'No approved reviews found' which maps to 'pr_not_approved'
-    // via mapToUnverifiedReason. Should be 'no_approved_reviews'.
     expect(result.reason).not.toBe('pr_not_approved')
     expect(result.reason).not.toBe('No approved reviews found')
   })
@@ -137,28 +109,12 @@ describe('verifyFourEyesFromPrData - reason codes for V1 consistency', () => {
       baseBranch: 'main',
     })
 
-    // V1 bug: returns 'Approval was before last commit' which maps to 'pr_not_approved'
-    // via mapToUnverifiedReason. Should be 'approval_before_last_commit'.
     expect(result.reason).not.toBe('pr_not_approved')
     expect(result.reason).not.toBe('Approval was before last commit')
   })
 })
 
-// =============================================================================
-// verifyDeployment — deployment 151 scenario
-// =============================================================================
-
 describe('verifyDeployment - deployment 151 (unapproved PR + direct push)', () => {
-  /**
-   * Reproduces the real deployment 151 scenario:
-   * - Commits edf1b1f and 16708b8 are from PR #18196 which has NO approved reviews
-   * - Commit 55a83e7 is a direct push revert (no PR)
-   * - The deployed PR #18220 is approved
-   *
-   * V1 originally reported 'approved' for this deployment (bug).
-   * V2 correctly found 3 unverified commits with specific reasons.
-   */
-
   const deployment151Input = makeBaseInput({
     deployedPr: {
       number: 18220,
@@ -209,7 +165,6 @@ describe('verifyDeployment - deployment 151 (unapproved PR + direct push)', () =
       ],
     },
     commitsBetween: [
-      // Commits from unapproved PR #18196
       {
         sha: 'edf1b1ff84ae3e508fa989c189a62ecbf44dd5aa',
         message: 'Feature commit from unapproved PR',
@@ -266,7 +221,6 @@ describe('verifyDeployment - deployment 151 (unapproved PR + direct push)', () =
           baseBranch: 'main',
         },
       },
-      // Merge commit from unapproved PR (should be skipped)
       {
         sha: 'f92ec18',
         message: 'Merge branch unapproved-feature',
@@ -277,7 +231,6 @@ describe('verifyDeployment - deployment 151 (unapproved PR + direct push)', () =
         htmlUrl: '',
         pr: null,
       },
-      // Direct push revert (no PR)
       {
         sha: '55a83e761bcd32917d4d79bb892ff143951ecd8f',
         message: 'Revert "Merge branch unapproved-feature"',
@@ -288,7 +241,6 @@ describe('verifyDeployment - deployment 151 (unapproved PR + direct push)', () =
         htmlUrl: 'https://github.com/navikt/pensjon-pen/commit/55a83e7',
         pr: null,
       },
-      // Commits from approved deployed PR #18220
       {
         sha: 'e9ba01f37fdde990718fbdc66ae3713a392f7a2e',
         message: 'Commit in approved PR',
@@ -309,7 +261,6 @@ describe('verifyDeployment - deployment 151 (unapproved PR + direct push)', () =
         htmlUrl: '',
         pr: null,
       },
-      // Merge commit for deployed PR (matched by mergeCommitSha)
       {
         sha: 'deploy-sha-151',
         message: 'Merge pull request #18220',
@@ -367,10 +318,8 @@ describe('verifyDeployment - deployment 151 (unapproved PR + direct push)', () =
 
     const unverifiedShas = result.unverifiedCommits.map((c) => c.sha.substring(0, 7))
 
-    // Non-base-branch merge "Merge branch unapproved-feature" IS now flagged
     expect(unverifiedShas).toContain('f92ec18')
 
-    // Deployed PR merge commit (deploy-sha-151) is verified via the deployed PR
     expect(unverifiedShas).not.toContain('deploy-s')
   })
 
@@ -385,10 +334,6 @@ describe('verifyDeployment - deployment 151 (unapproved PR + direct push)', () =
     }
   })
 })
-
-// =============================================================================
-// verifyDeployment — approval_before_last_commit reason
-// =============================================================================
 
 describe('verifyDeployment - approval_before_last_commit reason', () => {
   it('should produce "approval_before_last_commit" when PR was approved then had new commits', () => {

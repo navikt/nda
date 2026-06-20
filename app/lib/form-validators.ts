@@ -19,27 +19,11 @@ export function isValidGitHubUsername(value: string): boolean {
   return value.length <= 39 && GITHUB_USERNAME_REGEX.test(value)
 }
 
-/**
- * Safely read a string field from FormData.
- *
- * Guards against the (rare but possible) case where the client sends a
- * non-string value (e.g. a `File`), which would otherwise cause a
- * runtime TypeError when calling `.trim()` on the cast result.
- *
- * Returns the trimmed string, or `null` if the field is missing or not a
- * string.
- */
 export function getFormString(formData: FormData, key: string): string | null {
   const value = formData.get(key)
   return typeof value === 'string' ? value.trim() : null
 }
 
-/**
- * Parse and validate an audit start year from form data.
- *
- * Returns the parsed year as a number, or an error message string if invalid.
- * Accepts years between 2000 and currentYear + 1.
- */
 export function parseAuditStartYear(formData: FormData): number | string {
   const raw = getFormString(formData, 'audit_start_year')
   if (raw === null || raw === '') {

@@ -1,12 +1,6 @@
 import { BodyShort, Box, Detail, HStack, Tag, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
 
-/**
- * SearchDialog er en global søkedialog som åpnes med Cmd/Ctrl+K.
- *
- * Siden komponenten er avhengig av faktiske API-kall og tastaturhendelser,
- * viser vi her mockede søkeresultater som eksempel på utseende.
- */
 const meta: Meta = {
   title: 'Components/SearchDialog',
 }
@@ -15,7 +9,6 @@ export default meta
 
 type Story = StoryObj
 
-// Mock search result item component
 function SearchResultItem({
   type,
   title,

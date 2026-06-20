@@ -31,8 +31,6 @@ describe('buildHomeTabBlocks (personalized)', () => {
   it('renders an onboarding hint (not the empty-state) when github_username is missing', () => {
     const blocks = buildHomeTabBlocks(homeTabFixtures.noGithubUser)
     const text = JSON.stringify(blocks)
-    // The personal section IS rendered, but with guidance — not the
-    // "Alle dine deployments har endringsopphav" empty state.
     expect(text).toContain('Endringsopphav')
     expect(text).toContain('GitHub-brukernavnet')
     expect(text).toContain('open_profile')

@@ -16,9 +16,6 @@ import {
 } from '~/lib/deviation-constants'
 import { formatPercentages } from '~/lib/format-percentages'
 
-// Register fonts from local files (downloaded during Docker build)
-// In production (server-side): /app/fonts/
-// In development or browser (Storybook): use CDN fallback
 const fontBasePath =
   typeof window === 'undefined' && process.env.NODE_ENV === 'production' ? join(process.cwd(), 'fonts') : null
 
@@ -189,11 +186,9 @@ const styles = StyleSheet.create({
   tableCell: {
     fontSize: 8,
   },
-  // Row 1 columns: #, Dato, Tittel
   r1col1: { width: '5%' },
   r1col2: { width: '8%' },
   r1col3: { width: '87%' },
-  // Row 2 columns: (spacer), Commit, Metode, Referanse, Deployer, Godkjenner, Nais ID
   r2col1: { width: '5%' },
   r2col2: { width: '8%' },
   r2col3: { width: '8%' },
@@ -340,7 +335,6 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
     totalDeployments,
   )
 
-  // Group deployments by month
   const deploymentsByMonth = new Map<string, typeof reportData.deployments>()
   for (const d of reportData.deployments) {
     const date = new Date(d.date)
@@ -351,7 +345,6 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
     deploymentsByMonth.get(monthKey)?.push(d)
   }
 
-  // Sort months chronologically
   const sortedMonths = Array.from(deploymentsByMonth.keys()).sort()
 
   const formatMonthName = (monthKey: string) => {

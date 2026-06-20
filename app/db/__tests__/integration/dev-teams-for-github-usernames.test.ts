@@ -1,8 +1,3 @@
-/**
- * Integration test: getDevTeamsForGithubUsernamesByRole
- * Validates reverse lookup from GitHub usernames → dev teams.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDevTeamsForGithubUsernamesByRole } from '~/db/role-assignments.server'

@@ -1,14 +1,5 @@
-/**
- * Unit tests for the double-check logic in computeVerificationDiffs.
- *
- * Tests that when cache-only verification detects a status diff or missing
- * PR snapshot, forceRefresh is attempted. Also tests fallback to cache-only
- * result when forceRefresh fails.
- */
-
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
-// Mock DB modules
 vi.mock('~/db/app-settings.server', () => ({
   getImplicitApprovalSettings: vi.fn(),
 }))
@@ -141,9 +132,7 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetPrSnapshots.mockResolvedValue(makePrSnapshotMap())
     mockBuildCommitsBetween.mockResolvedValue([])
 
-    // Cache-only verification says "unverified_commits" (differs from stored "approved")
     const cacheOnlyResult = { status: 'unverified_commits', approvalDetails: { reason: 'no_pr_found' } }
-    // After forceRefresh, verification says "approved" (healed)
     const freshResult = { status: 'approved', approvalDetails: { reason: 'pr_approved' } }
     const freshInput = makeVerificationInput()
 
@@ -152,11 +141,9 @@ describe('computeVerificationDiffs double-check logic', () => {
 
     const result = await computeVerificationDiffs(1)
 
-    // Should have called fetchVerificationData with forceRefresh: true
     expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'abc123', 'navikt/test-repo', 'prod-gcp', 'main', 1, {
       forceRefresh: true,
     })
-    // After healing, no diff (approved → approved)
     expect(result.diffsFound).toBe(0)
     expect(result.deploymentsChecked).toBe(1)
   })
@@ -165,11 +152,9 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetDeployments.mockResolvedValue([makeDeploymentRow({ github_pr_number: 100 })])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
     mockGetPreviousDeployment.mockResolvedValue(null)
-    // PR snapshots are incomplete — missing metadata/reviews/commits
     mockGetPrSnapshots.mockResolvedValue(new Map())
     mockBuildCommitsBetween.mockResolvedValue([])
 
-    // Both cache-only and fresh produce same status, but missingPrSnapshot triggers refresh
     const verifyResult = { status: 'approved', approvalDetails: { reason: 'pr_approved' } }
     mockVerifyDeployment.mockReturnValue(verifyResult)
 
@@ -191,22 +176,17 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetPrSnapshots.mockResolvedValue(makePrSnapshotMap())
     mockBuildCommitsBetween.mockResolvedValue([])
 
-    // Cache-only says "unverified_commits" (triggers forceRefresh)
     const cacheOnlyResult = { status: 'unverified_commits', approvalDetails: { reason: 'no_pr_found' } }
     mockVerifyDeployment.mockReturnValue(cacheOnlyResult)
-    // forceRefresh fails (e.g. deleted PR, API error)
     mockFetchVerificationData.mockRejectedValue(new Error('GitHub API rate limited'))
 
     const result = await computeVerificationDiffs(1)
 
-    // Should log warning about fallback
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Force-refresh failed'),
       expect.objectContaining({ error: 'GitHub API rate limited' }),
     )
-    // verifyDeployment should NOT be called a second time (precomputedResult used)
     expect(mockVerifyDeployment).toHaveBeenCalledTimes(1)
-    // Diff still recorded (cache-only result differs from stored)
     expect(result.diffsFound).toBe(1)
   })
 
@@ -217,15 +197,12 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetPrSnapshots.mockResolvedValue(makePrSnapshotMap())
     mockBuildCommitsBetween.mockResolvedValue([])
 
-    // Cache-only matches stored status — no reason to forceRefresh
     const verifyResult = { status: 'approved', approvalDetails: { reason: 'pr_approved' } }
     mockVerifyDeployment.mockReturnValue(verifyResult)
 
     const result = await computeVerificationDiffs(1)
 
-    // Should NOT call fetchVerificationData (no forceRefresh needed)
     expect(mockFetchVerificationData).not.toHaveBeenCalled()
-    // verifyDeployment called only once (cache-only, then precomputedResult reused)
     expect(mockVerifyDeployment).toHaveBeenCalledTimes(1)
     expect(result.diffsFound).toBe(0)
   })

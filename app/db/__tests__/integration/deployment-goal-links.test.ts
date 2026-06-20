@@ -104,7 +104,6 @@ describe('deployment-goal-links', () => {
       environment: 'prod',
       createdAt: now,
     })
-    // Only link d1
     await pool.query(
       "INSERT INTO deployment_goal_links (deployment_id, external_url, link_method) VALUES ($1, 'https://x', 'manual')",
       [d1],
@@ -150,11 +149,9 @@ describe('deployment-goal-links', () => {
     )
     const linkId = linkRows[0].id
 
-    // Attempt to remove with wrong deploymentId
     const removed = await removeDeploymentGoalLink(linkId, depB)
     expect(removed).toBe(false)
 
-    // Link should still be active
     const { rows } = await pool.query('SELECT is_active FROM deployment_goal_links WHERE id = $1', [linkId])
     expect(rows[0].is_active).toBe(true)
   })

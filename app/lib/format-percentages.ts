@@ -1,23 +1,8 @@
-/**
- * Format a percentage value with 1 decimal, omitting the decimal for whole numbers.
- */
 export function formatPercent(value: number): string {
   const rounded = Math.round(value * 10) / 10
   return rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)
 }
 
-/**
- * Distribute percentages using a largest remainder adjustment so they sum to exactly 100%
- * when `total` is greater than 0.
- *
- * Each input count is converted to a percentage of the total, truncated down to 1 decimal,
- * then adjusted in 0.1 increments based on the largest remainders.
- *
- * Assumes `total` equals the sum of `counts` and all values are non-negative. If `total`
- * is 0, returns "0" for every input count.
- *
- * Returns formatted strings (e.g. "99.6", "0.4", "0").
- */
 export function formatPercentages(counts: number[], total: number): string[] {
   if (counts.length === 0) {
     return []

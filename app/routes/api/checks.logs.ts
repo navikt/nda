@@ -18,7 +18,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     return Response.json({ error: 'job_id must be a number' }, { status: 400 })
   }
 
-  // Try GCS first (cached logs)
   if (isGcsConfigured()) {
     try {
       if (await logExists(owner, repo, jobIdNum)) {
@@ -32,11 +31,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  // Fetch from GitHub API
   try {
     const client = getGitHubClient()
 
-    // Use manual redirect to log the target hostname (helps diagnose outbound policy issues)
     const redirectResponse = await client.request('GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs', {
       owner,
       repo,
@@ -50,7 +47,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       logger.info(`GitHub log redirect for job ${jobId}: ${targetHost}`)
     }
 
-    // Follow the redirect to download the actual logs
     const response = await client.actions.downloadJobLogsForWorkflowRun({
       owner,
       repo,
@@ -59,7 +55,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
     const logs = response.data as string
 
-    // Store to GCS in background (don't block response)
     if (isGcsConfigured()) {
       uploadLog(owner, repo, jobIdNum, logs).catch((err) => {
         logger.warn(`Failed to cache log to GCS: ${err}`)

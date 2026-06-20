@@ -102,12 +102,10 @@ const existingReport: AuditReportSummary = {
   formats: ['pdf', 'xlsx'],
 }
 
-/** Før kontroll — bare periode-velgere og "Kontroller grunnlag"-knapp. */
 export const FørKontroll: Story = {
   args: {},
 }
 
-/** Klar for rapport — readiness er OK, "Generer rapport"-knappen vises. */
 export const KlarForRapport: Story = {
   args: {
     readinessData: readyReadiness,
@@ -115,7 +113,6 @@ export const KlarForRapport: Story = {
   },
 }
 
-/** Ikke klar — readiness feiler, ingen generer-knapp. */
 export const IkkeKlar: Story = {
   args: {
     readinessData: notReadyReadiness,
@@ -129,7 +126,6 @@ export const IkkeKlar: Story = {
   },
 }
 
-/** Erstatting — eksisterende rapport funnet, begrunnelsesfelt vises over knapp. */
 export const ErstattRapport: Story = {
   args: {
     readinessData: readyReadiness,
@@ -138,7 +134,6 @@ export const ErstattRapport: Story = {
   },
 }
 
-/** Genererer — knapp i loading-tilstand. */
 export const Genererer: Story = {
   args: {
     readinessData: readyReadiness,
@@ -147,7 +142,6 @@ export const Genererer: Story = {
   },
 }
 
-/** Kontrollerer — "Kontroller grunnlag" i loading-tilstand. */
 export const Kontrollerer: Story = {
   args: {
     isCheckingReadiness: true,

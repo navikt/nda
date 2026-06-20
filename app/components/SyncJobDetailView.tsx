@@ -95,7 +95,6 @@ export function SyncJobDetailView({ job, logs, jobTypeLabel, jobStatusLabel, has
     [filteredLogs],
   )
 
-  // Auto-poll for running jobs
   useEffect(() => {
     if (!isRunning) return
 

@@ -1,10 +1,3 @@
-/**
- * Build AppMetadata for M2M API responses.
- *
- * Combines monitored application data with application group info
- * into the standardized shape used by all audit report API endpoints.
- */
-
 import { getGroupByAppId, getGroupWithApps } from '~/db/application-groups.server'
 import type { AuditReportAppMetadata } from '~/lib/api/types'
 

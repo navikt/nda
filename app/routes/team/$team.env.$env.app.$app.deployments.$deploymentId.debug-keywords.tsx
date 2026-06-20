@@ -1,11 +1,3 @@
-/**
- * Debug Goal Keyword Matching Page
- *
- * Shows why a deployment was/wasn't auto-linked to board goals via commit keywords.
- * Displays: extracted commit messages, loaded board keywords, match results, existing links.
- * Only available to admins.
- */
-
 import { Alert, BodyShort, Box, Button, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { pool } from '~/db/connection.server'
@@ -33,10 +25,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Deployment not found', { status: 404 })
   }
 
-  // Extract commit messages (same logic as the sync job)
   const commitInfos = extractCommitInfos(deployment as Parameters<typeof extractCommitInfos>[0])
 
-  // Find dev teams for this deployment
   if (!deployment.monitored_app_id) {
     return {
       deployment: {
@@ -84,16 +74,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const devTeams = await findDevTeamsForDeployment(deployment.team_slug, deployment.monitored_app_id)
 
-  // Load board keywords
   const devTeamIds = devTeams.map((r) => r.id)
   const { rows: boardKeywordsRaw, parsed: boardKeywords } = await loadBoardKeywords(devTeamIds)
 
-  // Run matching
   const matches = matchCommitKeywords(commitInfos, boardKeywords)
 
-  // Compute date-aware ambiguous keywords (same logic as matcher):
-  // A keyword is ambiguous only if it matches in multiple boards for commits whose dates
-  // fall within those boards' periods.
   const ambiguousKeywords: string[] = []
   if (commitInfos.length > 0 && boardKeywords.length > 0) {
     const keywordBoardHits = new Map<string, Set<number>>()
@@ -113,7 +98,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
   }
 
-  // Load existing goal links for comparison
   const existingLinksResult = await pool.query(
     `SELECT dgl.objective_id, dgl.key_result_id, dgl.link_method,
             bo.title AS objective_title, bkr.title AS key_result_title
@@ -188,7 +172,6 @@ export default function DebugKeywordsPage({ loaderData }: Route.ComponentProps) 
     downloadJson(loaderData, filename)
   }
 
-  // Group keywords by board for display
   const keywordsByBoard = new Map<number, { boardName: string; keywords: typeof boardKeywords }>()
   for (const bk of boardKeywords) {
     const entry = keywordsByBoard.get(bk.boardId) ?? { boardName: bk.boardName, keywords: [] }

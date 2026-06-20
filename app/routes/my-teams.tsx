@@ -35,15 +35,11 @@ export function meta(_args: Route.MetaArgs) {
 export async function loader({ request }: Route.LoaderArgs) {
   const identity = await requireUser(request)
 
-  // Resolve the user's GitHub username for the personal goal-link query.
   const githubAccount = await getActiveGithubAccountByNavIdent(identity.navIdent)
   const githubUsername = githubAccount?.github_username ?? null
 
-  // Personal "missing goal links" count — mirrors the Slack home tab section.
-  // null means the user hasn't mapped a GitHub username yet.
   const personalMissingGoalLinks = githubUsername ? await getPersonalDeploymentsMissingGoalLinks(githubUsername) : null
 
-  // getUserDevTeamsByRole returns teams where user has an assigned role
   let selectedDevTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> = []
   try {
     selectedDevTeams = await getUserDevTeamsByRole(identity.navIdent)
@@ -51,7 +47,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     // Graceful degradation if role assignments query fails
   }
 
-  // If no dev teams selected, return minimal data
   if (selectedDevTeams.length === 0) {
     return {
       selectedDevTeams: [],
@@ -71,15 +66,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  // Resolve scope (nais slugs, app IDs, deployer filter) — shared with Slack
-  // home tab so that both views show consistent numbers.
   const scope = await resolveDevTeamScope(selectedDevTeams)
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
 
-  // Use board-based team stats with deduplication across all selected teams
   const devTeamIds = selectedDevTeams.map((t) => t.id)
 
-  // Fetch stats, issue apps, unmapped deployers, and boards in parallel
   const [teamStats, issueApps, unmappedContributors, alertCounts, activeReposByApp, ...boardsByTeam] =
     await Promise.all([
       getDevTeamSummaryStats(scope.naisTeamSlugs, scope.directAppIds, ytdStart, scope.deployerUsernames, devTeamIds),
@@ -94,7 +85,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const allApps = await getAllMonitoredApplications()
 
-  // Build AppCardData for issue apps
   const issueAppKeys = new Set(issueApps.map((a) => `${a.team_slug}/${a.environment_name}/${a.app_name}`))
   const matchingApps = allApps.filter((app) =>
     issueAppKeys.has(`${app.team_slug}/${app.environment_name}/${app.app_name}`),
@@ -108,7 +98,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         )
       : new Map()
 
-  // Build a map of missing_goal_links from the issue query
   const missingGoalsByKey = new Map<string, number>()
   const unmappedByKey = new Map<string, number>()
   const baselineActionByKey = new Map<string, number>()
@@ -119,7 +108,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     baselineActionByKey.set(key, a.baseline_action_count)
   }
 
-  // Resolve group names for grouped app cards
   const groupIds = [
     ...new Set(matchingApps.map((a) => a.application_group_id).filter((id): id is number => id != null)),
   ]
@@ -171,7 +159,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     return bIssues - aIssues
   })
 
-  // Build board summaries from active boards
   const now = new Date()
   const activeBoards: { board: (typeof boardsByTeam)[0][0]; team: (typeof selectedDevTeams)[0] }[] = []
   for (let i = 0; i < selectedDevTeams.length; i++) {

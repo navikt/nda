@@ -10,13 +10,6 @@ import { pool } from './connection.server'
 import { getDeviationsForPeriod } from './deviations.server'
 import { findDeploymentIdsMissingApprover } from './verification-diff.server'
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Slim deployment row for audit reports - excludes large github_pr_data blob
- */
 interface AuditDeploymentRow {
   id: number
   nais_deployment_id: string | null
@@ -32,11 +25,8 @@ interface AuditDeploymentRow {
   team_slug: string
   environment_name: string
   app_name: string
-  // Extracted from github_pr_data via SQL - array of all approved reviewers
   approved_by_usernames: string[] | null
-  // Extracted from github_pr_data via SQL - PR author
   pr_author: string | null
-  // JSONB column with unverified commits (if any)
   unverified_commits: UnverifiedCommitEntry[] | null
 }
 
@@ -225,13 +215,6 @@ export interface AuditReadinessCheck {
   }>
 }
 
-// ============================================================================
-// Core Functions
-// ============================================================================
-
-/**
- * Check if all production deployments for an app in a period are approved
- */
 export async function checkAuditReadiness(
   monitoredAppId: number,
   periodStart: Date,
@@ -240,7 +223,6 @@ export async function checkAuditReadiness(
   const startDate = periodStart
   const endDate = periodEnd
 
-  // Get all deployments for the year in production environments
   const result = await pool.query<{
     id: number
     created_at: Date
@@ -267,8 +249,6 @@ export async function checkAuditReadiness(
   const legacy = deployments.filter((d) => d.four_eyes_status === 'legacy')
   const pending = deployments.filter((d) => !isApprovedStatus(d.four_eyes_status) && d.four_eyes_status !== 'legacy')
 
-  // Check for approved deployments missing approver data.
-  // Uses shared helper to ensure consistent criteria with verification diff page.
   const approvedIds = approved.map((d) => d.id)
   let missingApprover: typeof approved = []
 
@@ -289,9 +269,6 @@ export async function checkAuditReadiness(
   }
 }
 
-/**
- * Get all data needed for an audit report
- */
 export async function getAuditReportData(
   monitoredAppId: number,
   periodStart: Date,
@@ -325,7 +302,6 @@ export async function getAuditReportData(
   const startDate = periodStart
   const endDate = periodEnd
 
-  // Get app info
   const appResult = await pool.query(
     `SELECT app_name, team_slug, environment_name, test_requirement FROM monitored_applications WHERE id = $1`,
     [monitoredAppId],
@@ -335,8 +311,6 @@ export async function getAuditReportData(
   }
   const app = appResult.rows[0]
 
-  // Get all production deployments for the year - extract approved_by from JSON in SQL
-  // This avoids loading the large github_pr_data blob into memory
   const deploymentsResult = await pool.query<AuditDeploymentRow>(
     `SELECT 
        d.id,
@@ -375,13 +349,11 @@ export async function getAuditReportData(
   )
   const deployments = deploymentsResult.rows
 
-  // Determine repository from first deployment
   const repository =
     deployments.length > 0
       ? `${deployments[0].detected_github_owner}/${deployments[0].detected_github_repo_name}`
       : 'unknown'
 
-  // Get manual approvals for these deployments
   const deploymentIds = deployments.map((d) => d.id)
   let manual_approvals: Array<{
     deployment_id: number
@@ -402,7 +374,6 @@ export async function getAuditReportData(
     created_at: Date
   }> = []
 
-  // Aggregate reviewer counts directly in SQL to avoid loading github_pr_data
   const reviewer_counts = new Map<string, number>()
 
   if (deploymentIds.length > 0) {
@@ -415,7 +386,6 @@ export async function getAuditReportData(
     )
     manual_approvals = approvalsResult.rows
 
-    // Get legacy_info comments to find who registered legacy deployments
     const legacyInfoResult = await pool.query(
       `SELECT deployment_id, registered_by
        FROM deployment_comments
@@ -424,7 +394,6 @@ export async function getAuditReportData(
     )
     legacy_infos = legacyInfoResult.rows
 
-    // Get baseline approvals from status history (change_source = 'baseline_approval')
     const baselineApprovalResult = await pool.query<{
       deployment_id: number
       changed_by: string | null
@@ -438,7 +407,6 @@ export async function getAuditReportData(
     )
     baseline_approvals = baselineApprovalResult.rows
 
-    // Get reviewer counts aggregated from github_pr_data in SQL
     const reviewerCountsResult = await pool.query<{ username: string; review_count: number }>(
       `SELECT 
          r->>'username' AS username,
@@ -455,8 +423,6 @@ export async function getAuditReportData(
     }
   }
 
-  // Get user identities for all deployers and reviewers
-  // Collect all identifiers (could be github usernames or nav-idents)
   const identifiers = new Set<string>()
   for (const d of deployments) {
     if (d.deployer_username) identifiers.add(d.deployer_username)
@@ -476,17 +442,14 @@ export async function getAuditReportData(
   for (const b of baseline_approvals) {
     if (b.changed_by) identifiers.add(b.changed_by)
   }
-  // Add reviewer usernames from aggregated counts
   for (const username of reviewer_counts.keys()) {
     identifiers.add(username)
   }
 
-  // Fetch mappings where identifier matches github_username OR nav_ident
   const userLookups = new Map<
     string,
     { display_name: string | null; nav_ident: string | null; github_username: string }
   >()
-  // Maps any identifier (github_username or nav_ident) to canonical github_username
   const canonical_map = new Map<string, string>()
 
   if (identifiers.size > 0) {
@@ -506,15 +469,11 @@ export async function getAuditReportData(
         nav_ident: row.nav_ident,
         github_username: row.github_username,
       })
-      // Map canonical github_username and nav_ident to canonical github_username.
       canonical_map.set(row.github_username, row.github_username)
       if (row.nav_ident) {
         canonical_map.set(row.nav_ident, row.github_username)
       }
     }
-    // Map original identifier strings (preserving their casing) so lookups work
-    // regardless of how the identifier appeared in deployment data. O(n+m) by
-    // building lookup sets from DB rows first, then iterating identifierArray once.
     const githubSet = new Set(mappingsResult.rows.map((r) => r.github_username))
     const navIdentMap = new Map<string, string>(
       mappingsResult.rows.filter((r) => r.nav_ident).map((r) => [r.nav_ident, r.github_username]),
@@ -529,7 +488,6 @@ export async function getAuditReportData(
 
   const deviations = await getDeviationsForPeriod(monitoredAppId, startDate, endDate)
 
-  // Get goal links for all deployments in the period
   const goal_links_by_deployment = new Map<
     number,
     Array<{ objective_title: string; key_result_title: string | null; team_name: string; period_label: string }>
@@ -591,9 +549,6 @@ export async function getAuditReportData(
   }
 }
 
-/**
- * Build the structured report data from raw data
- */
 export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditReportData>>): AuditReportData {
   const {
     deployments,
@@ -610,19 +565,16 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
   const legacyInfoMap = new Map(legacy_infos.map((l) => [l.deployment_id, l]))
   const baselineApprovalMap = new Map(baseline_approvals.map((b) => [b.deployment_id, b]))
 
-  // Helper to get display name for any identifier (github username or nav-ident)
   const getDisplayName = (identifier: string | null | undefined): string | undefined => {
     if (!identifier) return undefined
     const canonical = canonical_map.get(identifier) || identifier
     return userLookups.get(canonical)?.display_name || undefined
   }
 
-  // Helper to get canonical username for aggregation
   const getCanonical = (identifier: string): string => {
     return canonical_map.get(identifier) || identifier
   }
 
-  // Build deployments list
   const deploymentEntries: AuditDeploymentEntry[] = deployments.map((d) => {
     const isManual = d.four_eyes_status === 'manually_approved'
     const isLegacy = d.four_eyes_status === 'legacy'
@@ -630,21 +582,16 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     const manualApproval = manualApprovalMap.get(d.id)
     const legacyInfo = legacyInfoMap.get(d.id)
     const baselineApproval = baselineApprovalMap.get(d.id)
-    // Treat as legacy if has legacy_info comment (even if status is manually_approved)
     const hasLegacyInfo = !!legacyInfo
 
-    // Helper to format approvers list with display names
     const formatApprovers = (usernames: string[]): string => {
       return usernames.map((u) => getDisplayName(u) || u).join(', ')
     }
 
-    // Find approver - now using extracted approved_by_usernames array from SQL
     let approver = ''
     if (isLegacy || hasLegacyInfo) {
-      // Legacy: use GitHub PR reviewers if available, otherwise '-'
       approver = d.approved_by_usernames?.length ? formatApprovers(d.approved_by_usernames) : '-'
     } else if (isBaseline) {
-      // Baseline: approver must exist in status history — report generation is invalid without it
       if (!baselineApproval?.changed_by) {
         throw new Error(
           `Baseline deployment ${d.id} is missing an approver in deployment_status_history. ` +
@@ -658,7 +605,6 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
       approver = formatApprovers(d.approved_by_usernames)
     }
 
-    // Determine method - use legacy if has legacy_info comment
     let method: 'pr' | 'manual' | 'legacy' | 'baseline' = 'pr'
     if (isLegacy || hasLegacyInfo) {
       method = 'legacy'
@@ -680,7 +626,6 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
       deployer: d.deployer_username || '',
       deployer_display_name: getDisplayName(d.deployer_username),
       approver,
-      // Display name is already baked into approver string above
       approver_display_name: undefined,
       pr_number: d.github_pr_number || undefined,
       pr_url: d.github_pr_url || undefined,
@@ -689,13 +634,10 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     }
   })
 
-  // Build manual approvals list
   const manualApprovalEntries: ManualApprovalEntry[] = manual_approvals.map((a) => {
     const deployment = deployments.find((d) => d.id === a.deployment_id)
     const legacyInfo = legacyInfoMap.get(a.deployment_id)
 
-    // Determine reason based on original status (before manually_approved)
-    // Check if there's legacy_info - that means it was a legacy deployment
     let reason = 'Ekstra commits etter godkjenning'
     if (legacyInfo) {
       reason = 'Legacy deployment (GitHub-verifisert)'
@@ -722,7 +664,6 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     }
   })
 
-  // Build contributors list - use canonical username for aggregation
   const contributorCounts = new Map<string, number>()
   for (const d of deployments) {
     if (d.deployer_username) {
@@ -739,15 +680,11 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     }))
     .sort((a, b) => b.deployment_count - a.deployment_count)
 
-  // Build reviewers list - use canonical username for aggregation
-  // Merge reviewers from PR reviews and manual approvals
   const combinedReviewerCounts = new Map<string, number>()
-  // Add PR reviewers (use canonical)
   for (const [username, count] of reviewer_counts) {
     const canonical = getCanonical(username)
     combinedReviewerCounts.set(canonical, (combinedReviewerCounts.get(canonical) || 0) + count)
   }
-  // Add manual approvers (use canonical)
   for (const a of manual_approvals) {
     if (a.approved_by) {
       const canonical = getCanonical(a.approved_by)
@@ -762,11 +699,9 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     }))
     .sort((a, b) => b.review_count - a.review_count)
 
-  // Count legacy and baseline deployments
   const legacyCount = deploymentEntries.filter((d) => d.method === 'legacy').length
   const baselineCount = deploymentEntries.filter((d) => d.method === 'baseline').length
 
-  // Build deviations list
   const deviationEntries: DeviationEntry[] = rawDeviations.map((d) => {
     const deployment = deployments.find((dep) => dep.id === d.deployment_id)
     return {
@@ -785,9 +720,6 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     }
   })
 
-  // Build unverified commit deployments list
-  // Include deployments that have unverified_commits data, regardless of current status
-  // (they may have been manually approved since)
   const manualApprovalByDeployment = new Map(manual_approvals.map((a) => [a.deployment_id, a]))
   const unverifiedCommitDeployments: UnverifiedCommitDeploymentEntry[] = deployments
     .filter((d) => d.unverified_commits && d.unverified_commits.length > 0)
@@ -823,17 +755,11 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
   }
 }
 
-/**
- * Calculate SHA256 hash of report data for integrity verification
- */
 function calculateReportHash(reportData: AuditReportData): string {
   const json = JSON.stringify(reportData)
   return createHash('sha256').update(json).digest('hex')
 }
 
-/**
- * Save an audit report to the database
- */
 export async function saveAuditReport(params: {
   monitoredAppId: number
   appName: string
@@ -873,7 +799,6 @@ export async function saveAuditReport(params: {
   const prApprovedCount = reportData.deployments.filter((d) => d.method === 'pr').length
   const manuallyApprovedCount = reportData.deployments.filter((d) => d.method === 'manual').length
 
-  // Count deployments with change origin (goal links), excluding Dependabot
   const changeOriginCount = reportData.deployments.filter(
     (d) => d.goal_links && d.goal_links.length > 0 && !isDependabotUser(d.pr_author),
   ).length
@@ -882,7 +807,6 @@ export async function saveAuditReport(params: {
   try {
     await client.query('BEGIN')
 
-    // Step 1: Mark existing active reports as superseded (before INSERT to satisfy partial UNIQUE index)
     const supersededIds = await supersedeExistingReports(
       client,
       monitoredAppId,
@@ -893,12 +817,10 @@ export async function saveAuditReport(params: {
       supersedeReason,
     )
 
-    // Enforce: if we're actually superseding, a reason must be provided
     if (supersededIds.length > 0 && !supersedeReason) {
       throw new Error('An active report already exists for this period. You must provide a reason to supersede it.')
     }
 
-    // Step 2: Insert new report (now safe — no active duplicates exist)
     const result = await client.query<AuditReport>(
       `INSERT INTO audit_reports (
         report_id, monitored_app_id, app_name, team_slug, environment_name, repository,
@@ -935,7 +857,6 @@ export async function saveAuditReport(params: {
 
     const newReport = result.rows[0]
 
-    // Step 3: Back-fill superseded_by_report_id now that we have the new report's ID
     if (supersededIds.length > 0) {
       await client.query(`UPDATE audit_reports SET superseded_by_report_id = $1 WHERE id = ANY($2)`, [
         newReport.id,
@@ -953,17 +874,11 @@ export async function saveAuditReport(params: {
   }
 }
 
-/**
- * Get an audit report by ID
- */
 export async function getAuditReportById(id: number): Promise<AuditReport | null> {
   const result = await pool.query<AuditReport>('SELECT * FROM audit_reports WHERE id = $1', [id])
   return result.rows[0] || null
 }
 
-/**
- * Get all audit reports (summary) — includes archived reports for admin views
- */
 export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
     `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
@@ -977,9 +892,6 @@ export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
   return result.rows
 }
 
-/**
- * Get audit reports for a specific app — excludes archived and superseded reports (public views)
- */
 export async function getAuditReportsForApp(monitoredAppId: number): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
     `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
@@ -995,9 +907,6 @@ export async function getAuditReportsForApp(monitoredAppId: number): Promise<Aud
   return result.rows
 }
 
-/**
- * Get audit reports for a specific app — includes archived reports (admin views)
- */
 export async function getAuditReportsForAppAdmin(monitoredAppId: number): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
     `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
@@ -1013,9 +922,6 @@ export async function getAuditReportsForAppAdmin(monitoredAppId: number): Promis
   return result.rows
 }
 
-/**
- * Upsert a file attachment (pdf or xlsx) for an audit report.
- */
 export async function saveAuditReportFile(reportId: number, format: 'pdf' | 'xlsx', data: Buffer): Promise<void> {
   await pool.query(
     `INSERT INTO audit_report_files (audit_report_id, format, data)
@@ -1025,9 +931,6 @@ export async function saveAuditReportFile(reportId: number, format: 'pdf' | 'xls
   )
 }
 
-/**
- * Get a file attachment for an audit report by format.
- */
 export async function getAuditReportFile(reportId: number, format: 'pdf' | 'xlsx'): Promise<Buffer | null> {
   const result = await pool.query<{ data: Buffer }>(
     'SELECT data FROM audit_report_files WHERE audit_report_id = $1 AND format = $2',
@@ -1036,9 +939,6 @@ export async function getAuditReportFile(reportId: number, format: 'pdf' | 'xlsx
   return result.rows[0]?.data ?? null
 }
 
-/**
- * Archive an audit report with a reason. Scoped to monitoredAppId for IDOR protection.
- */
 export async function archiveAuditReport(
   id: number,
   monitoredAppId: number,
@@ -1052,10 +952,6 @@ export async function archiveAuditReport(
   return (result.rowCount ?? 0) > 0
 }
 
-/**
- * Restore (unarchive) an audit report. Scoped to monitoredAppId for IDOR protection.
- * Preserves archive metadata and records who restored it.
- */
 export async function restoreAuditReport(id: number, monitoredAppId: number, restoredBy: string): Promise<boolean> {
   const result = await pool.query(
     'UPDATE audit_reports SET archived_at = NULL, restored_at = NOW(), restored_by = $1 WHERE id = $2 AND monitored_app_id = $3 AND archived_at IS NOT NULL',
@@ -1064,11 +960,6 @@ export async function restoreAuditReport(id: number, monitoredAppId: number, res
   return (result.rowCount ?? 0) > 0
 }
 
-/**
- * Mark existing active reports for a period as superseded.
- * Returns the IDs of superseded reports so the caller can back-fill superseded_by_report_id.
- * Must be called within a transaction via the provided client.
- */
 async function supersedeExistingReports(
   client: PoolClient,
   monitoredAppId: number,
@@ -1102,9 +993,6 @@ async function supersedeExistingReports(
   return result.rows.map((r) => r.id)
 }
 
-/**
- * Check if an active (non-archived, non-superseded) report exists for a given period.
- */
 export async function hasActiveReportForPeriod(
   monitoredAppId: number,
   periodType: ReportPeriodType,
@@ -1125,8 +1013,6 @@ export async function hasActiveReportForPeriod(
   return result.rows.length > 0
 }
 
-// ─── M2M API queries ────────────────────────────────────────────────────────
-
 interface M2MAuditReportRow {
   id: number
   report_id: string
@@ -1145,9 +1031,6 @@ interface M2MAuditReportRow {
   formats: string[]
 }
 
-/**
- * Get active (non-archived, non-superseded) reports for an app — M2M API shape.
- */
 export async function getActiveReportsForAppM2M(monitoredAppId: number): Promise<M2MAuditReportRow[]> {
   const result = await pool.query<M2MAuditReportRow>(
     `SELECT id, report_id, period_type, period_label, period_start, period_end,
@@ -1164,9 +1047,6 @@ export async function getActiveReportsForAppM2M(monitoredAppId: number): Promise
   return result.rows
 }
 
-/**
- * Get active reports for a specific period — used by status endpoint.
- */
 export async function getActiveReportsForPeriodM2M(
   monitoredAppId: number,
   periodType: ReportPeriodType,
@@ -1190,10 +1070,6 @@ export async function getActiveReportsForPeriodM2M(
   return result.rows
 }
 
-/**
- * Get a report by report_id, scoped to app for IDOR protection.
- * Allows superseded reports (valid historical evidence) but excludes archived.
- */
 export async function getReportByReportIdForApp(
   reportId: string,
   monitoredAppId: number,
@@ -1207,9 +1083,6 @@ export async function getReportByReportIdForApp(
   return result.rows[0] || null
 }
 
-/**
- * Get a report summary by internal ID — used by job-status endpoint after completion.
- */
 export async function getReportSummaryById(reportId: number): Promise<M2MAuditReportRow | null> {
   const result = await pool.query<M2MAuditReportRow>(
     `SELECT id, report_id, period_type, period_label, period_start, period_end,

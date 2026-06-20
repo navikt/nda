@@ -1,23 +1,7 @@
-/**
- * Tests for the title storage bug fix and detectedTitle precedence.
- *
- * Bug (fixed): store-data.server.ts used `result.deployedPr?.title || result.unverifiedCommits[0]?.message`
- * as the title. When deployedPr was null, this fell back to the first unverified commit message,
- * which could be from a DIFFERENT PR in the compare range — causing wrong titles.
- *
- * Fix: Only use `result.deployedPr?.title || null` as $6. The `detectedTitle` field ($9)
- * provides a correct fallback for non-PR deployments (first commit message from commitsBetween).
- * SQL: `title = COALESCE($6, $9, title)` — PR title wins, then detectedTitle, then preserve existing.
- */
 import { describe, expect, it } from 'vitest'
 import type { VerificationResult } from '~/lib/verification/types'
 
-/**
- * Simulate the title value that store-data.server.ts passes as $6
- * to the SQL: `title = COALESCE($6, $9, title)`
- */
 function getTitleForStorage(result: Pick<VerificationResult, 'deployedPr' | 'unverifiedCommits'>): string | null {
-  // This is the FIXED logic (deployedPr?.title only, no fallback to unverifiedCommits)
   return result.deployedPr?.title || null
 }
 
@@ -62,8 +46,6 @@ describe('Title storage: no fallback to unverifiedCommits', () => {
       ],
     }
 
-    // The old buggy code would return "Commit from a completely different PR"
-    // The fix returns null so detectedTitle ($9) or COALESCE keeps the existing title
     expect(getTitleForStorage(result)).toBeNull()
   })
 
@@ -102,10 +84,6 @@ describe('Title storage: no fallback to unverifiedCommits', () => {
 })
 
 describe('Title storage: COALESCE($6, $9, title) behavior', () => {
-  /**
-   * Simulates `COALESCE($6, $9, title)` — the SQL used in updateDeploymentVerification.
-   * $6 = deployedPr?.title, $9 = detectedTitle, title = existing DB value.
-   */
   function coalesce(prTitle: string | null, detectedTitle: string | null, existingTitle: string | null): string | null {
     return prTitle ?? detectedTitle ?? existingTitle
   }
@@ -119,7 +97,6 @@ describe('Title storage: COALESCE($6, $9, title) behavior', () => {
       ],
     })
 
-    // With the fix, newTitle ($6) is null, and no detectedTitle → COALESCE keeps existing
     expect(coalesce(newTitle, null, existingTitle)).toBe('Correct PR title set by previous verification')
   })
 
@@ -144,7 +121,6 @@ describe('Title storage: COALESCE($6, $9, title) behavior', () => {
     const detectedTitle = 'Aktiverer ForsendelsesUtsendelseRouteBuilder.kt igjen for danmark'
     const prTitle = getTitleForStorage({ deployedPr: null, unverifiedCommits: [] })
 
-    // $6 (prTitle) is null, $9 (detectedTitle) provides the value
     expect(coalesce(prTitle, detectedTitle, null)).toBe(detectedTitle)
   })
 
@@ -155,7 +131,6 @@ describe('Title storage: COALESCE($6, $9, title) behavior', () => {
     })
     const detectedTitle = 'First commit message fallback'
 
-    // $6 (prTitle) wins — detectedTitle is only used when deployedPr is null
     expect(coalesce(prTitle, detectedTitle, null)).toBe('Proper PR title')
   })
 

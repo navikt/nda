@@ -1,10 +1,3 @@
-/**
- * Integration test: getUnmappedContributors
- *
- * Verifies that the function correctly identifies GitHub usernames from
- * a team's deployments that lack a corresponding user_github_accounts row.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getUnmappedContributors } from '~/db/deployments/home.server'
@@ -112,7 +105,6 @@ describe('getUnmappedContributors', () => {
     await seedGithubAccount('deployer-1')
 
     const result = await getUnmappedContributors(['team-a'])
-    // pr-author-1 is NOT included — only deployer_username is checked
     expect(result).toEqual([])
   })
 
@@ -239,7 +231,6 @@ describe('getUnmappedContributors', () => {
       environment: 'prod',
       auditStartYear: new Date().getFullYear(),
     })
-    // Deploy before audit start year — should be excluded
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -247,7 +238,6 @@ describe('getUnmappedContributors', () => {
       deployerUsername: 'old-deployer',
       createdAt: new Date(new Date().getFullYear() - 1, 6, 1),
     })
-    // Deploy in audit year — should be included
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-a',
@@ -279,14 +269,12 @@ describe('getUnmappedContributors', () => {
 
   it('handles mixed apps with different audit_start_year values', async () => {
     const currentYear = new Date().getFullYear()
-    // App with audit start this year
     const appWithAudit = await seedApp(pool, {
       teamSlug: 'team-a',
       appName: 'new-svc',
       environment: 'prod',
       auditStartYear: currentYear,
     })
-    // App with no audit start year (all deployments count)
     const appNoAudit = await seedApp(pool, {
       teamSlug: 'team-a',
       appName: 'old-svc',
@@ -294,7 +282,6 @@ describe('getUnmappedContributors', () => {
       auditStartYear: null,
     })
 
-    // Deploy before audit year on the app WITH audit_start_year — excluded
     await seedDeployment(pool, {
       monitoredAppId: appWithAudit,
       teamSlug: 'team-a',
@@ -302,7 +289,6 @@ describe('getUnmappedContributors', () => {
       deployerUsername: 'excluded-deployer',
       createdAt: new Date(currentYear - 1, 6, 1),
     })
-    // Deploy on the app WITHOUT audit_start_year — included (since filter allows)
     await seedDeployment(pool, {
       monitoredAppId: appNoAudit,
       teamSlug: 'team-a',

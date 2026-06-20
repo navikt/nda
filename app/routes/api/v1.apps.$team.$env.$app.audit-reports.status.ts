@@ -1,12 +1,3 @@
-/**
- * API: Deployment status and existing reports for a period
- *
- * Returns deployment statistics and any existing reports for the specified period.
- * Secured with M2M token validation.
- *
- * GET /api/v1/apps/:team/:env/:app/audit-reports/status?periodType=yearly&periodStart=2025-01-01
- */
-
 import { getActiveReportsForPeriodM2M } from '~/db/audit-reports.server'
 import { getAppChangeOriginCoverage, getAppDeploymentStats } from '~/db/deployments.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'

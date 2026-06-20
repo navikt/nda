@@ -61,8 +61,6 @@ interface BoardWithObjectives extends Board {
   objectives: ObjectiveWithKeyResults[]
 }
 
-// --- Board queries ---
-
 export async function getBoardDevTeamId(boardId: number): Promise<number | null> {
   const result = await pool.query('SELECT dev_team_id FROM boards WHERE id = $1', [boardId])
   return result.rows[0]?.dev_team_id ?? null
@@ -106,14 +104,6 @@ export async function getBoardsByDevTeam(devTeamId: number): Promise<Board[]> {
   return result.rows
 }
 
-/**
- * Lightweight board list with objectives and key results (titles/IDs only)
- * for goal linking UI.
- *
- * Implementation: 3 queries total (boards, objectives across all boards, key
- * results across all objectives) regardless of hierarchy size, so this scales
- * with team size rather than O(boards × objectives).
- */
 export async function getBoardsWithGoalsForDevTeam(
   devTeamId: number,
   asOfDate?: string,
@@ -199,18 +189,6 @@ interface BoardKeywordsBoard {
   objectives: BoardKeywordsObjective[]
 }
 
-/**
- * Active boards (one or more) for a dev team, with full goal hierarchy and
- * keywords used by the auto-link pipeline. Used by the personalised Slack
- * home tab to render mål/nøkkelresultater/kodeord.
- *
- * Returns boards sorted by `period_start DESC`. Inactive objectives and key
- * results are excluded.
- *
- * Implementation: 3 queries total (boards, objectives across all boards, key
- * results across all objectives) regardless of hierarchy size, so this scales
- * with team size rather than O(boards × objectives).
- */
 export async function getActiveBoardsWithKeywordsForDevTeam(devTeamId: number): Promise<BoardKeywordsBoard[]> {
   const boardsResult = await pool.query(
     `SELECT b.id, b.period_label, dt.name AS team_name, dt.slug AS team_slug, s.slug AS section_slug
@@ -267,14 +245,6 @@ async function getBoardById(id: number): Promise<Board | null> {
   return result.rows[0] ?? null
 }
 
-/**
- * Full board with objectives, key results and external_references on both
- * objectives and key results.
- *
- * Implementation: 5 queries total (board, objectives, key results, objective
- * external_references, key-result external_references) regardless of
- * hierarchy size.
- */
 export async function getBoardWithObjectives(boardId: number): Promise<BoardWithObjectives | null> {
   const board = await getBoardById(boardId)
   if (!board) return null
@@ -397,8 +367,6 @@ export async function updateBoardDates(id: number, periodStart: string, periodEn
   return result.rows[0] ?? null
 }
 
-// --- Objective queries ---
-
 export async function createObjective(boardId: number, title: string, description?: string): Promise<BoardObjective> {
   const maxOrder = await pool.query(
     'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM board_objectives WHERE board_id = $1',
@@ -446,8 +414,6 @@ export async function deactivateObjective(id: number): Promise<void> {
 export async function reactivateObjective(id: number): Promise<void> {
   await pool.query('UPDATE board_objectives SET is_active = true WHERE id = $1', [id])
 }
-
-// --- Key Result queries ---
 
 export async function createKeyResult(
   objectiveId: number,
@@ -549,8 +515,6 @@ export async function reactivateKeyResult(id: number): Promise<void> {
   }
 }
 
-// --- Keyword queries ---
-
 export async function updateObjectiveKeywords(id: number, keywords: string[]): Promise<void> {
   const result = await pool.query('UPDATE board_objectives SET keywords = $1 WHERE id = $2 AND is_active = true', [
     keywords,
@@ -575,8 +539,6 @@ export async function updateKeyResultKeywords(id: number, keywords: string[]): P
   if (result.rowCount === 0)
     throw new Error('Kan ikke oppdatere kode-ord på et deaktivert nøkkelresultat eller under et deaktivert mål.')
 }
-
-// --- External Reference queries ---
 
 export async function addExternalReference(data: {
   ref_type: ExternalReference['ref_type']
@@ -657,10 +619,6 @@ export async function deleteExternalReference(id: number, deletedBy: string): Pr
   )
   if ((result.rowCount ?? 0) > 0) return
 
-  // The UPDATE matched zero rows. Re-read state to disambiguate:
-  //   - row missing → no-op (idempotent)
-  //   - row already soft-deleted (e.g. by a concurrent caller) → no-op (idempotent)
-  //   - row still active in this follow-up read → treat it as blocked by a deactivated parent and throw
   const { rows } = await pool.query<{ deleted_at: Date | null }>(
     'SELECT deleted_at FROM external_references WHERE id = $1',
     [id],
@@ -670,8 +628,6 @@ export async function deleteExternalReference(id: number, deletedBy: string): Pr
   throw new Error('Kan ikke slette ekstern lenke fra et deaktivert mål eller nøkkelresultat.')
 }
 
-// --- Dependabot target ---
-
 interface DependabotTarget {
   boardId: number
   objectiveId: number
@@ -680,10 +636,6 @@ interface DependabotTarget {
   periodEnd: Date
 }
 
-/**
- * Set a single objective or key result as the Dependabot target for its board.
- * Clears any other Dependabot targets on the same board (max one per board).
- */
 export async function setDependabotTarget(boardId: number, objectiveId?: number, keyResultId?: number): Promise<void> {
   if (!objectiveId && !keyResultId) {
     throw new Error('Må angi objectiveId eller keyResultId.')
@@ -696,11 +648,9 @@ export async function setDependabotTarget(boardId: number, objectiveId?: number,
   try {
     await client.query('BEGIN')
 
-    // Lock the board row to serialize concurrent setDependabotTarget calls
     const boardLock = await client.query('SELECT 1 FROM boards WHERE id = $1 FOR UPDATE', [boardId])
     if (boardLock.rowCount === 0) throw new Error('Tavlen finnes ikke.')
 
-    // Validate that the objective/key result belongs to this board and is active
     if (keyResultId) {
       const check = await client.query(
         `SELECT 1 FROM board_key_results bkr JOIN board_objectives bo ON bkr.objective_id = bo.id WHERE bkr.id = $1 AND bo.board_id = $2 AND bkr.is_active = true AND bo.is_active = true FOR UPDATE OF bkr, bo`,
@@ -715,7 +665,6 @@ export async function setDependabotTarget(boardId: number, objectiveId?: number,
       if (check.rowCount === 0) throw new Error('Målet tilhører ikke denne tavlen eller er deaktivert.')
     }
 
-    // Clear all existing targets on this board
     await client.query(
       `UPDATE board_objectives SET dependabot_target = false WHERE board_id = $1 AND dependabot_target = true`,
       [boardId],
@@ -727,7 +676,6 @@ export async function setDependabotTarget(boardId: number, objectiveId?: number,
       [boardId],
     )
 
-    // Set the new target
     if (keyResultId) {
       await client.query('UPDATE board_key_results SET dependabot_target = true WHERE id = $1', [keyResultId])
     } else if (objectiveId) {
@@ -743,14 +691,10 @@ export async function setDependabotTarget(boardId: number, objectiveId?: number,
   }
 }
 
-/**
- * Clear the Dependabot target for a board.
- */
 export async function clearDependabotTarget(boardId: number): Promise<void> {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    // Lock the board row to serialize with setDependabotTarget
     const boardLock = await client.query('SELECT 1 FROM boards WHERE id = $1 FOR UPDATE', [boardId])
     if (boardLock.rowCount === 0) throw new Error('Tavlen finnes ikke.')
     await client.query(`UPDATE board_objectives SET dependabot_target = false WHERE board_id = $1`, [boardId])
@@ -768,10 +712,6 @@ export async function clearDependabotTarget(boardId: number): Promise<void> {
   }
 }
 
-/**
- * Load Dependabot targets from active boards for the given dev team IDs.
- * Returns targets where the board period covers the given date.
- */
 export async function loadDependabotTargets(devTeamIds: number[], asOfDate: Date): Promise<DependabotTarget[]> {
   if (devTeamIds.length === 0) return []
 

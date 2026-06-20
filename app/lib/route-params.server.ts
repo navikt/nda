@@ -1,6 +1,3 @@
-/**
- * Require that specific route parameters are present, or throw a 400 Response.
- */
 export function requireParams<K extends string>(
   params: Record<string, string | undefined>,
   keys: K[],

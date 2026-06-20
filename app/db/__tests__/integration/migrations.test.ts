@@ -1,10 +1,3 @@
-/**
- * Integration test: Verify all database migrations apply correctly.
- *
- * The global-setup already ran all migrations on the test container.
- * This test verifies the resulting schema is correct.
- */
-
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Pool } from 'pg'
@@ -42,7 +35,6 @@ describe('Database migrations', () => {
     `)
     const tables = rows.map((r) => r.tablename)
 
-    // Core tables that must exist
     const expectedTables = [
       'sections',
       'monitored_applications',
@@ -66,7 +58,6 @@ describe('Database migrations', () => {
   it('should be idempotent (running migrations again is a no-op)', async () => {
     const { runner } = await import('node-pg-migrate')
 
-    // Running migrations again should complete without error
     await expect(
       runner({
         databaseUrl: process.env.DATABASE_URL ?? '',
@@ -101,7 +92,6 @@ describe('Database migrations', () => {
       ORDER BY tc.table_name, tc.constraint_name
     `)
 
-    // Verify key relationships exist
     const fks = rows.map((r) => `${r.table_name}.${r.column_name} -> ${r.foreign_table_name}`)
 
     expect(fks).toContainEqual('dev_teams.section_id -> sections')

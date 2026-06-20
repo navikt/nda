@@ -1,12 +1,6 @@
 import { pool } from '~/db/connection.server'
 import type { BoardKeywordSource } from '~/lib/goal-keyword-matcher'
 
-/**
- * Find dev team IDs linked to a deployment through any ownership path:
- * 1. Nais team mapping (dev_team_nais_teams)
- * 2. Direct app ownership (dev_team_applications)
- * 3. Application group ownership (dev_team_application_groups)
- */
 export async function findDevTeamsForDeployment(
   teamSlug: string,
   monitoredAppId: number,
@@ -41,10 +35,6 @@ interface BoardKeywordRow {
   keyword: string
 }
 
-/**
- * Load all board keywords for given dev teams (active boards only).
- * Returns both the raw rows (for display) and parsed BoardKeywordSource[] (for matching).
- */
 export async function loadBoardKeywords(devTeamIds: number[]): Promise<{
   rows: BoardKeywordRow[]
   parsed: BoardKeywordSource[]

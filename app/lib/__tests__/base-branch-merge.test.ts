@@ -5,25 +5,6 @@ import {
   shouldApproveWithBaseMerge,
 } from '../base-branch-merge'
 
-/**
- * Tests for handling base branch (main) merged into feature branch.
- *
- * Scenario: PR is approved, then main is merged INTO the feature branch
- * before the PR is merged to main. The deployment should still be considered
- * approved because:
- * 1. The PR has a valid approval
- * 2. The "extra" commits are from main (already approved via their own PRs)
- *
- * Test data based on real PR (anonymized):
- * - PR author: userA
- * - PR approver: userB
- * - Original commits: 2 commits by userA
- * - Then main was merged into branch, bringing 4 commits from other PRs
- * - Total: 6 commits in PR
- * - PR was merged by userA
- */
-
-// Mock PR data structure
 interface MockPRData {
   number: number
   title: string
@@ -35,7 +16,6 @@ interface MockPRData {
   merged_at: string
 }
 
-// Mock commit data
 interface MockCommit {
   sha: string
   message: string
@@ -44,7 +24,6 @@ interface MockCommit {
   html_url: string
 }
 
-// Mock review data
 interface MockReview {
   user: { login: string }
   state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED'
@@ -52,7 +31,6 @@ interface MockReview {
   commit_id: string
 }
 
-// Test data - anonymized from real PR #15277
 const mockDeployedPR: MockPRData = {
   number: 100,
   title: 'Feature/add new option',
@@ -64,7 +42,6 @@ const mockDeployedPR: MockPRData = {
   merged_at: '2025-02-26T11:14:01Z',
 }
 
-// The PR was approved BEFORE main was merged into the branch
 const mockReviews: MockReview[] = [
   {
     user: { login: 'userB' },
@@ -74,9 +51,7 @@ const mockReviews: MockReview[] = [
   },
 ]
 
-// Commits in the PR after main was merged into branch
 const mockPRCommits: MockCommit[] = [
-  // Original feature commits (by PR author)
   {
     sha: 'aaa1111',
     message: 'Add new option to enum',
@@ -91,7 +66,6 @@ const mockPRCommits: MockCommit[] = [
     date: '2025-02-24T06:45:00Z',
     html_url: 'https://github.com/org/repo/commit/bbb2222',
   },
-  // Commits from main (merged into branch on 2025-02-26)
   {
     sha: 'ccc3333',
     message: 'Merge pull request #98 from org/other-feature',
@@ -113,7 +87,6 @@ const mockPRCommits: MockCommit[] = [
     date: '2025-02-26T08:00:00Z',
     html_url: 'https://github.com/org/repo/commit/eee5555',
   },
-  // The merge commit bringing main into the feature branch
   {
     sha: 'ef504d6',
     message: "Merge branch 'main' into feature/add-new-option",
@@ -159,7 +132,7 @@ describe('Base branch merge detection', () => {
 
     it('should return false when no merge commit found', () => {
       const commitsWithoutMerge = mockPRCommits.filter((c) => !isBaseBranchMergeCommit(c.message))
-      const unverified = [mockPRCommits[2]] // A commit from main
+      const unverified = [mockPRCommits[2]]
 
       const result = canExplainUnverifiedByBaseMerge(unverified, commitsWithoutMerge)
       expect(result.canExplain).toBe(false)
@@ -167,7 +140,6 @@ describe('Base branch merge detection', () => {
     })
 
     it('should explain commits from base branch (before merge date)', () => {
-      // Commits ccc3333, ddd4444, eee5555 are from main (dates before merge on 2025-02-26T10:33:54Z)
       const unverified = mockPRCommits.filter((c) => ['ccc3333', 'ddd4444', 'eee5555', 'ef504d6'].includes(c.sha))
 
       const result = canExplainUnverifiedByBaseMerge(unverified, mockPRCommits)
@@ -177,7 +149,6 @@ describe('Base branch merge detection', () => {
     })
 
     it('should not explain commits made after the merge', () => {
-      // Create a fake commit after the merge date
       const postMergeCommit: MockCommit = {
         sha: 'fff6666',
         message: 'Direct push after merge',
@@ -232,9 +203,8 @@ describe('Base branch merge detection', () => {
     })
 
     it('should not approve when unverified commits cannot be explained', () => {
-      // Simulate commits without a merge commit to bring them in
       const commitsWithoutMerge = mockPRCommits.filter((c) => !isBaseBranchMergeCommit(c.message))
-      const unverified = [mockPRCommits[2]] // ccc3333 from main
+      const unverified = [mockPRCommits[2]]
 
       const result = shouldApproveWithBaseMerge(mockReviews, unverified, commitsWithoutMerge, mockDeployedPR.base.ref)
 
@@ -242,11 +212,7 @@ describe('Base branch merge detection', () => {
     })
 
     it('should handle scenario from real PR #15277', () => {
-      // This is the real scenario: PR was approved, then main was merged in
-      // The 4 unverified commits (3 from main + 1 merge commit) should be explained
-
       const unverifiedFromMain = mockPRCommits.filter((c) =>
-        // These are the commits that came from main + the merge commit
         ['ccc3333', 'ddd4444', 'eee5555', 'ef504d6'].includes(c.sha),
       )
 
@@ -259,26 +225,15 @@ describe('Base branch merge detection', () => {
 
   describe('isBaseBranchMergeCommit edge cases', () => {
     it('should handle multiple merge patterns from real-world scenario', () => {
-      // From the actual PR #15277, there were multiple merge commits
       expect(isBaseBranchMergeCommit("Merge branch 'main' into feature/kravArsakKodeENDRET_OPPTJENING")).toBe(true)
       expect(isBaseBranchMergeCommit('Merge pull request #15277 from navikt/feature/krav')).toBe(false)
     })
 
     it('should handle partial commit messages (truncated)', () => {
-      // Console logs often truncate commit messages
       expect(isBaseBranchMergeCommit("Merge branch 'main' into feature/kravArsakKodeENDR")).toBe(true)
     })
   })
 
-  /**
-   * Edge cases for missing date fields in merge commits and regular commits.
-   *
-   * WHY: Squash-merge and legacy commits from GitHub sometimes lack the 'date' field.
-   * When this happens, canExplainUnverifiedByBaseMerge falls back to position-based
-   * checking (commit index in the PR commit list). These tests cover lines 74-89
-   * (merge commit without date) and 107-116 (regular commit without date).
-   * Without these, a refactor could break the fallback logic silently.
-   */
   describe('canExplainUnverifiedByBaseMerge — no-date fallback (position-based)', () => {
     it('explains commits when merge commit has no date and unverified appear before it', () => {
       const prCommits = [

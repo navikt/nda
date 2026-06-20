@@ -48,43 +48,40 @@ describe('norwegian-holidays', () => {
 
   describe('isPublicHoliday', () => {
     it('returns true for Saturdays', () => {
-      // 2026-02-14 is a Saturday
       expect(isPublicHoliday(new Date(2026, 1, 14))).toBe(true)
     })
 
     it('returns true for Sundays', () => {
-      // 2026-02-15 is a Sunday
       expect(isPublicHoliday(new Date(2026, 1, 15))).toBe(true)
     })
 
     it('returns true for fixed holidays', () => {
-      expect(isPublicHoliday(new Date(2026, 4, 17))).toBe(true) // 17. mai
+      expect(isPublicHoliday(new Date(2026, 4, 17))).toBe(true)
     })
 
     it('returns true for movable holidays', () => {
-      expect(isPublicHoliday(new Date(2026, 3, 3))).toBe(true) // Langfredag 2026
+      expect(isPublicHoliday(new Date(2026, 3, 3))).toBe(true)
     })
 
     it('returns false for a regular weekday', () => {
-      // 2026-02-13 is a Friday
       expect(isPublicHoliday(new Date(2026, 1, 13))).toBe(false)
     })
   })
 
   describe('isBusinessDay', () => {
     it('returns true for regular weekdays', () => {
-      expect(isBusinessDay(new Date(2026, 1, 9))).toBe(true) // Monday
-      expect(isBusinessDay(new Date(2026, 1, 13))).toBe(true) // Friday
+      expect(isBusinessDay(new Date(2026, 1, 9))).toBe(true)
+      expect(isBusinessDay(new Date(2026, 1, 13))).toBe(true)
     })
 
     it('returns false for weekends', () => {
-      expect(isBusinessDay(new Date(2026, 1, 14))).toBe(false) // Saturday
-      expect(isBusinessDay(new Date(2026, 1, 15))).toBe(false) // Sunday
+      expect(isBusinessDay(new Date(2026, 1, 14))).toBe(false)
+      expect(isBusinessDay(new Date(2026, 1, 15))).toBe(false)
     })
 
     it('returns false for public holidays on weekdays', () => {
-      expect(isBusinessDay(new Date(2026, 4, 1))).toBe(false) // 1. mai (Friday)
-      expect(isBusinessDay(new Date(2026, 3, 2))).toBe(false) // Skjærtorsdag
+      expect(isBusinessDay(new Date(2026, 4, 1))).toBe(false)
+      expect(isBusinessDay(new Date(2026, 3, 2))).toBe(false)
     })
   })
 
@@ -101,7 +98,6 @@ describe('norwegian-holidays', () => {
   })
 
   describe('2022 exhaustive verification (matches Kotlin reference)', () => {
-    // All public holidays in 2022 (Easter = April 17)
     const fridager2022 = [
       new Date(2022, 0, 1), // Første nyttårsdag
       new Date(2022, 3, 14), // Skjærtorsdag
@@ -132,7 +128,7 @@ describe('norwegian-holidays', () => {
         ),
       )
 
-      const start = new Date(2022, 0, 2) // Jan 2 (Jan 1 is a holiday)
+      const start = new Date(2022, 0, 2)
       for (let i = 0; i < 364; i++) {
         const date = new Date(start)
         date.setDate(start.getDate() + i)
@@ -140,11 +136,9 @@ describe('norwegian-holidays', () => {
         const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
         if (day === 0 || day === 6) {
-          // Weekend
           expect(isPublicHoliday(date), `Expected weekend ${key} to be a holiday`).toBe(true)
           expect(isBusinessDay(date), `Expected weekend ${key} to NOT be a business day`).toBe(false)
         } else if (!fridagerKeys.has(key)) {
-          // Regular weekday
           expect(isPublicHoliday(date), `Expected weekday ${key} to NOT be a holiday`).toBe(false)
           expect(isBusinessDay(date), `Expected weekday ${key} to be a business day`).toBe(true)
         }

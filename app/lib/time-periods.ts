@@ -1,7 +1,3 @@
-/**
- * Unified time period definitions for filtering deployments
- */
-
 export type TimePeriod =
   | 'last-week'
   | 'current-month'
@@ -17,9 +13,6 @@ interface TimePeriodOption {
   label: string
 }
 
-/**
- * Available time periods in order from shortest to longest
- */
 export const TIME_PERIOD_OPTIONS: TimePeriodOption[] = [
   { value: 'last-week', label: 'Siste 7 dager' },
   { value: 'current-month', label: 'Inneværende måned' },
@@ -31,35 +24,23 @@ export const TIME_PERIOD_OPTIONS: TimePeriodOption[] = [
   { value: 'all', label: 'Alle' },
 ]
 
-/**
- * Get the tertial (1, 2, or 3) for a given month (0-11)
- * Tertial 1: Jan-Apr (months 0-3)
- * Tertial 2: May-Aug (months 4-7)
- * Tertial 3: Sep-Dec (months 8-11)
- */
 function getTertial(month: number): 1 | 2 | 3 {
   if (month <= 3) return 1
   if (month <= 7) return 2
   return 3
 }
 
-/**
- * Get the start month (0-11) for a given tertial
- */
 function getTertialStartMonth(tertial: 1 | 2 | 3): number {
   switch (tertial) {
     case 1:
-      return 0 // January
+      return 0
     case 2:
-      return 4 // May
+      return 4
     case 3:
-      return 8 // September
+      return 8
   }
 }
 
-/**
- * Calculate date range for a given time period
- */
 export function getDateRangeForPeriod(period: TimePeriod): { startDate: Date; endDate: Date } | null {
   if (period === 'all') {
     return null
@@ -85,7 +66,7 @@ export function getDateRangeForPeriod(period: TimePeriod): { startDate: Date; en
       const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1
       const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear
       startDate = new Date(lastMonthYear, lastMonth, 1)
-      endDate = new Date(currentYear, currentMonth, 0, 23, 59, 59, 999) // Last day of previous month
+      endDate = new Date(currentYear, currentMonth, 0, 23, 59, 59, 999)
       break
     }
 
@@ -110,7 +91,6 @@ export function getDateRangeForPeriod(period: TimePeriod): { startDate: Date; en
 
       const startMonth = getTertialStartMonth(lastTertial)
       startDate = new Date(year, startMonth, 1)
-      // End at last day of the tertial (4 months later, day 0 = last day of previous month)
       endDate = new Date(year, startMonth + 4, 0, 23, 59, 59, 999)
       break
     }

@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-/**
- * Integration tests for rebase and merge verification.
- *
- * These tests use real data from a PR which was merged using "rebase and merge".
- * The commits get new SHAs on main but should still be matched via metadata
- * (author + author_date + message).
- *
- * SHA values are real, usernames are anonymized.
- */
-
-// PR data (based on real PR - pensjon-pen)
 const PR_18375 = {
   number: 18375,
   title: 'Feature/ufo 194 forside saksinfo',
@@ -27,8 +16,6 @@ const PR_18375 = {
   ],
 }
 
-// Original commits in the PR (before rebase)
-// These are the commits as they appeared in the feature branch
 const PR_ORIGINAL_COMMITS = [
   {
     sha: '4e7ffafdaad4e955a4ab762ecf0ae8ff25719bea',
@@ -87,8 +74,6 @@ const PR_ORIGINAL_COMMITS = [
   },
 ]
 
-// Rebased commits on main (after rebase and merge)
-// These have NEW SHAs but same metadata (author, date, message)
 const REBASED_COMMITS_ON_MAIN = [
   {
     sha: '7b863d784d7b6e833d4464dc9c756e0c5fbbc261',
@@ -147,8 +132,6 @@ const REBASED_COMMITS_ON_MAIN = [
   },
 ]
 
-// Other commits on main between base and merge (from other PRs)
-// These should NOT match the PR's commits
 const OTHER_COMMITS_ON_MAIN = [
   {
     sha: 'd1b023601268dc84eea894b78529ffd80df35bbd',
@@ -176,22 +159,17 @@ const OTHER_COMMITS_ON_MAIN = [
   },
 ]
 
-/**
- * Match commit metadata - same logic as in github.server.ts
- */
 function matchCommitMetadata(
   mainCommit: { author_name: string; author_date: string; message: string },
   prCommit: { author_name: string; author_date: string; message: string },
 ): boolean {
   const authorMatch = mainCommit.author_name.toLowerCase() === prCommit.author_name.toLowerCase()
 
-  // Date match within 1 second
   const mainDate = new Date(mainCommit.author_date)
   const prDate = new Date(prCommit.author_date)
   const dateDiffMs = Math.abs(mainDate.getTime() - prDate.getTime())
   const dateMatch = dateDiffMs < 1000
 
-  // First line of message
   const mainMessageFirst = mainCommit.message.split('\n')[0].trim()
   const prMessageFirst = prCommit.message.split('\n')[0].trim()
   const messageMatch = mainMessageFirst === prMessageFirst
@@ -199,9 +177,6 @@ function matchCommitMetadata(
   return authorMatch && dateMatch && messageMatch
 }
 
-/**
- * Find matching PR commit for a rebased commit
- */
 function findMatchingPRCommit(
   rebasedCommit: { sha: string; author_name: string; author_date: string; message: string },
   prCommits: Array<{ sha: string; author_name: string; author_date: string; message: string }>,
@@ -226,7 +201,6 @@ describe('Rebase and Merge Integration (PR #18375)', () => {
       const approvals = PR_18375.reviews.filter((r) => r.state === 'APPROVED')
       expect(approvals.length).toBeGreaterThan(0)
 
-      // Last approval should be before merge
       const lastApproval = approvals[approvals.length - 1]
       expect(new Date(lastApproval.submitted_at).getTime()).toBeLessThan(new Date(PR_18375.merged_at).getTime())
     })
@@ -235,7 +209,6 @@ describe('Rebase and Merge Integration (PR #18375)', () => {
       const approvals = PR_18375.reviews.filter((r) => r.state === 'APPROVED')
       const approvers = approvals.map((r) => r.user)
 
-      // At least one approver should be different from the PR author
       const hasExternalApprover = approvers.some((approver) => approver !== PR_18375.user)
       expect(hasExternalApprover).toBe(true)
     })
@@ -264,7 +237,6 @@ describe('Rebase and Merge Integration (PR #18375)', () => {
         const original = PR_ORIGINAL_COMMITS[i]
         const rebased = REBASED_COMMITS_ON_MAIN[i]
 
-        // SHAs should be different (rebase creates new commits)
         expect(rebased.sha).not.toBe(original.sha)
       }
     })
@@ -276,12 +248,10 @@ describe('Rebase and Merge Integration (PR #18375)', () => {
         const rebased = REBASED_COMMITS_ON_MAIN[i]
         const original = PR_ORIGINAL_COMMITS[i]
 
-        // Metadata should match
         expect(rebased.author_name).toBe(original.author_name)
         expect(rebased.author_date).toBe(original.author_date)
         expect(rebased.message).toBe(original.message)
 
-        // Matching function should find it
         const match = findMatchingPRCommit(rebased, PR_ORIGINAL_COMMITS)
         expect(match).not.toBeNull()
         expect(match?.sha).toBe(original.sha)
@@ -310,7 +280,6 @@ describe('Rebase and Merge Integration (PR #18375)', () => {
     })
 
     it('merge commits should NOT match PR commits', () => {
-      // Filter for merge commits (have "Merge pull request" in message)
       const mergeCommits = OTHER_COMMITS_ON_MAIN.filter((c) => c.message.startsWith('Merge pull request'))
 
       for (const mergeCommit of mergeCommits) {
@@ -331,17 +300,14 @@ describe('Rebase and Merge Integration (PR #18375)', () => {
 
   describe('Full verification scenario', () => {
     it('should verify all 9 rebased commits belong to the approved PR', () => {
-      // Simulate the verification flow
       const allCommitsOnMain = [...OTHER_COMMITS_ON_MAIN, ...REBASED_COMMITS_ON_MAIN]
 
       const verificationResults = allCommitsOnMain.map((commit) => {
-        // First, check if SHA directly matches (won't work for rebased commits)
         const directMatch = PR_ORIGINAL_COMMITS.find((c) => c.sha === commit.sha)
         if (directMatch) {
           return { sha: commit.sha, matched: true, method: 'sha' }
         }
 
-        // Then try metadata matching (for rebased commits)
         const metadataMatch = findMatchingPRCommit(commit, PR_ORIGINAL_COMMITS)
         if (metadataMatch) {
           return { sha: commit.sha, matched: true, method: 'metadata' }
@@ -350,12 +316,10 @@ describe('Rebase and Merge Integration (PR #18375)', () => {
         return { sha: commit.sha, matched: false, method: 'none' }
       })
 
-      // All 9 rebased commits should match via metadata
       const rebasedResults = verificationResults.filter((r) => REBASED_COMMITS_ON_MAIN.some((c) => c.sha === r.sha))
       expect(rebasedResults.length).toBe(9)
       expect(rebasedResults.every((r) => r.matched && r.method === 'metadata')).toBe(true)
 
-      // Other commits should NOT match
       const otherResults = verificationResults.filter((r) => OTHER_COMMITS_ON_MAIN.some((c) => c.sha === r.sha))
       expect(otherResults.every((r) => !r.matched)).toBe(true)
     })

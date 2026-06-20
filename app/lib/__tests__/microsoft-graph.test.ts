@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock logger before importing the module under test
 vi.mock('~/lib/logger.server', () => ({
   logger: { error: vi.fn() },
   fetchWithLogging: async (_area: string, url: string | URL, options?: RequestInit) => fetch(url, options),
@@ -132,7 +131,6 @@ describe('microsoft-graph', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
-    // Quotes and backslashes stripped, implicit AND via multiple displayName clauses
     expect(url).toContain('"displayName:Glad"')
     expect(url).toContain('"displayName:Fjord"')
     expect(url).toContain('"displayName:test"')
@@ -159,7 +157,6 @@ describe('microsoft-graph', () => {
 
     expect(results).toEqual([{ displayName: 'Røe, Modig', email: 'modig.roe@nav.no', navIdent: 'Z990004' }])
 
-    // Both words sent as separate displayName clauses (implicit AND)
     const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
     expect(url).toContain('"displayName:Modig"')
     expect(url).toContain('"displayName:Røe"')

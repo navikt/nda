@@ -83,15 +83,12 @@ describe('boards', () => {
       obj[0].id,
     ])
 
-    // Deactivate objective
     await pool.query('UPDATE board_objectives SET is_active = false WHERE id = $1', [obj[0].id])
 
-    // Objective still exists but is inactive
     const { rows: objectives } = await pool.query('SELECT * FROM board_objectives WHERE id = $1', [obj[0].id])
     expect(objectives).toHaveLength(1)
     expect(objectives[0].is_active).toBe(false)
 
-    // Key results still exist
     const { rows: keyResults } = await pool.query('SELECT * FROM board_key_results WHERE objective_id = $1', [
       obj[0].id,
     ])
@@ -112,7 +109,6 @@ describe('boards', () => {
       [deploymentId, obj[0].id],
     )
 
-    // Physical deletion should fail with RESTRICT
     await expect(pool.query('DELETE FROM board_objectives WHERE id = $1', [obj[0].id])).rejects.toThrow()
   })
 
@@ -134,7 +130,6 @@ describe('boards', () => {
       [deploymentId, kr[0].id],
     )
 
-    // Physical deletion should fail with RESTRICT
     await expect(pool.query('DELETE FROM board_key_results WHERE id = $1', [kr[0].id])).rejects.toThrow()
   })
 
@@ -142,7 +137,6 @@ describe('boards', () => {
     const { board } = await seedBoardStack(pool)
     await pool.query("INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'Obj', 0)", [board.id])
 
-    // Physical deletion should fail with RESTRICT
     await expect(pool.query('DELETE FROM boards WHERE id = $1', [board.id])).rejects.toThrow()
   })
 
@@ -290,7 +284,6 @@ describe('getBoardsWithGoalsForDevTeam', () => {
       "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'O3', 0) RETURNING id",
       [b2[0].id],
     )
-    // inactive objective should be excluded
     await pool.query(
       "INSERT INTO board_objectives (board_id, title, sort_order, is_active) VALUES ($1, 'O-inactive', 2, false)",
       [b1[0].id],
@@ -305,14 +298,13 @@ describe('getBoardsWithGoalsForDevTeam', () => {
     await pool.query("INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'KR3', 0)", [
       o3[0].id,
     ])
-    // inactive KR should be excluded
     await pool.query(
       "INSERT INTO board_key_results (objective_id, title, sort_order, is_active) VALUES ($1, 'KR-inactive', 2, false)",
       [o1[0].id],
     )
 
     const result = await getBoardsWithGoalsForDevTeam(devTeamId)
-    expect(result.map((b) => b.id)).toEqual([b2[0].id, b1[0].id]) // sorted by period_start DESC
+    expect(result.map((b) => b.id)).toEqual([b2[0].id, b1[0].id])
 
     const board2 = result[0]
     const board1 = result[1]
@@ -471,7 +463,6 @@ describe('getBoardWithObjectives', () => {
       "INSERT INTO external_references (ref_type, url, title, objective_id) VALUES ('jira', 'https://j/o1', 'O1-ref', $1)",
       [o1[0].id],
     )
-    // soft-deleted objective ref should be excluded
     await pool.query(
       "INSERT INTO external_references (ref_type, url, title, objective_id, deleted_at, deleted_by) VALUES ('jira', 'https://j/o1-del', 'O1-del', $1, NOW(), 'A1')",
       [o1[0].id],

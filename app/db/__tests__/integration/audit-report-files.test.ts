@@ -1,8 +1,3 @@
-/**
- * Integration tests for audit_report_files —
- * saveAuditReportFile, getAuditReportFile and the M2M "has pdf" filter.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {

@@ -3,12 +3,6 @@ import { Box, Detail, HStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { Link, MemoryRouter } from 'react-router'
 
-/**
- * Breadcrumbs viser brødsmulesti basert på nåværende rute.
- *
- * Siden den faktiske komponenten bruker useMatches (data router),
- * viser vi her mockede breadcrumbs for å demonstrere utseendet.
- */
 const meta: Meta = {
   title: 'Components/Breadcrumbs',
   parameters: {

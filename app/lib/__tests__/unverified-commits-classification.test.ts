@@ -2,11 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { ImplicitApprovalSettings, PrCommit, PrMetadata, PrReview, VerificationInput } from '../verification/types'
 import { verifyDeployment } from '../verification/verify'
 
-/**
- * Tests for the commit classification logic in findUnverifiedCommits().
- * We exercise this through verifyDeployment() since findUnverifiedCommits is private.
- */
-
 function makeMetadata(overrides: Partial<PrMetadata> = {}): PrMetadata {
   return {
     number: 42,

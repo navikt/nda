@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
-// Mock DB modules
 vi.mock('~/db/github-data.server', () => ({
   getLatestCommitSnapshot: vi.fn(),
   getAllLatestPrSnapshots: vi.fn(),
@@ -26,7 +25,6 @@ vi.mock('~/db/sync-jobs.server', () => ({
   updateSyncJobProgress: vi.fn(),
 }))
 
-// Mock GitHub client
 vi.mock('~/lib/github', () => ({
   getPullRequestForCommit: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
@@ -35,7 +33,6 @@ vi.mock('~/lib/github', () => ({
   isCommitOnBranch: vi.fn(),
 }))
 
-// Mock logger
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
@@ -77,8 +74,6 @@ describe('findPrForCommit stale cache handling', () => {
   })
 
   it('trusts empty cache without calling GitHub (no staleness-based re-fetch)', async () => {
-    // Empty PR cache is trusted — healing only happens via forceRefresh
-    // (interactive operations like computeVerificationDiffs double-check)
     mockGetCommitSnapshot.mockResolvedValue({
       data: { prs: [] },
       schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -99,19 +94,16 @@ describe('findPrForCommit stale cache handling', () => {
 
     const result = await buildCommitsBetweenFromCache('navikt', 'repo', 'main', compareData)
 
-    // Should NOT call GitHub API — empty cache is trusted
     expect(mockGetPrForCommit).not.toHaveBeenCalled()
     expect(result[0].pr).toBeNull()
   })
 
   it('bypasses stale empty cache when forceRefresh is true', async () => {
-    // Simulate a cached empty PR association (from a race condition)
     mockGetCommitSnapshot.mockResolvedValue({
       data: { prs: [] },
       schemaVersion: CURRENT_SCHEMA_VERSION,
     })
 
-    // When GitHub is called fresh, it now finds the PR
     mockGetPrForCommit.mockResolvedValue({
       pr: {
         number: 100,
@@ -123,7 +115,6 @@ describe('findPrForCommit stale cache handling', () => {
       allAssociatedPrs: [{ number: 100, baseBranch: 'main' }],
     })
 
-    // Mock PR detail data fetch (via getDetailedPullRequestInfo)
     mockGetDetailedPrInfo.mockResolvedValue({
       number: 100,
       title: 'Feature branch',
@@ -165,7 +156,6 @@ describe('findPrForCommit stale cache handling', () => {
       comments: [],
     })
 
-    // Mock that no cached PR snapshots exist (force fetch from GitHub)
     mockGetAllPrSnapshots.mockResolvedValue(new Map())
 
     const compareData = makeCompareData([
@@ -185,15 +175,11 @@ describe('findPrForCommit stale cache handling', () => {
       forceRefresh: true,
     })
 
-    // SHOULD call GitHub API, bypassing the stale cache
     expect(mockGetPrForCommit).toHaveBeenCalledWith('navikt', 'repo', 'abc123', true, 'main')
-    // Should update the cache with the new PR association
     expect(mockSaveCommitSnapshot).toHaveBeenCalledWith('navikt', 'repo', 'abc123', 'prs', {
       prs: [{ number: 100, baseBranch: 'main' }],
     })
-    // Verify getDetailedPullRequestInfo was called to fetch PR details
     expect(mockGetDetailedPrInfo).toHaveBeenCalledWith('navikt', 'repo', 100)
-    // Commit now has PR data
     expect(result[0].pr).not.toBeNull()
     expect(result[0].pr?.number).toBe(100)
   })
@@ -221,7 +207,6 @@ describe('findPrForCommit stale cache handling', () => {
       cacheOnly: true,
     })
 
-    // Should NOT call GitHub API in cache-only mode
     expect(mockGetPrForCommit).not.toHaveBeenCalled()
     expect(result[0].pr).toBeNull()
   })

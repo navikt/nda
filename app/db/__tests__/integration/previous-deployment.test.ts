@@ -1,10 +1,3 @@
-/**
- * Integration test: getPreviousDeployment query logic.
- *
- * Verifies that legacy deployments and invalid refs are excluded
- * when finding the previous deployment for verification.
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { assignAppToGroup, seedApp, seedApplicationGroup, seedDeployment, truncateAllTables } from './helpers'
@@ -23,10 +16,6 @@ afterEach(async () => {
   await truncateAllTables(pool)
 })
 
-/**
- * Replicates the getPreviousDeployment query from fetch-data.server.ts.
- * We test the SQL directly since the function is private.
- */
 async function getPreviousDeployment(
   currentDeploymentId: number,
   environmentName: string,
@@ -60,7 +49,6 @@ describe('getPreviousDeployment query', () => {
   it('should skip legacy deployments and return null when no valid previous exists', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
-    // Legacy deployment (old)
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -72,7 +60,6 @@ describe('getPreviousDeployment query', () => {
       githubRepo: repo,
     })
 
-    // Current deployment (new)
     const currentId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -91,7 +78,6 @@ describe('getPreviousDeployment query', () => {
   it('should skip deployments with refs/ commit SHAs', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
-    // Deployment with refs/ SHA but not legacy status
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -121,7 +107,6 @@ describe('getPreviousDeployment query', () => {
   it('should return a valid non-legacy previous deployment', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
-    // Legacy (oldest)
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -133,7 +118,6 @@ describe('getPreviousDeployment query', () => {
       githubRepo: repo,
     })
 
-    // Valid previous deployment (middle)
     const validId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -145,7 +129,6 @@ describe('getPreviousDeployment query', () => {
       githubRepo: repo,
     })
 
-    // Current deployment (newest)
     const currentId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -193,10 +176,6 @@ describe('getPreviousDeployment query', () => {
   })
 })
 
-/**
- * Replicates the getPreviousDeploymentFromGroupSibling query from fetch-data.server.ts.
- * First checks if the app has a group, then queries sibling environments.
- */
 async function getPreviousDeploymentFromGroupSibling(
   currentDeploymentId: number,
   owner: string,
@@ -204,7 +183,6 @@ async function getPreviousDeploymentFromGroupSibling(
   monitoredAppId: number,
   auditStartYear?: number | null,
 ): Promise<{ id: number; commitSha: string } | null> {
-  // Early return: check if app belongs to a group (matches production)
   const groupCheck = await pool.query<{ application_group_id: number | null }>(
     `SELECT application_group_id FROM monitored_applications WHERE id = $1`,
     [monitoredAppId],
@@ -244,17 +222,13 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
   const repo = 'pensjon-psak'
 
   it('should find previous deployment from a sibling app in the same group', async () => {
-    // App in prod-fss (has history)
     const appFss = await seedApp(pool, { teamSlug: 'team', appName: 'pensjon-psak', environment: 'prod-fss' })
-    // App in prod-gcp (new, no history in this env)
     const appGcp = await seedApp(pool, { teamSlug: 'team', appName: 'pensjon-penny', environment: 'prod-gcp' })
 
-    // Group them
     const groupId = await seedApplicationGroup(pool, 'psak-og-penny')
     await assignAppToGroup(pool, appFss, groupId)
     await assignAppToGroup(pool, appGcp, groupId)
 
-    // Existing deployment in prod-fss (older)
     const siblingId = await seedDeployment(pool, {
       monitoredAppId: appFss,
       teamSlug: 'team',
@@ -266,7 +240,6 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
       githubRepo: repo,
     })
 
-    // New deployment in prod-gcp (no prior in this env)
     const currentId = await seedDeployment(pool, {
       monitoredAppId: appGcp,
       teamSlug: 'team',
@@ -278,11 +251,9 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
       githubRepo: repo,
     })
 
-    // Standard query finds nothing (different environment)
     const prev = await getPreviousDeployment(currentId, 'prod-gcp', owner, repo)
     expect(prev).toBeNull()
 
-    // Group sibling fallback finds the prod-fss deployment
     const siblingPrev = await getPreviousDeploymentFromGroupSibling(currentId, owner, repo, appGcp)
     expect(siblingPrev).not.toBeNull()
     expect(siblingPrev?.id).toBe(siblingId)
@@ -315,7 +286,6 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
     await assignAppToGroup(pool, appFss, groupId)
     await assignAppToGroup(pool, appGcp, groupId)
 
-    // Deployment from different repo
     await seedDeployment(pool, {
       monitoredAppId: appFss,
       teamSlug: 'team',
@@ -350,7 +320,6 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
     await assignAppToGroup(pool, appFss, groupId)
     await assignAppToGroup(pool, appGcp, groupId)
 
-    // Legacy deployment in sibling
     await seedDeployment(pool, {
       monitoredAppId: appFss,
       teamSlug: 'team',
@@ -395,7 +364,6 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
     await assignAppToGroup(pool, appFss, groupId)
     await assignAppToGroup(pool, appGcp, groupId)
 
-    // Deployment in sibling BEFORE audit start year
     await seedDeployment(pool, {
       monitoredAppId: appFss,
       teamSlug: 'team',
@@ -407,7 +375,6 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
       githubRepo: repo,
     })
 
-    // Deployment in sibling AFTER audit start year
     const validId = await seedDeployment(pool, {
       monitoredAppId: appFss,
       teamSlug: 'team',
@@ -430,15 +397,12 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
       githubRepo: repo,
     })
 
-    // Without auditStartYear: finds the newest sibling (new222)
     const prevNoFilter = await getPreviousDeploymentFromGroupSibling(currentId, owner, repo, appGcp)
     expect(prevNoFilter?.id).toBe(validId)
 
-    // With auditStartYear=2025: still finds new222 (within window)
     const prevWithYear = await getPreviousDeploymentFromGroupSibling(currentId, owner, repo, appGcp, 2025)
     expect(prevWithYear?.id).toBe(validId)
 
-    // With auditStartYear=2026: excludes both (too old for this window)
     const prevStrictYear = await getPreviousDeploymentFromGroupSibling(currentId, owner, repo, appGcp, 2026)
     expect(prevStrictYear).toBeNull()
   })

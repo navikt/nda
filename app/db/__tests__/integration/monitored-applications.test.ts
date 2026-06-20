@@ -1,11 +1,3 @@
-/**
- * Integration tests for createMonitoredApplication.
- *
- * Spesifikt: verifiserer at audit_start_year settes ved første INSERT, og at
- * eksisterende verdi *ikke* overskrives ved ON CONFLICT (re-add av app skal
- * ikke kunne endre revisjonsvinduet utilsiktet).
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createMonitoredApplication, getMonitoredApplicationById } from '../../monitored-applications.server'
@@ -47,7 +39,6 @@ describe('createMonitoredApplication', () => {
     })
     expect(first.audit_start_year).toBe(2023)
 
-    // Re-add med annet årstall — skal IKKE overskrive
     const second = await createMonitoredApplication({
       team_slug: 'team-a',
       environment_name: 'prod-gcp',
@@ -57,7 +48,6 @@ describe('createMonitoredApplication', () => {
     })
     expect(second.audit_start_year).toBe(2023)
 
-    // Verifiser også via ny lesing
     const fetched = await getMonitoredApplicationById(first.id)
     expect(fetched?.audit_start_year).toBe(2023)
   })

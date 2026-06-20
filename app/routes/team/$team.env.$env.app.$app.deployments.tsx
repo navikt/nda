@@ -48,17 +48,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const range = getDateRangeForPeriod(period)
 
-  // Check if this app belongs to an application group
   const { group: appGroup, siblings: allSiblings } = await getGroupContext(app.id)
   const hasGroup = allSiblings.length > 0
   const siblings = showGroup ? allSiblings : []
 
-  // Resolve current user (used for "Meg" deployer shortcut and "Mine team" filter)
   const currentUser = await getUserIdentity(request)
 
-  // Dev teams owning this app (or group siblings) — used to populate the team-filter dropdown.
-  // When viewing a group, check ownership across ALL sibling apps so a dev team
-  // that only owns a secondary app in the group is still found.
   const owningDevTeams =
     showGroup && hasGroup
       ? await getDevTeamsForApps([
@@ -67,9 +62,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         ])
       : await getDevTeamsForApp(app.id, app.team_slug)
 
-  // User's assigned dev teams — needed both to render the "Mine team" option
-  // (only shown when the user has a role in at least one team) and to resolve
-  // it to a list of GitHub usernames when applied.
   let userDevTeams: Awaited<ReturnType<typeof getUserDevTeamsByRole>> | null = null
   if (currentUser?.navIdent) {
     try {
@@ -79,22 +71,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
   }
 
-  // Resolve the team filter to a list of GitHub usernames.
-  // - "" / "all"  → no filter (undefined)
-  // - "mine"      → union of all members across the user's dev teams
-  // - "<slug>"    → members of that single dev team (owner or contributor)
-  //
-  // We track *why* the resolved set is empty so the UI can give a useful
-  // empty-state hint instead of generic "no deployments". `teamFilterEmpty`
-  // is true only when the filter was applied but yields no candidate users.
   let deployerUsernamesFilter: string[] | undefined
   let teamFilterEmptyReason: 'no-user-teams' | 'no-team-members' | null = null
-  // Wrap helper calls in try/catch so the page still works if the
-  // dev_team_role_assignments table hasn't been deployed yet (matches the
-  // graceful degradation for getUserDevTeamsByRole above) — fall back to no filter.
   if (teamFilter === 'mine') {
     if (userDevTeams === null) {
-      // Role query failed — fall back to no filter rather than showing 0 deployments
       deployerUsernamesFilter = undefined
     } else if (userDevTeams.length === 0) {
       deployerUsernamesFilter = []
@@ -108,7 +88,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       }
     }
   } else if (teamFilter) {
-    // Look up the team by slug — it may be an owning team or a contributing team
     const matched = owningDevTeams.find((t) => t.slug === teamFilter) ?? (await getDevTeamBySlug(teamFilter))
     if (matched) {
       try {
@@ -143,13 +122,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const result = await getDeploymentsPaginated(filters)
 
-  // Redirect to last valid page if requested page exceeds total pages
   if (page > result.total_pages && result.total_pages > 0) {
     url.searchParams.set('page', String(result.total_pages))
     throw redirect(url.pathname + url.search)
   }
 
-  // ── Parallel: error reasons, all deployers, and current user GitHub mapping ──
   const errorDeploymentIds = result.deployments.filter((d) => d.four_eyes_status === 'error').map((d) => d.id)
   const appIds = showGroup && hasGroup ? [app.id, ...siblings.map((s) => s.id)] : [app.id]
 
@@ -213,7 +190,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const allDeployers = allDeployersResult.rows.map((r: any) => r.deployer_username as string)
 
-  // Get display names for deployers, PR creators, and mergers (current page + all distinct deployers for filter)
   const deployerUsernames = [...new Set(result.deployments.map((d) => d.deployer_username).filter(Boolean))] as string[]
   const prCreatorUsernames = result.deployments
     .map((d: any) => d.github_pr_data?.creator?.username)
@@ -226,28 +202,22 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   ]
   const userMappings = await getGithubUserLookups(allUsernamesForMapping)
 
-  // Build deployer options with display names
   const deployerOptions = allDeployers.map((username) => {
     const mapping = userMappings.get(username)
     return { value: username, label: mapping?.display_name || username }
   })
   deployerOptions.sort((a, b) => a.label.localeCompare(b.label, 'no'))
 
-  // Check if any deployer in the audit window lacks an active mapping
   const hasUnmappedDeployers = allDeployers.some((u) => {
     const m = userMappings.get(u)
     return !m || m.account_deleted_at !== null
   })
 
-  // Find current user's GitHub username for "Meg" shortcut
   let currentUserGithub: string | null = null
   if (currentUserMapping?.github_username && allDeployers.includes(currentUserMapping.github_username)) {
     currentUserGithub = currentUserMapping.github_username
   }
 
-  // Build dropdown options for the team filter:
-  // 1. "Mine team" (if user has assigned dev-team roles)
-  // 2. Teams owning the app + teams with contributing members (deployer/PR creator/merger)
   const allContributors = [...new Set(allContributorsResult.rows.map((r: any) => r.username as string))]
   let contributingTeams: Array<{ id: number; slug: string; name: string }> = []
   try {
@@ -316,7 +286,6 @@ export default function AppDeployments() {
   const currentSha = searchParams.get('sha') || ''
   const currentPeriod = searchParams.get('period') || 'last-week'
   const teamParam = searchParams.get('team') || ''
-  // Clear 'mine' if the option isn't available (e.g. role query failed)
   const currentTeam = teamParam === 'mine' && !teamOptions.some((o) => o.value === 'mine') ? '' : teamParam
 
   const updateFilter = (key: string, value: string) => {

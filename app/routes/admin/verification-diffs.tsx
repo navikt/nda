@@ -1,10 +1,3 @@
-/**
- * Global Verification Diffs Admin Page
- *
- * Allows admins to compute and view verification diffs across ALL
- * monitored applications, not just one at a time.
- */
-
 import {
   Link as AkselLink,
   Alert,
@@ -68,7 +61,6 @@ export function meta(_args: Route.MetaArgs) {
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  // Get all diffs across all apps
   const result = await pool.query(
     `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.error_reason, vd.monitored_app_id,
             d.commit_sha, d.environment_name, d.created_at,
@@ -109,10 +101,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   )
 
-  // Get all active apps for the compute-all button
   const apps = await getAllMonitoredApplications()
 
-  // Get latest global compute job
   const jobResult = await pool.query(
     `SELECT id, status, result, started_at, completed_at
      FROM sync_jobs
@@ -122,14 +112,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   )
   const latestJob = jobResult.rows[0] || null
 
-  // Get missing approver summary (aggregated — no full list needed)
   const { total: missingApproverCount, byApp } = await getMissingApproverSummary()
   const missingApproverApps = byApp.map((r) => ({
     app: `${r.team_slug}/${r.environment_name}/${r.app_name}`,
     count: r.count,
   }))
 
-  // Get latest refresh job (global only — monitored_app_id IS NULL)
   const refreshJobResult = await pool.query(
     `SELECT id, status, result, started_at, completed_at
      FROM sync_jobs
@@ -149,10 +137,8 @@ export async function action({ request }: Route.ActionArgs) {
   const actionType = formData.get('action') as string
 
   if (actionType === 'compute_all') {
-    // Start computing diffs for all apps in background
     const apps = await getAllMonitoredApplications()
 
-    // Create a tracking job
     const jobResult = await pool.query(
       `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, locked_by, lock_expires_at, result)
        VALUES ('reverify_all', $1, 'running', NOW(), $2, NOW() + INTERVAL '30 minutes', $3)
@@ -165,7 +151,6 @@ export async function action({ request }: Route.ActionArgs) {
     )
     const jobId = jobResult.rows[0].id
 
-    // Process in background
     processComputeAllAsync(jobId, apps).catch((err) => {
       logger.error('Compute all diffs failed', err instanceof Error ? err : new Error(String(err)))
     })
@@ -205,10 +190,8 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (actionType === 'refresh_missing_approver_all') {
-    // Release any stuck jobs with expired locks before checking/inserting
     await releaseExpiredLocks()
 
-    // Check for existing running job BEFORE heavy query
     const existingJob = await pool.query(
       `SELECT id FROM sync_jobs WHERE job_type = 'refresh_missing_approver' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
     )
@@ -220,7 +203,6 @@ export async function action({ request }: Route.ActionArgs) {
     if (deployments.length === 0)
       return { refreshEmpty: true, refreshResult: { refreshed: 0, skipped: 0, errors: 0, total: 0 } }
 
-    // Create a tracking job — handle unique constraint race (23505)
     let jobId: number
     try {
       const jobResult = await pool.query(
@@ -273,13 +255,11 @@ async function processComputeAllAsync(jobId: number, apps: Array<{ id: number; t
       }
       processed++
 
-      // Update progress
       await pool.query(`UPDATE sync_jobs SET result = $2 WHERE id = $1 AND status = 'running'`, [
         jobId,
         JSON.stringify({ processed, total: apps.length, totalDiffs, errors }),
       ])
 
-      // Extend lock
       if (processed % 5 === 0) {
         await pool.query(
           `UPDATE sync_jobs SET lock_expires_at = NOW() + INTERVAL '30 minutes' WHERE id = $1 AND status = 'running'`,
@@ -359,14 +339,12 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
 
       const processed = refreshed + skipped + errors
 
-      // Update progress every 5 deployments, plus first and last
       if (processed === 1 || processed === deployments.length || processed % 5 === 0) {
         await updateSyncJobProgress(jobId, { processed, refreshed, skipped, errors, total: deployments.length })
         await heartbeatSyncJob(jobId, 30)
       }
     }
 
-    // Don't overwrite cancelled status
     if (!cancelled && !(await isSyncJobCancelled(jobId))) {
       await pool.query(
         `UPDATE sync_jobs SET status = 'completed', completed_at = NOW(), result = $2 WHERE id = $1 AND status = 'running'`,
@@ -400,7 +378,6 @@ export default function GlobalVerificationDiffsPage() {
   const revalidator = useRevalidator()
   const isApplying = navigation.state === 'submitting' && navigation.formData?.get('action') === 'apply_selected'
 
-  // Job polling
   const computeFetcher = useFetcher()
   const [activeJobId, setActiveJobId] = useState<number | null>(latestJob?.status === 'running' ? latestJob.id : null)
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -465,7 +442,6 @@ export default function GlobalVerificationDiffsPage() {
 
   const isComputing = !!activeJobId || triggerFetcher.state !== 'idle'
 
-  // Refresh missing approver job polling
   const refreshFetcher = useFetcher()
   const refreshTriggerFetcher = useFetcher()
   const [activeRefreshJobId, setActiveRefreshJobId] = useState<number | null>(
@@ -552,7 +528,6 @@ export default function GlobalVerificationDiffsPage() {
 
   const isRefreshing = !!activeRefreshJobId || refreshTriggerFetcher.state !== 'idle'
 
-  // Multi-select
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const toggleId = (id: number) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -568,7 +543,6 @@ export default function GlobalVerificationDiffsPage() {
     }
   })
 
-  // Group diffs by app for summary
   const appGroups = new Map<string, number>()
   for (const diff of diffs) {
     const key = `${diff.teamSlug}/${diff.appName}`

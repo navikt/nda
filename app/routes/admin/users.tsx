@@ -122,8 +122,6 @@ export async function action({ request }: Route.ActionArgs) {
     const githubUsername = githubUsernameRaw.toLowerCase()
     const navIdentRaw = getFormString(formData, 'nav_ident')?.toUpperCase() || null
 
-    // nav_email included for TypeScript compatibility — both create-mapping and upsert branches
-    // contribute to the same inferred action return type used by the Edit modal (line ~484)
     const fieldErrors: { github_username?: string; nav_email?: string; nav_ident?: string } = {}
 
     if (!githubUsername) {
@@ -185,12 +183,10 @@ export async function action({ request }: Route.ActionArgs) {
       fieldErrors.github_username = 'Kan ikke opprette mapping for GitHub-botkontoer'
     }
 
-    // Validate email format
     if (navEmail && !isValidEmail(navEmail)) {
       fieldErrors.nav_email = 'Ugyldig e-postformat'
     }
 
-    // Validate Nav-ident format (one letter followed by 6 digits)
     if (navIdent && !isValidNavIdent(navIdent)) {
       fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer'
     }
@@ -286,7 +282,6 @@ export default function AdminUsers() {
 
   const devTeamById = new Map(allDevTeams.map((t) => [t.id, t]))
 
-  // Reset add form and close modals when action succeeds
   useEffect(() => {
     if (actionData?.success && navigation.state === 'idle') {
       setAddFormKey((k) => k + 1)
@@ -295,7 +290,6 @@ export default function AdminUsers() {
     }
   }, [actionData, navigation.state])
 
-  // Open add modal after remount triggered by key change
   useEffect(() => {
     if (addModalTrigger > 0) {
       addModalRef.current?.showModal()

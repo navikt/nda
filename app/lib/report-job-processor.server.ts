@@ -1,9 +1,3 @@
-/**
- * Shared report generation logic used by both the web admin UI and M2M API.
- *
- * Orchestrates: job status update → data fetch → report save → PDF → store.
- */
-
 import {
   archiveAuditReport,
   buildReportData,
@@ -30,10 +24,6 @@ interface ReportJobParams {
   supersedeReason?: string
 }
 
-/**
- * Process a report generation job in background (fire-and-forget).
- * Used by both web admin actions and M2M generate endpoint.
- */
 export async function processReportJobAsync(params: ReportJobParams) {
   const {
     jobId,
@@ -51,7 +41,7 @@ export async function processReportJobAsync(params: ReportJobParams) {
   try {
     const claimed = await claimReportJob(jobId)
     if (!claimed) {
-      return // Another processor already claimed this job
+      return
     }
 
     const rawData = await getAuditReportData(appId, periodStart, periodEnd)
@@ -76,7 +66,6 @@ export async function processReportJobAsync(params: ReportJobParams) {
 
     reportId = report.id
 
-    // Link job to the created report
     await setReportJobAuditReportId(jobId, report.id)
 
     const reportProps = {
@@ -127,7 +116,6 @@ export async function processReportJobAsync(params: ReportJobParams) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error'
     await updateReportJobStatus(jobId, 'failed', undefined, errorMessage)
 
-    // Archive incomplete report (no PDF) so it doesn't block retries
     if (reportId) {
       await archiveAuditReport(reportId, appId, generatedBy ?? generatedByApp ?? 'system', 'Report generation failed')
     }

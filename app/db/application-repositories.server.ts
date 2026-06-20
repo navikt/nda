@@ -14,9 +14,6 @@ interface ApplicationRepository {
   created_at: Date
 }
 
-/**
- * Get all repositories for a monitored application
- */
 export async function getRepositoriesByAppId(appId: number): Promise<ApplicationRepository[]> {
   const result = await pool.query(
     `SELECT * FROM application_repositories 
@@ -33,10 +30,6 @@ export async function getRepositoriesByAppId(appId: number): Promise<Application
   return result.rows
 }
 
-/**
- * Find repository for an app (checking status and redirects)
- * Returns the effective repository (following redirects if set up)
- */
 export async function findRepositoryForApp(
   appId: number,
   owner: string,
@@ -66,7 +59,6 @@ export async function findRepositoryForApp(
 
   const repo = result.rows[0]
 
-  // Check if this repo redirects to another
   if (repo.redirects_to_owner && repo.redirects_to_repo) {
     return {
       repository: repo,
@@ -84,10 +76,6 @@ export async function findRepositoryForApp(
   }
 }
 
-/**
- * Create or update a repository for an app
- * If repository already exists, updates it; otherwise creates new
- */
 export async function upsertApplicationRepository(data: {
   monitoredAppId: number
   githubOwner: string
@@ -129,9 +117,6 @@ export async function upsertApplicationRepository(data: {
   return result.rows[0]
 }
 
-/**
- * Approve a pending repository
- */
 export async function approveRepository(
   repoId: number,
   approvedBy: string,
@@ -139,7 +124,6 @@ export async function approveRepository(
 ): Promise<ApplicationRepository> {
   const status = setAsActive ? 'active' : 'historical'
 
-  // If setting as active, deactivate other repos for same app
   if (setAsActive) {
     const repo = await pool.query('SELECT monitored_app_id FROM application_repositories WHERE id = $1', [repoId])
 
@@ -170,16 +154,10 @@ export async function approveRepository(
   return result.rows[0]
 }
 
-/**
- * Reject/delete a pending repository
- */
 export async function rejectRepository(repoId: number): Promise<void> {
   await pool.query(`DELETE FROM application_repositories WHERE id = $1 AND status = 'pending_approval'`, [repoId])
 }
 
-/**
- * Set a repository as active (and deactivate others for same app)
- */
 export async function setRepositoryAsActive(repoId: number): Promise<ApplicationRepository> {
   const repo = await pool.query('SELECT monitored_app_id FROM application_repositories WHERE id = $1', [repoId])
 
@@ -187,7 +165,6 @@ export async function setRepositoryAsActive(repoId: number): Promise<Application
     throw new Error(`Repository with id ${repoId} not found`)
   }
 
-  // Deactivate other repos
   await pool.query(
     `UPDATE application_repositories 
      SET status = 'historical' 
@@ -195,7 +172,6 @@ export async function setRepositoryAsActive(repoId: number): Promise<Application
     [repo.rows[0].monitored_app_id, repoId],
   )
 
-  // Activate this repo
   const result = await pool.query(
     `UPDATE application_repositories 
      SET status = 'active' 
@@ -207,9 +183,6 @@ export async function setRepositoryAsActive(repoId: number): Promise<Application
   return result.rows[0]
 }
 
-/**
- * Get all active repositories as a Map of appId -> "owner/repo" string
- */
 export async function getAllActiveRepositories(): Promise<Map<number, string>> {
   const result = await pool.query(
     `SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name

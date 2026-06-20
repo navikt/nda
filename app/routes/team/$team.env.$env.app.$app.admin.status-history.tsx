@@ -1,10 +1,3 @@
-/**
- * Status History Page (App Admin)
- *
- * Shows deployments that have had status transitions (more than one entry in history).
- * Useful for finding deployments where verification results have changed over time.
- */
-
 import { BodyShort, Box, Heading, Table, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { getDeploymentsWithStatusChanges } from '~/db/deployments.server'

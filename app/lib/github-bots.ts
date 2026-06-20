@@ -1,18 +1,8 @@
-/**
- * GitHub Bot User Utilities
- *
- * Handles recognition and display of GitHub bot accounts like dependabot[bot].
- * Bot users should not have user mappings created for them.
- */
-
 interface GitHubBot {
   displayName: string
   description: string
 }
 
-/**
- * Known GitHub bot usernames with their display names and descriptions
- */
 export const GITHUB_BOTS: Record<string, GitHubBot> = {
   'dependabot[bot]': {
     displayName: 'Dependabot',
@@ -48,37 +38,23 @@ export const GITHUB_BOTS: Record<string, GitHubBot> = {
   },
 }
 
-/**
- * Known GitHub bot usernames that do NOT end with `[bot]`.
- * Used in SQL queries that already filter `LIKE '%[bot]'` to also
- * exclude these additional known bots (e.g. `snyk-bot`).
- */
 export const NON_BRACKET_BOT_USERNAMES = Object.keys(GITHUB_BOTS)
   .filter((u) => !u.endsWith('[bot]'))
   .map((u) => u.toLowerCase())
 
-/**
- * Check if a username is a known GitHub bot
- */
 export function isGitHubBot(username: string | null | undefined): boolean {
   if (!username) return false
   return username in GITHUB_BOTS || username.endsWith('[bot]')
 }
 
-/**
- * Get display name for a bot user, or null if not a bot
- */
 export function getBotDisplayName(username: string | null | undefined): string | null {
   if (!username) return null
 
-  // Check known bots first
   if (username in GITHUB_BOTS) {
     return GITHUB_BOTS[username].displayName
   }
 
-  // Handle unknown [bot] users
   if (username.endsWith('[bot]')) {
-    // Convert "some-app[bot]" to "Some App (bot)"
     const baseName = username.replace('[bot]', '')
     const displayName = baseName
       .split(/[-_]/)
@@ -90,9 +66,6 @@ export function getBotDisplayName(username: string | null | undefined): string |
   return null
 }
 
-/**
- * Get description for a bot user, or null if not a known bot
- */
 export function getBotDescription(username: string | null | undefined): string | null {
   if (!username) return null
 
@@ -100,7 +73,6 @@ export function getBotDescription(username: string | null | undefined): string |
     return GITHUB_BOTS[username].description
   }
 
-  // Generic description for unknown bots
   if (username.endsWith('[bot]')) {
     return 'GitHub bot-konto.'
   }

@@ -3,7 +3,6 @@ import { isDependabotUser } from '~/lib/dependabot'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
 
-// Cache for PR commits to avoid repeated API calls for same PR
 const prCommitsCache = new Map<string, string[]>()
 
 function _clearPrCommitsCache(): void {
@@ -30,10 +29,6 @@ interface MergedPullRequestInWindow {
   mergedByUsername: string | null
 }
 
-/**
- * List merged PRs on a base branch within a merged_at time window.
- * Used by debug tooling to explain out-of-order/superseded deployment sequences.
- */
 export async function getMergedPullRequestsInWindow(
   owner: string,
   repo: string,
@@ -55,8 +50,6 @@ export async function getMergedPullRequestsInWindow(
   const perPage = 100
   const maxPages = 10
 
-  // Search API is capped; for a ±30 minute window we should be far below limits.
-  // Keep pagination bounded to avoid page>10 (422) on very broad search windows.
   for (let page = 1; page <= maxPages; page++) {
     const response = await client.search.issuesAndPullRequests({
       q: query,
@@ -122,17 +115,6 @@ export async function getMergedPullRequestsInWindow(
   return mergedPrs.sort((a, b) => new Date(a.mergedAt).getTime() - new Date(b.mergedAt).getTime())
 }
 
-/**
- * Result from `getPullRequestForCommit`: the PR matched by the (optional)
- * baseBranch filter (or null if none), plus the full unfiltered list of PRs
- * associated with the commit and their actual base branches.
- *
- * `allAssociatedPrs` is used by callers to:
- *  - Cache the canonical {number, baseBranch} pairs (instead of the requested
- *    baseBranch which is what schema v2 mistakenly stored).
- *  - Detect base-branch mismatch (a PR exists for the commit, but on a branch
- *    other than the configured `default_branch`).
- */
 interface PullRequestLookupResult {
   pr: PullRequest | null
   allAssociatedPrs: Array<{ number: number; baseBranch: string }>
@@ -167,14 +149,12 @@ export async function getPullRequestForCommit(
       return { pr: null, allAssociatedPrs }
     }
 
-    // Filter to only PRs targeting the base branch if specified
     const filteredPRs = baseBranch ? response.data.filter((pr) => pr.base.ref === baseBranch) : response.data
 
     if (baseBranch && filteredPRs.length !== response.data.length) {
       logger.info(`   🔍 Filtered to ${filteredPRs.length} PR(s) targeting ${baseBranch}`)
     }
 
-    // Log all PRs found
     filteredPRs.forEach((pr, index) => {
       logger.info(
         `   PR ${index + 1}: #${pr.number} - ${pr.title} (${pr.state}, merged: ${pr.merged_at ? 'yes' : 'no'}, base: ${pr.base.ref})`,
@@ -186,17 +166,10 @@ export async function getPullRequestForCommit(
       return { pr: null, allAssociatedPrs }
     }
 
-    // When verifyCommitIsInPR is true, we need to check that the commit is actually
-    // part of the PR's original commits, not just reachable via merge from main.
-    // This is important to detect commits pushed directly to main that get
-    // "smuggled" into a PR when the PR merges main into its branch.
     if (verifyCommitIsInPR) {
       for (const pr of filteredPRs) {
-        // Only check merged PRs
         if (!pr.merged_at) continue
 
-        // Check if this commit is the PR's merge/squash commit
-        // For squash merges, the merge_commit_sha is the squashed commit
         if (pr.merge_commit_sha === sha) {
           logger.info(`✅ Commit ${sha.substring(0, 7)} is the merge/squash commit for PR #${pr.number}`)
           return {
@@ -211,16 +184,13 @@ export async function getPullRequestForCommit(
           }
         }
 
-        // Check cache first
         const cacheKey = `${owner}/${repo}#${pr.number}`
         let prCommitShas = prCommitsCache.get(cacheKey)
 
-        // Also get metadata cache for rebase matching
         const metadataCacheKey = `${owner}/${repo}#${pr.number}-metadata`
         let prCommitsMetadata = prCommitsMetadataCache.get(metadataCacheKey)
 
         if (!prCommitShas || !prCommitsMetadata) {
-          // Fetch the PR's commits (with pagination for PRs with 100+ commits)
           try {
             let allPrCommits: Awaited<ReturnType<typeof client.pulls.listCommits>>['data'] = []
             let prCommitsPage = 1
@@ -245,7 +215,6 @@ export async function getPullRequestForCommit(
             prCommitShas = allPrCommits.map((c) => c.sha)
             prCommitsCache.set(cacheKey, prCommitShas)
 
-            // Also cache metadata for rebase matching
             prCommitsMetadata = allPrCommits.map((c) => ({
               sha: c.sha,
               author: (c.commit.author?.name || c.author?.login || 'unknown').toLowerCase(),
@@ -261,7 +230,6 @@ export async function getPullRequestForCommit(
           logger.info(`   📋 Using cached commits for PR #${pr.number} (${prCommitShas.length} commits)`)
         }
 
-        // Check if our commit is in the PR's commit list (exact SHA match)
         const isInPR = prCommitShas.includes(sha)
 
         if (isInPR) {
@@ -278,10 +246,7 @@ export async function getPullRequestForCommit(
           }
         }
 
-        // Not an exact SHA match - try rebase matching via metadata
-        // This handles "rebase and merge" where commits get new SHAs
         if (prCommitsMetadata) {
-          // Fetch the commit details to get metadata for matching
           try {
             const commitResponse = await client.repos.getCommit({
               owner,
@@ -294,11 +259,9 @@ export async function getPullRequestForCommit(
             const commitAuthorDate = commitData.commit.author?.date || ''
             const commitMessageFirstLine = commitData.commit.message.split('\n')[0].trim()
 
-            // Try to match against PR commits by metadata
             for (const prCommit of prCommitsMetadata) {
               const authorMatch = prCommit.author === commitAuthor
 
-              // Date match within 1 second
               let dateMatch = false
               if (prCommit.authorDate && commitAuthorDate) {
                 const prDate = new Date(prCommit.authorDate)
@@ -337,12 +300,10 @@ export async function getPullRequestForCommit(
         )
       }
 
-      // None of the associated PRs contain this commit as an original commit
       logger.info(`❌ Commit ${sha.substring(0, 7)} was not an original commit in any associated PR`)
       return { pr: null, allAssociatedPrs }
     }
 
-    // Return the first (most relevant) PR (default behavior for backward compatibility)
     const pr = filteredPRs[0]
     logger.info(`✅ Using PR #${pr.number} for verification`)
 
@@ -359,7 +320,6 @@ export async function getPullRequestForCommit(
   } catch (error) {
     logger.error(`❌ Error fetching PR for commit ${sha}:`, error)
 
-    // Re-throw rate limit errors so they can be handled properly upstream
     if (error instanceof Error && error.message.includes('rate limit')) {
       throw error
     }
@@ -368,13 +328,11 @@ export async function getPullRequestForCommit(
   }
 }
 
-// Extended PR type that includes rebase match info
 interface PullRequestWithMatchInfo extends PullRequest {
   _rebase_matched?: boolean
   _matched_original_sha?: string
 }
 
-// Cache for PR commits with metadata for rebase matching
 interface PRCommitMetadata {
   sha: string
   author: string
@@ -383,15 +341,6 @@ interface PRCommitMetadata {
 }
 const prCommitsMetadataCache = new Map<string, PRCommitMetadata[]>()
 
-/**
- * Find a PR for a rebased commit by matching metadata.
- * When commits are rebased, they get new SHAs but preserve:
- * - author name
- * - author date (NOT committer date)
- * - commit message
- *
- * This function searches recently merged PRs for commits with matching metadata.
- */
 async function _findPRForRebasedCommit(
   owner: string,
   repo: string,
@@ -404,7 +353,6 @@ async function _findPRForRebasedCommit(
 ): Promise<PullRequestWithMatchInfo | null> {
   const client = getGitHubClient()
 
-  // Normalize inputs for comparison
   const normalizedAuthor = commitAuthor.toLowerCase()
   const normalizedAuthorDate = new Date(commitAuthorDate).toISOString()
   const normalizedMessageFirstLine = commitMessage.split('\n')[0].trim()
@@ -414,7 +362,6 @@ async function _findPRForRebasedCommit(
   )
 
   try {
-    // Get recently merged PRs targeting the base branch
     const mergedPRs = await client.pulls.list({
       owner,
       repo,
@@ -425,7 +372,6 @@ async function _findPRForRebasedCommit(
       per_page: 50,
     })
 
-    // Filter to only merged PRs, optionally since a date
     const relevantPRs = mergedPRs.data.filter((pr) => {
       if (!pr.merged_at) return false
       if (sinceDate) {
@@ -442,7 +388,6 @@ async function _findPRForRebasedCommit(
       let prCommits = prCommitsMetadataCache.get(cacheKey)
 
       if (!prCommits) {
-        // Fetch PR commits with full metadata (with pagination for PRs with 100+ commits)
         try {
           const allPrCommitsData: Array<{
             sha: string
@@ -484,18 +429,16 @@ async function _findPRForRebasedCommit(
         }
       }
 
-      // Look for metadata match
       for (const prCommit of prCommits) {
         const authorMatch = prCommit.author === normalizedAuthor
         const messageMatch = prCommit.messageFirstLine === normalizedMessageFirstLine
 
-        // Date match: within 1 second tolerance
         let dateMatch = false
         if (prCommit.authorDate) {
           const prDate = new Date(prCommit.authorDate)
           const commitDate = new Date(normalizedAuthorDate)
           const dateDiffMs = Math.abs(prDate.getTime() - commitDate.getTime())
-          dateMatch = dateDiffMs < 1000 // Within 1 second
+          dateMatch = dateDiffMs < 1000
         }
 
         if (authorMatch && dateMatch && messageMatch) {
@@ -530,9 +473,6 @@ async function _findPRForRebasedCommit(
   }
 }
 
-/**
- * Clear the PR commits metadata cache (for testing)
- */
 function _clearPrCommitsMetadataCache(): void {
   prCommitsMetadataCache.clear()
 }
@@ -553,7 +493,6 @@ export async function getPullRequestReviews(
 ): Promise<PullRequestReview[]> {
   const client = getGitHubClient()
 
-  // Use paginate to get all reviews (PRs with many comments can have 30+ reviews)
   const allReviews = await client.paginate(client.pulls.listReviews, {
     owner,
     repo,
@@ -586,7 +525,6 @@ async function getPullRequestCommits(owner: string, repo: string, pull_number: n
 
   logger.info(`   📄 Fetching commits for PR #${pull_number}...`)
 
-  // Use paginate to automatically handle all pages efficiently
   const allCommits = await client.paginate(client.pulls.listCommits, {
     owner,
     repo,
@@ -599,22 +537,13 @@ async function getPullRequestCommits(owner: string, repo: string, pull_number: n
   return allCommits as PullRequestCommit[]
 }
 
-/**
- * Check if a commit is a merge commit from main/master branch
- */
 function isMergeFromMainBranch(commit: PullRequestCommit): boolean {
-  // A merge commit has 2+ parents
   if (commit.parents.length < 2) {
     return false
   }
 
   const message = commit.commit.message.toLowerCase()
 
-  // Check for common merge commit patterns from main/master
-  // Examples:
-  // - "Merge branch 'main' into feature-branch"
-  // - "Merge remote-tracking branch 'origin/main' into feature"
-  // - "Merge branch 'master' into ..."
   const mainBranchPatterns = [
     /merge\s+branch\s+['"]main['"]/i,
     /merge\s+branch\s+['"]master['"]/i,
@@ -627,13 +556,6 @@ function isMergeFromMainBranch(commit: PullRequestCommit): boolean {
   return mainBranchPatterns.some((pattern) => pattern.test(message))
 }
 
-/**
- * Verifies if a PR has "four eyes" (two sets of eyes):
- * - At least one APPROVED review
- * - The approval came after the last commit in the PR, OR
- * - The approval came before the last commit, but all commits after approval are merges from main/master, OR
- * - Special case for Dependabot: commits by dependabot[bot] after approval are allowed
- */
 async function _verifyPullRequestFourEyes(
   owner: string,
   repo: string,
@@ -644,7 +566,6 @@ async function _verifyPullRequestFourEyes(
 
     const client = getGitHubClient()
 
-    // Fetch PR details to check creator
     const prResponse = await client.pulls.get({
       owner,
       repo,
@@ -668,13 +589,11 @@ async function _verifyPullRequestFourEyes(
       return { hasFourEyes: false, reason: 'No commits found in PR' }
     }
 
-    // Get the timestamp of the last commit
     const lastCommit = commits[commits.length - 1]
     const lastCommitDate = new Date(lastCommit.commit.author.date)
     logger.info(`   📅 Last commit: ${lastCommit.sha.substring(0, 7)} at ${lastCommitDate.toISOString()}`)
     logger.info(`   📝 Last commit message: ${lastCommit.commit.message.split('\n')[0].substring(0, 80)}`)
 
-    // Find approved reviews that came after the last commit
     const approvedReviewsAfterLastCommit = reviews.filter((review) => {
       if (review.state !== 'APPROVED' || !review.submitted_at) {
         return false
@@ -694,7 +613,6 @@ async function _verifyPullRequestFourEyes(
       return result
     }
 
-    // Check if there are any approved reviews (even before last commit)
     const approvedReviews = reviews.filter((r) => r.state === 'APPROVED')
     logger.info(`   ✅ ${approvedReviews.length} total approved review(s) found`)
 
@@ -703,7 +621,6 @@ async function _verifyPullRequestFourEyes(
       return { hasFourEyes: false, reason: 'No approved reviews found' }
     }
 
-    // Find the most recent approved review
     const mostRecentApproval = approvedReviews.reduce((latest, current) => {
       const currentDate = new Date(current.submitted_at || 0)
       const latestDate = new Date(latest.submitted_at || 0)
@@ -715,7 +632,6 @@ async function _verifyPullRequestFourEyes(
       `   📅 Most recent approval: ${mostRecentApproval.user?.login || 'unknown'} at ${approvalDate.toISOString()}`,
     )
 
-    // Get all commits that came after the approval
     const commitsAfterApproval = commits.filter((commit) => {
       const commitDate = new Date(commit.commit.author.date)
       return commitDate > approvalDate
@@ -724,7 +640,6 @@ async function _verifyPullRequestFourEyes(
     logger.info(`   📊 ${commitsAfterApproval.length} commit(s) after most recent approval`)
 
     if (commitsAfterApproval.length === 0) {
-      // This shouldn't happen since we already checked approvedReviewsAfterLastCommit
       logger.info(`   ✅ Approval was after last commit`)
       return {
         hasFourEyes: true,
@@ -732,7 +647,6 @@ async function _verifyPullRequestFourEyes(
       }
     }
 
-    // Log commits after approval
     commitsAfterApproval.forEach((commit, index) => {
       const isMainMerge = isMergeFromMainBranch(commit)
       const commitAuthor = commit.author?.login || commit.commit.author?.name || 'unknown'
@@ -742,7 +656,6 @@ async function _verifyPullRequestFourEyes(
       )
     })
 
-    // Special case for Dependabot PRs: Allow commits by dependabot after approval
     if (isDependabotPR) {
       const allCommitsAreBotOrMainMerge = commitsAfterApproval.every((commit) => {
         const commitAuthor = commit.author?.login || commit.commit.author?.name || ''
@@ -763,7 +676,6 @@ async function _verifyPullRequestFourEyes(
       }
     }
 
-    // Check if ALL commits after approval are merges from main/master
     const allCommitsAreMainMerges = commitsAfterApproval.every((commit) => isMergeFromMainBranch(commit))
 
     logger.info(`   🔀 All commits after approval are main/master merges: ${allCommitsAreMainMerges}`)
@@ -777,7 +689,6 @@ async function _verifyPullRequestFourEyes(
       return result
     }
 
-    // There are commits after approval that are not merges from main
     const result = {
       hasFourEyes: false,
       reason: 'Approved review exists but came before the last commit (non-merge commits after approval)',
@@ -790,9 +701,6 @@ async function _verifyPullRequestFourEyes(
   }
 }
 
-/**
- * Get detailed PR information including metadata, reviewers, and checks
- */
 export async function getDetailedPullRequestInfo(
   owner: string,
   repo: string,
@@ -801,7 +709,6 @@ export async function getDetailedPullRequestInfo(
   const client = getGitHubClient()
 
   try {
-    // Fetch PR details
     const prResponse = await client.pulls.get({
       owner,
       repo,
@@ -810,7 +717,6 @@ export async function getDetailedPullRequestInfo(
 
     const pr = prResponse.data
 
-    // Fetch reviews with pagination to get all reviews
     const allReviews = await client.paginate(client.pulls.listReviews, {
       owner,
       repo,
@@ -818,14 +724,11 @@ export async function getDetailedPullRequestInfo(
       per_page: 100,
     })
 
-    // Group reviews by user - prioritize APPROVED state, then latest timestamp
-    // This ensures a later COMMENTED review doesn't overwrite an earlier APPROVED
     const reviewsByUser = new Map<
       string,
       { username: string; avatar_url: string; state: string; submitted_at: string }
     >()
 
-    // Collect review comments (the body text from reviews)
     const reviewBodyComments: Array<{
       id: number
       body: string
@@ -838,21 +741,16 @@ export async function getDetailedPullRequestInfo(
       if (review.user && review.submitted_at) {
         const existing = reviewsByUser.get(review.user.login)
 
-        // Determine if we should update the stored review
         let shouldUpdate = false
         if (!existing) {
           shouldUpdate = true
         } else if (review.state === 'APPROVED' && existing.state !== 'APPROVED') {
-          // New review is APPROVED but existing is not - always prefer APPROVED
           shouldUpdate = true
         } else if (review.state === 'APPROVED' && existing.state === 'APPROVED') {
-          // Both are APPROVED - keep the latest one
           shouldUpdate = new Date(review.submitted_at) > new Date(existing.submitted_at)
         } else if (review.state !== 'APPROVED' && existing.state !== 'APPROVED') {
-          // Neither is APPROVED - keep the latest one
           shouldUpdate = new Date(review.submitted_at) > new Date(existing.submitted_at)
         }
-        // If existing is APPROVED and new is not, don't update (shouldUpdate stays false)
 
         if (shouldUpdate) {
           reviewsByUser.set(review.user.login, {
@@ -862,7 +760,6 @@ export async function getDetailedPullRequestInfo(
             submitted_at: review.submitted_at,
           })
         }
-        // If review has a body comment, add it to comments
         if (review.body?.trim()) {
           reviewBodyComments.push({
             id: review.id,
@@ -878,7 +775,6 @@ export async function getDetailedPullRequestInfo(
       }
     }
 
-    // Fetch check runs details
     let checks_passed: boolean | null = null
     const checks: Array<{
       id: number
@@ -913,24 +809,19 @@ export async function getDetailedPullRequestInfo(
     }> = []
 
     try {
-      // Prefer merge commit checks (what was actually built on main) when available
       const primaryRef = pr.merge_commit_sha ?? pr.head.sha
       let checksResponse = await client.checks.listForRef({ owner, repo, ref: primaryRef })
 
-      // Fall back to feature branch head if merge commit has no checks
       if (checksResponse.data.total_count === 0 && pr.merge_commit_sha) {
         checksResponse = await client.checks.listForRef({ owner, repo, ref: pr.head.sha })
       }
 
       if (checksResponse.data.total_count > 0) {
-        // All checks must have conclusion 'success' or 'skipped'
         checks_passed = checksResponse.data.check_runs.every(
           (check) => check.conclusion === 'success' || check.conclusion === 'skipped',
         )
 
-        // Store detailed check info
         for (const check of checksResponse.data.check_runs) {
-          // Fetch annotations for checks that have them
           let annotations: (typeof checks)[number]['annotations'] = null
           if (check.output?.annotations_count && check.output.annotations_count > 0) {
             try {
@@ -984,7 +875,6 @@ export async function getDetailedPullRequestInfo(
       logger.warn(`Could not fetch check runs: ${error}`)
     }
 
-    // Fetch commits (with pagination for PRs with 100+ commits)
     let allCommitsData: Awaited<ReturnType<typeof client.pulls.listCommits>>['data'] = []
     let commitsPage = 1
 
@@ -1016,7 +906,6 @@ export async function getDetailedPullRequestInfo(
       html_url: commit.html_url,
     }))
 
-    // Fetch issue comments (general PR discussion comments) with pagination
     const allIssueComments = await client.paginate(client.issues.listComments, {
       owner,
       repo,
@@ -1024,7 +913,6 @@ export async function getDetailedPullRequestInfo(
       per_page: 100,
     })
 
-    // Fetch review comments (comments on code lines) with pagination
     const allReviewComments = await client.paginate(client.pulls.listReviewComments, {
       owner,
       repo,
@@ -1032,7 +920,6 @@ export async function getDetailedPullRequestInfo(
       per_page: 100,
     })
 
-    // Combine both types of comments
     const issueComments = allIssueComments.map((comment) => ({
       id: comment.id,
       body: comment.body || '',
@@ -1055,7 +942,6 @@ export async function getDetailedPullRequestInfo(
       html_url: comment.html_url,
     }))
 
-    // Merge and sort by created_at
     const comments = [...issueComments, ...reviewComments, ...reviewBodyComments].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     )

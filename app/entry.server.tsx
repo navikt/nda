@@ -9,9 +9,6 @@ import './load-context'
 import { initializeServer } from './init.server'
 import { logger } from './lib/logger.server'
 
-// Override console.error to produce structured logs instead of multi-line stderr.
-// React DOM's SSR calls console.error internally for rendering errors, which creates
-// separate log entries per stack frame in containerized environments.
 const originalConsoleError = console.error.bind(console)
 console.error = (...args: unknown[]) => {
   const error = args.find((arg): arg is Error => arg instanceof Error)
@@ -22,24 +19,17 @@ console.error = (...args: unknown[]) => {
     return
   }
 
-  // Join all args into a single line to prevent line-splitting in container logs
   const message = args.map((arg) => (typeof arg === 'string' ? arg : String(arg))).join(' ')
   if (message.trim()) {
     originalConsoleError(message)
   }
 }
 
-// Initialize server-side services once at startup
 initializeServer()
 
 export const streamTimeout = 5_000
 
-/**
- * Handle errors from loaders, actions, and SSR rendering.
- * Replaces React Router's default behavior of calling console.error.
- */
 export function handleError(error: unknown, { request }: { request: Request }) {
-  // Ignore aborted requests (user navigated away)
   if (error instanceof Error && /aborted/i.test(error.message)) return
 
   const url = new URL(request.url)
@@ -64,7 +54,6 @@ export default function handleRequest(
   routerContext: EntryContext,
   loadContext: AppLoadContext,
 ) {
-  // https://httpwg.org/specs/rfc9110.html#HEAD
   if (request.method.toUpperCase() === 'HEAD') {
     return new Response(null, {
       status: responseStatusCode,
@@ -76,23 +65,14 @@ export default function handleRequest(
     let shellRendered = false
     const userAgent = request.headers.get('user-agent')
 
-    // Ensure requests from bots and SPA Mode renders wait for all content to load before responding
     const readyOption: keyof RenderToPipeableStreamOptions =
       (userAgent && isbot(userAgent)) || routerContext.isSpaMode ? 'onAllReady' : 'onShellReady'
 
-    // Abort the rendering stream after the `streamTimeout` so it has time to
-    // flush down the rejected boundaries
     let timeoutId: ReturnType<typeof setTimeout> | undefined = setTimeout(() => abort(), streamTimeout + 1000)
 
     const { pipe, abort } = renderToPipeableStream(
       <ServerRouter context={routerContext} url={request.url} nonce={loadContext.cspNonce} />,
       {
-        // React DOM emits its own inline `<script>` tags during streaming SSR
-        // (most notably the Suspense boundary runtime, `$RC=...`). Without a
-        // `nonce` here those scripts ship without a nonce attribute and the
-        // strict CSP `script-src 'self' 'nonce-…'` directive blocks them in
-        // the browser. The same nonce is also forwarded to <ServerRouter>
-        // above so React Router's own context/manifest scripts carry it.
         nonce: loadContext.cspNonce,
         [readyOption]() {
           shellRendered = true

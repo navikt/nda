@@ -1,13 +1,3 @@
-/**
- * API: Download an audit report
- *
- * Returns the PDF or Excel file for a report.
- * App-scoped for IDOR protection. Archived reports return 404. Superseded allowed.
- * Secured with M2M token validation.
- *
- * GET /api/v1/apps/:team/:env/:app/audit-reports/:reportId/download?format=pdf|xlsx
- */
-
 import { getAuditReportFile, getReportByReportIdForApp } from '~/db/audit-reports.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { jsonError, validateProdEnvironment } from '~/lib/api/errors'

@@ -6,26 +6,18 @@ import { formatDisplayNameNatural } from '~/lib/user-display'
 import { UserSearch } from './UserSearch'
 
 export interface CreateMappingModalProps {
-  /** GitHub username (normal/admin flow) or route param value (self-service URL uses NAV-ident) */
   username: string
-  /** Whether the logged-in user is creating a mapping for their own NAV-ident URL */
   canPrefillOwnMapping: boolean
-  /** Whether the GitHub username field is editable (default: only in self-service) */
   githubEditable?: boolean
-  /** Pre-filled NAV-ident for self-service flow */
   loggedInNavIdent?: string | null
   isSubmitting: boolean
   fieldErrors?: {
     github_username?: string
     nav_ident?: string
   }
-  /** Override the form intent value (default: "create-mapping") */
   intent?: string
-  /** Override the modal heading (default: "Opprett brukermapping") */
   heading?: string
-  /** Override the form ID (default: "create-mapping-form") */
   formId?: string
-  /** Modal width (passed to Modal component) */
   width?: 'medium' | 'small' | number | `${number}${string}`
 }
 

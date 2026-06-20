@@ -15,9 +15,7 @@ export interface ActiveBoardSectionProps {
   board: ActiveBoardData
   objectives: BoardObjectiveProgress[]
   teamBasePath: string
-  /** Optional team name prepended to the board title (e.g. «Teamnavn — T1 2026») */
   teamName?: string
-  /** Heading level for the board title. Defaults to "3". */
   headingLevel?: '2' | '3' | '4'
 }
 

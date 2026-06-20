@@ -37,7 +37,6 @@ export async function createRepositoryAlert(data: {
   expectedGithubRepoName?: string
   alertType: RepositoryAlertType
 }): Promise<RepositoryAlert> {
-  // First, find the deployment ID from nais_deployment_id
   const depResult = await pool.query('SELECT id, monitored_app_id FROM deployments WHERE nais_deployment_id = $1', [
     data.deploymentNaisId,
   ])
@@ -54,7 +53,6 @@ export async function createRepositoryAlert(data: {
     )
   }
 
-  // Use provided expected repo or default to detected (for pending/historical alerts)
   const expectedOwner = data.expectedGithubOwner || data.detectedGithubOwner
   const expectedRepoName = data.expectedGithubRepoName || data.detectedGithubRepoName
 

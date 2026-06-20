@@ -104,7 +104,6 @@ describe('external_references soft delete', () => {
     ])
     const firstDeletedAt = first[0].deleted_at as Date
 
-    // Second delete should not throw and should not overwrite deleted_at/deleted_by
     await expect(deleteExternalReference(ref.id, 'B999999')).resolves.toBeUndefined()
 
     const { rows: second } = await pool.query('SELECT deleted_at, deleted_by FROM external_references WHERE id = $1', [
@@ -173,13 +172,11 @@ describe('external_references soft delete', () => {
       deleteExternalReference(ref.id, 'B222222'),
     ])
 
-    // Both calls must succeed — neither should misclassify the lost race as a "deactivated parent" failure.
     expect(results[0].status).toBe('fulfilled')
     expect(results[1].status).toBe('fulfilled')
 
     const { rows } = await pool.query('SELECT deleted_at, deleted_by FROM external_references WHERE id = $1', [ref.id])
     expect(rows[0].deleted_at).toBeInstanceOf(Date)
-    // Whichever caller won the UPDATE recorded their navIdent; the loser was a no-op.
     expect(['A111111', 'B222222']).toContain(rows[0].deleted_by)
   })
 })

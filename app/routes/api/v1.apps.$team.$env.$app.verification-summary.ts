@@ -1,16 +1,3 @@
-/**
- * API: Verification Summary for an Application
- *
- * Returns four-eyes coverage and change origin (endringsopphav) data
- * for a monitored application. Secured with M2M token validation.
- *
- * GET /api/v1/apps/:team/:env/:app/verification-summary
- *
- * Query parameters:
- *   from - ISO 8601 date (default: start of current year)
- *   to   - ISO 8601 date (default: now)
- */
-
 import { getAppChangeOriginCoverage, getAppDeploymentStats, getLastDeploymentSummary } from '~/db/deployments.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import type { VerificationSummaryResponse } from '~/lib/api/types'

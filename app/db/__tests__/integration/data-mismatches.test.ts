@@ -1,10 +1,3 @@
-/**
- * Integration tests: data-mismatches admin page queries.
- * 1. Title-missing summary query — validates FILTER aggregate syntax
- * 2. Baseline-without-approver query — validates detection of NULL changed_by
- * 3. Comments missing registered_by query — validates detection of NULL registered_by
- */
-
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { LEGACY_STATUSES_SQL } from '../../../lib/four-eyes-status'
@@ -24,8 +17,6 @@ afterEach(async () => {
   await truncateAllTables(pool)
 })
 
-// This is the exact query from the title-mismatches route loader.
-// Keep in sync with the MissingSummary pool.query() in app/routes/admin/data-mismatches.tsx.
 const FIXED_SUMMARY_SQL = `SELECT
   (COUNT(*) FILTER (WHERE d.title IS NULL))::int AS total_missing,
   (COUNT(*) FILTER (
@@ -52,7 +43,6 @@ const FIXED_SUMMARY_SQL = `SELECT
     AND d.created_at >= make_date(ma.audit_start_year, 1, 1)
     AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${LEGACY_STATUSES_SQL})`
 
-// Keep in sync with missingRowsResult pool.query() in app/routes/admin/data-mismatches.tsx.
 function MISSING_ROWS_SQL(limit: number, offset: number) {
   return {
     text: `SELECT
@@ -165,7 +155,6 @@ describe('data-mismatches: missing title rows (paginated) query', () => {
     const page2 = await pool.query(MISSING_ROWS_SQL(2, 2))
     expect(page2.rows).toHaveLength(1)
 
-    // Pages should not overlap
     const ids1 = page1.rows.map((r: { id: number }) => r.id)
     const ids2 = page2.rows.map((r: { id: number }) => r.id)
     expect(ids1.some((id: number) => ids2.includes(id))).toBe(false)
@@ -208,7 +197,6 @@ describe('data-mismatches: missing title rows (paginated) query', () => {
       environment: 'prod',
       auditStartYear: currentYear,
     })
-    // Deployment from last year — should be excluded
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-l',
@@ -216,7 +204,6 @@ describe('data-mismatches: missing title rows (paginated) query', () => {
       title: undefined,
       createdAt: new Date(currentYear - 1, 6, 1),
     })
-    // Deployment from this year — should be included
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-l',
@@ -280,7 +267,6 @@ describe('data-mismatches: title missing summary query', () => {
   it('should count deployments with missing titles correctly', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
-    // Deployment with title
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -288,7 +274,6 @@ describe('data-mismatches: title missing summary query', () => {
       title: 'Has title',
     })
 
-    // Deployment with missing title but has PR data
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -297,7 +282,6 @@ describe('data-mismatches: title missing summary query', () => {
       githubPrData: { title: 'PR title' },
     })
 
-    // Deployment with missing title and no fallback
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -314,7 +298,6 @@ describe('data-mismatches: title missing summary query', () => {
   it('whitespace-only PR title counts as no_fallback, not with_pr_data', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
-    // Whitespace-only PR title — should NOT count as with_pr_data
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
@@ -422,7 +405,6 @@ describe('baseline-without-approver query', () => {
   it('returns baseline deployments missing an approver in status history', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-b', appName: 'app-b', environment: 'prod-gcp' })
 
-    // Baseline without any history row — represents pre-#200 approvals
     const missingId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-b',
@@ -430,7 +412,6 @@ describe('baseline-without-approver query', () => {
       fourEyesStatus: 'baseline',
     })
 
-    // Baseline with a history row but changed_by is NULL
     const nullApproverId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-b',

@@ -55,9 +55,6 @@ describe('filterDeploymentsForVerification', () => {
   })
 
   it('excludes approved deployments with pending status', () => {
-    // Even if four_eyes_status says 'pending', if it's actually approved it should be excluded
-    // This can't happen in practice since approved statuses aren't 'pending',
-    // but test the filter logic
     const deps = [makeDeployment({ four_eyes_status: 'approved' })]
     expect(filterDeploymentsForVerification(deps)).toHaveLength(0)
   })
@@ -123,7 +120,7 @@ describe('applyLimit', () => {
   })
 
   it('returns empty when limit is 0', () => {
-    expect(applyLimit([1, 2, 3], 0)).toEqual([1, 2, 3]) // 0 is falsy so no limit applied
+    expect(applyLimit([1, 2, 3], 0)).toEqual([1, 2, 3])
   })
 })
 

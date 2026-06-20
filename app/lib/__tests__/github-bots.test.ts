@@ -12,7 +12,7 @@ describe('isGitHubBot', () => {
 
   it('returns false for regular users', () => {
     expect(isGitHubBot('octocat')).toBe(false)
-    expect(isGitHubBot('dependabot')).toBe(false) // no [bot] suffix
+    expect(isGitHubBot('dependabot')).toBe(false)
   })
 
   it('returns false for null/undefined/empty', () => {

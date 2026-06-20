@@ -1,11 +1,3 @@
-/**
- * Store Verification Data
- *
- * This module handles storing verification results to the database.
- * It connects the verification output to the deployment record and
- * stores the verification run history.
- */
-
 import { updateCommitPrVerification } from '~/db/commits.server'
 import { pool } from '~/db/connection.server'
 import { logStatusTransition } from '~/db/deployments.server'
@@ -22,14 +14,6 @@ import type {
   VerificationResult,
 } from './types'
 
-// =============================================================================
-// Store Verification Result
-// =============================================================================
-
-/**
- * Store a verification result and update the deployment record.
- * Also updates the commit cache with PR approval status.
- */
 export async function storeVerificationResult(
   deploymentId: number,
   result: VerificationResult,
@@ -43,7 +27,6 @@ export async function storeVerificationResult(
     commitsBetween: VerificationInput['commitsBetween']
   },
 ): Promise<{ verificationRunId: number }> {
-  // Save the verification run for history/audit
   const verificationRunId = await saveVerificationRun(
     deploymentId,
     {
@@ -53,11 +36,8 @@ export async function storeVerificationResult(
     snapshotIds,
   )
 
-  // Update the deployment record with the verification result
-  // Also build and store github_pr_data from snapshots if a PR was found
   await updateDeploymentVerification(deploymentId, result, changeSource)
 
-  // Update commit cache with PR approval status
   if (commitCacheContext) {
     await updateCommitCache(commitCacheContext.repository, result, commitCacheContext.commitsBetween)
   }
@@ -65,19 +45,14 @@ export async function storeVerificationResult(
   return { verificationRunId }
 }
 
-/**
- * Update the deployment table with verification results.
- * Exported for use in reverifyDeployment when only metadata needs updating (no status change).
- */
 export async function updateDeploymentVerification(
   deploymentId: number,
   result: VerificationResult,
   changeSource?: string,
 ): Promise<void> {
-  if (result.status === 'manually_approved') return // Don't overwrite manual approval
-  if (result.status === 'legacy') return // Don't update legacy deployments
+  if (result.status === 'manually_approved') return
+  if (result.status === 'legacy') return
 
-  // Build github_pr_data from snapshots if a PR was found
   let githubPrDataJson: string | null = null
   if (result.deployedPr?.number) {
     const prData = await buildGithubPrDataFromSnapshotsForPr(result.deployedPr.number, deploymentId)
@@ -86,10 +61,8 @@ export async function updateDeploymentVerification(
     }
   }
 
-  // Get current status before update for history logging
   const current = await pool.query(`SELECT four_eyes_status FROM deployments WHERE id = $1`, [deploymentId])
 
-  // Update deployment record
   const updateResult = await pool.query(
     `UPDATE deployments
      SET 
@@ -127,7 +100,6 @@ export async function updateDeploymentVerification(
     ],
   )
 
-  // Log status transition only if the UPDATE actually changed a row
   if (updateResult.rowCount && updateResult.rowCount > 0 && current.rows.length > 0) {
     const prev = current.rows[0]
     const newStatus = result.status
@@ -141,15 +113,10 @@ export async function updateDeploymentVerification(
   }
 }
 
-/**
- * Build github_pr_data from DB snapshots for a given PR.
- * Looks up the PR's owner/repo from the deployment record, then reads all snapshots.
- */
 async function buildGithubPrDataFromSnapshotsForPr(
   prNumber: number,
   deploymentId: number,
 ): Promise<ReturnType<typeof buildGithubPrDataFromSnapshots> | null> {
-  // Get the owner/repo from the deployment
   const deploymentResult = await pool.query(
     `SELECT detected_github_owner, detected_github_repo_name FROM deployments WHERE id = $1`,
     [deploymentId],
@@ -172,14 +139,6 @@ async function buildGithubPrDataFromSnapshotsForPr(
   return buildGithubPrDataFromSnapshots(metadata, reviews, commits, checks, comments)
 }
 
-// =============================================================================
-// Commit Cache Updates
-// =============================================================================
-
-/**
- * Update the commit cache with PR approval status from V2 verification results.
- * Marks unverified commits as not approved and verified commits as approved.
- */
 async function updateCommitCache(
   repository: string,
   result: VerificationResult,
@@ -203,7 +162,6 @@ async function updateCommitCache(
     )
   }
 
-  // Mark verified commits (those in commitsBetween but not in unverifiedCommits)
   for (const commit of commitsBetween) {
     if (unverifiedShas.has(commit.sha)) continue
     if (commit.isMergeCommit) continue

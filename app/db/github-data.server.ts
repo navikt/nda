@@ -1,16 +1,3 @@
-/**
- * GitHub Data Storage Module
- *
- * Handles versioned, granular storage of GitHub data with history.
- * All GitHub API data flows through here before being used for verification.
- *
- * Key features:
- * - Schema versioning for data migration
- * - Historical snapshots (never overwrites, always appends)
- * - Granular data types (metadata, reviews, commits, etc.)
- * - GitHub retention handling (marks data as unavailable)
- */
-
 import { pool } from '~/db/connection.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import {
@@ -23,13 +10,6 @@ import {
   type PrSnapshot,
 } from '~/lib/verification/types'
 
-// =============================================================================
-// PR Snapshots
-// =============================================================================
-
-/**
- * Save a PR data snapshot to the database
- */
 async function savePrSnapshot(
   owner: string,
   repo: string,
@@ -60,10 +40,6 @@ async function savePrSnapshot(
   return result.rows[0].id
 }
 
-/**
- * Get the latest snapshot for a PR data type
- * Returns null if no snapshot exists or if schema version is outdated
- */
 async function getLatestPrSnapshot(
   owner: string,
   repo: string,
@@ -105,9 +81,6 @@ async function getLatestPrSnapshot(
   }
 }
 
-/**
- * Get all snapshots for a PR data type (history)
- */
 async function _getPrSnapshotHistory(
   owner: string,
   repo: string,
@@ -156,9 +129,6 @@ async function _getPrSnapshotHistory(
   )
 }
 
-/**
- * Get all latest snapshots for a PR (all data types)
- */
 export async function getAllLatestPrSnapshots(
   owner: string,
   repo: string,
@@ -193,9 +163,6 @@ export async function getAllLatestPrSnapshots(
   return snapshots
 }
 
-/**
- * Save multiple PR snapshots in a batch
- */
 export async function savePrSnapshotsBatch(
   owner: string,
   repo: string,
@@ -234,13 +201,6 @@ export async function savePrSnapshotsBatch(
   return result.rows.map((row: { id: number }) => row.id)
 }
 
-// =============================================================================
-// Commit Snapshots
-// =============================================================================
-
-/**
- * Save a commit data snapshot to the database
- */
 export async function saveCommitSnapshot(
   owner: string,
   repo: string,
@@ -271,9 +231,6 @@ export async function saveCommitSnapshot(
   return result.rows[0].id
 }
 
-/**
- * Get the latest snapshot for a commit data type
- */
 export async function getLatestCommitSnapshot(
   owner: string,
   repo: string,
@@ -315,9 +272,6 @@ export async function getLatestCommitSnapshot(
   }
 }
 
-/**
- * Get all latest snapshots for a commit (all data types)
- */
 async function _getAllLatestCommitSnapshots(
   owner: string,
   repo: string,
@@ -352,9 +306,6 @@ async function _getAllLatestCommitSnapshots(
   return snapshots
 }
 
-/**
- * Save multiple commit snapshots in a batch
- */
 async function _saveCommitSnapshotsBatch(
   snapshots: Array<{
     owner: string
@@ -396,27 +347,17 @@ async function _saveCommitSnapshotsBatch(
   return result.rows.map((row: { id: number }) => row.id)
 }
 
-// =============================================================================
-// GitHub Retention Handling
-// =============================================================================
-
-/**
- * Mark PR data as unavailable from GitHub (404/410 response)
- * Copies the last known good data with github_available = false
- */
 export async function markPrDataUnavailable(
   owner: string,
   repo: string,
   prNumber: number,
   dataType: PrDataType,
 ): Promise<void> {
-  // Get the last known good data
   const lastGood = await getLatestPrSnapshot(owner, repo, prNumber, dataType, {
     requireCurrentSchema: false,
   })
 
   if (lastGood) {
-    // Save a new snapshot marking it as unavailable
     await savePrSnapshot(owner, repo, prNumber, dataType, lastGood.data, {
       source: 'cached',
       githubAvailable: false,
@@ -424,9 +365,6 @@ export async function markPrDataUnavailable(
   }
 }
 
-/**
- * Mark commit data as unavailable from GitHub
- */
 async function _markCommitDataUnavailable(
   owner: string,
   repo: string,
@@ -445,13 +383,6 @@ async function _markCommitDataUnavailable(
   }
 }
 
-// =============================================================================
-// Verification Runs
-// =============================================================================
-
-/**
- * Save a verification run
- */
 export async function saveVerificationRun(
   deploymentId: number,
   result: {
@@ -480,9 +411,6 @@ export async function saveVerificationRun(
   return queryResult.rows[0].id
 }
 
-/**
- * Get the latest verification run for a deployment
- */
 export async function getLatestVerificationRun(deploymentId: number): Promise<{
   id: number
   schemaVersion: number
@@ -518,9 +446,6 @@ export async function getLatestVerificationRun(deploymentId: number): Promise<{
   }
 }
 
-/**
- * Get verification run history for a deployment
- */
 async function _getVerificationRunHistory(
   deploymentId: number,
   options?: { limit?: number },
@@ -551,14 +476,6 @@ async function _getVerificationRunHistory(
   }))
 }
 
-// =============================================================================
-// Cleanup / Maintenance
-// =============================================================================
-
-/**
- * Delete old snapshots (keep only the latest N per PR/commit + data type)
- * Used for periodic maintenance to control database size
- */
 async function _cleanupOldSnapshots(options?: {
   keepCount?: number
   olderThanDays?: number
@@ -566,7 +483,6 @@ async function _cleanupOldSnapshots(options?: {
   const keepCount = options?.keepCount ?? 5
   const olderThanDays = options?.olderThanDays ?? 90
 
-  // Delete old PR snapshots
   const prResult = await pool.query(
     `DELETE FROM github_pr_snapshots
      WHERE id IN (
@@ -583,7 +499,6 @@ async function _cleanupOldSnapshots(options?: {
     [keepCount],
   )
 
-  // Delete old commit snapshots
   const commitResult = await pool.query(
     `DELETE FROM github_commit_snapshots
      WHERE id IN (
@@ -606,13 +521,6 @@ async function _cleanupOldSnapshots(options?: {
   }
 }
 
-// =============================================================================
-// Compare Snapshots (commits between two SHAs)
-// =============================================================================
-
-/**
- * Save a compare snapshot (commits between two SHAs)
- */
 export async function saveCompareSnapshot(
   owner: string,
   repo: string,
@@ -643,9 +551,6 @@ export async function saveCompareSnapshot(
   return result.rows[0].id
 }
 
-/**
- * Get the latest compare snapshot for a base/head SHA pair
- */
 export async function getLatestCompareSnapshot(
   owner: string,
   repo: string,
@@ -687,10 +592,6 @@ export async function getLatestCompareSnapshot(
   }
 }
 
-// =============================================================================
-// Statistics
-// =============================================================================
-
 interface GitHubDataStats {
   total: number
   withCurrentData: number
@@ -698,17 +599,10 @@ interface GitHubDataStats {
   withoutData: number
 }
 
-/**
- * Get statistics on GitHub data coverage for an app's deployments.
- * Matches the same logic as fetchVerificationDataForAllDeployments:
- * - Only counts deployments with valid commit_sha and detected GitHub info
- * - Checks commit snapshots with data_type='prs' (same as hasCurrentSchemaData)
- */
 export async function getGitHubDataStatsForApp(
   appId: number,
   auditStartYear?: number | null,
 ): Promise<GitHubDataStats> {
-  // Match the same filters as fetchVerificationDataForAllDeployments
   const params: (number | string)[] = [appId]
   let dateFilter = ''
   if (auditStartYear) {

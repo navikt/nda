@@ -1,28 +1,14 @@
-/**
- * Builds a GitHubPRData object from V2 snapshots.
- *
- * Maps from V2 camelCase snapshot types to V1 snake_case GitHubPRData format
- * used by the UI and PDF reports.
- */
 import type { GitHubPRData } from '~/db/deployments.server'
 import type { PrChecks, PrComment, PrCommit, PrMetadata, PrReview } from './types'
 
-/**
- * Determines which SHA the checks were fetched for by comparing a check run's
- * headSha against the PR's merge commit SHA and head SHA.
- * Uses the first check run that actually has headSha populated.
- * Works for both freshly fetched and cached check data.
- */
 function deriveChecksRef(
   checks: PrChecks | null,
   mergeCommitSha: string | null | undefined,
   headSha: string,
 ): 'merge_commit' | 'head' | null {
   if (!checks || checks.checkRuns.length === 0) return null
-  if (!mergeCommitSha) return null // open PR — not relevant
+  if (!mergeCommitSha) return null
   const refSha = checks.checkRuns.find((cr) => cr.headSha)?.headSha
-  // If no check run has headSha (older cached data), assume branch — all data
-  // cached before 2026-06-20 was fetched from head.sha due to a bug
   if (!refSha) return 'head'
   if (refSha === mergeCommitSha) return 'merge_commit'
   if (refSha === headSha) return 'head'

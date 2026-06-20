@@ -7,8 +7,6 @@ import type {
 } from '~/lib/authorization-types'
 import { pool } from './connection.server'
 
-// ─── Section role assignments ────────────────────────────────────────────────
-
 export async function assignSectionRole(
   navIdent: string,
   sectionId: number,
@@ -35,7 +33,6 @@ export async function removeSectionRole(assignmentId: number, deletedBy: string)
   return (rowCount ?? 0) > 0
 }
 
-/** @public Used by section-roles admin page (Branch 2) */
 export async function getSectionRoleAssignments(sectionId: number): Promise<SectionRoleAssignment[]> {
   const { rows } = await pool.query<SectionRoleAssignment>(
     `SELECT r.id, r.nav_ident, r.section_id, r.role, r.assigned_by, r.assigned_at
@@ -48,10 +45,6 @@ export async function getSectionRoleAssignments(sectionId: number): Promise<Sect
   return rows
 }
 
-/**
- * Get all section role assignments grouped by nav_ident.
- * @public Used by admin user listing (Branch 2)
- */
 export async function getAllSectionRoleAssignments(): Promise<
   Map<string, Array<{ section_id: number; section_name: string; role: SectionRole }>>
 > {
@@ -71,8 +64,6 @@ export async function getAllSectionRoleAssignments(): Promise<
   }
   return map
 }
-
-// ─── Team role assignments ───────────────────────────────────────────────────
 
 export async function assignTeamRole(
   navIdent: string,
@@ -132,8 +123,6 @@ export async function getTeamRoleAssignments(devTeamId: number): Promise<TeamRol
   return rows
 }
 
-// ─── User role queries ───────────────────────────────────────────────────────
-
 export async function getUserRoles(navIdent: string): Promise<UserRoles> {
   const [sectionResult, teamResult] = await Promise.all([
     pool.query<SectionRoleAssignment>(
@@ -164,10 +153,6 @@ export interface UserRoleDisplay {
   teamRoles: Array<{ role: TeamRole; teamName: string; teamSlug: string; sectionSlug: string | null }>
 }
 
-/**
- * Get all active roles for a user with display-friendly names.
- * Used by user profile page for read-only role display.
- */
 export async function getUserRolesForDisplay(navIdent: string): Promise<UserRoleDisplay> {
   const [sectionResult, teamResult] = await Promise.all([
     pool.query<{ role: SectionRole; section_name: string; section_slug: string }>(
@@ -213,10 +198,6 @@ export interface DevTeamMemberWithRole {
   assigned_at: Date
 }
 
-/**
- * Get all members of a dev team with their roles.
- * Both tables store nav_ident as uppercase, so plain equality is used.
- */
 export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<DevTeamMemberWithRole[]> {
   const { rows } = await pool.query<DevTeamMemberWithRole>(
     `SELECT r.id, r.nav_ident, r.role, uga.github_username, uga.display_github_username, u.display_name, r.assigned_at
@@ -237,11 +218,6 @@ export async function getDevTeamMembersWithRoles(devTeamId: number): Promise<Dev
   return rows
 }
 
-/**
- * Get the unique GitHub usernames of all role-assigned members across the given dev teams.
- * Replacement for getMembersGithubUsernamesForDevTeams in user-dev-team-preference.
- * @public Used by deployment team filter (Branch 3)
- */
 export async function getMembersGithubUsernamesForDevTeamRoles(devTeamIds: number[]): Promise<string[]> {
   if (devTeamIds.length === 0) return []
   const { rows } = await pool.query<{ github_username: string }>(
@@ -257,11 +233,6 @@ export async function getMembersGithubUsernamesForDevTeamRoles(devTeamIds: numbe
   return rows.map((r) => r.github_username)
 }
 
-/**
- * Find active dev teams that have at least one role-assigned member whose GitHub username
- * is in the given set. Replacement for getDevTeamsForGithubUsernames in user-dev-team-preference.
- * @public Used by deployment team filter (Branch 3)
- */
 export async function getDevTeamsForGithubUsernamesByRole(
   githubUsernames: string[],
 ): Promise<Array<{ id: number; slug: string; name: string }>> {
@@ -280,11 +251,6 @@ export async function getDevTeamsForGithubUsernamesByRole(
   return rows
 }
 
-/**
- * Get all role assignments for admin user listing.
- * Returns a map of nav_ident → array of { dev_team_id, role }.
- * @public Used by admin user listing (Branch 2)
- */
 export async function getAllUserRoleAssignments(): Promise<
   Map<string, Array<{ dev_team_id: number; role: TeamRole }>>
 > {
@@ -305,12 +271,6 @@ export async function getAllUserRoleAssignments(): Promise<
   return map
 }
 
-/**
- * Get dev teams the user has any active role in (with nais_team_slugs).
- * Replacement for getUserDevTeams in user-dev-team-preference.
- * Returns one row per team with all roles aggregated.
- * @public Used by my-teams and my-apps (Branch 3)
- */
 export async function getUserDevTeamsByRole(navIdent: string): Promise<
   Array<{
     id: number

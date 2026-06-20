@@ -1,17 +1,3 @@
-/**
- * Status Categorization Consistency Tests
- *
- * These tests enforce the "Single Source of Truth" principle for status categorization.
- * All code that asks "is this approved?", "is this pending?", etc. MUST use the
- * canonical helpers from four-eyes-status.ts. These tests verify:
- *
- * 1. Static: No source file defines its own inline status category arrays
- * 2. Semantic: All categorization functions agree on every status value
- *
- * Background: A bug where checkAuditReadiness() defined its own approved-statuses
- * list (missing baseline/no_changes) caused audit report counts to diverge.
- * Audit reports are compliance evidence — this class of bug must be structurally prevented.
- */
 import { execSync } from 'node:child_process'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -32,10 +18,7 @@ import {
 import { getFourEyesStatus } from '../status-display'
 import { filterDeploymentsForVerification } from '../sync/verify-filters'
 
-// ─── Semantic consistency ────────────────────────────────────────────────────
-
 describe('status categorization semantic consistency', () => {
-  // Helper: create a minimal deployment object for a given status
   function makeDeployment(status: FourEyesStatus) {
     return {
       id: 1,
@@ -149,8 +132,6 @@ describe('status categorization semantic consistency', () => {
   })
 })
 
-// ─── Static analysis: no inline status category definitions ──────────────────
-
 describe('no inline status category definitions in source files', () => {
   const excludePatterns = [
     '__tests__',
@@ -161,8 +142,6 @@ describe('no inline status category definitions in source files', () => {
   ]
 
   function grepForPattern(pattern: string): string[] {
-    // Use a validated, hardcoded relative path to avoid shell injection (CodeQL).
-    // __dirname is always inside app/lib/__tests__, so '../..' resolves to app/.
     const safeDir = path.resolve(__dirname, '../..')
     const excludeArgs = excludePatterns.map((p) => ` | grep -v '${p}'`).join('')
     try {
@@ -173,11 +152,9 @@ describe('no inline status category definitions in source files', () => {
       })
       return result.trim().split('\n').filter(Boolean)
     } catch (error: unknown) {
-      // grep exits with code 1 when no matches found — that's expected
       if (error instanceof Error && 'status' in error && (error as { status: number }).status === 1) {
         return []
       }
-      // Any other error (grep missing, timeout, etc.) should fail the test
       throw error
     }
   }

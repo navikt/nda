@@ -40,7 +40,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const allApps = await getAllMonitoredApplications()
   const [alertCounts, activeReposByApp] = await Promise.all([getAllAlertCounts(), getAllActiveRepositories()])
 
-  // Filter to apps belonging to user's teams
   const directAppIdSet = new Set(allDirectAppIds)
   const naisTeamSlugSet = new Set(allNaisTeamSlugs)
 
@@ -51,7 +50,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       ? await getAppDeploymentStatsBatch(userApps.map((a) => ({ id: a.id, audit_start_year: a.audit_start_year })))
       : new Map()
 
-  // Resolve group names for grouped app cards
   const groupIds = [...new Set(userApps.map((a) => a.application_group_id).filter((id): id is number => id != null))]
   const groupNames = await getGroupNamesByIds(groupIds)
 
@@ -73,7 +71,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     groupNames,
   )
 
-  // Group by team_slug, then by environment
   const appsByTeamAndEnv: Record<string, Record<string, AppCardData[]>> = {}
   for (const app of appCards) {
     if (!appsByTeamAndEnv[app.team_slug]) {

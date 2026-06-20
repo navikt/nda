@@ -60,7 +60,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canAccessTeamAdmin(user, devTeam.id),
   ])
 
-  // Top-of-page coverage stats: YTD, filtered to team members' deploys.
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
   const url = new URL(request.url)
   const showAllApps = url.searchParams.get('allApps') === 'true'
@@ -73,7 +72,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     getDevTeamStats(devTeam.id, ytdStart),
   ])
 
-  // Build app cards: direct links + group-owned apps + nais team matches
   const directAppIds = new Set([...directApps.map((a) => a.monitored_app_id), ...groupAppIds])
   const naisTeamSlugs = devTeam.nais_team_slugs ?? []
   const teamApps = allApps.filter(
@@ -82,9 +80,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const appsForStats = showAllApps ? allApps.filter((a) => a.is_active) : teamApps
 
-  // Determine which apps are exclusively owned by this team (no other team claims them).
-  // For those apps, show all deployments unfiltered — avoids misleading "Ingen data" when
-  // an app is deployed by people not yet added as team members.
   const hasMappedMembers = members.some((m) => Boolean(m.github_username))
   const exclusiveAppIds =
     appsForStats.length > 0
@@ -94,9 +89,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         )
       : new Set<number>()
 
-  // For grouped apps, all siblings (across all teams) must be exclusive for the
-  // group to be unfiltered. When AppCard uses group=true, the link expands to all
-  // siblings — so we must check the full group, not just this team's subset.
   const effectiveExclusiveIds = new Set(exclusiveAppIds)
   const groupIdsInView = [
     ...new Set(appsForStats.map((a) => a.application_group_id).filter((id): id is number => id != null)),
@@ -136,11 +128,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const statsByApp = new Map([...exclusiveStats, ...sharedStats])
 
-  // Derive top-card stats from the board-based team stats function.
-  // This guarantees consistency with the section page (same counting logic).
-  // Note: top-level total counts board-linked deploys (any deployer) + unlinked deploys
-  // by team members. Per-app stats may differ for exclusively-owned apps where all
-  // deployments are shown unfiltered (app-level governance view vs team performance view).
   const teamCoverage = {
     total: teamStats.total_deployments,
     with_four_eyes: teamStats.with_four_eyes,
@@ -156,7 +143,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     non_member_deployments: teamStats.non_member_deployments,
   }
 
-  // Resolve group names for grouped app cards
   const displayApps = showAllApps
     ? appsForStats.filter((app) => {
         const stats = statsByApp.get(app.id)
@@ -188,16 +174,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     groupNames,
   ).sort((a, b) => (a.groupName ?? a.app_name).localeCompare(b.groupName ?? b.app_name, 'nb'))
 
-  // Determine which cards show unfiltered stats. Since effectiveExclusiveIds already
-  // downgrades mixed groups, we can check the card's primary ID directly.
-  // For grouped cards, all members share the same group fate (all exclusive or all shared).
   const unfilteredCardIds = new Set(
     appCards.filter((card) => effectiveExclusiveIds.has(card.id)).map((card) => card.id),
   )
 
   const section = await getSectionBySlug(params.sectionSlug)
 
-  // Deduplicate members by nav_ident (a user may have multiple roles)
   const uniqueMembers = Array.from(new Map(members.map((m) => [m.nav_ident.toUpperCase(), m])).values())
 
   return {
@@ -403,7 +385,6 @@ export default function DevTeamPage() {
   )
 }
 
-/** Floors percentage to avoid showing 100% unless it's truly complete. */
 function floorUnlessPerfect(pct: number): number {
   if (pct >= 100) return 100
   return Math.floor(pct)

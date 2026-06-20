@@ -8,10 +8,6 @@ import type {
 
 const BASE_URL = 'https://nda.ansatt.nav.no'
 
-// =============================================================================
-// Deployment Notification Fixtures
-// =============================================================================
-
 const base = {
   deploymentId: 42,
   appName: 'pensjon-pen',
@@ -69,10 +65,6 @@ export const deploymentFixtures = {
     prUrl: 'https://github.com/navikt/pensjon-pen/pull/999',
   },
 } satisfies Record<string, DeploymentNotification>
-
-// =============================================================================
-// Home Tab Fixtures
-// =============================================================================
 
 const sampleBoards = [
   {
@@ -223,10 +215,6 @@ export const homeTabFixtures = {
   },
 } satisfies Record<string, HomeTabInput>
 
-// =============================================================================
-// Deviation Notification Fixtures
-// =============================================================================
-
 export const deviationFixtures = {
   standard: {
     deploymentId: 42,
@@ -271,10 +259,6 @@ export const deviationFixtures = {
     detailsUrl: `${BASE_URL}/team/pensjondeployer/env/prod-gcp/app/pensjon-opptjening/deployments/150`,
   },
 } satisfies Record<string, DeviationNotification>
-
-// =============================================================================
-// Reminder Notification Fixtures
-// =============================================================================
 
 const appUrl = `${BASE_URL}/team/pensjondeployer/env/prod-gcp/app/pensjon-pen`
 
@@ -347,10 +331,6 @@ export const reminderFixtures = {
     })),
   },
 } satisfies Record<string, ReminderNotification>
-
-// =============================================================================
-// New Deployment Notification Fixtures
-// =============================================================================
 
 const deployNotifyBase = {
   deploymentId: 42,

@@ -18,7 +18,6 @@ export function ThemeProvider({ children, initialTheme }: { children: ReactNode;
   const setTheme = useCallback(
     (newTheme: ThemeValue) => {
       setThemeState(newTheme)
-      // Persist to cookie via root action
       fetcher.submit({ theme: newTheme }, { method: 'POST', action: '/' })
     },
     [fetcher],

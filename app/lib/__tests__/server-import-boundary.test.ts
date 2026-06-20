@@ -3,21 +3,6 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-/**
- * Server / client import boundary guard.
- *
- * `.server.ts` files contain server-only code (DB access, secrets, Node-only
- * APIs like `node:async_hooks`, `pg`, `@slack/bolt`). When such code is pulled
- * into the client bundle (Storybook, browser bundle), the build either fails
- * (e.g. `AsyncLocalStorage is not exported by __vite-browser-external`) or —
- * worse — leaks server-only deps to the browser.
- *
- * This test starts from all client-bundled entry points (stories, components,
- * hooks, fixtures) and follows every non-type import transitively. It fails if
- * any path reaches a `.server.ts` file — including indirect paths via barrels
- * such as `~/lib/slack` re-exporting `client.server.ts`.
- */
-
 const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../..')
 const appDir = join(repoRoot, 'app')
 
@@ -46,9 +31,6 @@ function parseImportsFromText(text: string): ImportLine[] {
     const line = lines[i]
     const isStartOfStatement = /^\s*(?:import|export)\b/.test(line)
     if (!buffer && !isStartOfStatement) continue
-    // If a new import/export starts while a previous buffer is still open
-    // (e.g. a bare `export type { X }` with no `from`), discard the stale
-    // buffer so we don't pollute the next statement's classification.
     if (buffer && isStartOfStatement) {
       buffer = ''
       bufStart = i
@@ -60,8 +42,6 @@ function parseImportsFromText(text: string): ImportLine[] {
       const sideMatch = !fromMatch ? buffer.match(/^\s*import\s*['"]([^'"]+)['"]/) : null
       const source = fromMatch?.[1] ?? sideMatch?.[1] ?? null
       if (source) {
-        // Type-only forms: `import type ...`, `export type ...`,
-        // and inline `import { type X, type Y } from ...` where ALL specifiers are type-only.
         const isFullTypeOnly = /^\s*(?:import|export)\s+type\b/.test(buffer)
         const inlineSpecifierBlock = buffer.match(/\{([^}]*)\}/)?.[1] ?? ''
         const specifiers = inlineSpecifierBlock
@@ -80,25 +60,20 @@ function parseImportsFromText(text: string): ImportLine[] {
 const exts = ['.ts', '.tsx', '.js', '.jsx']
 
 function resolveImport(source: string, fromFile: string): string | null {
-  // External module — skip.
   if (!source.startsWith('.') && !source.startsWith('~')) return null
-  // CSS / asset — skip.
   if (/\.(css|svg|png|jpg|jpeg|gif|webp|json)(\?.*)?$/.test(source)) return null
 
   const base = source.startsWith('~/') ? join(appDir, source.slice(2)) : resolve(dirname(fromFile), source)
 
-  // Try direct file with extensions.
   for (const ext of exts) {
     if (existsSync(base + ext)) return base + ext
   }
-  // Try as directory with index file.
   if (existsSync(base) && statSync(base).isDirectory()) {
     for (const ext of exts) {
       const idx = join(base, `index${ext}`)
       if (existsSync(idx)) return idx
     }
   }
-  // Direct file with extension already in source.
   if (existsSync(base) && statSync(base).isFile()) return base
   return null
 }
@@ -137,7 +112,6 @@ function walkClientEntries(dir: string, out: string[] = []): string[] {
   for (const e of entries) {
     const full = join(dir, e.name)
     if (e.isDirectory()) {
-      // Skip generated typegen output and node_modules just in case.
       if (e.name === 'node_modules' || e.name.startsWith('+types')) continue
       walkClientEntries(full, out)
       continue
@@ -173,9 +147,6 @@ describe('server-import boundary', () => {
     })
 
     it('does not let a bare `export type { X }` (no `from`) pollute the next import', () => {
-      // Regression: the parser used to start a buffer on `export type` and
-      // never reset it because there was no `from`. The next import would be
-      // appended to the buffer and misclassified as type-only.
       const text = `export type { Local }\nimport { leaked } from './server-stuff'\n`
       const out = parseImportsFromText(text)
       const leaked = out.find((i) => i.source === './server-stuff')
@@ -196,7 +167,6 @@ describe('server-import boundary', () => {
 
     const offenders: string[] = []
     for (const entry of entries) {
-      // Each entry gets its own visited set so we can find the shortest leak path per entry.
       const leak = findServerLeak(entry)
       if (leak) {
         const trail = leak.map((s) => `  ${s.via}`).join('\n')

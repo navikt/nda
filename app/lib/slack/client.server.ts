@@ -1,17 +1,3 @@
-/**
- * Slack Integration using Bolt.js with Socket Mode
- *
- * Provides functionality for:
- * - Sending deployment notifications to Slack channels
- * - Interactive buttons for approval/rejection
- * - Updating messages when deployment status changes
- *
- * Environment variables:
- * - SLACK_BOT_TOKEN: Bot User OAuth Token (xoxb-...)
- * - SLACK_APP_TOKEN: App-Level Token for Socket Mode (xapp-...)
- * - SLACK_CHANNEL_ID: Default channel for notifications
- */
-
 import { App, type BlockAction, LogLevel } from '@slack/bolt'
 import type { KnownBlock } from '@slack/types'
 import { getActiveBoardsWithKeywordsForDevTeam } from '~/db/boards.server'
@@ -49,19 +35,9 @@ import {
   type ReminderNotification,
 } from './blocks'
 
-// NOTE: Types and block builders are exported from `./blocks` and surfaced
-// through the `~/lib/slack` barrel; do not re-export them here. Re-exporting
-// them from this server-only file forces callers that only need types/builders
-// (e.g. stories, components) to risk pulling in the server graph.
-
-// Singleton Slack app instance
 let slackApp: App | null = null
 let isConnected = false
 
-/**
- * Wraps a Slack Web API call and logs it as a structured outgoing HTTP entry.
- * Slack's transport always uses HTTP POST to slack.com/api/<method>.
- */
 async function callSlackApi<T>(slackMethod: string, fn: () => Promise<T>): Promise<T> {
   const start = Date.now()
   try {
@@ -88,16 +64,10 @@ async function callSlackApi<T>(slackMethod: string, fn: () => Promise<T>): Promi
   }
 }
 
-/**
- * Check if Slack integration is configured
- */
 export function isSlackConfigured(): boolean {
   return !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN)
 }
 
-/**
- * Get or initialize the Slack app instance
- */
 function getSlackApp(): App | null {
   if (!isSlackConfigured()) {
     logger.info('[Slack] Not configured (missing SLACK_BOT_TOKEN or SLACK_APP_TOKEN)')
@@ -113,21 +83,15 @@ function getSlackApp(): App | null {
       logLevel: process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO,
     })
 
-    // Register action handlers
     registerActionHandlers(slackApp)
     logger.info('[Slack] Action handlers registered')
 
-    // Register event handlers
     registerEventHandlers(slackApp)
   }
 
   return slackApp
 }
 
-/**
- * Start the Slack Socket Mode connection
- * Should be called once at app startup
- */
 export async function startSlackConnection(): Promise<void> {
   if (isConnected) return
 
@@ -146,9 +110,6 @@ export async function startSlackConnection(): Promise<void> {
   }
 }
 
-/**
- * Stop the Slack connection
- */
 async function _stopSlackConnection(): Promise<void> {
   if (!isConnected || !slackApp) return
 
@@ -161,10 +122,6 @@ async function _stopSlackConnection(): Promise<void> {
   }
 }
 
-/**
- * Send a deployment notification to Slack
- * Returns the message timestamp (ts) for later updates
- */
 export async function sendDeploymentNotification(
   notification: DeploymentNotification,
   channelId?: string,
@@ -196,7 +153,6 @@ export async function sendDeploymentNotification(
 
     const messageTs = result.ts
     if (messageTs) {
-      // Store notification in database
       await createSlackNotification({
         deploymentId: notification.deploymentId,
         channelId: channel,
@@ -214,9 +170,6 @@ export async function sendDeploymentNotification(
   }
 }
 
-/**
- * Send a deviation notification to a dedicated Slack channel
- */
 export async function sendDeviationNotification(
   notification: DeviationNotification,
   channelId: string,
@@ -250,9 +203,6 @@ export async function sendDeviationNotification(
   }
 }
 
-/**
- * Send a reminder notification to a Slack channel
- */
 export async function sendReminder(notification: ReminderNotification, channelId: string): Promise<string | null> {
   const app = getSlackApp()
   if (!app) {
@@ -284,9 +234,6 @@ export async function sendReminder(notification: ReminderNotification, channelId
   }
 }
 
-/**
- * Update an existing deployment notification
- */
 async function _updateDeploymentNotification(
   messageTs: string,
   notification: DeploymentNotification,
@@ -312,7 +259,6 @@ async function _updateDeploymentNotification(
       }),
     )
 
-    // Log the update in database
     const existing = await getSlackNotificationByMessage(channel, messageTs)
     if (existing) {
       await updateSlackNotification(existing.id, {
@@ -329,26 +275,19 @@ async function _updateDeploymentNotification(
   }
 }
 
-/**
- * Register action handlers for interactive components
- */
 function registerActionHandlers(app: App): void {
-  // Handle approve button click
   app.action<BlockAction>('approve_deployment', async ({ ack, body, client, action }) => {
     await ack()
 
     try {
-      // Parse the action value
       const buttonAction = action as { value: string }
       const value = JSON.parse(buttonAction.value)
       const { deploymentId, appName } = value
 
-      // Get user info
       const userId = body.user.id
 
       logger.info(`Slack: User ${userId} approved deployment ${deploymentId}`)
 
-      // Log the interaction
       if (body.channel?.id && body.message?.ts) {
         const notification = await getSlackNotificationByMessage(body.channel.id, body.message.ts)
         if (notification) {
@@ -361,8 +300,6 @@ function registerActionHandlers(app: App): void {
           })
         }
 
-        // TODO: Call the actual approval logic
-        // For now, just update the message to show it was approved
         const channelId = body.channel.id
         const messageTs = body.message.ts
         await callSlackApi('chat.update', () =>
@@ -387,7 +324,6 @@ function registerActionHandlers(app: App): void {
     }
   })
 
-  // View details is a link button, but we log the interaction
   app.action<BlockAction>('view_details', async ({ ack, body, action }) => {
     await ack()
 
@@ -413,14 +349,6 @@ function registerActionHandlers(app: App): void {
   })
 }
 
-/**
- * Send notification for a deployment if needed.
- * Uses atomic database claim to prevent duplicate notifications across pods.
- *
- * @param deployment - Deployment with app info (must include app_slack_channel_id)
- * @param baseUrl - Base URL for links (e.g., https://deployment-audit.ansatt.nav.no)
- * @returns true if notification was sent, false if skipped (already sent or not configured)
- */
 export async function notifyDeploymentIfNeeded(
   deployment: {
     id: number
@@ -441,12 +369,10 @@ export async function notifyDeploymentIfNeeded(
   },
   baseUrl: string,
 ): Promise<boolean> {
-  // Skip if already notified
   if (deployment.slack_message_ts) {
     return false
   }
 
-  // Skip if Slack not enabled for this app
   if (!deployment.slack_notifications_enabled || !deployment.app_slack_channel_id) {
     return false
   }
@@ -458,15 +384,12 @@ export async function notifyDeploymentIfNeeded(
 
   const channelId = deployment.app_slack_channel_id
 
-  // Determine status for notification
   const status = mapFourEyesStatus(deployment.four_eyes_status)
 
-  // Only notify for deployments needing attention
   if (status === 'approved') {
     return false
   }
 
-  // Build notification
   const notification: DeploymentNotification = {
     deploymentId: deployment.id,
     appName: deployment.app_name,
@@ -482,17 +405,14 @@ export async function notifyDeploymentIfNeeded(
     detailsUrl: `${baseUrl}/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}/deployments/${deployment.id}`,
   }
 
-  // Send to Slack
   const messageTs = await sendDeploymentNotification(notification, channelId)
   if (!messageTs) {
     return false
   }
 
-  // Atomically claim this deployment (prevents duplicates across pods)
   const claimed = await claimDeploymentForSlackNotification(deployment.id, channelId, messageTs)
 
   if (!claimed) {
-    // Another pod already claimed it - delete our duplicate message
     try {
       await callSlackApi('chat.delete', () =>
         app.client.chat.delete({
@@ -510,10 +430,6 @@ export async function notifyDeploymentIfNeeded(
   return true
 }
 
-/**
- * Send a new deployment notification to Slack (informational, for ALL deployments).
- * Uses atomic claim pattern to prevent duplicates across pods.
- */
 async function notifyNewDeploymentIfNeeded(
   deployment: {
     id: number
@@ -535,12 +451,10 @@ async function notifyNewDeploymentIfNeeded(
   },
   baseUrl: string,
 ): Promise<boolean> {
-  // Skip if already notified
   if (deployment.slack_deploy_message_ts) {
     return false
   }
 
-  // Skip if deploy notifications not enabled for this app
   if (!deployment.slack_deploy_notify_enabled || !deployment.slack_deploy_channel_id) {
     return false
   }
@@ -552,7 +466,6 @@ async function notifyNewDeploymentIfNeeded(
 
   const channelId = deployment.slack_deploy_channel_id
 
-  // Determine deploy method
   let deployMethod: NewDeploymentNotification['deployMethod'] = 'direct_push'
   if (deployment.github_pr_number) {
     deployMethod = 'pull_request'
@@ -560,7 +473,6 @@ async function notifyNewDeploymentIfNeeded(
     deployMethod = 'legacy'
   }
 
-  // Extract PR metadata
   const prData = deployment.github_pr_data
   const approvers = prData?.reviewers?.filter((r) => r.state === 'APPROVED').map((r) => r.username) ?? []
 
@@ -606,11 +518,9 @@ async function notifyNewDeploymentIfNeeded(
     return false
   }
 
-  // Atomically claim this deployment (prevents duplicates across pods)
   const claimed = await claimDeploymentForDeployNotify(deployment.id, channelId, messageTs)
 
   if (!claimed) {
-    // Another pod already claimed it — delete our duplicate message
     try {
       await callSlackApi('chat.delete', () =>
         app.client.chat.delete({
@@ -628,10 +538,6 @@ async function notifyNewDeploymentIfNeeded(
   return true
 }
 
-/**
- * Send pending deploy notifications for all deployments that need one.
- * Called from the periodic sync flow after verification completes.
- */
 export async function sendPendingDeployNotifications(baseUrl: string): Promise<number> {
   const deployments = await getDeploymentsNeedingDeployNotify()
   if (deployments.length === 0) {
@@ -641,7 +547,6 @@ export async function sendPendingDeployNotifications(baseUrl: string): Promise<n
   let sentCount = 0
   for (const deployment of deployments) {
     try {
-      // The query joins monitored_applications, so these fields exist on the row
       const row = deployment as DeploymentWithApp & {
         slack_deploy_channel_id: string | null
         slack_deploy_notify_enabled: boolean
@@ -662,11 +567,6 @@ export async function sendPendingDeployNotifications(baseUrl: string): Promise<n
   return sentCount
 }
 
-/**
- * Map four_eyes_status to notification status using canonical helpers.
- * Note: legacy_pending is intentionally NOT treated as approved — it means
- * "waiting for approval from another person".
- */
 function mapFourEyesStatus(status: string): DeploymentNotification['status'] {
   if (isApprovedStatus(status) || status === 'legacy') return 'approved'
   if (status === 'legacy_pending') return 'pending_approval'
@@ -675,11 +575,7 @@ function mapFourEyesStatus(status: string): DeploymentNotification['status'] {
   return 'pending_approval'
 }
 
-/**
- * Register event handlers for Slack events
- */
 function registerEventHandlers(app: App): void {
-  // Handle Home Tab opened
   app.event('app_home_opened', async ({ event, client }) => {
     logger.info('[Slack Home Tab] Event received:', { user: event.user, tab: event.tab })
 
@@ -710,12 +606,6 @@ function registerEventHandlers(app: App): void {
   logger.info('[Slack] Event handlers registered (app_home_opened)')
 }
 
-/**
- * Assemble the personalised home-tab payload for a given Slack user.
- *
- * Module-private helper exercised end-to-end via the `app_home_opened` handler
- * and unit-tested at the block-builder level via fixtures.
- */
 async function buildPersonalizedHomeTabInput({
   slackUserId,
   baseUrl,
@@ -727,7 +617,6 @@ async function buildPersonalizedHomeTabInput({
   const navIdent = userData?.nav_ident ?? null
   const githubUsername = userData?.github_username ?? null
 
-  // No NDA mapping at all → render onboarding-only home tab.
   if (!navIdent) {
     return {
       slackUserId,
@@ -754,21 +643,11 @@ async function buildPersonalizedHomeTabInput({
     // Graceful degradation — show onboarding view if role query fails
   }
 
-  // Resolve scope (nais slugs, app IDs, deployer filter) — shared with
-  // /my-teams so that both views show consistent numbers.
   const [scope, ...teamBoardResults] = await Promise.all([
     resolveDevTeamScope(devTeams),
     ...devTeams.map((t) => getActiveBoardsWithKeywordsForDevTeam(t.id)),
   ])
 
-  // When no team members are mapped to GitHub usernames the deployer
-  // filter would match zero users → zero results.  We fall back to
-  // team-level counts so the summary numbers remain meaningful.
-  // The unmapped-contributors warning is only shown when the deployer
-  // filter is actually active (i.e. at least some members are mapped).
-  // When noMembersMapped is true the warning is skipped because the
-  // displayed numbers are unfiltered and therefore already include
-  // those contributors' deployments.
   const deployerUsernames = scope.noMembersMapped ? undefined : scope.deployerUsernames
   const deployerFilterActive = deployerUsernames !== undefined
   const [issueApps, unmappedContributors] = await Promise.all([

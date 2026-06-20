@@ -1,10 +1,3 @@
-/**
- * Debug Verification Page (under Verification Diff)
- *
- * Same as debug-verify but with breadcrumbs showing verification-diff as parent.
- * Used when navigating from the verification-diff list.
- */
-
 import { Alert, BodyShort, Box, Button, Heading, HStack, Switch, Tag, VStack } from '@navikt/ds-react'
 import { Link, useSearchParams } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
@@ -77,7 +70,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       forceRefresh: !useCache,
     })
 
-    // Collect usernames for display name resolution
     const usernames: string[] = []
     const fetchedData = debugResult.fetchedData
     if (fetchedData?.deployedPr) {

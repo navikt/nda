@@ -2,22 +2,14 @@ import { type Span, SpanStatusCode, trace } from '@opentelemetry/api'
 
 const tracer = trace.getTracer('deployment-audit')
 
-/**
- * Get the current trace ID from the active OTel context, or undefined if none.
- */
 export function getTraceId(): string | undefined {
   const span = trace.getActiveSpan()
   if (!span) return undefined
   const traceId = span.spanContext().traceId
-  // All-zero trace ID means no active trace
   if (traceId === '00000000000000000000000000000000') return undefined
   return traceId
 }
 
-/**
- * Run an async function inside a named OTel span.
- * Automatically sets error status and records exceptions on failure.
- */
 async function withSpan<T>(name: string, fn: (span: Span) => Promise<T>): Promise<T> {
   return tracer.startActiveSpan(name, async (span) => {
     try {
@@ -36,22 +28,15 @@ async function withSpan<T>(name: string, fn: (span: Span) => Promise<T>): Promis
   })
 }
 
-/**
- * Create a span for a database query. Adds db.system and db.statement attributes.
- */
 export async function withDbSpan<T>(operation: string, statement: string, fn: () => Promise<T>): Promise<T> {
   return withSpan(`db ${operation}`, async (span) => {
     span.setAttribute('db.system', 'postgresql')
     span.setAttribute('db.operation', operation)
-    // Truncate very long SQL statements
     span.setAttribute('db.statement', statement.length > 500 ? `${statement.substring(0, 500)}…` : statement)
     return fn()
   })
 }
 
-/**
- * Create a span for a GitHub API call.
- */
 export async function withGitHubSpan<T>(operation: string, fn: () => Promise<T>): Promise<T> {
   return withSpan(`github ${operation}`, async (span) => {
     span.setAttribute('http.url', 'https://api.github.com')

@@ -2,7 +2,7 @@ import { pool } from '~/db/connection.server'
 import { toDateString } from '~/lib/date-utils'
 import type { ReportPeriodType } from '~/lib/report-periods'
 
-const STALE_JOB_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
+const STALE_JOB_THRESHOLD_MS = 5 * 60 * 1000
 const STALE_JOB_THRESHOLD_SQL = `${STALE_JOB_THRESHOLD_MS} milliseconds`
 
 export async function createReportJob(
@@ -55,11 +55,6 @@ export async function getReportJobWithPdf(
   return result.rows[0] || null
 }
 
-/**
- * Atomically claim a pending or stale processing job for processing.
- * Returns true if this caller won the claim, false if another processor already claimed it.
- * A stale processing job (older than threshold or with NULL started_at from pre-migration) is treated as crashed.
- */
 export async function claimReportJob(jobId: string): Promise<boolean> {
   const result = await pool.query(
     `UPDATE report_jobs SET status = 'processing', started_at = NOW()
@@ -87,14 +82,9 @@ export async function updateReportJobStatus(
   }
 }
 
-/**
- * Link a completed report job to the audit_reports row it created.
- */
 export async function setReportJobAuditReportId(jobId: string, auditReportId: number): Promise<void> {
   await pool.query(`UPDATE report_jobs SET audit_report_id = $2 WHERE job_id = $1`, [jobId, auditReportId])
 }
-
-// ─── M2M API queries (app-scoped) ───────────────────────────────────────────
 
 interface InFlightJob {
   job_id: string
@@ -104,10 +94,6 @@ interface InFlightJob {
   started_at: Date | null
 }
 
-/**
- * Find an existing pending/processing/completed job for the same app and period.
- * Used by the generate endpoint to deduplicate requests.
- */
 export async function findInFlightJob(
   monitoredAppId: number,
   periodType: ReportPeriodType,
@@ -129,18 +115,12 @@ export async function findInFlightJob(
   return result.rows[0] || null
 }
 
-/**
- * Check if a pending or processing job is stale and should be re-triggered.
- * Pending jobs become stale after 5 minutes from creation (never picked up).
- * Processing jobs become stale after 5 minutes from started_at (processor crashed),
- * or immediately if started_at is NULL (pre-migration row).
- */
 export function isStaleJob(job: { status: string; created_at: Date; started_at?: Date | null }): boolean {
   if (job.status === 'pending') {
     return Date.now() - new Date(job.created_at).getTime() > STALE_JOB_THRESHOLD_MS
   }
   if (job.status === 'processing') {
-    if (!job.started_at) return true // Pre-migration row without started_at — treat as stale
+    if (!job.started_at) return true
     return Date.now() - new Date(job.started_at).getTime() > STALE_JOB_THRESHOLD_MS
   }
   return false
@@ -155,10 +135,6 @@ interface AppScopedJobStatus {
   audit_report_id: number | null
 }
 
-/**
- * Get job status scoped to a specific app (IDOR protection).
- * Returns null if job doesn't exist or doesn't belong to the app.
- */
 export async function getReportJobStatusForApp(
   jobId: string,
   monitoredAppId: number,

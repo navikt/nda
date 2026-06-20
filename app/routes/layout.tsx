@@ -28,7 +28,6 @@ import type { Route } from './+types/layout'
 export async function loader({ request }: Route.LoaderArgs) {
   const identity = await requireUser(request)
 
-  // Resolve user's display name and section memberships in parallel
   const [userMapping, sections] = await Promise.all([
     getUserByIdentifier(identity.navIdent),
     getUserSections(identity.entraGroups),
@@ -65,7 +64,6 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
     ...(user.role === 'admin' ? [{ path: '/admin', label: 'Admin' }] : []),
   ]
 
-  // Clear search on navigation
   const prevPathRef = useRef(location.pathname)
   useEffect(() => {
     if (prevPathRef.current !== location.pathname) {

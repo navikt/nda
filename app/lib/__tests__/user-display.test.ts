@@ -1,15 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatDisplayNameNatural, getUserDisplayName, serializeUserLookups, type UserLookupMap } from '../user-display'
 
-/**
- * Tests for user display name resolution.
- *
- * WHY: getUserDisplayName() is called everywhere a username is shown in the UI.
- * It has a specific priority chain: bot name > display_name > nav_email > raw username.
- * If the fallback order is broken, users see wrong names across the entire application.
- * These tests pin down each step in the fallback chain.
- */
-
 describe('getUserDisplayName — resolves GitHub username to display name with fallback chain', () => {
   const mappings: UserLookupMap = {
     'modig.bjork': { display_name: 'Modig Bjørk', nav_ident: 'Z990007', nav_email: 'modig.bjork@nav.no' },
@@ -23,7 +14,6 @@ describe('getUserDisplayName — resolves GitHub username to display name with f
   })
 
   it('returns bot display name for known GitHub bots', () => {
-    // dependabot[bot] is a known bot in github-bots.ts
     const result = getUserDisplayName('dependabot[bot]', mappings)
     expect(result).toBe('Dependabot')
   })

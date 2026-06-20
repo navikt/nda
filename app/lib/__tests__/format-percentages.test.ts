@@ -60,7 +60,6 @@ describe('formatPercentages', () => {
   })
 
   it('gives remainder to largest fractional part', () => {
-    // 7/9 = 77.777...%, 2/9 = 22.222...%
     const result = formatPercentages([7, 2], 9)
     const sum = result.reduce((a, b) => a + parseFloat(b), 0)
     expect(sum).toBeCloseTo(100, 1)

@@ -13,7 +13,7 @@ import {
 describe('getCompletedPeriods', () => {
   describe('yearly', () => {
     it('returns only completed years', () => {
-      const ref = new Date(2026, 5, 15) // June 15, 2026
+      const ref = new Date(2026, 5, 15)
       const periods = getCompletedPeriods('yearly', ref)
 
       expect(periods[0].label).toBe('2025')
@@ -21,7 +21,6 @@ describe('getCompletedPeriods', () => {
       expect(periods[0].startDate).toEqual(new Date(2025, 0, 1))
       expect(periods[0].endDate).toEqual(new Date(2025, 11, 31, 23, 59, 59, 999))
 
-      // Should not include 2026 (current year)
       expect(periods.every((p) => p.year < 2026)).toBe(true)
     })
 
@@ -36,29 +35,26 @@ describe('getCompletedPeriods', () => {
 
   describe('quarterly', () => {
     it('returns only completed quarters', () => {
-      const ref = new Date(2026, 4, 10) // May 10, 2026 (Q2)
+      const ref = new Date(2026, 4, 10)
       const periods = getCompletedPeriods('quarterly', ref)
 
-      // Q1 2026 should be completed (ended Mar 31)
       expect(periods[0].label).toBe('Q1 2026')
       expect(periods[0].startDate).toEqual(new Date(2026, 0, 1))
       expect(periods[0].endDate).toEqual(new Date(2026, 2, 31, 23, 59, 59, 999))
 
-      // Q2 2026 should NOT be included (we're in it)
       expect(periods.find((p) => p.label === 'Q2 2026')).toBeUndefined()
     })
 
     it('handles start of quarter correctly', () => {
-      const ref = new Date(2026, 3, 1) // April 1 (start of Q2)
+      const ref = new Date(2026, 3, 1)
       const periods = getCompletedPeriods('quarterly', ref)
       expect(periods[0].label).toBe('Q1 2026')
     })
 
     it('returns Q3 and Q4 of previous year', () => {
-      const ref = new Date(2026, 1, 15) // Feb 15, 2026 (Q1)
+      const ref = new Date(2026, 1, 15)
       const periods = getCompletedPeriods('quarterly', ref)
 
-      // No quarters in 2026 should be complete yet
       expect(periods[0].label).toBe('Q4 2025')
       expect(periods[1].label).toBe('Q3 2025')
     })
@@ -69,46 +65,43 @@ describe('getCompletedPeriods', () => {
 
       const q1 = periods.find((p) => p.label === 'Q1 2026')
       expect(q1).toBeDefined()
-      expect(q1?.endDate.getMonth()).toBe(2) // March
+      expect(q1?.endDate.getMonth()).toBe(2)
       expect(q1?.endDate.getDate()).toBe(31)
 
       const q2 = periods.find((p) => p.label === 'Q2 2026')
       expect(q2).toBeDefined()
-      expect(q2?.endDate.getMonth()).toBe(5) // June
+      expect(q2?.endDate.getMonth()).toBe(5)
       expect(q2?.endDate.getDate()).toBe(30)
 
       const q3 = periods.find((p) => p.label === 'Q3 2026')
       expect(q3).toBeDefined()
-      expect(q3?.endDate.getMonth()).toBe(8) // September
+      expect(q3?.endDate.getMonth()).toBe(8)
       expect(q3?.endDate.getDate()).toBe(30)
     })
   })
 
   describe('tertiary', () => {
     it('returns only completed tertialer', () => {
-      const ref = new Date(2026, 5, 15) // June 15, 2026 (T2)
+      const ref = new Date(2026, 5, 15)
       const periods = getCompletedPeriods('tertiary', ref)
 
-      // T1 2026 should be completed (ended Apr 30)
       expect(periods[0].label).toBe('T1 2026')
       expect(periods[0].startDate).toEqual(new Date(2026, 0, 1))
       expect(periods[0].endDate).toEqual(new Date(2026, 3, 30, 23, 59, 59, 999))
 
-      // T2 2026 should NOT be included (we're in it)
       expect(periods.find((p) => p.label === 'T2 2026')).toBeUndefined()
     })
 
     it('handles start of tertial correctly', () => {
-      const ref = new Date(2026, 4, 1) // May 1 (start of T2)
+      const ref = new Date(2026, 4, 1)
       const periods = getCompletedPeriods('tertiary', ref)
       expect(periods[0].label).toBe('T1 2026')
     })
 
     it('returns T3 of previous year when in T1', () => {
-      const ref = new Date(2026, 2, 15) // March 15, 2026 (T1)
+      const ref = new Date(2026, 2, 15)
       const periods = getCompletedPeriods('tertiary', ref)
 
-      // No tertialer in 2026 should be complete yet
       expect(periods[0].label).toBe('T3 2025')
       expect(periods[1].label).toBe('T2 2025')
     })
@@ -118,38 +111,37 @@ describe('getCompletedPeriods', () => {
       const periods = getCompletedPeriods('tertiary', ref)
 
       const t1 = periods.find((p) => p.label === 'T1 2026')
-      expect(t1?.endDate.getMonth()).toBe(3) // April
+      expect(t1?.endDate.getMonth()).toBe(3)
       expect(t1?.endDate.getDate()).toBe(30)
 
       const t2 = periods.find((p) => p.label === 'T2 2026')
-      expect(t2?.endDate.getMonth()).toBe(7) // August
+      expect(t2?.endDate.getMonth()).toBe(7)
       expect(t2?.endDate.getDate()).toBe(31)
 
       const t3 = periods.find((p) => p.label === 'T3 2025')
-      expect(t3?.endDate.getMonth()).toBe(11) // December
+      expect(t3?.endDate.getMonth()).toBe(11)
       expect(t3?.endDate.getDate()).toBe(31)
     })
   })
 
   describe('monthly', () => {
     it('returns only completed months', () => {
-      const ref = new Date(2026, 2, 15) // March 15, 2026
+      const ref = new Date(2026, 2, 15)
       const periods = getCompletedPeriods('monthly', ref)
 
       expect(periods[0].label).toBe('Februar 2026')
       expect(periods[1].label).toBe('Januar 2026')
 
-      // March should NOT be included
       expect(periods.find((p) => p.label === 'Mars 2026')).toBeUndefined()
     })
 
     it('handles end-of-month dates correctly', () => {
-      const ref = new Date(2026, 3, 1) // April 1
+      const ref = new Date(2026, 3, 1)
       const periods = getCompletedPeriods('monthly', ref)
 
       const feb = periods.find((p) => p.label === 'Februar 2026')
       expect(feb).toBeDefined()
-      expect(feb?.endDate.getDate()).toBe(28) // 2026 is not a leap year
+      expect(feb?.endDate.getDate()).toBe(28)
 
       const jan = periods.find((p) => p.label === 'Januar 2026')
       expect(jan).toBeDefined()
@@ -157,7 +149,7 @@ describe('getCompletedPeriods', () => {
     })
 
     it('handles leap year February', () => {
-      const ref = new Date(2028, 3, 1) // April 1, 2028 (leap year)
+      const ref = new Date(2028, 3, 1)
       const periods = getCompletedPeriods('monthly', ref)
       const feb = periods.find((p) => p.label === 'Februar 2028')
       expect(feb).toBeDefined()
@@ -184,7 +176,6 @@ describe('getCompletedPeriods', () => {
     it('quarterly: excludes quarters before startYear', () => {
       const ref = new Date(2026, 5, 15)
       const periods = getCompletedPeriods('quarterly', ref, 2026)
-      // Only Q1 2026 should be included (Q1 ended Mar 31)
       expect(periods.every((p) => p.year >= 2026)).toBe(true)
       expect(periods[0].label).toBe('Q1 2026')
     })
@@ -206,7 +197,7 @@ describe('getCompletedPeriods', () => {
     })
 
     it('returns empty when startYear is current year and no periods completed', () => {
-      const ref = new Date(2026, 0, 15) // Jan 15
+      const ref = new Date(2026, 0, 15)
       const periods = getCompletedPeriods('yearly', ref, 2026)
       expect(periods.length).toBe(0)
     })
@@ -434,14 +425,10 @@ describe('findExistingReportForPeriod', () => {
   })
 
   it('handles period_start as Date object (as returned by node-postgres for DATE columns)', () => {
-    // node-postgres returns DATE columns as Date objects, not strings.
-    // The old code used .slice(0, 10) which crashes on Date objects.
-    const pgDate = new Date(2025, 0, 1) // This is what pg actually returns
+    const pgDate = new Date(2025, 0, 1)
     const reports = [makeReport({ period_type: 'tertiary', period_start: pgDate })]
     const period = makePeriod('tertiary', new Date(2025, 0, 1))
 
-    // This must not throw — the old inline code threw:
-    // "t.period_start.slice is not a function"
     expect(() => findExistingReportForPeriod(reports, period)).not.toThrow()
     expect(findExistingReportForPeriod(reports, period)).toBe(reports[0])
   })
@@ -489,9 +476,6 @@ describe('findExistingReportForPeriod', () => {
   })
 
   it('old .slice() approach crashes on Date objects from node-postgres', () => {
-    // This test documents the bug: the old inline code in the admin route used
-    // r.period_start.slice(0, 10) assuming period_start was a string.
-    // node-postgres returns DATE columns as Date objects, so .slice() is undefined.
     const pgDate = new Date(2025, 0, 1)
     expect(() => (pgDate as unknown as { slice: (start: number, end: number) => string }).slice(0, 10)).toThrow(
       /slice is not a function/,
@@ -506,7 +490,7 @@ describe('buildCustomPeriod', () => {
   })
 
   it('returns null when start is after end', () => {
-    expect(buildCustomPeriod(2025, 5, 2025, 3)).toBeNull() // June → April
+    expect(buildCustomPeriod(2025, 5, 2025, 3)).toBeNull()
   })
 
   it('returns null for out-of-range month index', () => {
@@ -522,7 +506,7 @@ describe('buildCustomPeriod', () => {
   })
 
   it('single month: label matches monthly format', () => {
-    const period = buildCustomPeriod(2025, 0, 2025, 0) // January 2025
+    const period = buildCustomPeriod(2025, 0, 2025, 0)
     expect(period).not.toBeNull()
     expect(period?.label).toBe('Januar 2025')
     expect(period?.type).toBe('custom')
@@ -532,7 +516,7 @@ describe('buildCustomPeriod', () => {
   })
 
   it('same year range: label is "Month - Month YYYY"', () => {
-    const period = buildCustomPeriod(2025, 0, 2025, 4) // January - May 2025
+    const period = buildCustomPeriod(2025, 0, 2025, 4)
     expect(period).not.toBeNull()
     expect(period?.label).toBe('Januar - Mai 2025')
     expect(period?.startDate).toEqual(new Date(2025, 0, 1))
@@ -540,7 +524,7 @@ describe('buildCustomPeriod', () => {
   })
 
   it('cross-year range: label is "Month YYYY - Month YYYY"', () => {
-    const period = buildCustomPeriod(2024, 10, 2025, 1) // November 2024 - February 2025
+    const period = buildCustomPeriod(2024, 10, 2025, 1)
     expect(period).not.toBeNull()
     expect(period?.label).toBe('November 2024 - Februar 2025')
     expect(period?.startDate).toEqual(new Date(2024, 10, 1))
@@ -549,9 +533,9 @@ describe('buildCustomPeriod', () => {
   })
 
   it('end month date is last day of the month', () => {
-    const period = buildCustomPeriod(2024, 0, 2024, 1) // January - February 2024 (leap year)
+    const period = buildCustomPeriod(2024, 0, 2024, 1)
     expect(period).not.toBeNull()
-    expect(period?.endDate.getDate()).toBe(29) // 2024 is a leap year
+    expect(period?.endDate.getDate()).toBe(29)
   })
 })
 

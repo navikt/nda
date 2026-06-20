@@ -100,7 +100,6 @@ export function StatCard(props: StatCardProps & { compact?: boolean }) {
     )
   }
 
-  // Static card without interaction
   return (
     <Box
       padding={compact ? 'space-12' : 'space-20'}

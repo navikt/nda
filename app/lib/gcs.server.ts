@@ -77,7 +77,6 @@ export function isGcsConfigured(): boolean {
   return !!process.env[BUCKET_ENV_VAR]
 }
 
-// Log GCS bucket configuration on module load
 const bucketEnvVars = Object.keys(process.env).filter((k) => k.includes('BUCKET') || k.includes('STORAGE'))
 if (process.env[BUCKET_ENV_VAR]) {
   logger.info(`GCS bucket configured: ${process.env[BUCKET_ENV_VAR]}`)

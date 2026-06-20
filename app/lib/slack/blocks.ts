@@ -1,11 +1,3 @@
-/**
- * Slack Block Kit block builders
- *
- * Pure functions that construct Slack Block Kit structures.
- * These are extracted from slack.server.ts to be usable in both
- * server context and browser context (Storybook previews).
- */
-
 import type { KnownBlock } from '@slack/types'
 import {
   DEVIATION_FOLLOW_UP_ROLE_LABELS,
@@ -15,10 +7,6 @@ import {
   type DeviationIntent,
   type DeviationSeverity,
 } from '~/lib/deviation-constants'
-
-// =============================================================================
-// Types
-// =============================================================================
 
 export interface DeploymentNotification {
   deploymentId: number
@@ -78,7 +66,6 @@ export interface PersonalHomeTabBoard {
 }
 
 export interface PersonalHomeTabTeamIssues {
-  /** Number of monitored applications (in the user's dev teams) with at least one open issue. */
   appsWithIssuesCount: number
   withoutFourEyes: number
   pendingVerification: number
@@ -89,30 +76,16 @@ export interface PersonalHomeTabTeamIssues {
 
 export interface HomeTabInput {
   slackUserId: string
-  /** GitHub username from user_github_accounts; null/undefined = no linked account. */
   githubUsername: string | null | undefined
-  /** NAV-ident from user_github_accounts; null/undefined = no linked account. */
   navIdent: string | null | undefined
   baseUrl: string
-  /** Active boards (with goals + key results + keywords) for each dev team the user is on. */
   boards: PersonalHomeTabBoard[]
-  /** Aggregated team-scoped approval/alert issues across all the user's dev teams. */
   teamIssues: PersonalHomeTabTeamIssues
-  /**
-   * Personal-scope: deployments where the user is deployer or PR creator AND the deployment
-   * has no goal-link. `null` if the user has no `githubUsername` (cannot be computed).
-   */
   personalMissingGoalLinks: number | null
 }
 
-/** Cap board count per home view to stay well under Slack's 100-block limit. */
 const MAX_BOARDS_IN_HOME_TAB = 3
-/** Cap objectives shown per board. */
 const MAX_OBJECTIVES_PER_BOARD = 5
-
-// =============================================================================
-// Helpers
-// =============================================================================
 
 export function getStatusEmoji(status: DeploymentNotification['status']): string {
   switch (status) {
@@ -159,17 +132,10 @@ export interface DeviationNotification {
   detailsUrl: string
 }
 
-// =============================================================================
-// Block Builders
-// =============================================================================
-
 function truncate(text: string, maxLength: number): string {
   return text.length > maxLength ? `${text.substring(0, maxLength)}...` : text
 }
 
-/**
- * Build Slack Block Kit blocks for deployment notification
- */
 export function buildDeploymentBlocks(notification: DeploymentNotification): KnownBlock[] {
   const shortSha = notification.commitSha.substring(0, 7)
   const statusEmoji = getStatusEmoji(notification.status)
@@ -220,7 +186,6 @@ export function buildDeploymentBlocks(notification: DeploymentNotification): Kno
     },
   ]
 
-  // Add commit message if available
   if (notification.commitMessage) {
     const truncatedMessage =
       notification.commitMessage.length > 100
@@ -235,7 +200,6 @@ export function buildDeploymentBlocks(notification: DeploymentNotification): Kno
     })
   }
 
-  // Add description and link to app for review
   if (notification.status === 'unverified' || notification.status === 'pending_approval') {
     blocks.push({
       type: 'section',
@@ -264,7 +228,6 @@ export function buildDeploymentBlocks(notification: DeploymentNotification): Kno
     ],
   })
 
-  // Add context with timestamp
   blocks.push({
     type: 'context',
     elements: [
@@ -278,9 +241,6 @@ export function buildDeploymentBlocks(notification: DeploymentNotification): Kno
   return blocks
 }
 
-/**
- * Build blocks for deviation notification
- */
 export function buildDeviationBlocks(notification: DeviationNotification): KnownBlock[] {
   const shortSha = notification.commitSha.substring(0, 7)
 
@@ -372,18 +332,6 @@ export function buildDeviationBlocks(notification: DeviationNotification): Known
   return blocks
 }
 
-/**
- * Build blocks for the personalised Slack Home Tab.
- *
- * Layout (no global "ingress"; each section is opt-in):
- * 1. Per dev-team: active boards with mål, nøkkelresultater, kodeord (inline
- *    code) and a "Vis kodeord"-button per KR with keywords (opens a modal
- *    that's easier to copy from than the home tab itself).
- * 2. Team-scoped approval/alert summary with a link to NDA `/my-apps`.
- * 3. Personal-scoped goal-link summary (only when the user has a
- *    `githubUsername`).
- * 4. Friendly fallback when the user is not yet onboarded.
- */
 export function buildHomeTabBlocks({
   baseUrl,
   navIdent,
@@ -394,7 +342,6 @@ export function buildHomeTabBlocks({
 }: HomeTabInput): KnownBlock[] {
   const blocks: KnownBlock[] = []
 
-  // --- Onboarding fallback when the user has no NDA mapping at all. ---
   if (!navIdent) {
     blocks.push({
       type: 'section',
@@ -420,7 +367,6 @@ export function buildHomeTabBlocks({
     return blocks
   }
 
-  // --- Boards section (per dev-team / per board). ---
   const boardsToShow = boards.slice(0, MAX_BOARDS_IN_HOME_TAB)
   const omittedBoards = boards.length - boardsToShow.length
 
@@ -501,7 +447,6 @@ export function buildHomeTabBlocks({
     }
   }
 
-  // --- Team-scoped issue summary (godkjenning + alerts + endringsopphav). ---
   const teamIssueLines: string[] = []
   if (teamIssues.withoutFourEyes > 0) {
     teamIssueLines.push(`• ⚠️ ${teamIssues.withoutFourEyes} deployments uten godkjenning`)
@@ -547,7 +492,6 @@ export function buildHomeTabBlocks({
     })
   }
 
-  // --- Warning about unmapped deployers. ---
   if (teamIssues.unmappedContributors.length > 0) {
     const count = teamIssues.unmappedContributors.length
     const userList = teamIssues.unmappedContributors.slice(0, 10).join(', ')
@@ -577,7 +521,6 @@ export function buildHomeTabBlocks({
 
   blocks.push({ type: 'divider' })
 
-  // --- Person-scoped: deployments missing goal-link. ---
   if (personalMissingGoalLinks === null) {
     blocks.push({
       type: 'section',
@@ -646,36 +589,17 @@ export function buildHomeTabBlocks({
   return blocks
 }
 
-/** Format an array of keywords as space-separated inline-code spans. */
 function formatKeywordsInline(keywords: string[]): string {
   return keywords.map((k) => `\`${sanitizeForInlineCode(k)}\``).join('  ')
 }
 
-/**
- * Slack mrkdwn has no escape mechanism inside an inline-code span — a literal
- * backtick will close the span and break formatting. Strip backticks (and other
- * format-breaking control characters) before interpolation.
- */
 function sanitizeForInlineCode(value: string): string {
-  // Remove backticks (would close the inline-code span) and any newlines.
   return value.replace(/`/g, '').replace(/\r?\n/g, ' ')
 }
 
-/**
- * Escape characters that Slack mrkdwn treats as HTML entities (`&`, `<`, `>`).
- *
- * Note: this intentionally does NOT escape `*`, `_`, or `~` — the call sites
- * wrap user-supplied text in those characters (e.g. `*${escapeMrkdwn(title)}*`)
- * and need them to retain their formatting meaning. If user content needs to
- * be displayed verbatim, use {@link sanitizeForInlineCode} or a code block.
- */
 function escapeMrkdwn(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
-
-// =============================================================================
-// Reminder Blocks
-// =============================================================================
 
 export interface ReminderDeployment {
   id: number
@@ -692,16 +616,11 @@ export interface ReminderNotification {
   environmentName: string
   teamSlug: string
   deployments: ReminderDeployment[]
-  /** URL to the filtered deployment list */
   deploymentsListUrl: string
 }
 
 const REMINDER_DETAIL_LIMIT = 5
 
-/**
- * Build Slack Block Kit blocks for a reminder notification.
- * Shows individual deployments if ≤5, otherwise a summary.
- */
 export function buildReminderBlocks(notification: ReminderNotification): KnownBlock[] {
   const { appName, environmentName, deployments, deploymentsListUrl } = notification
   const count = deployments.length
@@ -786,10 +705,6 @@ export function buildReminderBlocks(notification: ReminderNotification): KnownBl
   return blocks
 }
 
-// =============================================================================
-// New Deployment Notification Blocks
-// =============================================================================
-
 function mapDeployMethod(method: NewDeploymentNotification['deployMethod']): string {
   switch (method) {
     case 'pull_request':
@@ -824,9 +739,6 @@ function mapFourEyesStatus(status: string): { emoji: string; text: string } {
   }
 }
 
-/**
- * Build Slack Block Kit blocks for a new deployment notification
- */
 export function buildNewDeploymentBlocks(notification: NewDeploymentNotification): KnownBlock[] {
   const shortSha = notification.commitSha.substring(0, 7)
   const { emoji: fourEyesEmoji, text: fourEyesText } = mapFourEyesStatus(notification.fourEyesStatus)

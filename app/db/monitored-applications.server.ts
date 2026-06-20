@@ -33,9 +33,6 @@ export async function getAllMonitoredApplications(): Promise<MonitoredApplicatio
   return result.rows
 }
 
-/**
- * Get unresolved alert counts for all apps in a single query
- */
 export async function getAllAlertCounts(): Promise<Map<number, number>> {
   const result = await pool.query(`
     SELECT monitored_app_id, COUNT(*)::integer as count
@@ -86,16 +83,6 @@ export async function getMonitoredApplicationByIdentity(
   return result.rows[0] || null
 }
 
-/**
- * Insert a monitored application, or refresh `updated_at` if it already exists.
- *
- * `audit_start_year` and `default_branch` are only set on initial INSERT.
- * Re-adding an existing app does NOT overwrite these values — the auto-sync
- * handles `default_branch` updates, and `audit_start_year` changes go through
- * the dedicated admin update flow.
- *
- * Pass `client` to run within an existing transaction.
- */
 export async function createMonitoredApplication(
   data: {
     team_slug: string
@@ -229,14 +216,6 @@ export async function updateMonitoredApplication(
   return result.rows[0]
 }
 
-/**
- * Repair the (team_slug, environment_name, app_name) identity of a monitored
- * application. Used by the admin validator when a row was created with values
- * that don't match Nais (e.g. team and app fields swapped at insert time).
- *
- * Throws if the target identity is already occupied by another row — the
- * caller must deactivate or delete that conflicting row first.
- */
 export async function updateMonitoredApplicationIdentity(
   id: number,
   identity: { team_slug: string; environment_name: string; app_name: string },

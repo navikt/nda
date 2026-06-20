@@ -1,23 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
-// Mock DB modules
 vi.mock('~/db/deployments.server', () => ({
   getAllDeployments: vi.fn(),
   getDeploymentById: vi.fn(),
   updateDeploymentFourEyes: vi.fn(),
 }))
 
-// Mock verification
 vi.mock('~/lib/verification', () => ({
   runVerification: vi.fn(),
 }))
 
-// Mock logger
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-// Mock goal keyword sync
 vi.mock('~/lib/sync/goal-keyword-sync.server', () => ({
   autoLinkGoalKeywords: vi.fn(),
   autoLinkDependabotGoal: vi.fn(),
@@ -55,7 +51,6 @@ function makeDeployment(overrides: Record<string, unknown> = {}) {
 describe('verifyDeploymentsFourEyes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Use fake timers to skip the 100ms delay between verifications
     vi.useFakeTimers()
   })
 
@@ -88,7 +83,6 @@ describe('verifyDeploymentsFourEyes', () => {
     await vi.advanceTimersByTimeAsync(1000)
     const result = await promise
 
-    // Only pending (id:1) and error (id:2) should be verified
     expect(mockRunVerification).toHaveBeenCalledTimes(2)
     expect(result.verified).toBe(2)
   })
@@ -127,10 +121,9 @@ describe('verifyDeploymentsFourEyes', () => {
     await vi.advanceTimersByTimeAsync(1000)
     const result = await promise
 
-    // Should verify only the 2 oldest (id:1, id:2), not id:3
     expect(mockRunVerification).toHaveBeenCalledTimes(2)
     const firstCall = mockRunVerification.mock.calls[0]
-    expect(firstCall[0]).toBe(1) // oldest first
+    expect(firstCall[0]).toBe(1)
     expect(result.verified).toBe(2)
   })
 
@@ -219,7 +212,6 @@ describe('verifyDeploymentsFourEyes', () => {
   })
 
   it('re-reads deployment from DB after verification for keyword auto-linking', async () => {
-    // The original deployment loaded in batch has no title/PR data (simulates stale data)
     const staleDeployment = makeDeployment({
       id: 99,
       team_slug: 'my-team',
@@ -228,7 +220,6 @@ describe('verifyDeploymentsFourEyes', () => {
       unverified_commits: null,
     })
 
-    // After verification writes to DB, the fresh read has title populated
     const freshDeployment = {
       ...staleDeployment,
       title: 'MP-BAU: Fjern automerge av Dependabot pull requests',
@@ -244,16 +235,13 @@ describe('verifyDeploymentsFourEyes', () => {
     await vi.advanceTimersByTimeAsync(1000)
     await promise
 
-    // Should have re-read the deployment from DB
     expect(mockGetById).toHaveBeenCalledWith(99)
 
-    // Should have called autoLinkGoalKeywords with commit infos from the fresh data
     expect(mockAutoLink).toHaveBeenCalledTimes(1)
     const [deploymentId, teamSlug, monitoredAppId, commitInfos] = mockAutoLink.mock.calls[0]
     expect(deploymentId).toBe(99)
     expect(teamSlug).toBe('my-team')
     expect(monitoredAppId).toBe(10)
-    // The commit infos should include the PR title from the fresh deployment
     expect(commitInfos.some((c: { message: string }) => c.message.includes('MP-BAU'))).toBe(true)
   })
 
@@ -262,7 +250,6 @@ describe('verifyDeploymentsFourEyes', () => {
 
     mockGetAll.mockResolvedValue([deployment])
     mockRunVerification.mockResolvedValue({ status: 'approved' })
-    // Fresh read also has no title/PR data
     mockGetById.mockResolvedValue({ ...deployment, github_pr_data: null, unverified_commits: null })
     mockAutoLink.mockResolvedValue(0)
 
@@ -271,7 +258,6 @@ describe('verifyDeploymentsFourEyes', () => {
     await promise
 
     expect(mockGetById).toHaveBeenCalledWith(50)
-    // Should NOT call autoLinkGoalKeywords since commitInfos would be empty
     expect(mockAutoLink).not.toHaveBeenCalled()
   })
 

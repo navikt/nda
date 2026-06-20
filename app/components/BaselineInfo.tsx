@@ -1,10 +1,5 @@
 import { BodyShort } from '@navikt/ds-react'
 
-/**
- * Shared explanation of what a baseline deployment is.
- * Rendered on both the deployment detail page and the app detail warning banner.
- * Keep consistent with the explanation in the PDF audit report.
- */
 export function BaselineInfo() {
   return (
     <BodyShort>

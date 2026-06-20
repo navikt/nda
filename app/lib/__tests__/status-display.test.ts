@@ -1,15 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatChangeSource, getFourEyesStatus } from '../status-display'
 
-/**
- * Tests for user-facing status display text.
- *
- * WHY: These functions produce the Norwegian text shown in the UI for every deployment.
- * If someone renames a status string or changes the switch/case, these tests catch
- * that the user-visible text, variant (color), and description change accordingly.
- * Without these tests, a refactor could silently break the UI labels.
- */
-
 describe('getFourEyesStatus — maps deployment status to user-visible label, variant and description', () => {
   const cases: Array<{
     status: string

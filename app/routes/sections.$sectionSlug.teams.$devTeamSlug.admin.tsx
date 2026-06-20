@@ -170,8 +170,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData()
   const intent = getFormString(formData, 'intent')
 
-  // Role intents use canAssignTeamRole as sole gate (avoids double DB lookup)
-  // All other intents require canAdmin via resolveTeamAdminCapabilities
   if (intent !== 'assign_role' && intent !== 'remove_role') {
     const { canAdmin } = await resolveTeamAdminCapabilities(user, devTeam.id)
     if (!canAdmin) {
@@ -278,7 +276,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       return fail('Velg minst én applikasjon å legge til.')
     }
 
-    // Validate audit_start_year when there are new apps to create
     let auditStartYear = 0
     let implicitApprovalMode: ImplicitApprovalMode = 'off'
     if (newIdentities.length > 0) {
@@ -291,7 +288,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       implicitApprovalMode = implicitApprovalModeRaw
     }
 
-    // Verify apps exist in NAIS and collect repository info for default branch detection
     const appRepoMap = new Map<string, string | null>()
     for (const id of newIdentities) {
       const found = await getApplicationInfo(id.team_slug, id.environment_name, id.app_name)
@@ -303,7 +299,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       appRepoMap.set(`${id.team_slug}|${id.environment_name}|${id.app_name}`, found.repository)
     }
 
-    // Resolve default branch from GitHub for each new app (best-effort, NULL if detection fails)
     const defaultBranchMap = new Map<string, string | null>()
     await Promise.all(
       newIdentities.map(async (id) => {

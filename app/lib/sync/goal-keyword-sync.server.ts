@@ -5,14 +5,6 @@ import { type CommitInfo, matchCommitKeywords, pickLatestBoard } from '~/lib/goa
 import { logger } from '~/lib/logger.server'
 import { findDevTeamsForDeployment, loadBoardKeywords } from './goal-keyword-helpers.server'
 
-/**
- * Auto-link a deployment to board goals based on commit message keywords.
- *
- * Finds the dev team(s) for the deployment, loads active board keywords,
- * matches against commit messages, and creates goal links for unambiguous matches.
- *
- * Skips if no keywords are configured or no matches found.
- */
 export async function autoLinkGoalKeywords(
   deploymentId: number,
   teamSlug: string,
@@ -28,11 +20,9 @@ export async function autoLinkGoalKeywords(
   const { parsed: boardKeywords } = await loadBoardKeywords(devTeamIds)
   if (boardKeywords.length === 0) return 0
 
-  // Run pure matching logic
   const matches = matchCommitKeywords(commitMessages, boardKeywords)
   if (matches.length === 0) return 0
 
-  // Check for existing links to avoid duplicates
   const existingResult = await pool.query(
     `SELECT objective_id, key_result_id FROM deployment_goal_links WHERE deployment_id = $1 AND is_active = true`,
     [deploymentId],
@@ -67,15 +57,6 @@ export async function autoLinkGoalKeywords(
   return linked
 }
 
-/**
- * Auto-link a Dependabot deployment to a board goal marked as the Dependabot target.
- *
- * Follows the same rules as keyword linking:
- * - Finds dev teams for the deployment
- * - Loads Dependabot targets from active boards covering the deployment date
- * - If multiple boards have targets, the one with the latest periodStart wins
- * - Skips if the same link (same objective/KR) already exists
- */
 export async function autoLinkDependabotGoal(
   deploymentId: number,
   teamSlug: string,

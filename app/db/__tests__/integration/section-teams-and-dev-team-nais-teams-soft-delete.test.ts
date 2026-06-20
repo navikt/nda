@@ -1,14 +1,3 @@
-/**
- * Integration tests: Soft-delete behavior for section_teams and
- * dev_team_nais_teams.
- *
- * Both tables share the same composite-PK soft-delete pattern: replace-all
- * writes soft-delete missing entries (recording deletedBy), undelete
- * existing soft-deleted entries in place, and leave already-active rows
- * untouched (no row-version churn). Concurrent replace-all writes on the
- * same parent are serialized via a per-parent advisory lock so they always
- * converge to one of the requested sets — never the union, never empty.
- */
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { getSectionDashboardStats, getSectionOverallStats } from '../../dashboard-stats.server'
@@ -109,7 +98,6 @@ describe('section_teams soft delete', () => {
        WHERE section_id = $1 AND deleted_at IS NULL`,
       [sectionId],
     )
-    // Exactly one of the two replace-all calls won — never both, never neither.
     expect(rows).toHaveLength(1)
     expect(['team-a', 'team-b']).toContain(rows[0].team_slug)
   })
@@ -144,8 +132,6 @@ describe('section_teams soft delete', () => {
     const before = await getSectionOverallStats(sectionId)
     expect(before.total_deployments).toBe(1)
 
-    // Soft-delete the link — deployments must no longer be counted in
-    // current-state section stats.
     await setSectionTeams(sectionId, [], 'A999999')
     const after = await getSectionOverallStats(sectionId)
     expect(after.total_deployments).toBe(0)
@@ -248,8 +234,6 @@ describe('dev_team_nais_teams soft delete', () => {
     const beforeRow = before.find((r) => r.dev_team_id === devTeamId)
     expect(beforeRow?.total_deployments).toBe(1)
 
-    // Soft-delete the link — the dev team's deployments must no longer
-    // be counted in current-state dashboard stats.
     await setDevTeamNaisTeams(devTeamId, [], 'A999999')
     const after = await getSectionDashboardStats(sectionId)
     const afterRow = after.find((r) => r.dev_team_id === devTeamId)
@@ -291,7 +275,6 @@ describe('removeNaisTeamFromDevTeam', () => {
     )
     expect(before[0].deleted_by).toBe('A222222')
 
-    // Second call should be a no-op
     await removeNaisTeamFromDevTeam(devTeamId, 'nais-a', 'A333333')
 
     const { rows: after } = await pool.query(
@@ -299,7 +282,6 @@ describe('removeNaisTeamFromDevTeam', () => {
        WHERE dev_team_id = $1 AND nais_team_slug = 'nais-a'`,
       [devTeamId],
     )
-    // deleted_by should still be original remover, not updated
     expect(after[0].deleted_by).toBe('A222222')
   })
 })

@@ -1,18 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-/**
- * Tests for rebase commit matching logic.
- *
- * When using "rebase and merge", commits get new SHAs because their parent changes.
- * The GitHub API `listPullRequestsAssociatedWithCommit` won't find these commits.
- * We need to match them by metadata: author + author_date + message.
- */
-
-// Test data from real PRs (anonymized)
-
-// Test Case 1: Rebase and Merge
-// All 9 rebased commits should match to PR via metadata
-
 const PR_18375_ORIGINAL_COMMITS = [
   {
     sha: '4e7ffafdaad4e955a4ab762ecf0ae8ff25719bea',
@@ -127,7 +114,6 @@ const PR_18375_REBASED_COMMITS = [
   },
 ]
 
-// Commits from other PRs that should NOT match
 const NON_MATCHING_COMMITS = [
   {
     sha: 'd1b023601268dc84eea894b78529ffd80df35bbd',
@@ -149,8 +135,6 @@ const NON_MATCHING_COMMITS = [
   },
 ]
 
-// Test Case 2: Normal Merge with extra commits (PR #2156 - pensjon-psak)
-// Merge-commit should be detected as NOT part of PR-commits → "Ikke-godkjente commits"
 const PR_2156_METADATA = {
   number: 2156,
   base_sha: 'e3a7e8bbb8e698f08742525a7530d08400ef3a57',
@@ -177,7 +161,6 @@ const PR_2156_MAIN_COMMITS = [
     author_date: '2025-11-26T07:08:35Z',
   },
   {
-    // This is a merge commit - should NOT match PR commits
     sha: 'eb39ed6f924d97a4a0392484066d8d765ac385d8',
     message: 'Merge pull request #2156 from navikt/legger-til-redirect-for',
     author: 'author-c',
@@ -185,8 +168,6 @@ const PR_2156_MAIN_COMMITS = [
   },
 ]
 
-// Test Case 3: Normal Merge without extra commits (PR #18424 - pensjon-pen)
-// Dependabot PR, 1 commit - should be approved
 const PR_18424_METADATA = {
   number: 18424,
   base_sha: 'd03dffe5dd3860c899913845b1bb1f015644ba00',
@@ -222,20 +203,17 @@ const PR_18424_MAIN_COMMITS = [
   },
 ]
 
-// Pure matching function (extracted for unit testing)
 function matchCommitMetadata(
   mainCommit: { author: string; author_date: string; message: string },
   prCommit: { author: string; author_date: string; message: string },
 ): boolean {
   const authorMatch = mainCommit.author.toLowerCase() === prCommit.author.toLowerCase()
 
-  // Date match within 1 second
   const mainDate = new Date(mainCommit.author_date)
   const prDate = new Date(prCommit.author_date)
   const dateDiffMs = Math.abs(mainDate.getTime() - prDate.getTime())
   const dateMatch = dateDiffMs < 1000
 
-  // First line of message
   const mainMessageFirst = mainCommit.message.split('\n')[0].trim()
   const prMessageFirst = prCommit.message.split('\n')[0].trim()
   const messageMatch = mainMessageFirst === prMessageFirst
@@ -256,7 +234,6 @@ describe('Rebase Commit Matching', () => {
     })
 
     it('should match rebased commits with different SHAs but same metadata', () => {
-      // Original and rebased commits should match
       for (let i = 0; i < PR_18375_ORIGINAL_COMMITS.length; i++) {
         const original = PR_18375_ORIGINAL_COMMITS[i]
         const rebased = PR_18375_REBASED_COMMITS[i]
@@ -272,7 +249,7 @@ describe('Rebase Commit Matching', () => {
 
     it('should NOT match commits with different authors', () => {
       const commit1 = PR_18375_ORIGINAL_COMMITS[0]
-      const commit2 = NON_MATCHING_COMMITS[0] // Different author
+      const commit2 = NON_MATCHING_COMMITS[0]
 
       expect(
         matchCommitMetadata(
@@ -284,7 +261,7 @@ describe('Rebase Commit Matching', () => {
 
     it('should NOT match commits with different messages', () => {
       const commit1 = PR_18375_ORIGINAL_COMMITS[0]
-      const commit2 = PR_18375_ORIGINAL_COMMITS[1] // Different message
+      const commit2 = PR_18375_ORIGINAL_COMMITS[1]
 
       expect(
         matchCommitMetadata(
@@ -322,15 +299,12 @@ describe('Rebase Commit Matching', () => {
       expect(PR_18375_ORIGINAL_COMMITS.length).toBe(9)
       expect(PR_18375_REBASED_COMMITS.length).toBe(9)
 
-      // Each rebased commit should match its corresponding original
       for (let i = 0; i < 9; i++) {
         const original = PR_18375_ORIGINAL_COMMITS[i]
         const rebased = PR_18375_REBASED_COMMITS[i]
 
-        // SHAs should be different
         expect(rebased.sha).not.toBe(original.sha)
 
-        // But metadata should match
         expect(rebased.author).toBe(original.author)
         expect(rebased.author_date).toBe(original.author_date)
         expect(rebased.message).toBe(original.message)
@@ -359,17 +333,14 @@ describe('Rebase Commit Matching', () => {
       const originalCommit = PR_2156_ORIGINAL_COMMITS[0]
       const mainCommit = PR_2156_MAIN_COMMITS[0]
 
-      // Same SHA - direct match
       expect(mainCommit.sha).toBe(originalCommit.sha)
     })
 
     it('should NOT match the merge commit to PR commits', () => {
       const mergeCommit = PR_2156_MAIN_COMMITS[1]
 
-      // Verify it's the merge commit
       expect(mergeCommit.sha).toBe(PR_2156_METADATA.merge_commit_sha)
 
-      // Merge commit should not match any PR commit via metadata
       for (const original of PR_2156_ORIGINAL_COMMITS) {
         const result = matchCommitMetadata(
           { author: mergeCommit.author, author_date: mergeCommit.author_date, message: mergeCommit.message },
@@ -394,19 +365,14 @@ describe('Rebase Commit Matching', () => {
     })
 
     it('dependabot PR with human merger should pass four-eyes', () => {
-      // Dependabot created the PR
       expect(PR_18424_METADATA.user).toBe('dependabot[bot]')
-      // Human merged it
       expect(PR_18424_METADATA.merged_by).toBe('author-d')
-      // Different actors = four-eyes OK
       expect(PR_18424_METADATA.user).not.toBe(PR_18424_METADATA.merged_by)
     })
   })
 
   describe('Edge cases', () => {
     it('should handle commits with same message but different author', () => {
-      // Two people might have the same commit message (e.g., "fix typo")
-      // but different authors - should NOT match
       const result = matchCommitMetadata(
         { author: 'author-a', author_date: '2026-01-01T12:00:00Z', message: 'fix typo' },
         { author: 'author-b', author_date: '2026-01-01T12:00:00Z', message: 'fix typo' },
@@ -415,7 +381,6 @@ describe('Rebase Commit Matching', () => {
     })
 
     it('should handle commits with same author but different date (within 1 second)', () => {
-      // Same author, same message, date within 1 second should match
       const result = matchCommitMetadata(
         { author: 'author-a', author_date: '2026-01-01T12:00:00.500Z', message: 'fix typo' },
         { author: 'author-a', author_date: '2026-01-01T12:00:00.000Z', message: 'fix typo' },
@@ -424,7 +389,6 @@ describe('Rebase Commit Matching', () => {
     })
 
     it('should handle commits with same author but different date (more than 1 second)', () => {
-      // Same author, same message, but date more than 1 second apart - should NOT match
       const result = matchCommitMetadata(
         { author: 'author-a', author_date: '2026-01-01T12:00:02Z', message: 'fix typo' },
         { author: 'author-a', author_date: '2026-01-01T12:00:00Z', message: 'fix typo' },
@@ -433,7 +397,6 @@ describe('Rebase Commit Matching', () => {
     })
 
     it('should match only first line of commit message', () => {
-      // Multi-line message should only compare first line
       const result = matchCommitMetadata(
         {
           author: 'author-a',

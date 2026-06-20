@@ -43,6 +43,10 @@ All outgoing HTTP calls must emit structured logs via `app/lib/logger.server.ts`
 
 Four-eyes principle check on all deployments. **Do not modify `app/lib/verification/verify.ts` without user confirmation.** See `docs/verification.md`. Archived reports must never appear in public-facing views (`archived_at IS NULL`).
 
+## Code Style
+
+Never add code comments. Code should be self-documenting. No `//` comments, no `/* */` blocks, no JSDoc. Exception: suppression directives (`biome-ignore`, `eslint-disable`, `@ts-*`) must be kept as-is.
+
 ## Test Conventions
 
 - Person names: "Adjektiv Substantiv" (e.g. "Glad Fjord")

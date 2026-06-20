@@ -2,10 +2,6 @@ import { logger } from '~/lib/logger.server'
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool } from './connection.server'
 
-// ============================================================================
-// Types
-// ============================================================================
-
 interface AppSetting {
   id: number
   monitored_app_id: number
@@ -26,31 +22,21 @@ interface AppConfigAuditLogEntry {
   created_at: Date
 }
 
-// Implicit approval settings structure
 export interface ImplicitApprovalSettings {
   mode: ImplicitApprovalMode
-  [key: string]: unknown // Allow index signature for Record<string, unknown> compatibility
+  [key: string]: unknown
 }
 
 export const DEFAULT_IMPLICIT_APPROVAL_SETTINGS: ImplicitApprovalSettings = {
   mode: 'off',
 }
 
-// Setting keys
 const SETTING_KEYS = {
   IMPLICIT_APPROVAL: 'implicit_approval',
 } as const
 
-// Re-export for convenience
 export type { ImplicitApprovalMode }
 
-// ============================================================================
-// Settings CRUD
-// ============================================================================
-
-/**
- * Get a setting for an application
- */
 async function getAppSetting<T extends Record<string, unknown>>(
   monitoredAppId: number,
   settingKey: string,
@@ -68,16 +54,10 @@ async function getAppSetting<T extends Record<string, unknown>>(
   return { ...defaultValue, ...result.rows[0].setting_value } as T
 }
 
-/**
- * Get implicit approval settings for an application
- */
 export async function getImplicitApprovalSettings(monitoredAppId: number): Promise<ImplicitApprovalSettings> {
   return getAppSetting(monitoredAppId, SETTING_KEYS.IMPLICIT_APPROVAL, DEFAULT_IMPLICIT_APPROVAL_SETTINGS)
 }
 
-/**
- * Update a setting for an application with audit logging
- */
 async function updateAppSetting<T extends Record<string, unknown>>(params: {
   monitoredAppId: number
   settingKey: string
@@ -88,14 +68,12 @@ async function updateAppSetting<T extends Record<string, unknown>>(params: {
 }): Promise<AppSetting> {
   const { monitoredAppId, settingKey, newValue, changedByNavIdent, changedByName, changeReason } = params
 
-  // Get current value for audit log
   const currentResult = await pool.query<AppSetting>(
     'SELECT * FROM app_settings WHERE monitored_app_id = $1 AND setting_key = $2',
     [monitoredAppId, settingKey],
   )
   const oldValue = currentResult.rows[0]?.setting_value || null
 
-  // Upsert the setting
   const settingResult = await pool.query<AppSetting>(
     `INSERT INTO app_settings (monitored_app_id, setting_key, setting_value, updated_at)
      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
@@ -105,7 +83,6 @@ async function updateAppSetting<T extends Record<string, unknown>>(params: {
     [monitoredAppId, settingKey, JSON.stringify(newValue)],
   )
 
-  // Create audit log entry
   await pool.query(
     `INSERT INTO app_config_audit_log 
      (monitored_app_id, changed_by_nav_ident, changed_by_name, setting_key, old_value, new_value, change_reason)
@@ -128,9 +105,6 @@ async function updateAppSetting<T extends Record<string, unknown>>(params: {
   return settingResult.rows[0]
 }
 
-/**
- * Update implicit approval settings with audit logging
- */
 export async function updateImplicitApprovalSettings(params: {
   monitoredAppId: number
   settings: ImplicitApprovalSettings
@@ -148,13 +122,6 @@ export async function updateImplicitApprovalSettings(params: {
   })
 }
 
-// ============================================================================
-// Audit Log Queries
-// ============================================================================
-
-/**
- * Get audit log entries for an application
- */
 export async function getAppConfigAuditLog(
   monitoredAppId: number,
   options?: {
@@ -188,9 +155,6 @@ export async function getAppConfigAuditLog(
   return result.rows
 }
 
-/**
- * Get audit log entries for a time period (for audit reports)
- */
 async function _getAppConfigAuditLogForPeriod(
   monitoredAppId: number,
   startDate: Date,
@@ -205,9 +169,6 @@ async function _getAppConfigAuditLogForPeriod(
   return result.rows
 }
 
-/**
- * Get all settings for an application
- */
 async function _getAllAppSettings(monitoredAppId: number): Promise<AppSetting[]> {
   const result = await pool.query<AppSetting>(
     'SELECT * FROM app_settings WHERE monitored_app_id = $1 ORDER BY setting_key',
@@ -215,6 +176,3 @@ async function _getAllAppSettings(monitoredAppId: number): Promise<AppSetting[]>
   )
   return result.rows
 }
-
-// checkImplicitApproval has been consolidated into app/lib/verification/verify.ts
-// Import from there if needed: import { checkImplicitApproval } from '~/lib/verification/verify'

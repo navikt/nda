@@ -46,7 +46,6 @@ export function LegacyLookupSection({ actionData, userMappings }: LegacyLookupSe
             Hent fra GitHub
           </Button>
         ) : actionData?.legacyLookup ? (
-          // Show preview of looked up data
           <VStack gap="space-16">
             <Alert variant={actionData.legacyLookup.isWithinThreshold ? 'success' : 'warning'}>
               <Heading size="xsmall" level="4">
@@ -121,7 +120,6 @@ export function LegacyLookupSection({ actionData, userMappings }: LegacyLookupSe
             </HStack>
           </VStack>
         ) : (
-          // Show search form
           <Form method="post">
             <input type="hidden" name="intent" value="lookup_legacy_github" />
             <VStack gap="space-16">

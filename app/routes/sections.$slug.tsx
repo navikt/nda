@@ -42,7 +42,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const teamStatsMap = await getDevTeamStatsBatch(devTeamIds, ytdStart)
 
-  // Aggregate across all teams for the header
   let totalDeployments = 0
   let withFourEyes = 0
   let linkedToGoal = 0
@@ -162,7 +161,6 @@ export default function SectionOverview() {
   )
 }
 
-/** Format coverage percentage — never shows 100% if there are violations */
 function formatCoverage(ratio: number): string {
   const pct = ratio * 100
   if (pct > 0 && pct < 1) return '<1%'

@@ -1,16 +1,3 @@
-/**
- * Debug Verification Page
- *
- * This page allows testing the new verification system without
- * modifying existing data. Only available when VERIFICATION_DEBUG=true.
- *
- * Shows:
- * - Existing verification status
- * - Data fetched from GitHub
- * - New calculated verification result
- * - Side-by-side comparison
- */
-
 import { Alert, BodyShort, Box, Button, Heading, HStack, Switch, Tag, VStack } from '@navikt/ds-react'
 import { Link, useSearchParams } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
@@ -23,14 +10,13 @@ import { type DebugVerificationResult, isVerificationDebugMode, runDebugVerifica
 import type { Route } from './+types/$team.env.$env.app.$app.deployments.$deploymentId.debug-verify'
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  // Allow access if debug mode is enabled OR user is global admin
   const user = await getUserIdentity(request)
   if (!isVerificationDebugMode && user?.role !== 'admin') {
     throw new Response('Debug mode not enabled', { status: 403 })
   }
 
   const url = new URL(request.url)
-  const useCache = url.searchParams.get('cache') !== 'false' // Default to using cache
+  const useCache = url.searchParams.get('cache') !== 'false'
 
   const deploymentId = parseInt(params.deploymentId, 10)
   if (Number.isNaN(deploymentId)) {
@@ -80,7 +66,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       forceRefresh: !useCache,
     })
 
-    // Collect usernames for display name resolution (deduplicated)
     const usernames = new Set<string>()
     const fetchedData = debugResult.fetchedData
     if (fetchedData?.deployedPr) {
@@ -145,7 +130,7 @@ export default function DebugVerifyPage({ loaderData }: Route.ComponentProps) {
   const handleCacheToggle = (checked: boolean) => {
     const newParams = new URLSearchParams(searchParams)
     if (checked) {
-      newParams.delete('cache') // Default is cache=true, so remove param
+      newParams.delete('cache')
     } else {
       newParams.set('cache', 'false')
     }
@@ -234,7 +219,6 @@ function DebugResultView({
     }
   }
 
-  // Determine the display state
   const hasRealChange = comparison.statusChanged
   const onlyNameChange = comparison.statusEquivalent
 

@@ -77,7 +77,6 @@ describe('matchCommitKeywords', () => {
         kw('PEN-123', 20, { boardId: 2, periodStart: board1Start, periodEnd: board1End }),
       ],
     )
-    // Same periodStart → tiebreak by highest boardId (most recently created)
     expect(result).toEqual([{ boardId: 2, objectiveId: 20, keyResultId: null, keyword: 'pen-123' }])
   })
 
@@ -97,13 +96,10 @@ describe('matchCommitKeywords', () => {
         kw('PEN-123', 20, { boardId: 2, periodStart: board2Start, periodEnd: board2End }),
       ],
     )
-    // Only board 2 covers May 2026, so it's unambiguous
     expect(result).toEqual([{ boardId: 2, objectiveId: 20, keyResultId: null, keyword: 'pen-123' }])
   })
 
   it('picks the latest board when commits span two board periods with same keyword', () => {
-    // Commit A in Q1 → board 1, Commit B in Q2 → board 2
-    // Same keyword in both boards → latest board (board 2, later periodStart) wins
     const result = matchCommitKeywords(
       [commit('fix: PEN-123 part 1', new Date('2026-02-15')), commit('fix: PEN-123 part 2', new Date('2026-05-15'))],
       [
@@ -111,7 +107,6 @@ describe('matchCommitKeywords', () => {
         kw('PEN-123', 20, { boardId: 2, periodStart: board2Start, periodEnd: board2End }),
       ],
     )
-    // Board 2 has later periodStart → wins
     expect(result).toEqual([{ boardId: 2, objectiveId: 20, keyResultId: null, keyword: 'pen-123' }])
   })
 
@@ -123,7 +118,6 @@ describe('matchCommitKeywords', () => {
         kw('SMOD-42', 20, { boardId: 2, periodStart: board2Start, periodEnd: board2End }),
       ],
     )
-    // Different keywords → each unambiguous in its own board
     expect(result).toHaveLength(2)
   })
 
@@ -136,8 +130,6 @@ describe('matchCommitKeywords', () => {
         kw('SMOD-42', 30, { boardId: 1 }),
       ],
     )
-    // PEN-123 matches boards 1+2 → board 2 wins (higher boardId, same periodStart)
-    // SMOD-42 matches board 1 only
     expect(result).toHaveLength(2)
     expect(result).toContainEqual({ boardId: 2, objectiveId: 20, keyResultId: null, keyword: 'pen-123' })
     expect(result).toContainEqual({ boardId: 1, objectiveId: 30, keyResultId: null, keyword: 'smod-42' })
@@ -149,7 +141,6 @@ describe('matchCommitKeywords', () => {
   })
 
   it('matches commit on the exact period end date with later timestamp', () => {
-    // period_end is "2026-03-31" (midnight), commit is at 14:30 the same day
     const result = matchCommitKeywords(
       [commit('fix: PEN-123 last day fix', new Date('2026-03-31T14:30:00Z'))],
       [kw('PEN-123', 10, { periodStart: board1Start, periodEnd: board1End })],
@@ -160,7 +151,6 @@ describe('matchCommitKeywords', () => {
 
   describe('branch name as keyword source', () => {
     it('matches keyword from branch name prefix (e.g. sp-bau/feature)', () => {
-      // Branch name passed as a synthetic commit message
       const result = matchCommitKeywords([commit('sp-bau/refactor-components')], [kw('SP-BAU', 10)])
       expect(result).toEqual([{ boardId: 1, objectiveId: 10, keyResultId: null, keyword: 'sp-bau' }])
     })
@@ -180,7 +170,6 @@ describe('matchCommitKeywords', () => {
         [commit('sp-bau/feature'), commit('fix: SP-BAU update rules')],
         [kw('SP-BAU', 10)],
       )
-      // Deduplicated by (objectiveId, keyResultId)
       expect(result).toHaveLength(1)
     })
   })

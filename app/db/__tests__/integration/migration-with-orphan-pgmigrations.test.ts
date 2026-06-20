@@ -1,25 +1,3 @@
-/**
- * Integration test: New backfill migration runs cleanly when an orphan row
- * exists in pgmigrations.
- *
- * Reproduces the EXACT prod state:
- *   - The old migration `1772700000000_populate-missing-github-pr-urls` is
- *     registered in `pgmigrations` (it ran earlier in prod with broken SQL).
- *   - The corresponding migration FILE has been removed (commit a47cdc9).
- *   - Existing deployments have github_pr_number set but github_pr_url NULL.
- *
- * Verifies:
- *   1. node-pg-migrate's checkOrder does NOT throw against this orphan state.
- *   2. The new backfill migration runs and is registered in pgmigrations.
- *   3. The deployment row gets its github_pr_url constructed correctly.
- *   4. Pre-existing github_pr_url values are preserved.
- *   5. Re-running migrations is idempotent.
- *
- * To reproduce the prod scenario faithfully, the test copies all migrations
- * EXCEPT the new backfill into a tmp dir, runs them, then adds the orphan to
- * pgmigrations, then copies in the new backfill migration and runs again.
- */
-
 import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,13 +10,6 @@ import { seedApp } from './helpers'
 const ORPHAN_MIGRATION_NAME = '1772700000000_populate-missing-github-pr-urls'
 const NEW_MIGRATION_NAME = '1772800000000_backfill-github-pr-url-from-pr-number'
 
-/**
- * Anything from the orphan onwards is excluded from the "old prod state"
- * step so that re-running with the orphan file present doesn't trip
- * node-pg-migrate's checkOrder. Without this, any migration added AFTER
- * 1772800 (with a higher timestamp) would be registered in step 3 and then
- * cause checkOrder to refuse the not-yet-run 1772800 in step 5.
- */
 const EXCLUDE_FROM_BASELINE_PREFIX = 1772700000000n
 
 const realMigrationsDir = join(process.cwd(), 'app/db/migrations')
@@ -50,15 +21,10 @@ let tmpMigrationsDir: string
 
 describe('Migration runs cleanly against orphan pgmigrations row (prod scenario)', () => {
   beforeAll(async () => {
-    // 1. Spin up isolated PostgreSQL container (don't share with global setup)
     container = await new PostgreSqlContainer('postgres:16-alpine').start()
     databaseUrl = container.getConnectionUri()
     pool = new Pool({ connectionString: databaseUrl })
 
-    // 2. Set up a tmp migrations dir that omits the orphan AND every
-    //    migration with a timestamp at or after the orphan's. This recreates
-    //    the prod baseline as it existed when the orphan was first run, so
-    //    later additions don't pollute pgmigrations during the baseline step.
     tmpMigrationsDir = join(tmpdir(), `nda-migrations-${Date.now()}`)
     mkdirSync(tmpMigrationsDir, { recursive: true })
     for (const file of readdirSync(realMigrationsDir)) {
@@ -68,7 +34,6 @@ describe('Migration runs cleanly against orphan pgmigrations row (prod scenario)
       copyFileSync(join(realMigrationsDir, file), join(tmpMigrationsDir, file))
     }
 
-    // 3. Run all OTHER migrations (this is the prod schema sans new migration)
     await runner({
       databaseUrl,
       dir: tmpMigrationsDir,
@@ -78,8 +43,6 @@ describe('Migration runs cleanly against orphan pgmigrations row (prod scenario)
       log: () => {},
     })
 
-    // 4. Simulate prod by inserting the orphan row in pgmigrations.
-    //    This row has no matching local file (file removed in commit a47cdc9).
     await pool.query(`INSERT INTO pgmigrations (name, run_on) VALUES ($1, NOW())`, [ORPHAN_MIGRATION_NAME])
   }, 120_000)
 
@@ -98,7 +61,6 @@ describe('Migration runs cleanly against orphan pgmigrations row (prod scenario)
   })
 
   test('node-pg-migrate runs new migration cleanly despite orphan', async () => {
-    // Insert prod-like deployment: PR number set, URL NULL, repo info present
     const appId = await seedApp(pool, { teamSlug: 't', appName: 'a', environment: 'prod-gcp' })
 
     await pool.query(
@@ -112,7 +74,6 @@ describe('Migration runs cleanly against orphan pgmigrations row (prod scenario)
       [appId],
     )
 
-    // Pre-existing URL must NOT be overwritten
     await pool.query(
       `INSERT INTO deployments (
         nais_deployment_id, monitored_app_id, team_slug, app_name, environment_name,
@@ -124,9 +85,6 @@ describe('Migration runs cleanly against orphan pgmigrations row (prod scenario)
       [appId],
     )
 
-    // Add BOTH the placeholder (to align with the orphan in pgmigrations) AND
-    // every later migration (orphan + new + anything added since) to the tmp
-    // dir, then run again — simulates deploy of the latest schema.
     for (const file of readdirSync(realMigrationsDir)) {
       const tsMatch = file.match(/^(\d+)_/)
       const ts = tsMatch ? BigInt(tsMatch[1]) : null
@@ -145,15 +103,12 @@ describe('Migration runs cleanly against orphan pgmigrations row (prod scenario)
       }),
     ).resolves.not.toThrow()
 
-    // The new migration should now be registered
     const registered = await pool.query(`SELECT name FROM pgmigrations WHERE name = $1`, [NEW_MIGRATION_NAME])
     expect(registered.rows).toHaveLength(1)
 
-    // The NULL row should be backfilled from owner/repo/number
     const backfilled = await pool.query(`SELECT github_pr_url FROM deployments WHERE nais_deployment_id = 'nais-1'`)
     expect(backfilled.rows[0].github_pr_url).toBe('https://github.com/navikt/my-repo/pull/13631')
 
-    // Pre-existing URL preserved
     const preserved = await pool.query(`SELECT github_pr_url FROM deployments WHERE nais_deployment_id = 'nais-2'`)
     expect(preserved.rows[0].github_pr_url).toBe('https://github.com/navikt/my-repo/pull/99')
   }, 60_000)

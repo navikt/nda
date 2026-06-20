@@ -1,8 +1,3 @@
-/**
- * Report period utilities for yearly, quarterly, and monthly reports.
- * Shared between server and client code.
- */
-
 import { toDateString } from './date-utils'
 
 export type ReportPeriodType = 'yearly' | 'tertiary' | 'quarterly' | 'monthly' | 'custom'
@@ -55,10 +50,6 @@ const MONTH_LABELS = [
   'Desember',
 ]
 
-/**
- * Get completed periods of a given type up to the reference date.
- * Only returns periods that are fully completed (end date is in the past).
- */
 export function getCompletedPeriods(
   type: ReportPeriodType,
   referenceDate: Date = new Date(),
@@ -127,21 +118,14 @@ export function getCompletedPeriods(
       }
     }
   }
-  // 'custom' has no predefined periods — use buildCustomPeriod() instead
 
   return periods
 }
 
-/**
- * Check if a period is completed (fully in the past).
- */
 export function isPeriodCompleted(period: ReportPeriod, referenceDate: Date = new Date()): boolean {
   return period.endDate < referenceDate
 }
 
-/**
- * Generate a report ID incorporating the period type.
- */
 export function generateReportId(
   _periodType: ReportPeriodType,
   periodLabel: string,
@@ -163,12 +147,6 @@ export const REPORT_PERIOD_TYPE_LABELS: Record<ReportPeriodType, string> = {
   custom: 'Egendefinert',
 }
 
-/**
- * Build a custom period spanning from the start of one month to the end of another.
- * Both startMonthIndex and endMonthIndex are 0-based (0 = January).
- * Returns null if the period has not ended yet, if start is after end, or if
- * any argument is out of range.
- */
 export function buildCustomPeriod(
   startYear: number,
   startMonthIndex: number,
@@ -214,12 +192,6 @@ export function buildCustomPeriod(
   }
 }
 
-/**
- * Returns the full period with label and endDate derived server-side,
- * or an error string if the input is invalid.
- *
- * Used by M2M API endpoints to avoid mismatches between periodStart and periodEnd.
- */
 export function resolvePeriod(
   periodType: ReportPeriodType,
   periodStart: Date,
@@ -236,7 +208,6 @@ export function resolvePeriod(
   const month = periodStart.getMonth()
   const day = periodStart.getDate()
 
-  // Validate audit_start_year constraint
   if (auditStartYear !== null && year < auditStartYear) {
     return { period: null, error: `periodStart cannot be before audit start year (${auditStartYear}-01-01)` }
   }
@@ -296,7 +267,6 @@ export function resolvePeriod(
     }
   }
 
-  // Validate period is completed
   if (period.endDate >= new Date()) {
     return { period: null, error: 'Period has not ended yet' }
   }
@@ -304,7 +274,6 @@ export function resolvePeriod(
   return { period, error: null }
 }
 
-/** Minimal shape needed to match existing reports against a selected period. */
 interface ReportForPeriodMatch {
   period_type: ReportPeriodType
   period_start: Date
@@ -313,11 +282,6 @@ interface ReportForPeriodMatch {
   superseded_at: Date | null
 }
 
-/**
- * Find an active (non-archived, non-superseded) report that matches a selected period.
- * Used by the app admin UI to detect existing reports and offer superseding.
- * For custom periods, both period_start and period_end must match.
- */
 export function findExistingReportForPeriod<T extends ReportForPeriodMatch>(
   reports: T[],
   selectedPeriod: ReportPeriod,

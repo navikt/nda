@@ -1,4 +1,3 @@
-/** Parse and validate form data app IDs. Returns deduplicated positive integers, or null if any value is invalid. */
 export function parseAppIds(values: FormDataEntryValue[]): number[] | null {
   const ids: number[] = []
   for (const value of values) {

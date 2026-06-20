@@ -1,16 +1,5 @@
-/**
- * Application Groups
- *
- * Groups multiple monitored_applications that represent the same logical
- * application deployed to different NAIS clusters or teams.
- *
- * When a deployment is verified in one cluster, the verification status
- * can be propagated to sibling deployments with the same commit SHA.
- */
 import { REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface ApplicationGroup {
   id: number
@@ -48,7 +37,6 @@ interface ApplicationGroupSummary extends ApplicationGroup {
   app_count: number
 }
 
-// Statuses that are safe to propagate to sibling deployments
 const PROPAGATABLE_STATUSES = new Set([
   'approved',
   'approved_pr_with_unreviewed',
@@ -57,10 +45,7 @@ const PROPAGATABLE_STATUSES = new Set([
   'manually_approved',
 ])
 
-// Statuses eligible for propagation: reverifiable pending + error (verification failure, can be retried)
 const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
-
-// ─── CRUD ────────────────────────────────────────────────────────────────────
 
 export async function createApplicationGroup(name: string): Promise<ApplicationGroup> {
   const { rows } = await pool.query<ApplicationGroup>('INSERT INTO application_groups (name) VALUES ($1) RETURNING *', [
@@ -76,10 +61,6 @@ export async function addAppToGroup(groupId: number, monitoredAppId: number): Pr
   ])
 }
 
-/**
- * Atomically add a team app to a group, verifying ungrouped+active+team-membership in the same SQL.
- * Returns false if the app was already grouped, inactive, or no longer belongs to the team (TOCTOU-safe).
- */
 export async function addTeamAppToGroupConditional(
   groupId: number,
   appId: number,
@@ -174,10 +155,6 @@ interface GroupContextRow {
   app_name: string | null
 }
 
-/**
- * Get an app's group and its siblings in a single SQL query.
- * Returns `{ group: null, siblings: [] }` for ungrouped apps.
- */
 export async function getGroupContext(monitoredAppId: number): Promise<GroupContext> {
   const { rows } = await pool.query<GroupContextRow>(
     `SELECT
@@ -219,14 +196,6 @@ export async function getGroupContext(monitoredAppId: number): Promise<GroupCont
   return { group, siblings }
 }
 
-/**
- * Soft-delete an application group.
- *
- * Sets deleted_at/deleted_by on the group row (preserving it for audit
- * reports) and clears application_group_id on all linked monitored
- * applications so they appear "ungrouped" in current-state UI listings.
- * Both updates run in a single transaction.
- */
 export async function deleteGroup(groupId: number, deletedBy: string): Promise<void> {
   const client = await pool.connect()
   try {
@@ -262,10 +231,6 @@ export async function getAllGroups(): Promise<ApplicationGroupSummary[]> {
   return rows
 }
 
-/**
- * Get all application groups that contain at least one app belonging to the given dev team.
- * Returns each group with its full app list, where `is_team_app` marks apps owned by the team.
- */
 export async function getGroupsForDevTeam(devTeamId: number): Promise<ApplicationGroupWithTeamApps[]> {
   const { rows } = await pool.query<{
     id: number
@@ -310,9 +275,6 @@ export async function getGroupsForDevTeam(devTeamId: number): Promise<Applicatio
   return rows
 }
 
-/**
- * Get monitored applications that belong to the given dev team and are not in any group.
- */
 export async function getUngroupedTeamApps(devTeamId: number): Promise<UngroupedTeamApp[]> {
   const { rows } = await pool.query<UngroupedTeamApp>(
     `SELECT ma.id, ma.team_slug, ma.environment_name, ma.app_name
@@ -329,10 +291,6 @@ export async function getUngroupedTeamApps(devTeamId: number): Promise<Ungrouped
   return rows
 }
 
-/**
- * Verify that ALL given monitored app IDs belong to a dev team AND are ungrouped and active.
- * Used for IDOR protection before creating a group from manually selected apps.
- */
 export async function verifyAllUngroupedTeamApps(devTeamId: number, appIds: number[]): Promise<boolean> {
   const uniqueIds = [...new Set(appIds)]
   if (uniqueIds.length === 0) return true
@@ -349,10 +307,6 @@ export async function verifyAllUngroupedTeamApps(devTeamId: number, appIds: numb
   return parseInt(String(rows[0]?.count ?? '0'), 10) === uniqueIds.length
 }
 
-/**
- * Verify that ALL given monitored app IDs belong to a dev team in a single query.
- * Handles duplicates by deduplicating before the count comparison.
- */
 export async function verifyAllTeamApps(devTeamId: number, appIds: number[]): Promise<boolean> {
   const uniqueIds = [...new Set(appIds)]
   if (uniqueIds.length === 0) return true
@@ -367,10 +321,6 @@ export async function verifyAllTeamApps(devTeamId: number, appIds: number[]): Pr
   return parseInt(String(rows[0]?.count ?? '0'), 10) === uniqueIds.length
 }
 
-/**
- * Verify that a monitored application belongs to a dev team.
- * Used for IDOR protection in team-scoped group mutations.
- */
 export async function isTeamApp(devTeamId: number, monitoredAppId: number): Promise<boolean> {
   const { rows } = await pool.query<{ exists: boolean }>(
     `SELECT EXISTS (
@@ -382,10 +332,6 @@ export async function isTeamApp(devTeamId: number, monitoredAppId: number): Prom
   return rows[0]?.exists ?? false
 }
 
-/**
- * Verify that an application group contains at least one app belonging to a dev team.
- * Used for IDOR protection in team-scoped group mutations (add, delete).
- */
 export async function isTeamGroup(devTeamId: number, groupId: number): Promise<boolean> {
   const { rows } = await pool.query<{ exists: boolean }>(
     `SELECT EXISTS (
@@ -399,7 +345,6 @@ export async function isTeamGroup(devTeamId: number, groupId: number): Promise<b
   return rows[0]?.exists ?? false
 }
 
-/** Get group names by IDs — lightweight lookup for UI labels */
 export async function getGroupNamesByIds(groupIds: number[]): Promise<Map<number, string>> {
   if (groupIds.length === 0) return new Map()
   const { rows } = await pool.query<{ id: number; name: string }>(
@@ -409,16 +354,6 @@ export async function getGroupNamesByIds(groupIds: number[]): Promise<Map<number
   return new Map(rows.map((r) => [r.id, r.name]))
 }
 
-// ─── Verification propagation ────────────────────────────────────────────────
-
-/**
- * Propagate a positive verification status to sibling deployments that:
- * 1. Belong to apps in the same application group
- * 2. Have the same commit SHA
- * 3. Are still in a pending state (any canonical pending status) or error state
- *
- * Returns the number of sibling deployments updated.
- */
 export async function propagateVerificationToSiblings(
   deploymentId: number,
   status: string,
@@ -427,11 +362,6 @@ export async function propagateVerificationToSiblings(
 ): Promise<number> {
   if (!PROPAGATABLE_STATUSES.has(status)) return 0
 
-  // All propagatable statuses imply four-eyes compliance.
-  // The single UPDATE statement is atomic in PostgreSQL — concurrent
-  // propagation attempts targeting the same row are serialized by
-  // row-level locking, and the WHERE clause ensures only pending/error
-  // deployments are updated.
   const result = await pool.query(
     `UPDATE deployments
      SET four_eyes_status = $1
@@ -452,11 +382,6 @@ export async function propagateVerificationToSiblings(
   return result.rowCount ?? 0
 }
 
-/**
- * Get all app IDs belonging to the given application group IDs.
- * Includes inactive apps to match the deployment route's getGroupContext()
- * which does not filter by is_active when expanding group siblings.
- */
 export async function getAppIdsByGroupIds(groupIds: number[]): Promise<Map<number, number[]>> {
   if (groupIds.length === 0) return new Map()
 

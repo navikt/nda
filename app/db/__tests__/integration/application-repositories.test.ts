@@ -103,7 +103,6 @@ describe('application-repositories', () => {
       [appId],
     )
 
-    // Deactivate old, activate new
     await pool.query(
       "UPDATE application_repositories SET status = 'historical' WHERE monitored_app_id = $1 AND id != $2 AND status = 'active'",
       [appId, repo2[0].id],
@@ -149,7 +148,7 @@ describe('application-repositories', () => {
     ])
 
     const { rows } = await pool.query('SELECT * FROM application_repositories WHERE id = $1', [created[0].id])
-    expect(rows).toHaveLength(1) // Still exists
+    expect(rows).toHaveLength(1)
   })
 
   it('redirect configuration works', async () => {

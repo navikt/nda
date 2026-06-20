@@ -7,10 +7,6 @@ import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '../dev-teams.
 import { getMembersGithubUsernamesForDevTeamRoles } from '../role-assignments.server'
 import { lowerUsernames, userDeploymentMatchAnySql, userDeploymentMatchSql } from '../user-deployment-match'
 
-// ---------------------------------------------------------------------------
-// Shared dev-team scope resolution
-// ---------------------------------------------------------------------------
-
 interface DevTeamScope {
   naisTeamSlugs: string[]
   directAppIds: number[] | undefined
@@ -18,17 +14,6 @@ interface DevTeamScope {
   noMembersMapped: boolean
 }
 
-/**
- * Resolve the full query scope for a set of dev teams.
- *
- * Combines:
- * - Nais team slugs (deduped)
- * - Direct app IDs + application-group app IDs (merged, deduped)
- * - Deployer usernames (person-scope filter)
- *
- * Both the `/my-teams` page and the Slack Home Tab call this so that they
- * operate on the same scope and produce consistent numbers.
- */
 export async function resolveDevTeamScope(
   devTeams: { id: number; nais_team_slugs: string[] }[],
 ): Promise<DevTeamScope> {
@@ -54,24 +39,6 @@ export async function resolveDevTeamScope(
   return { naisTeamSlugs, directAppIds, deployerUsernames, noMembersMapped }
 }
 
-/**
- * Find GitHub usernames that appear as deployers in a dev team's apps
- * but do NOT have a corresponding `user_github_accounts` row.
- *
- * Only checks `deployer_username`, not PR creators. PR creators don't
- * affect deployer-filtered stats because the filter
- * (`userDeploymentMatchAnySql`) matches on deployer OR PR creator — so
- * an unmapped PR creator's PR is still counted when a mapped team member
- * deploys it.
- *
- * Respects `audit_start_year` per app — deployments before an app's
- * audit start year are excluded, matching how `getDevTeamAppsWithIssues`
- * and `getAppDeploymentStatsBatch` filter. Without this, deployers from
- * before the audit period would appear as "unmapped" even though their
- * deployments don't show up in any stats or issue lists.
- *
- * Excludes bot accounts using the canonical `isGitHubBot` helper.
- */
 export async function getUnmappedContributors(
   naisTeamSlugs: string[],
   directAppIds?: number[],
@@ -107,26 +74,6 @@ export async function getUnmappedContributors(
   return result.rows.map((r) => r.username).filter((u) => !isGitHubBot(u))
 }
 
-/**
- * Get apps with issues filtered to a dev team's scope.
- *
- * The scope is the **union** of `nais_team_slugs` (apps owned by the team via
- * their nais team slug) and `directAppIds` (apps explicitly attached to the
- * dev team in NDA). An app is included if it matches either side — this
- * matches user expectations on /my-teams where teams may have both.
- *
- * `deployerUsernames` (optional) restricts the deployment-derived counts
- * (`without_four_eyes`, `pending_verification`, `missing_goal_links`) to
- * deployments where the deployer or PR creator matches one of the given
- * GitHub usernames. Repository-level alert counts are NOT filtered (they
- * track Dependabot/CodeQL events which aren't tied to a deployer). When the
- * filter is provided as an empty array the deployment counts are 0 — callers
- * should surface a hint to the user that no team members are GitHub-mapped.
- * When the parameter is `undefined` no deployer filter is applied.
- *
- * Both `/my-teams` and the Slack Home Tab use {@link resolveDevTeamScope} to
- * obtain the same `deployerUsernames` filter so that their numbers agree.
- */
 export async function getDevTeamAppsWithIssues(
   naisTeamSlugs: string[],
   directAppIds?: number[],
@@ -199,9 +146,6 @@ export async function getDevTeamAppsWithIssues(
   return result.rows
 }
 
-/**
- * Get recent deployments for Slack Home Tab
- */
 async function _getRecentDeploymentsForHomeTab(limit = 10): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*, 
@@ -216,22 +160,6 @@ async function _getRecentDeploymentsForHomeTab(limit = 10): Promise<DeploymentWi
   return result.rows
 }
 
-/**
- * Count deployments where the given GitHub user is the deployer or the PR
- * creator, AND the deployment has no active goal-link.
- *
- * Used by the personalised Slack home tab to surface "your own deployments
- * that lack endringsopphav (goal linkage)" so that the user can act on them.
- *
- * Filters:
- * - Only `is_active = true` monitored applications.
- * - Respects `audit_start_year` per app (matches existing dashboard queries).
- * - Excludes deployments with any `is_active = true` row in
- *   `deployment_goal_links`.
- *
- * The username match is case-insensitive on both `deployer_username` and
- * `github_pr_data->'creator'->>'username'`.
- */
 export async function getPersonalDeploymentsMissingGoalLinks(githubUsername: string): Promise<number> {
   const result = await pool.query(
     `SELECT COUNT(*)::integer AS count

@@ -1,28 +1,12 @@
-/**
- * Database queries for external API consumption.
- *
- * These queries support the /api/v1/ endpoints used by KISS and other consumers.
- */
-
 import { pool } from '../connection.server'
 
 interface AppChangeOriginCoverage {
-  /** Total deployments (excluding Dependabot) */
   total: number
-  /** Deployments linked to an objective or key result */
   linked: number
-  /** Dependabot deployments */
   dependabot: number
-  /** Coverage percentage (linked / total * 100) */
   coveragePercent: number
 }
 
-/**
- * Get change origin (endringsopphav) coverage for a single app within a date range.
- *
- * Counts how many deployments are linked to board objectives/key results,
- * excluding automated Dependabot deployments from the coverage calculation.
- */
 export async function getAppChangeOriginCoverage(
   monitoredAppId: number,
   startDate: Date,
@@ -71,9 +55,6 @@ interface LastDeploymentSummary {
   hasChangeOrigin: boolean
 }
 
-/**
- * Get a summary of the most recent deployment for an app.
- */
 export async function getLastDeploymentSummary(monitoredAppId: number): Promise<LastDeploymentSummary | null> {
   const result = await pool.query(
     `SELECT

@@ -1,16 +1,6 @@
-/**
- * Tests for building GitHubPRData from V2 snapshots.
- *
- * Verifies that buildGithubPrDataFromSnapshots correctly maps all fields
- * from V2 camelCase snapshot types to V1 snake_case GitHubPRData format.
- */
 import { describe, expect, it } from 'vitest'
 import { buildGithubPrDataFromSnapshots } from '../verification/build-github-pr-data'
 import type { PrChecks, PrComment, PrCommit, PrMetadata, PrReview } from '../verification/types'
-
-// =============================================================================
-// Test Fixtures
-// =============================================================================
 
 const metadata: PrMetadata = {
   number: 18220,
@@ -35,7 +25,6 @@ const metadata: PrMetadata = {
   changedFiles: 5,
   additions: 120,
   deletions: 40,
-  // Extended fields
   commentsCount: 2,
   reviewCommentsCount: 1,
   locked: false,
@@ -109,10 +98,6 @@ const comments: PrComment[] = [
     updatedAt: '2026-02-21T15:00:00Z',
   },
 ]
-
-// =============================================================================
-// Tests
-// =============================================================================
 
 describe('buildGithubPrDataFromSnapshots', () => {
   it('maps all basic metadata fields', () => {
