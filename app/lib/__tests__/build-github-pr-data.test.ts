@@ -354,6 +354,16 @@ describe('buildGithubPrDataFromSnapshots', () => {
       expect(result.checks_ref).toBeNull()
     })
 
+    it('returns head when no check runs have headSha (older cached data — assumed branch)', () => {
+      const noShaChecks: PrChecks = {
+        conclusion: 'success',
+        checkRuns: [makeCheckRun(), makeCheckRun()],
+        statuses: [],
+      }
+      const result = buildGithubPrDataFromSnapshots(metadata, null, null, noShaChecks, null)
+      expect(result.checks_ref).toBe('head')
+    })
+
     it('returns null when PR has no mergeCommitSha (open PR)', () => {
       const openPrMetadata: PrMetadata = { ...metadata, mergeCommitSha: null, mergedAt: null }
       const branchChecks: PrChecks = {

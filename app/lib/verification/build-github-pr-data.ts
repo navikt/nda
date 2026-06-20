@@ -21,7 +21,9 @@ function deriveChecksRef(
   if (!checks || checks.checkRuns.length === 0) return null
   if (!mergeCommitSha) return null // open PR — not relevant
   const refSha = checks.checkRuns.find((cr) => cr.headSha)?.headSha
-  if (!refSha) return null
+  // If no check run has headSha (older cached data), assume branch — all data
+  // cached before 2026-06-20 was fetched from head.sha due to a bug
+  if (!refSha) return 'head'
   if (refSha === mergeCommitSha) return 'merge_commit'
   if (refSha === headSha) return 'head'
   return null
