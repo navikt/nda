@@ -378,3 +378,107 @@ describe('not_approved filter includes unrecognized statuses', () => {
     expect(rows).toHaveLength(0)
   })
 })
+
+describe('getDeploymentById backfills checks_ref for legacy data', () => {
+  it('sets checks_ref to head when check head_sha matches head_sha', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'glad-fjord', appName: 'min-app', environment: 'prod' })
+    const depId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'glad-fjord',
+      environment: 'prod',
+      githubPrData: {
+        title: 'Bump dep',
+        head_sha: 'headabc',
+        merge_commit_sha: 'mergedef',
+        merged_at: '2026-05-01T10:00:00Z',
+        checks: [{ id: 1, name: 'build', status: 'completed', conclusion: 'success', head_sha: 'headabc' }],
+      },
+    })
+
+    const { getDeploymentById } = await import('~/db/deployments.server')
+    const result = await getDeploymentById(depId)
+    expect(result?.github_pr_data?.checks_ref).toBe('head')
+  })
+
+  it('sets checks_ref to merge_commit when check head_sha matches merge_commit_sha', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'rask-elv', appName: 'min-app', environment: 'prod' })
+    const depId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'rask-elv',
+      environment: 'prod',
+      githubPrData: {
+        title: 'Bump dep',
+        head_sha: 'headabc',
+        merge_commit_sha: 'mergedef',
+        merged_at: '2026-05-01T10:00:00Z',
+        checks: [{ id: 1, name: 'build', status: 'completed', conclusion: 'success', head_sha: 'mergedef' }],
+      },
+    })
+
+    const { getDeploymentById } = await import('~/db/deployments.server')
+    const result = await getDeploymentById(depId)
+    expect(result?.github_pr_data?.checks_ref).toBe('merge_commit')
+  })
+
+  it('sets checks_ref to head when no check has head_sha (older cached data)', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'sterk-skog', appName: 'min-app', environment: 'prod' })
+    const depId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'sterk-skog',
+      environment: 'prod',
+      githubPrData: {
+        title: 'Bump dep',
+        head_sha: 'headabc',
+        merge_commit_sha: 'mergedef',
+        merged_at: '2026-05-01T10:00:00Z',
+        checks: [{ id: 1, name: 'build', status: 'completed', conclusion: 'success' }],
+      },
+    })
+
+    const { getDeploymentById } = await import('~/db/deployments.server')
+    const result = await getDeploymentById(depId)
+    expect(result?.github_pr_data?.checks_ref).toBe('head')
+  })
+
+  it('sets checks_ref to null when PR has no merge_commit_sha (open PR)', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'blid-stein', appName: 'min-app', environment: 'prod' })
+    const depId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'blid-stein',
+      environment: 'prod',
+      githubPrData: {
+        title: 'Open PR',
+        head_sha: 'headabc',
+        merge_commit_sha: null,
+        merged_at: null,
+        checks: [{ id: 1, name: 'build', status: 'completed', conclusion: 'success', head_sha: 'headabc' }],
+      },
+    })
+
+    const { getDeploymentById } = await import('~/db/deployments.server')
+    const result = await getDeploymentById(depId)
+    expect(result?.github_pr_data?.checks_ref).toBeNull()
+  })
+
+  it('preserves existing checks_ref without recomputing', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'trygg-dal', appName: 'min-app', environment: 'prod' })
+    const depId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'trygg-dal',
+      environment: 'prod',
+      githubPrData: {
+        title: 'Already computed',
+        head_sha: 'headabc',
+        merge_commit_sha: 'mergedef',
+        merged_at: '2026-05-01T10:00:00Z',
+        checks_ref: 'merge_commit',
+        checks: [{ id: 1, name: 'build', status: 'completed', conclusion: 'success', head_sha: 'headabc' }],
+      },
+    })
+
+    const { getDeploymentById } = await import('~/db/deployments.server')
+    const result = await getDeploymentById(depId)
+    // head_sha matches headabc, but stored checks_ref='merge_commit' must be kept
+    expect(result?.github_pr_data?.checks_ref).toBe('merge_commit')
+  })
+})
