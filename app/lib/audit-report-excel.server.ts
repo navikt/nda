@@ -176,7 +176,7 @@ function addDeploymentsSheet(workbook: ExcelJS.Workbook, deployments: AuditDeplo
   const sheet = workbook.addWorksheet('Deployments')
   sheet.columns = [
     { header: '#', width: 6 },
-    { header: 'Dato', width: 12 },
+    { header: 'Tidspunkt', width: 18 },
     { header: 'Tittel', width: 30 },
     { header: 'Commit', width: 12 },
     { header: 'Metode', width: 10 },
@@ -216,7 +216,7 @@ function addDeploymentsSheet(workbook: ExcelJS.Workbook, deployments: AuditDeplo
 
     const row = sheet.addRow([
       idx + 1,
-      formatDate(d.date),
+      formatDateTime(d.date),
       d.title || '-',
       commitShort,
       methodLabel(d.method),
@@ -255,7 +255,7 @@ function addManualApprovalsSheet(workbook: ExcelJS.Workbook, approvals: ManualAp
   const sheet = workbook.addWorksheet('Manuelle godkjenninger')
   sheet.columns = [
     { header: 'Deployment ID', width: 14 },
-    { header: 'Dato', width: 12 },
+    { header: 'Tidspunkt', width: 18 },
     { header: 'Tittel', width: 30 },
     { header: 'Commit', width: 12 },
     { header: 'Deployer', width: 18 },
@@ -275,7 +275,7 @@ function addManualApprovalsSheet(workbook: ExcelJS.Workbook, approvals: ManualAp
 
     const row = sheet.addRow([
       a.deployment_id,
-      formatDate(a.date),
+      formatDateTime(a.date),
       a.title || '-',
       commitShort,
       a.deployer_display_name || a.deployer,
@@ -306,7 +306,7 @@ function addDeviationsSheet(workbook: ExcelJS.Workbook, deviations: DeviationEnt
   const sheet = workbook.addWorksheet('Avvik')
   sheet.columns = [
     { header: 'Deployment ID', width: 14 },
-    { header: 'Dato', width: 12 },
+    { header: 'Tidspunkt', width: 18 },
     { header: 'Commit', width: 12 },
     { header: 'Beskrivelse', width: 40 },
     { header: 'Type brudd', width: 20 },
@@ -328,7 +328,7 @@ function addDeviationsSheet(workbook: ExcelJS.Workbook, deviations: DeviationEnt
 
     const row = sheet.addRow([
       d.deployment_id,
-      formatDate(d.date),
+      formatDateTime(d.date),
       commitShort,
       d.reason,
       d.breach_type || '-',
@@ -361,7 +361,7 @@ function addUnverifiedCommitsSheet(
   const sheet = workbook.addWorksheet('Ikke-verifiserte commits')
   sheet.columns = [
     { header: 'Deployment ID', width: 14 },
-    { header: 'Dato', width: 12 },
+    { header: 'Tidspunkt', width: 18 },
     { header: 'Tittel', width: 30 },
     { header: 'Deployer', width: 18 },
     { header: 'Status', width: 30 },
@@ -385,7 +385,7 @@ function addUnverifiedCommitsSheet(
 
       const row = sheet.addRow([
         entry.deployment_id,
-        formatDate(entry.date),
+        formatDateTime(entry.date),
         entry.title || '-',
         entry.deployer_display_name || entry.deployer,
         statusText,
