@@ -466,6 +466,24 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   }
 }
 
+/**
+ * Derives checks_ref from stored GitHubPRData when it hasn't been computed yet.
+ * Matches the same logic as deriveChecksRef in build-github-pr-data.ts, but
+ * operates on the snake_case DB format. Needed for data stored before checks_ref
+ * was introduced (pre 2026-06-20).
+ */
+function backfillChecksRef(prData: GitHubPRData): GitHubPRData {
+  if (prData.checks_ref !== undefined) return prData
+  if (!prData.merged_at || !prData.merge_commit_sha || !prData.checks?.length) {
+    return { ...prData, checks_ref: null }
+  }
+  const refSha = prData.checks.find((c) => c.head_sha)?.head_sha
+  if (!refSha) return { ...prData, checks_ref: 'head' }
+  if (refSha === prData.merge_commit_sha) return { ...prData, checks_ref: 'merge_commit' }
+  if (refSha === prData.head_sha) return { ...prData, checks_ref: 'head' }
+  return { ...prData, checks_ref: null }
+}
+
 export async function getDeploymentById(id: number): Promise<DeploymentWithApp | null> {
   const result = await pool.query(
     `SELECT 
@@ -483,7 +501,11 @@ export async function getDeploymentById(id: number): Promise<DeploymentWithApp |
     WHERE d.id = $1`,
     [id],
   )
-  return result.rows[0] || null
+  const row = result.rows[0] || null
+  if (row?.github_pr_data) {
+    row.github_pr_data = backfillChecksRef(row.github_pr_data)
+  }
+  return row
 }
 
 export async function getDeploymentByNaisId(naisDeploymentId: string): Promise<Deployment | null> {
