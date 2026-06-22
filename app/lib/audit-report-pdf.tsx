@@ -9,6 +9,7 @@ import type {
 import {
   DEVIATIONS_INTRO,
   MANUAL_APPROVALS_INTRO,
+  ndaDeploymentUrl,
   UNVERIFIED_COMMITS_INTRO_PDF,
   UNVERIFIED_COMMITS_NOTE,
 } from '~/lib/audit-report-texts'
@@ -657,7 +658,11 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
                   <View key={d.id} style={[styles.deploymentCard, idx % 2 === 1 ? styles.deploymentCardAlt : {}]}>
                     {/* Row 1: #, Dato, Tittel */}
                     <View style={styles.deploymentRow1}>
-                      <Text style={[styles.tableCell, styles.r1col1]}>{runningTotal + idx + 1}</Text>
+                      <Text style={[styles.tableCell, styles.r1col1]}>
+                        <Link src={ndaDeploymentUrl(teamSlug, environmentName, appName, d.id)} style={styles.link}>
+                          {String(runningTotal + idx + 1)}
+                        </Link>
+                      </Text>
                       <Text style={[styles.tableCell, styles.r1col2]}>{formatDate(d.date)}</Text>
                       <Text style={[styles.tableCell, styles.r1col3, { fontWeight: 600 }]}>{d.title || '-'}</Text>
                     </View>
@@ -755,7 +760,14 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
             {reportData.manual_approvals.map((approval: ManualApprovalEntry) => (
               <View key={approval.deployment_id} style={styles.manualBox} wrap={false}>
                 <Text style={styles.manualTitle}>
-                  Deployment #{approval.deployment_id} - {formatDate(approval.date)}
+                  <Link
+                    src={ndaDeploymentUrl(teamSlug, environmentName, appName, approval.deployment_id)}
+                    style={styles.link}
+                  >
+                    Deployment #{approval.deployment_id}
+                  </Link>
+                  {' - '}
+                  {formatDate(approval.date)}
                 </Text>
                 {approval.title && <Text style={[styles.manualDetail, { fontWeight: 600 }]}>{approval.title}</Text>}
                 <Text style={[styles.manualDetail, { fontSize: 7, color: '#666666' }]}>
@@ -811,7 +823,14 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
             {reportData.deviations.map((deviation: DeviationEntry) => (
               <View key={`${deviation.deployment_id}-${deviation.date}`} style={styles.manualBox} wrap={false}>
                 <Text style={styles.manualTitle}>
-                  Deployment #{deviation.deployment_id} - {formatDate(deviation.date)}
+                  <Link
+                    src={ndaDeploymentUrl(teamSlug, environmentName, appName, deviation.deployment_id)}
+                    style={styles.link}
+                  >
+                    Deployment #{deviation.deployment_id}
+                  </Link>
+                  {' - '}
+                  {formatDate(deviation.date)}
                 </Text>
                 <Text style={[styles.manualDetail, { fontSize: 7, color: '#666666' }]}>
                   Commit:{' '}
@@ -878,7 +897,14 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
               return (
                 <View key={entry.deployment_id} style={styles.manualBox} wrap={false}>
                   <Text style={styles.manualTitle}>
-                    Deployment #{entry.deployment_id} - {formatDate(entry.date)}
+                    <Link
+                      src={ndaDeploymentUrl(teamSlug, environmentName, appName, entry.deployment_id)}
+                      style={styles.link}
+                    >
+                      Deployment #{entry.deployment_id}
+                    </Link>
+                    {' - '}
+                    {formatDate(entry.date)}
                   </Text>
                   {entry.title && <Text style={[styles.manualDetail, { fontWeight: 600 }]}>{entry.title}</Text>}
                   <Text style={styles.manualDetail}>
