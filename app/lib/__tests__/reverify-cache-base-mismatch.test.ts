@@ -20,6 +20,7 @@ vi.mock('~/db/verification-diff.server', () => ({
 
 vi.mock('~/lib/four-eyes-status', () => ({
   isProtectedStatus: vi.fn().mockReturnValue(false),
+  PENDING_BASELINE_DEMOTABLE_STATUSES: [],
 }))
 
 vi.mock('~/lib/logger.server', () => ({
