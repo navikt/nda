@@ -1,16 +1,26 @@
-import { readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { GraphQLClient } from 'graphql-request'
 import { fetchWithLogging, logger } from '~/lib/logger.server'
 
-function getNaisToken(): string | undefined {
+let lastTokenLogAt = 0
+
+async function getNaisToken(): Promise<string | undefined> {
   const tokenPath = process.env.NAIS_SERVICE_ACCOUNT_TOKEN_PATH
   if (tokenPath) {
     try {
-      const token = readFileSync(tokenPath, 'utf-8').trim()
+      const token = (await readFile(tokenPath, 'utf-8')).trim()
       if (token) return token
-      logger.warn(`[nais] NAIS_SERVICE_ACCOUNT_TOKEN_PATH peker til tom fil: ${tokenPath}`)
+      const now = Date.now()
+      if (now - lastTokenLogAt > 60_000) {
+        lastTokenLogAt = now
+        logger.warn(`[nais] NAIS_SERVICE_ACCOUNT_TOKEN_PATH peker til tom fil: ${tokenPath}`)
+      }
     } catch (err) {
-      logger.error(`[nais] Kunne ikke lese NAIS_SERVICE_ACCOUNT_TOKEN_PATH (${tokenPath})`, err)
+      const now = Date.now()
+      if (now - lastTokenLogAt > 60_000) {
+        lastTokenLogAt = now
+        logger.error(`[nais] Kunne ikke lese NAIS_SERVICE_ACCOUNT_TOKEN_PATH (${tokenPath})`, err)
+      }
     }
   }
   return undefined
@@ -21,8 +31,8 @@ function getNaisClient(): GraphQLClient {
   const url = baseUrl.endsWith('/graphql') ? baseUrl : `${baseUrl}/graphql`
 
   return new GraphQLClient(url, {
-    fetch: (reqUrl, options) => {
-      const token = getNaisToken()
+    fetch: async (reqUrl, options) => {
+      const token = await getNaisToken()
       const headers = new Headers(options?.headers)
       headers.set('Content-Type', 'application/json')
       if (token) {
