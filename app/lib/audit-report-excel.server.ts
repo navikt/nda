@@ -9,6 +9,7 @@ import type {
 import {
   DEVIATIONS_INTRO,
   MANUAL_APPROVALS_INTRO,
+  ndaDeploymentUrl,
   UNVERIFIED_COMMITS_INTRO_EXCEL,
   UNVERIFIED_COMMITS_NOTE,
 } from '~/lib/audit-report-texts'
@@ -120,10 +121,6 @@ function methodLabel(method: string): string {
   return 'Manuell'
 }
 
-function deploymentUrl(teamSlug: string, environmentName: string, appName: string, deploymentId: number): string {
-  return `https://nda.ansatt.nav.no/team/${teamSlug}/env/${environmentName}/app/${appName}/deployments/${deploymentId}`
-}
-
 function setDeploymentIdLink(
   row: ExcelJS.Row,
   cell: number,
@@ -132,7 +129,7 @@ function setDeploymentIdLink(
   environmentName: string,
   appName: string,
 ) {
-  const url = deploymentUrl(teamSlug, environmentName, appName, deploymentId)
+  const url = ndaDeploymentUrl(teamSlug, environmentName, appName, deploymentId)
   row.getCell(cell).value = { text: String(deploymentId), hyperlink: url }
   row.getCell(cell).font = { color: { argb: 'FF005B82' }, underline: true }
 }

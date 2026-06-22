@@ -1,3 +1,12 @@
+export function ndaDeploymentUrl(
+  teamSlug: string,
+  environmentName: string,
+  appName: string,
+  deploymentId: number,
+): string {
+  return `https://nda.ansatt.nav.no/team/${teamSlug}/env/${environmentName}/app/${appName}/deployments/${deploymentId}`
+}
+
 export const MANUAL_APPROVALS_INTRO =
   'Følgende deployments er manuelt godkjent i NDA etter at leveransen ble gjennomført.'
 
