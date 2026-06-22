@@ -1,28 +1,36 @@
+import { readFileSync } from 'node:fs'
 import { GraphQLClient } from 'graphql-request'
 import { fetchWithLogging, logger } from '~/lib/logger.server'
 
-let client: GraphQLClient | null = null
+function getNaisToken(): string | undefined {
+  const tokenPath = process.env.NAIS_SERVICE_ACCOUNT_TOKEN_PATH
+  if (tokenPath) {
+    try {
+      const token = readFileSync(tokenPath, 'utf-8').trim()
+      if (token) return token
+      logger.warn(`[nais] NAIS_SERVICE_ACCOUNT_TOKEN_PATH peker til tom fil: ${tokenPath}`)
+    } catch (err) {
+      logger.error(`[nais] Kunne ikke lese NAIS_SERVICE_ACCOUNT_TOKEN_PATH (${tokenPath})`, err)
+    }
+  }
+  return undefined
+}
 
 function getNaisClient(): GraphQLClient {
-  if (!client) {
-    const baseUrl = process.env.NAIS_GRAPHQL_URL || 'http://localhost:4242'
-    const url = baseUrl.endsWith('/graphql') ? baseUrl : `${baseUrl}/graphql`
+  const baseUrl = process.env.NAIS_GRAPHQL_URL || 'http://localhost:4242'
+  const url = baseUrl.endsWith('/graphql') ? baseUrl : `${baseUrl}/graphql`
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-
-    const apiKey = process.env.NAIS_API_KEY
-    if (apiKey) {
-      headers.Authorization = `Bearer ${apiKey}`
-    }
-
-    client = new GraphQLClient(url, {
-      headers,
-      fetch: (reqUrl, options) => fetchWithLogging('nais_graphql', reqUrl, options),
-    })
-  }
-  return client
+  return new GraphQLClient(url, {
+    fetch: (reqUrl, options) => {
+      const token = getNaisToken()
+      const headers = new Headers(options?.headers)
+      headers.set('Content-Type', 'application/json')
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`)
+      }
+      return fetchWithLogging('nais_graphql', reqUrl, { ...options, headers })
+    },
+  })
 }
 
 interface NaisResource {

@@ -472,10 +472,9 @@ Applikasjonen henter deployment-data fra Nais sitt GraphQL API med polling hvert
 
 ```env
 NAIS_GRAPHQL_URL=https://console.nav.cloud.nais.io/graphql
-NAIS_API_KEY=<API-nøkkel for Nais>
 ```
 
-> **Produksjon**: Kontakt Nais-teamet for å få utstedt en `NAIS_API_KEY` for tilgang til GraphQL-APIet.
+Autentisering mot Nais-APIet skjer via et service account-token som Nais-plattformen automatisk monterer som en fil. Token-stien injiseres via `NAIS_SERVICE_ACCOUNT_TOKEN_PATH` og leses ved hvert API-kall for å støtte rotasjon.
 
 > **Lokal utvikling**: Bruk `nais alpha api proxy` for å få tilgang til Nais-APIet lokalt. Proxyen kjører på `http://localhost:4242` og håndterer autentisering automatisk.
 
@@ -490,4 +489,4 @@ envFrom:
   - secret: nais-deployment-audit
 ```
 
-Secreten må inneholde: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `NAIS_API_KEY`, og eventuelt `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` og `SLACK_CHANNEL_ID`.
+Secreten må inneholde: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, og eventuelt `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` og `SLACK_CHANNEL_ID`.
