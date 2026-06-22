@@ -7,6 +7,12 @@ import type {
   UnverifiedCommitDeploymentEntry,
 } from '~/db/audit-reports.server'
 import {
+  DEVIATIONS_INTRO,
+  MANUAL_APPROVALS_INTRO,
+  UNVERIFIED_COMMITS_INTRO,
+  UNVERIFIED_COMMITS_NOTE,
+} from '~/lib/audit-report-texts'
+import {
   DEVIATION_FOLLOW_UP_ROLE_LABELS,
   DEVIATION_INTENT_LABELS,
   DEVIATION_SEVERITY_LABELS,
@@ -747,6 +753,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
             <Text style={styles.sectionTitle}>
               Manuelt godkjente deployments ({reportData.manual_approvals.length})
             </Text>
+            <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>{MANUAL_APPROVALS_INTRO}</Text>
             {reportData.manual_approvals.map((approval: ManualApprovalEntry) => (
               <View key={approval.deployment_id} style={styles.manualBox} wrap={false}>
                 <Text style={styles.manualTitle}>
@@ -802,6 +809,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
         <Page size="A4" style={styles.page}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Avvik ({reportData.deviations.length})</Text>
+            <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>{DEVIATIONS_INTRO}</Text>
             {reportData.deviations.map((deviation: DeviationEntry) => (
               <View key={`${deviation.deployment_id}-${deviation.date}`} style={styles.manualBox} wrap={false}>
                 <Text style={styles.manualTitle}>
@@ -861,9 +869,9 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
             <Text style={styles.sectionTitle}>
               Ikke-godkjente commits ({reportData.unverified_commit_deployments.length} deployments)
             </Text>
-            <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>
-              Følgende deployments inneholdt commits som ikke har godkjent pull request. Deployments som er manuelt
-              godkjent i etterkant er merket med godkjenner.
+            <Text style={{ fontSize: 9, color: '#595959', marginBottom: 4 }}>{UNVERIFIED_COMMITS_INTRO}</Text>
+            <Text style={{ fontSize: 8, color: '#7a7a7a', fontStyle: 'italic', marginBottom: 10 }}>
+              {UNVERIFIED_COMMITS_NOTE}
             </Text>
             {reportData.unverified_commit_deployments.map((entry: UnverifiedCommitDeploymentEntry) => {
               const isApproved = entry.four_eyes_status === 'manually_approved'

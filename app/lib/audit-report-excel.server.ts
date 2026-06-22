@@ -7,6 +7,12 @@ import type {
   UnverifiedCommitDeploymentEntry,
 } from '~/db/audit-reports.server'
 import {
+  DEVIATIONS_INTRO,
+  MANUAL_APPROVALS_INTRO,
+  UNVERIFIED_COMMITS_INTRO,
+  UNVERIFIED_COMMITS_NOTE,
+} from '~/lib/audit-report-texts'
+import {
   DEVIATION_FOLLOW_UP_ROLE_LABELS,
   DEVIATION_INTENT_LABELS,
   DEVIATION_SEVERITY_LABELS,
@@ -43,6 +49,24 @@ const CELL_BORDERS: Partial<ExcelJS.Borders> = {
   left: BORDER_THIN,
   bottom: BORDER_THIN,
   right: BORDER_THIN,
+}
+
+function addIntroRow(sheet: ExcelJS.Worksheet, text: string, columnCount: number) {
+  const row = sheet.addRow([text])
+  sheet.mergeCells(row.number, 1, row.number, columnCount)
+  row.height = 30
+  row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4F8' } }
+  row.getCell(1).font = { size: 9, color: { argb: 'FF333333' } }
+  row.getCell(1).alignment = { wrapText: true, vertical: 'middle' }
+}
+
+function addWarningNoteRow(sheet: ExcelJS.Worksheet, text: string, columnCount: number) {
+  const row = sheet.addRow([text])
+  sheet.mergeCells(row.number, 1, row.number, columnCount)
+  row.height = 30
+  row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } }
+  row.getCell(1).font = { italic: true, size: 9, color: { argb: 'FF664D03' } }
+  row.getCell(1).alignment = { wrapText: true, vertical: 'middle' }
 }
 
 function formatDate(date: Date | string): string {
@@ -176,6 +200,7 @@ function addDeploymentsSheet(workbook: ExcelJS.Workbook, deployments: AuditDeplo
   const sheet = workbook.addWorksheet('Deployments')
   sheet.columns = [
     { header: '#', width: 6 },
+    { header: 'Deployment ID', width: 14 },
     { header: 'Tidspunkt', width: 18 },
     { header: 'Tittel', width: 30 },
     { header: 'Commit', width: 12 },
@@ -216,6 +241,7 @@ function addDeploymentsSheet(workbook: ExcelJS.Workbook, deployments: AuditDeplo
 
     const row = sheet.addRow([
       idx + 1,
+      d.id,
       formatDateTime(d.date),
       d.title || '-',
       commitShort,
@@ -230,50 +256,68 @@ function addDeploymentsSheet(workbook: ExcelJS.Workbook, deployments: AuditDeplo
     applyDataRow(row)
 
     if (commitUrl) {
-      row.getCell(4).value = { text: commitShort, hyperlink: commitUrl }
-      row.getCell(4).font = { color: { argb: 'FF005B82' }, underline: true }
+      row.getCell(5).value = { text: commitShort, hyperlink: commitUrl }
+      row.getCell(5).font = { color: { argb: 'FF005B82' }, underline: true }
     }
 
     if (d.pr_number && d.pr_url) {
-      row.getCell(6).value = { text: `PR #${d.pr_number}`, hyperlink: d.pr_url }
-      row.getCell(6).font = { color: { argb: 'FF005B82' }, underline: true }
+      row.getCell(7).value = { text: `PR #${d.pr_number}`, hyperlink: d.pr_url }
+      row.getCell(7).font = { color: { argb: 'FF005B82' }, underline: true }
     } else if (d.pr_number) {
       const prUrl = `https://github.com/${repository}/pull/${d.pr_number}`
-      row.getCell(6).value = { text: `PR #${d.pr_number}`, hyperlink: prUrl }
-      row.getCell(6).font = { color: { argb: 'FF005B82' }, underline: true }
+      row.getCell(7).value = { text: `PR #${d.pr_number}`, hyperlink: prUrl }
+      row.getCell(7).font = { color: { argb: 'FF005B82' }, underline: true }
     } else if (d.slack_link) {
-      row.getCell(6).value = { text: 'Slack', hyperlink: d.slack_link }
-      row.getCell(6).font = { color: { argb: 'FF005B82' }, underline: true }
+      row.getCell(7).value = { text: 'Slack', hyperlink: d.slack_link }
+      row.getCell(7).font = { color: { argb: 'FF005B82' }, underline: true }
     }
   })
 
-  sheet.autoFilter = { from: 'A1', to: 'K1' }
+  sheet.autoFilter = { from: 'A1', to: 'L1' }
 }
 
 function addManualApprovalsSheet(workbook: ExcelJS.Workbook, approvals: ManualApprovalEntry[], repository: string) {
   if (approvals.length === 0) return
   const sheet = workbook.addWorksheet('Manuelle godkjenninger')
   sheet.columns = [
-    { header: 'Deployment ID', width: 14 },
-    { header: 'Tidspunkt', width: 18 },
-    { header: 'Tittel', width: 30 },
-    { header: 'Commit', width: 12 },
-    { header: 'Deployer', width: 18 },
-    { header: 'Årsak', width: 30 },
-    { header: 'Registrert av', width: 18 },
-    { header: 'Godkjent av', width: 18 },
-    { header: 'Godkjent', width: 18 },
-    { header: 'Slack', width: 30 },
-    { header: 'Kommentar', width: 40 },
+    { width: 6 },
+    { width: 14 },
+    { width: 18 },
+    { width: 30 },
+    { width: 12 },
+    { width: 18 },
+    { width: 30 },
+    { width: 18 },
+    { width: 18 },
+    { width: 18 },
+    { width: 30 },
+    { width: 40 },
   ]
 
-  applyHeaderRow(sheet, sheet.getRow(1))
+  addIntroRow(sheet, MANUAL_APPROVALS_INTRO, 12)
 
-  for (const a of approvals) {
+  const headerRow = sheet.addRow([
+    '#',
+    'Deployment ID',
+    'Tidspunkt',
+    'Tittel',
+    'Commit',
+    'Deployer',
+    'Årsak',
+    'Registrert av',
+    'Godkjent av',
+    'Godkjent',
+    'Slack',
+    'Kommentar',
+  ])
+  applyHeaderRow(sheet, headerRow)
+
+  approvals.forEach((a, idx) => {
     const commitShort = a.commit_sha ? a.commit_sha.substring(0, 7) : 'N/A'
     const commitUrl = a.commit_sha ? `https://github.com/${repository}/commit/${a.commit_sha}` : undefined
 
     const row = sheet.addRow([
+      idx + 1,
       a.deployment_id,
       formatDateTime(a.date),
       a.title || '-',
@@ -289,44 +333,62 @@ function addManualApprovalsSheet(workbook: ExcelJS.Workbook, approvals: ManualAp
     applyDataRow(row)
 
     if (commitUrl) {
-      row.getCell(4).value = { text: commitShort, hyperlink: commitUrl }
-      row.getCell(4).font = { color: { argb: 'FF005B82' }, underline: true }
+      row.getCell(5).value = { text: commitShort, hyperlink: commitUrl }
+      row.getCell(5).font = { color: { argb: 'FF005B82' }, underline: true }
     }
     if (a.slack_link) {
-      row.getCell(10).value = { text: a.slack_link, hyperlink: a.slack_link }
-      row.getCell(10).font = { color: { argb: 'FF005B82' }, underline: true }
+      row.getCell(11).value = { text: a.slack_link, hyperlink: a.slack_link }
+      row.getCell(11).font = { color: { argb: 'FF005B82' }, underline: true }
     }
-  }
+  })
 
-  sheet.autoFilter = { from: 'A1', to: 'K1' }
+  sheet.autoFilter = { from: 'A2', to: 'L2' }
 }
 
 function addDeviationsSheet(workbook: ExcelJS.Workbook, deviations: DeviationEntry[], repository: string) {
   if (deviations.length === 0) return
   const sheet = workbook.addWorksheet('Avvik')
   sheet.columns = [
-    { header: 'Deployment ID', width: 14 },
-    { header: 'Tidspunkt', width: 18 },
-    { header: 'Commit', width: 12 },
-    { header: 'Beskrivelse', width: 40 },
-    { header: 'Type brudd', width: 20 },
-    { header: 'Intensjon', width: 18 },
-    { header: 'Alvorlighetsgrad', width: 16 },
-    { header: 'Oppfølgingsansvarlig', width: 20 },
-    { header: 'Registrert av', width: 18 },
-    { header: 'Status', width: 24 },
-    { header: 'Løsning', width: 40 },
+    { width: 6 },
+    { width: 14 },
+    { width: 18 },
+    { width: 12 },
+    { width: 40 },
+    { width: 20 },
+    { width: 18 },
+    { width: 16 },
+    { width: 20 },
+    { width: 18 },
+    { width: 24 },
+    { width: 40 },
   ]
 
-  applyHeaderRow(sheet, sheet.getRow(1))
+  addIntroRow(sheet, DEVIATIONS_INTRO, 12)
 
-  for (const d of deviations) {
+  const headerRow = sheet.addRow([
+    '#',
+    'Deployment ID',
+    'Tidspunkt',
+    'Commit',
+    'Beskrivelse',
+    'Type brudd',
+    'Intensjon',
+    'Alvorlighetsgrad',
+    'Oppfølgingsansvarlig',
+    'Registrert av',
+    'Status',
+    'Løsning',
+  ])
+  applyHeaderRow(sheet, headerRow)
+
+  deviations.forEach((d, idx) => {
     const commitShort = d.commit_sha ? d.commit_sha.substring(0, 7) : 'N/A'
     const commitUrl = d.commit_sha ? `https://github.com/${repository}/commit/${d.commit_sha}` : undefined
 
     const status = d.resolved_at ? `Løst ${formatDateTime(d.resolved_at)}` : 'Åpen'
 
     const row = sheet.addRow([
+      idx + 1,
       d.deployment_id,
       formatDateTime(d.date),
       commitShort,
@@ -344,12 +406,12 @@ function addDeviationsSheet(workbook: ExcelJS.Workbook, deviations: DeviationEnt
     applyDataRow(row)
 
     if (commitUrl) {
-      row.getCell(3).value = { text: commitShort, hyperlink: commitUrl }
-      row.getCell(3).font = { color: { argb: 'FF005B82' }, underline: true }
+      row.getCell(4).value = { text: commitShort, hyperlink: commitUrl }
+      row.getCell(4).font = { color: { argb: 'FF005B82' }, underline: true }
     }
-  }
+  })
 
-  sheet.autoFilter = { from: 'A1', to: 'K1' }
+  sheet.autoFilter = { from: 'A2', to: 'L2' }
 }
 
 function addUnverifiedCommitsSheet(
@@ -360,21 +422,38 @@ function addUnverifiedCommitsSheet(
   if (entries.length === 0) return
   const sheet = workbook.addWorksheet('Ikke-verifiserte commits')
   sheet.columns = [
-    { header: 'Deployment ID', width: 14 },
-    { header: 'Tidspunkt', width: 18 },
-    { header: 'Tittel', width: 30 },
-    { header: 'Deployer', width: 18 },
-    { header: 'Status', width: 30 },
-    { header: 'Commit SHA', width: 12 },
-    { header: 'Commit-melding', width: 50 },
-    { header: 'Forfatter', width: 16 },
-    { header: 'Årsak', width: 24 },
-    { header: 'PR', width: 10 },
+    { width: 6 },
+    { width: 14 },
+    { width: 18 },
+    { width: 30 },
+    { width: 18 },
+    { width: 30 },
+    { width: 12 },
+    { width: 50 },
+    { width: 16 },
+    { width: 24 },
+    { width: 10 },
   ]
 
-  applyHeaderRow(sheet, sheet.getRow(1))
+  addIntroRow(sheet, UNVERIFIED_COMMITS_INTRO, 11)
+  addWarningNoteRow(sheet, UNVERIFIED_COMMITS_NOTE, 11)
 
-  for (const entry of entries) {
+  const headerRow = sheet.addRow([
+    '#',
+    'Deployment ID',
+    'Tidspunkt',
+    'Tittel',
+    'Deployer',
+    'Status',
+    'Commit SHA',
+    'Commit-melding',
+    'Forfatter',
+    'Årsak',
+    'PR',
+  ])
+  applyHeaderRow(sheet, headerRow)
+
+  entries.forEach((entry, entryIdx) => {
     const isApproved = entry.four_eyes_status === 'manually_approved'
     const statusText = isApproved
       ? `✓ Godkjent av: ${entry.approved_by_display_name || entry.approved_by}${entry.approved_at ? ` (${formatDateTime(entry.approved_at)})` : ''}`
@@ -384,6 +463,7 @@ function addUnverifiedCommitsSheet(
       const commitShort = commit.sha.substring(0, 7)
 
       const row = sheet.addRow([
+        entryIdx + 1,
         entry.deployment_id,
         formatDateTime(entry.date),
         entry.title || '-',
@@ -397,57 +477,18 @@ function addUnverifiedCommitsSheet(
       ])
       applyDataRow(row)
 
-      row.getCell(6).value = { text: commitShort, hyperlink: commit.html_url }
-      row.getCell(6).font = { color: { argb: 'FF005B82' }, underline: true }
+      row.getCell(7).value = { text: commitShort, hyperlink: commit.html_url }
+      row.getCell(7).font = { color: { argb: 'FF005B82' }, underline: true }
 
       if (isApproved) {
-        row.getCell(5).font = { color: { argb: 'FF006A2E' }, bold: true }
+        row.getCell(6).font = { color: { argb: 'FF006A2E' }, bold: true }
       } else {
-        row.getCell(5).font = { color: { argb: 'FFBA3A26' }, bold: true }
+        row.getCell(6).font = { color: { argb: 'FFBA3A26' }, bold: true }
       }
     }
-  }
+  })
 
-  sheet.autoFilter = { from: 'A1', to: 'J1' }
-}
-
-function addContributorsSheet(
-  workbook: ExcelJS.Workbook,
-  contributors: AuditReportData['contributors'],
-  reviewers: AuditReportData['reviewers'],
-) {
-  const sheet = workbook.addWorksheet('Bidragsytere og reviewers')
-
-  const contribTitle = sheet.addRow(['Bidragsytere'])
-  contribTitle.font = { bold: true, size: 14 }
-  sheet.mergeCells(contribTitle.number, 1, contribTitle.number, 4)
-
-  const contribHeader = sheet.addRow(['GitHub-brukernavn', 'Navn', 'NAV-ident', 'Antall deployments'])
-  applyHeaderRow(sheet, contribHeader)
-  sheet.getColumn(1).width = 22
-  sheet.getColumn(2).width = 24
-  sheet.getColumn(3).width = 14
-  sheet.getColumn(4).width = 20
-
-  for (const c of contributors) {
-    const row = sheet.addRow([c.github_username, c.display_name || '-', c.nav_ident || '-', c.deployment_count])
-    applyDataRow(row)
-  }
-
-  sheet.addRow([])
-  sheet.addRow([])
-
-  const reviewTitle = sheet.addRow(['Reviewers'])
-  reviewTitle.font = { bold: true, size: 14 }
-  sheet.mergeCells(reviewTitle.number, 1, reviewTitle.number, 4)
-
-  const reviewHeader = sheet.addRow(['GitHub-brukernavn', 'Navn', 'Antall reviews', ''])
-  applyHeaderRow(sheet, reviewHeader)
-
-  for (const r of reviewers) {
-    const row = sheet.addRow([r.github_username, r.display_name || '-', r.review_count, ''])
-    applyDataRow(row)
-  }
+  sheet.autoFilter = { from: 'A3', to: 'K3' }
 }
 
 export async function generateAuditReportExcel(props: AuditReportExcelProps): Promise<Buffer> {
@@ -460,7 +501,6 @@ export async function generateAuditReportExcel(props: AuditReportExcelProps): Pr
   addManualApprovalsSheet(workbook, props.reportData.manual_approvals, props.repository)
   addDeviationsSheet(workbook, props.reportData.deviations, props.repository)
   addUnverifiedCommitsSheet(workbook, props.reportData.unverified_commit_deployments, props.repository)
-  addContributorsSheet(workbook, props.reportData.contributors, props.reportData.reviewers)
 
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
