@@ -31,6 +31,7 @@ const minimalReportData = {
   legacy_count: 0,
   deviations: [],
   unverified_commit_deployments: [],
+  show_unverified_commits_note: false,
 }
 
 async function seedReport(appId: number) {

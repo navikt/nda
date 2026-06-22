@@ -9,7 +9,7 @@ import type {
 import {
   DEVIATIONS_INTRO,
   MANUAL_APPROVALS_INTRO,
-  UNVERIFIED_COMMITS_INTRO,
+  UNVERIFIED_COMMITS_INTRO_PDF,
   UNVERIFIED_COMMITS_NOTE,
 } from '~/lib/audit-report-texts'
 import {
@@ -598,7 +598,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
             <Text style={styles.methodologyText}>Datagrunnlag hentet fra:</Text>
             <Text style={styles.methodologyText}>• Nais Console API (deployments)</Text>
             <Text style={styles.methodologyText}>• GitHub API (pull requests, reviews, commits)</Text>
-            <Text style={styles.methodologyText}>• Intern database (manuelle godkjenninger)</Text>
+            <Text style={styles.methodologyText}>• Intern database (godkjenninger i NDA)</Text>
             <Text style={[styles.methodologyText, { marginTop: 8 }]}>
               Alle data kan verifiseres mot originalkildene ved behov.
             </Text>
@@ -750,9 +750,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
       {reportData.manual_approvals.length > 0 && (
         <Page size="A4" style={styles.page}>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Manuelt godkjente deployments ({reportData.manual_approvals.length})
-            </Text>
+            <Text style={styles.sectionTitle}>Godkjenninger i NDA ({reportData.manual_approvals.length})</Text>
             <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>{MANUAL_APPROVALS_INTRO}</Text>
             {reportData.manual_approvals.map((approval: ManualApprovalEntry) => (
               <View key={approval.deployment_id} style={styles.manualBox} wrap={false}>
@@ -869,10 +867,12 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
             <Text style={styles.sectionTitle}>
               Ikke-godkjente commits ({reportData.unverified_commit_deployments.length} deployments)
             </Text>
-            <Text style={{ fontSize: 9, color: '#595959', marginBottom: 4 }}>{UNVERIFIED_COMMITS_INTRO}</Text>
-            <Text style={{ fontSize: 8, color: '#7a7a7a', fontStyle: 'italic', marginBottom: 10 }}>
-              {UNVERIFIED_COMMITS_NOTE}
-            </Text>
+            <Text style={{ fontSize: 9, color: '#595959', marginBottom: 4 }}>{UNVERIFIED_COMMITS_INTRO_PDF}</Text>
+            {reportData.show_unverified_commits_note && (
+              <Text style={{ fontSize: 8, color: '#7a7a7a', fontStyle: 'italic', marginBottom: 10 }}>
+                {UNVERIFIED_COMMITS_NOTE}
+              </Text>
+            )}
             {reportData.unverified_commit_deployments.map((entry: UnverifiedCommitDeploymentEntry) => {
               const isApproved = entry.four_eyes_status === 'manually_approved'
               return (
