@@ -9,7 +9,7 @@ import type {
 import {
   DEVIATIONS_INTRO,
   MANUAL_APPROVALS_INTRO,
-  UNVERIFIED_COMMITS_INTRO,
+  UNVERIFIED_COMMITS_INTRO_EXCEL,
   UNVERIFIED_COMMITS_NOTE,
 } from '~/lib/audit-report-texts'
 import {
@@ -278,7 +278,7 @@ function addDeploymentsSheet(workbook: ExcelJS.Workbook, deployments: AuditDeplo
 
 function addManualApprovalsSheet(workbook: ExcelJS.Workbook, approvals: ManualApprovalEntry[], repository: string) {
   if (approvals.length === 0) return
-  const sheet = workbook.addWorksheet('Manuelle godkjenninger')
+  const sheet = workbook.addWorksheet('Godkjenninger i NDA')
   sheet.columns = [
     { width: 6 },
     { width: 14 },
@@ -417,6 +417,7 @@ function addDeviationsSheet(workbook: ExcelJS.Workbook, deviations: DeviationEnt
 function addUnverifiedCommitsSheet(
   workbook: ExcelJS.Workbook,
   entries: UnverifiedCommitDeploymentEntry[],
+  showNote: boolean,
   _repository: string,
 ) {
   if (entries.length === 0) return
@@ -435,8 +436,10 @@ function addUnverifiedCommitsSheet(
     { width: 10 },
   ]
 
-  addIntroRow(sheet, UNVERIFIED_COMMITS_INTRO, 11)
-  addWarningNoteRow(sheet, UNVERIFIED_COMMITS_NOTE, 11)
+  addIntroRow(sheet, UNVERIFIED_COMMITS_INTRO_EXCEL, 11)
+  if (showNote) {
+    addWarningNoteRow(sheet, UNVERIFIED_COMMITS_NOTE, 11)
+  }
 
   const headerRow = sheet.addRow([
     '#',
@@ -488,7 +491,7 @@ function addUnverifiedCommitsSheet(
     }
   })
 
-  sheet.autoFilter = { from: 'A3', to: 'K3' }
+  sheet.autoFilter = { from: `A${showNote ? 3 : 2}`, to: `K${showNote ? 3 : 2}` }
 }
 
 export async function generateAuditReportExcel(props: AuditReportExcelProps): Promise<Buffer> {
@@ -500,7 +503,12 @@ export async function generateAuditReportExcel(props: AuditReportExcelProps): Pr
   addDeploymentsSheet(workbook, props.reportData.deployments, props.repository)
   addManualApprovalsSheet(workbook, props.reportData.manual_approvals, props.repository)
   addDeviationsSheet(workbook, props.reportData.deviations, props.repository)
-  addUnverifiedCommitsSheet(workbook, props.reportData.unverified_commit_deployments, props.repository)
+  addUnverifiedCommitsSheet(
+    workbook,
+    props.reportData.unverified_commit_deployments,
+    props.reportData.show_unverified_commits_note,
+    props.repository,
+  )
 
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)

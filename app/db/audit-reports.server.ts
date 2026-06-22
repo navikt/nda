@@ -69,6 +69,7 @@ export interface AuditReportData {
   baseline_count?: number
   deviations: DeviationEntry[]
   unverified_commit_deployments: UnverifiedCommitDeploymentEntry[]
+  show_unverified_commits_note: boolean
 }
 
 export interface DeviationEntry {
@@ -743,6 +744,9 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
       }
     })
 
+  const UNVERIFIED_COMMITS_CUTOFF = new Date('2026-01-31T00:00:00Z')
+  const showUnverifiedCommitsNote = deployments.some((d) => d.created_at < UNVERIFIED_COMMITS_CUTOFF)
+
   return {
     deployments: deploymentEntries,
     manual_approvals: manualApprovalEntries,
@@ -752,6 +756,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     baseline_count: baselineCount,
     deviations: deviationEntries,
     unverified_commit_deployments: unverifiedCommitDeployments,
+    show_unverified_commits_note: showUnverifiedCommitsNote,
   }
 }
 
