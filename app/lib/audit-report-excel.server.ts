@@ -120,23 +120,6 @@ function methodLabel(method: string): string {
   return 'Manuell'
 }
 
-function deploymentUrl(teamSlug: string, environmentName: string, appName: string, deploymentId: number): string {
-  return `https://nda.ansatt.nav.no/team/${teamSlug}/env/${environmentName}/app/${appName}/deployments/${deploymentId}`
-}
-
-function setDeploymentIdLink(
-  row: ExcelJS.Row,
-  cell: number,
-  deploymentId: number,
-  teamSlug: string,
-  environmentName: string,
-  appName: string,
-) {
-  const url = deploymentUrl(teamSlug, environmentName, appName, deploymentId)
-  row.getCell(cell).value = { text: String(deploymentId), hyperlink: url }
-  row.getCell(cell).font = { color: { argb: 'FF005B82' }, underline: true }
-}
-
 function addSammendragSheet(workbook: ExcelJS.Workbook, props: AuditReportExcelProps) {
   const {
     appName,
@@ -213,14 +196,7 @@ function addSammendragSheet(workbook: ExcelJS.Workbook, props: AuditReportExcelP
   }
 }
 
-function addDeploymentsSheet(
-  workbook: ExcelJS.Workbook,
-  deployments: AuditDeploymentEntry[],
-  repository: string,
-  teamSlug: string,
-  environmentName: string,
-  appName: string,
-) {
+function addDeploymentsSheet(workbook: ExcelJS.Workbook, deployments: AuditDeploymentEntry[], repository: string) {
   const sheet = workbook.addWorksheet('Deployments')
   sheet.columns = [
     { header: '#', width: 6 },
@@ -279,8 +255,6 @@ function addDeploymentsSheet(
     ])
     applyDataRow(row)
 
-    setDeploymentIdLink(row, 2, d.id, teamSlug, environmentName, appName)
-
     if (commitUrl) {
       row.getCell(5).value = { text: commitShort, hyperlink: commitUrl }
       row.getCell(5).font = { color: { argb: 'FF005B82' }, underline: true }
@@ -302,14 +276,7 @@ function addDeploymentsSheet(
   sheet.autoFilter = { from: 'A1', to: 'L1' }
 }
 
-function addManualApprovalsSheet(
-  workbook: ExcelJS.Workbook,
-  approvals: ManualApprovalEntry[],
-  repository: string,
-  teamSlug: string,
-  environmentName: string,
-  appName: string,
-) {
+function addManualApprovalsSheet(workbook: ExcelJS.Workbook, approvals: ManualApprovalEntry[], repository: string) {
   if (approvals.length === 0) return
   const sheet = workbook.addWorksheet('Godkjenninger i NDA')
   sheet.columns = [
@@ -365,8 +332,6 @@ function addManualApprovalsSheet(
     ])
     applyDataRow(row)
 
-    setDeploymentIdLink(row, 2, a.deployment_id, teamSlug, environmentName, appName)
-
     if (commitUrl) {
       row.getCell(5).value = { text: commitShort, hyperlink: commitUrl }
       row.getCell(5).font = { color: { argb: 'FF005B82' }, underline: true }
@@ -380,14 +345,7 @@ function addManualApprovalsSheet(
   sheet.autoFilter = { from: 'A2', to: 'L2' }
 }
 
-function addDeviationsSheet(
-  workbook: ExcelJS.Workbook,
-  deviations: DeviationEntry[],
-  repository: string,
-  teamSlug: string,
-  environmentName: string,
-  appName: string,
-) {
+function addDeviationsSheet(workbook: ExcelJS.Workbook, deviations: DeviationEntry[], repository: string) {
   if (deviations.length === 0) return
   const sheet = workbook.addWorksheet('Avvik')
   sheet.columns = [
@@ -447,8 +405,6 @@ function addDeviationsSheet(
     ])
     applyDataRow(row)
 
-    setDeploymentIdLink(row, 2, d.deployment_id, teamSlug, environmentName, appName)
-
     if (commitUrl) {
       row.getCell(4).value = { text: commitShort, hyperlink: commitUrl }
       row.getCell(4).font = { color: { argb: 'FF005B82' }, underline: true }
@@ -463,9 +419,6 @@ function addUnverifiedCommitsSheet(
   entries: UnverifiedCommitDeploymentEntry[],
   showNote: boolean,
   _repository: string,
-  teamSlug: string,
-  environmentName: string,
-  appName: string,
 ) {
   if (entries.length === 0) return
   const sheet = workbook.addWorksheet('Ikke-verifiserte commits')
@@ -527,8 +480,6 @@ function addUnverifiedCommitsSheet(
       ])
       applyDataRow(row)
 
-      setDeploymentIdLink(row, 2, entry.deployment_id, teamSlug, environmentName, appName)
-
       row.getCell(7).value = { text: commitShort, hyperlink: commit.html_url }
       row.getCell(7).font = { color: { argb: 'FF005B82' }, underline: true }
 
@@ -549,38 +500,14 @@ export async function generateAuditReportExcel(props: AuditReportExcelProps): Pr
   workbook.created = props.generatedAt
 
   addSammendragSheet(workbook, props)
-  addDeploymentsSheet(
-    workbook,
-    props.reportData.deployments,
-    props.repository,
-    props.teamSlug,
-    props.environmentName,
-    props.appName,
-  )
-  addManualApprovalsSheet(
-    workbook,
-    props.reportData.manual_approvals,
-    props.repository,
-    props.teamSlug,
-    props.environmentName,
-    props.appName,
-  )
-  addDeviationsSheet(
-    workbook,
-    props.reportData.deviations,
-    props.repository,
-    props.teamSlug,
-    props.environmentName,
-    props.appName,
-  )
+  addDeploymentsSheet(workbook, props.reportData.deployments, props.repository)
+  addManualApprovalsSheet(workbook, props.reportData.manual_approvals, props.repository)
+  addDeviationsSheet(workbook, props.reportData.deviations, props.repository)
   addUnverifiedCommitsSheet(
     workbook,
     props.reportData.unverified_commit_deployments,
     props.reportData.show_unverified_commits_note,
     props.repository,
-    props.teamSlug,
-    props.environmentName,
-    props.appName,
   )
 
   const buffer = await workbook.xlsx.writeBuffer()
