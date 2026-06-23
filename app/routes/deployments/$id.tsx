@@ -329,68 +329,71 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
       )}
 
       {/* Unverified commits section */}
-      {(() => {
-        const prCommitShas = new Set(deployment.github_pr_data?.commits?.map((c: any) => c.sha) || [])
-        const mergeCommitSha = deployment.github_pr_data?.merge_commit_sha
-        const filteredUnverifiedCommits =
-          deployment.unverified_commits?.filter(
-            (commit: any) => !prCommitShas.has(commit.sha) && commit.sha !== mergeCommitSha,
-          ) || []
+      {!isApprovedStatus((deployment.four_eyes_status ?? '') as FourEyesStatus) &&
+        (() => {
+          const prCommitShas = new Set(deployment.github_pr_data?.commits?.map((c: any) => c.sha) || [])
+          const mergeCommitSha = deployment.github_pr_data?.merge_commit_sha
+          const filteredUnverifiedCommits =
+            deployment.unverified_commits?.filter(
+              (commit: any) => !prCommitShas.has(commit.sha) && commit.sha !== mergeCommitSha,
+            ) || []
 
-        return (
-          filteredUnverifiedCommits.length > 0 && (
-            <Alert variant="error">
-              <Heading size="small" level="3" spacing>
-                Ikke-godkjente commits ({filteredUnverifiedCommits.length})
-              </Heading>
-              <BodyShort spacing>
-                Følgende commits mangler godkjenning etter fire-øyne-prinsippet.
-                {previousDeploymentForDiff?.commit_sha && deployment.commit_sha && (
-                  <>
-                    {' '}
-                    <ExternalLink
-                      href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
-                    >
-                      Se endringer på GitHub
-                    </ExternalLink>
-                  </>
-                )}
-              </BodyShort>
-              <ul style={{ margin: 0, paddingLeft: 'var(--ax-space-24)' }}>
-                {filteredUnverifiedCommits.map((commit: any) => (
-                  <li key={commit.sha} style={{ marginBottom: 'var(--ax-space-8)' }}>
-                    <ExternalLink href={commit.html_url} style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                      {commit.sha.substring(0, 7)}
-                    </ExternalLink>{' '}
-                    - {commit.message}
-                    <br />
-                    <Detail>
-                      av <UserName username={commit.author} userMappings={userMappings} link={false} /> •{' '}
-                      {commit.reason && commit.reason in UNVERIFIED_REASON_LABELS
-                        ? UNVERIFIED_REASON_LABELS[commit.reason as UnverifiedReason]
-                        : commit.pr_number
-                          ? `PR #${commit.pr_number} ikke godkjent`
-                          : 'Ingen PR (direkte push)'}
-                      {commit.pr_number && deployment.detected_github_owner && deployment.detected_github_repo_name && (
-                        <>
-                          {' '}
-                          (
-                          <ExternalLink
-                            href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/pull/${commit.pr_number}`}
-                          >
-                            #{commit.pr_number}
-                          </ExternalLink>
-                          )
-                        </>
-                      )}
-                    </Detail>
-                  </li>
-                ))}
-              </ul>
-            </Alert>
+          return (
+            filteredUnverifiedCommits.length > 0 && (
+              <Alert variant="error">
+                <Heading size="small" level="3" spacing>
+                  Ikke-godkjente commits ({filteredUnverifiedCommits.length})
+                </Heading>
+                <BodyShort spacing>
+                  Følgende commits mangler godkjenning etter fire-øyne-prinsippet.
+                  {previousDeploymentForDiff?.commit_sha && deployment.commit_sha && (
+                    <>
+                      {' '}
+                      <ExternalLink
+                        href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
+                      >
+                        Se endringer på GitHub
+                      </ExternalLink>
+                    </>
+                  )}
+                </BodyShort>
+                <ul style={{ margin: 0, paddingLeft: 'var(--ax-space-24)' }}>
+                  {filteredUnverifiedCommits.map((commit: any) => (
+                    <li key={commit.sha} style={{ marginBottom: 'var(--ax-space-8)' }}>
+                      <ExternalLink href={commit.html_url} style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                        {commit.sha.substring(0, 7)}
+                      </ExternalLink>{' '}
+                      - {commit.message}
+                      <br />
+                      <Detail>
+                        av <UserName username={commit.author} userMappings={userMappings} link={false} /> •{' '}
+                        {commit.reason && commit.reason in UNVERIFIED_REASON_LABELS
+                          ? UNVERIFIED_REASON_LABELS[commit.reason as UnverifiedReason]
+                          : commit.pr_number
+                            ? `PR #${commit.pr_number} ikke godkjent`
+                            : 'Ingen PR (direkte push)'}
+                        {commit.pr_number &&
+                          deployment.detected_github_owner &&
+                          deployment.detected_github_repo_name && (
+                            <>
+                              {' '}
+                              (
+                              <ExternalLink
+                                href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/pull/${commit.pr_number}`}
+                              >
+                                #{commit.pr_number}
+                              </ExternalLink>
+                              )
+                            </>
+                          )}
+                      </Detail>
+                    </li>
+                  ))}
+                </ul>
+              </Alert>
+            )
           )
-        )
-      })()}
+        })()}
       {/* Deployment Details Section */}
       <DeploymentDetailsGrid deployment={deployment} userMappings={userMappings} />
       {/* PR Approvers - shown prominently before the accordion */}
