@@ -85,6 +85,16 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       : undefined
   const isGoalSpecificFilter = goalObjectiveIdFilter !== undefined || goalKeyResultIdFilter !== undefined
 
+  if (
+    (goalParam.startsWith('obj:') && goalObjectiveIdFilter === undefined) ||
+    (goalParam.startsWith('kr:') && goalKeyResultIdFilter === undefined)
+  ) {
+    const cleanUrl = new URL(request.url)
+    cleanUrl.searchParams.delete('goal')
+    cleanUrl.searchParams.set('page', '1')
+    throw redirect(cleanUrl.pathname + cleanUrl.search)
+  }
+
   const currentUser = await getUserIdentity(request)
 
   let deployerUsernamesFilter: string[] | undefined = deployerUsernames
