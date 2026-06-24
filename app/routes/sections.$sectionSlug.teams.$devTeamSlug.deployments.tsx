@@ -2,7 +2,7 @@ import { BodyShort, Box, Heading, VStack } from '@navikt/ds-react'
 import { Link, redirect, useLoaderData, useSearchParams } from 'react-router'
 import { DeploymentFilters, DeploymentRow, PaginationControls } from '~/components/deployments'
 import { pool } from '~/db/connection.server'
-import { getLinkedGoalsForApps } from '~/db/deployment-goal-links.server'
+import { getFallbackGoalOption, getLinkedGoalsForApps } from '~/db/deployment-goal-links.server'
 import { type DeploymentFilters as DeploymentFiltersType, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
@@ -75,15 +75,35 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const parsedAppFilter = appFilter ? parseInt(appFilter, 10) : undefined
   const filteredAppIds = parsedAppFilter && teamAppIds.includes(parsedAppFilter) ? [parsedAppFilter] : teamAppIds
 
+  const goalObjectiveIdFilter =
+    goalObjectiveId !== undefined && Number.isInteger(goalObjectiveId) && goalObjectiveId >= 1
+      ? goalObjectiveId
+      : undefined
+  const goalKeyResultIdFilter =
+    goalKeyResultId !== undefined && Number.isInteger(goalKeyResultId) && goalKeyResultId >= 1
+      ? goalKeyResultId
+      : undefined
+  const isGoalSpecificFilter = goalObjectiveIdFilter !== undefined || goalKeyResultIdFilter !== undefined
+
+  if (
+    (goalParam.startsWith('obj:') && goalObjectiveIdFilter === undefined) ||
+    (goalParam.startsWith('kr:') && goalKeyResultIdFilter === undefined)
+  ) {
+    const cleanUrl = new URL(request.url)
+    cleanUrl.searchParams.delete('goal')
+    cleanUrl.searchParams.set('page', '1')
+    throw redirect(cleanUrl.pathname + cleanUrl.search)
+  }
+
   const currentUser = await getUserIdentity(request)
 
   let deployerUsernamesFilter: string[] | undefined = deployerUsernames
   let teamFilterEmptyReason: string | null = null
-  if (deployerUsernames.length === 0) {
+  if (deployerUsernames.length === 0 && !isGoalSpecificFilter) {
     teamFilterEmptyReason = 'no-team-members'
   }
 
-  if (deployer) {
+  if (deployer || isGoalSpecificFilter) {
     deployerUsernamesFilter = undefined
   }
 
@@ -91,15 +111,19 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const isNonMemberFilter = deployer === '__non_member__'
 
   const filters: DeploymentFiltersType = {
-    monitored_app_ids: filteredAppIds,
-    per_app_audit_start_year: true,
+    monitored_app_ids: isGoalSpecificFilter
+      ? parsedAppFilter && teamAppIds.includes(parsedAppFilter)
+        ? [parsedAppFilter]
+        : undefined
+      : filteredAppIds,
+    per_app_audit_start_year: isGoalSpecificFilter ? undefined : true,
     page,
     per_page: 20,
     four_eyes_status: status,
     method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
     goal_filter: goal && ['missing', 'linked'].includes(goal) ? goal : undefined,
-    goal_objective_id: goalObjectiveId && !Number.isNaN(goalObjectiveId) ? goalObjectiveId : undefined,
-    goal_key_result_id: goalKeyResultId && !Number.isNaN(goalKeyResultId) ? goalKeyResultId : undefined,
+    goal_objective_id: goalObjectiveIdFilter,
+    goal_key_result_id: goalKeyResultIdFilter,
     goal_dev_team_id: isNonMemberFilter && goal === 'linked' ? devTeam.id : undefined,
     deployer_username: isUnmappedFilter || isNonMemberFilter ? undefined : deployer,
     unmapped_deployers: isUnmappedFilter || undefined,
@@ -129,14 +153,46 @@ export async function loader({ params, request }: Route.LoaderArgs) {
           [errorDeploymentIds],
         )
       : Promise.resolve({ rows: [] as { deployment_id: number; result: any }[] }),
-    pool.query<{ deployer_username: string }>(
-      `SELECT DISTINCT deployer_username FROM deployments
-         WHERE monitored_app_id = ANY($1) AND deployer_username IS NOT NULL AND deployer_username != ''`,
-      [teamAppIds],
-    ),
+    isGoalSpecificFilter
+      ? pool.query<{ deployer_username: string }>(
+          `SELECT DISTINCT d.deployer_username
+           FROM deployment_goal_links dgl
+           JOIN deployments d ON d.id = dgl.deployment_id
+           LEFT JOIN board_key_results bkr ON bkr.id = dgl.key_result_id
+           WHERE dgl.is_active = true
+             AND (
+               ($1::int IS NOT NULL AND (dgl.objective_id = $1 OR bkr.objective_id = $1))
+               OR ($2::int IS NOT NULL AND dgl.key_result_id = $2)
+             )
+             AND d.deployer_username IS NOT NULL AND d.deployer_username != ''`,
+          [goalObjectiveIdFilter ?? null, goalKeyResultIdFilter ?? null],
+        )
+      : pool.query<{ deployer_username: string }>(
+          `SELECT DISTINCT deployer_username FROM deployments
+             WHERE monitored_app_id = ANY($1) AND deployer_username IS NOT NULL AND deployer_username != ''`,
+          [teamAppIds],
+        ),
     currentUser?.navIdent ? getActiveGithubAccountByNavIdent(currentUser.navIdent) : Promise.resolve(null),
     getLinkedGoalsForApps(teamAppIds),
   ])
+
+  const selectedInGoalOptions =
+    goalObjectiveIdFilter !== undefined
+      ? goalOptions.some((o) => o.type === 'objective' && o.id === goalObjectiveIdFilter)
+      : goalKeyResultIdFilter !== undefined
+        ? goalOptions.some((o) => o.type === 'key_result' && o.id === goalKeyResultIdFilter)
+        : true
+  let resolvedGoalOptions = goalOptions
+  if (isGoalSpecificFilter && !selectedInGoalOptions) {
+    const fallback = await getFallbackGoalOption(goalObjectiveIdFilter, goalKeyResultIdFilter)
+    if (fallback === null) {
+      const cleanUrl = new URL(request.url)
+      cleanUrl.searchParams.delete('goal')
+      cleanUrl.searchParams.set('page', '1')
+      throw redirect(cleanUrl.pathname + cleanUrl.search)
+    }
+    resolvedGoalOptions = [...goalOptions, fallback]
+  }
 
   const errorReasons: Record<number, string> = Object.fromEntries(
     errorReasonsResult.rows
@@ -177,7 +233,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const lowerMembers = new Set(deployerUsernames.map((u) => u.toLowerCase()))
   const hasNonMemberDeployers =
-    deployerUsernames.length > 0 && allDeployerUsernames.some((u) => !lowerMembers.has(u.toLowerCase()))
+    !isGoalSpecificFilter &&
+    deployerUsernames.length > 0 &&
+    allDeployerUsernames.some((u) => !lowerMembers.has(u.toLowerCase()))
 
   const appOptions = teamApps
     .map((a) => ({
@@ -200,7 +258,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     teamFilterEmptyReason,
     hasUnmappedDeployers,
     hasNonMemberDeployers,
-    goalOptions,
+    goalOptions: resolvedGoalOptions,
     appOptions,
   }
 }
