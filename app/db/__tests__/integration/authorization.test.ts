@@ -56,11 +56,11 @@ async function seedGithubAccount(navIdent: string, githubUsername: string, displ
 }
 
 function makeAdmin(navIdent = 'A123456'): UserIdentity {
-  return { navIdent, role: 'admin', entraGroups: [] }
+  return { navIdent, role: 'admin', isActualAdmin: true, adminSuppressed: false, entraGroups: [] }
 }
 
 function makeUser(navIdent = 'B654321'): UserIdentity {
-  return { navIdent, role: 'user', entraGroups: [] }
+  return { navIdent, role: 'user', isActualAdmin: false, adminSuppressed: true, entraGroups: [] }
 }
 
 describe('canAssignSectionRole', () => {
