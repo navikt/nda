@@ -1,4 +1,4 @@
-import { ChevronDownIcon, MenuHamburgerIcon, MoonIcon, PersonIcon, ShieldLockIcon, SunIcon } from '@navikt/aksel-icons'
+import { MenuHamburgerIcon, MoonIcon, PersonIcon, ShieldLockIcon, SunIcon } from '@navikt/aksel-icons'
 import {
   ActionMenu,
   Alert,
@@ -13,7 +13,6 @@ import {
   Page,
   Show,
   Spacer,
-  Tag,
   VStack,
 } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
@@ -146,21 +145,10 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
         {user ? (
           <ActionMenu>
             <ActionMenu.Trigger>
-              <InternalHeader.Button
-                style={{
-                  paddingRight: 'var(--ax-space-16)',
-                  paddingLeft: 'var(--ax-space-16)',
-                  gap: 'var(--ax-space-8)',
-                }}
-              >
-                <BodyShort size="small">{user.displayName}</BodyShort>
-                {user.isActualAdmin && !user.adminSuppressed && (
-                  <Tag size="xsmall" variant="warning">
-                    Admin
-                  </Tag>
-                )}
-                <ChevronDownIcon title="Brukermeny" />
-              </InternalHeader.Button>
+              <InternalHeader.UserButton
+                name={user.displayName}
+                description={user.isActualAdmin && !user.adminSuppressed ? 'Admin' : undefined}
+              />
             </ActionMenu.Trigger>
             <ActionMenu.Content align="end">
               <ActionMenu.Label>
