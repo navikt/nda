@@ -25,7 +25,6 @@ import {
 } from '~/db/boards.server'
 import { getBoardObjectiveProgress } from '~/db/dashboard-stats.server'
 import { getDevTeamBySlug } from '~/db/dev-teams.server'
-import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
 import { requireUser } from '~/lib/auth.server'
 import { formatBoardLabel } from '~/lib/board-periods'
@@ -48,11 +47,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const board = await getBoardWithObjectives(Number(params.boardId))
   if (!board || board.dev_team_id !== devTeam.id) throw new Response('Tavle ikke funnet', { status: 404 })
 
-  const [section, deployerUsernames] = await Promise.all([
+  const [section, { objectives: objectiveProgress }] = await Promise.all([
     getSectionBySlug(params.sectionSlug),
-    getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
+    getBoardObjectiveProgress(board.id),
   ])
-  const { objectives: objectiveProgress } = await getBoardObjectiveProgress(board.id, deployerUsernames)
 
   return {
     devTeam,

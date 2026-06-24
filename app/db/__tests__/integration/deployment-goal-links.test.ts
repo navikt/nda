@@ -1,6 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { removeDeploymentGoalLink } from '../../deployment-goal-links.server'
+import { getFallbackGoalOption, removeDeploymentGoalLink } from '../../deployment-goal-links.server'
 import { seedApp, seedDeployment, seedDevTeam, seedSection, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -154,5 +154,46 @@ describe('deployment-goal-links', () => {
 
     const { rows } = await pool.query('SELECT is_active FROM deployment_goal_links WHERE id = $1', [linkId])
     expect(rows[0].is_active).toBe(true)
+  })
+
+  describe('getFallbackGoalOption', () => {
+    it('returns objective metadata for a valid objective id', async () => {
+      const { objective } = await seedGoalLinkStack(pool)
+
+      const result = await getFallbackGoalOption(objective.id, undefined)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('objective')
+      expect(result?.id).toBe(objective.id)
+      expect(result?.title).toBe('Objective')
+      expect(result?.parent_objective_id).toBeNull()
+    })
+
+    it('returns key result metadata for a valid key result id', async () => {
+      const { objective, keyResult } = await seedGoalLinkStack(pool)
+
+      const result = await getFallbackGoalOption(undefined, keyResult.id)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('key_result')
+      expect(result?.id).toBe(keyResult.id)
+      expect(result?.title).toBe('KR')
+      expect(result?.parent_objective_id).toBe(objective.id)
+    })
+
+    it('returns null for an unknown objective id', async () => {
+      const result = await getFallbackGoalOption(999999, undefined)
+      expect(result).toBeNull()
+    })
+
+    it('returns null for an unknown key result id', async () => {
+      const result = await getFallbackGoalOption(undefined, 999999)
+      expect(result).toBeNull()
+    })
+
+    it('returns null when both arguments are undefined', async () => {
+      const result = await getFallbackGoalOption(undefined, undefined)
+      expect(result).toBeNull()
+    })
   })
 })

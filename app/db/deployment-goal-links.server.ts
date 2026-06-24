@@ -136,6 +136,40 @@ export async function getLinkedGoalsForApps(appIds: number[]): Promise<GoalFilte
   return result.rows
 }
 
+export async function getFallbackGoalOption(
+  objectiveId?: number,
+  keyResultId?: number,
+): Promise<GoalFilterOptionWithType | null> {
+  if (objectiveId !== undefined) {
+    const result = await pool.query<GoalFilterOptionWithType>(
+      `SELECT 'objective'::text AS type, bo.id, bo.title, NULL::int AS parent_objective_id,
+              dt.name AS dev_team_name, b.period_label
+       FROM board_objectives bo
+       LEFT JOIN boards b ON b.id = bo.board_id
+       LEFT JOIN dev_teams dt ON dt.id = b.dev_team_id
+       WHERE bo.id = $1
+       LIMIT 1`,
+      [objectiveId],
+    )
+    return result.rows[0] ?? null
+  }
+  if (keyResultId !== undefined) {
+    const result = await pool.query<GoalFilterOptionWithType>(
+      `SELECT 'key_result'::text AS type, bkr.id, bkr.title, bo.id AS parent_objective_id,
+              dt.name AS dev_team_name, b.period_label
+       FROM board_key_results bkr
+       JOIN board_objectives bo ON bo.id = bkr.objective_id
+       LEFT JOIN boards b ON b.id = bo.board_id
+       LEFT JOIN dev_teams dt ON dt.id = b.dev_team_id
+       WHERE bkr.id = $1
+       LIMIT 1`,
+      [keyResultId],
+    )
+    return result.rows[0] ?? null
+  }
+  return null
+}
+
 type SystemLinkMethod = Exclude<DeploymentGoalLink['link_method'], 'manual'>
 
 type AddDeploymentGoalLinkParams = {
