@@ -1,4 +1,4 @@
-import { ChevronDownIcon, MenuHamburgerIcon, MoonIcon, PersonIcon, SunIcon } from '@navikt/aksel-icons'
+import { ChevronDownIcon, MenuHamburgerIcon, MoonIcon, PersonIcon, ShieldLockIcon, SunIcon } from '@navikt/aksel-icons'
 import {
   ActionMenu,
   Alert,
@@ -13,10 +13,11 @@ import {
   Page,
   Show,
   Spacer,
+  Tag,
   VStack,
 } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
-import { isRouteErrorResponse, Link, Outlet, useLocation, useNavigate, useRouteError } from 'react-router'
+import { isRouteErrorResponse, Link, Outlet, useFetcher, useLocation, useNavigate, useRouteError } from 'react-router'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { SearchDialog } from '~/components/SearchDialog'
 import { getUserByIdentifier } from '~/db/user-github-lookups.server'
@@ -40,6 +41,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       email: userMapping?.nav_email || identity.email || null,
       githubUsername: userMapping?.github_username || null,
       role: identity.role,
+      isActualAdmin: identity.isActualAdmin,
+      adminSuppressed: identity.adminSuppressed,
       sections,
     },
   }
@@ -50,7 +53,15 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
+  const fetcher = useFetcher()
   const [_searchQuery, setSearchQuery] = useState('')
+
+  const toggleAdminMode = () => {
+    fetcher.submit(
+      { intent: 'toggleAdminMode', elevate: user.adminSuppressed ? 'true' : 'false' },
+      { method: 'POST', action: '/' },
+    )
+  }
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -143,6 +154,11 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
                 }}
               >
                 <BodyShort size="small">{user.displayName}</BodyShort>
+                {user.isActualAdmin && !user.adminSuppressed && (
+                  <Tag size="xsmall" variant="warning">
+                    Admin
+                  </Tag>
+                )}
                 <ChevronDownIcon title="Brukermeny" />
               </InternalHeader.Button>
             </ActionMenu.Trigger>
@@ -164,6 +180,19 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
                 Min profil
               </ActionMenu.Item>
               <ActionMenu.Divider />
+              {user.isActualAdmin && (
+                <>
+                  <ActionMenu.Group label="Admin-modus">
+                    <ActionMenu.Item
+                      onSelect={toggleAdminMode}
+                      icon={<ShieldLockIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
+                    >
+                      {user.adminSuppressed ? 'Aktiver admin-modus' : 'Deaktiver admin-modus'}
+                    </ActionMenu.Item>
+                  </ActionMenu.Group>
+                  <ActionMenu.Divider />
+                </>
+              )}
               {user.sections.length > 0 && (
                 <>
                   <ActionMenu.Group label="Seksjoner">

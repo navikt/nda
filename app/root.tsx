@@ -4,6 +4,7 @@ import {
   Links,
   Meta,
   Outlet,
+  redirect,
   Scripts,
   ScrollRestoration,
   useLoaderData,
@@ -13,6 +14,8 @@ import type { Route } from './+types/root'
 import '@navikt/ds-css'
 import { Page, Theme } from '@navikt/ds-react'
 import { ThemeProvider } from './hooks/useTheme'
+import { serializeAdminElevation } from './lib/admin-elevation.server'
+import { getUserIdentity } from './lib/auth.server'
 import { getTheme, setThemeCookie, type ThemeValue } from './lib/theme.server'
 import styles from './styles/common.module.css'
 
@@ -23,6 +26,22 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData()
+
+  if (formData.get('intent') === 'toggleAdminMode') {
+    const user = await getUserIdentity(request)
+    if (!user?.isActualAdmin) {
+      return data({ ok: false }, { status: 403 })
+    }
+    const elevate = formData.get('elevate') === 'true'
+    const headers = { 'Set-Cookie': await serializeAdminElevation(elevate) }
+    // When dropping elevation, redirect home: revalidating an admin-gated route
+    // the user can no longer access would otherwise throw 403.
+    if (!elevate) {
+      return redirect('/', { headers })
+    }
+    return data({ ok: true }, { headers })
+  }
+
   const theme = formData.get('theme') as ThemeValue
   if (theme !== 'light' && theme !== 'dark') {
     return data({ error: 'Invalid theme' }, { status: 400 })
