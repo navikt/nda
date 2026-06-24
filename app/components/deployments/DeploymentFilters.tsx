@@ -12,6 +12,8 @@ interface GoalOption {
   title: string
   dev_team_name: string | null
   period_label: string | null
+  type?: 'objective' | 'key_result'
+  parent_objective_id?: number | null
 }
 
 interface DeploymentFiltersProps {
@@ -113,21 +115,38 @@ export function DeploymentFilters({
               {goalOptions.length > 0 &&
                 (() => {
                   const groups = new Map<string, GoalOption[]>()
-                  for (const obj of goalOptions) {
-                    const groupKey = [obj.dev_team_name, obj.period_label].filter(Boolean).join(' – ') || 'Mål'
+                  for (const opt of goalOptions) {
+                    const groupKey = [opt.dev_team_name, opt.period_label].filter(Boolean).join(' – ') || 'Mål'
                     const existing = groups.get(groupKey) ?? []
-                    existing.push(obj)
+                    existing.push(opt)
                     groups.set(groupKey, existing)
                   }
-                  return Array.from(groups.entries()).map(([groupLabel, options]) => (
-                    <optgroup key={groupLabel} label={groupLabel}>
-                      {options.map((obj) => (
-                        <option key={obj.id} value={`obj:${obj.id}`}>
-                          {obj.title}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))
+                  return Array.from(groups.entries()).map(([groupLabel, options]) => {
+                    const objectives = options.filter((o) => !o.type || o.type === 'objective')
+                    const krByObjective = new Map<number, GoalOption[]>()
+                    for (const kr of options.filter((o) => o.type === 'key_result')) {
+                      if (kr.parent_objective_id != null) {
+                        const existing = krByObjective.get(kr.parent_objective_id) ?? []
+                        existing.push(kr)
+                        krByObjective.set(kr.parent_objective_id, existing)
+                      }
+                    }
+                    return (
+                      <optgroup key={groupLabel} label={groupLabel}>
+                        {objectives.flatMap((obj) => [
+                          <option key={`obj:${obj.id}`} value={`obj:${obj.id}`}>
+                            {obj.title}
+                          </option>,
+                          ...(krByObjective.get(obj.id) ?? []).map((kr) => (
+                            <option key={`kr:${kr.id}`} value={`kr:${kr.id}`}>
+                              {'↳ '}
+                              {kr.title}
+                            </option>
+                          )),
+                        ])}
+                      </optgroup>
+                    )
+                  })
                 })()}
             </Select>
 

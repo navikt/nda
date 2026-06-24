@@ -13,7 +13,7 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { useEffect, useState } from 'react'
-import { Form, useSubmit } from 'react-router'
+import { Form, Link, useSubmit } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
 import type { BoardKeyResultWithRefs, ExternalReference, ObjectiveWithKeyResults } from '~/db/boards.server'
 import type { BoardObjectiveProgress } from '~/db/dashboard-stats.server'
@@ -21,10 +21,12 @@ import type { BoardObjectiveProgress } from '~/db/dashboard-stats.server'
 export function ObjectiveCard({
   objective,
   progress,
+  deploymentsPath,
   actionResult,
 }: {
   objective: ObjectiveWithKeyResults
   progress?: BoardObjectiveProgress
+  deploymentsPath?: string
   actionResult?: {
     error?: string
     success?: boolean
@@ -100,7 +102,16 @@ export function ObjectiveCard({
             )}
             {progress && (
               <Tag variant={progress.total_linked_deployments > 0 ? 'info' : 'neutral'} size="xsmall">
-                {progress.total_linked_deployments} leveranser
+                {deploymentsPath ? (
+                  <Link
+                    to={`${deploymentsPath}?goal=obj:${objective.id}`}
+                    style={{ textDecoration: 'none', color: 'inherit' }}
+                  >
+                    {progress.total_linked_deployments} leveranser
+                  </Link>
+                ) : (
+                  `${progress.total_linked_deployments} leveranser`
+                )}
               </Tag>
             )}
           </HStack>
@@ -161,6 +172,7 @@ export function ObjectiveCard({
                 kr={kr}
                 objectiveIsActive={objective.is_active}
                 linkedDeployments={krProgressMap.get(kr.id) ?? 0}
+                deploymentsPath={deploymentsPath}
                 actionResult={actionResult}
               />
             ))}
@@ -223,11 +235,13 @@ function KeyResultRow({
   kr,
   objectiveIsActive,
   linkedDeployments,
+  deploymentsPath,
   actionResult,
 }: {
   kr: BoardKeyResultWithRefs
   objectiveIsActive: boolean
   linkedDeployments: number
+  deploymentsPath?: string
   actionResult?: {
     error?: string
     success?: boolean
@@ -302,7 +316,17 @@ function KeyResultRow({
             </Tag>
           )}
           <Tag variant={linkedDeployments > 0 ? 'info' : 'neutral'} size="xsmall">
-            {linkedDeployments} leveranser
+            {deploymentsPath ? (
+              <Link
+                to={`${deploymentsPath}?goal=kr:${kr.id}`}
+                aria-label={`${linkedDeployments} leveranser for ${kr.title}`}
+                style={{ textDecoration: 'none', color: 'inherit' }}
+              >
+                {linkedDeployments} leveranser
+              </Link>
+            ) : (
+              `${linkedDeployments} leveranser`
+            )}
           </Tag>
         </HStack>
         <HStack gap="space-8" align="center">

@@ -32,6 +32,7 @@ interface BoardDetailProps {
     objectives: ObjectiveWithKeyResults[]
   }
   objectiveProgress: BoardObjectiveProgress[]
+  deploymentsPath?: string
   actionResult?: {
     error?: string
     success?: boolean
@@ -41,7 +42,13 @@ interface BoardDetailProps {
   }
 }
 
-export function BoardDetailPage({ devTeam, board, objectiveProgress, actionResult }: BoardDetailProps) {
+export function BoardDetailPage({
+  devTeam,
+  board,
+  objectiveProgress,
+  deploymentsPath,
+  actionResult,
+}: BoardDetailProps) {
   const [showAddObjective, setShowAddObjective] = useState(false)
   const [editingDates, setEditingDates] = useState(false)
 
@@ -149,6 +156,7 @@ export function BoardDetailPage({ devTeam, board, objectiveProgress, actionResul
           key={objective.id}
           objective={objective}
           progress={progressByObjective.get(objective.id)}
+          deploymentsPath={deploymentsPath}
           actionResult={actionResult}
         />
       ))}

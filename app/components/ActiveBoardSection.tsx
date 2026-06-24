@@ -15,6 +15,7 @@ export interface ActiveBoardSectionProps {
   board: ActiveBoardData
   objectives: BoardObjectiveProgress[]
   teamBasePath: string
+  deploymentsPath?: string
   teamName?: string
   headingLevel?: '2' | '3' | '4'
 }
@@ -23,6 +24,7 @@ export function ActiveBoardSection({
   board,
   objectives,
   teamBasePath,
+  deploymentsPath,
   teamName,
   headingLevel = '3',
 }: ActiveBoardSectionProps) {
@@ -74,7 +76,16 @@ export function ActiveBoardSection({
                       )}
                     </HStack>
                     <Tag variant="neutral" size="xsmall">
-                      {obj.total_linked_deployments} deployments
+                      {deploymentsPath ? (
+                        <Link
+                          to={`${deploymentsPath}?goal=obj:${obj.objective_id}`}
+                          style={{ textDecoration: 'none', color: 'inherit' }}
+                        >
+                          {obj.total_linked_deployments} deployments
+                        </Link>
+                      ) : (
+                        `${obj.total_linked_deployments} deployments`
+                      )}
                     </Tag>
                   </HStack>
                   {obj.key_results.length > 0 && (
@@ -97,7 +108,17 @@ export function ActiveBoardSection({
                             size="xsmall"
                             data-color={kr.linked_deployments > 0 ? 'success' : 'neutral'}
                           >
-                            {kr.linked_deployments}
+                            {deploymentsPath ? (
+                              <Link
+                                to={`${deploymentsPath}?goal=kr:${kr.id}`}
+                                aria-label={`${kr.linked_deployments} leveranser for ${kr.title}`}
+                                style={{ textDecoration: 'none', color: 'inherit' }}
+                              >
+                                {kr.linked_deployments}
+                              </Link>
+                            ) : (
+                              kr.linked_deployments
+                            )}
                           </Tag>
                         </HStack>
                       ))}

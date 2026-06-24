@@ -192,6 +192,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           } satisfies ActiveBoardData,
           objectives: (await getBoardObjectiveProgress(board.id, undefined)).objectives,
           teamBasePath,
+          deploymentsPath: `${teamBasePath}/deployments`,
           teamName: team.name,
         }
       }),
@@ -454,6 +455,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                     board={bs.board}
                     objectives={bs.objectives}
                     teamBasePath={bs.teamBasePath}
+                    deploymentsPath={bs.deploymentsPath}
                     teamName={bs.teamName}
                     headingLevel="4"
                   />

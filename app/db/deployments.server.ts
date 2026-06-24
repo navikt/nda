@@ -217,6 +217,7 @@ export interface DeploymentFilters {
   method?: 'pr' | 'direct_push' | 'legacy'
   goal_filter?: 'missing' | 'linked'
   goal_objective_id?: number
+  goal_key_result_id?: number
   goal_dev_team_id?: number
   page?: number
   per_page?: number
@@ -344,7 +345,8 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     whereSql += ` AND d.four_eyes_status = 'legacy'`
   }
 
-  const needsGoalJoin = filters?.goal_filter != null || filters?.goal_objective_id != null
+  const needsGoalJoin =
+    filters?.goal_filter != null || filters?.goal_objective_id != null || filters?.goal_key_result_id != null
   let goalJoinSql = ''
   if (needsGoalJoin && filters?.goal_objective_id) {
     whereSql += ` AND EXISTS (
@@ -354,6 +356,14 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
         AND (dgl.objective_id = $${paramIndex} OR bkr_f.objective_id = $${paramIndex})
     )`
     params.push(filters.goal_objective_id)
+    paramIndex++
+  } else if (needsGoalJoin && filters?.goal_key_result_id) {
+    whereSql += ` AND EXISTS (
+      SELECT 1 FROM deployment_goal_links dgl
+      WHERE dgl.deployment_id = d.id AND dgl.is_active = true
+        AND dgl.key_result_id = $${paramIndex}
+    )`
+    params.push(filters.goal_key_result_id)
     paramIndex++
   } else if (needsGoalJoin && filters?.goal_dev_team_id) {
     goalJoinSql = `LEFT JOIN (
@@ -376,10 +386,12 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
       'LEFT JOIN (SELECT DISTINCT deployment_id FROM deployment_goal_links WHERE is_active = true AND (objective_id IS NOT NULL OR key_result_id IS NOT NULL)) dgl ON dgl.deployment_id = d.id'
   }
 
-  if (filters?.goal_filter === 'missing') {
-    whereSql += ' AND dgl.deployment_id IS NULL'
-  } else if (filters?.goal_filter === 'linked') {
-    whereSql += ' AND dgl.deployment_id IS NOT NULL'
+  if (!filters?.goal_objective_id && !filters?.goal_key_result_id) {
+    if (filters?.goal_filter === 'missing') {
+      whereSql += ' AND dgl.deployment_id IS NULL'
+    } else if (filters?.goal_filter === 'linked') {
+      whereSql += ' AND dgl.deployment_id IS NOT NULL'
+    }
   }
 
   const countSql = `

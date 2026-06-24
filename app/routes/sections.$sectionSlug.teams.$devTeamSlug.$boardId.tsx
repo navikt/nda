@@ -243,8 +243,15 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function BoardDetail() {
   const actionData = useActionData<typeof action>()
-  const { devTeam, board, objectiveProgress } = useLoaderData<typeof loader>()
+  const { devTeam, board, objectiveProgress, sectionSlug } = useLoaderData<typeof loader>()
+  const deploymentsPath = `/sections/${sectionSlug}/teams/${devTeam.slug}/deployments`
   return (
-    <BoardDetailPage devTeam={devTeam} board={board} objectiveProgress={objectiveProgress} actionResult={actionData} />
+    <BoardDetailPage
+      devTeam={devTeam}
+      board={board}
+      objectiveProgress={objectiveProgress}
+      deploymentsPath={deploymentsPath}
+      actionResult={actionData}
+    />
   )
 }
