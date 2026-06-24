@@ -284,6 +284,7 @@ export default function DevTeamPage() {
             board={activeBoard}
             objectives={activeBoardProgress?.objectives ?? []}
             teamBasePath={teamBasePath}
+            deploymentsPath={`${teamBasePath}/deployments`}
             headingLevel="2"
           />
         ) : (

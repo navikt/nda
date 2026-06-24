@@ -61,6 +61,11 @@ interface GoalFilterOption {
   period_label: string | null
 }
 
+export interface GoalFilterOptionWithType extends GoalFilterOption {
+  type: 'objective' | 'key_result'
+  parent_objective_id: number | null
+}
+
 export async function getLinkedObjectivesForApps(appIds: number[]): Promise<GoalFilterOption[]> {
   if (appIds.length === 0) return []
   const result = await pool.query<GoalFilterOption>(
@@ -80,6 +85,52 @@ export async function getLinkedObjectivesForApps(appIds: number[]): Promise<Goal
        AND dgl.is_active = true
        AND COALESCE(bo.id, bo_via_kr.id) IS NOT NULL
      ORDER BY dev_team_name, period_label, title`,
+    [appIds],
+  )
+  return result.rows
+}
+
+export async function getLinkedGoalsForApps(appIds: number[]): Promise<GoalFilterOptionWithType[]> {
+  if (appIds.length === 0) return []
+  const result = await pool.query<GoalFilterOptionWithType>(
+    `SELECT DISTINCT
+       'objective' AS type,
+       COALESCE(bo.id, bo_via_kr.id) AS id,
+       COALESCE(bo.title, bo_via_kr.title) AS title,
+       NULL::int AS parent_objective_id,
+       dt.name AS dev_team_name,
+       COALESCE(b.period_label, b_via_kr.period_label) AS period_label
+     FROM deployment_goal_links dgl
+     JOIN deployments d ON d.id = dgl.deployment_id
+     LEFT JOIN board_objectives bo ON bo.id = dgl.objective_id
+     LEFT JOIN board_key_results bkr ON bkr.id = dgl.key_result_id
+     LEFT JOIN board_objectives bo_via_kr ON bo_via_kr.id = bkr.objective_id
+     LEFT JOIN boards b ON b.id = bo.board_id
+     LEFT JOIN boards b_via_kr ON b_via_kr.id = bo_via_kr.board_id
+     LEFT JOIN dev_teams dt ON dt.id = COALESCE(b.dev_team_id, b_via_kr.dev_team_id)
+     WHERE d.monitored_app_id = ANY($1)
+       AND dgl.is_active = true
+       AND COALESCE(bo.id, bo_via_kr.id) IS NOT NULL
+
+     UNION ALL
+
+     SELECT DISTINCT
+       'key_result' AS type,
+       bkr2.id AS id,
+       bkr2.title AS title,
+       bo2.id AS parent_objective_id,
+       dt2.name AS dev_team_name,
+       b2.period_label AS period_label
+     FROM deployment_goal_links dgl2
+     JOIN deployments d2 ON d2.id = dgl2.deployment_id
+     JOIN board_key_results bkr2 ON bkr2.id = dgl2.key_result_id
+     JOIN board_objectives bo2 ON bo2.id = bkr2.objective_id
+     JOIN boards b2 ON b2.id = bo2.board_id
+     LEFT JOIN dev_teams dt2 ON dt2.id = b2.dev_team_id
+     WHERE d2.monitored_app_id = ANY($1)
+       AND dgl2.is_active = true
+
+     ORDER BY dev_team_name, period_label, type, title`,
     [appIds],
   )
   return result.rows

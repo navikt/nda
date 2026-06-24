@@ -2,7 +2,7 @@ import { BodyShort, Box, Heading, VStack } from '@navikt/ds-react'
 import { Link, redirect, useLoaderData, useSearchParams } from 'react-router'
 import { DeploymentFilters, DeploymentRow, PaginationControls } from '~/components/deployments'
 import { pool } from '~/db/connection.server'
-import { getLinkedObjectivesForApps } from '~/db/deployment-goal-links.server'
+import { getLinkedGoalsForApps } from '~/db/deployment-goal-links.server'
 import { type DeploymentFilters as DeploymentFiltersType, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
@@ -31,6 +31,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const goal: 'missing' | 'linked' | undefined =
     goalParam === 'missing' || goalParam === 'linked' ? goalParam : undefined
   const goalObjectiveId = goalParam.startsWith('obj:') ? parseInt(goalParam.slice(4), 10) : undefined
+  const goalKeyResultId = goalParam.startsWith('kr:') ? parseInt(goalParam.slice(3), 10) : undefined
   const deployer = url.searchParams.get('deployer') || undefined
   const sha = url.searchParams.get('sha') || undefined
   const period = (url.searchParams.get('period') || 'year-to-date') as TimePeriod
@@ -65,7 +66,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       errorReasons: {} as Record<number, string>,
       teamFilterEmptyReason: null as string | null,
       hasUnmappedDeployers: false,
-      goalOptions: [] as { id: number; title: string; dev_team_name: string | null; period_label: string | null }[],
+      goalOptions: [] as Awaited<ReturnType<typeof getLinkedGoalsForApps>>,
       appOptions: [] as { value: string; label: string }[],
     }
   }
@@ -98,6 +99,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
     goal_filter: goal && ['missing', 'linked'].includes(goal) ? goal : undefined,
     goal_objective_id: goalObjectiveId && !Number.isNaN(goalObjectiveId) ? goalObjectiveId : undefined,
+    goal_key_result_id: goalKeyResultId && !Number.isNaN(goalKeyResultId) ? goalKeyResultId : undefined,
     goal_dev_team_id: isNonMemberFilter && goal === 'linked' ? devTeam.id : undefined,
     deployer_username: isUnmappedFilter || isNonMemberFilter ? undefined : deployer,
     unmapped_deployers: isUnmappedFilter || undefined,
@@ -133,7 +135,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       [teamAppIds],
     ),
     currentUser?.navIdent ? getActiveGithubAccountByNavIdent(currentUser.navIdent) : Promise.resolve(null),
-    getLinkedObjectivesForApps(teamAppIds),
+    getLinkedGoalsForApps(teamAppIds),
   ])
 
   const errorReasons: Record<number, string> = Object.fromEntries(
