@@ -369,6 +369,44 @@ describe('getBoardObjectiveProgress', () => {
     expect(obj.key_results.find((kr) => kr.id === kr2[0].id)?.linked_deployments).toBe(0)
   })
 
+  it('counts a deployment linked both directly and via KR only once in total_linked_deployments', async () => {
+    const sectionId = await seedSection(pool, 'sec-bop-dedup')
+    const devTeamId = await seedDevTeam(pool, 'team-bop-dedup', 'DEDUP', sectionId)
+    const { rows: br } = await pool.query(
+      `INSERT INTO boards (dev_team_id, title, period_type, period_start, period_end, period_label)
+       VALUES ($1, 'B', 'tertiary', '2026-05-01', '2026-08-31', 'T2') RETURNING id`,
+      [devTeamId],
+    )
+    const boardId = br[0].id
+
+    const { rows: o1 } = await pool.query(
+      "INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, 'O1', 0) RETURNING id",
+      [boardId],
+    )
+    const { rows: kr1 } = await pool.query(
+      "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'KR1', 0) RETURNING id",
+      [o1[0].id],
+    )
+
+    const appId = await seedApp(pool, { teamSlug: 'team-bop-dedup', appName: 'app-dedup', environment: 'prod' })
+    const d1 = await seedDeploymentWithStatus(pool, appId, 'team-bop-dedup', new Date(), 'approved_pr', 'Z990001')
+
+    await pool.query(
+      "INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method) VALUES ($1, $2, 'manual')",
+      [d1, o1[0].id],
+    )
+    await pool.query(
+      "INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method) VALUES ($1, $2, 'manual')",
+      [d1, kr1[0].id],
+    )
+
+    const { objectives, totalDistinctDeployments } = await getBoardObjectiveProgress(boardId)
+    expect(objectives).toHaveLength(1)
+    const obj = objectives[0]
+    expect(obj.total_linked_deployments).toBe(1)
+    expect(totalDistinctDeployments).toBe(1)
+  })
+
   it('returns key results with zero deployments when deployerUsernames filter is active', async () => {
     const sectionId = await seedSection(pool, 'sec-bop-kr0-dep')
     const devTeamId = await seedDevTeam(pool, 'team-bop-kr0-dep', 'KR0D', sectionId)

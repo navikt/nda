@@ -391,20 +391,19 @@ export async function getBoardObjectiveProgress(
     baseParams,
   )
 
-  const objLinksResult = await pool.query(
-    `SELECT dgl.objective_id, COUNT(DISTINCT dgl.deployment_id) AS cnt
-     FROM deployment_goal_links dgl${deployerJoin}
-     WHERE dgl.objective_id = ANY($1::int[]) AND dgl.is_active = true${filterWhere}
-     GROUP BY dgl.objective_id`,
-    baseParams,
-  )
-
-  const krDistinctResult = await pool.query(
-    `SELECT bkr.objective_id, COUNT(DISTINCT dgl.deployment_id) AS cnt
-     FROM deployment_goal_links dgl
-     JOIN board_key_results bkr ON bkr.id = dgl.key_result_id AND bkr.is_active = true${deployerJoin}
-     WHERE bkr.objective_id = ANY($1::int[]) AND dgl.is_active = true${filterWhere}
-     GROUP BY bkr.objective_id`,
+  const combinedLinksResult = await pool.query(
+    `SELECT combined.objective_id, COUNT(DISTINCT combined.deployment_id)::int AS cnt
+     FROM (
+       SELECT dgl.objective_id, dgl.deployment_id
+       FROM deployment_goal_links dgl${deployerJoin}
+       WHERE dgl.objective_id = ANY($1::int[]) AND dgl.is_active = true${filterWhere}
+       UNION ALL
+       SELECT bkr.objective_id, dgl.deployment_id
+       FROM deployment_goal_links dgl
+       JOIN board_key_results bkr ON bkr.id = dgl.key_result_id AND bkr.is_active = true${deployerJoin}
+       WHERE bkr.objective_id = ANY($1::int[]) AND dgl.is_active = true${filterWhere}
+     ) combined
+     GROUP BY combined.objective_id`,
     baseParams,
   )
 
@@ -425,14 +424,9 @@ export async function getBoardObjectiveProgress(
     krsByObjective.set(kr.objective_id, list)
   }
 
-  const objLinksByObjective = new Map<number, number>()
-  for (const row of objLinksResult.rows) {
-    objLinksByObjective.set(row.objective_id as number, Number(row.cnt))
-  }
-
-  const krDistinctByObjective = new Map<number, number>()
-  for (const row of krDistinctResult.rows) {
-    krDistinctByObjective.set(row.objective_id as number, Number(row.cnt))
+  const combinedByObjective = new Map<number, number>()
+  for (const row of combinedLinksResult.rows) {
+    combinedByObjective.set(row.objective_id as number, Number(row.cnt))
   }
 
   const totalDistinctResult = await pool.query(
@@ -455,7 +449,7 @@ export async function getBoardObjectiveProgress(
       keywords: obj.keywords as string[],
       dependabot_target: obj.dependabot_target as boolean,
       key_results: krsByObjective.get(obj.id) ?? [],
-      total_linked_deployments: (objLinksByObjective.get(obj.id) ?? 0) + (krDistinctByObjective.get(obj.id) ?? 0),
+      total_linked_deployments: combinedByObjective.get(obj.id) ?? 0,
     })),
     totalDistinctDeployments,
   }
