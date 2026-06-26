@@ -46,7 +46,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 }
 
-export function meta({ data }: { data?: { app: { app_name: string } } }) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `Slack - ${data?.app?.app_name ?? 'App'} - NDA` }]
 }
 

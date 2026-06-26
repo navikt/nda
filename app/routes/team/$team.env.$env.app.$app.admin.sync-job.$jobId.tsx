@@ -4,7 +4,7 @@ import { getSyncJobById, getSyncJobLogs, SYNC_JOB_STATUS_LABELS, SYNC_JOB_TYPE_L
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.sync-job.$jobId'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: data?.job ? `Jobb #${data.job.id}` : 'Jobb' }]
 }
 

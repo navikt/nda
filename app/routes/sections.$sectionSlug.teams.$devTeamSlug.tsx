@@ -28,7 +28,7 @@ import { canAccessTeamAdmin } from '~/lib/authorization.server'
 import { groupAppCards } from '~/lib/group-app-cards'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `${data?.devTeam?.name ?? 'Utviklingsteam'}` }]
 }
 

@@ -9,7 +9,7 @@ import { requireUser } from '~/lib/auth.server'
 import { type BoardPeriodType, formatBoardLabel, getCurrentPeriod, getPeriodsForYear } from '~/lib/board-periods'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.dashboard'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `Dashboard – ${data?.devTeam?.name ?? 'Team'}` }]
 }
 

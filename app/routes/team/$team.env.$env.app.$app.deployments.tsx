@@ -20,7 +20,7 @@ import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { serializeUserLookups } from '~/lib/user-display'
 import type { Route } from './+types/$team.env.$env.app.$app.deployments'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: data?.app ? `Deployments - ${data.app.app_name}` : 'Deployments' }]
 }
 

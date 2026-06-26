@@ -30,7 +30,7 @@ import { getSectionBySlug, getSectionWithTeams, setSectionTeams, updateSection }
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/sections.$slug.dev-teams'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `Rediger – ${data?.section?.name ?? 'Seksjon'} – Admin` }]
 }
 

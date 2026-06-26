@@ -47,7 +47,7 @@ import { parseRepository } from '~/lib/sync/repo-parser'
 import { type ImplicitApprovalMode, isImplicitApprovalMode } from '~/lib/verification/types'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.admin'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `Admin – ${data?.devTeam?.name ?? 'Utviklingsteam'}` }]
 }
 

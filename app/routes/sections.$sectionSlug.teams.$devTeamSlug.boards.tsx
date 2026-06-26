@@ -8,7 +8,7 @@ import { requireUser } from '~/lib/auth.server'
 import { BOARD_PERIOD_TYPE_LABELS, formatBoardLabel } from '~/lib/board-periods'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.boards'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `Tidligere tavler – ${data?.devTeam?.name ?? 'Utviklingsteam'}` }]
 }
 
