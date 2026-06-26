@@ -31,6 +31,10 @@ updates:
         patterns:
           - 'storybook'
           - '@storybook/*'
+      testcontainers:
+        patterns:
+          - "@testcontainers/postgresql"
+          - 'testcontainers'
 
   - package-ecosystem: "docker"
     directory: "/"
