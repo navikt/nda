@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs'
 import type {
+  AdminResetEntry,
   AuditDeploymentEntry,
   AuditReportData,
   DeviationEntry,
@@ -540,6 +541,41 @@ function addUnverifiedCommitsSheet(
   sheet.autoFilter = { from: `A${showNote ? 3 : 2}`, to: `K${showNote ? 3 : 2}` }
 }
 
+function addAdminResetsSheet(
+  workbook: ExcelJS.Workbook,
+  entries: AdminResetEntry[],
+  teamSlug: string,
+  environmentName: string,
+  appName: string,
+) {
+  if (entries.length === 0) return
+  const sheet = workbook.addWorksheet('Tilbakestillinger')
+  sheet.columns = [{ width: 6 }, { width: 14 }, { width: 20 }, { width: 30 }, { width: 60 }]
+
+  addIntroRow(
+    sheet,
+    'Deployments der verifiseringsstatusen ble tilbakestilt av administrator for å muliggjøre re-verifisering.',
+    5,
+  )
+
+  const headerRow = sheet.addRow(['#', 'Deployment ID', 'Tidspunkt', 'Tilbakestilt av', 'Begrunnelse'])
+  applyHeaderRow(sheet, headerRow)
+
+  entries.forEach((entry, idx) => {
+    const row = sheet.addRow([
+      idx + 1,
+      entry.deployment_id,
+      formatDateTime(entry.reset_at),
+      entry.reset_by,
+      entry.reason,
+    ])
+    applyDataRow(row)
+    setDeploymentIdLink(row, 2, entry.deployment_id, teamSlug, environmentName, appName)
+  })
+
+  sheet.autoFilter = { from: 'A2', to: 'E2' }
+}
+
 export async function generateAuditReportExcel(props: AuditReportExcelProps): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'Deployment Audit System'
@@ -570,6 +606,7 @@ export async function generateAuditReportExcel(props: AuditReportExcelProps): Pr
     props.environmentName,
     props.appName,
   )
+  addAdminResetsSheet(workbook, props.reportData.admin_resets, props.teamSlug, props.environmentName, props.appName)
   addUnverifiedCommitsSheet(
     workbook,
     props.reportData.unverified_commit_deployments,

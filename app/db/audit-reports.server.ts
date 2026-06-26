@@ -60,6 +60,13 @@ interface AuditReport {
   superseded_by_report_id: number | null
 }
 
+export interface AdminResetEntry {
+  deployment_id: number
+  reset_at: string
+  reset_by: string
+  reason: string
+}
+
 export interface AuditReportData {
   deployments: AuditDeploymentEntry[]
   manual_approvals: ManualApprovalEntry[]
@@ -70,6 +77,7 @@ export interface AuditReportData {
   deviations: DeviationEntry[]
   unverified_commit_deployments: UnverifiedCommitDeploymentEntry[]
   show_unverified_commits_note: boolean
+  admin_resets: AdminResetEntry[]
 }
 
 export interface DeviationEntry {
@@ -294,6 +302,12 @@ export async function getAuditReportData(
     changed_by: string | null
     created_at: Date
   }>
+  admin_resets: Array<{
+    deployment_id: number
+    changed_by: string | null
+    created_at: Date
+    details: { reason?: string } | null
+  }>
   deviations: Awaited<ReturnType<typeof getDeviationsForPeriod>>
   reviewer_counts: Map<string, number>
   user_mappings: Map<string, { display_name: string | null; nav_ident: string | null; github_username: string }>
@@ -375,6 +389,13 @@ export async function getAuditReportData(
     created_at: Date
   }> = []
 
+  let admin_resets: Array<{
+    deployment_id: number
+    changed_by: string | null
+    created_at: Date
+    details: { reason?: string } | null
+  }> = []
+
   const reviewer_counts = new Map<string, number>()
 
   if (deploymentIds.length > 0) {
@@ -424,6 +445,23 @@ export async function getAuditReportData(
     }
   }
 
+  const adminResetsResult = await pool.query<{
+    deployment_id: number
+    changed_by: string | null
+    created_at: Date
+    details: { reason?: string } | null
+  }>(
+    `SELECT dsh.deployment_id, dsh.changed_by, dsh.created_at, dsh.details
+     FROM deployment_status_history dsh
+     JOIN deployments d ON d.id = dsh.deployment_id
+     WHERE d.monitored_app_id = $1
+       AND dsh.change_source = 'admin_reset'
+       AND dsh.created_at >= $2 AND dsh.created_at <= $3
+     ORDER BY dsh.created_at ASC`,
+    [monitoredAppId, startDate, endDate],
+  )
+  admin_resets = adminResetsResult.rows
+
   const identifiers = new Set<string>()
   for (const d of deployments) {
     if (d.deployer_username) identifiers.add(d.deployer_username)
@@ -442,6 +480,9 @@ export async function getAuditReportData(
   }
   for (const b of baseline_approvals) {
     if (b.changed_by) identifiers.add(b.changed_by)
+  }
+  for (const r of admin_resets) {
+    if (r.changed_by) identifiers.add(r.changed_by)
   }
   for (const username of reviewer_counts.keys()) {
     identifiers.add(username)
@@ -542,6 +583,7 @@ export async function getAuditReportData(
     manual_approvals,
     legacy_infos,
     baseline_approvals,
+    admin_resets,
     reviewer_counts,
     user_mappings: userLookups,
     canonical_map,
@@ -556,6 +598,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     manual_approvals,
     legacy_infos,
     baseline_approvals,
+    admin_resets: rawAdminResets,
     reviewer_counts,
     user_mappings: userLookups,
     canonical_map,
@@ -744,6 +787,13 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
       }
     })
 
+  const adminResetEntries: AdminResetEntry[] = rawAdminResets.map((r) => ({
+    deployment_id: r.deployment_id,
+    reset_at: r.created_at.toISOString(),
+    reset_by: r.changed_by ? getDisplayName(r.changed_by) || r.changed_by : 'ukjent',
+    reason: r.details?.reason ?? '',
+  }))
+
   const UNVERIFIED_COMMITS_CUTOFF = new Date('2026-01-31T00:00:00Z')
   const showUnverifiedCommitsNote = deployments.some((d) => d.created_at < UNVERIFIED_COMMITS_CUTOFF)
 
@@ -757,6 +807,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     deviations: deviationEntries,
     unverified_commit_deployments: unverifiedCommitDeployments,
     show_unverified_commits_note: showUnverifiedCommitsNote,
+    admin_resets: adminResetEntries,
   }
 }
 

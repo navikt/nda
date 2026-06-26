@@ -162,6 +162,7 @@ const baseReportData: AuditReportData = {
   deviations: [],
   unverified_commit_deployments: [],
   show_unverified_commits_note: false,
+  admin_resets: [],
 }
 
 const baseProps = {
@@ -232,6 +233,7 @@ export const TomPeriode: Story = {
       deviations: [],
       unverified_commit_deployments: [],
       show_unverified_commits_note: false,
+      admin_resets: [],
     },
   },
 }

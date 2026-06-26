@@ -147,6 +147,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         canLinkGoal: false,
         canNotify: false,
         canLookupLegacy: false,
+        canResetVerification: false,
       }
 
   let availableBoards: AvailableBoard[] = []

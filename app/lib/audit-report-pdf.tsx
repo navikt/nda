@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { Document, Font, Link, Page, renderToBuffer, StyleSheet, Text, View } from '@react-pdf/renderer'
 import type {
+  AdminResetEntry,
   AuditReportData,
   DeviationEntry,
   ManualApprovalEntry,
@@ -871,6 +872,31 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
                 {deviation.resolution_note && (
                   <Text style={styles.manualDetail}>Løsning: {deviation.resolution_note}</Text>
                 )}
+              </View>
+            ))}
+          </View>
+          <Text
+            style={styles.pageNumber}
+            render={({ pageNumber, totalPages }) => `Side ${pageNumber} av ${totalPages}`}
+          />
+        </Page>
+      )}
+      {reportData.admin_resets && reportData.admin_resets.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Tilbakestillinger av verifisering ({reportData.admin_resets.length})
+            </Text>
+            <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>
+              Disse deploymentene fikk verifiseringsstatusen tilbakestilt av en administrator, slik at re-verifisering
+              kunne kjøres på nytt.
+            </Text>
+            {reportData.admin_resets.map((entry: AdminResetEntry) => (
+              <View key={`${entry.deployment_id}-${entry.reset_at}`} style={styles.manualBox} wrap={false}>
+                <Text style={styles.manualTitle}>Deployment #{entry.deployment_id}</Text>
+                <Text style={styles.manualDetail}>Tilbakestilt: {formatDateTime(entry.reset_at)}</Text>
+                <Text style={styles.manualDetail}>Tilbakestilt av: {entry.reset_by}</Text>
+                <Text style={styles.manualDetail}>Begrunnelse: {entry.reason}</Text>
               </View>
             ))}
           </View>

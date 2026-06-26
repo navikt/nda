@@ -13,7 +13,7 @@ import { BaselineInfo } from '~/components/BaselineInfo'
 import { ExternalLink } from '~/components/ExternalLink'
 import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
-import { type FourEyesStatus, isApprovedStatus } from '~/lib/four-eyes-status'
+import { type FourEyesStatus, isApprovedStatus, isProtectedStatus } from '~/lib/four-eyes-status'
 import { getFourEyesStatus } from '~/lib/status-display'
 import { getUserDisplayName } from '~/lib/user-display'
 import { UNVERIFIED_REASON_LABELS, type UnverifiedReason } from '~/lib/verification/types'
@@ -27,6 +27,7 @@ import { LegacyLookupSection } from '~/routes/deployments/$id/LegacyLookupSectio
 import { LegacyPendingApproval } from '~/routes/deployments/$id/LegacyPendingApproval'
 import { ManualApprovalSection } from '~/routes/deployments/$id/ManualApprovalSection'
 import { PrDetailsAccordion } from '~/routes/deployments/$id/PrDetailsAccordion'
+import { ResetVerificationModal } from '~/routes/deployments/$id/ResetVerificationModal'
 import { StatusHistorySection } from '~/routes/deployments/$id/StatusHistorySection'
 import type { Route } from './+types/$id'
 
@@ -84,6 +85,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
     statusesRequiringApproval.includes(deployment.four_eyes_status ?? '') && !manualApproval
   const commentDialogRef = useRef<HTMLDialogElement>(null)
   const deviationDialogRef = useRef<HTMLDialogElement>(null)
+  const resetVerificationDialogRef = useRef<HTMLDialogElement>(null)
 
   const status = getFourEyesStatus(deployment)
 
@@ -115,6 +117,15 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                   size="xsmall"
                 >
                   🔑 Debug nøkkelord
+                </Button>
+              )}
+              {capabilities.canResetVerification && isProtectedStatus(deployment.four_eyes_status ?? '') && (
+                <Button
+                  variant="tertiary"
+                  size="xsmall"
+                  onClick={() => resetVerificationDialogRef.current?.showModal()}
+                >
+                  🔄 Tilbakestill verifisering
                 </Button>
               )}
             </HStack>
@@ -692,6 +703,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
       />
 
       <CommentModal modalRef={commentDialogRef} />
+      <ResetVerificationModal modalRef={resetVerificationDialogRef} />
     </VStack>
   )
 }

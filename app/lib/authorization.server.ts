@@ -180,6 +180,7 @@ export interface DeploymentCapabilities {
   canLinkGoal: boolean
   canNotify: boolean
   canLookupLegacy: boolean
+  canResetVerification: boolean
 }
 
 export async function resolveDeploymentCapabilities(
@@ -194,6 +195,7 @@ export async function resolveDeploymentCapabilities(
       canLinkGoal: true,
       canNotify: true,
       canLookupLegacy: true,
+      canResetVerification: true,
     }
   }
 
@@ -210,6 +212,7 @@ export async function resolveDeploymentCapabilities(
       canLinkGoal: false,
       canNotify: false,
       canLookupLegacy: false,
+      canResetVerification: false,
     }
   }
 
@@ -238,5 +241,6 @@ export async function resolveDeploymentCapabilities(
     canLinkGoal: hasAnyRole,
     canNotify: hasAnyRole,
     canLookupLegacy: hasAnyRole,
+    canResetVerification: false,
   }
 }

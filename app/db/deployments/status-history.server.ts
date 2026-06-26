@@ -1,6 +1,38 @@
 import { pool } from '../connection.server'
 import type { StatusTransition } from '../deployments.server'
 
+export async function resetVerificationStatus(
+  deploymentId: number,
+  adminNavIdent: string,
+  reason: string,
+  fromStatus: string,
+): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query(
+      `UPDATE deployments SET four_eyes_status = 'unknown'
+       WHERE id = $1 AND four_eyes_status = $2`,
+      [deploymentId, fromStatus],
+    )
+    if (result.rowCount === 0) {
+      throw new Error(`Status has changed since page load — expected '${fromStatus}', aborting reset`)
+    }
+    await client.query(
+      `INSERT INTO deployment_status_history
+         (deployment_id, from_status, to_status, changed_by, change_source, details)
+       VALUES ($1, $2, 'unknown', $3, 'admin_reset', $4)`,
+      [deploymentId, fromStatus, adminNavIdent, JSON.stringify({ reason })],
+    )
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
 export async function logStatusTransition(
   deploymentId: number,
   data: {
