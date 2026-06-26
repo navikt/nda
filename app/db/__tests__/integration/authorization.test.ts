@@ -794,6 +794,7 @@ describe('resolveDeploymentCapabilities', () => {
       canLinkGoal: true,
       canNotify: true,
       canLookupLegacy: true,
+      canResetVerification: true,
     })
   })
 
@@ -817,6 +818,7 @@ describe('resolveDeploymentCapabilities', () => {
       canLinkGoal: true,
       canNotify: true,
       canLookupLegacy: true,
+      canResetVerification: false,
     })
   })
 
@@ -840,6 +842,7 @@ describe('resolveDeploymentCapabilities', () => {
       canLinkGoal: true,
       canNotify: true,
       canLookupLegacy: true,
+      canResetVerification: false,
     })
   })
 
@@ -863,6 +866,7 @@ describe('resolveDeploymentCapabilities', () => {
       canLinkGoal: true,
       canNotify: true,
       canLookupLegacy: true,
+      canResetVerification: false,
     })
   })
 
@@ -879,6 +883,7 @@ describe('resolveDeploymentCapabilities', () => {
       canLinkGoal: false,
       canNotify: false,
       canLookupLegacy: false,
+      canResetVerification: false,
     })
   })
 
@@ -906,6 +911,7 @@ describe('resolveDeploymentCapabilities', () => {
       canLinkGoal: false,
       canNotify: false,
       canLookupLegacy: false,
+      canResetVerification: false,
     })
   })
 
@@ -929,6 +935,7 @@ describe('resolveDeploymentCapabilities', () => {
       canLinkGoal: false,
       canNotify: false,
       canLookupLegacy: false,
+      canResetVerification: false,
     })
   })
 
@@ -953,6 +960,7 @@ describe('resolveDeploymentCapabilities', () => {
       canLinkGoal: false,
       canNotify: false,
       canLookupLegacy: false,
+      canResetVerification: false,
     })
   })
 })

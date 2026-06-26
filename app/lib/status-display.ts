@@ -121,6 +121,7 @@ export function formatChangeSource(source: string): string {
     sync: 'Synkronisering',
     legacy: 'Legacy',
     baseline_approval: 'Baseline godkjent',
+    admin_reset: 'Admin: tilbakestilt verifisering',
     unknown: 'Ukjent',
   }
   return labels[source] || source

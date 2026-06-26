@@ -31,6 +31,7 @@ const minimalReportData = {
   deviations: [],
   unverified_commit_deployments: [],
   show_unverified_commits_note: false,
+  admin_resets: [],
 }
 
 describe('audit report superseding', () => {

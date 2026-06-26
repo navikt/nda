@@ -1,6 +1,7 @@
 import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { createComment, deleteComment, deleteLegacyInfo, getLegacyInfo } from '~/db/comments.server'
 import { addDeploymentGoalLink, removeDeploymentGoalLink } from '~/db/deployment-goal-links.server'
+import { resetVerificationStatus } from '~/db/deployments/status-history.server'
 import {
   getDeploymentById,
   recordBaselineApproval,
@@ -13,6 +14,8 @@ import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
+import { getFormString } from '~/lib/form-validators'
+import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { lookupLegacyByCommit, lookupLegacyByPR } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { notifyDeploymentIfNeeded, sendDeviationNotification } from '~/lib/slack/client.server'
@@ -32,6 +35,7 @@ const INTENT_CAPABILITY: Record<string, keyof DeploymentCapabilities> = {
   unlink_goal: 'canLinkGoal',
   send_slack_notification: 'canNotify',
   lookup_legacy_github: 'canLookupLegacy',
+  reset_verification: 'canResetVerification',
 }
 
 export async function action({ request, params }: { request: Request; params: Record<string, string | undefined> }) {
@@ -611,6 +615,27 @@ export async function action({ request, params }: { request: Request; params: Re
     } catch (error) {
       logger.error('Error removing goal link:', error)
       return { error: 'Kunne ikke fjerne kobling' }
+    }
+  }
+
+  if (intent === 'reset_verification') {
+    const reason = getFormString(formData, 'reason')
+    if (!reason) {
+      return { error: 'Begrunnelse er påkrevd for å tilbakestille verifisering' }
+    }
+    const currentStatus = deployment.four_eyes_status
+    if (!currentStatus) {
+      return { error: 'Deployment har ingen status å tilbakestille' }
+    }
+    if (!isProtectedStatus(currentStatus)) {
+      return { error: 'Kun deployments med beskyttet status kan tilbakestilles' }
+    }
+    try {
+      await resetVerificationStatus(deploymentId, identity.navIdent, reason, currentStatus)
+      return { success: 'Verifisering tilbakestilt — deploymenten kan nå re-verifiseres' }
+    } catch (error) {
+      logger.error('Error resetting verification status', error)
+      return { error: 'Kunne ikke tilbakestille verifisering' }
     }
   }
 

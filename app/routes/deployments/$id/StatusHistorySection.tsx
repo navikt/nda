@@ -108,6 +108,11 @@ export function StatusHistorySection({
                 })}
               </Detail>
             </HStack>
+            {transition.change_source === 'admin_reset' && transition.details?.reason && (
+              <BodyShort size="small" textColor="subtle" style={{ marginTop: 'var(--ax-space-4)' }}>
+                Begrunnelse: {String(transition.details.reason)}
+              </BodyShort>
+            )}
           </Box>
         ))}
       </VStack>
