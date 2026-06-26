@@ -184,7 +184,8 @@ For hver commit mellom forrige og nåværende deployment:
 2. **Andre merge-commits** (f.eks. `Merge branch unapproved-feature`) verifiseres som vanlige commits — de kan inneholde kodeendringer fra konfliktløsning
 3. **Commit i deployed PR**: Hvis commiten tilhører PR-en som ble deployet, sjekkes den PR-ens godkjenningsstatus
 4. **Commit med egen PR**: Hvis commiten har en tilknyttet PR (f.eks. en squash-merge fra en annen branch), sjekkes den PR-ens godkjenningsstatus
-5. **Commit uten PR**: Commiten er pushet direkte til main uten PR — dette er en **direkte push** og kan ikke verifiseres automatisk
+5. **Commit dekket av merge-commit-PR**: GitHub's commit→PR API returnerer ikke alltid alle PR-er for en gitt SHA — typisk skjer dette når en commit var på en testbranch (f.eks. sandbox) og ble merget til main via en annen PR. Hvis commiten inngår i commit-listen til en PR-merge-commit som finnes i samme deployment-rekke, verifiseres den via den PR-ens godkjenningsstatus.
+6. **Commit uten PR**: Commiten er pushet direkte til main uten PR — dette er en **direkte push** og kan ikke verifiseres automatisk
 
 #### Steg 4: Alle commits verifisert?
 
