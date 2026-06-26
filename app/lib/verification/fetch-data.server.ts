@@ -22,6 +22,7 @@ import {
   isCommitOnBranch,
 } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
+import { buildBranchMismatch } from './branch-mismatch'
 import type { RepositoryStatus } from './types'
 import {
   type CompareData,
@@ -77,16 +78,6 @@ export async function fetchVerificationData(
   const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, options)
   const deployedPr = deployedPrResult.deployedPr
 
-  const mismatchedSet = new Map<string, Set<number>>()
-  if (deployedPr === null) {
-    for (let i = 0; i < deployedPrResult.mismatchedBaseBranches.length; i++) {
-      const branch = deployedPrResult.mismatchedBaseBranches[i]
-      const prNumber = deployedPrResult.mismatchedPrNumbers[i]
-      if (!mismatchedSet.has(branch)) mismatchedSet.set(branch, new Set())
-      mismatchedSet.get(branch)?.add(prNumber)
-    }
-  }
-
   let commitsBetween: VerificationInput['commitsBetween'] = []
   let compareSummary: CompareSummary | null = null
   let compareFailed = false
@@ -109,31 +100,13 @@ export async function fetchVerificationData(
   }
   const noDiffAlreadyConfirmed = compareSummary?.noDiffDetected === true
 
-  for (const commit of commitsBetween) {
-    if (commit.pr) continue
-    if (commit.mismatchedBaseBranches) {
-      for (let i = 0; i < commit.mismatchedBaseBranches.length; i++) {
-        const branch = commit.mismatchedBaseBranches[i]
-        const prNumber = commit.mismatchedPrNumbers?.[i]
-        if (prNumber == null) continue
-        if (!mismatchedSet.has(branch)) mismatchedSet.set(branch, new Set())
-        mismatchedSet.get(branch)?.add(prNumber)
-      }
-    }
-  }
-
-  let branchMismatch: VerificationInput['branchMismatch']
-  if (mismatchedSet.size > 0) {
-    const detectedBranches = Array.from(mismatchedSet.keys())
-    const prNumbers = Array.from(new Set(Array.from(mismatchedSet.values()).flatMap((s) => Array.from(s)))).sort(
-      (a, b) => a - b,
-    )
-    branchMismatch = {
-      expectedBranch: baseBranch,
-      detectedBranches,
-      prNumbers,
-    }
-  }
+  const branchMismatch = buildBranchMismatch(
+    deployedPr,
+    deployedPrResult.mismatchedBaseBranches,
+    deployedPrResult.mismatchedPrNumbers,
+    commitsBetween,
+    baseBranch,
+  )
 
   let nearbyApprovedDeployWithSameCommit: VerificationInput['nearbyApprovedDeployWithSameCommit']
   if (
