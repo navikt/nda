@@ -643,7 +643,11 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
             <CheckmarkIcon aria-hidden /> Manuelt godkjent
           </Heading>
           <BodyShort>
-            Godkjent av <strong>{manualApproval.approved_by}</strong> den{' '}
+            Godkjent av{' '}
+            <strong>
+              <UserName username={manualApproval.approved_by} userMappings={userMappings} />
+            </strong>{' '}
+            den{' '}
             {manualApproval.approved_at
               ? new Date(manualApproval.approved_at).toLocaleDateString('no-NO', {
                   year: 'numeric',
