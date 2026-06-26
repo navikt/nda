@@ -1,4 +1,5 @@
 import { createRequestHandler } from '@react-router/express'
+import { RouterContextProvider } from 'react-router'
 import { trace } from '@opentelemetry/api'
 import compression from 'compression'
 import express from 'express'
@@ -6,6 +7,7 @@ import path from 'node:path'
 import url from 'node:url'
 import winston from 'winston'
 import { createAuthMiddleware } from './auth-middleware.js'
+import { cspNonceContext } from './app/lib/app-context.js'
 import { createSecurityHeadersMiddleware } from './app/lib/security-headers.js'
 
 const isProd = process.env.NODE_ENV === 'production'
@@ -79,7 +81,9 @@ app.all(
       if (!cspNonce) {
         throw new Error('cspNonce missing on res.locals — security-headers middleware not registered?')
       }
-      return { cspNonce }
+      const ctx = new RouterContextProvider()
+      ctx.set(cspNonceContext, cspNonce)
+      return ctx
     },
   }),
 )

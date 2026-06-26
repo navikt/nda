@@ -27,7 +27,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
 }
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   const deployment = data?.deployment
   return [{ title: deployment ? `Deployment #${deployment.id} - NDA` : 'Deployment' }]
 }

@@ -49,6 +49,7 @@ export interface Deployment {
 }
 
 export interface GitHubPRData {
+  [key: string]: unknown
   title: string
   body: string | null
   labels: string[]

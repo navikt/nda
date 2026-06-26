@@ -15,13 +15,14 @@ import '@navikt/ds-css'
 import { Page, Theme } from '@navikt/ds-react'
 import { ThemeProvider } from './hooks/useTheme'
 import { serializeAdminElevation } from './lib/admin-elevation.server'
+import { cspNonceContext } from './lib/app-context'
 import { getUserIdentity } from './lib/auth.server'
 import { getTheme, setThemeCookie, type ThemeValue } from './lib/theme.server'
 import styles from './styles/common.module.css'
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const theme = await getTheme(request)
-  return { theme, cspNonce: context.cspNonce }
+  return { theme, cspNonce: context.get(cspNonceContext) }
 }
 
 export async function action({ request }: Route.ActionArgs) {

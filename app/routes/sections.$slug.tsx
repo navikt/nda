@@ -26,7 +26,7 @@ import { requireUser } from '~/lib/auth.server'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/sections.$slug'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `${data?.section?.name ?? 'Seksjon'} – Oversikt` }]
 }
 

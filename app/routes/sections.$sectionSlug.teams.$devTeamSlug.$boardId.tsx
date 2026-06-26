@@ -31,7 +31,7 @@ import { formatBoardLabel } from '~/lib/board-periods'
 import { isSafeHttpUrl, parseId } from '~/lib/route-helpers'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.$boardId'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   const label =
     data?.devTeam && data?.board
       ? formatBoardLabel({ teamName: data.devTeam.name, periodLabel: data.board.period_label })

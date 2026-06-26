@@ -28,7 +28,7 @@ import type { Route } from './+types/$team.env.$env.app.$app.admin'
 
 export { action } from './$team.env.$env.app.$app.admin.actions.server'
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: data?.app ? `Admin - ${data.app.app_name}` : 'Admin' }]
 }
 

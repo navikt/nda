@@ -109,7 +109,7 @@ const dynamicBreadcrumbs: Array<{
     pattern: /^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)\/deployments\/(\d+)$/,
     getLabel: (matches) => {
       const match = matches.find((m) => m.pathname.match(/^\/team\/[^/]+\/env\/[^/]+\/app\/[^/]+\/deployments\/\d+$/))
-      const data = match?.data as { deployment?: { commit_sha?: string } } | undefined
+      const data = match?.loaderData as { deployment?: { commit_sha?: string } } | undefined
       const sha = data?.deployment?.commit_sha
       return sha ? sha.substring(0, 7) : 'Deployment'
     },
@@ -135,8 +135,8 @@ const dynamicBreadcrumbs: Array<{
   {
     pattern: /^\/sections\/([^/]+)$/,
     getLabel: (matches) => {
-      const match = matches.find((m) => (m.data as Record<string, unknown>)?.section)
-      const section = (match?.data as Record<string, { name?: string }>)?.section
+      const match = matches.find((m) => (m.loaderData as Record<string, unknown>)?.section)
+      const section = (match?.loaderData as Record<string, { name?: string }>)?.section
       return section?.name || 'Seksjon'
     },
     parent: '/sections',
@@ -149,8 +149,8 @@ const dynamicBreadcrumbs: Array<{
   {
     pattern: /^\/sections\/([^/]+)\/teams\/([^/]+)$/,
     getLabel: (matches) => {
-      const match = matches.find((m) => (m.data as Record<string, unknown>)?.devTeam)
-      const devTeam = (match?.data as Record<string, { name?: string }>)?.devTeam
+      const match = matches.find((m) => (m.loaderData as Record<string, unknown>)?.devTeam)
+      const devTeam = (match?.loaderData as Record<string, { name?: string }>)?.devTeam
       return devTeam?.name || 'Team'
     },
     parent: '/sections/:slug',
@@ -158,8 +158,11 @@ const dynamicBreadcrumbs: Array<{
   {
     pattern: /^\/sections\/([^/]+)\/teams\/([^/]+)\/(\d+)$/,
     getLabel: (matches) => {
-      const match = matches.find((m) => (m.data as Record<string, unknown>)?.board)
-      const data = match?.data as Record<string, { name?: string; period_label?: string; title?: string } | undefined>
+      const match = matches.find((m) => (m.loaderData as Record<string, unknown>)?.board)
+      const data = match?.loaderData as Record<
+        string,
+        { name?: string; period_label?: string; title?: string } | undefined
+      >
       const board = data?.board
       const devTeam = data?.devTeam
       if (board?.period_label && devTeam?.name) {
@@ -240,11 +243,12 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
     const sectionPath = `/sections/${sectionSlug}`
 
     const sectionData = matches.find(
-      (m) => (m.data as Record<string, unknown>)?.section || (m.data as Record<string, unknown>)?.sectionName,
+      (m) =>
+        (m.loaderData as Record<string, unknown>)?.section || (m.loaderData as Record<string, unknown>)?.sectionName,
     )
     const sectionName =
-      (sectionData?.data as Record<string, { name?: string }>)?.section?.name ||
-      (sectionData?.data as Record<string, string>)?.sectionName ||
+      (sectionData?.loaderData as Record<string, { name?: string }>)?.section?.name ||
+      (sectionData?.loaderData as Record<string, string>)?.sectionName ||
       sectionSlug
 
     crumbs.push({ path: '/sections', label: 'Seksjoner' })
@@ -255,8 +259,8 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
       if (teamMatch) {
         const teamSlug = teamMatch[1]
         const teamPath = `/sections/${sectionSlug}/teams/${teamSlug}`
-        const teamData = matches.find((m) => (m.data as Record<string, unknown>)?.devTeam)
-        const teamName = (teamData?.data as Record<string, { name?: string }>)?.devTeam?.name || teamSlug
+        const teamData = matches.find((m) => (m.loaderData as Record<string, unknown>)?.devTeam)
+        const teamName = (teamData?.loaderData as Record<string, { name?: string }>)?.devTeam?.name || teamSlug
         crumbs.push({ path: teamPath, label: teamName })
       }
     }

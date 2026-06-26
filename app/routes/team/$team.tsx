@@ -46,7 +46,7 @@ export async function loader({ params: { team } }: Route.LoaderArgs) {
   }
 }
 
-export function meta({ data }: Route.MetaArgs) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `Team ${data?.team ?? 'Team'} - NDA` }]
 }
 

@@ -30,7 +30,7 @@ import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { formatDisplayNameNatural } from '~/lib/user-display'
 import type { Route } from './+types/$username'
 
-export function meta({ data }: { data: { username: string } }) {
+export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `${data?.username || 'Bruker'} - NDA` }]
 }
 
