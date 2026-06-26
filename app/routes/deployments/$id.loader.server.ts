@@ -211,6 +211,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
   for (const link of goalLinks) addId(link.linked_by)
   for (const transition of statusHistory) addId(transition.changed_by)
+  addId(manualApproval?.approved_by)
 
   const userMappings = await getUsersByIdentifiers([...identifierSet])
 
