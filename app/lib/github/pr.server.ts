@@ -3,6 +3,8 @@ import { isDependabotUser } from '~/lib/dependabot'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
 
+const ANNOTATION_CONCURRENCY_LIMIT = 5
+
 const prCommitsCache = new Map<string, string[]>()
 
 function _clearPrCommitsCache(): void {
@@ -709,20 +711,15 @@ export async function getDetailedPullRequestInfo(
   const client = getGitHubClient()
 
   try {
-    const prResponse = await client.pulls.get({
-      owner,
-      repo,
-      pull_number,
-    })
+    const [prResponse, allReviews, allCommitsData, allIssueComments, allReviewComments] = await Promise.all([
+      client.pulls.get({ owner, repo, pull_number }),
+      client.paginate(client.pulls.listReviews, { owner, repo, pull_number, per_page: 100 }),
+      client.paginate(client.pulls.listCommits, { owner, repo, pull_number, per_page: 100 }),
+      client.paginate(client.issues.listComments, { owner, repo, issue_number: pull_number, per_page: 100 }),
+      client.paginate(client.pulls.listReviewComments, { owner, repo, pull_number, per_page: 100 }),
+    ])
 
     const pr = prResponse.data
-
-    const allReviews = await client.paginate(client.pulls.listReviews, {
-      owner,
-      repo,
-      pull_number,
-      per_page: 100,
-    })
 
     const reviewsByUser = new Map<
       string,
@@ -821,31 +818,47 @@ export async function getDetailedPullRequestInfo(
           (check) => check.conclusion === 'success' || check.conclusion === 'skipped',
         )
 
-        for (const check of checksResponse.data.check_runs) {
-          let annotations: (typeof checks)[number]['annotations'] = null
-          if (check.output?.annotations_count && check.output.annotations_count > 0) {
-            try {
-              const annotationsResponse = await client.checks.listAnnotations({
-                owner,
-                repo,
-                check_run_id: check.id,
-              })
-              annotations = annotationsResponse.data.map((a) => ({
-                path: a.path ?? null,
-                start_line: a.start_line,
-                end_line: a.end_line,
-                start_column: a.start_column ?? null,
-                end_column: a.end_column ?? null,
-                annotation_level: a.annotation_level ?? 'notice',
-                message: a.message ?? '',
-                title: a.title ?? null,
-                raw_details: a.raw_details ?? null,
-              }))
-            } catch (error) {
-              logger.warn(`Could not fetch annotations for check ${check.id}: ${error}`)
-            }
-          }
+        const checkRunsWithAnnotations = checksResponse.data.check_runs
+        const annotationResults: Array<{
+          check: (typeof checkRunsWithAnnotations)[0]
+          annotations: (typeof checks)[number]['annotations']
+        }> = []
 
+        for (let i = 0; i < checkRunsWithAnnotations.length; i += ANNOTATION_CONCURRENCY_LIMIT) {
+          const batch = checkRunsWithAnnotations.slice(i, i + ANNOTATION_CONCURRENCY_LIMIT)
+          const batchResults = await Promise.all(
+            batch.map(async (check) => {
+              let annotations: (typeof checks)[number]['annotations'] = null
+              if (check.output?.annotations_count && check.output.annotations_count > 0) {
+                try {
+                  const allAnnotations = await client.paginate(client.checks.listAnnotations, {
+                    owner,
+                    repo,
+                    check_run_id: check.id,
+                    per_page: 100,
+                  })
+                  annotations = allAnnotations.map((a) => ({
+                    path: a.path ?? null,
+                    start_line: a.start_line,
+                    end_line: a.end_line,
+                    start_column: a.start_column ?? null,
+                    end_column: a.end_column ?? null,
+                    annotation_level: a.annotation_level ?? 'notice',
+                    message: a.message ?? '',
+                    title: a.title ?? null,
+                    raw_details: a.raw_details ?? null,
+                  }))
+                } catch (error) {
+                  logger.warn(`Could not fetch annotations for check ${check.id}: ${error}`)
+                }
+              }
+              return { check, annotations }
+            }),
+          )
+          annotationResults.push(...batchResults)
+        }
+
+        for (const { check, annotations } of annotationResults) {
           checks.push({
             id: check.id,
             name: check.name,
@@ -875,26 +888,6 @@ export async function getDetailedPullRequestInfo(
       logger.warn(`Could not fetch check runs: ${error}`)
     }
 
-    let allCommitsData: Awaited<ReturnType<typeof client.pulls.listCommits>>['data'] = []
-    let commitsPage = 1
-
-    while (true) {
-      const commitsResponse = await client.pulls.listCommits({
-        owner,
-        repo,
-        pull_number,
-        per_page: 100,
-        page: commitsPage,
-      })
-
-      allCommitsData = allCommitsData.concat(commitsResponse.data)
-
-      if (commitsResponse.data.length < 100) {
-        break
-      }
-      commitsPage++
-    }
-
     const commits = allCommitsData.map((commit) => ({
       sha: commit.sha,
       message: commit.commit.message,
@@ -905,20 +898,6 @@ export async function getDetailedPullRequestInfo(
       date: commit.commit.author?.date || '',
       html_url: commit.html_url,
     }))
-
-    const allIssueComments = await client.paginate(client.issues.listComments, {
-      owner,
-      repo,
-      issue_number: pull_number,
-      per_page: 100,
-    })
-
-    const allReviewComments = await client.paginate(client.pulls.listReviewComments, {
-      owner,
-      repo,
-      pull_number,
-      per_page: 100,
-    })
 
     const issueComments = allIssueComments.map((comment) => ({
       id: comment.id,

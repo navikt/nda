@@ -712,6 +712,8 @@ async function fetchCommitsBetween(
   }
 }
 
+const COMMIT_CONCURRENCY_LIMIT = 10
+
 export async function buildCommitsBetweenFromCache(
   owner: string,
   repo: string,
@@ -719,10 +721,10 @@ export async function buildCommitsBetweenFromCache(
   compareData: CompareData,
   options?: FetchOptions & { cacheOnly?: boolean },
 ): Promise<VerificationInput['commitsBetween']> {
-  const result: VerificationInput['commitsBetween'] = []
   const cacheOnly = options?.cacheOnly ?? false
+  const prFetchCache = new Map<number, Promise<Awaited<ReturnType<typeof fetchPrFromGitHub>>>>()
 
-  for (const commit of compareData.commits) {
+  const processCommit = async (commit: CompareData['commits'][0]) => {
     const { prNumber, mismatchedBaseBranches, mismatchedPrNumbers } = await findPrForCommit(
       owner,
       repo,
@@ -753,23 +755,27 @@ export async function buildCommitsBetweenFromCache(
     }
 
     if (prNumber && !prData && !cacheOnly) {
+      let prFetch = prFetchCache.get(prNumber)
+      if (!prFetch) {
+        prFetch = fetchPrFromGitHub(owner, repo, prNumber)
+          .then(async (data) => {
+            await savePrSnapshotsBatch(owner, repo, prNumber, [
+              { dataType: 'metadata', data: data.metadata },
+              { dataType: 'reviews', data: data.reviews },
+              { dataType: 'commits', data: data.commits },
+              { dataType: 'checks', data: data.checks },
+              { dataType: 'comments', data: data.comments },
+            ])
+            return data
+          })
+          .catch((error) => {
+            prFetchCache.delete(prNumber)
+            throw error
+          })
+        prFetchCache.set(prNumber, prFetch)
+      }
       try {
-        const {
-          metadata,
-          reviews,
-          commits: prCommits,
-          checks,
-          comments,
-        } = await fetchPrFromGitHub(owner, repo, prNumber)
-
-        await savePrSnapshotsBatch(owner, repo, prNumber, [
-          { dataType: 'metadata', data: metadata },
-          { dataType: 'reviews', data: reviews },
-          { dataType: 'commits', data: prCommits },
-          { dataType: 'checks', data: checks },
-          { dataType: 'comments', data: comments },
-        ])
-
+        const { metadata, reviews, commits: prCommits } = await prFetch
         prData = {
           number: prNumber,
           title: metadata.title,
@@ -783,7 +789,7 @@ export async function buildCommitsBetweenFromCache(
       }
     }
 
-    result.push({
+    return {
       sha: commit.sha,
       message: commit.message,
       authorUsername: commit.authorUsername,
@@ -794,10 +800,16 @@ export async function buildCommitsBetweenFromCache(
       pr: prData,
       mismatchedBaseBranches: mismatchedBaseBranches.length > 0 ? mismatchedBaseBranches : undefined,
       mismatchedPrNumbers: mismatchedPrNumbers.length > 0 ? mismatchedPrNumbers : undefined,
-    })
+    }
   }
 
-  return result
+  const results: VerificationInput['commitsBetween'] = []
+  for (let i = 0; i < compareData.commits.length; i += COMMIT_CONCURRENCY_LIMIT) {
+    const batch = compareData.commits.slice(i, i + COMMIT_CONCURRENCY_LIMIT)
+    const batchResults = await Promise.all(batch.map(processCommit))
+    results.push(...batchResults)
+  }
+  return results
 }
 
 async function _refreshPrData(
