@@ -1064,3 +1064,167 @@ describe('verifyDeployment - Branch validation', () => {
     expect(result.status).toBe('pending_baseline')
   })
 })
+
+describe('verifyDeployment - Merge commit PR coverage (dual-branch scenario)', () => {
+  it('should verify a commit covered by a merge commit PR when GitHub only returned a non-main PR for the commit SHA', () => {
+    const sandboxCommit = makePrCommit({
+      sha: '94161ce51fa2f6812b6e121d16dd6b8815d5bce1',
+      message: 'Log warning instead of error when 403 from representasjon.',
+      authorUsername: 'r154508',
+      authorDate: '2026-06-11T14:05:30Z',
+      committerDate: '2026-06-11T14:05:30Z',
+    })
+
+    const input = makeBaseInput({
+      deployedPr: {
+        number: 3257,
+        url: 'https://github.com/navikt/pensjon-psak/pull/3257',
+        metadata: makePrMetadata({
+          number: 3257,
+          baseBranch: 'main',
+          mergeCommitSha: '4ebb80bb2f3f8ae8b222fb9b1c041ea827161622',
+          mergedBy: { username: 'emil323' },
+        }),
+        reviews: [makePrReview({ username: 'bjorngi', submittedAt: '2026-06-12T07:37:39Z' })],
+        commits: [
+          makePrCommit({ sha: '256f4f4e1544b29351ce33b1802abbb727d2aa2d', authorDate: '2026-06-11T13:36:54Z' }),
+        ],
+      },
+      commitsBetween: [
+        {
+          sha: '94161ce51fa2f6812b6e121d16dd6b8815d5bce1',
+          message: 'Log warning instead of error when 403 from representasjon.',
+          authorUsername: 'r154508',
+          authorDate: '2026-06-11T14:05:30Z',
+          isMergeCommit: false,
+          parentShas: ['b41fa0c0327a35d901df23f523ce747ebaf6039d'],
+          htmlUrl: 'https://github.com/navikt/pensjon-psak/commit/94161ce51fa2f6812b6e121d16dd6b8815d5bce1',
+          pr: null,
+          mismatchedBaseBranches: ['sandbox'],
+          mismatchedPrNumbers: [3262],
+        },
+        {
+          sha: 'a1f2e609914280e1ef254811fe094980025b9554',
+          message:
+            'Merge pull request #3261 from navikt/PUF-Forvaltning/bugfix/improve_error_handling_representasjon\n\nLog warning instead of error when 403 from representasjon.',
+          authorUsername: 'r154508',
+          authorDate: '2026-06-12T07:37:39Z',
+          isMergeCommit: true,
+          parentShas: ['b41fa0c0327a35d901df23f523ce747ebaf6039d', '94161ce51fa2f6812b6e121d16dd6b8815d5bce1'],
+          htmlUrl: 'https://github.com/navikt/pensjon-psak/commit/a1f2e609914280e1ef254811fe094980025b9554',
+          pr: {
+            number: 3261,
+            title: 'Log warning instead of error when 403 from representasjon.',
+            url: 'https://github.com/navikt/pensjon-psak/pull/3261',
+            baseBranch: 'main',
+            reviews: [makePrReview({ username: 'julianacms', submittedAt: '2026-06-11T15:00:00Z' })],
+            commits: [sandboxCommit],
+          },
+        },
+        {
+          sha: '4ebb80bb2f3f8ae8b222fb9b1c041ea827161622',
+          message:
+            'Merge pull request #3257 from navikt/feature/utbetalinger_kopi\n\nLegg til kopi-funksjon for posteringer og bilag i Ubetalinger',
+          authorUsername: 'emil323',
+          authorDate: '2026-06-12T07:38:23Z',
+          isMergeCommit: true,
+          parentShas: ['a1f2e609914280e1ef254811fe094980025b9554', '256f4f4e1544b29351ce33b1802abbb727d2aa2d'],
+          htmlUrl: 'https://github.com/navikt/pensjon-psak/commit/4ebb80bb2f3f8ae8b222fb9b1c041ea827161622',
+          pr: null,
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('approved')
+    expect(result.unverifiedCommits).toHaveLength(0)
+  })
+
+  it('should still flag a commit as unverified when the covering merge commit PR is not approved', () => {
+    const unapprovedMergeCommit = makePrCommit({
+      sha: 'commit-in-unapproved-pr',
+      authorDate: '2026-06-11T14:05:30Z',
+    })
+
+    const input = makeBaseInput({
+      commitsBetween: [
+        {
+          sha: 'commit-in-unapproved-pr',
+          message: 'Some change',
+          authorUsername: 'developer-a',
+          authorDate: '2026-06-11T14:05:30Z',
+          isMergeCommit: false,
+          parentShas: ['parent-sha'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/commit-in-unapproved-pr',
+          pr: null,
+        },
+        {
+          sha: 'merge-commit-unapproved',
+          message: 'Merge pull request #999 from navikt/feature/x',
+          authorUsername: 'developer-a',
+          authorDate: '2026-06-11T15:00:00Z',
+          isMergeCommit: true,
+          parentShas: ['main-head', 'commit-in-unapproved-pr'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/merge-commit-unapproved',
+          pr: {
+            number: 999,
+            title: 'Feature X',
+            url: 'https://github.com/navikt/test-app/pull/999',
+            baseBranch: 'main',
+            reviews: [],
+            commits: [unapprovedMergeCommit],
+          },
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+    const unverified = result.unverifiedCommits.find((c) => c.sha === 'commit-in-unapproved-pr')
+    expect(unverified).toBeDefined()
+    expect(unverified?.prNumber).toBe(999)
+  })
+
+  it('should not cover the base-branch previous-HEAD commit (parent[0] of merge commit)', () => {
+    const input = makeBaseInput({
+      commitsBetween: [
+        {
+          sha: 'direct-push-to-main',
+          message: 'Direct push — no PR',
+          authorUsername: 'developer-a',
+          authorDate: '2026-06-11T10:00:00Z',
+          isMergeCommit: false,
+          parentShas: ['prev-main'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/direct-push-to-main',
+          pr: null,
+        },
+        {
+          sha: 'approved-merge-commit',
+          message: 'Merge pull request #500 from navikt/feature/y',
+          authorUsername: 'developer-b',
+          authorDate: '2026-06-11T12:00:00Z',
+          isMergeCommit: true,
+          parentShas: ['direct-push-to-main', 'feature-head-sha'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/approved-merge-commit',
+          pr: {
+            number: 500,
+            title: 'Feature Y',
+            url: 'https://github.com/navikt/test-app/pull/500',
+            baseBranch: 'main',
+            reviews: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-06-11T11:00:00Z' })],
+            commits: [makePrCommit({ sha: 'feature-head-sha', authorDate: '2026-06-11T09:00:00Z' })],
+          },
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+    const unverified = result.unverifiedCommits.find((c) => c.sha === 'direct-push-to-main')
+    expect(unverified).toBeDefined()
+    expect(unverified?.reason).toBe('no_pr')
+  })
+})

@@ -172,6 +172,16 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
     })
   }
 
+  type CommitPr = NonNullable<VerificationInput['commitsBetween'][number]['pr']>
+  const mergedPrByCommitSha = new Map<string, CommitPr>()
+  for (const c of input.commitsBetween) {
+    if (c.isMergeCommit && c.pr) {
+      for (const prCommit of c.pr.commits) {
+        mergedPrByCommitSha.set(prCommit.sha, c.pr)
+      }
+    }
+  }
+
   for (const commit of input.commitsBetween) {
     if (commit.isMergeCommit) {
       if (isBaseBranchMergeCommit(commit.message, input.baseBranch)) {
@@ -213,6 +223,28 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
         date: commit.authorDate,
         htmlUrl: commit.htmlUrl,
         prNumber: commit.pr.number,
+        reason: mapToUnverifiedReason(prApproval.reason),
+      })
+      continue
+    }
+
+    const coveringPr = mergedPrByCommitSha.get(commit.sha)
+    if (coveringPr) {
+      const prApproval = verifyFourEyesFromPrData({
+        reviewers: coveringPr.reviews,
+        commits: coveringPr.commits,
+        baseBranch: coveringPr.baseBranch,
+      })
+      if (prApproval.hasFourEyes) {
+        continue
+      }
+      unverifiedCommits.push({
+        sha: commit.sha,
+        message: commit.message.split('\n')[0],
+        author: commit.authorUsername,
+        date: commit.authorDate,
+        htmlUrl: commit.htmlUrl,
+        prNumber: coveringPr.number,
         reason: mapToUnverifiedReason(prApproval.reason),
       })
       continue
