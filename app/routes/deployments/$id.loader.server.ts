@@ -210,6 +210,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     addId(deviation.resolved_by)
   }
   for (const link of goalLinks) addId(link.linked_by)
+  for (const transition of statusHistory) addId(transition.changed_by)
 
   const userMappings = await getUsersByIdentifiers([...identifierSet])
 

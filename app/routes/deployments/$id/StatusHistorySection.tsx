@@ -1,5 +1,6 @@
 import { DownloadIcon } from '@navikt/aksel-icons'
 import { BodyShort, Box, Button, Detail, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
+import { UserName } from '~/components/UserName'
 import { type FourEyesStatus, isApprovedStatus } from '~/lib/four-eyes-status'
 import { formatChangeSource } from '~/lib/status-display'
 import type { Route } from '../+types/$id'
@@ -13,6 +14,7 @@ export type StatusHistorySectionProps = {
   nearbyDeployments: LoaderData['nearbyDeployments']
   verificationRun: LoaderData['verificationRun']
   isAdmin: LoaderData['isAdmin']
+  userMappings: LoaderData['userMappings']
 }
 export function StatusHistorySection({
   statusHistory,
@@ -21,6 +23,7 @@ export function StatusHistorySection({
   nearbyDeployments,
   verificationRun,
   isAdmin,
+  userMappings,
 }: StatusHistorySectionProps) {
   return (
     <VStack gap="space-16">
@@ -100,7 +103,11 @@ export function StatusHistorySection({
                   {transition.to_status}
                 </Tag>
               </BodyShort>
-              {transition.changed_by && <Detail textColor="subtle">av {transition.changed_by}</Detail>}
+              {transition.changed_by && (
+                <Detail textColor="subtle">
+                  av <UserName username={transition.changed_by} userMappings={userMappings} />
+                </Detail>
+              )}
               <Detail textColor="subtle">
                 {new Date(transition.created_at).toLocaleString('no-NO', {
                   dateStyle: 'medium',
