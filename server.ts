@@ -78,8 +78,7 @@ app.use(createAuthMiddleware())
 
 // React Router request handler
 const build = await import(url.pathToFileURL(buildPath).href)
-app.all(
-  '*',
+app.use(
   createRequestHandler({
     build,
     mode: process.env.NODE_ENV,
