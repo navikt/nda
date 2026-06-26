@@ -15,7 +15,6 @@ import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
 import { type FourEyesStatus, isApprovedStatus, isProtectedStatus } from '~/lib/four-eyes-status'
 import { getFourEyesStatus } from '~/lib/status-display'
-import { getUserDisplayName } from '~/lib/user-display'
 import { UNVERIFIED_REASON_LABELS, type UnverifiedReason } from '~/lib/verification/types'
 import { CommentModal } from '~/routes/deployments/$id/CommentModal'
 import { CommentsSection } from '~/routes/deployments/$id/CommentsSection'
@@ -88,8 +87,6 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
   const resetVerificationDialogRef = useRef<HTMLDialogElement>(null)
 
   const status = getFourEyesStatus(deployment)
-
-  const getUserDisplay = (githubUsername: string | undefined | null) => getUserDisplayName(githubUsername, userMappings)
 
   return (
     <VStack gap="space-32">
@@ -423,7 +420,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                   icon={<CheckmarkIcon aria-hidden />}
                 >
                   <ExternalLink href={`https://github.com/${reviewer.username}`}>
-                    {getUserDisplay(reviewer.username)}
+                    <UserName username={reviewer.username} userMappings={userMappings} link={false} />
                   </ExternalLink>
                 </Tag>
               ))}

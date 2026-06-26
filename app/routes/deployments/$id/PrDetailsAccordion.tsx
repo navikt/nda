@@ -12,6 +12,7 @@ import { Accordion, Alert, BodyShort, Box, Detail, HStack, Tag, VStack } from '@
 import { CheckAnnotations } from '~/components/CheckAnnotations'
 import { CheckLogViewer } from '~/components/CheckLogViewer'
 import { ExternalLink } from '~/components/ExternalLink'
+import { UserName } from '~/components/UserName'
 import { getUserDisplayName } from '~/lib/user-display'
 import type { Route } from '../+types/$id'
 
@@ -57,7 +58,7 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
                     <ChatIcon aria-hidden style={{ color: 'var(--ax-text-neutral-subtle)' }} />
                   )}
                   <ExternalLink href={`https://github.com/${reviewer.username}`}>
-                    {getUserDisplay(reviewer.username)}
+                    <UserName username={reviewer.username} userMappings={userMappings} link={false} />
                   </ExternalLink>
                   <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
                     {new Date(reviewer.submitted_at).toLocaleString('no-NO', {
@@ -72,7 +73,9 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
               {githubPrData.requested_reviewers?.map((r) => (
                 <HStack key={`pending:${r.username}`} gap="space-8" align="center">
                   <CircleIcon aria-hidden style={{ color: 'var(--ax-text-warning)' }} />
-                  <ExternalLink href={`https://github.com/${r.username}`}>{getUserDisplay(r.username)}</ExternalLink>
+                  <ExternalLink href={`https://github.com/${r.username}`}>
+                    <UserName username={r.username} userMappings={userMappings} link={false} />
+                  </ExternalLink>
                 </HStack>
               ))}
 
@@ -236,7 +239,7 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
                         {commit.sha.substring(0, 7)}
                       </ExternalLink>
                       <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
-                        {getUserDisplay(commit.author?.username)}
+                        <UserName username={commit.author?.username} userMappings={userMappings} />
                       </span>
                       <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
                         {new Date(commit.date).toLocaleString('no-NO', {
@@ -276,9 +279,13 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
                   )}
                   <VStack gap="space-4" style={{ flex: 1 }}>
                     <HStack gap="space-8" align="baseline" wrap>
-                      <ExternalLink href={`https://github.com/${comment.user?.username ?? ''}`}>
-                        {getUserDisplay(comment.user?.username) ?? 'ukjent'}
-                      </ExternalLink>
+                      {comment.user?.username ? (
+                        <ExternalLink href={`https://github.com/${comment.user.username}`}>
+                          <UserName username={comment.user.username} userMappings={userMappings} link={false} />
+                        </ExternalLink>
+                      ) : (
+                        <span>ukjent</span>
+                      )}
                       <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
                         {new Date(comment.created_at).toLocaleString('no-NO', {
                           dateStyle: 'short',

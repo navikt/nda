@@ -3,7 +3,7 @@ import { BodyShort, Box, Button, Detail, Heading, HStack, VStack } from '@navikt
 import type { RefObject } from 'react'
 import { Form } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
-import { getUserDisplayName } from '~/lib/user-display'
+import { UserName } from '~/components/UserName'
 import type { Route } from '../+types/$id'
 
 type LoaderData = Route.ComponentProps['loaderData']
@@ -16,8 +16,6 @@ export type CommentsSectionProps = {
 }
 
 export function CommentsSection({ comments, capabilities, userMappings, commentDialogRef }: CommentsSectionProps) {
-  const getUserDisplay = (githubUsername: string | undefined | null) => getUserDisplayName(githubUsername, userMappings)
-
   return (
     <>
       <VStack gap="space-16">
@@ -50,7 +48,7 @@ export function CommentsSection({ comments, capabilities, userMappings, commentD
                       {comment.registered_by && (
                         <>
                           {' — '}
-                          {getUserDisplay(comment.registered_by)}
+                          <UserName username={comment.registered_by} userMappings={userMappings} />
                         </>
                       )}
                     </Detail>
