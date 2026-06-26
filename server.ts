@@ -1,5 +1,4 @@
 import { createRequestHandler } from '@react-router/express'
-import { RouterContextProvider } from 'react-router'
 import { trace } from '@opentelemetry/api'
 import compression from 'compression'
 import express from 'express'
@@ -7,7 +6,6 @@ import path from 'node:path'
 import url from 'node:url'
 import winston from 'winston'
 import { createAuthMiddleware } from './auth-middleware.js'
-import { cspNonceContext } from './app/lib/app-context.js'
 import { createSecurityHeadersMiddleware } from './app/lib/security-headers.js'
 
 const isProd = process.env.NODE_ENV === 'production'
@@ -49,7 +47,18 @@ function accessLogMiddleware(req: express.Request, res: express.Response, next: 
 
 const app = express()
 app.disable('x-powered-by')
+app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  delete req.headers['x-csp-nonce']
+  next()
+})
 app.use(createSecurityHeadersMiddleware({ isProd }))
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!res.locals.cspNonce) {
+    throw new Error('cspNonce missing on res.locals — security-headers middleware not registered?')
+  }
+  req.headers['x-csp-nonce'] = res.locals.cspNonce
+  next()
+})
 app.use(compression())
 
 // Vite build output paths
@@ -74,17 +83,6 @@ app.all(
   createRequestHandler({
     build,
     mode: process.env.NODE_ENV,
-    getLoadContext: (_req, res) => {
-      // The security-headers middleware MUST run before this handler so the nonce is set.
-      // Fail loudly rather than silently emitting a CSP-blocked page if that invariant breaks.
-      const cspNonce = res.locals.cspNonce
-      if (!cspNonce) {
-        throw new Error('cspNonce missing on res.locals — security-headers middleware not registered?')
-      }
-      const ctx = new RouterContextProvider()
-      ctx.set(cspNonceContext, cspNonce)
-      return ctx
-    },
   }),
 )
 
