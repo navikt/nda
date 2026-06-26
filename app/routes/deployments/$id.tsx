@@ -675,6 +675,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           nearbyDeployments={nearbyDeployments}
           verificationRun={verificationRun}
           isAdmin={isAdmin}
+          userMappings={userMappings}
         />
       )}
 
