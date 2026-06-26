@@ -7,7 +7,7 @@ import {
   getPreviousDeploymentForDiff,
   getPrSnapshotsForDiff,
 } from '~/db/verification-diff.server'
-import { isProtectedStatus } from '~/lib/four-eyes-status'
+import { isProtectedStatus, PENDING_BASELINE_DEMOTABLE_STATUSES } from '~/lib/four-eyes-status'
 import { getMergedPullRequestsInWindow } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
@@ -505,7 +505,8 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const dep = row.rows[0]
 
-  if (isProtectedStatus(dep.four_eyes_status ?? '')) {
+  const isDemotable = PENDING_BASELINE_DEMOTABLE_STATUSES.includes(dep.four_eyes_status as never)
+  if (isProtectedStatus(dep.four_eyes_status ?? '') && !isDemotable) {
     return null
   }
 
@@ -581,6 +582,10 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const newResult = verifyDeployment(input)
   applyPassthroughFields(newResult, input)
+
+  if (isDemotable && newResult.status !== 'pending_baseline') {
+    return null
+  }
 
   const statusChanged = dep.four_eyes_status !== newResult.status
 
