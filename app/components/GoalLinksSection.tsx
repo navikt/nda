@@ -2,8 +2,9 @@ import { LinkIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
 import { BodyShort, Box, Button, Detail, Heading, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
 import { useState } from 'react'
 import { Form, Link } from 'react-router'
+import { UserName } from '~/components/UserName'
 import type { DeploymentGoalLinkWithDetails } from '~/db/deployment-goal-links.server'
-import { getUserDisplayName, type UserLookupMap } from '~/lib/user-display'
+import type { UserLookupMap } from '~/lib/user-display'
 import { ExternalLink } from './ExternalLink'
 import { type GoalSelectionBoard, GoalSelectionFields } from './GoalSelectionFields'
 
@@ -153,7 +154,9 @@ function GoalLinkItem({
               )}
             </HStack>
             {link.linked_by && link.link_method === 'manual' && (
-              <Detail textColor="subtle">Registrert av {getUserDisplayName(link.linked_by, userMappings)}</Detail>
+              <Detail textColor="subtle">
+                Registrert av <UserName username={link.linked_by} userMappings={userMappings} />
+              </Detail>
             )}
           </div>
         </HStack>

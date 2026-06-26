@@ -1,12 +1,12 @@
 import { ExclamationmarkTriangleIcon } from '@navikt/aksel-icons'
 import { BodyShort, Box, Button, Detail, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
 import type { RefObject } from 'react'
+import { UserName } from '~/components/UserName'
 import {
   DEVIATION_FOLLOW_UP_ROLE_LABELS,
   DEVIATION_INTENT_LABELS,
   DEVIATION_SEVERITY_LABELS,
 } from '~/lib/deviation-constants'
-import { getUserDisplayName } from '~/lib/user-display'
 import type { Route } from '../+types/$id'
 
 type LoaderData = Route.ComponentProps['loaderData']
@@ -24,8 +24,6 @@ export function DeviationsSection({
   userMappings,
   deviationDialogRef,
 }: DeviationsSectionProps) {
-  const getUserDisplay = (githubUsername: string | undefined | null) => getUserDisplayName(githubUsername, userMappings)
-
   return (
     <VStack gap="space-16">
       <HStack justify="space-between" align="center">
@@ -68,7 +66,9 @@ export function DeviationsSection({
                       timeStyle: 'short',
                     })}
                     {' — '}
-                    {deviation.registered_by_name || getUserDisplay(deviation.registered_by)}
+                    {deviation.registered_by_name || (
+                      <UserName username={deviation.registered_by} userMappings={userMappings} />
+                    )}
                   </Detail>
                   {deviation.resolved_at ? (
                     <Tag size="xsmall" variant="moderate" data-color="success">
@@ -115,7 +115,13 @@ export function DeviationsSection({
                   <BodyShort size="small" textColor="subtle">
                     Løsning: {deviation.resolution_note}
                     {(deviation.resolved_by_name ?? deviation.resolved_by) && (
-                      <> — løst av {deviation.resolved_by_name || getUserDisplay(deviation.resolved_by)}</>
+                      <>
+                        {' '}
+                        — løst av{' '}
+                        {deviation.resolved_by_name || (
+                          <UserName username={deviation.resolved_by} userMappings={userMappings} />
+                        )}
+                      </>
                     )}
                   </BodyShort>
                 )}

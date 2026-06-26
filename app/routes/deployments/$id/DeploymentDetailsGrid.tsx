@@ -2,7 +2,6 @@ import { CheckmarkIcon, XMarkIcon } from '@navikt/aksel-icons'
 import { BodyShort, CopyButton, Detail, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
-import { getUserDisplayName } from '~/lib/user-display'
 import type { Route } from '../+types/$id'
 
 type LoaderData = Route.ComponentProps['loaderData']
@@ -13,8 +12,6 @@ export type DeploymentDetailsGridProps = {
 }
 
 export function DeploymentDetailsGrid({ deployment, userMappings }: DeploymentDetailsGridProps) {
-  const getUserDisplay = (githubUsername: string | undefined | null) => getUserDisplayName(githubUsername, userMappings)
-
   return (
     <>
       <Heading size="medium" level="2">
@@ -211,7 +208,7 @@ export function DeploymentDetailsGrid({ deployment, userMappings }: DeploymentDe
                 <HStack gap="space-8" wrap>
                   {deployment.github_pr_data.assignees.map((a) => (
                     <Tag data-color="neutral" key={a.username} variant="outline" size="small">
-                      {getUserDisplay(a.username)}
+                      <UserName username={a.username} userMappings={userMappings} link={false} />
                     </Tag>
                   ))}
                 </HStack>

@@ -2,6 +2,7 @@ import { ClockIcon } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Box, Button, Detail, Heading, HStack, TextField, VStack } from '@navikt/ds-react'
 import { useState } from 'react'
 import { Form } from 'react-router'
+import { UserName } from '~/components/UserName'
 import { getUserDisplayName } from '~/lib/user-display'
 import type { Route } from '../+types/$id'
 
@@ -66,11 +67,13 @@ export function LegacyLookupSection({ actionData, userMappings }: LegacyLookupSe
                   <strong>Melding:</strong> {actionData.legacyLookup.commitMessage}
                 </Detail>
                 <Detail>
-                  <strong>Forfatter:</strong> {getUserDisplay(actionData.legacyLookup.commitAuthor)}
+                  <strong>Forfatter:</strong>{' '}
+                  <UserName username={actionData.legacyLookup.commitAuthor} userMappings={userMappings} />
                 </Detail>
                 {actionData.legacyLookup.mergedBy && (
                   <Detail>
-                    <strong>Merget av:</strong> {getUserDisplay(actionData.legacyLookup.mergedBy)}
+                    <strong>Merget av:</strong>{' '}
+                    <UserName username={actionData.legacyLookup.mergedBy} userMappings={userMappings} />
                   </Detail>
                 )}
                 {actionData.legacyLookup.prNumber && (
