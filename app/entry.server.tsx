@@ -3,9 +3,8 @@ import { createReadableStreamFromReadable } from '@react-router/node'
 import { isbot } from 'isbot'
 import type { RenderToPipeableStreamOptions } from 'react-dom/server'
 import { renderToPipeableStream } from 'react-dom/server'
-import type { AppLoadContext, EntryContext } from 'react-router'
+import type { EntryContext } from 'react-router'
 import { ServerRouter } from 'react-router'
-import './load-context'
 import { initializeServer } from './init.server'
 import { logger } from './lib/logger.server'
 
@@ -52,7 +51,6 @@ export default function handleRequest(
   responseStatusCode: number,
   responseHeaders: Headers,
   routerContext: EntryContext,
-  loadContext: AppLoadContext,
 ) {
   if (request.method.toUpperCase() === 'HEAD') {
     return new Response(null, {
@@ -60,6 +58,8 @@ export default function handleRequest(
       headers: responseHeaders,
     })
   }
+
+  const nonce = request.headers.get('x-csp-nonce') ?? undefined
 
   return new Promise((resolve, reject) => {
     let shellRendered = false
@@ -71,9 +71,9 @@ export default function handleRequest(
     let timeoutId: ReturnType<typeof setTimeout> | undefined = setTimeout(() => abort(), streamTimeout + 1000)
 
     const { pipe, abort } = renderToPipeableStream(
-      <ServerRouter context={routerContext} url={request.url} nonce={loadContext.cspNonce} />,
+      <ServerRouter context={routerContext} url={request.url} nonce={nonce} />,
       {
-        nonce: loadContext.cspNonce,
+        nonce,
         [readyOption]() {
           shellRendered = true
           const body = new PassThrough({
