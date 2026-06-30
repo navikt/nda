@@ -22,10 +22,11 @@ const features = [
     <div class="container hero__inner">
       <img class="hero__logo" src={`${base}nda-logo.svg`} alt="" width="72" height="72" />
       <p class="hero__kicker">NDA · Deployment Audit</p>
-      <h1>Vet du at alle deployments har vært gjennom to sett øyne?</h1>
+      <h1>Gjør det lett å gjøre rett</h1>
       <p class="hero__lead">
-        NDA overvåker deployments på Nais og verifiserer automatisk at hver endring i produksjon
-        har en godkjent pull request — etter four-eyes-prinsippet. Ingen manuell etterkontroll.
+        NDA gir deg og teamet automatisk oversikt over at deployments på Nais følger
+        four-eyes-prinsippet. God praksis blir synlig og dokumentert — uten ekstra arbeid,
+        og uten å stå i veien for flyten.
       </p>
       <div class="hero__cta">
         <a class="btn btn--primary" href="https://nda.ansatt.nav.no" target="_blank" rel="noopener noreferrer">Åpne appen ↗</a>
@@ -36,32 +37,31 @@ const features = [
   </section>
 
   <!-- PROBLEM -->
-  <section class="section" id="problem">
+  <section class="section" id="hvorfor">
     <div class="container">
-      <p class="eyebrow">Problemet</p>
-      <h2>Manuell four-eyes-kontroll skalerer ikke</h2>
+      <p class="eyebrow">Hvorfor NDA</p>
+      <h2>God praksis, gjort enkel og synlig</h2>
       <p class="section__lead">
-        Nav deployer kontinuerlig på tvers av mange team og miljøer. Kravet om at all kode i
-        produksjon skal være godkjent av en annen person er enkelt å formulere — men vanskelig å
-        <em>bevise</em> i ettertid. Hvordan vet en tech-lead, en seksjonsleder eller en revisor at
-        ingenting har gått rett i produksjon uten godkjenning?
+        Teamene i Nav reviewer allerede hverandres kode. NDA gjør den gode praksisen synlig og
+        dokumenterbar — automatisk. Du får oversikten servert, slik at det å <em>vise</em> at
+        deployments følger four-eyes blir like lett som å gjøre det.
       </p>
 
       <div class="grid grid--3" style="margin-top:2rem">
         <div class="card">
-          <span class="card__icon" aria-hidden="true">🕵️</span>
-          <h3>Direkte pushes glir under radaren</h3>
-          <p>Kode som pushes rett til main uten PR er lett å overse i en travel hverdag.</p>
+          <span class="card__icon" aria-hidden="true">⚡</span>
+          <h3>Oversikt på sekunder</h3>
+          <p>Se four-eyes-status for alle appene dine ett sted — uten å lete deg gjennom GitHub.</p>
         </div>
         <div class="card">
-          <span class="card__icon" aria-hidden="true">🎭</span>
-          <h3>«Godkjent» er ikke alltid godkjent</h3>
-          <p>Ureviewede commits kan følge med en godkjent PR inn i produksjon uten at noen ser det.</p>
+          <span class="card__icon" aria-hidden="true">📄</span>
+          <h3>Dokumentasjon som lager seg selv</h3>
+          <p>Godkjenningshistorikken samles løpende og er klar den dagen noen spør etter den.</p>
         </div>
         <div class="card">
-          <span class="card__icon" aria-hidden="true">📁</span>
-          <h3>Sporbarhet krever gravearbeid</h3>
-          <p>Å rekonstruere godkjenningshistorikk manuelt fra GitHub er tidkrevende og feilbarlig.</p>
+          <span class="card__icon" aria-hidden="true">🛟</span>
+          <h3>En trygghet i ryggen</h3>
+          <p>De sjeldne avvikene dukker opp tidlig, så teamet kan rette dem i ro og mak.</p>
         </div>
       </div>
     </div>
@@ -112,10 +112,10 @@ const features = [
     <div class="container audience">
       <div>
         <p class="eyebrow">For revisorer og seksjonsledere</p>
-        <h2>Dokumentert kontroll, ikke tillit på tro</h2>
+        <h2>Dokumentasjon som er klar når revisjonen er det</h2>
         <p class="section__lead">
           NDA gir et etterprøvbart bilde av four-eyes-dekning over tid — per applikasjon, miljø og
-          periode. Tallene er knyttet til konkrete deployments og pull requests, så funn kan alltid
+          periode. Tallene er knyttet til konkrete deployments og pull requests, så de alltid kan
           spores tilbake til kilden.
         </p>
       </div>
@@ -175,8 +175,8 @@ pnpm run dev           # http://localhost:5173</code></pre>
   <section class="cta-band">
     <div class="container cta-band__inner">
       <div>
-        <h2>Vil du se din egen four-eyes-dekning?</h2>
-        <p>Åpne appen og legg til teamene dine, eller utforsk koden på GitHub.</p>
+        <h2>Vil du se oversikten for teamet ditt?</h2>
+        <p>Åpne appen og legg til appene dine, eller utforsk koden på GitHub.</p>
       </div>
       <div class="hero__cta">
         <a class="btn btn--secondary" href="https://nda.ansatt.nav.no" target="_blank" rel="noopener noreferrer">Åpne appen ↗</a>

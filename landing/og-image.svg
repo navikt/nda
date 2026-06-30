@@ -34,9 +34,9 @@
 
   <g font-family="'Source Sans Pro', 'Helvetica Neue', Arial, sans-serif">
     <text x="470" y="250" fill="#66cc66" font-size="30" font-weight="700" letter-spacing="3">NDA · DEPLOYMENT AUDIT</text>
-    <text x="468" y="330" fill="#ffffff" font-size="62" font-weight="700">Two sets of eyes,</text>
-    <text x="468" y="402" fill="#ffffff" font-size="62" font-weight="700">verifisert automatisk.</text>
-    <text x="470" y="470" fill="#cfe0ee" font-size="30" font-weight="400">Four-eyes-kontroll av deployments på Nais.</text>
-    <text x="470" y="540" fill="#8fb3cf" font-size="24" font-weight="600">Åpen kildekode · MIT · Nav</text>
+    <text x="468" y="346" fill="#ffffff" font-size="66" font-weight="700">Gjør det lett</text>
+    <text x="468" y="420" fill="#ffffff" font-size="66" font-weight="700">å gjøre rett.</text>
+    <text x="470" y="486" fill="#cfe0ee" font-size="30" font-weight="400">Oversikt over four-eyes på Nais — automatisk.</text>
+    <text x="470" y="548" fill="#8fb3cf" font-size="24" font-weight="600">Åpen kildekode · MIT · Nav</text>
   </g>
 </svg>
