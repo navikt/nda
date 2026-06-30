@@ -1,0 +1,104 @@
+---
+const base = import.meta.env.BASE_URL
+const year = 2026
+---
+
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-footer__brand">
+      <img src={`${base}nda-logo.svg`} alt="" width="32" height="32" />
+      <div>
+        <strong>NDA – Deployment Audit</strong>
+        <p>Et åpent Nav-verktøy for four-eyes-verifisering av deployments på Nais.</p>
+      </div>
+    </div>
+
+    <nav class="site-footer__links" aria-label="Lenker i bunntekst">
+      <div>
+        <h2>Produkt</h2>
+        <a href="https://nda.ansatt.nav.no" target="_blank" rel="noopener noreferrer">Åpne appen ↗</a>
+        <a href={`${base}storybook/`}>Storybook</a>
+      </div>
+      <div>
+        <h2>Kildekode</h2>
+        <a href="https://github.com/navikt/nda" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+        <a href="https://github.com/navikt/nda/blob/main/docs/verification.md" target="_blank" rel="noopener noreferrer">Verifiseringslogikk</a>
+      </div>
+      <div>
+        <h2>Plattform</h2>
+        <a href="https://nais.io" target="_blank" rel="noopener noreferrer">Nais ↗</a>
+        <a href="https://aksel.nav.no" target="_blank" rel="noopener noreferrer">Aksel ↗</a>
+      </div>
+    </nav>
+  </div>
+
+  <div class="container site-footer__legal">
+    <span>MIT-lisens · © {year} Nav (Arbeids- og velferdsdirektoratet)</span>
+    <span>Bygget med Astro · Hostet på GitHub Pages</span>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    background: var(--blue-900);
+    color: #dbe7f1;
+    padding-block: 3rem 1.5rem;
+  }
+  .site-footer__inner {
+    display: grid;
+    gap: 2.5rem;
+  }
+  @media (min-width: 760px) {
+    .site-footer__inner {
+      grid-template-columns: 1.3fr 2fr;
+    }
+  }
+  .site-footer__brand {
+    display: flex;
+    gap: 0.9rem;
+    align-items: flex-start;
+    max-width: 32ch;
+  }
+  .site-footer__brand strong {
+    color: #fff;
+  }
+  .site-footer__brand p {
+    margin: 0.3rem 0 0;
+    font-size: 0.92rem;
+    color: #a9c2d6;
+  }
+  .site-footer__links {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1.5rem;
+  }
+  .site-footer__links h2 {
+    color: #8fb3cf;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 0 0 0.7rem;
+  }
+  .site-footer__links a {
+    display: block;
+    color: #dbe7f1;
+    text-decoration: none;
+    padding: 0.2rem 0;
+    font-size: 0.95rem;
+  }
+  .site-footer__links a:hover {
+    color: #fff;
+    text-decoration: underline;
+  }
+  .site-footer__legal {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: #8fb3cf;
+  }
+</style>

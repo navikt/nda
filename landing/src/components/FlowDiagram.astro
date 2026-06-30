@@ -1,0 +1,129 @@
+---
+const steps = [
+  {
+    n: 1,
+    title: 'Hent fra Nais',
+    body: 'Deployments hentes fra Nais GraphQL-API hvert 5. minutt og lagres med status «pending». Repository detekteres fra deployment-data.',
+    tag: 'Ingen rate limit',
+  },
+  {
+    n: 2,
+    title: 'Verifiser mot GitHub',
+    body: 'PR-godkjenninger, reviewers, merger og CI/CD-status hentes via GitHub (read-only). Four-eyes-status settes automatisk.',
+    tag: 'GitHub App',
+  },
+  {
+    n: 3,
+    title: 'Fang opp avvik',
+    body: 'Repository-mismatch og ureviewede commits flagges. Varsler kan løses med notat, og Slack-lenker kan dokumentere direkte pushes.',
+    tag: 'Varsler',
+  },
+  {
+    n: 4,
+    title: 'Rapportér',
+    body: 'Status, statistikk og audit-rapporter (PDF/Excel) er tilgjengelig i appen og via et sikret M2M-API.',
+    tag: 'Sporbarhet',
+  },
+]
+---
+
+<ol class="flow" aria-label="Synkroniserings- og verifiseringsflyt">
+  {
+    steps.map((s) => (
+      <li class="flow__step">
+        <span class="flow__num" aria-hidden="true">
+          {s.n}
+        </span>
+        <div class="flow__body">
+          <h3>{s.title}</h3>
+          <p>{s.body}</p>
+          <span class="flow__tag">{s.tag}</span>
+        </div>
+      </li>
+    ))
+  }
+</ol>
+
+<style>
+  .flow {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+    counter-reset: none;
+  }
+  @media (min-width: 880px) {
+    .flow {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+    }
+  }
+  .flow__step {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.4rem;
+    box-shadow: var(--shadow);
+  }
+  @media (min-width: 880px) {
+    .flow__step {
+      border-radius: 0;
+      margin-right: 18px;
+    }
+    .flow__step:first-child {
+      border-top-left-radius: var(--radius);
+      border-bottom-left-radius: var(--radius);
+    }
+    .flow__step:last-child {
+      border-top-right-radius: var(--radius);
+      border-bottom-right-radius: var(--radius);
+      margin-right: 0;
+    }
+    /* pil mellom stegene */
+    .flow__step:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      right: -11px;
+      top: 50%;
+      width: 14px;
+      height: 14px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      transform: translateY(-50%) rotate(45deg);
+      z-index: 2;
+    }
+  }
+  .flow__num {
+    display: grid;
+    place-items: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    background: var(--blue-500);
+    color: #fff;
+    font-weight: 700;
+    margin-bottom: 0.8rem;
+  }
+  .flow__body h3 {
+    margin: 0 0 0.4rem;
+  }
+  .flow__body p {
+    font-size: 0.94rem;
+    color: var(--ink-muted);
+    margin-bottom: 0.9rem;
+  }
+  .flow__tag {
+    display: inline-block;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--blue-700);
+    background: var(--blue-100);
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+  }
+</style>

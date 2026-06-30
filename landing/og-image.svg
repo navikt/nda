@@ -1,0 +1,42 @@
+<!-- Kilde for public/og.png. Regenerer med:
+     rsvg-convert -w 1200 -h 630 og-image.svg -o public/og.png -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00243d"/>
+      <stop offset="1" stop-color="#003862"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.85" cy="0.1" r="0.6">
+      <stop offset="0" stop-color="#66cc66" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#66cc66" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- Robot-logo (forenklet, hvit på blå) -->
+  <g transform="translate(96, 150) scale(0.62)">
+    <circle cx="256" cy="256" r="240" fill="#0067c5"/>
+    <rect x="156" y="180" width="200" height="180" rx="20" fill="#ffffff"/>
+    <circle cx="206" cy="250" r="25" fill="#0067c5"/>
+    <circle cx="306" cy="250" r="25" fill="#0067c5"/>
+    <path d="M196 315 Q256 350 316 315" stroke="#0067c5" stroke-width="12" stroke-linecap="round" fill="none"/>
+    <rect x="246" y="140" width="20" height="50" fill="#ffffff"/>
+    <circle cx="256" cy="125" r="25" fill="#66cc66"/>
+    <circle cx="256" cy="125" r="14" fill="#aaffaa"/>
+    <rect x="126" y="220" width="30" height="60" rx="5" fill="#ffffff"/>
+    <rect x="356" y="220" width="30" height="60" rx="5" fill="#ffffff"/>
+    <rect x="186" y="360" width="140" height="60" rx="10" fill="#ffffff"/>
+    <circle cx="226" cy="390" r="12" fill="#0067c5"/>
+    <circle cx="286" cy="390" r="12" fill="#0067c5"/>
+  </g>
+
+  <g font-family="'Source Sans Pro', 'Helvetica Neue', Arial, sans-serif">
+    <text x="470" y="250" fill="#66cc66" font-size="30" font-weight="700" letter-spacing="3">NDA · DEPLOYMENT AUDIT</text>
+    <text x="468" y="330" fill="#ffffff" font-size="62" font-weight="700">Two sets of eyes,</text>
+    <text x="468" y="402" fill="#ffffff" font-size="62" font-weight="700">verifisert automatisk.</text>
+    <text x="470" y="470" fill="#cfe0ee" font-size="30" font-weight="400">Four-eyes-kontroll av deployments på Nais.</text>
+    <text x="470" y="540" fill="#8fb3cf" font-size="24" font-weight="600">Åpen kildekode · MIT · Nav</text>
+  </g>
+</svg>
