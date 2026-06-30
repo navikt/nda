@@ -1,0 +1,61 @@
+---
+import '../styles/global.css'
+import Header from '../components/Header.astro'
+import Footer from '../components/Footer.astro'
+
+interface Props {
+  title?: string
+  description?: string
+}
+
+const {
+  title = 'NDA – Deployment Audit',
+  description = 'Automatisk verifisering av at alle deployments på Nais har vært gjennom to sett øyne. Et åpent Nav-verktøy for sporbarhet og four-eyes-kontroll.',
+} = Astro.props
+
+const base = import.meta.env.BASE_URL
+---
+
+<!doctype html>
+<html lang="nb">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    <link rel="icon" type="image/x-icon" href={`${base}favicon.ico`} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:locale" content="nb_NO" />
+  </head>
+  <body>
+    <a class="skip-link" href="#hovedinnhold">Hopp til innhold</a>
+    <Header />
+    <main id="hovedinnhold">
+      <slot />
+    </main>
+    <Footer />
+
+    <style>
+      .skip-link {
+        position: absolute;
+        left: 1rem;
+        top: -100px;
+        z-index: 100;
+        background: var(--blue-700);
+        color: #fff;
+        padding: 0.6rem 1rem;
+        border-radius: 8px;
+        text-decoration: none;
+        transition: top 0.15s ease;
+      }
+      .skip-link:focus {
+        top: 1rem;
+      }
+    </style>
+  </body>
+</html>
