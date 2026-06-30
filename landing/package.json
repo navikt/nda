@@ -12,5 +12,9 @@
   "dependencies": {
     "@fontsource/source-sans-pro": "^5.2.5",
     "astro": "^5.6.1"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.6.0"
   }
 }
