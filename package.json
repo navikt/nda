@@ -78,7 +78,7 @@
     "winston": "^3.19.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.0",
+    "@biomejs/biome": "^2.5.1",
     "@react-router/dev": "8.0.1",
     "@storybook/react": "^10.4.6",
     "@storybook/react-vite": "^10.4.6",
