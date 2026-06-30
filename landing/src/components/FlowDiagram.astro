@@ -2,26 +2,26 @@
 const steps = [
   {
     n: 1,
-    title: 'Hent fra Nais',
-    body: 'Deployments hentes fra Nais GraphQL-API hvert 5. minutt og lagres med status «pending». Repository detekteres fra deployment-data.',
-    tag: 'Ingen rate limit',
+    title: 'Fanger opp deployments',
+    body: 'NDA oppdager nye deployments av seg selv og holder oversikten oppdatert — du trenger ikke gjøre noe.',
+    tag: 'Automatisk',
   },
   {
     n: 2,
-    title: 'Verifiser mot GitHub',
-    body: 'PR-godkjenninger, reviewers, merger og CI/CD-status hentes via GitHub (read-only). Fire-øyne-status settes automatisk.',
-    tag: 'GitHub App',
+    title: 'Sjekker godkjenning',
+    body: 'Godkjenninger og status hentes fra GitHub, og fire-øyne-status settes automatisk for hver leveranse.',
+    tag: 'Kun lesetilgang',
   },
   {
     n: 3,
     title: 'Få beskjed ved avvik',
-    body: 'Skulle noe avvike — repository-mismatch eller ureviewede commits — får teamet beskjed. Varsler løses med et notat, og Slack-lenker kan dokumentere direkte pushes.',
-    tag: 'Varsler',
+    body: 'Mangler en leveranse godkjenning, får teamet beskjed med en gang — så dere kan ta tak i det i ro og mak.',
+    tag: 'Trygghet',
   },
   {
     n: 4,
-    title: 'Rapportér',
-    body: 'Status, statistikk og audit-rapporter (PDF/Excel) er tilgjengelig i appen og via et sikret M2M-API.',
+    title: 'Rapport når du trenger den',
+    body: 'Status og rapporter (PDF og Excel) ligger klare i appen, og kan deles med andre systemer ved behov.',
     tag: 'Sporbarhet',
   },
 ]
