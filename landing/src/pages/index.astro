@@ -7,7 +7,7 @@ const base = import.meta.env.BASE_URL
 const features = [
   { icon: '🔍', title: 'Application discovery', body: 'Søk etter Nais-team og velg hvilke applikasjoner som skal overvåkes.' },
   { icon: '📦', title: 'Deployment tracking', body: 'Automatisk synkronisering av deployments fra Nais hvert 5. minutt.' },
-  { icon: '✅', title: 'Four-eyes-verifisering', body: 'Sjekker automatisk at hver endring har en godkjent pull request.' },
+  { icon: '✅', title: 'Fire-øyne-verifisering', body: 'Sjekker automatisk at hver endring har en godkjent pull request.' },
   { icon: '🚨', title: 'Repository-varsler', body: 'Varsler dersom et deployment kommer fra et uventet repository.' },
   { icon: '🧩', title: 'Ureviewede commits', body: 'Oppdager kode som er smuglet inn sammen med godkjente PR-er.' },
   { icon: '💬', title: 'Slack-integrasjon', body: 'Dokumentér direkte pushes med Slack-lenker og få varsler i kanal.' },
@@ -25,18 +25,18 @@ const features = [
       <h1>Gjør det lett å gjøre rett</h1>
       <p class="hero__lead">
         NDA gir deg og teamet automatisk oversikt over at deployments på Nais følger
-        four-eyes-prinsippet. God praksis blir synlig og dokumentert — uten ekstra arbeid,
+        fire-øyne-prinsippet. God praksis blir synlig og dokumentert — uten ekstra arbeid,
         og uten å stå i veien for flyten.
       </p>
       <div class="hero__cta">
         <a class="btn btn--primary" href="https://nda.ansatt.nav.no" target="_blank" rel="noopener noreferrer">Åpne appen ↗</a>
         <a class="btn btn--ghost" href="https://github.com/navikt/nda" target="_blank" rel="noopener noreferrer">Se kildekoden ↗</a>
       </div>
-      <p class="hero__note">Appen krever Nav-tilgang (naisdevice). Denne siden og kildekoden er åpne for alle.</p>
+      <p class="hero__note">Appen er tilgjengelig for alle med Nav-maskin. Denne siden og kildekoden er åpne for alle.</p>
     </div>
   </section>
 
-  <!-- PROBLEM -->
+  <!-- HVORFOR NDA -->
   <section class="section" id="hvorfor">
     <div class="container">
       <p class="eyebrow">Hvorfor NDA</p>
@@ -44,14 +44,14 @@ const features = [
       <p class="section__lead">
         Teamene i Nav reviewer allerede hverandres kode. NDA gjør den gode praksisen synlig og
         dokumenterbar — automatisk. Du får oversikten servert, slik at det å <em>vise</em> at
-        deployments følger four-eyes blir like lett som å gjøre det.
+        deployments følger fire-øyne blir like lett som å gjøre det.
       </p>
 
       <div class="grid grid--3" style="margin-top:2rem">
         <div class="card">
           <span class="card__icon" aria-hidden="true">⚡</span>
           <h3>Oversikt på sekunder</h3>
-          <p>Se four-eyes-status for alle appene dine ett sted — uten å lete deg gjennom GitHub.</p>
+          <p>Se fire-øyne-status for alle appene dine ett sted — uten å lete deg gjennom GitHub.</p>
         </div>
         <div class="card">
           <span class="card__icon" aria-hidden="true">📄</span>
@@ -62,6 +62,38 @@ const features = [
           <span class="card__icon" aria-hidden="true">🛟</span>
           <h3>En trygghet i ryggen</h3>
           <p>De sjeldne avvikene dukker opp tidlig, så teamet kan rette dem i ro og mak.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TO VEIER / ARBEIDSFLYT -->
+  <section class="section paths" id="arbeidsflyt">
+    <div class="container">
+      <p class="eyebrow">Tilpasset arbeidsflyten deres</p>
+      <h2>To veier til samme mål</h2>
+      <p class="section__lead">
+        NDA krever ikke at dere legger om måten dere jobber på. Bruker dere pull requests, går
+        verifiseringen av seg selv. Gjør dere det ikke, godkjenner dere like gjerne i etterkant —
+        rett i NDA. Begge veier ender med dokumentert fire-øyne.
+      </p>
+      <div class="grid grid--2" style="margin-top:2rem">
+        <div class="card path-card">
+          <span class="card__icon" aria-hidden="true">🔀</span>
+          <h3>Proaktivt med pull requests</h3>
+          <p>
+            Jobber teamet med PR-er? NDA henter godkjenninger, reviewers og CI-status fra GitHub
+            automatisk. Dere trenger ikke gjøre noe ekstra — det bare stemmer.
+          </p>
+        </div>
+        <div class="card path-card">
+          <span class="card__icon" aria-hidden="true">✅</span>
+          <h3>Retroaktivt i NDA</h3>
+          <p>
+            Jobber dere ikke PR-basert, eller pushet rett til main? Godkjenn deploymentet i
+            etterkant i NDA — med et notat eller en Slack-lenke som dokumenterer at to par øyne
+            har sett endringen.
+          </p>
         </div>
       </div>
     </div>
@@ -114,17 +146,17 @@ const features = [
         <p class="eyebrow">For revisorer og seksjonsledere</p>
         <h2>Dokumentasjon som er klar når revisjonen er det</h2>
         <p class="section__lead">
-          NDA gir et etterprøvbart bilde av four-eyes-dekning over tid — per applikasjon, miljø og
+          NDA gir et etterprøvbart bilde av fire-øyne-dekning over tid — per applikasjon, miljø og
           periode. Tallene er knyttet til konkrete deployments og pull requests, så de alltid kan
           spores tilbake til kilden.
         </p>
       </div>
       <ul class="checklist">
-        <li><strong>Four-eyes-dekning</strong> i prosent, med opptelling av godkjente, ikke-godkjente og ventende deployments.</li>
+        <li><strong>Fire-øyne-dekning</strong> i prosent, med opptelling av godkjente, ikke-godkjente og ventende deployments.</li>
         <li><strong>Endringsopphav (change origin)</strong> — hvor stor andel av endringene som er sporet til en kjent kilde.</li>
         <li><strong>Skriver aldri til GitHub.</strong> Appen har kun lesetilgang og kan ikke endre kode eller godkjenninger.</li>
         <li><strong>Audit-rapporter</strong> kan genereres og lastes ned som PDF og Excel for en valgt periode.</li>
-        <li><strong>Maskin-til-maskin-API</strong> (Entra ID-sikret) leverer four-eyes-data til andre systemer, f.eks. KISS.</li>
+        <li><strong>Maskin-til-maskin-API</strong> (Entra ID-sikret) leverer fire-øyne-data til andre systemer, f.eks. KISS.</li>
         <li><strong>Strukturert logging</strong> med trace-id og pgaudit gir full sporbarhet i ELK og Loki.</li>
       </ul>
     </div>
@@ -298,6 +330,18 @@ pnpm run dev           # http://localhost:5173</code></pre>
     }
     .code-card__note a {
       color: var(--green-300);
+    }
+
+    /* To veier / arbeidsflyt */
+    .paths {
+      background: var(--blue-100);
+      border-block: 1px solid var(--blue-300);
+    }
+    .path-card {
+      border-color: var(--blue-300);
+    }
+    .path-card .card__icon {
+      font-size: 2rem;
     }
 
     /* CTA-bånd */
