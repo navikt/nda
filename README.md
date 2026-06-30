@@ -18,7 +18,7 @@ Appen bruker en applikasjon-sentrisk tilnærming hvor Team + Environment + Appli
 
 ## Teknisk Stack
 
-- **Framework**: React Router 7 med SSR
+- **Framework**: React Router 8 i Framework Mode med SSR
 - **TypeScript**: For type-sikkerhet
 - **Database**: PostgreSQL
 - **UI**: Nav Aksel designsystem v8

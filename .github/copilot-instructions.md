@@ -1,6 +1,6 @@
 # NDA — GitHub Copilot Instructions
 
-React Router v7 (framework mode) + TypeScript + PostgreSQL + Slack Bolt + Nais/GCP.
+React Router v8 (framework mode) + TypeScript + PostgreSQL + Slack Bolt + Nais/GCP.
 
 ## Tech Stack
 
