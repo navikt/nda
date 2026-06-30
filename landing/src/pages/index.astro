@@ -11,7 +11,7 @@ const features = [
   { icon: '🚨', title: 'Repository-varsler', body: 'Varsler dersom et deployment kommer fra et uventet repository.' },
   { icon: '🧩', title: 'Ureviewede commits', body: 'Oppdager kode som er smuglet inn sammen med godkjente PR-er.' },
   { icon: '💬', title: 'Slack-integrasjon', body: 'Få deployment-varsler i kanal, med mulighet til å lenke til Slack ved behov.' },
-  { icon: '🎯', title: 'Endringsopphav', body: 'Knytt leveranser til mål og nøkkelresultater (OKR) i en målplakat — automatisk fra commit eller branch.' },
+  { icon: '🎯', title: 'Endringsopphav', body: 'Knytt leveranser til mål og nøkkelresultater (OKR) i en målplakat, automatisk fra commit eller branch.' },
   { icon: '📈', title: 'Statistikk & rapporter', body: 'Audit-rapporter (PDF/Excel) med både fire-øyne-dekning og endringsopphav for valgt periode.' },
 ]
 ---
@@ -25,7 +25,7 @@ const features = [
       <h1>Gjør det lett å gjøre rett</h1>
       <p class="hero__lead">
         NDA gir deg og teamet automatisk oversikt over at deployments på Nais følger
-        fire-øyne-prinsippet — og kobler samtidig hver leveranse til målet den hører til.
+        fire-øyne-prinsippet. I tillegg kobles hver leveranse til målet den hører til.
         God praksis blir synlig og dokumentert, uten ekstra arbeid.
       </p>
       <div class="hero__cta">
@@ -42,16 +42,16 @@ const features = [
       <p class="eyebrow">Hvorfor NDA</p>
       <h2>God praksis, gjort enkel og synlig</h2>
       <p class="section__lead">
-        Uansett hvordan teamet kvalitetssikrer koden — i pull requests eller ved å godkjenne i
-        etterkant — gjør NDA det synlig og dokumenterbart, automatisk. Du får oversikten servert,
-        slik at det å <em>vise</em> at deployments følger fire-øyne blir like lett som å gjøre det.
+        Enten dere jobber i pull requests eller godkjenner i etterkant, gjør NDA det synlig og
+        dokumenterbart automatisk. Oversikten er der allerede, så det å <em>vise</em> at
+        deployments følger fire-øyne blir like lett som å gjøre det.
       </p>
 
       <div class="grid grid--3" style="margin-top:2rem">
         <div class="card">
           <span class="card__icon" aria-hidden="true">⚡</span>
           <h3>Oversikt på sekunder</h3>
-          <p>Se fire-øyne-status for alle appene dine ett sted — uten å lete deg gjennom GitHub.</p>
+          <p>Se fire-øyne-status for alle appene dine ett sted, uten å lete deg gjennom GitHub.</p>
         </div>
         <div class="card">
           <span class="card__icon" aria-hidden="true">📄</span>
@@ -74,7 +74,7 @@ const features = [
       <h2>To veier til samme mål</h2>
       <p class="section__lead">
         NDA krever ikke at dere legger om måten dere jobber på. Bruker dere pull requests, går
-        verifiseringen av seg selv. Gjør dere det ikke, godkjenner dere like gjerne i etterkant —
+        verifiseringen av seg selv. Gjør dere det ikke, godkjenner dere like gjerne i etterkant,
         rett i NDA. Begge veier ender med dokumentert fire-øyne.
       </p>
       <div class="grid grid--2" style="margin-top:2rem">
@@ -83,7 +83,7 @@ const features = [
           <h3>Proaktivt med pull requests</h3>
           <p>
             Jobber teamet med PR-er? NDA henter godkjenninger, reviewers og CI-status fra GitHub
-            automatisk. Dere trenger ikke gjøre noe ekstra — det bare stemmer.
+            automatisk. Dere trenger ikke gjøre noe ekstra. Det bare stemmer.
           </p>
         </div>
         <div class="card path-card">
@@ -92,7 +92,7 @@ const features = [
           <p>
             Jobber dere ikke PR-basert, eller pushet rett til main? Godkjenn deploymentet i
             etterkant rett i NDA. Vil dere, kan dere legge ved en kommentar eller lenke som
-            utdyper — men det er ikke et krav.
+            utdyper, men det er ikke et krav.
           </p>
         </div>
       </div>
@@ -106,16 +106,16 @@ const features = [
       <h2>Fra Nais-deployment til verifisert godkjenning</h2>
       <p class="section__lead">
         NDA kobler sammen Nais og GitHub. Den henter deployments, verifiserer dem mot
-        pull request-historikken, og flagger alt som ikke stemmer — helt automatisk.
+        pull request-historikken, og flagger alt som ikke stemmer. Det skjer helt automatisk.
       </p>
       <div style="margin-top:2.5rem">
         <FlowDiagram />
       </div>
       <p class="section__lead" style="margin-top:2.5rem">
-        Hele verifiseringslogikken — inkludert implisitt godkjenning, base-branch-merge og
-        deteksjon av ureviewede commits — er dokumentert i
+        Hele verifiseringslogikken er dokumentert i
         <a href="https://github.com/navikt/nda/blob/main/docs/verification.md" target="_blank" rel="noopener noreferrer">verification.md</a>,
-        med flytdiagram og kodereferanser for full sporbarhet.
+        med flytdiagram og kodereferanser for full sporbarhet. Der finner du blant annet implisitt
+        godkjenning, base-branch-merge og deteksjon av ureviewede commits.
       </p>
     </div>
   </section>
@@ -127,19 +127,19 @@ const features = [
         <p class="eyebrow">Endringsopphav</p>
         <h2>Hver leveranse koblet til målet sitt</h2>
         <p class="section__lead">
-          Ved siden av fire-øyne samler NDA også inn <strong>endringsopphav</strong> — hvorfor en
-          endring ble levert. Nøkkelord i commit-melding eller branch-navn knytter leveransen
+          Ved siden av fire-øyne samler NDA også inn <strong>endringsopphav</strong>, altså hvorfor
+          en endring ble levert. Nøkkelord i commit-melding eller branch-navn knytter leveransen
           automatisk til riktig mål eller nøkkelresultat i en målplakat. Ingen manuell registrering.
         </p>
         <p class="section__lead">
-          Slik dekker dere behovet for endringsopphav uten ekstra arbeid — enten dere styrer etter
+          Slik dekker dere behovet for endringsopphav uten ekstra arbeid, enten dere styrer etter
           OKR (mål og nøkkelresultater) eller jobber tight-loose-tight.
         </p>
       </div>
       <ul class="checklist">
         <li><strong>Fra mål til leveranser:</strong> se alle leveranser knyttet til et mål eller nøkkelresultat i målplakaten.</li>
         <li><strong>Fra leveranse til mål:</strong> se hvilke(t) mål eller nøkkelresultat en enkelt leveranse hører til.</li>
-        <li><strong>Automatisk kobling</strong> via nøkkelord i commit-melding eller branch-navn — det skjer av seg selv.</li>
+        <li><strong>Automatisk kobling</strong> via nøkkelord i commit-melding eller branch-navn.</li>
         <li><strong>Med i rapporten:</strong> endringsopphav rapporteres sammen med fire-øyne-dekning for valgt periode.</li>
       </ul>
     </div>
@@ -171,14 +171,14 @@ const features = [
         <p class="eyebrow">For revisorer og seksjonsledere</p>
         <h2>Dokumentasjon som er klar når revisjonen er det</h2>
         <p class="section__lead">
-          NDA gir et etterprøvbart bilde av fire-øyne-dekning over tid — per applikasjon, miljø og
+          NDA gir et etterprøvbart bilde av fire-øyne-dekning over tid, per applikasjon, miljø og
           periode. Tallene er knyttet til konkrete deployments og pull requests, så de alltid kan
           spores tilbake til kilden.
         </p>
       </div>
       <ul class="checklist">
         <li><strong>Fire-øyne-dekning</strong> i prosent, med opptelling av godkjente, ikke-godkjente og ventende deployments.</li>
-        <li><strong>Endringsopphav</strong> — hvor stor andel av leveransene som er koblet til et mål eller nøkkelresultat.</li>
+        <li><strong>Endringsopphav</strong> viser hvor stor andel av leveransene som er koblet til et mål eller nøkkelresultat.</li>
         <li><strong>Skriver aldri til GitHub.</strong> Appen har kun lesetilgang og kan ikke endre kode eller godkjenninger.</li>
         <li><strong>Audit-rapporter</strong> kan genereres og lastes ned som PDF og Excel for en valgt periode.</li>
         <li><strong>Maskin-til-maskin-API</strong> (Entra ID-sikret) leverer fire-øyne-data til andre systemer, f.eks. KISS.</li>
@@ -194,8 +194,8 @@ const features = [
         <p class="eyebrow">For utviklere og tech-leads</p>
         <h2>Åpen kildekode, kjent stack</h2>
         <p class="section__lead">
-          NDA er bygget på en moderne, gjenkjennelig Nav-stack og kjører på Nais. Alt er åpent —
-          les koden, kjør den lokalt, eller bidra.
+          NDA er bygget på en moderne, gjenkjennelig Nav-stack og kjører på Nais. Alt er åpent.
+          Les koden, kjør den lokalt, eller bidra.
         </p>
         <div class="stack">
           <span>React Router 8 (SSR)</span>
