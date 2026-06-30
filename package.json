@@ -46,9 +46,9 @@
   "dependencies": {
     "@fontsource/source-sans-pro": "^5.2.5",
     "@google-cloud/storage": "^7.21.0",
-    "@navikt/aksel-icons": "^8.13.0",
-    "@navikt/ds-css": "^8.13.0",
-    "@navikt/ds-react": "^8.13.0",
+    "@navikt/aksel-icons": "^8.13.1",
+    "@navikt/ds-css": "^8.13.1",
+    "@navikt/ds-react": "^8.13.1",
     "@octokit/auth-app": "^8.2.0",
     "@octokit/rest": "^22.0.1",
     "@opentelemetry/api": "^1.9.1",
