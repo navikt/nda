@@ -1020,7 +1020,7 @@ describe('canManageSection / resolveSectionCapabilities', () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const user = makeUser('Z990005')
     const assignment = await assignSectionRole(user.navIdent, sectionId, 'seksjonsleder', 'admin')
-    await removeSectionRole(assignment!.id, 'admin')
+    await removeSectionRole(defined(assignment).id, 'admin')
 
     expect(await canManageSection(user, sectionId)).toBe(false)
   })
