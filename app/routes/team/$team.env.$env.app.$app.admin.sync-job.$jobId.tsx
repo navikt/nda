@@ -8,7 +8,7 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: data?.job ? `Jobb #${data.job.id}` : 'Jobb' }]
 }
 
-export async function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, request, url }: Route.LoaderArgs) {
   await requireAdmin(request)
 
   const { team, env, app: appName, jobId: jobIdParam } = params
@@ -20,7 +20,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Not found', { status: 404 })
   }
 
-  const url = new URL(request.url)
   const afterId = parseInt(url.searchParams.get('afterId') || '0', 10)
   const logs = await getSyncJobLogs(jobId, { afterId })
 

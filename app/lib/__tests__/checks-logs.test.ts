@@ -19,12 +19,12 @@ import { isGcsConfigured } from '~/lib/gcs.server'
 import { getGitHubClient } from '~/lib/github'
 import { loader } from '../../routes/api/checks.logs'
 
-function makeRequest(params: Record<string, string> = {}) {
+function makeArgs(params: Record<string, string> = {}) {
   const url = new URL('http://localhost/api/checks/logs')
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v)
   }
-  return new Request(url.toString())
+  return { request: new Request(url.toString()), url }
 }
 
 function makeOctokitError(status: number, message: string) {
@@ -41,7 +41,7 @@ describe('checks.logs loader', () => {
   })
 
   it('returns 400 when required params are missing', async () => {
-    const response = await loader({ request: makeRequest({}) } as never)
+    const response = await loader(makeArgs({}) as never)
     expect(response.status).toBe(400)
   })
 
@@ -51,9 +51,7 @@ describe('checks.logs loader', () => {
     vi.mocked(logExists).mockResolvedValue(true)
     vi.mocked(downloadLog).mockResolvedValue('cached log content')
 
-    const response = await loader({
-      request: makeRequest({ owner: 'navikt', repo: 'pen', job_id: '123' }),
-    } as never)
+    const response = await loader(makeArgs({ owner: 'navikt', repo: 'pen', job_id: '123' }) as never)
     const data = await response.json()
     expect(data.source).toBe('cached')
     expect(data.logs).toBe('cached log content')
@@ -75,9 +73,7 @@ describe('checks.logs loader', () => {
         makeOctokitError(404, 'Not Found - https://docs.github.com/rest/actions/workflow-jobs'),
       )
 
-      const response = await loader({
-        request: makeRequest({ owner: 'navikt', repo: 'pen', job_id: '123' }),
-      } as never)
+      const response = await loader(makeArgs({ owner: 'navikt', repo: 'pen', job_id: '123' }) as never)
 
       expect(response.status).toBe(404)
       const data = await response.json()
@@ -89,9 +85,7 @@ describe('checks.logs loader', () => {
     it('returns errorType "not_found" for Octokit 410 error', async () => {
       mockClient.request.mockRejectedValue(makeOctokitError(410, 'Gone'))
 
-      const response = await loader({
-        request: makeRequest({ owner: 'navikt', repo: 'pen', job_id: '456' }),
-      } as never)
+      const response = await loader(makeArgs({ owner: 'navikt', repo: 'pen', job_id: '456' }) as never)
 
       expect(response.status).toBe(404)
       const data = await response.json()
@@ -101,9 +95,7 @@ describe('checks.logs loader', () => {
     it('returns errorType "server_error" for non-404 errors', async () => {
       mockClient.request.mockRejectedValue(makeOctokitError(500, 'Internal Server Error'))
 
-      const response = await loader({
-        request: makeRequest({ owner: 'navikt', repo: 'pen', job_id: '789' }),
-      } as never)
+      const response = await loader(makeArgs({ owner: 'navikt', repo: 'pen', job_id: '789' }) as never)
 
       expect(response.status).toBe(500)
       const data = await response.json()
@@ -113,9 +105,7 @@ describe('checks.logs loader', () => {
     it('returns errorType "server_error" for generic errors without status', async () => {
       mockClient.request.mockRejectedValue(new Error('Network timeout'))
 
-      const response = await loader({
-        request: makeRequest({ owner: 'navikt', repo: 'pen', job_id: '789' }),
-      } as never)
+      const response = await loader(makeArgs({ owner: 'navikt', repo: 'pen', job_id: '789' }) as never)
 
       expect(response.status).toBe(500)
       const data = await response.json()
@@ -126,9 +116,7 @@ describe('checks.logs loader', () => {
       mockClient.request.mockResolvedValue({ headers: { location: 'https://storage.example.com/logs' } })
       mockClient.actions.downloadJobLogsForWorkflowRun.mockResolvedValue({ data: 'log content from github' })
 
-      const response = await loader({
-        request: makeRequest({ owner: 'navikt', repo: 'pen', job_id: '123' }),
-      } as never)
+      const response = await loader(makeArgs({ owner: 'navikt', repo: 'pen', job_id: '123' }) as never)
 
       const data = await response.json()
       expect(data.logs).toBe('log content from github')

@@ -13,8 +13,7 @@ export function meta(_args: Route.MetaArgs) {
   return [{ title: 'Verifiser deployments - NDA' }]
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url)
+export async function loader({ url }: Route.LoaderArgs) {
   const appId = url.searchParams.get('app')
 
   const stats = await getVerificationStats(appId ? parseInt(appId, 10) : undefined)

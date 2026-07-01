@@ -39,10 +39,9 @@ export function meta(_args: Route.MetaArgs) {
   return [{ title: 'Sync Jobs - Admin - NDA' }]
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, url }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const url = new URL(request.url)
   const status = url.searchParams.get('status') as SyncJobStatus | null
   const jobType = url.searchParams.get('type') as SyncJobType | null
   const appName = url.searchParams.get('app') || null

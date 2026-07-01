@@ -3,7 +3,7 @@ import { requireParams } from '~/lib/route-params.server'
 import { default as DeploymentDetail, action as deploymentAction, loader as deploymentLoader } from '../deployments/$id'
 import type { Route } from './+types/$team.env.$env.app.$app.deployments.$deploymentId'
 
-export async function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, request, url }: Route.LoaderArgs) {
   const { team, env, app: appName, deploymentId } = requireParams(params, ['team', 'env', 'app', 'deploymentId'])
 
   const app = await getMonitoredApplicationByIdentity(team, env, appName)
@@ -14,6 +14,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const result = await deploymentLoader({
     params: { id: deploymentId },
     request,
+    url,
   } as Parameters<typeof deploymentLoader>[0])
 
   if (result instanceof Response) {
@@ -32,10 +33,11 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: deployment ? `Deployment #${deployment.id} - NDA` : 'Deployment' }]
 }
 
-export async function action({ params, request }: Route.ActionArgs) {
+export async function action({ params, request, url }: Route.ActionArgs) {
   return deploymentAction({
     params: { id: params.deploymentId },
     request,
+    url,
   } as Parameters<typeof deploymentAction>[0])
 }
 

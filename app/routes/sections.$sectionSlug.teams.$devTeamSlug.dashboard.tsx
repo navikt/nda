@@ -13,12 +13,11 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `Dashboard – ${data?.devTeam?.name ?? 'Team'}` }]
 }
 
-export async function loader({ request, params }: Route.LoaderArgs) {
+export async function loader({ request, params, url }: Route.LoaderArgs) {
   await requireUser(request)
   const devTeam = await getDevTeamBySlug(params.devTeamSlug)
   if (!devTeam) throw new Response('Utviklingsteam ikke funnet', { status: 404 })
 
-  const url = new URL(request.url)
   const periodType = (url.searchParams.get('periodType') as BoardPeriodType) || 'tertiary'
   const periodLabel = url.searchParams.get('period') || getCurrentPeriod(periodType).label
 

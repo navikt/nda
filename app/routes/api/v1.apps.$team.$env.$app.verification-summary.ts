@@ -4,7 +4,7 @@ import type { VerificationSummaryResponse } from '~/lib/api/types'
 import { requireM2MToken } from '~/lib/m2m-auth.server'
 import type { Route } from './+types/v1.apps.$team.$env.$app.verification-summary'
 
-export async function loader({ request, params }: Route.LoaderArgs) {
+export async function loader({ request, params, url }: Route.LoaderArgs) {
   await requireM2MToken(request)
 
   const { team, env, app: appName } = params
@@ -17,7 +17,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })
   }
 
-  const url = new URL(request.url)
   const now = new Date()
   const startOfYear = new Date(now.getFullYear(), 0, 1)
 

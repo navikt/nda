@@ -2,8 +2,7 @@ import { getGitHubClient } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import type { Route } from './+types/checks.annotations'
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url)
+export async function loader({ url }: Route.LoaderArgs) {
   const owner = url.searchParams.get('owner')
   const repo = url.searchParams.get('repo')
   const checkRunId = url.searchParams.get('check_run_id')
