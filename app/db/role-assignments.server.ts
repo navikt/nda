@@ -45,6 +45,16 @@ export async function getSectionRoleAssignments(sectionId: number): Promise<Sect
   return rows
 }
 
+export async function getSectionRoleAssignmentById(assignmentId: number): Promise<SectionRoleAssignment | null> {
+  const { rows } = await pool.query<SectionRoleAssignment>(
+    `SELECT id, nav_ident, section_id, role, assigned_by, assigned_at
+     FROM section_role_assignments
+     WHERE id = $1 AND deleted_at IS NULL`,
+    [assignmentId],
+  )
+  return rows[0] ?? null
+}
+
 export async function getAllSectionRoleAssignments(): Promise<
   Map<string, Array<{ section_id: number; section_name: string; role: SectionRole }>>
 > {
