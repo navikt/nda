@@ -33,7 +33,7 @@ import {
   removeTeamRole,
 } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import { getUserByNavIdent } from '~/db/user-github-lookups.server'
+import { getOrCreateUserFromGraph } from '~/db/user-github-lookups.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
@@ -193,9 +193,15 @@ export async function action({ request, params }: Route.ActionArgs) {
       throw new Response('Du har ikke tilgang til å tildele denne rollen', { status: 403 })
     }
 
-    const knownUser = await getUserByNavIdent(navIdent)
+    let knownUser: Awaited<ReturnType<typeof getOrCreateUserFromGraph>>
+    try {
+      knownUser = await getOrCreateUserFromGraph(navIdent)
+    } catch (err) {
+      logger.error(`Feil ved brukeropprettelse for ${navIdent}:`, err instanceof Error ? err : new Error(String(err)))
+      return fail(`Kunne ikke opprette brukeren ${navIdent}. Prøv igjen senere.`)
+    }
     if (!knownUser) {
-      return fail(`Brukeren ${navIdent} er ikke kjent i systemet. Opprett brukeren under Admin → Brukere.`)
+      return fail(`Brukeren ${navIdent} ble ikke funnet i Active Directory eller mangler visningsnavn.`)
     }
 
     const roleLabel = TEAM_ROLE_LABELS[role] ?? role
