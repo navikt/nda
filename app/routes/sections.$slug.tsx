@@ -23,6 +23,7 @@ import { type DevTeamBatchStats, getDevTeamStatsBatch } from '~/db/dashboard-sta
 import { getDevTeamsBySection } from '~/db/dev-teams.server'
 import { getSectionBySlug } from '~/db/sections.server'
 import { requireUser } from '~/lib/auth.server'
+import { resolveSectionCapabilities } from '~/lib/authorization.server'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/sections.$slug'
 
@@ -37,7 +38,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
 
-  const devTeams = await getDevTeamsBySection(section.id)
+  const [devTeams, { canManage }] = await Promise.all([
+    getDevTeamsBySection(section.id),
+    resolveSectionCapabilities(user, section.id),
+  ])
   const devTeamIds = devTeams.map((t) => t.id)
 
   const teamStatsMap = await getDevTeamStatsBatch(devTeamIds, ytdStart)
@@ -82,12 +86,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ytdStats,
     ytdTeamStats,
     devTeams,
-    isAdmin: user.role === 'admin',
+    canManage,
   }
 }
 
 export default function SectionOverview() {
-  const { section, ytdStats, ytdTeamStats, devTeams, isAdmin } = useLoaderData<typeof loader>()
+  const { section, ytdStats, ytdTeamStats, devTeams, canManage } = useLoaderData<typeof loader>()
 
   const overallFourEyes = ytdStats.four_eyes_coverage
   const overallGoalCoverage = ytdStats.goal_coverage
@@ -99,7 +103,7 @@ export default function SectionOverview() {
           <Heading level="1" size="xlarge" spacing>
             {section.name}
           </Heading>
-          {isAdmin && (
+          {canManage && (
             <Button
               as={Link}
               to={`/sections/${section.slug}/edit`}
