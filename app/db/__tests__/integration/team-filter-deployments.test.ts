@@ -19,10 +19,10 @@ afterEach(async () => {
 })
 
 async function seedUser(navIdent: string, githubUsername: string) {
-  await pool.query(
-    `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-    [navIdent, navIdent, `${githubUsername}@nav.no`],
-  )
+  await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [
+    navIdent,
+    navIdent,
+  ])
   await pool.query(
     `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     [githubUsername, navIdent],

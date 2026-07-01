@@ -20,7 +20,7 @@ function SearchPage({ query, results }: { query: string; results: SearchResult[]
           Søk
         </Heading>
         <Hide above="md">
-          <BodyShort>Søk på navn, NAV-ident, e-post, brukernavn, SHA eller ID</BodyShort>
+          <BodyShort>Søk på navn, NAV-ident, brukernavn, SHA eller ID</BodyShort>
         </Hide>
         <Show above="md">
           <BodyShort>
@@ -40,7 +40,7 @@ function SearchPage({ query, results }: { query: string; results: SearchResult[]
               label="Søk"
               hideLabel
               variant="primary"
-              placeholder="Navn, NAV-ident, e-post, SHA..."
+              placeholder="Navn, NAV-ident, brukernavn, SHA..."
               name="q"
               defaultValue={query}
             />

@@ -17,7 +17,7 @@ import {
   upsertUserAndGithubAccount,
 } from '~/db/user-github-lookups.server'
 import { requireAdmin } from '~/lib/auth.server'
-import { getFormString, isValidEmail, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
+import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
@@ -105,15 +105,13 @@ export async function action({ request }: Route.ActionArgs) {
     if (!graphUser) {
       return { createUserFieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
     }
-
     const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
-    const navEmail = graphUser.email ?? null
 
-    if (!displayName || !navEmail) {
-      return { createUserFieldErrors: { nav_ident: 'Brukeren mangler navn eller e-post i Active Directory' } }
+    if (!displayName) {
+      return { createUserFieldErrors: { nav_ident: 'Brukeren mangler navn i Active Directory' } }
     }
 
-    await upsertUser({ navIdent, displayName, navEmail })
+    await upsertUser({ navIdent, displayName })
     return { createUserSuccess: true, createUserNavIdent: navIdent }
   }
 
@@ -122,7 +120,7 @@ export async function action({ request }: Route.ActionArgs) {
     const githubUsername = githubUsernameRaw.toLowerCase()
     const navIdentRaw = getFormString(formData, 'nav_ident')?.toUpperCase() || null
 
-    const fieldErrors: { github_username?: string; nav_email?: string; nav_ident?: string } = {}
+    const fieldErrors: { github_username?: string; nav_ident?: string } = {}
 
     if (!githubUsername) {
       fieldErrors.github_username = 'GitHub brukernavn er påkrevd'
@@ -157,13 +155,14 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
-    const navEmail = graphUser.email ?? null
+    if (!displayName) {
+      return { fieldErrors: { nav_ident: 'Brukeren ble funnet i Active Directory, men mangler visningsnavn' } }
+    }
 
     await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: githubUsernameRaw,
       displayName,
-      navEmail,
       navIdent,
       slackMemberId: getFormString(formData, 'slack_member_id') || null,
     })
@@ -171,35 +170,23 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === 'upsert') {
-    const githubUsername = formData.get('github_username') as string
-    const navEmail = (formData.get('nav_email') as string) || null
-    const navIdent = (formData.get('nav_ident') as string) || null
-
-    const fieldErrors: { github_username?: string; nav_email?: string; nav_ident?: string } = {}
+    const githubUsername = getFormString(formData, 'github_username')
+    const navIdent = getFormString(formData, 'nav_ident')
 
     if (!githubUsername) {
-      fieldErrors.github_username = 'GitHub brukernavn er påkrevd'
-    } else if (isGitHubBot(githubUsername)) {
-      fieldErrors.github_username = 'Kan ikke opprette mapping for GitHub-botkontoer'
+      return { fieldErrors: { github_username: 'GitHub brukernavn er påkrevd' } }
     }
-
-    if (navEmail && !isValidEmail(navEmail)) {
-      fieldErrors.nav_email = 'Ugyldig e-postformat'
+    if (isGitHubBot(githubUsername)) {
+      return { fieldErrors: { github_username: 'Kan ikke opprette mapping for GitHub-botkontoer' } }
     }
-
     if (navIdent && !isValidNavIdent(navIdent)) {
-      fieldErrors.nav_ident = 'Må være én bokstav etterfulgt av 6 siffer'
-    }
-
-    if (Object.keys(fieldErrors).length > 0) {
-      return { fieldErrors }
+      return { fieldErrors: { nav_ident: 'Må være én bokstav etterfulgt av 6 siffer' } }
     }
 
     await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: null,
       displayName: getFormString(formData, 'display_name') || null,
-      navEmail,
       navIdent,
       slackMemberId: getFormString(formData, 'slack_member_id') || null,
     })
@@ -238,7 +225,6 @@ export async function action({ request }: Route.ActionArgs) {
         await upsertUserAndGithubAccount({
           githubUsername: mapping.github_username,
           displayName: typeof mapping.display_name === 'string' ? mapping.display_name || null : null,
-          navEmail: typeof mapping.nav_email === 'string' ? mapping.nav_email || null : null,
           navIdent: typeof mapping.nav_ident === 'string' ? mapping.nav_ident || null : null,
           slackMemberId: typeof mapping.slack_member_id === 'string' ? mapping.slack_member_id || null : null,
         })
@@ -409,7 +395,7 @@ export default function AdminUsers() {
                     <VStack gap="space-2">
                       <BodyShort weight="semibold">{u.display_name}</BodyShort>
                       <BodyShort size="small" textColor="subtle">
-                        {u.nav_ident} · {u.nav_email}
+                        {u.nav_ident}
                       </BodyShort>
                     </VStack>
                   </HStack>
@@ -454,12 +440,6 @@ export default function AdminUsers() {
                   disabled
                 />
                 <TextField label="Navn" name="display_name" defaultValue={editMapping.display_name || ''} />
-                <TextField
-                  label="Nav e-post"
-                  name="nav_email"
-                  defaultValue={editMapping.nav_email || ''}
-                  error={actionData?.fieldErrors?.nav_email}
-                />
                 <TextField
                   label="Nav-ident"
                   name="nav_ident"

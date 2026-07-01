@@ -48,7 +48,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
     await softDeleteGithubAccount('gladfjord', 'Z990002')
 
@@ -66,7 +65,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
     await softDeleteGithubAccount('gladfjord', 'Z990002')
 
@@ -80,7 +78,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990003',
-      navEmail: 'glad.fjord@nav.no',
     })
     await softDeleteGithubAccount('gladfjord', null)
 
@@ -94,7 +91,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'GladFjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
 
     const byMixedCase = await getGithubUserLookup('GladFjord')
@@ -109,7 +105,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'GladFjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990002',
-      navEmail: 'glad.fjord@nav.no',
     })
 
     const lookups = await getGithubUserLookups(['GLADFJORD', 'GladFjord'])
@@ -122,13 +117,11 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
     await upsertUserAndGithubAccount({
       githubUsername: 'raskelv',
       displayName: 'Rask Elv',
       navIdent: 'Z990002',
-      navEmail: 'rask.elv@nav.no',
     })
     await softDeleteGithubAccount('raskelv', null)
 
@@ -141,7 +134,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
     await softDeleteGithubAccount('gladfjord', null)
 
@@ -153,7 +145,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
       slackMemberId: 'U001GLAD',
     })
     await softDeleteGithubAccount('gladfjord', null)
@@ -167,7 +158,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
 
     expect(await getUnmappedDeployers()).toEqual([])
@@ -178,12 +168,11 @@ describe('user_github_accounts soft delete', () => {
   })
 
   it('upsertUserAndGithubAccount undeletes a soft-deleted github account', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await upsertUserAndGithubAccount({
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
     await softDeleteGithubAccount('gladfjord', 'Z990002')
 
@@ -191,7 +180,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord2@nav.no',
     })
 
     const { rows } = await pool.query<{ deleted_at: Date | null; nav_ident: string }>(
@@ -207,7 +195,6 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
     await softDeleteGithubAccount('gladfjord', 'Z990011')
 
@@ -233,20 +220,17 @@ describe('user_github_accounts soft delete', () => {
       githubUsername: 'gladfjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
       slackMemberId: 'U001GLAD',
     })
 
     expect((await searchDeployments('Glad Fjord')).some((r) => r.type === 'user')).toBe(true)
     expect((await searchDeployments('Z990001')).some((r) => r.type === 'user')).toBe(true)
-    expect((await searchDeployments('glad.fjord')).some((r) => r.type === 'user')).toBe(true)
     expect((await searchDeployments('U001GLAD')).some((r) => r.type === 'user')).toBe(true)
 
     await softDeleteGithubAccount('gladfjord', 'Z990002')
 
     expect((await searchDeployments('Glad Fjord')).some((r) => r.type === 'user')).toBe(false)
     expect((await searchDeployments('Z990001')).some((r) => r.type === 'user')).toBe(false)
-    expect((await searchDeployments('glad.fjord')).some((r) => r.type === 'user')).toBe(false)
     expect((await searchDeployments('U001GLAD')).some((r) => r.type === 'user')).toBe(false)
 
     const byUsername = await searchDeployments('gladfjord')

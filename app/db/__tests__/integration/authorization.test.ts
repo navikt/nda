@@ -48,8 +48,8 @@ function defined<T>(value: T | null | undefined): T {
 
 async function seedGithubAccount(navIdent: string, githubUsername: string, displayName: string) {
   await pool.query(
-    `INSERT INTO users (nav_ident, display_name, nav_email)
-     VALUES ($1, $2, LOWER($1) || '@nav.no') ON CONFLICT DO NOTHING`,
+    `INSERT INTO users (nav_ident, display_name)
+     VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     [navIdent, displayName],
   )
   await pool.query(

@@ -13,7 +13,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     mappings: mappings.map((m) => ({
       github_username: m.github_username,
       display_name: m.display_name,
-      nav_email: m.nav_email,
       nav_ident: m.nav_ident,
       slack_member_id: m.slack_member_id,
     })),

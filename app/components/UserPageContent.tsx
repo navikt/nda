@@ -30,7 +30,6 @@ import styles from '~/styles/common.module.css'
 interface UserMapping {
   github_username: string | null
   display_name: string | null
-  nav_email: string | null
   nav_ident: string | null
   slack_member_id: string | null
 }

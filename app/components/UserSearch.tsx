@@ -109,12 +109,9 @@ function formatUserLabel(user: GraphUserResult): string {
   const parts: string[] = []
   if (user.displayName) parts.push(user.displayName)
   if (user.navIdent) parts.push(user.navIdent)
-  if (user.email) parts.push(user.email)
   if (parts.length === 0) return 'Ukjent bruker'
   if (user.displayName && user.navIdent) {
-    return user.email
-      ? `${user.displayName} (${user.navIdent}) – ${user.email}`
-      : `${user.displayName} (${user.navIdent})`
+    return `${user.displayName} (${user.navIdent})`
   }
   return parts.join(' – ')
 }

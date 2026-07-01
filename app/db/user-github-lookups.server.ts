@@ -9,7 +9,6 @@ interface GithubUserLookup {
   github_username: string
   display_github_username: string | null
   display_name: string | null
-  nav_email: string | null
   nav_ident: string | null
   slack_member_id: string | null
   account_deleted_at: Date | null
@@ -20,7 +19,6 @@ export async function getGithubUserLookup(githubUsername: string): Promise<Githu
     `SELECT uga.github_username,
             uga.display_github_username,
             u.display_name,
-            u.nav_email,
             uga.nav_ident,
             u.slack_member_id,
             uga.deleted_at AS account_deleted_at
@@ -39,7 +37,6 @@ export async function getGithubUserLookups(githubUsernames: string[]): Promise<M
     `SELECT uga.github_username,
             uga.display_github_username,
             u.display_name,
-            u.nav_email,
             uga.nav_ident,
             u.slack_member_id,
             uga.deleted_at AS account_deleted_at
@@ -105,7 +102,6 @@ interface UserRecord {
   display_github_username: string | null
   nav_ident: string
   display_name: string | null
-  nav_email: string | null
   slack_member_id: string | null
 }
 
@@ -114,7 +110,6 @@ export async function getUserByIdentifier(identifier: string): Promise<UserRecor
     const result = await pool.query<UserRecord>(
       `SELECT u.nav_ident,
               u.display_name,
-              u.nav_email,
               u.slack_member_id,
               uga.github_username,
               uga.display_github_username
@@ -137,7 +132,6 @@ export async function getUserByIdentifier(identifier: string): Promise<UserRecor
             uga.display_github_username,
             u.nav_ident,
             u.display_name,
-            u.nav_email,
             u.slack_member_id
      FROM user_github_accounts uga
      JOIN users u ON u.nav_ident = uga.nav_ident AND u.deleted_at IS NULL
@@ -160,7 +154,6 @@ export async function getUsersByIdentifiers(identifiers: string[]): Promise<Map<
     const result = await pool.query<UserRecord>(
       `SELECT u.nav_ident,
               u.display_name,
-              u.nav_email,
               u.slack_member_id,
               uga.github_username,
               uga.display_github_username
@@ -185,7 +178,6 @@ export async function getUsersByIdentifiers(identifiers: string[]): Promise<Map<
             uga.display_github_username,
             u.nav_ident,
             u.display_name,
-            u.nav_email,
             u.slack_member_id
      FROM user_github_accounts uga
      JOIN users u ON u.nav_ident = uga.nav_ident AND u.deleted_at IS NULL
@@ -213,7 +205,6 @@ export interface UserWithAccount {
   display_github_username: string | null
   nav_ident: string
   display_name: string
-  nav_email: string
   slack_member_id: string | null
   created_at: Date
   updated_at: Date
@@ -225,7 +216,6 @@ export async function getAllUsersWithAccounts(): Promise<UserWithAccount[]> {
             uga.display_github_username,
             u.nav_ident,
             u.display_name,
-            u.nav_email,
             u.slack_member_id,
             GREATEST(u.updated_at, uga.updated_at) AS updated_at,
             LEAST(u.created_at, uga.created_at) AS created_at
@@ -286,16 +276,9 @@ function normalizeNavIdent(value: string | null | undefined): string | null {
   return trimmed || null
 }
 
-function normalizeEmail(value: string | null | undefined): string | null {
-  if (!value) return null
-  const trimmed = value.trim().toLowerCase()
-  return trimmed || null
-}
-
 interface User {
   nav_ident: string
   display_name: string
-  nav_email: string
   slack_member_id: string | null
   created_at: Date
   updated_at: Date
@@ -306,30 +289,26 @@ interface User {
 export async function upsertUser(params: {
   navIdent: string
   displayName: string
-  navEmail: string
   slackMemberId?: string | null
 }): Promise<User> {
   const navIdent = normalizeNavIdent(params.navIdent)
   const displayName = normalize(params.displayName)
-  const navEmail = normalizeEmail(params.navEmail)
   const slackMemberId = normalize(params.slackMemberId)
 
   if (!navIdent) throw new Error('navIdent is required')
   if (!displayName) throw new Error('displayName is required')
-  if (!navEmail) throw new Error('navEmail is required')
 
   const result = await pool.query<User>(
-    `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id, updated_at)
-     VALUES ($1, $2, $3, $4, NOW())
+    `INSERT INTO users (nav_ident, display_name, slack_member_id, updated_at)
+     VALUES ($1, $2, $3, NOW())
      ON CONFLICT (nav_ident) DO UPDATE SET
        display_name    = EXCLUDED.display_name,
-       nav_email       = EXCLUDED.nav_email,
        slack_member_id = COALESCE(EXCLUDED.slack_member_id, users.slack_member_id),
        updated_at      = NOW(),
        deleted_at      = NULL,
        deleted_by      = NULL
      RETURNING *`,
-    [navIdent, displayName, navEmail, slackMemberId],
+    [navIdent, displayName, slackMemberId],
   )
 
   return result.rows[0]
@@ -339,7 +318,6 @@ export async function upsertUserAndGithubAccount(params: {
   githubUsername: string
   displayGithubUsername?: string | null
   displayName?: string | null
-  navEmail?: string | null
   navIdent?: string | null
   slackMemberId?: string | null
 }): Promise<void> {
@@ -358,28 +336,25 @@ export async function upsertUserAndGithubAccount(params: {
       `display_github_username '${displayGithubUsername}' does not match github_username '${githubUsername}'`,
     )
   }
-
   const navIdent = normalizeNavIdent(params.navIdent)
   const displayName = normalize(params.displayName)
-  const navEmail = normalizeEmail(params.navEmail)
   const slackMemberId = normalize(params.slackMemberId)
 
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
 
-    if (navIdent && displayName && navEmail) {
+    if (navIdent && displayName) {
       await client.query(
-        `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id, updated_at)
-         VALUES ($1, $2, $3, $4, NOW())
+        `INSERT INTO users (nav_ident, display_name, slack_member_id, updated_at)
+         VALUES ($1, $2, $3, NOW())
          ON CONFLICT (nav_ident) DO UPDATE SET
            display_name    = EXCLUDED.display_name,
-           nav_email       = EXCLUDED.nav_email,
            slack_member_id = COALESCE(EXCLUDED.slack_member_id, users.slack_member_id),
            updated_at      = NOW(),
            deleted_at      = NULL,
            deleted_by      = NULL`,
-        [navIdent, displayName, navEmail, slackMemberId],
+        [navIdent, displayName, slackMemberId],
       )
       await client.query(
         `INSERT INTO user_github_accounts (github_username, display_github_username, nav_ident, updated_at)
@@ -462,12 +437,12 @@ export async function populateUsersFromGraph(): Promise<PopulateResult> {
         continue
       }
       const user = graphUsers[0]
-      if (!user.displayName || !user.email) {
-        logger.warn('populate-users: skipping nav_ident — missing displayName or email', { nav_ident: navIdent })
+      if (!user.displayName) {
+        logger.warn('populate-users: skipping nav_ident — missing displayName', { nav_ident: navIdent })
         skipped++
         continue
       }
-      await upsertUser({ navIdent, displayName: user.displayName, navEmail: user.email })
+      await upsertUser({ navIdent, displayName: user.displayName })
       success++
     } catch (err) {
       logger.error('populate-users: error processing nav_ident', err)
@@ -478,11 +453,9 @@ export async function populateUsersFromGraph(): Promise<PopulateResult> {
   return { success, skipped, errors }
 }
 
-export async function getUsersWithoutGithub(): Promise<
-  { nav_ident: string; display_name: string; nav_email: string }[]
-> {
-  const result = await pool.query<{ nav_ident: string; display_name: string; nav_email: string }>(
-    `SELECT u.nav_ident, u.display_name, u.nav_email
+export async function getUsersWithoutGithub(): Promise<{ nav_ident: string; display_name: string }[]> {
+  const result = await pool.query<{ nav_ident: string; display_name: string }>(
+    `SELECT u.nav_ident, u.display_name
      FROM users u
      WHERE u.deleted_at IS NULL
        AND NOT EXISTS (

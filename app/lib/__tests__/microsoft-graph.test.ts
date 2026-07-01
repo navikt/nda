@@ -45,9 +45,7 @@ describe('microsoft-graph', () => {
         mockGraphResponse([
           {
             displayName: 'Glad Fjord',
-            mail: 'glad.fjord@nav.no',
             onPremisesSamAccountName: 'Z990001',
-            userPrincipalName: 'glad.fjord@nav.no',
           },
         ]),
       )
@@ -56,7 +54,7 @@ describe('microsoft-graph', () => {
     const searchGraphUsers = await getSearchFn()
     const results = await searchGraphUsers('Z990001')
 
-    expect(results).toEqual([{ displayName: 'Glad Fjord', email: 'glad.fjord@nav.no', navIdent: 'Z990001' }])
+    expect(results).toEqual([{ displayName: 'Glad Fjord', navIdent: 'Z990001' }])
 
     const graphCall = fetchMock.mock.calls[1]
     const url = graphCall[0] as string
@@ -64,34 +62,6 @@ describe('microsoft-graph', () => {
     expect(url).toContain(encodeURIComponent("onPremisesSamAccountName eq 'Z990001'"))
     expect(url).toContain('$count=true')
     expect(url).not.toContain('$search')
-  })
-
-  it('searches by email using $search with mail:', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockTokenResponse())
-      .mockResolvedValueOnce(
-        mockGraphResponse([
-          {
-            displayName: 'Rask Elv',
-            mail: 'rask.elv@nav.no',
-            onPremisesSamAccountName: 'Z990002',
-            userPrincipalName: 'rask.elv@nav.no',
-          },
-        ]),
-      )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const searchGraphUsers = await getSearchFn()
-    const results = await searchGraphUsers('rask.elv@nav.no')
-
-    expect(results).toEqual([{ displayName: 'Rask Elv', email: 'rask.elv@nav.no', navIdent: 'Z990002' }])
-
-    const graphCall = fetchMock.mock.calls[1]
-    const url = graphCall[0] as string
-    expect(url).toContain('$search=')
-    expect(url).toContain(encodeURIComponent('"mail:rask.elv@nav.no"'))
-    expect(url).toContain('$count=true')
   })
 
   it('searches by display name using $search with displayName:', async () => {
@@ -102,9 +72,7 @@ describe('microsoft-graph', () => {
         mockGraphResponse([
           {
             displayName: 'Stille Skog',
-            mail: 'stille.skog@nav.no',
             onPremisesSamAccountName: 'Z990003',
-            userPrincipalName: 'stille.skog@nav.no',
           },
         ]),
       )
@@ -113,7 +81,7 @@ describe('microsoft-graph', () => {
     const searchGraphUsers = await getSearchFn()
     const results = await searchGraphUsers('Stille')
 
-    expect(results).toEqual([{ displayName: 'Stille Skog', email: 'stille.skog@nav.no', navIdent: 'Z990003' }])
+    expect(results).toEqual([{ displayName: 'Stille Skog', navIdent: 'Z990003' }])
 
     const graphCall = fetchMock.mock.calls[1]
     const url = graphCall[0] as string
@@ -144,9 +112,7 @@ describe('microsoft-graph', () => {
         mockGraphResponse([
           {
             displayName: 'Røe, Modig',
-            mail: 'modig.roe@nav.no',
             onPremisesSamAccountName: 'Z990004',
-            userPrincipalName: 'modig.roe@nav.no',
           },
         ]),
       )
@@ -155,7 +121,7 @@ describe('microsoft-graph', () => {
     const searchGraphUsers = await getSearchFn()
     const results = await searchGraphUsers('Modig Røe')
 
-    expect(results).toEqual([{ displayName: 'Røe, Modig', email: 'modig.roe@nav.no', navIdent: 'Z990004' }])
+    expect(results).toEqual([{ displayName: 'Røe, Modig', navIdent: 'Z990004' }])
 
     const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
     expect(url).toContain('"displayName:Modig"')

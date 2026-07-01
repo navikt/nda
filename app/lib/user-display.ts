@@ -3,7 +3,6 @@ import { getBotDisplayName } from './github-bots'
 export type UserRecord = {
   display_name: string | null
   nav_ident?: string | null
-  nav_email?: string | null
 }
 
 export type UserLookupMap = Record<string, UserRecord>
@@ -18,18 +17,17 @@ export function getUserDisplayName(
   if (botName) return botName
 
   const mapping = userMappings[githubUsername]
-  return mapping?.display_name || mapping?.nav_email || githubUsername
+  return mapping?.display_name || githubUsername
 }
 
 export function serializeUserLookups(
-  mappings: Map<string, { display_name: string | null; nav_ident: string | null; nav_email?: string | null }>,
+  mappings: Map<string, { display_name: string | null; nav_ident: string | null }>,
 ): UserLookupMap {
   const result: UserLookupMap = {}
   for (const [username, mapping] of mappings) {
     result[username] = {
       display_name: mapping.display_name,
       nav_ident: mapping.nav_ident,
-      nav_email: mapping.nav_email,
     }
   }
   return result

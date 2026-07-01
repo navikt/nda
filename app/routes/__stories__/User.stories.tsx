@@ -122,7 +122,6 @@ export const PartialMapping: Story = {
     mapping: {
       github_username: 'partial-user',
       display_name: 'Rolig Dal',
-      nav_email: null,
       nav_ident: 'Z990001',
       slack_member_id: null,
     },

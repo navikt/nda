@@ -7,9 +7,7 @@ interface GraphToken {
 
 interface GraphUser {
   displayName: string | null
-  mail: string | null
   onPremisesSamAccountName: string | null
-  userPrincipalName: string | null
 }
 
 interface GraphSearchResponse {
@@ -18,7 +16,6 @@ interface GraphSearchResponse {
 
 export interface GraphUserResult {
   displayName: string | null
-  email: string | null
   navIdent: string | null
 }
 
@@ -66,25 +63,18 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
   const token = await getAccessToken()
 
   const isNavIdent = /^[A-Za-z]\d{6}$/.test(trimmed)
-  const isEmail = trimmed.includes('@')
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     ConsistencyLevel: 'eventual',
   }
 
-  const select = '$select=displayName,mail,onPremisesSamAccountName,userPrincipalName'
+  const select = '$select=displayName,onPremisesSamAccountName'
 
   if (isNavIdent) {
     const sanitized = trimmed.toUpperCase().replace(/'/g, "''")
     const filter = `onPremisesSamAccountName eq '${sanitized}'`
     const url = `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(filter)}&${select}&$count=true&$top=10`
-    return fetchGraphUsers(url, headers)
-  }
-
-  if (isEmail) {
-    const search = `"mail:${escapeSearchValue(trimmed)}"`
-    const url = `https://graph.microsoft.com/v1.0/users?$search=${encodeURIComponent(search)}&${select}&$count=true&$top=10`
     return fetchGraphUsers(url, headers)
   }
 
@@ -106,7 +96,6 @@ async function fetchGraphUsers(url: string, headers: Record<string, string>): Pr
 
   return data.value.map((user) => ({
     displayName: user.displayName,
-    email: user.mail || user.userPrincipalName,
     navIdent: user.onPremisesSamAccountName,
   }))
 }

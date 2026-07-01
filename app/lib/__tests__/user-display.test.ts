@@ -3,9 +3,9 @@ import { formatDisplayNameNatural, getUserDisplayName, serializeUserLookups, typ
 
 describe('getUserDisplayName — resolves GitHub username to display name with fallback chain', () => {
   const mappings: UserLookupMap = {
-    'modig.bjork': { display_name: 'Modig Bjørk', nav_ident: 'Z990007', nav_email: 'modig.bjork@nav.no' },
-    'kari.hansen': { display_name: null, nav_email: 'kari@nav.no' },
-    'per.person': { display_name: null, nav_email: null },
+    'modig.bjork': { display_name: 'Modig Bjørk', nav_ident: 'Z990007' },
+    'kari.hansen': { display_name: null },
+    'per.person': { display_name: null },
   }
 
   it('returns null for null/undefined input (no username available)', () => {
@@ -22,11 +22,7 @@ describe('getUserDisplayName — resolves GitHub username to display name with f
     expect(getUserDisplayName('modig.bjork', mappings)).toBe('Modig Bjørk')
   })
 
-  it('falls back to nav_email when display_name is null', () => {
-    expect(getUserDisplayName('kari.hansen', mappings)).toBe('kari@nav.no')
-  })
-
-  it('falls back to raw username when both display_name and nav_email are null', () => {
+  it('falls back to raw username when display_name is null', () => {
     expect(getUserDisplayName('per.person', mappings)).toBe('per.person')
   })
 
@@ -47,14 +43,14 @@ describe('serializeUserLookups — converts Map to plain object for JSON transpo
 
   it('preserves all fields from Map entries', () => {
     const map = new Map([
-      ['alice', { display_name: 'Alice A', nav_ident: 'Z990001', nav_email: 'alice@nav.no' }],
-      ['bob', { display_name: null, nav_ident: null, nav_email: undefined }],
+      ['alice', { display_name: 'Alice A', nav_ident: 'Z990001' }],
+      ['bob', { display_name: null, nav_ident: null }],
     ])
 
     const result = serializeUserLookups(map)
     expect(result).toEqual({
-      alice: { display_name: 'Alice A', nav_ident: 'Z990001', nav_email: 'alice@nav.no' },
-      bob: { display_name: null, nav_ident: null, nav_email: undefined },
+      alice: { display_name: 'Alice A', nav_ident: 'Z990001' },
+      bob: { display_name: null, nav_ident: null },
     })
   })
 })

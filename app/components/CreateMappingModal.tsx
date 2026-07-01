@@ -42,14 +42,12 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
 
     const [mappingFields, setMappingFields] = useState({
       display_name: '',
-      nav_email: '',
       nav_ident: canPrefillOwnMapping ? (loggedInNavIdent ?? '') : '',
     })
 
     const handleSelectUser = (user: GraphUserResult) => {
       setMappingFields({
         display_name: formatDisplayNameNatural(user.displayName),
-        nav_email: user.email ?? '',
         nav_ident: user.navIdent ?? '',
       })
     }
@@ -75,10 +73,10 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
               {showUserSearch && (
                 <UserSearch
                   label="Søk opp person"
-                  description="Søk med navn, e-post eller NAV-ident for å fylle ut feltene under"
+                  description="Søk med navn eller NAV-ident for å fylle ut feltene under"
                   onSelect={() => {}}
                   onSelectUser={handleSelectUser}
-                  onClear={() => setMappingFields({ display_name: '', nav_email: '', nav_ident: '' })}
+                  onClear={() => setMappingFields({ display_name: '', nav_ident: '' })}
                 />
               )}
               {mappingFields.nav_ident && (
@@ -86,10 +84,6 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
                   <div>
                     <Label size="small">Navn</Label>
                     <BodyShort>{mappingFields.display_name || '–'}</BodyShort>
-                  </div>
-                  <div>
-                    <Label size="small">Nav e-post</Label>
-                    <BodyShort>{mappingFields.nav_email || '–'}</BodyShort>
                   </div>
                   <div>
                     <Label size="small">Nav-ident</Label>

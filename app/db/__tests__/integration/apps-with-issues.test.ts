@@ -21,10 +21,9 @@ afterEach(async () => {
 let navIdentCounter = 1
 async function seedGithubAccount(githubUsername: string): Promise<void> {
   const navIdent = `Z99${String(navIdentCounter++).padStart(4, '0')}`
-  await pool.query(`INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3)`, [
+  await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2)`, [
     navIdent,
     `Name of ${githubUsername}`,
-    `${githubUsername}@nav.no`,
   ])
   await pool.query(`INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2)`, [
     githubUsername.toLowerCase(),

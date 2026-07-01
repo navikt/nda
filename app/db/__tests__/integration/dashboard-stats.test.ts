@@ -462,10 +462,10 @@ describe('getDevTeamStatsBatch vs getAppDeploymentStatsBatch consistency', () =>
       opts.naisTeamSlug,
     ])
     for (const m of opts.members) {
-      await pool.query(
-        `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-        [m.navIdent, m.githubUsername, `${m.githubUsername}@nav.no`],
-      )
+      await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [
+        m.navIdent,
+        m.githubUsername,
+      ])
       await pool.query(
         `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [m.githubUsername, m.navIdent],
@@ -759,11 +759,7 @@ describe('Regression: unrecognized four_eyes_status values sum correctly', () =>
       devTeamId,
       appId,
     ])
-    await pool.query(`INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3)`, [
-      'A123456',
-      'Alice',
-      'alice@nav.no',
-    ])
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2)`, ['A123456', 'Alice'])
     await pool.query(`INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2)`, [
       'alice',
       'A123456',
@@ -914,10 +910,10 @@ describe('getDevTeamStatsBatch board-based counting', () => {
       opts.naisTeamSlug,
     ])
     for (const m of opts.members) {
-      await pool.query(
-        `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-        [m.navIdent, m.githubUsername, `${m.githubUsername}@nav.no`],
-      )
+      await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [
+        m.navIdent,
+        m.githubUsername,
+      ])
       await pool.query(
         `INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [m.githubUsername, m.navIdent],
@@ -1164,7 +1160,7 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       devTeamId,
       appId,
     ])
-    await pool.query("INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('S123456', 'Sam', 'sam@nav.no')")
+    await pool.query("INSERT INTO users (nav_ident, display_name) VALUES ('S123456', 'Sam')")
     await pool.query("INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('sam', 'S123456')")
     await pool.query(
       `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by) VALUES ('S123456', $1, 'utvikler', 'test')`,
@@ -1215,7 +1211,7 @@ describe('getDevTeamSummaryStats board-based counting', () => {
       appId,
       teamBId,
     ])
-    await pool.query("INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('X123456', 'Xena', 'xena@nav.no')")
+    await pool.query("INSERT INTO users (nav_ident, display_name) VALUES ('X123456', 'Xena')")
     await pool.query("INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('xena', 'X123456')")
     await pool.query(
       `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by)

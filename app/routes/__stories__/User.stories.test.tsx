@@ -26,7 +26,6 @@ describe('User story baseline characterization', () => {
 
     expect(html).toContain('Glad Fjord')
     expect(html).toContain('Leveranser (42)')
-    expect(html).toContain('glad.fjord@nav.no')
     expect(html).toContain('Åpne i Slack')
     expect(html).toContain('pensjon-pen')
     expect(html).toContain('/team/pensjondeployer/env/prod-fss/app/pensjon-pen')

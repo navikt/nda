@@ -19,7 +19,6 @@ export const FullMapping: Story = {
     username: 'glad-fjord',
     displayName: 'Glad Fjord',
     identity: {
-      nav_email: 'glad.fjord@nav.no',
       nav_ident: 'Z990001',
       slack_member_id: 'U12345678',
     },
@@ -32,7 +31,6 @@ export const PartialMapping: Story = {
     username: 'rask-elv',
     displayName: 'Rask Elv',
     identity: {
-      nav_email: null,
       nav_ident: 'Z990002',
       slack_member_id: null,
     },

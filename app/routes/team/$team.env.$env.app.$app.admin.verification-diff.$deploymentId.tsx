@@ -120,9 +120,7 @@ function downloadJson(data: unknown, filename: string) {
 export default function VerificationDiffDeploymentPage({ loaderData }: Route.ComponentProps) {
   const { deployment, debugResult, error, useCache, params } = loaderData
   const userMappings =
-    'userMappings' in loaderData
-      ? (loaderData.userMappings as Record<string, { display_name: string | null; nav_email: string | null }>)
-      : {}
+    'userMappings' in loaderData ? (loaderData.userMappings as Record<string, { display_name: string | null }>) : {}
   const [searchParams, setSearchParams] = useSearchParams()
 
   const handleCacheToggle = (checked: boolean) => {
@@ -202,7 +200,7 @@ function DebugResultView({
   userMappings,
 }: {
   result: DebugVerificationResult
-  userMappings: Record<string, { display_name: string | null; nav_email: string | null }>
+  userMappings: Record<string, { display_name: string | null }>
 }) {
   const { existingStatus, fetchedData, newResult, comparison } = result
   const resolveUsername = (username: string | undefined | null) =>
