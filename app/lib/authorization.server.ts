@@ -154,11 +154,14 @@ export async function resolveTeamAdminCapabilities(
   const { sectionRoles, teamRoles } = await getUserRoles(actor.navIdent)
 
   const isTeamLeader = teamRoles.some((r) => r.dev_team_id === devTeamId && isTeamLeaderRole(r.role))
-  const isSectionLeader = sectionRoles.some((r) => r.section_id === teamSectionId)
+  const isSectionMember = sectionRoles.some((r) => r.section_id === teamSectionId)
+  const isSectionManager = sectionRoles.some(
+    (r) => r.section_id === teamSectionId && (r.role === 'seksjonsleder' || r.role === 'teknologileder'),
+  )
 
   return {
-    canAccess: isTeamLeader || isSectionLeader,
-    canAdmin: isTeamLeader,
+    canAccess: isTeamLeader || isSectionMember,
+    canAdmin: isTeamLeader || isSectionManager,
   }
 }
 
