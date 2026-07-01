@@ -1,8 +1,9 @@
-import { PlusIcon, TrashIcon } from '@navikt/aksel-icons'
+import { LinkIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Button, Heading, HStack, Modal, Select, Table, Tag, VStack } from '@navikt/ds-react'
 import { useRef, useState } from 'react'
 import { Form } from 'react-router'
 import { isTeamLeaderRole, TEAM_ROLE_LABELS, TEAM_ROLES } from '~/lib/authorization-types'
+import { LinkGithubModal } from './LinkGithubModal'
 import { UserSearch } from './UserSearch'
 
 export interface RoleMember {
@@ -15,11 +16,26 @@ export interface RoleMember {
   assigned_at: string | Date
 }
 
-export function RoleMembersSection({ roleMembers }: { roleMembers: RoleMember[] }) {
+export function RoleMembersSection({
+  roleMembers,
+  canAdmin,
+  isSubmitting,
+}: {
+  roleMembers: RoleMember[]
+  canAdmin?: boolean
+  isSubmitting?: boolean
+}) {
   const modalRef = useRef<HTMLDialogElement>(null)
+  const linkGithubModalRef = useRef<HTMLDialogElement>(null)
   const [selectedNavIdent, setSelectedNavIdent] = useState('')
   const [selectedRole, setSelectedRole] = useState<string>('utvikler')
   const [searchResetKey, setSearchResetKey] = useState(0)
+  const [linkGithubMember, setLinkGithubMember] = useState<RoleMember | null>(null)
+
+  function openLinkGithub(member: RoleMember) {
+    setLinkGithubMember(member)
+    linkGithubModalRef.current?.showModal()
+  }
 
   return (
     <VStack gap="space-16">
@@ -61,11 +77,22 @@ export function RoleMembersSection({ roleMembers }: { roleMembers: RoleMember[] 
                   </Tag>
                 </Table.DataCell>
                 <Table.DataCell>
-                  {member.display_github_username || member.github_username ? (
-                    <code>{member.display_github_username ?? member.github_username}</code>
-                  ) : (
-                    <BodyShort textColor="subtle">–</BodyShort>
-                  )}
+                  <HStack gap="space-8" align="center">
+                    {member.display_github_username || member.github_username ? (
+                      <code>{member.display_github_username ?? member.github_username}</code>
+                    ) : (
+                      <BodyShort textColor="subtle">–</BodyShort>
+                    )}
+                    {canAdmin && (
+                      <Button
+                        variant="tertiary"
+                        size="xsmall"
+                        icon={<LinkIcon aria-hidden />}
+                        onClick={() => openLinkGithub(member)}
+                        aria-label={`Knytt GitHub-konto til ${member.nav_ident}`}
+                      />
+                    )}
+                  </HStack>
                 </Table.DataCell>
                 <Table.DataCell>
                   <Form method="post" style={{ display: 'inline' }}>
@@ -139,6 +166,13 @@ export function RoleMembersSection({ roleMembers }: { roleMembers: RoleMember[] 
           </Form>
         </Modal.Body>
       </Modal>
+
+      <LinkGithubModal
+        ref={linkGithubModalRef}
+        navIdent={linkGithubMember?.nav_ident ?? ''}
+        currentGithubUsername={linkGithubMember?.display_github_username ?? linkGithubMember?.github_username}
+        isSubmitting={isSubmitting ?? false}
+      />
     </VStack>
   )
 }

@@ -33,14 +33,15 @@ import {
   removeTeamRole,
 } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import { getOrCreateUserFromGraph } from '~/db/user-github-lookups.server'
+import { getOrCreateUserFromGraph, upsertUserAndGithubAccount } from '~/db/user-github-lookups.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
 import { TEAM_ROLE_LABELS, TEAM_ROLES, type TeamRole } from '~/lib/authorization-types'
 import { type BoardPeriodType, formatBoardLabel } from '~/lib/board-periods'
-import { getFormString, isValidNavIdent, parseAuditStartYear } from '~/lib/form-validators'
+import { getFormString, isValidGitHubUsername, isValidNavIdent, parseAuditStartYear } from '~/lib/form-validators'
 import { getRepositoryDefaultBranch } from '~/lib/github/git.server'
+import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { fetchAllTeamsAndApplications, getApplicationInfo } from '~/lib/nais.server'
 import { parseRepository } from '~/lib/sync/repo-parser'
@@ -232,6 +233,44 @@ export async function action({ request, params }: Route.ActionArgs) {
       return fail('Kunne ikke fjerne rollen. Den kan allerede være fjernet.')
     }
     return ok('Rollen ble fjernet.')
+  }
+
+  if (intent === 'link_github') {
+    const navIdent = getFormString(formData, 'nav_ident')?.toUpperCase()
+    const githubUsernameRaw = getFormString(formData, 'github_username')?.trim() ?? ''
+    const githubUsername = githubUsernameRaw.toLowerCase()
+
+    if (!navIdent || !isValidNavIdent(navIdent)) {
+      return fail('Ugyldig NAV-ident.')
+    }
+    if (!githubUsername) {
+      return fail('GitHub brukernavn er påkrevd.')
+    }
+    if (!isValidGitHubUsername(githubUsername)) {
+      return fail('Ugyldig GitHub-brukernavn (kun bokstaver, tall og bindestrek).')
+    }
+    if (isGitHubBot(githubUsername)) {
+      return fail('Kan ikke knytte GitHub-botkontoer til en NAV-ident.')
+    }
+
+    const members = await getDevTeamMembersWithRoles(devTeam.id)
+    if (!members.some((m) => m.nav_ident === navIdent)) {
+      return fail(`${navIdent} er ikke registrert som medlem av dette teamet.`)
+    }
+
+    let knownUser: Awaited<ReturnType<typeof getOrCreateUserFromGraph>>
+    try {
+      knownUser = await getOrCreateUserFromGraph(navIdent)
+    } catch (err) {
+      logger.error(`Feil ved brukeroppslag for ${navIdent}:`, err instanceof Error ? err : new Error(String(err)))
+      return fail(`Kunne ikke opprette brukeren ${navIdent}. Prøv igjen senere.`)
+    }
+    if (!knownUser) {
+      return fail(`Brukeren ${navIdent} ble ikke funnet i Active Directory eller mangler visningsnavn.`)
+    }
+
+    await upsertUserAndGithubAccount({ githubUsername, displayGithubUsername: githubUsernameRaw, navIdent })
+    return ok(`GitHub-konto "${githubUsernameRaw}" ble knyttet til ${navIdent}.`)
   }
 
   if (intent === 'update_name') {

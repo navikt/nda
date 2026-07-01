@@ -11,6 +11,9 @@ const {
   mockClientQuery,
   mockClientRelease,
   mockPoolConnect,
+  mockGetDevTeamMembersWithRoles,
+  mockGetOrCreateUserFromGraph,
+  mockUpsertUserAndGithubAccount,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockGetDevTeamBySlug: vi.fn(),
@@ -22,6 +25,9 @@ const {
   mockClientQuery: vi.fn(),
   mockClientRelease: vi.fn(),
   mockPoolConnect: vi.fn(),
+  mockGetDevTeamMembersWithRoles: vi.fn(),
+  mockGetOrCreateUserFromGraph: vi.fn(),
+  mockUpsertUserAndGithubAccount: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -70,6 +76,18 @@ vi.mock('~/lib/logger.server', () => ({
   logger: {
     error: vi.fn(),
   },
+}))
+
+vi.mock('~/db/role-assignments.server', () => ({
+  assignTeamRole: vi.fn(),
+  getDevTeamMembersWithRoles: mockGetDevTeamMembersWithRoles,
+  getTeamRoleAssignmentById: vi.fn(),
+  removeTeamRole: vi.fn(),
+}))
+
+vi.mock('~/db/user-github-lookups.server', () => ({
+  getOrCreateUserFromGraph: mockGetOrCreateUserFromGraph,
+  upsertUserAndGithubAccount: mockUpsertUserAndGithubAccount,
 }))
 
 import { action } from '../../routes/sections.$sectionSlug.teams.$devTeamSlug.admin'
@@ -195,5 +213,96 @@ describe('sections team admin action - add_apps characterization', () => {
       expect.objectContaining({ default_branch: null }),
       expect.anything(),
     )
+  })
+})
+
+describe('sections team admin action - link_github', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
+    mockGetDevTeamBySlug.mockResolvedValue({
+      id: 10,
+      section_slug: 'pensjon',
+      is_active: true,
+    })
+    mockResolveTeamAdminCapabilities.mockResolvedValue({ canAdmin: true })
+    mockGetDevTeamMembersWithRoles.mockResolvedValue([
+      {
+        nav_ident: 'Z990001',
+        role: 'utvikler',
+        github_username: null,
+        display_github_username: null,
+        display_name: 'Glad Fjord',
+        id: 1,
+        assigned_at: new Date(),
+      },
+    ])
+    mockGetOrCreateUserFromGraph.mockResolvedValue({ nav_ident: 'Z990001', display_name: 'Glad Fjord' })
+    mockUpsertUserAndGithubAccount.mockResolvedValue(undefined)
+  })
+
+  it('returns validation error for invalid GitHub username', async () => {
+    const formData = new FormData()
+    formData.set('intent', 'link_github')
+    formData.set('nav_ident', 'Z990001')
+    formData.set('github_username', 'invalid username!')
+
+    const result = await action({
+      request: makeRequest(formData),
+      params: { sectionSlug: 'pensjon', devTeamSlug: 'starte-pensjon' },
+    } as never)
+
+    expect(result).toEqual({ error: expect.stringContaining('Ugyldig GitHub-brukernavn') })
+    expect(mockUpsertUserAndGithubAccount).not.toHaveBeenCalled()
+  })
+
+  it('returns validation error for bot account', async () => {
+    const formData = new FormData()
+    formData.set('intent', 'link_github')
+    formData.set('nav_ident', 'Z990001')
+    formData.set('github_username', 'snyk-bot')
+
+    const result = await action({
+      request: makeRequest(formData),
+      params: { sectionSlug: 'pensjon', devTeamSlug: 'starte-pensjon' },
+    } as never)
+
+    expect(result).toEqual({ error: expect.stringContaining('botkonto') })
+    expect(mockUpsertUserAndGithubAccount).not.toHaveBeenCalled()
+  })
+
+  it('returns error when NAV-ident is not a team member', async () => {
+    mockGetDevTeamMembersWithRoles.mockResolvedValue([])
+
+    const formData = new FormData()
+    formData.set('intent', 'link_github')
+    formData.set('nav_ident', 'Z990002')
+    formData.set('github_username', 'glad-fjord')
+
+    const result = await action({
+      request: makeRequest(formData),
+      params: { sectionSlug: 'pensjon', devTeamSlug: 'starte-pensjon' },
+    } as never)
+
+    expect(result).toEqual({ error: expect.stringContaining('ikke registrert som medlem') })
+    expect(mockUpsertUserAndGithubAccount).not.toHaveBeenCalled()
+  })
+
+  it('links GitHub account and returns success on happy path', async () => {
+    const formData = new FormData()
+    formData.set('intent', 'link_github')
+    formData.set('nav_ident', 'Z990001')
+    formData.set('github_username', 'glad-fjord')
+
+    const result = await action({
+      request: makeRequest(formData),
+      params: { sectionSlug: 'pensjon', devTeamSlug: 'starte-pensjon' },
+    } as never)
+
+    expect(mockUpsertUserAndGithubAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ githubUsername: 'glad-fjord', navIdent: 'Z990001' }),
+    )
+    expect(result).toEqual({ success: expect.stringContaining('glad-fjord') })
   })
 })
