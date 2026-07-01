@@ -32,7 +32,7 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `${data?.devTeam?.name ?? 'Utviklingsteam'}` }]
 }
 
-export async function loader({ request, params }: Route.LoaderArgs) {
+export async function loader({ request, params, url }: Route.LoaderArgs) {
   const user = await requireUser(request)
   const devTeam = await getDevTeamBySlug(params.devTeamSlug)
   if (!devTeam) {
@@ -61,7 +61,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ])
 
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
-  const url = new URL(request.url)
   const showAllApps = url.searchParams.get('allApps') === 'true'
   const showAllBoards = url.searchParams.get('allBoards') === 'true'
 

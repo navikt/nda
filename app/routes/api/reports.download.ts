@@ -3,10 +3,9 @@ import { getReportJobWithPdf } from '~/db/report-jobs.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/reports.download'
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, url }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const url = new URL(request.url)
   const jobId = url.searchParams.get('jobId')
 
   if (!jobId) {

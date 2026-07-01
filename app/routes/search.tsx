@@ -8,8 +8,7 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: data?.query ? `Søk: ${data.query} - NDA` : 'Søk - NDA' }]
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url)
+export async function loader({ url }: Route.LoaderArgs) {
   const query = url.searchParams.get('q') || ''
 
   let results: SearchResult[] = []

@@ -10,13 +10,12 @@ import { getUserDisplayName, serializeUserLookups } from '~/lib/user-display'
 import { type DebugVerificationResult, isVerificationDebugMode, runDebugVerification } from '~/lib/verification'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.verification-diff.$deploymentId'
 
-export async function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, request, url }: Route.LoaderArgs) {
   const user = await getUserIdentity(request)
   if (!isVerificationDebugMode && user?.role !== 'admin') {
     throw new Response('Debug mode not enabled', { status: 403 })
   }
 
-  const url = new URL(request.url)
   const useCache = url.searchParams.get('cache') !== 'false'
 
   const deploymentId = Number.parseInt(params.deploymentId, 10)

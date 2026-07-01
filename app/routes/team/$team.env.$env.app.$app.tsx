@@ -56,10 +56,9 @@ import { isImplicitApprovalMode } from '~/lib/verification/types'
 import type { loader as layoutLoader } from '../layout'
 import type { Route } from './+types/$team.env.$env.app.$app'
 
-export async function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, url }: Route.LoaderArgs) {
   const { team, env, app: appName } = requireTeamEnvAppParams(params)
 
-  const url = new URL(request.url)
   const period = (url.searchParams.get('period') || 'last-week') as TimePeriod
 
   const range = getDateRangeForPeriod(period)

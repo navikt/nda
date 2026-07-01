@@ -38,7 +38,15 @@ const INTENT_CAPABILITY: Record<string, keyof DeploymentCapabilities> = {
   reset_verification: 'canResetVerification',
 }
 
-export async function action({ request, params }: { request: Request; params: Record<string, string | undefined> }) {
+export async function action({
+  request,
+  params,
+  url,
+}: {
+  request: Request
+  params: Record<string, string | undefined>
+  url: URL
+}) {
   const deploymentId = parseInt(params.id ?? '', 10)
   if (!Number.isFinite(deploymentId)) {
     throw new Response('Ugyldig deployment-ID', { status: 400 })
@@ -553,7 +561,7 @@ export async function action({ request, params }: { request: Request; params: Re
     }
 
     try {
-      const baseUrl = new URL(request.url).origin
+      const baseUrl = url.origin
 
       const sent = await notifyDeploymentIfNeeded(
         {

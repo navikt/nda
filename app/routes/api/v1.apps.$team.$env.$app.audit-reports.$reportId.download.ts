@@ -4,7 +4,7 @@ import { jsonError, validateProdEnvironment } from '~/lib/api/errors'
 import { requireM2MToken } from '~/lib/m2m-auth.server'
 import type { Route } from './+types/v1.apps.$team.$env.$app.audit-reports.$reportId.download'
 
-export async function loader({ request, params }: Route.LoaderArgs) {
+export async function loader({ request, params, url }: Route.LoaderArgs) {
   await requireM2MToken(request)
 
   const { team, env, app: appName, reportId } = params
@@ -12,7 +12,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const envError = validateProdEnvironment(env)
   if (envError) throw envError
 
-  const url = new URL(request.url)
   const format = url.searchParams.get('format') ?? 'pdf'
 
   if (format !== 'pdf' && format !== 'xlsx') {

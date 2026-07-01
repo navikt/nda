@@ -4,7 +4,7 @@ import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import type { Route } from './+types/users.search'
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, url }: Route.LoaderArgs) {
   const user = await requireUser(request)
 
   if (!(await canSearchUsers(user))) {
@@ -14,7 +14,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     )
   }
 
-  const url = new URL(request.url)
   const query = url.searchParams.get('q') || ''
 
   if (query.trim().length < 2) {

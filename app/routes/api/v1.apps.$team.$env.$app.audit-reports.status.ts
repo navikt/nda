@@ -10,7 +10,7 @@ import { requireM2MToken } from '~/lib/m2m-auth.server'
 import { isValidReportPeriodType, type ReportPeriodType, resolvePeriod } from '~/lib/report-periods'
 import type { Route } from './+types/v1.apps.$team.$env.$app.audit-reports.status'
 
-export async function loader({ request, params }: Route.LoaderArgs) {
+export async function loader({ request, params, url }: Route.LoaderArgs) {
   await requireM2MToken(request)
 
   const { team, env, app: appName } = params
@@ -18,7 +18,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const envError = validateProdEnvironment(env)
   if (envError) throw envError
 
-  const url = new URL(request.url)
   const periodType = url.searchParams.get('periodType')
   const periodStartParam = url.searchParams.get('periodStart')
 

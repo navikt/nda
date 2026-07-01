@@ -15,7 +15,7 @@ export function meta(_args: Route.MetaArgs) {
   return [{ title: 'Avvik - Admin' }]
 }
 
-export async function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, request, url }: Route.LoaderArgs) {
   await requireAdmin(request)
   const { team, env, app: appName } = params
   const app = await getMonitoredApplicationByIdentity(team, env, appName)
@@ -23,7 +23,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  const url = new URL(request.url)
   const filter = url.searchParams.get('filter') || 'all'
   const resolved = filter === 'resolved' ? true : filter === 'open' ? false : undefined
 

@@ -21,9 +21,9 @@ import { canSearchUsers } from '~/lib/authorization.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { loader } from '../../routes/api/users.search'
 
-function makeRequest(query = '') {
+function makeArgs(query = '') {
   const url = new URL(`http://localhost/api/users/search?q=${encodeURIComponent(query)}`)
-  return new Request(url.toString())
+  return { request: new Request(url.toString()), url }
 }
 
 const mockUser = { navIdent: 'Z990001', name: 'Glad Fjord', role: 'admin' }
@@ -38,7 +38,7 @@ describe('users.search loader', () => {
   it('returns 403 with Cache-Control: no-store when user lacks permission', async () => {
     vi.mocked(canSearchUsers).mockResolvedValue(false)
 
-    const response = await loader({ request: makeRequest('test') } as never)
+    const response = await loader(makeArgs('test') as never)
 
     expect(response.status).toBe(403)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
@@ -48,7 +48,7 @@ describe('users.search loader', () => {
   })
 
   it('returns empty results with Cache-Control: no-store for short queries', async () => {
-    const response = await loader({ request: makeRequest('a') } as never)
+    const response = await loader(makeArgs('a') as never)
 
     expect(response.status).toBe(200)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
@@ -60,7 +60,7 @@ describe('users.search loader', () => {
     const mockResults = [{ displayName: 'Rask Elv', navIdent: 'Z990002' }]
     vi.mocked(searchGraphUsers).mockResolvedValue(mockResults)
 
-    const response = await loader({ request: makeRequest('Rask') } as never)
+    const response = await loader(makeArgs('Rask') as never)
 
     expect(response.status).toBe(200)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
@@ -72,7 +72,7 @@ describe('users.search loader', () => {
   it('returns 500 with Cache-Control: no-store when search fails', async () => {
     vi.mocked(searchGraphUsers).mockRejectedValue(new Error('Graph API error'))
 
-    const response = await loader({ request: makeRequest('test query') } as never)
+    const response = await loader(makeArgs('test query') as never)
 
     expect(response.status).toBe(500)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
@@ -82,7 +82,7 @@ describe('users.search loader', () => {
   })
 
   it('does not call searchGraphUsers when query is too short', async () => {
-    await loader({ request: makeRequest('x') } as never)
+    await loader(makeArgs('x') as never)
 
     expect(searchGraphUsers).not.toHaveBeenCalled()
   })
