@@ -2,6 +2,7 @@ import { isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { formatDisplayNameNatural } from '~/lib/user-display'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 
@@ -472,4 +473,20 @@ export async function getUserByNavIdent(navIdent: string): Promise<User | null> 
     navIdent,
   ])
   return result.rows[0] ?? null
+}
+
+export async function getOrCreateUserFromGraph(navIdent: string): Promise<User | null> {
+  const normalized = navIdent.trim().toUpperCase()
+
+  if (!isValidNavIdent(normalized)) return null
+
+  const existing = await getUserByNavIdent(normalized)
+  if (existing) return existing
+
+  const graphResults = await searchGraphUsers(normalized)
+
+  const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === normalized)
+  if (!graphUser?.displayName) return null
+
+  return upsertUser({ navIdent: normalized, displayName: formatDisplayNameNatural(graphUser.displayName) })
 }

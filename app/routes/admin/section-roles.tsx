@@ -9,12 +9,13 @@ import {
   removeSectionRole,
 } from '~/db/role-assignments.server'
 import type { Section } from '~/db/sections.server'
-import { getAllUsersWithAccounts, getUserByIdentifier } from '~/db/user-github-lookups.server'
+import { getAllUsersWithAccounts, getOrCreateUserFromGraph } from '~/db/user-github-lookups.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canManageSection } from '~/lib/authorization.server'
 import { SECTION_ROLES, type SectionRole } from '~/lib/authorization-types'
 import { getFormString, isValidNavIdent } from '~/lib/form-validators'
+import { logger } from '~/lib/logger.server'
 import type { Route } from './+types/section-roles'
 
 const ROLE_LABELS: Record<SectionRole, string> = {
@@ -114,13 +115,6 @@ export async function action({ request }: Route.ActionArgs) {
       return fail('Du har ikke tilgang til å tildele roller i denne seksjonen.')
     }
 
-    const userMapping = await getUserByIdentifier(navIdent)
-    if (!userMapping) {
-      return fail(
-        `Brukeren ${navIdent} er ikke kjent i systemet. Opprett brukeren først under Admin → Brukermappinger.`,
-      )
-    }
-
     const sections = await (async () => {
       const { pool } = await import('~/db/connection.server')
       const result = await pool.query<Section>('SELECT id FROM sections WHERE is_active = true AND id = $1', [
@@ -130,6 +124,17 @@ export async function action({ request }: Route.ActionArgs) {
     })()
     if (sections.length === 0) {
       return fail('Seksjonen finnes ikke eller er deaktivert.')
+    }
+
+    let userMapping: Awaited<ReturnType<typeof getOrCreateUserFromGraph>>
+    try {
+      userMapping = await getOrCreateUserFromGraph(navIdent)
+    } catch (err) {
+      logger.error(`Feil ved brukeropprettelse for ${navIdent}:`, err instanceof Error ? err : new Error(String(err)))
+      return fail(`Kunne ikke opprette brukeren ${navIdent}. Prøv igjen senere.`)
+    }
+    if (!userMapping) {
+      return fail(`Brukeren ${navIdent} ble ikke funnet i Active Directory eller mangler visningsnavn.`)
     }
 
     const result = await assignSectionRole(navIdent, sectionId, role, user.navIdent)
