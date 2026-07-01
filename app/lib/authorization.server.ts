@@ -12,6 +12,23 @@ export function canAssignSectionRole(actor: UserIdentity): boolean {
   return isEntraAdmin(actor)
 }
 
+export interface SectionCapabilities {
+  canManage: boolean
+}
+
+export async function resolveSectionCapabilities(actor: UserIdentity, sectionId: number): Promise<SectionCapabilities> {
+  if (isEntraAdmin(actor)) return { canManage: true }
+  const { sectionRoles } = await getUserRoles(actor.navIdent)
+  const canManage = sectionRoles.some(
+    (r) => r.section_id === sectionId && (r.role === 'seksjonsleder' || r.role === 'teknologileder'),
+  )
+  return { canManage }
+}
+
+export async function canManageSection(actor: UserIdentity, sectionId: number): Promise<boolean> {
+  return (await resolveSectionCapabilities(actor, sectionId)).canManage
+}
+
 export async function canAssignTeamRole(
   actor: UserIdentity,
   devTeamId: number,
