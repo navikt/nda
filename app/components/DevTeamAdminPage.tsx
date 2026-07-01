@@ -112,7 +112,7 @@ export function DevTeamAdminPage({
 
       {canAdmin && <BoardsSection teamName={devTeam.name} boards={boards} teamBasePath={teamBasePath} />}
       {canAdmin && <TeamNameSection name={devTeam.name} />}
-      <RoleMembersSection roleMembers={roleMembers} />
+      <RoleMembersSection roleMembers={roleMembers} canAdmin={canAdmin} isSubmitting={isSubmitting} />
       {canAdmin && <NaisTeamsSection naisTeamSlugs={devTeam.nais_team_slugs} />}
       {canAdmin && (
         <ApplicationsSection
