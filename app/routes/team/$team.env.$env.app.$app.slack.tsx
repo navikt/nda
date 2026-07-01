@@ -15,7 +15,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const { team, env, app: appName } = requireTeamEnvAppParams(params)
 
   const identity = await getUserIdentity(request)
-  if (!identity || identity.role !== 'admin') {
+  if (identity?.role !== 'admin') {
     return redirect(`/team/${team}/env/${env}/app/${appName}`)
   }
 

@@ -1,29 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import {
-  getFormString,
-  isValidEmail,
-  isValidGitHubUsername,
-  isValidNavIdent,
-  isValidSlackChannel,
-} from '../form-validators'
+import { getFormString, isValidGitHubUsername, isValidNavIdent, isValidSlackChannel } from '../form-validators'
 
 describe('form-validators', () => {
-  describe('isValidEmail', () => {
-    it('accepts valid email addresses', () => {
-      expect(isValidEmail('ola@nav.no')).toBe(true)
-      expect(isValidEmail('user.name@example.com')).toBe(true)
-      expect(isValidEmail('a@b.c')).toBe(true)
-    })
-
-    it('rejects invalid email addresses', () => {
-      expect(isValidEmail('')).toBe(false)
-      expect(isValidEmail('not-an-email')).toBe(false)
-      expect(isValidEmail('missing@domain')).toBe(false)
-      expect(isValidEmail('@no-local.com')).toBe(false)
-      expect(isValidEmail('spaces in@email.com')).toBe(false)
-    })
-  })
-
   describe('isValidNavIdent', () => {
     it('accepts valid nav idents (letter + 6 digits)', () => {
       expect(isValidNavIdent('A123456')).toBe(true)

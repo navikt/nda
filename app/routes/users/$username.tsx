@@ -282,13 +282,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
-    const navEmail = graphUser.email ?? null
+    if (!displayName) {
+      return { fieldErrors: { nav_ident: 'Brukeren ble funnet i Active Directory, men mangler visningsnavn' } }
+    }
 
     await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: isSelfService ? githubUsernameRaw : null,
       displayName,
-      navEmail,
       navIdent: navIdent,
       slackMemberId: getFormString(formData, 'slack_member_id') || null,
     })

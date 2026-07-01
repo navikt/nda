@@ -107,7 +107,7 @@ export function RoleMembersSection({ roleMembers }: { roleMembers: RoleMember[] 
             <VStack gap="space-16">
               <UserSearch
                 label="Søk etter bruker"
-                description="Søk med navn, e-post eller NAV-ident"
+                description="Søk med navn eller NAV-ident"
                 onSelect={(navIdent) => setSelectedNavIdent(navIdent)}
                 onClear={() => setSelectedNavIdent('')}
                 resetKey={searchResetKey}

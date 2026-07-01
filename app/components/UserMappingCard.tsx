@@ -26,7 +26,6 @@ interface UserMappingCardProps {
     github_username: string
     display_github_username: string | null
     display_name: string | null
-    nav_email: string | null
     nav_ident: string | null
     slack_member_id: string | null
   }
@@ -86,7 +85,6 @@ export function UserMappingCard({
           <ExternalLink href={`https://github.com/${mapping.display_github_username || mapping.github_username}`}>
             <Detail textColor="subtle">GitHub: {mapping.display_github_username || mapping.github_username}</Detail>
           </ExternalLink>
-          {mapping.nav_email && <Detail textColor="subtle">{mapping.nav_email}</Detail>}
           {mapping.nav_ident && (
             <ExternalLink href={`https://teamkatalogen.nav.no/resource/${mapping.nav_ident}`}>
               <Detail textColor="subtle">Teamkatalogen: {mapping.nav_ident}</Detail>
@@ -97,7 +95,7 @@ export function UserMappingCard({
               <Detail textColor="subtle">Slack: {mapping.slack_member_id}</Detail>
             </ExternalLink>
           )}
-          {!mapping.nav_email && !mapping.nav_ident && !mapping.slack_member_id && (
+          {!mapping.nav_ident && !mapping.slack_member_id && (
             <Detail textColor="subtle">Ingen tilleggsinformasjon</Detail>
           )}
         </HStack>

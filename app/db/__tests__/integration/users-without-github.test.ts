@@ -18,7 +18,7 @@ beforeEach(async () => {
 
 describe('getUsersWithoutGithub', () => {
   it('returns user with no GitHub account', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
 
     const result = await getUsersWithoutGithub()
 
@@ -28,7 +28,7 @@ describe('getUsersWithoutGithub', () => {
   })
 
   it('excludes user with active GitHub account', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await upsertUserGithubAccount({ githubUsername: 'gladfjord', navIdent: 'Z990001' })
 
     const result = await getUsersWithoutGithub()
@@ -37,7 +37,7 @@ describe('getUsersWithoutGithub', () => {
   })
 
   it('returns user with only soft-deleted GitHub account', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await upsertUserGithubAccount({ githubUsername: 'gladfjord', navIdent: 'Z990001' })
     await pool.query(
       `UPDATE user_github_accounts SET deleted_at = NOW(), deleted_by = 'Z990099' WHERE github_username = 'gladfjord'`,
@@ -50,7 +50,7 @@ describe('getUsersWithoutGithub', () => {
   })
 
   it('excludes soft-deleted users', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await pool.query(`UPDATE users SET deleted_at = NOW(), deleted_by = 'Z990099' WHERE nav_ident = 'Z990001'`)
 
     const result = await getUsersWithoutGithub()
@@ -59,9 +59,9 @@ describe('getUsersWithoutGithub', () => {
   })
 
   it('returns multiple users without GitHub accounts', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
-    await upsertUser({ navIdent: 'Z990002', displayName: 'Rask Elv', navEmail: 'rask.elv@nav.no' })
-    await upsertUser({ navIdent: 'Z990003', displayName: 'Stille Skog', navEmail: 'stille.skog@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
+    await upsertUser({ navIdent: 'Z990002', displayName: 'Rask Elv' })
+    await upsertUser({ navIdent: 'Z990003', displayName: 'Stille Skog' })
     await upsertUserGithubAccount({ githubUsername: 'stilleskog', navIdent: 'Z990003' })
 
     const result = await getUsersWithoutGithub()

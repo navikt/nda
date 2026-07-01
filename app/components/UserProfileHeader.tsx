@@ -2,7 +2,6 @@ import { BodyShort, Box, Detail, Heading, HGrid, HStack, Tag, VStack } from '@na
 import { ExternalLink } from './ExternalLink'
 
 interface UserProfileIdentity {
-  nav_email: string | null
   nav_ident: string | null
   slack_member_id: string | null
 }
@@ -48,15 +47,6 @@ export function UserProfileHeader({
               <ExternalLink href={`https://github.com/${githubUsername ?? username}`}>
                 {githubUsername ?? username}
               </ExternalLink>
-            </VStack>
-          </Box>
-        )}
-
-        {identity?.nav_email && (
-          <Box padding="space-16" borderRadius="8" background="sunken">
-            <VStack gap="space-4">
-              <Detail textColor="subtle">E-post</Detail>
-              <BodyShort>{identity.nav_email}</BodyShort>
             </VStack>
           </Box>
         )}

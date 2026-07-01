@@ -43,10 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   const mappingsByIdent = await getUsersByIdentifiers(Array.from(navIdents))
 
-  const mappingsByUsername = new Map<
-    string,
-    { display_name: string | null; nav_ident: string; nav_email: string | null }
-  >()
+  const mappingsByUsername = new Map<string, { display_name: string | null; nav_ident: string }>()
   const navIdentToUsername: Record<string, string> = {}
   for (const [navIdent, mapping] of mappingsByIdent) {
     if (mapping.github_username) {

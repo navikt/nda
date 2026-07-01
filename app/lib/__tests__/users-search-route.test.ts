@@ -57,7 +57,7 @@ describe('users.search loader', () => {
   })
 
   it('returns search results with Cache-Control: no-store', async () => {
-    const mockResults = [{ displayName: 'Rask Elv', email: 'rask.elv@nav.no', navIdent: 'Z990002' }]
+    const mockResults = [{ displayName: 'Rask Elv', navIdent: 'Z990002' }]
     vi.mocked(searchGraphUsers).mockResolvedValue(mockResults)
 
     const response = await loader({ request: makeRequest('Rask') } as never)

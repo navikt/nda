@@ -1168,17 +1168,16 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
   const [userResult, teamResult, appResult, groupResult, devTeamResult] = await Promise.all([
     pool.query(
       `SELECT DISTINCT d.deployer_username, 
-              u.display_name, u.nav_email, uga.nav_ident, u.slack_member_id,
+              u.display_name, uga.nav_ident, u.slack_member_id,
               COUNT(*) as deployment_count
        FROM deployments d
        LEFT JOIN user_github_accounts uga ON LOWER(d.deployer_username) = uga.github_username AND uga.deleted_at IS NULL
        LEFT JOIN users u ON uga.nav_ident = u.nav_ident AND u.deleted_at IS NULL
        WHERE d.deployer_username ILIKE $1
           OR u.display_name ILIKE $1
-          OR u.nav_email ILIKE $1
           OR uga.nav_ident ILIKE $1
           OR u.slack_member_id ILIKE $1
-       GROUP BY d.deployer_username, u.display_name, u.nav_email, uga.nav_ident, u.slack_member_id
+       GROUP BY d.deployer_username, u.display_name, uga.nav_ident, u.slack_member_id
        ORDER BY deployment_count DESC
        LIMIT $2`,
       [`%${trimmedQuery}%`, limit],
@@ -1281,8 +1280,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
       matchInfo = row.display_name
     } else if (row.nav_ident?.toLowerCase().includes(queryLower)) {
       matchInfo = `NAV-ident: ${row.nav_ident}`
-    } else if (row.nav_email?.toLowerCase().includes(queryLower)) {
-      matchInfo = row.nav_email
     } else if (row.slack_member_id?.toLowerCase().includes(queryLower)) {
       matchInfo = `Slack: ${row.slack_member_id}`
     }

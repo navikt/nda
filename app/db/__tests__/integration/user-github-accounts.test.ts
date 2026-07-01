@@ -19,7 +19,7 @@ describe('user_github_accounts', () => {
   })
 
   it('upsertUserGithubAccount creates a new row', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     const account = await upsertUserGithubAccount({
       githubUsername: 'GladFjord',
       navIdent: 'Z990001',
@@ -31,7 +31,7 @@ describe('user_github_accounts', () => {
   })
 
   it('upsertUserGithubAccount is idempotent', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await upsertUserGithubAccount({ githubUsername: 'gladfjord', navIdent: 'Z990001' })
     const second = await upsertUserGithubAccount({ githubUsername: 'gladfjord', navIdent: 'Z990001' })
     expect(second.github_username).toBe('gladfjord')
@@ -43,13 +43,13 @@ describe('user_github_accounts', () => {
   })
 
   it('upsertUserGithubAccount normalizes github_username to lowercase', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     const account = await upsertUserGithubAccount({ githubUsername: 'GladFjord', navIdent: 'Z990001' })
     expect(account.github_username).toBe('gladfjord')
   })
 
   it('upsertUserGithubAccount restores soft-deleted row', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'glad.fjord@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await upsertUserGithubAccount({ githubUsername: 'gladfjord', navIdent: 'Z990001' })
     await pool.query(
       `UPDATE user_github_accounts SET deleted_at = NOW(), deleted_by = 'Z990099' WHERE github_username = 'gladfjord'`,
@@ -65,19 +65,11 @@ describe('user_github_accounts', () => {
       githubUsername: 'GladFjord',
       displayName: 'Glad Fjord',
       navIdent: 'Z990001',
-      navEmail: 'glad.fjord@nav.no',
     })
 
     const { rows } = await pool.query('SELECT github_username, nav_ident FROM user_github_accounts')
     expect(rows).toHaveLength(1)
     expect(rows[0].github_username).toBe('gladfjord')
     expect(rows[0].nav_ident).toBe('Z990001')
-  })
-
-  it('upsertUserAndGithubAccount does not write to user_github_accounts when nav_email is missing', async () => {
-    await upsertUserAndGithubAccount({ githubUsername: 'gladfjord', navIdent: 'Z990001', displayName: 'Glad Fjord' })
-
-    const { rows } = await pool.query('SELECT COUNT(*) AS c FROM user_github_accounts')
-    expect(Number(rows[0].c)).toBe(0)
   })
 })

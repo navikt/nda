@@ -234,7 +234,6 @@ CREATE INDEX IF NOT EXISTS idx_commits_unverified ON commits(repo_owner, repo_na
 CREATE TABLE IF NOT EXISTS users (
   nav_ident   TEXT PRIMARY KEY CHECK (nav_ident ~ '^[A-Z][0-9]{6}$'),
   display_name TEXT NOT NULL,
-  nav_email    TEXT NOT NULL,
   slack_member_id TEXT,
   created_at   TIMESTAMPTZ DEFAULT NOW(),
   updated_at   TIMESTAMPTZ DEFAULT NOW(),
@@ -242,7 +241,6 @@ CREATE TABLE IF NOT EXISTS users (
   deleted_by   TEXT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_nav_email ON users(nav_email);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(nav_ident) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_users_slack_member_id ON users(slack_member_id) WHERE slack_member_id IS NOT NULL AND deleted_at IS NULL;
 
@@ -353,4 +351,3 @@ CREATE INDEX IF NOT EXISTS idx_report_jobs_created_at  ON report_jobs(created_at
 CREATE UNIQUE INDEX IF NOT EXISTS idx_report_jobs_inflight
   ON report_jobs(monitored_app_id, period_type, period_start, period_end)
   WHERE status IN ('pending', 'processing');
-

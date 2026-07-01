@@ -73,12 +73,11 @@ describe('soft-deleted: getAllSoftDeleted', () => {
       environment: 'dev',
     })
 
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'z990001@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await upsertUserAndGithubAccount({
       githubUsername: 'gh-alice',
       navIdent: 'Z990001',
       displayName: 'Glad Fjord',
-      navEmail: 'z990001@nav.no',
     })
     await softDeleteGithubAccount('gh-alice', 'Z990002')
 
@@ -161,12 +160,11 @@ describe('soft-deleted: getAllSoftDeleted', () => {
 
 describe('soft-deleted: restore', () => {
   it('restores a soft-deleted GitHub account link', async () => {
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'z990001@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await upsertUserAndGithubAccount({
       githubUsername: 'gh-alice',
       navIdent: 'Z990001',
       displayName: 'Glad Fjord',
-      navEmail: 'z990001@nav.no',
     })
     await softDeleteGithubAccount('gh-alice', 'Z990002')
 
@@ -190,12 +188,11 @@ describe('soft-deleted: restore', () => {
   it('restoreGithubAccountLink is a no-op for missing or already-active rows', async () => {
     expect(await restoreGithubAccountLink('does-not-exist')).toBe(false)
 
-    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord', navEmail: 'z990001@nav.no' })
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
     await upsertUserAndGithubAccount({
       githubUsername: 'gh-alice',
       navIdent: 'Z990001',
       displayName: 'Glad Fjord',
-      navEmail: 'z990001@nav.no',
     })
     expect(await restoreGithubAccountLink('gh-alice')).toBe(false)
   })

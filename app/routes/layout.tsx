@@ -37,7 +37,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     user: {
       navIdent: identity.navIdent,
       displayName: userMapping?.display_name || identity.name || identity.navIdent,
-      email: userMapping?.nav_email || identity.email || null,
       githubUsername: userMapping?.github_username || null,
       role: identity.role,
       isActualAdmin: identity.isActualAdmin,

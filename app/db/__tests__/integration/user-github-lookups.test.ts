@@ -22,10 +22,9 @@ afterAll(async () => {
 })
 
 async function seedAccount(githubUsername: string, navIdent: string, opts: { deleted?: boolean } = {}) {
-  await pool.query(
-    `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ($1, 'Glad Fjord', 'glad.fjord@nav.no') ON CONFLICT DO NOTHING`,
-    [navIdent],
-  )
+  await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, 'Glad Fjord') ON CONFLICT DO NOTHING`, [
+    navIdent,
+  ])
   await pool.query(
     `INSERT INTO user_github_accounts (github_username, nav_ident, display_github_username) VALUES (LOWER($1), $2, $1) ON CONFLICT DO NOTHING`,
     [githubUsername, navIdent],
@@ -123,9 +122,7 @@ describe('getActiveGithubAccountByNavIdent', () => {
   })
 
   it('returns null when no active account exists', async () => {
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no')`,
-    )
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Glad Fjord')`)
     const result = await getActiveGithubAccountByNavIdent('Z990001')
     expect(result).toBeNull()
   })
@@ -151,7 +148,7 @@ describe('getActiveGithubAccountByNavIdent', () => {
 
   it('returns newest active account when multiple exist', async () => {
     await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no') ON CONFLICT DO NOTHING`,
+      `INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Glad Fjord') ON CONFLICT DO NOTHING`,
     )
     await pool.query(
       `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('old-account', 'Z990001', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING`,
@@ -176,7 +173,7 @@ describe('getUserBySlackMemberId', () => {
 
   it('returns user with github_username when account is linked', async () => {
     await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no', 'U_GLADFJORD')`,
+      `INSERT INTO users (nav_ident, display_name, slack_member_id) VALUES ('Z990001', 'Glad Fjord', 'U_GLADFJORD')`,
     )
     await pool.query(`INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('gladfjord', 'Z990001')`)
     const result = await getUserBySlackMemberId('U_GLADFJORD')
@@ -186,7 +183,7 @@ describe('getUserBySlackMemberId', () => {
 
   it('returns user with null github_username when no GitHub account is linked', async () => {
     await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no', 'U_GLADFJORD')`,
+      `INSERT INTO users (nav_ident, display_name, slack_member_id) VALUES ('Z990001', 'Glad Fjord', 'U_GLADFJORD')`,
     )
     const result = await getUserBySlackMemberId('U_GLADFJORD')
     expect(result?.nav_ident).toBe('Z990001')
@@ -195,7 +192,7 @@ describe('getUserBySlackMemberId', () => {
 
   it('returns null for soft-deleted user', async () => {
     await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email, slack_member_id, deleted_at) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no', 'U_GLADFJORD', NOW())`,
+      `INSERT INTO users (nav_ident, display_name, slack_member_id, deleted_at) VALUES ('Z990001', 'Glad Fjord', 'U_GLADFJORD', NOW())`,
     )
     const result = await getUserBySlackMemberId('U_GLADFJORD')
     expect(result).toBeNull()
@@ -232,9 +229,7 @@ describe('getUserByIdentifier', () => {
   })
 
   it('returns null github_username when user has no GitHub account', async () => {
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Rask Elv', 'rask.elv@nav.no')`,
-    )
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Rask Elv')`)
     const result = await getUserByIdentifier('Z990001')
     expect(result?.nav_ident).toBe('Z990001')
     expect(result?.github_username).toBeNull()
@@ -255,9 +250,7 @@ describe('getUserByIdentifier', () => {
   })
 
   it('returns newest active GitHub account when NAV-ident has multiple', async () => {
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Stille Skog', 'stille.skog@nav.no')`,
-    )
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Stille Skog')`)
     await pool.query(
       `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('olduser', 'Z990001', NOW() - INTERVAL '1 day')`,
     )
@@ -286,9 +279,7 @@ describe('getUsersByIdentifiers', () => {
   })
 
   it('resolves NAV-idents', async () => {
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990002', 'Modig Bjørk', 'modig.bjork@nav.no')`,
-    )
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990002', 'Modig Bjørk')`)
     const result = await getUsersByIdentifiers(['Z990002'])
     expect(result.get('Z990002')?.display_name).toBe('Modig Bjørk')
     expect(result.get('Z990002')?.nav_ident).toBe('Z990002')
@@ -296,9 +287,7 @@ describe('getUsersByIdentifiers', () => {
 
   it('resolves mixed GitHub usernames and NAV-idents in one call', async () => {
     await seedAccount('GladFjord', 'Z990001')
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990002', 'Rask Elv', 'rask.elv@nav.no')`,
-    )
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990002', 'Rask Elv')`)
     const result = await getUsersByIdentifiers(['gladfjord', 'Z990002'])
     expect(result.size).toBe(2)
     expect(result.get('gladfjord')?.nav_ident).toBe('Z990001')
@@ -313,9 +302,7 @@ describe('getUsersByIdentifiers', () => {
   })
 
   it('NAV-ident lookup returns newest active GitHub account when linked', async () => {
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Glad Fjord', 'glad.fjord@nav.no')`,
-    )
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Glad Fjord')`)
     await pool.query(
       `INSERT INTO user_github_accounts (github_username, nav_ident, created_at) VALUES ('olduser', 'Z990001', NOW() - INTERVAL '1 day')`,
     )
@@ -327,9 +314,7 @@ describe('getUsersByIdentifiers', () => {
   })
 
   it('NAV-ident lookup returns null github_username when no GitHub account linked', async () => {
-    await pool.query(
-      `INSERT INTO users (nav_ident, display_name, nav_email) VALUES ('Z990001', 'Rask Elv', 'rask.elv@nav.no')`,
-    )
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Rask Elv')`)
     const result = await getUsersByIdentifiers(['Z990001'])
     expect(result.get('Z990001')?.github_username).toBeNull()
   })
