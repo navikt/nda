@@ -27,7 +27,8 @@ import {
   updateDevTeam,
 } from '~/db/dev-teams.server'
 import { getSectionBySlug, getSectionWithTeams, setSectionTeams, updateSection } from '~/db/sections.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canManageSection } from '~/lib/authorization.server'
 import type { Route } from './+types/sections.$slug.dev-teams'
 
 export function meta({ loaderData: data }: Route.MetaArgs) {
@@ -35,10 +36,15 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
   const section = await getSectionWithTeams(params.slug)
   if (!section) {
     throw new Response('Seksjon ikke funnet', { status: 404 })
+  }
+  if (!(await canManageSection(user, section.id))) {
+    throw new Response('Du må være seksjonsleder eller teknologileder for denne seksjonen for å redigere den.', {
+      status: 403,
+    })
   }
   const devTeams = await getDevTeamsBySection(section.id)
 
@@ -56,12 +62,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const user = await requireAdmin(request)
+  const user = await requireUser(request)
   const section = await getSectionBySlug(params.slug)
   if (!section) {
     throw new Response('Seksjon ikke funnet', { status: 404 })
   }
-
+  if (!(await canManageSection(user, section.id))) {
+    throw new Response('Du må være seksjonsleder eller teknologileder for denne seksjonen for å gjøre endringer.', {
+      status: 403,
+    })
+  }
   const formData = await request.formData()
   const intent = formData.get('intent') as string
 
