@@ -20,8 +20,10 @@ import {
   canAssignSectionRole,
   canAssignTeamRole,
   canDeviateDeployment,
+  canManageSection,
   isTeamMember,
   resolveDeploymentCapabilities,
+  resolveSectionCapabilities,
   resolveTeamAdminCapabilities,
 } from '~/lib/authorization.server'
 import { seedApp, seedDevTeam, seedSection, truncateAllTables } from './helpers'
@@ -962,5 +964,64 @@ describe('resolveDeploymentCapabilities', () => {
       canLookupLegacy: false,
       canResetVerification: false,
     })
+  })
+})
+
+describe('canManageSection / resolveSectionCapabilities', () => {
+  it('allows admin', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    expect(await canManageSection(makeAdmin(), sectionId)).toBe(true)
+    expect(await resolveSectionCapabilities(makeAdmin(), sectionId)).toEqual({ canManage: true })
+  })
+
+  it('allows seksjonsleder for own section', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const user = makeUser('Z990001')
+    await assignSectionRole(user.navIdent, sectionId, 'seksjonsleder', 'admin')
+
+    expect(await canManageSection(user, sectionId)).toBe(true)
+    expect(await resolveSectionCapabilities(user, sectionId)).toEqual({ canManage: true })
+  })
+
+  it('allows teknologileder for own section', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const user = makeUser('Z990002')
+    await assignSectionRole(user.navIdent, sectionId, 'teknologileder', 'admin')
+
+    expect(await canManageSection(user, sectionId)).toBe(true)
+    expect(await resolveSectionCapabilities(user, sectionId)).toEqual({ canManage: true })
+  })
+
+  it('denies seksjonsleder for different section', async () => {
+    const section1 = await seedSection(pool, 'pensjon')
+    const section2 = await seedSection(pool, 'arbeid')
+    const user = makeUser('Z990003')
+    await assignSectionRole(user.navIdent, section1, 'seksjonsleder', 'admin')
+
+    expect(await canManageSection(user, section2)).toBe(false)
+    expect(await resolveSectionCapabilities(user, section2)).toEqual({ canManage: false })
+  })
+
+  it('denies leveranseleder', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const user = makeUser('Z990004')
+    await assignSectionRole(user.navIdent, sectionId, 'leveranseleder', 'admin')
+
+    expect(await canManageSection(user, sectionId)).toBe(false)
+  })
+
+  it('denies regular user with no roles', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    expect(await canManageSection(makeUser(), sectionId)).toBe(false)
+    expect(await resolveSectionCapabilities(makeUser(), sectionId)).toEqual({ canManage: false })
+  })
+
+  it('denies after section role is soft-deleted', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const user = makeUser('Z990005')
+    const assignment = await assignSectionRole(user.navIdent, sectionId, 'seksjonsleder', 'admin')
+    await removeSectionRole(assignment!.id, 'admin')
+
+    expect(await canManageSection(user, sectionId)).toBe(false)
   })
 })
