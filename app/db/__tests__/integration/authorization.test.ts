@@ -748,20 +748,38 @@ describe('resolveTeamAdminCapabilities', () => {
     expect(result).toEqual({ canAccess: true, canAdmin: true })
   })
 
-  it('returns canAccess=true, canAdmin=false for section leader', async () => {
+  it('returns canAccess=true, canAdmin=true for seksjonsleder in the section', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const sl = makeUser('S777777')
+    const sl = makeUser('Z990007')
     await assignSectionRole(sl.navIdent, sectionId, 'seksjonsleder', 'admin')
     const result = await resolveTeamAdminCapabilities(sl, teamId)
+    expect(result).toEqual({ canAccess: true, canAdmin: true })
+  })
+
+  it('returns canAccess=true, canAdmin=true for teknologileder in the section', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const tl = makeUser('Z990008')
+    await assignSectionRole(tl.navIdent, sectionId, 'teknologileder', 'admin')
+    const result = await resolveTeamAdminCapabilities(tl, teamId)
+    expect(result).toEqual({ canAccess: true, canAdmin: true })
+  })
+
+  it('returns canAccess=true, canAdmin=false for leveranseleder in the section', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const ll = makeUser('Z990009')
+    await assignSectionRole(ll.navIdent, sectionId, 'leveranseleder', 'admin')
+    const result = await resolveTeamAdminCapabilities(ll, teamId)
     expect(result).toEqual({ canAccess: true, canAdmin: false })
   })
 
-  it('returns canAccess=false, canAdmin=false for section leader in different section', async () => {
+  it('returns canAccess=false, canAdmin=false for seksjonsleder in different section', async () => {
     const section1 = await seedSection(pool, 'pensjon')
     const section2 = await seedSection(pool, 'arbeid')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', section1)
-    const sl = makeUser('S888888')
+    const sl = makeUser('Z990010')
     await assignSectionRole(sl.navIdent, section2, 'seksjonsleder', 'admin')
     const result = await resolveTeamAdminCapabilities(sl, teamId)
     expect(result).toEqual({ canAccess: false, canAdmin: false })
