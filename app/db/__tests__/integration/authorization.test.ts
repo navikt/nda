@@ -6,6 +6,7 @@ import {
   getDevTeamMembersWithRoles,
   getDevTeamsForGithubUsernamesByRole,
   getMembersGithubUsernamesForDevTeamRoles,
+  getSectionRoleAssignmentById,
   getTeamRoleAssignmentById,
   getTeamRoleAssignments,
   getUserRoles,
@@ -1023,5 +1024,66 @@ describe('canManageSection / resolveSectionCapabilities', () => {
     await removeSectionRole(defined(assignment).id, 'admin')
 
     expect(await canManageSection(user, sectionId)).toBe(false)
+  })
+})
+
+describe('getSectionRoleAssignmentById', () => {
+  it('returns assignment when it exists', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const user = makeUser('Z990006')
+    const created = await assignSectionRole(user.navIdent, sectionId, 'seksjonsleder', 'admin')
+
+    const result = await getSectionRoleAssignmentById(defined(created).id)
+    expect(result).not.toBeNull()
+    expect(result?.section_id).toBe(sectionId)
+    expect(result?.nav_ident).toBe(user.navIdent)
+  })
+
+  it('returns null for unknown id', async () => {
+    expect(await getSectionRoleAssignmentById(999999)).toBeNull()
+  })
+
+  it('returns null after soft-delete', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const user = makeUser('Z990007')
+    const created = await assignSectionRole(user.navIdent, sectionId, 'leveranseleder', 'admin')
+    await removeSectionRole(defined(created).id, 'admin')
+
+    expect(await getSectionRoleAssignmentById(defined(created).id)).toBeNull()
+  })
+})
+
+describe('section-roles IDOR guard (canManageSection scoping)', () => {
+  it('seksjonsleder kan administrere rolle i sin seksjon', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const actor = makeUser('Z990010')
+    await assignSectionRole(actor.navIdent, sectionId, 'seksjonsleder', 'admin')
+
+    expect(await canManageSection(actor, sectionId)).toBe(true)
+  })
+
+  it('seksjonsleder avvises for annen seksjon', async () => {
+    const section1 = await seedSection(pool, 'pensjon')
+    const section2 = await seedSection(pool, 'arbeid')
+    const actor = makeUser('Z990011')
+    await assignSectionRole(actor.navIdent, section1, 'seksjonsleder', 'admin')
+
+    expect(await canManageSection(actor, section2)).toBe(false)
+  })
+
+  it('seksjonsleder med begge roller i samme seksjon gir ikke duplikate seksjonIds', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const actor = makeUser('Z990012')
+    await assignSectionRole(actor.navIdent, sectionId, 'seksjonsleder', 'admin')
+    await assignSectionRole(actor.navIdent, sectionId, 'teknologileder', 'admin')
+
+    const { sectionRoles } = await getUserRoles(actor.navIdent)
+    const managingIds = [
+      ...new Set(
+        sectionRoles.filter((r) => r.role === 'seksjonsleder' || r.role === 'teknologileder').map((r) => r.section_id),
+      ),
+    ]
+    expect(managingIds).toEqual([sectionId])
+    expect(managingIds.length).toBe(1)
   })
 })
