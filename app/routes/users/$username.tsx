@@ -34,14 +34,13 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `${data?.username || 'Bruker'} - NDA` }]
 }
 
-export async function loader({ request, params }: Route.LoaderArgs) {
+export async function loader({ request, params, url }: Route.LoaderArgs) {
   const identity = await requireUser(request)
   const username = params.username
   if (!username) {
     throw new Response('Username required', { status: 400 })
   }
 
-  const url = new URL(request.url)
   const page = Math.max(1, Number.parseInt(url.searchParams.get('page') || '1', 10))
   const period = (url.searchParams.get('period') || 'all') as TimePeriod
   const dateRange = getDateRangeForPeriod(period)

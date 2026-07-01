@@ -24,7 +24,7 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: data?.app ? `Deployments - ${data.app.app_name}` : 'Deployments' }]
 }
 
-export async function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, request, url }: Route.LoaderArgs) {
   const { team, env, app: appName } = requireTeamEnvAppParams(params)
 
   const app = await getMonitoredApplicationByIdentity(team, env, appName)
@@ -32,7 +32,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  const url = new URL(request.url)
   const page = parseInt(url.searchParams.get('page') || '1', 10)
   const status = url.searchParams.get('status') || undefined
   const method = url.searchParams.get('method') as 'pr' | 'direct_push' | 'legacy' | undefined

@@ -17,13 +17,12 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: data?.devTeam ? `Deployments - ${data.devTeam.name}` : 'Deployments' }]
 }
 
-export async function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, request, url }: Route.LoaderArgs) {
   const devTeam = await getDevTeamBySlug(params.devTeamSlug)
   if (!devTeam) {
     throw new Response('Utviklingsteam ikke funnet', { status: 404 })
   }
 
-  const url = new URL(request.url)
   const page = parseInt(url.searchParams.get('page') || '1', 10)
   const status = url.searchParams.get('status') || undefined
   const method = url.searchParams.get('method') as 'pr' | 'direct_push' | 'legacy' | undefined
@@ -89,7 +88,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     (goalParam.startsWith('obj:') && goalObjectiveIdFilter === undefined) ||
     (goalParam.startsWith('kr:') && goalKeyResultIdFilter === undefined)
   ) {
-    const cleanUrl = new URL(request.url)
+    const cleanUrl = new URL(url)
     cleanUrl.searchParams.delete('goal')
     cleanUrl.searchParams.set('page', '1')
     throw redirect(cleanUrl.pathname + cleanUrl.search)
@@ -186,7 +185,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   if (isGoalSpecificFilter && !selectedInGoalOptions) {
     const fallback = await getFallbackGoalOption(goalObjectiveIdFilter, goalKeyResultIdFilter)
     if (fallback === null) {
-      const cleanUrl = new URL(request.url)
+      const cleanUrl = new URL(url)
       cleanUrl.searchParams.delete('goal')
       cleanUrl.searchParams.set('page', '1')
       throw redirect(cleanUrl.pathname + cleanUrl.search)

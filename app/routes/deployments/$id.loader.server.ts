@@ -26,7 +26,7 @@ import { serializeUserLookups } from '~/lib/user-display'
 import { isVerificationDebugMode } from '~/lib/verification'
 import type { Route } from './+types/$id'
 
-export async function loader({ params, request }: Route.LoaderArgs) {
+export async function loader({ params, request, url }: Route.LoaderArgs) {
   const deploymentId = parseInt(params.id, 10)
   const deployment = await getDeploymentById(deploymentId)
 
@@ -40,7 +40,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   }
   const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 
-  const url = new URL(request.url)
   if (url.pathname === `/deployments/${deploymentId}`) {
     const searchParams = url.searchParams.toString()
     const redirectUrl = `${appUrl}/deployments/${deploymentId}${searchParams ? `?${searchParams}` : ''}`
