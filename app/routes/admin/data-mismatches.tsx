@@ -79,10 +79,9 @@ interface CommentMissingRegisteredBy {
 
 const MISSING_PAGE_SIZE = 50
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, url }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const url = new URL(request.url)
   const rawPage = parseInt(url.searchParams.get('missingPage') ?? '1', 10)
   const missingPage = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1
 
