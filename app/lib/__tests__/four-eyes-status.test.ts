@@ -42,15 +42,12 @@ describe('status categorization', () => {
 })
 
 describe('isApprovedStatus', () => {
-  it.each([
-    'approved',
-    'approved_pr',
-    'implicitly_approved',
-    'manually_approved',
-    'no_changes',
-  ])('returns true for %s', (status) => {
-    expect(isApprovedStatus(status)).toBe(true)
-  })
+  it.each(['approved', 'approved_pr', 'implicitly_approved', 'manually_approved', 'no_changes'])(
+    'returns true for %s',
+    (status) => {
+      expect(isApprovedStatus(status)).toBe(true)
+    },
+  )
 
   it.each(['pending', 'direct_push', 'unknown', 'error', 'legacy'])('returns false for %s', (status) => {
     expect(isApprovedStatus(status)).toBe(false)
