@@ -54,11 +54,11 @@ importers:
         specifier: 8.2.0
         version: 8.2.0(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@5.9.3)
       '@slack/bolt':
-        specifier: ^5.0.0
+        specifier: 5.0.0
         version: 5.0.0(@types/express@5.0.6)(undici@8.7.0)
       '@slack/types':
-        specifier: ^2.21.1
-        version: 2.21.1
+        specifier: 3.0.0
+        version: 3.0.0
       '@types/pg':
         specifier: ^8.18.0
         version: 8.20.0
@@ -1776,10 +1776,6 @@ packages:
     engines: {node: '>=20', npm: '>=9.6.4'}
     peerDependencies:
       undici: ^7.0.0
-
-  '@slack/types@2.21.1':
-    resolution: {integrity: sha512-I8vmSjNYWsaxuWPx6dz4yeh0h7vRBWbgAMK14LEmblbZ404BtrPbXs6jDPx4cYgGf8msDGF4A9opLZBu21FViQ==}
-    engines: {node: '>= 12.13.0', npm: '>= 6.12.0'}
 
   '@slack/types@3.0.0':
     resolution: {integrity: sha512-KNOqpnNAlsFt5Jk9XBclslQ0lobRIg/0tnhpmvZJAglHJx9E8oceN8hC3gaBzkR6UzQ9Wzq4rLsJ98wUcxWPfw==}
@@ -5831,8 +5827,6 @@ snapshots:
       '@types/node': 24.13.2
       eventemitter3: 5.0.4
       undici: 8.7.0
-
-  '@slack/types@2.21.1': {}
 
   '@slack/types@3.0.0': {}
 
