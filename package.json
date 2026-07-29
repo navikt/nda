@@ -71,9 +71,9 @@
     "jose": "^6.2.3",
     "node-pg-migrate": "^8.0.4",
     "pg": "^8.22.0",
-    "react": "^19.2.7",
+    "react": "^19.2.8",
     "react-chartjs-2": "^5.3.1",
-    "react-dom": "^19.2.7",
+    "react-dom": "^19.2.8",
     "react-router": "8.2.0",
     "winston": "^3.19.0"
   },
