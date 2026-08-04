@@ -105,7 +105,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Deploy to prod-gcp
-        uses: nais/deploy/actions/deploy@2d18f050f07b6a007864c6a57070ed915d571beb # pinned
+        uses: nais/deploy/actions/deploy@fc3eae3edebabdf67f7592102ae16176d5ba3b5f # pinned
         env:
           CLUSTER: prod-gcp
           RESOURCE: .nais/prod.yaml
