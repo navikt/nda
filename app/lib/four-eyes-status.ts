@@ -63,6 +63,12 @@ const PROTECTED_STATUSES: FourEyesStatus[] = ['manually_approved', 'baseline', '
 
 export const PROTECTED_STATUSES_SQL = PROTECTED_STATUSES.map((s) => `'${s}'`).join(', ')
 
+export const PENDING_BASELINE_DEMOTABLE_STATUSES: FourEyesStatus[] = ['manually_approved', 'baseline']
+
+export const PENDING_BASELINE_DEMOTABLE_STATUSES_SQL = PENDING_BASELINE_DEMOTABLE_STATUSES.map((s) => `'${s}'`).join(
+  ', ',
+)
+
 export const STATUS_DISPLAY: Record<
   FourEyesStatus,
   { tagLabel: string; tagVariant: 'success' | 'warning' | 'danger' | 'info' | 'neutral' }

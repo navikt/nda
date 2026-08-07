@@ -2,7 +2,7 @@ import { updateCommitPrVerification } from '~/db/commits.server'
 import { pool } from '~/db/connection.server'
 import { logStatusTransition } from '~/db/deployments.server'
 import { getAllLatestPrSnapshots, saveVerificationRun } from '~/db/github-data.server'
-import { PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { PENDING_BASELINE_DEMOTABLE_STATUSES_SQL, PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { buildGithubPrDataFromSnapshots } from './build-github-pr-data'
 import type {
   PrChecks,
@@ -74,7 +74,10 @@ export async function updateDeploymentVerification(
        title = COALESCE($6, $9, title),
        branch_name = COALESCE($8, branch_name)
      WHERE id = $3
-       AND four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})`,
+       AND (
+         four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
+         OR (four_eyes_status IN (${PENDING_BASELINE_DEMOTABLE_STATUSES_SQL}) AND $1 = 'pending_baseline')
+       )`,
     [
       result.status,
       result.deployedPr?.number || null,
