@@ -22,7 +22,7 @@ export function NotFoundInNaisNotice({ variant, canDeactivate, appId }: NotFound
     </Form>
   ) : (
     <BodyShort size="small" textColor="subtle">
-      Kontakt en teamleder, seksjonsleder eller administrator for å deaktivere applikasjonen.
+      Kontakt en produktleder, tech lead, seksjonsleder eller administrator for å deaktivere applikasjonen.
     </BodyShort>
   )
 
