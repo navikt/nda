@@ -34,6 +34,7 @@ import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
 import { ExternalLink } from '~/components/ExternalLink'
 import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
+import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { StatCard } from '~/components/StatCard'
 import { getUnresolvedAlertsByApp, resolveRepositoryAlert } from '~/db/alerts.server'
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
@@ -74,8 +75,10 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   }
 
   const identity = await getUserIdentity(request)
-  const canDeactivate =
-    app.not_found_in_nais_at && identity ? (await resolveAppCapabilities(identity, app.id)).canDeactivate : false
+  const capabilities =
+    (app.not_found_in_nais_at || !app.is_active) && identity ? await resolveAppCapabilities(identity, app.id) : null
+  const canDeactivate = app.not_found_in_nais_at ? (capabilities?.canDeactivate ?? false) : false
+  const canReactivate = !app.is_active ? (capabilities?.canReactivate ?? false) : false
 
   const [repositories, deploymentStats, alerts, auditReports, groupContext, devTeams, latestSyncJob] =
     await Promise.all([
@@ -97,6 +100,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   return {
     app,
     canDeactivate,
+    canReactivate,
     repositories,
     activeRepo,
     pendingRepos,
@@ -232,6 +236,29 @@ export async function action({ params, request }: Route.ActionArgs) {
       return { success: 'Applikasjonen ble deaktivert' }
     }
 
+    if (action === 'reactivate_app') {
+      if (!identity) {
+        return { error: 'Du må være innlogget for å reaktivere applikasjonen' }
+      }
+
+      const { team, env, app: appName } = requireTeamEnvAppParams(params)
+      const targetApp = await getMonitoredApplicationByIdentity(team, env, appName)
+      if (!targetApp) {
+        return { error: 'Applikasjonen finnes ikke' }
+      }
+      if (targetApp.is_active) {
+        return { error: 'Applikasjonen er allerede aktiv' }
+      }
+
+      const { canReactivate } = await resolveAppCapabilities(identity, targetApp.id)
+      if (!canReactivate) {
+        return { error: 'Du har ikke tilgang til å reaktivere denne applikasjonen' }
+      }
+
+      await updateMonitoredApplication(targetApp.id, { is_active: true, not_found_in_nais_at: null })
+      return { success: 'Applikasjonen ble reaktivert' }
+    }
+
     return { error: 'Ukjent handling' }
   } catch (error) {
     logger.error('Action error:', error)
@@ -243,6 +270,7 @@ export default function AppDetail() {
   const {
     app,
     canDeactivate,
+    canReactivate,
     repositories,
     activeRepo,
     pendingRepos,
@@ -332,6 +360,8 @@ export default function AppDetail() {
       </HStack>
 
       <ActionAlert data={actionData} />
+
+      {!app.is_active && <ReactivateAppNotice canReactivate={canReactivate} />}
 
       {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="alert" canDeactivate={canDeactivate} />}
 

@@ -8,6 +8,10 @@ const meta: Meta<typeof ReactivateAppNotice> = {
 export default meta
 type Story = StoryObj<typeof ReactivateAppNotice>
 
-export const Default: Story = {
-  args: { appId: 1 },
+export const WithReactivate: Story = {
+  args: { canReactivate: true, appId: 1 },
+}
+
+export const WithoutReactivate: Story = {
+  args: { canReactivate: false },
 }

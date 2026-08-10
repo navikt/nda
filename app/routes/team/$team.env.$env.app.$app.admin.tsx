@@ -252,7 +252,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
         </Box>
       )}
 
-      {!app.is_active && <ReactivateAppNotice appId={app.id} />}
+      {!app.is_active && <ReactivateAppNotice canReactivate appId={app.id} />}
 
       {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="panel" canDeactivate appId={app.id} />}
 

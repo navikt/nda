@@ -808,7 +808,7 @@ describe('resolveAppCapabilities', () => {
   it('allows admin', async () => {
     const _sectionId = await seedSection(pool, 'pensjon')
     const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
-    expect(await resolveAppCapabilities(makeAdmin(), appId)).toEqual({ canDeactivate: true })
+    expect(await resolveAppCapabilities(makeAdmin(), appId)).toEqual({ canDeactivate: true, canReactivate: true })
   })
 
   it('allows team leader for app via direct app link', async () => {
@@ -823,7 +823,7 @@ describe('resolveAppCapabilities', () => {
     const pl = makeUser('P123456')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
 
-    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: true })
+    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: true, canReactivate: true })
   })
 
   it('allows team leader for app via nais team link', async () => {
@@ -838,7 +838,7 @@ describe('resolveAppCapabilities', () => {
     const tl = makeUser('T123456')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
-    expect(await resolveAppCapabilities(tl, appId)).toEqual({ canDeactivate: true })
+    expect(await resolveAppCapabilities(tl, appId)).toEqual({ canDeactivate: true, canReactivate: true })
   })
 
   it('allows team leader for app via application group link', async () => {
@@ -858,7 +858,7 @@ describe('resolveAppCapabilities', () => {
     const pl = makeUser('P234567')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
 
-    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: true })
+    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: true, canReactivate: true })
   })
 
   it('allows seksjonsleder in the managing team section', async () => {
@@ -873,7 +873,7 @@ describe('resolveAppCapabilities', () => {
     const sl = makeUser('Z991001')
     await assignSectionRole(sl.navIdent, sectionId, 'seksjonsleder', 'admin')
 
-    expect(await resolveAppCapabilities(sl, appId)).toEqual({ canDeactivate: true })
+    expect(await resolveAppCapabilities(sl, appId)).toEqual({ canDeactivate: true, canReactivate: true })
   })
 
   it('allows teknologileder in the managing team section', async () => {
@@ -888,7 +888,7 @@ describe('resolveAppCapabilities', () => {
     const tl = makeUser('Z991002')
     await assignSectionRole(tl.navIdent, sectionId, 'teknologileder', 'admin')
 
-    expect(await resolveAppCapabilities(tl, appId)).toEqual({ canDeactivate: true })
+    expect(await resolveAppCapabilities(tl, appId)).toEqual({ canDeactivate: true, canReactivate: true })
   })
 
   it('denies regular team member without leader role', async () => {
@@ -903,7 +903,7 @@ describe('resolveAppCapabilities', () => {
     const dev = makeUser('D112233')
     await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
 
-    expect(await resolveAppCapabilities(dev, appId)).toEqual({ canDeactivate: false })
+    expect(await resolveAppCapabilities(dev, appId)).toEqual({ canDeactivate: false, canReactivate: false })
   })
 
   it('denies leveranseleder in the managing team section', async () => {
@@ -918,13 +918,13 @@ describe('resolveAppCapabilities', () => {
     const ll = makeUser('Z991003')
     await assignSectionRole(ll.navIdent, sectionId, 'leveranseleder', 'admin')
 
-    expect(await resolveAppCapabilities(ll, appId)).toEqual({ canDeactivate: false })
+    expect(await resolveAppCapabilities(ll, appId)).toEqual({ canDeactivate: false, canReactivate: false })
   })
 
   it('denies user with no managing team', async () => {
     const _sectionId = await seedSection(pool, 'pensjon')
     const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
-    expect(await resolveAppCapabilities(makeUser(), appId)).toEqual({ canDeactivate: false })
+    expect(await resolveAppCapabilities(makeUser(), appId)).toEqual({ canDeactivate: false, canReactivate: false })
   })
 
   it('denies seksjonsleder in a different section', async () => {
@@ -940,7 +940,7 @@ describe('resolveAppCapabilities', () => {
     const sl = makeUser('Z991004')
     await assignSectionRole(sl.navIdent, section2, 'seksjonsleder', 'admin')
 
-    expect(await resolveAppCapabilities(sl, appId)).toEqual({ canDeactivate: false })
+    expect(await resolveAppCapabilities(sl, appId)).toEqual({ canDeactivate: false, canReactivate: false })
   })
 
   it('denies when dev team is deactivated', async () => {
@@ -954,10 +954,10 @@ describe('resolveAppCapabilities', () => {
 
     const pl = makeUser('P345678')
     await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
-    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: true })
+    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: true, canReactivate: true })
 
     await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [teamId])
-    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: false })
+    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: false, canReactivate: false })
   })
 })
 
