@@ -74,27 +74,36 @@ async function runPeriodicSync(): Promise<void> {
       let verifiedCount = 0
       let cachedLogsCount = 0
       let lockedCount = 0
+      let failedCount = 0
 
       for (const app of apps) {
-        const syncResult = await syncNewDeploymentsWithLock(app.id, app.team_slug, app.environment_name, app.app_name)
+        try {
+          const syncResult = await syncNewDeploymentsWithLock(app.id, app.team_slug, app.environment_name, app.app_name)
 
-        if (syncResult.locked) {
-          lockedCount++
-        } else if (syncResult.success) {
-          syncedCount++
-          newDeploymentsCount += syncResult.result?.newCount || 0
-        }
+          if (syncResult.locked) {
+            lockedCount++
+          } else if (syncResult.success) {
+            syncedCount++
+            newDeploymentsCount += syncResult.result?.newCount || 0
+          }
 
-        const verifyResult = await verifyDeploymentsWithLock(app.id, VERIFY_LIMIT_PER_APP)
+          const verifyResult = await verifyDeploymentsWithLock(app.id, VERIFY_LIMIT_PER_APP)
 
-        if (verifyResult.success && verifyResult.result) {
-          verifiedCount += verifyResult.result.verified
-        }
+          if (verifyResult.success && verifyResult.result) {
+            verifiedCount += verifyResult.result.verified
+          }
 
-        const cacheResult = await cacheCheckLogsWithLock(app.id)
+          const cacheResult = await cacheCheckLogsWithLock(app.id)
 
-        if (cacheResult.success && cacheResult.result) {
-          cachedLogsCount += cacheResult.result.cached
+          if (cacheResult.success && cacheResult.result) {
+            cachedLogsCount += cacheResult.result.cached
+          }
+        } catch (error) {
+          failedCount++
+          logger.error(
+            `❌ Sync cycle failed for app ${app.app_name} (${app.team_slug}/${app.environment_name}):`,
+            error,
+          )
         }
 
         await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -117,7 +126,7 @@ async function runPeriodicSync(): Promise<void> {
       }
 
       logger.info(
-        `✅ Periodic sync complete: synced ${syncedCount} apps (${newDeploymentsCount} new deployments), verified ${verifiedCount} deployments, cached ${cachedLogsCount} logs, ${lockedCount} locked`,
+        `✅ Periodic sync complete: synced ${syncedCount} apps (${newDeploymentsCount} new deployments), verified ${verifiedCount} deployments, cached ${cachedLogsCount} logs, ${lockedCount} locked, ${failedCount} failed`,
       )
     })
 
