@@ -4,7 +4,6 @@ import {
   CogIcon,
   DownloadIcon,
   ExclamationmarkTriangleIcon,
-  ExternalLinkIcon,
   EyeIcon,
   FileTextIcon,
   LayersIcon,
@@ -48,6 +47,8 @@ import { getAuditReportsForApp } from '~/db/audit-reports.server'
 import { getAppDeploymentStats } from '~/db/deployments.server'
 import { getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
+import { SYNC_JOB_STATUS_LABELS, type SyncJobStatus } from '~/db/sync-job-types'
+import { getLatestSyncJob } from '~/db/sync-jobs.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
@@ -70,14 +71,16 @@ export async function loader({ params, url }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  const [repositories, deploymentStats, alerts, auditReports, groupContext, devTeams] = await Promise.all([
-    getRepositoriesByAppId(app.id),
-    getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
-    getUnresolvedAlertsByApp(app.id),
-    getAuditReportsForApp(app.id),
-    getGroupContext(app.id),
-    getDevTeamsForApp(app.id, team),
-  ])
+  const [repositories, deploymentStats, alerts, auditReports, groupContext, devTeams, latestSyncJob] =
+    await Promise.all([
+      getRepositoriesByAppId(app.id),
+      getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
+      getUnresolvedAlertsByApp(app.id),
+      getAuditReportsForApp(app.id),
+      getGroupContext(app.id),
+      getDevTeamsForApp(app.id, team),
+      getLatestSyncJob(app.id, 'nais_sync'),
+    ])
 
   const { group, siblings } = groupContext
 
@@ -97,6 +100,14 @@ export async function loader({ params, url }: Route.LoaderArgs) {
     group,
     siblings,
     devTeams,
+    latestSyncJob: latestSyncJob
+      ? {
+          status: latestSyncJob.status,
+          started_at: latestSyncJob.started_at,
+          completed_at: latestSyncJob.completed_at,
+          created_at: latestSyncJob.created_at,
+        }
+      : null,
   }
 }
 
@@ -211,6 +222,7 @@ export default function AppDetail() {
     group,
     siblings,
     devTeams,
+    latestSyncJob,
   } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const [searchParams] = useSearchParams()
@@ -229,6 +241,28 @@ export default function AppDetail() {
 
   const naisConsoleUrl = `https://console.nav.cloud.nais.io/team/${app.team_slug}/${app.environment_name}/app/${app.app_name}`
 
+  const syncStatusVariant: Record<SyncJobStatus, 'success' | 'warning' | 'error' | 'neutral'> = {
+    completed: 'success',
+    running: 'neutral',
+    failed: 'error',
+    cancelled: 'warning',
+    pending: 'neutral',
+  }
+
+  const lastSyncTimestamp = latestSyncJob
+    ? new Date(latestSyncJob.completed_at || latestSyncJob.started_at || latestSyncJob.created_at).toLocaleString(
+        'nb-NO',
+        { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' },
+      )
+    : null
+
+  const lastSyncLabel =
+    latestSyncJob && lastSyncTimestamp
+      ? latestSyncJob.status === 'completed'
+        ? `Sist synkronisert: ${lastSyncTimestamp}`
+        : `Siste synk-forsøk: ${lastSyncTimestamp}`
+      : null
+
   return (
     <VStack gap="space-32">
       <HStack justify="space-between" align="start" wrap>
@@ -242,18 +276,21 @@ export default function AppDetail() {
               <code style={{ fontSize: '0.75rem' }}>{app.environment_name}</code> | Branch:{' '}
               <code style={{ fontSize: '0.75rem' }}>{app.default_branch}</code>
             </BodyShort>
-            <Button
-              as="a"
-              href={naisConsoleUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              variant="tertiary"
-              size="xsmall"
-              icon={<ExternalLinkIcon aria-hidden />}
-              iconPosition="right"
-            >
-              Nais Console
-            </Button>
+            <ExternalLink href={naisConsoleUrl}>Nais Console</ExternalLink>
+            {latestSyncJob ? (
+              <Tag variant={syncStatusVariant[latestSyncJob.status] || 'neutral'} size="small">
+                {lastSyncLabel} ({SYNC_JOB_STATUS_LABELS[latestSyncJob.status]})
+              </Tag>
+            ) : (
+              <Tag variant="warning" size="small">
+                Ingen synkronisering registrert
+              </Tag>
+            )}
+            {isAdmin && (
+              <Link to={`${appUrl}/admin/sync-jobs`} style={{ fontSize: '0.75rem' }}>
+                Se sync-jobber
+              </Link>
+            )}
           </HStack>
         </div>
         {isAdmin && (
