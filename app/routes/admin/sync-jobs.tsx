@@ -25,6 +25,7 @@ import { SYNC_JOB_TYPE_LABELS } from '~/db/sync-job-types'
 import {
   cleanupOldSyncJobs,
   getAllSyncJobs,
+  getFailedSyncJobsGrouped,
   getSyncJobAppNames,
   getSyncJobStats,
   releaseExpiredLocks,
@@ -46,7 +47,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   const jobType = url.searchParams.get('type') as SyncJobType | null
   const appName = url.searchParams.get('app') || null
 
-  const [jobs, stats, appNames] = await Promise.all([
+  const [jobs, stats, appNames, failedGrouped] = await Promise.all([
     getAllSyncJobs({
       status: status || undefined,
       jobType: jobType || undefined,
@@ -55,9 +56,10 @@ export async function loader({ request, url }: Route.LoaderArgs) {
     }),
     getSyncJobStats(),
     getSyncJobAppNames(),
+    getFailedSyncJobsGrouped(),
   ])
 
-  return { jobs, stats, appNames, filters: { status, jobType, appName } }
+  return { jobs, stats, appNames, failedGrouped, filters: { status, jobType, appName } }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -205,7 +207,7 @@ function StatCard({
 }
 
 export default function AdminSyncJobs({ loaderData, actionData }: Route.ComponentProps) {
-  const { jobs, stats, appNames, filters } = loaderData
+  const { jobs, stats, appNames, failedGrouped, filters } = loaderData
   const [, setSearchParams] = useSearchParams()
 
   function setStatusFilter(status: string | null) {
@@ -274,6 +276,68 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
         />
         <StatCard label="Siste time" value={stats.lastHour} active={false} onClick={() => setStatusFilter(null)} />
       </HGrid>
+
+      {failedGrouped.length > 0 && (
+        <Box padding="space-20" borderRadius="8" background="raised" borderColor="danger-subtle" borderWidth="1">
+          <VStack gap="space-12">
+            <Heading level="2" size="small">
+              Feilede jobber gruppert per app ({failedGrouped.length})
+            </Heading>
+            <BodyShort size="small" textColor="subtle">
+              Viser hver unike kombinasjon av app, jobbtype og feilmelding, med antall forekomster og første/siste
+              tidspunkt. Nyttig for å finne appen som blokkerte den periodiske synk-loopen.
+            </BodyShort>
+            <div>
+              {failedGrouped.map((group) => (
+                <Box
+                  key={`${group.monitored_app_id}-${group.job_type}-${group.error}`}
+                  padding="space-12"
+                  className={styles.stackedListItem}
+                >
+                  <VStack gap="space-4">
+                    <HStack gap="space-8" align="center" justify="space-between" wrap>
+                      <HStack gap="space-12" align="center">
+                        <BodyShort weight="semibold">{group.app_name ?? 'Ukjent app'}</BodyShort>
+                        {group.team_slug && (
+                          <Detail textColor="subtle">
+                            {group.team_slug} / {group.environment_name}
+                          </Detail>
+                        )}
+                        <JobTypeTag type={group.job_type} />
+                      </HStack>
+                      <HStack gap="space-12" align="center">
+                        <Tag data-color="danger" variant="moderate" size="small">
+                          {group.failure_count}x
+                        </Tag>
+                        {group.app_name && (
+                          <Link
+                            to={`/admin/sync-jobs?${new URLSearchParams({
+                              status: 'failed',
+                              type: group.job_type,
+                              app: group.app_name,
+                            }).toString()}`}
+                            style={{ fontSize: '0.75rem' }}
+                          >
+                            Se alle
+                          </Link>
+                        )}
+                      </HStack>
+                    </HStack>
+                    <Detail textColor="subtle">
+                      Første: {formatDate(group.first_failed_at)} — Siste: {formatDate(group.last_failed_at)}
+                    </Detail>
+                    {group.error && (
+                      <BodyShort size="small" textColor="subtle" style={{ wordBreak: 'break-word' }}>
+                        ❌ {group.error}
+                      </BodyShort>
+                    )}
+                  </VStack>
+                </Box>
+              ))}
+            </div>
+          </VStack>
+        </Box>
+      )}
 
       <HStack gap="space-16" justify="space-between" wrap>
         <Form method="get">
