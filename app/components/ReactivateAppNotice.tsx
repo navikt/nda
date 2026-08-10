@@ -30,7 +30,7 @@ export function ReactivateAppNotice({ canReactivate, appId }: ReactivateAppNotic
           </Form>
         ) : (
           <BodyShort size="small" textColor="subtle">
-            Kontakt en produktleder, tech lead, seksjonsleder eller administrator for å reaktivere applikasjonen.
+            Kontakt en produktleder, tech lead eller administrator for å reaktivere applikasjonen.
           </BodyShort>
         )}
       </VStack>
