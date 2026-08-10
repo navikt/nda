@@ -1,6 +1,10 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { createMonitoredApplication, getMonitoredApplicationById } from '../../monitored-applications.server'
+import {
+  createMonitoredApplication,
+  getMonitoredApplicationById,
+  updateMonitoredApplication,
+} from '../../monitored-applications.server'
 import { truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -73,5 +77,33 @@ describe('createMonitoredApplication', () => {
       default_branch: 'master',
     })
     expect(app.default_branch).toBe('master')
+  })
+
+  it('nullstiller not_found_in_nais_at og reaktiverer ved ON CONFLICT (re-add)', async () => {
+    const first = await createMonitoredApplication({
+      team_slug: 'team-d',
+      environment_name: 'prod-gcp',
+      app_name: 'app-d',
+      audit_start_year: 2026,
+      default_branch: 'main',
+    })
+
+    await updateMonitoredApplication(first.id, {
+      is_active: false,
+      not_found_in_nais_at: new Date(),
+    })
+    const deactivated = await getMonitoredApplicationById(first.id)
+    expect(deactivated?.is_active).toBe(false)
+    expect(deactivated?.not_found_in_nais_at).not.toBeNull()
+
+    const readded = await createMonitoredApplication({
+      team_slug: 'team-d',
+      environment_name: 'prod-gcp',
+      app_name: 'app-d',
+      audit_start_year: 2026,
+      default_branch: 'main',
+    })
+    expect(readded.is_active).toBe(true)
+    expect(readded.not_found_in_nais_at).toBeNull()
   })
 })

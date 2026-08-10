@@ -102,6 +102,7 @@ export async function createMonitoredApplication(
       ON CONFLICT (team_slug, environment_name, app_name)
       DO UPDATE SET
         is_active = true,
+        not_found_in_nais_at = NULL,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *`,
     [data.team_slug, data.environment_name, data.app_name, data.audit_start_year, data.default_branch ?? null],
