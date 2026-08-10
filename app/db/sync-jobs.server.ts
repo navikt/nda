@@ -186,6 +186,48 @@ export async function getSyncJobStats(): Promise<{
   }
 }
 
+export interface FailedSyncJobGroup {
+  monitored_app_id: number | null
+  app_name: string | null
+  team_slug: string | null
+  environment_name: string | null
+  job_type: SyncJobType
+  error: string | null
+  failure_count: number
+  first_failed_at: string
+  last_failed_at: string
+}
+
+export async function getFailedSyncJobsGrouped(jobType?: SyncJobType): Promise<FailedSyncJobGroup[]> {
+  const params: string[] = []
+  let jobTypeClause = ''
+  if (jobType) {
+    params.push(jobType)
+    jobTypeClause = `AND sj.job_type = $${params.length}`
+  }
+
+  const result = await pool.query(
+    `SELECT
+       sj.monitored_app_id,
+       ma.app_name,
+       ma.team_slug,
+       ma.environment_name,
+       sj.job_type,
+       sj.error,
+       COUNT(*)::integer as failure_count,
+       MIN(COALESCE(sj.completed_at, sj.created_at)) as first_failed_at,
+       MAX(COALESCE(sj.completed_at, sj.created_at)) as last_failed_at
+     FROM sync_jobs sj
+     LEFT JOIN monitored_applications ma ON sj.monitored_app_id = ma.id
+     WHERE sj.status = 'failed' ${jobTypeClause}
+     GROUP BY sj.monitored_app_id, ma.app_name, ma.team_slug, ma.environment_name, sj.job_type, sj.error
+     ORDER BY last_failed_at DESC
+     LIMIT 100`,
+    params,
+  )
+  return result.rows
+}
+
 export async function getSyncJobsForApp(
   appId: number,
   options?: { limit?: number; jobType?: SyncJobType },
