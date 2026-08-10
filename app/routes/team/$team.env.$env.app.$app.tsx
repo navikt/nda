@@ -33,6 +33,7 @@ import { Form, Link, useActionData, useLoaderData, useRouteLoaderData, useSearch
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
 import { ExternalLink } from '~/components/ExternalLink'
+import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
 import { StatCard } from '~/components/StatCard'
 import { getUnresolvedAlertsByApp, resolveRepositoryAlert } from '~/db/alerts.server'
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
@@ -332,28 +333,7 @@ export default function AppDetail() {
 
       <ActionAlert data={actionData} />
 
-      {app.not_found_in_nais_at && (
-        <Alert variant="error">
-          <VStack gap="space-8">
-            <BodyShort>
-              Applikasjonen ble ikke funnet i Nais under siste synkronisering. Den kan være omdøpt, flyttet eller
-              avviklet.
-            </BodyShort>
-            {canDeactivate ? (
-              <Form method="post">
-                <input type="hidden" name="action" value="deactivate_app" />
-                <Button type="submit" variant="danger" size="small">
-                  Deaktiver applikasjon
-                </Button>
-              </Form>
-            ) : (
-              <BodyShort size="small" textColor="subtle">
-                Kontakt en teamleder, seksjonsleder eller administrator for å deaktivere applikasjonen.
-              </BodyShort>
-            )}
-          </VStack>
-        </Alert>
-      )}
+      {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="alert" canDeactivate={canDeactivate} />}
 
       {(deploymentStats.baseline_action_count ?? 0) > 0 && (
         <Alert variant="warning">

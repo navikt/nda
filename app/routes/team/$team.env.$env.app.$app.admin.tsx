@@ -1,9 +1,10 @@
-import { CogIcon, ExclamationmarkTriangleIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Heading, HStack, Loader, VStack } from '@navikt/ds-react'
+import { CogIcon } from '@navikt/aksel-icons'
+import { Alert, BodyShort, Box, Heading, HStack, Loader, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
-import { Form, useFetcher, useNavigation, useRevalidator } from 'react-router'
+import { useFetcher, useNavigation, useRevalidator } from 'react-router'
 import { AuditReportGenerateSection } from '~/components/AuditReportGenerateSection'
 import { AuditReportList } from '~/components/AuditReportList'
+import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
 import { getAppConfigAuditLog, getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getGitHubDataStatsForApp } from '~/db/github-data.server'
@@ -250,29 +251,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
         </Box>
       )}
 
-      {app.not_found_in_nais_at && (
-        <Box padding="space-24" borderRadius="8" background="danger-softA" borderColor="danger" borderWidth="1">
-          <VStack gap="space-16">
-            <HStack gap="space-8" align="center">
-              <ExclamationmarkTriangleIcon aria-hidden fontSize="1.5rem" />
-              <Heading size="small" level="2">
-                Finnes ikke i Nais
-              </Heading>
-            </HStack>
-            <BodyShort textColor="subtle" size="small">
-              Applikasjonen ble ikke funnet i Nais under siste synkronisering. Den kan være omdøpt, flyttet eller
-              avviklet. Deaktiver den her hvis den ikke lenger skal overvåkes.
-            </BodyShort>
-            <Form method="post">
-              <input type="hidden" name="action" value="deactivate_app" />
-              <input type="hidden" name="app_id" value={app.id} />
-              <Button type="submit" variant="danger" size="small">
-                Deaktiver applikasjon
-              </Button>
-            </Form>
-          </VStack>
-        </Box>
-      )}
+      {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="panel" canDeactivate />}
 
       <DefaultBranchSettings app={app} />
 
