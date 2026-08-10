@@ -22,6 +22,7 @@ interface MonitoredApplication {
   slack_deploy_notify_enabled: boolean
   slack_deploy_notify_enabled_at: Date | null
   application_group_id: number | null
+  not_found_in_nais_at: Date | null
   created_at: Date
   updated_at: Date
 }
@@ -123,6 +124,7 @@ export async function updateMonitoredApplication(
     reminder_enabled?: boolean
     reminder_time?: string
     reminder_days?: string[]
+    not_found_in_nais_at?: Date | null
   },
 ): Promise<MonitoredApplication> {
   const updates: string[] = []
@@ -197,6 +199,11 @@ export async function updateMonitoredApplication(
   if (data.reminder_days !== undefined) {
     updates.push(`reminder_days = $${paramCount++}`)
     values.push(data.reminder_days)
+  }
+
+  if (data.not_found_in_nais_at !== undefined) {
+    updates.push(`not_found_in_nais_at = $${paramCount++}`)
+    values.push(data.not_found_in_nais_at)
   }
 
   if (updates.length === 0) {

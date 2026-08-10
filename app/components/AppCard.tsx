@@ -34,6 +34,7 @@ export interface AppCardData {
   siblingEnvironments?: string[]
   groupName?: string
   groupApps?: { app_name: string; environment_name: string }[]
+  not_found_in_nais_at?: Date | string | null
 }
 
 interface IssueBadgeProps {
@@ -139,6 +140,11 @@ export function AppCard({ app, showEnvironment = true, appendSearchParams }: App
             )}
           </HStack>
           <HStack gap="space-8" align="center">
+            {app.not_found_in_nais_at && (
+              <IssueBadge icon={<ExclamationmarkTriangleIcon aria-hidden />} color="danger" variant="moderate">
+                Finnes ikke i Nais
+              </IssueBadge>
+            )}
             {app.alertCount > 0 && (
               <IssueBadge to={`${appUrl}#varsler`} icon={<BellIcon aria-hidden />} color="danger" variant="moderate">
                 {app.alertCount}

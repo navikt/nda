@@ -165,6 +165,35 @@ export async function resolveTeamAdminCapabilities(
   }
 }
 
+interface AppCapabilities {
+  canDeactivate: boolean
+}
+
+export async function resolveAppCapabilities(actor: UserIdentity, monitoredAppId: number): Promise<AppCapabilities> {
+  if (isEntraAdmin(actor)) return { canDeactivate: true }
+
+  const managingTeamIds = await getManagingTeamIds(monitoredAppId)
+  if (managingTeamIds.length === 0) return { canDeactivate: false }
+
+  const { rows: teamRows } = await pool.query<{ id: number; section_id: number }>(
+    'SELECT id, section_id FROM dev_teams WHERE id = ANY($1) AND is_active = true',
+    [managingTeamIds],
+  )
+  if (teamRows.length === 0) return { canDeactivate: false }
+
+  const { sectionRoles, teamRoles } = await getUserRoles(actor.navIdent)
+  const sectionManagerIds = new Set(
+    sectionRoles.filter((r) => r.role === 'seksjonsleder' || r.role === 'teknologileder').map((r) => r.section_id),
+  )
+
+  const canDeactivate = teamRows.some(
+    (t) =>
+      teamRoles.some((r) => r.dev_team_id === t.id && isTeamLeaderRole(r.role)) || sectionManagerIds.has(t.section_id),
+  )
+
+  return { canDeactivate }
+}
+
 export async function isTeamMember(navIdent: string, devTeamId: number): Promise<boolean> {
   const { rows } = await pool.query<{ exists: boolean }>(
     `SELECT EXISTS(

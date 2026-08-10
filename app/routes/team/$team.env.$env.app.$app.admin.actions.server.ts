@@ -5,7 +5,11 @@ import {
   hasActiveReportForPeriod,
   restoreAuditReport,
 } from '~/db/audit-reports.server'
-import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
+import {
+  getMonitoredApplicationById,
+  getMonitoredApplicationByIdentity,
+  updateMonitoredApplication,
+} from '~/db/monitored-applications.server'
 import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
 import {
   acquireSyncLock,
@@ -457,6 +461,21 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Rapporten finnes ikke eller er ikke arkivert' }
     }
     return { success: 'Rapporten er gjenopprettet' }
+  }
+
+  if (action === 'deactivate_app') {
+    if (!Number.isFinite(appId)) {
+      return { error: 'Ugyldig app-ID' }
+    }
+    const targetApp = await getMonitoredApplicationById(appId)
+    if (!targetApp) {
+      return { error: 'Applikasjonen finnes ikke' }
+    }
+    if (!targetApp.not_found_in_nais_at) {
+      return { error: 'Applikasjonen er ikke markert som ikke funnet i Nais' }
+    }
+    await updateMonitoredApplication(appId, { is_active: false })
+    return { success: 'Applikasjonen ble deaktivert' }
   }
 
   return null
