@@ -8,12 +8,14 @@ const MESSAGE =
 interface NotFoundInNaisNoticeProps {
   variant: 'alert' | 'panel'
   canDeactivate: boolean
+  appId?: number
 }
 
-export function NotFoundInNaisNotice({ variant, canDeactivate }: NotFoundInNaisNoticeProps) {
+export function NotFoundInNaisNotice({ variant, canDeactivate, appId }: NotFoundInNaisNoticeProps) {
   const deactivateButton = canDeactivate ? (
     <Form method="post">
       <input type="hidden" name="action" value="deactivate_app" />
+      {appId !== undefined && <input type="hidden" name="app_id" value={appId} />}
       <Button type="submit" variant="danger" size="small">
         Deaktiver applikasjon
       </Button>

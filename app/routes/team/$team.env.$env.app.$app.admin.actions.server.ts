@@ -478,5 +478,20 @@ export async function action({ request }: { request: Request; params: Record<str
     return { success: 'Applikasjonen ble deaktivert' }
   }
 
+  if (action === 'reactivate_app') {
+    if (!Number.isFinite(appId)) {
+      return { error: 'Ugyldig app-ID' }
+    }
+    const targetApp = await getMonitoredApplicationById(appId)
+    if (!targetApp) {
+      return { error: 'Applikasjonen finnes ikke' }
+    }
+    if (targetApp.is_active) {
+      return { error: 'Applikasjonen er allerede aktiv' }
+    }
+    await updateMonitoredApplication(appId, { is_active: true, not_found_in_nais_at: null })
+    return { success: 'Applikasjonen ble reaktivert' }
+  }
+
   return null
 }

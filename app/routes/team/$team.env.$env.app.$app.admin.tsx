@@ -5,6 +5,7 @@ import { useFetcher, useNavigation, useRevalidator } from 'react-router'
 import { AuditReportGenerateSection } from '~/components/AuditReportGenerateSection'
 import { AuditReportList } from '~/components/AuditReportList'
 import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
+import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { getAppConfigAuditLog, getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getGitHubDataStatsForApp } from '~/db/github-data.server'
@@ -251,7 +252,9 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
         </Box>
       )}
 
-      {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="panel" canDeactivate />}
+      {!app.is_active && <ReactivateAppNotice appId={app.id} />}
+
+      {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="panel" canDeactivate appId={app.id} />}
 
       <DefaultBranchSettings app={app} />
 
