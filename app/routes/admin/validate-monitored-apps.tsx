@@ -1,5 +1,6 @@
 import { ArrowsCirclepathIcon, CheckmarkCircleIcon, ExclamationmarkTriangleIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Heading, HStack, Table, Tag, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, Heading, HStack, Select, Table, Tag, VStack } from '@navikt/ds-react'
+import { useState } from 'react'
 import { Form, useActionData, useLoaderData } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import {
@@ -171,12 +172,16 @@ export default function ValidateMonitoredApps() {
                       <code>
                         {row.suggested.team_slug} / {row.suggested.environment_name} / {row.suggested.app_name}
                       </code>
+                    ) : row.candidates.length > 0 ? (
+                      <BodyShort size="small" textColor="subtle">
+                        Flere mulige miljøer, velg ett →
+                      </BodyShort>
                     ) : (
                       <BodyShort textColor="subtle">—</BodyShort>
                     )}
                   </Table.DataCell>
                   <Table.DataCell>
-                    <HStack gap="space-8">
+                    <HStack gap="space-8" align="end">
                       {row.suggested && (
                         <Form method="post">
                           <input type="hidden" name="intent" value="apply_fix" />
@@ -188,6 +193,9 @@ export default function ValidateMonitoredApps() {
                             Bruk forslag
                           </Button>
                         </Form>
+                      )}
+                      {!row.suggested && row.candidates.length > 0 && (
+                        <CandidatePicker id={row.id} candidates={row.candidates} />
                       )}
                       <Form method="post">
                         <input type="hidden" name="intent" value="deactivate" />
@@ -230,5 +238,38 @@ function SummaryTile({ icon, label, value }: { icon: React.ReactNode; label: str
         </VStack>
       </HStack>
     </Box>
+  )
+}
+
+function CandidatePicker({
+  id,
+  candidates,
+}: {
+  id: number
+  candidates: { team_slug: string; environment_name: string; app_name: string }[]
+}) {
+  const [selected, setSelected] = useState(candidates[0].environment_name)
+  const chosen = candidates.find((c) => c.environment_name === selected) ?? candidates[0]
+
+  return (
+    <Form method="post">
+      <HStack gap="space-8" align="end">
+        <input type="hidden" name="intent" value="apply_fix" />
+        <input type="hidden" name="id" value={id} />
+        <input type="hidden" name="team_slug" value={chosen.team_slug} />
+        <input type="hidden" name="environment_name" value={chosen.environment_name} />
+        <input type="hidden" name="app_name" value={chosen.app_name} />
+        <Select size="small" label="Miljø" hideLabel value={selected} onChange={(e) => setSelected(e.target.value)}>
+          {candidates.map((c) => (
+            <option key={c.environment_name} value={c.environment_name}>
+              {c.environment_name}
+            </option>
+          ))}
+        </Select>
+        <Button size="small" type="submit" variant="primary">
+          Bruk valgt miljø
+        </Button>
+      </HStack>
+    </Form>
   )
 }

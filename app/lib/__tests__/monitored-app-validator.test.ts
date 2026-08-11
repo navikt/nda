@@ -81,6 +81,7 @@ describe('classifyRow', () => {
     })
     expect(result.status).toBe('wrong_env')
     expect(result.suggested).toBeNull()
+    expect(result.candidates.map((c) => c.environment_name).sort()).toEqual(['dev-gcp', 'prod-gcp'])
   })
 
   it('returns missing when nothing matches in either orientation', () => {
