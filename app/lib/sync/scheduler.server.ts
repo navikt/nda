@@ -10,7 +10,9 @@ import { withSyncLock } from './with-sync-lock.server'
 let periodicSyncInterval: ReturnType<typeof setInterval> | null = null
 let isPeriodicSyncRunning = false
 
-export const VERIFY_LIMIT_PER_APP = 20
+export const VERIFY_LIMIT_PER_APP = 50
+
+const APP_THROTTLE_MS = 250
 
 async function syncNewDeploymentsWithLock(
   monitoredAppId: number,
@@ -78,6 +80,8 @@ async function runPeriodicSync(): Promise<void> {
       let failedCount = 0
 
       for (const app of apps) {
+        let didWork = false
+
         try {
           const syncResult = await syncNewDeploymentsWithLock(app.id, app.team_slug, app.environment_name, app.app_name)
 
@@ -86,28 +90,38 @@ async function runPeriodicSync(): Promise<void> {
           } else if (syncResult.success) {
             syncedCount++
             newDeploymentsCount += syncResult.result?.newCount || 0
+            didWork = true
           }
 
           const verifyResult = await verifyDeploymentsWithLock(app.id, VERIFY_LIMIT_PER_APP)
 
           if (verifyResult.success && verifyResult.result) {
             verifiedCount += verifyResult.result.verified
+            didWork =
+              didWork ||
+              verifyResult.result.verified > 0 ||
+              verifyResult.result.failed > 0 ||
+              verifyResult.result.skipped > 0
           }
 
           const cacheResult = await cacheCheckLogsWithLock(app.id)
 
           if (cacheResult.success && cacheResult.result) {
             cachedLogsCount += cacheResult.result.cached
+            didWork = didWork || cacheResult.result.cached > 0
           }
         } catch (error) {
           failedCount++
+          didWork = true
           logger.error(
             `❌ Sync cycle failed for app ${app.app_name} (${app.team_slug}/${app.environment_name}):`,
             error,
           )
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+        if (didWork) {
+          await new Promise((resolve) => setTimeout(resolve, APP_THROTTLE_MS))
+        }
       }
 
       const cleaned = await cleanupOldSyncJobs(50)

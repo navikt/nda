@@ -19,7 +19,12 @@ vi.mock('~/lib/sync/goal-keyword-sync.server', () => ({
   autoLinkDependabotGoal: vi.fn(),
 }))
 
+vi.mock('~/lib/github', () => ({
+  getGitHubRateLimitRemaining: vi.fn(() => null),
+}))
+
 import { getAllDeployments, getDeploymentById, updateDeploymentFourEyes } from '~/db/deployments.server'
+import { getGitHubRateLimitRemaining } from '~/lib/github'
 import { verifyDeploymentsFourEyes } from '~/lib/sync/github-verify.server'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from '~/lib/sync/goal-keyword-sync.server'
 import { runVerification } from '~/lib/verification'
@@ -30,6 +35,7 @@ const mockUpdateFourEyes = updateDeploymentFourEyes as Mock
 const mockRunVerification = runVerification as Mock
 const mockAutoLink = autoLinkGoalKeywords as Mock
 const mockAutoLinkDependabot = autoLinkDependabotGoal as Mock
+const mockRateLimitRemaining = getGitHubRateLimitRemaining as Mock
 
 function makeDeployment(overrides: Record<string, unknown> = {}) {
   return {
@@ -126,6 +132,43 @@ describe('verifyDeploymentsFourEyes', () => {
     expect(firstCall[0]).toBe(1)
     expect(result.verified).toBe(2)
     expect(result.remaining).toBe(1)
+  })
+
+  it('stops early when the GitHub rate limit is near exhaustion', async () => {
+    mockGetAll.mockResolvedValue([
+      makeDeployment({ id: 1, created_at: '2026-01-01T00:00:00Z' }),
+      makeDeployment({ id: 2, created_at: '2026-02-01T00:00:00Z' }),
+      makeDeployment({ id: 3, created_at: '2026-03-01T00:00:00Z' }),
+    ])
+    mockRunVerification.mockResolvedValue({ status: 'approved' })
+    mockRateLimitRemaining.mockReturnValue(50)
+
+    const promise = verifyDeploymentsFourEyes()
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await promise
+
+    expect(mockRunVerification).not.toHaveBeenCalled()
+    expect(result).toEqual({ verified: 0, failed: 0, skipped: 0, remaining: 3 })
+
+    mockRateLimitRemaining.mockReturnValue(null)
+  })
+
+  it('stops processing further deployments once a rate limit error is thrown', async () => {
+    mockGetAll.mockResolvedValue([
+      makeDeployment({ id: 1, created_at: '2026-01-01T00:00:00Z' }),
+      makeDeployment({ id: 2, created_at: '2026-02-01T00:00:00Z' }),
+      makeDeployment({ id: 3, created_at: '2026-03-01T00:00:00Z' }),
+    ])
+    mockRunVerification
+      .mockResolvedValueOnce({ status: 'approved' })
+      .mockRejectedValueOnce(new Error('API rate limit exceeded for installation'))
+
+    const promise = verifyDeploymentsFourEyes()
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await promise
+
+    expect(mockRunVerification).toHaveBeenCalledTimes(2)
+    expect(result).toEqual({ verified: 1, failed: 1, skipped: 0, remaining: 1 })
   })
 
   it('skips deployments without commit_sha', async () => {

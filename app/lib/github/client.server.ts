@@ -5,6 +5,11 @@ import { withGitHubSpan } from '~/lib/tracing.server'
 
 let octokit: Octokit | null = null
 let requestCount = 0
+let lastKnownRateLimitRemaining: number | null = null
+
+export function getGitHubRateLimitRemaining(): number | null {
+  return lastKnownRateLimitRemaining
+}
 
 export function getGitHubClient(): Octokit {
   if (!octokit) {
@@ -58,12 +63,18 @@ export function getGitHubClient(): Octokit {
     })
 
     octokit.hook.after('request', (response, _options) => {
-      const remaining = response.headers['x-ratelimit-remaining']
-      const limit = response.headers['x-ratelimit-limit']
-      if (remaining && parseInt(remaining, 10) < 100) {
+      const remainingHeader = response.headers['x-ratelimit-remaining']
+      const limitHeader = response.headers['x-ratelimit-limit']
+
+      const remaining = remainingHeader !== undefined ? Number.parseInt(String(remainingHeader), 10) : NaN
+      if (!Number.isFinite(remaining)) return
+
+      lastKnownRateLimitRemaining = remaining
+
+      if (remaining < 100) {
         logger.warn('GitHub rate limit low', {
-          rate_limit_remaining: parseInt(remaining, 10),
-          rate_limit_total: parseInt(limit ?? '0', 10),
+          rate_limit_remaining: remaining,
+          rate_limit_total: Number.parseInt(String(limitHeader ?? '0'), 10),
         })
       }
     })

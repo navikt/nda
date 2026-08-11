@@ -7,9 +7,12 @@ import {
 } from '~/db/deployments.server'
 import { isDependabotUser } from '~/lib/dependabot'
 import { isApprovedStatus, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
+import { getGitHubRateLimitRemaining } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { runVerification } from '~/lib/verification'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from './goal-keyword-sync.server'
+
+const RATE_LIMIT_SAFETY_BUFFER = 200
 
 export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { limit?: number }): Promise<{
   verified: number
@@ -57,8 +60,19 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
   let verified = 0
   let failed = 0
   let skipped = 0
+  let processedCount = 0
+  let rateLimitHit = false
 
   for (const deployment of toVerify) {
+    const rateLimitRemaining = getGitHubRateLimitRemaining()
+    if (rateLimitRemaining !== null && rateLimitRemaining < RATE_LIMIT_SAFETY_BUFFER) {
+      logger.warn(`⚠️  GitHub rate limit near exhaustion (${rateLimitRemaining} remaining), stopping verification run`)
+      rateLimitHit = true
+      break
+    }
+
+    processedCount++
+
     try {
       logger.info(`🔍 Verifying deployment ${deployment.nais_deployment_id}...`)
 
@@ -141,16 +155,23 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
     } catch (error) {
       logger.error(`❌ Error verifying deployment ${deployment.nais_deployment_id}:`, error)
       failed++
+
+      if (error instanceof Error && error.message.includes('rate limit')) {
+        logger.warn('⚠️  GitHub rate limit reached, stopping verification run')
+        rateLimitHit = true
+        break
+      }
     }
   }
 
-  const remaining = Math.max(0, filtered.length - toVerify.length)
+  const remaining = Math.max(0, filtered.length - processedCount)
 
   logger.info(`✅ Verification complete:`, {
     verified,
     failed,
     skipped,
     remaining,
+    rateLimitHit,
   })
 
   return {
