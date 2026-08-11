@@ -2,6 +2,17 @@ import { readFile } from 'node:fs/promises'
 import { GraphQLClient } from 'graphql-request'
 import { fetchWithLogging, logger } from '~/lib/logger.server'
 
+export class NaisResourceNotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NaisResourceNotFoundError'
+  }
+}
+
+function isResourceNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Resource not found')
+}
+
 let lastTokenLogAt = 0
 
 async function getNaisToken(): Promise<string | undefined> {
@@ -252,6 +263,10 @@ export async function fetchApplicationDeployments(
   } catch (error) {
     logger.error('❌ Error fetching deployments from Nais:', error)
 
+    if (isResourceNotFoundError(error)) {
+      throw new NaisResourceNotFoundError((error as Error).message)
+    }
+
     if (error instanceof Error && error.message.includes('Unexpected token')) {
       throw new Error(
         'Nais GraphQL API returnerte HTML i stedet for JSON. ' +
@@ -330,6 +345,9 @@ export async function fetchNewDeployments(
     return { deployments: newDeployments, stoppedEarly }
   } catch (error) {
     logger.error('❌ Error fetching new deployments from Nais:', error)
+    if (isResourceNotFoundError(error)) {
+      throw new NaisResourceNotFoundError((error as Error).message)
+    }
     throw error
   }
 }

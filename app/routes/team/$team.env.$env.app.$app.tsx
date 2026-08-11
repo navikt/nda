@@ -33,6 +33,8 @@ import { Form, Link, useActionData, useLoaderData, useRouteLoaderData, useSearch
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
 import { ExternalLink } from '~/components/ExternalLink'
+import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
+import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { StatCard } from '~/components/StatCard'
 import { getUnresolvedAlertsByApp, resolveRepositoryAlert } from '~/db/alerts.server'
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
@@ -50,6 +52,7 @@ import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~
 import { SYNC_JOB_STATUS_LABELS, type SyncJobStatus } from '~/db/sync-job-types'
 import { getLatestSyncJob } from '~/db/sync-jobs.server'
 import { getUserIdentity } from '~/lib/auth.server'
+import { resolveAppCapabilities } from '~/lib/authorization.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
@@ -57,7 +60,7 @@ import { isImplicitApprovalMode } from '~/lib/verification/types'
 import type { loader as layoutLoader } from '../layout'
 import type { Route } from './+types/$team.env.$env.app.$app'
 
-export async function loader({ params, url }: Route.LoaderArgs) {
+export async function loader({ params, request, url }: Route.LoaderArgs) {
   const { team, env, app: appName } = requireTeamEnvAppParams(params)
 
   const period = (url.searchParams.get('period') || 'last-week') as TimePeriod
@@ -70,6 +73,12 @@ export async function loader({ params, url }: Route.LoaderArgs) {
   if (!app) {
     throw new Response('Application not found', { status: 404 })
   }
+
+  const identity = await getUserIdentity(request)
+  const capabilities =
+    (app.not_found_in_nais_at || !app.is_active) && identity ? await resolveAppCapabilities(identity, app.id) : null
+  const canDeactivate = app.not_found_in_nais_at ? (capabilities?.canDeactivate ?? false) : false
+  const canReactivate = !app.is_active ? (capabilities?.canReactivate ?? false) : false
 
   const [repositories, deploymentStats, alerts, auditReports, groupContext, devTeams, latestSyncJob] =
     await Promise.all([
@@ -90,6 +99,8 @@ export async function loader({ params, url }: Route.LoaderArgs) {
 
   return {
     app,
+    canDeactivate,
+    canReactivate,
     repositories,
     activeRepo,
     pendingRepos,
@@ -115,7 +126,7 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `${data?.app?.app_name ?? 'App'} - NDA` }]
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ params, request }: Route.ActionArgs) {
   const formData = await request.formData()
   const action = formData.get('action')
   const identity = await getUserIdentity(request)
@@ -202,6 +213,52 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
+    if (action === 'deactivate_app') {
+      if (!identity) {
+        return { error: 'Du må være innlogget for å deaktivere applikasjonen' }
+      }
+
+      const { team, env, app: appName } = requireTeamEnvAppParams(params)
+      const targetApp = await getMonitoredApplicationByIdentity(team, env, appName)
+      if (!targetApp) {
+        return { error: 'Applikasjonen finnes ikke' }
+      }
+      if (!targetApp.not_found_in_nais_at) {
+        return { error: 'Applikasjonen er ikke markert som ikke funnet i Nais' }
+      }
+
+      const { canDeactivate } = await resolveAppCapabilities(identity, targetApp.id)
+      if (!canDeactivate) {
+        return { error: 'Du har ikke tilgang til å deaktivere denne applikasjonen' }
+      }
+
+      await updateMonitoredApplication(targetApp.id, { is_active: false })
+      return { success: 'Applikasjonen ble deaktivert' }
+    }
+
+    if (action === 'reactivate_app') {
+      if (!identity) {
+        return { error: 'Du må være innlogget for å reaktivere applikasjonen' }
+      }
+
+      const { team, env, app: appName } = requireTeamEnvAppParams(params)
+      const targetApp = await getMonitoredApplicationByIdentity(team, env, appName)
+      if (!targetApp) {
+        return { error: 'Applikasjonen finnes ikke' }
+      }
+      if (targetApp.is_active) {
+        return { error: 'Applikasjonen er allerede aktiv' }
+      }
+
+      const { canReactivate } = await resolveAppCapabilities(identity, targetApp.id)
+      if (!canReactivate) {
+        return { error: 'Du har ikke tilgang til å reaktivere denne applikasjonen' }
+      }
+
+      await updateMonitoredApplication(targetApp.id, { is_active: true, not_found_in_nais_at: null })
+      return { success: 'Applikasjonen ble reaktivert' }
+    }
+
     return { error: 'Ukjent handling' }
   } catch (error) {
     logger.error('Action error:', error)
@@ -212,6 +269,8 @@ export async function action({ request }: Route.ActionArgs) {
 export default function AppDetail() {
   const {
     app,
+    canDeactivate,
+    canReactivate,
     repositories,
     activeRepo,
     pendingRepos,
@@ -301,6 +360,10 @@ export default function AppDetail() {
       </HStack>
 
       <ActionAlert data={actionData} />
+
+      {!app.is_active && <ReactivateAppNotice canReactivate={canReactivate} />}
+
+      {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="alert" canDeactivate={canDeactivate} />}
 
       {(deploymentStats.baseline_action_count ?? 0) > 0 && (
         <Alert variant="warning">

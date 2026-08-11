@@ -10,10 +10,36 @@ import {
   getDeploymentByNaisId,
   getLatestDeploymentForApp,
 } from '~/db/deployments.server'
-import { getMonitoredApplicationById, getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
+import {
+  getMonitoredApplicationById,
+  getMonitoredApplicationByIdentity,
+  updateMonitoredApplication,
+} from '~/db/monitored-applications.server'
 import { logger } from '~/lib/logger.server'
-import { fetchApplicationDeployments, fetchNewDeployments } from '~/lib/nais.server'
+import { fetchApplicationDeployments, fetchNewDeployments, NaisResourceNotFoundError } from '~/lib/nais.server'
 import { syncDefaultBranchForApp } from './default-branch-sync.server'
+
+async function markNaisResourceStatus<T>(
+  monitoredAppId: number,
+  currentNotFoundAt: Date | null,
+  fetchFn: () => Promise<T>,
+  notFoundFallback: T,
+): Promise<T> {
+  try {
+    const result = await fetchFn()
+    if (currentNotFoundAt) {
+      await updateMonitoredApplication(monitoredAppId, { not_found_in_nais_at: null })
+    }
+    return result
+  } catch (error) {
+    if (error instanceof NaisResourceNotFoundError) {
+      await updateMonitoredApplication(monitoredAppId, { not_found_in_nais_at: new Date() })
+      logger.warn(`⚠️  Application not found in Nais - treating as no-op sync: ${monitoredAppId}`)
+      return notFoundFallback
+    }
+    throw error
+  }
+}
 
 async function syncDeploymentsFromNais(
   teamSlug: string,
@@ -36,7 +62,12 @@ async function syncDeploymentsFromNais(
     throw new Error(`Application not found in monitored applications: ${teamSlug}/${environmentName}/${appName}`)
   }
 
-  const naisDeployments = await fetchApplicationDeployments(teamSlug, environmentName, appName)
+  const naisDeployments = await markNaisResourceStatus(
+    monitoredApp.id,
+    monitoredApp.not_found_in_nais_at,
+    () => fetchApplicationDeployments(teamSlug, environmentName, appName),
+    [],
+  )
 
   logger.info(`📦 Processing ${naisDeployments.length} deployments from Nais`)
 
@@ -212,12 +243,19 @@ export async function syncNewDeploymentsFromNais(
 
   logger.info(`🔍 Looking for deployments newer than ${latestDeployment.nais_deployment_id.substring(0, 20)}...`)
 
-  const { deployments, stoppedEarly } = await fetchNewDeployments(
-    teamSlug,
-    environmentName,
-    appName,
-    latestDeployment.nais_deployment_id,
-    100, // Smaller page size for incremental
+  const monitoredApp = await getMonitoredApplicationById(monitoredAppId)
+  const { deployments, stoppedEarly } = await markNaisResourceStatus(
+    monitoredAppId,
+    monitoredApp?.not_found_in_nais_at ?? null,
+    () =>
+      fetchNewDeployments(
+        teamSlug,
+        environmentName,
+        appName,
+        latestDeployment.nais_deployment_id,
+        100, // Smaller page size for incremental
+      ),
+    { deployments: [], stoppedEarly: false },
   )
 
   if (deployments.length === 0) {
