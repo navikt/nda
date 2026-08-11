@@ -18,6 +18,7 @@ interface ValidationResult {
   stored: { team_slug: string; environment_name: string; app_name: string }
   status: ValidationStatus
   suggested: { team_slug: string; environment_name: string; app_name: string } | null
+  candidates: { team_slug: string; environment_name: string; app_name: string }[]
 }
 
 interface NaisIndex {
@@ -51,7 +52,7 @@ export function classifyRow(row: MonitoredRow, index: NaisIndex): ValidationResu
 
   const exactKey = `${row.team_slug}|${row.environment_name}|${row.app_name}`
   if (index.exact.has(exactKey)) {
-    return { id: row.id, stored, status: 'ok', suggested: null }
+    return { id: row.id, stored, status: 'ok', suggested: null, candidates: [] }
   }
 
   const sameOrientationEnvs = index.envsForPair.get(`${row.team_slug}|${row.app_name}`)
@@ -69,9 +70,20 @@ export function classifyRow(row: MonitoredRow, index: NaisIndex): ValidationResu
           environment_name: sameOrientationEnvs[0],
           app_name: row.app_name,
         },
+        candidates: [],
       }
     }
-    return { id: row.id, stored, status: 'wrong_env', suggested: null }
+    return {
+      id: row.id,
+      stored,
+      status: 'wrong_env',
+      suggested: null,
+      candidates: sameOrientationEnvs.map((environment_name) => ({
+        team_slug: row.team_slug,
+        environment_name,
+        app_name: row.app_name,
+      })),
+    }
   }
 
   if (index.exact.has(swapKeySameEnv)) {
@@ -84,6 +96,7 @@ export function classifyRow(row: MonitoredRow, index: NaisIndex): ValidationResu
         environment_name: row.environment_name,
         app_name: row.team_slug,
       },
+      candidates: [],
     }
   }
 
@@ -98,12 +111,23 @@ export function classifyRow(row: MonitoredRow, index: NaisIndex): ValidationResu
           environment_name: swapOrientationEnvs[0],
           app_name: row.team_slug,
         },
+        candidates: [],
       }
     }
-    return { id: row.id, stored, status: 'swapped_wrong_env', suggested: null }
+    return {
+      id: row.id,
+      stored,
+      status: 'swapped_wrong_env',
+      suggested: null,
+      candidates: swapOrientationEnvs.map((environment_name) => ({
+        team_slug: row.app_name,
+        environment_name,
+        app_name: row.team_slug,
+      })),
+    }
   }
 
-  return { id: row.id, stored, status: 'missing', suggested: null }
+  return { id: row.id, stored, status: 'missing', suggested: null, candidates: [] }
 }
 
 export function classifyAll(rows: MonitoredRow[], naisApps: NaisAppEntry[]): ValidationResult[] {
