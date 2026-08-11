@@ -1,15 +1,59 @@
 import { createAppAuth } from '@octokit/auth-app'
 import { Octokit } from '@octokit/rest'
+import { metrics } from '@opentelemetry/api'
 import { logger, logOutgoingHttp } from '~/lib/logger.server'
 import { withGitHubSpan } from '~/lib/tracing.server'
+
+export type GitHubRateLimitStatus = {
+  remaining: number
+  limit: number | null
+  resetAt: Date | null
+}
 
 let octokit: Octokit | null = null
 let requestCount = 0
 let lastKnownRateLimitRemaining: number | null = null
+let lastKnownRateLimitStatus: GitHubRateLimitStatus | null = null
 
 export function getGitHubRateLimitRemaining(): number | null {
   return lastKnownRateLimitRemaining
 }
+
+export function getGitHubRateLimitStatus(): GitHubRateLimitStatus | null {
+  return lastKnownRateLimitStatus
+}
+
+const meter = metrics.getMeter('deployment-audit')
+
+meter
+  .createObservableGauge('github.rate_limit.remaining', { description: 'GitHub API rate limit remaining' })
+  .addCallback((result) => {
+    if (lastKnownRateLimitStatus) {
+      result.observe(lastKnownRateLimitStatus.remaining)
+    }
+  })
+
+meter
+  .createObservableGauge('github.rate_limit.limit', { description: 'GitHub API rate limit ceiling' })
+  .addCallback((result) => {
+    if (lastKnownRateLimitStatus?.limit !== null && lastKnownRateLimitStatus?.limit !== undefined) {
+      result.observe(lastKnownRateLimitStatus.limit)
+    }
+  })
+
+meter
+  .createObservableGauge('github.rate_limit.reset_seconds', {
+    description: 'Seconds until the GitHub API rate limit resets',
+  })
+  .addCallback((result) => {
+    if (lastKnownRateLimitStatus?.resetAt) {
+      const secondsUntilReset = Math.max(
+        0,
+        Math.round((lastKnownRateLimitStatus.resetAt.getTime() - Date.now()) / 1000),
+      )
+      result.observe(secondsUntilReset)
+    }
+  })
 
 export function getGitHubClient(): Octokit {
   if (!octokit) {
@@ -65,11 +109,20 @@ export function getGitHubClient(): Octokit {
     octokit.hook.after('request', (response, _options) => {
       const remainingHeader = response.headers['x-ratelimit-remaining']
       const limitHeader = response.headers['x-ratelimit-limit']
+      const resetHeader = response.headers['x-ratelimit-reset']
 
       const remaining = remainingHeader !== undefined ? Number.parseInt(String(remainingHeader), 10) : NaN
       if (!Number.isFinite(remaining)) return
 
+      const limit = limitHeader !== undefined ? Number.parseInt(String(limitHeader), 10) : NaN
+      const resetEpochSeconds = resetHeader !== undefined ? Number.parseInt(String(resetHeader), 10) : NaN
+
       lastKnownRateLimitRemaining = remaining
+      lastKnownRateLimitStatus = {
+        remaining,
+        limit: Number.isFinite(limit) ? limit : null,
+        resetAt: Number.isFinite(resetEpochSeconds) ? new Date(resetEpochSeconds * 1000) : null,
+      }
 
       if (remaining < 100) {
         logger.warn('GitHub rate limit low', {
