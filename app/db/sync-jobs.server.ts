@@ -257,6 +257,34 @@ export async function getSyncJobsForApp(
   return result.rows
 }
 
+export async function getObservedSyncIntervalMs(
+  appId: number,
+  jobType: SyncJobType,
+  sampleSize = 5,
+): Promise<number | null> {
+  const result = await pool.query<{ started_at: Date }>(
+    `SELECT started_at
+     FROM sync_jobs
+     WHERE monitored_app_id = $1 AND job_type = $2 AND status = 'completed'
+     ORDER BY started_at DESC
+     LIMIT $3`,
+    [appId, jobType, sampleSize],
+  )
+
+  if (result.rows.length < 2) {
+    return null
+  }
+
+  const timestamps = result.rows.map((r) => new Date(r.started_at).getTime())
+  const gaps: number[] = []
+  for (let i = 0; i < timestamps.length - 1; i++) {
+    gaps.push(timestamps[i] - timestamps[i + 1])
+  }
+
+  const avgGap = gaps.reduce((sum, g) => sum + g, 0) / gaps.length
+  return avgGap > 0 ? avgGap : null
+}
+
 export async function getLatestSyncJob(appId: number, jobType: SyncJobType): Promise<SyncJob | null> {
   const result = await pool.query(
     `SELECT id, job_type, monitored_app_id, status, started_at, completed_at,

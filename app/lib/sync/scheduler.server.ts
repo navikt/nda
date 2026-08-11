@@ -7,8 +7,7 @@ import { cacheCheckLogsWithLock } from './log-cache-job.server'
 import { syncNewDeploymentsFromNais } from './nais-sync.server'
 import { withSyncLock } from './with-sync-lock.server'
 
-let periodicSyncInterval: ReturnType<typeof setInterval> | null = null
-let isPeriodicSyncRunning = false
+let periodicSyncStarted = false
 
 export const VERIFY_LIMIT_PER_APP = 50
 
@@ -58,13 +57,6 @@ export async function verifyDeploymentsWithLock(monitoredAppId: number, limit?: 
 }
 
 async function runPeriodicSync(): Promise<void> {
-  if (isPeriodicSyncRunning) {
-    logger.info('⏳ Periodic sync already running, skipping...')
-    return
-  }
-
-  isPeriodicSyncRunning = true
-
   try {
     const result = await withSyncClient(async () => {
       logger.info('🔄 Starting periodic sync cycle...')
@@ -150,24 +142,25 @@ async function runPeriodicSync(): Promise<void> {
     }
   } catch (error) {
     logger.error('❌ Periodic sync error:', error)
-  } finally {
-    isPeriodicSyncRunning = false
   }
 }
 
+function scheduleNextSync(delayMs: number): void {
+  setTimeout(() => {
+    runPeriodicSync()
+      .catch((err) => logger.error('❌ Periodic sync failed:', err))
+      .finally(() => scheduleNextSync(SYNC_INTERVAL_MS))
+  }, delayMs)
+}
+
 export function startPeriodicSync(): void {
-  if (periodicSyncInterval) {
+  if (periodicSyncStarted) {
     logger.warn('⚠️ Periodic sync already started')
     return
   }
 
+  periodicSyncStarted = true
   logger.info(`🚀 Starting periodic sync scheduler (interval: ${SYNC_INTERVAL_MS / 1000}s)`)
 
-  setTimeout(() => {
-    runPeriodicSync().catch((err) => logger.error('❌ Periodic sync failed:', err))
-  }, 10_000)
-
-  periodicSyncInterval = setInterval(() => {
-    runPeriodicSync().catch((err) => logger.error('❌ Periodic sync failed:', err))
-  }, SYNC_INTERVAL_MS)
+  scheduleNextSync(10_000)
 }

@@ -51,7 +51,7 @@ import { getAppDeploymentStats, getPendingVerificationCount } from '~/db/deploym
 import { getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
 import { SYNC_JOB_STATUS_LABELS, type SyncJobStatus } from '~/db/sync-job-types'
-import { getLatestSyncJob, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
+import { getLatestSyncJob, getObservedSyncIntervalMs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { resolveAppCapabilities } from '~/lib/authorization.server'
 import { logger } from '~/lib/logger.server'
@@ -91,6 +91,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     devTeams,
     latestSyncJob,
     verificationProgress,
+    observedVerifyIntervalMs,
   ] = await Promise.all([
     getRepositoriesByAppId(app.id),
     getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
@@ -100,6 +101,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     getDevTeamsForApp(app.id, team),
     getLatestSyncJob(app.id, 'nais_sync'),
     getPendingVerificationCount(app.id),
+    getObservedSyncIntervalMs(app.id, 'github_verify'),
   ])
 
   const { group, siblings } = groupContext
@@ -109,7 +111,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const historicalRepos = repositories.filter((r) => r.status === 'historical')
 
   const verifyLimitPerCycle = VERIFY_LIMIT_PER_APP
-  const syncIntervalMs = SYNC_INTERVAL_MS
+  const syncIntervalMs = observedVerifyIntervalMs ?? SYNC_INTERVAL_MS
 
   return {
     app,
