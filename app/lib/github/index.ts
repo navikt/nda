@@ -1,4 +1,9 @@
-export { getGitHubClient, getGitHubRateLimitRemaining } from './client.server'
+export {
+  type GitHubRateLimitStatus,
+  getGitHubClient,
+  getGitHubRateLimitRemaining,
+  getGitHubRateLimitStatus,
+} from './client.server'
 export {
   getBranchFromWorkflowRun,
   getCommitsBetween,
