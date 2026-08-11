@@ -261,11 +261,15 @@ export async function fetchApplicationDeployments(
     logger.info(`✨ Total deployments fetched: ${allDeployments.length} (from ${pageCount} page(s))`)
     return allDeployments
   } catch (error) {
-    logger.error('❌ Error fetching deployments from Nais:', error)
-
     if (isResourceNotFoundError(error)) {
+      logger.warn('⚠️  Resource not found in Nais (application may have been removed):', {
+        error: (error as Error).message,
+        stack_trace: (error as Error).stack,
+      })
       throw new NaisResourceNotFoundError((error as Error).message)
     }
+
+    logger.error('❌ Error fetching deployments from Nais:', error)
 
     if (error instanceof Error && error.message.includes('Unexpected token')) {
       throw new Error(
@@ -344,10 +348,14 @@ export async function fetchNewDeployments(
     )
     return { deployments: newDeployments, stoppedEarly }
   } catch (error) {
-    logger.error('❌ Error fetching new deployments from Nais:', error)
     if (isResourceNotFoundError(error)) {
+      logger.warn('⚠️  Resource not found in Nais (application may have been removed):', {
+        error: (error as Error).message,
+        stack_trace: (error as Error).stack,
+      })
       throw new NaisResourceNotFoundError((error as Error).message)
     }
+    logger.error('❌ Error fetching new deployments from Nais:', error)
     throw error
   }
 }
