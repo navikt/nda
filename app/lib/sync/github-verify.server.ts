@@ -15,6 +15,7 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
   verified: number
   failed: number
   skipped: number
+  remaining: number
 }> {
   logger.info(`🔍 Starting GitHub verification for deployments (limit: ${filters?.limit})`)
 
@@ -143,16 +144,20 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
     }
   }
 
+  const remaining = Math.max(0, filtered.length - toVerify.length)
+
   logger.info(`✅ Verification complete:`, {
     verified,
     failed,
     skipped,
+    remaining,
   })
 
   return {
     verified,
     failed,
     skipped,
+    remaining,
   }
 }
 

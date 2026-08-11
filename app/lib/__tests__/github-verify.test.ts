@@ -66,7 +66,7 @@ describe('verifyDeploymentsFourEyes', () => {
     await vi.advanceTimersByTimeAsync(0)
     const result = await promise
 
-    expect(result).toEqual({ verified: 0, failed: 0, skipped: 0 })
+    expect(result).toEqual({ verified: 0, failed: 0, skipped: 0, remaining: 0 })
   })
 
   it('filters to only pending and error statuses', async () => {
@@ -95,7 +95,7 @@ describe('verifyDeploymentsFourEyes', () => {
     const result = await promise
 
     expect(mockRunVerification).not.toHaveBeenCalled()
-    expect(result).toEqual({ verified: 0, failed: 0, skipped: 0 })
+    expect(result).toEqual({ verified: 0, failed: 0, skipped: 0, remaining: 0 })
   })
 
   it('skips legacy four_eyes_status', async () => {
@@ -106,7 +106,7 @@ describe('verifyDeploymentsFourEyes', () => {
     const result = await promise
 
     expect(mockRunVerification).not.toHaveBeenCalled()
-    expect(result).toEqual({ verified: 0, failed: 0, skipped: 0 })
+    expect(result).toEqual({ verified: 0, failed: 0, skipped: 0, remaining: 0 })
   })
 
   it('sorts oldest first and applies limit', async () => {
@@ -125,6 +125,7 @@ describe('verifyDeploymentsFourEyes', () => {
     const firstCall = mockRunVerification.mock.calls[0]
     expect(firstCall[0]).toBe(1)
     expect(result.verified).toBe(2)
+    expect(result.remaining).toBe(1)
   })
 
   it('skips deployments without commit_sha', async () => {
