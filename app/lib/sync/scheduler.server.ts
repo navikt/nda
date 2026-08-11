@@ -10,7 +10,7 @@ import { withSyncLock } from './with-sync-lock.server'
 let periodicSyncInterval: ReturnType<typeof setInterval> | null = null
 let isPeriodicSyncRunning = false
 
-const VERIFY_LIMIT_PER_APP = 20
+export const VERIFY_LIMIT_PER_APP = 20
 
 async function syncNewDeploymentsWithLock(
   monitoredAppId: number,
@@ -48,6 +48,7 @@ export async function verifyDeploymentsWithLock(monitoredAppId: number, limit?: 
         verified: r.verified,
         failed: r.failed,
         skipped: r.skipped,
+        remaining: r.remaining,
       }),
     },
     () => verifyDeploymentsFourEyes({ monitored_app_id: monitoredAppId, limit }),

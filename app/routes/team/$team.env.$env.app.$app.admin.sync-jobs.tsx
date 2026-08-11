@@ -178,7 +178,10 @@ function ResultSummary({ job }: { job: SyncJob }) {
 
   const parts: string[] = []
   if (typeof r.newCount === 'number') parts.push(`${r.newCount} nye`)
-  if (typeof r.verified === 'number') parts.push(`${r.verified} verifisert`)
+  if (typeof r.verified === 'number') {
+    const remainingSuffix = typeof r.remaining === 'number' && r.remaining > 0 ? ` (${r.remaining} gjenstår)` : ''
+    parts.push(`${r.verified} verifisert${remainingSuffix}`)
+  }
   if (typeof r.failed === 'number' && r.failed > 0) parts.push(`${r.failed} feilet`)
   if (typeof r.skipped === 'number' && r.skipped > 0) parts.push(`${r.skipped} hoppet over`)
 

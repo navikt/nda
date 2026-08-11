@@ -33,6 +33,7 @@ import { Form, Link, useActionData, useLoaderData, useRouteLoaderData, useSearch
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
 import { ExternalLink } from '~/components/ExternalLink'
+import { GithubVerificationProgress } from '~/components/GithubVerificationProgress'
 import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
 import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { StatCard } from '~/components/StatCard'
@@ -46,15 +47,16 @@ import {
   setRepositoryAsActive,
 } from '~/db/application-repositories.server'
 import { getAuditReportsForApp } from '~/db/audit-reports.server'
-import { getAppDeploymentStats } from '~/db/deployments.server'
+import { getAppDeploymentStats, getPendingVerificationCount } from '~/db/deployments.server'
 import { getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
 import { SYNC_JOB_STATUS_LABELS, type SyncJobStatus } from '~/db/sync-job-types'
-import { getLatestSyncJob } from '~/db/sync-jobs.server'
+import { getLatestSyncJob, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { resolveAppCapabilities } from '~/lib/authorization.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
+import { VERIFY_LIMIT_PER_APP } from '~/lib/sync'
 import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
 import { isImplicitApprovalMode } from '~/lib/verification/types'
 import type { loader as layoutLoader } from '../layout'
@@ -80,22 +82,34 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const canDeactivate = app.not_found_in_nais_at ? (capabilities?.canDeactivate ?? false) : false
   const canReactivate = !app.is_active ? (capabilities?.canReactivate ?? false) : false
 
-  const [repositories, deploymentStats, alerts, auditReports, groupContext, devTeams, latestSyncJob] =
-    await Promise.all([
-      getRepositoriesByAppId(app.id),
-      getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
-      getUnresolvedAlertsByApp(app.id),
-      getAuditReportsForApp(app.id),
-      getGroupContext(app.id),
-      getDevTeamsForApp(app.id, team),
-      getLatestSyncJob(app.id, 'nais_sync'),
-    ])
+  const [
+    repositories,
+    deploymentStats,
+    alerts,
+    auditReports,
+    groupContext,
+    devTeams,
+    latestSyncJob,
+    verificationProgress,
+  ] = await Promise.all([
+    getRepositoriesByAppId(app.id),
+    getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
+    getUnresolvedAlertsByApp(app.id),
+    getAuditReportsForApp(app.id),
+    getGroupContext(app.id),
+    getDevTeamsForApp(app.id, team),
+    getLatestSyncJob(app.id, 'nais_sync'),
+    getPendingVerificationCount(app.id),
+  ])
 
   const { group, siblings } = groupContext
 
   const activeRepo = repositories.find((r) => r.status === 'active')
   const pendingRepos = repositories.filter((r) => r.status === 'pending_approval')
   const historicalRepos = repositories.filter((r) => r.status === 'historical')
+
+  const verifyLimitPerCycle = VERIFY_LIMIT_PER_APP
+  const syncIntervalMs = SYNC_INTERVAL_MS
 
   return {
     app,
@@ -119,6 +133,9 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
           created_at: latestSyncJob.created_at,
         }
       : null,
+    verificationProgress,
+    verifyLimitPerCycle,
+    syncIntervalMs,
   }
 }
 
@@ -282,6 +299,9 @@ export default function AppDetail() {
     siblings,
     devTeams,
     latestSyncJob,
+    verificationProgress,
+    verifyLimitPerCycle,
+    syncIntervalMs,
   } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
   const [searchParams] = useSearchParams()
@@ -364,6 +384,16 @@ export default function AppDetail() {
       {!app.is_active && <ReactivateAppNotice canReactivate={canReactivate} />}
 
       {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="alert" canDeactivate={canDeactivate} />}
+
+      {verificationProgress.pending > verifyLimitPerCycle && (
+        <GithubVerificationProgress
+          verified={verificationProgress.total - verificationProgress.pending}
+          pending={verificationProgress.pending}
+          total={verificationProgress.total}
+          verifyLimitPerCycle={verifyLimitPerCycle}
+          syncIntervalMs={syncIntervalMs}
+        />
+      )}
 
       {(deploymentStats.baseline_action_count ?? 0) > 0 && (
         <Alert variant="warning">

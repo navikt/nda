@@ -1341,7 +1341,11 @@ export {
   getDeploymentsNeedingDeployNotify,
   getUnapprovedDeployments,
 } from './deployments/notifications.server'
-export { getAppDeploymentStats, getAppDeploymentStatsBatch } from './deployments/stats.server'
+export {
+  getAppDeploymentStats,
+  getAppDeploymentStatsBatch,
+  getPendingVerificationCount,
+} from './deployments/stats.server'
 export {
   getDeploymentsWithStatusChanges,
   getStatusHistory,
