@@ -18,6 +18,7 @@ Appen bruker en applikasjon-sentrisk tilnærming hvor Team + Environment + Appli
 
 ## Teknisk Stack
 
+- **Runtime**: Node.js 24 LTS
 - **Framework**: React Router 8 i Framework Mode med SSR
 - **TypeScript**: For type-sikkerhet
 - **Database**: PostgreSQL
