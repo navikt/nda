@@ -68,12 +68,15 @@ export function buildGithubPrDataFromSnapshots(
       avatar_url: '',
       state: r.state,
       submitted_at: r.submittedAt,
+      commit_id: r.commitId ?? null,
     })),
     commits: (commits ?? []).map((c) => ({
       sha: c.sha,
       message: c.message,
-      author: { username: c.authorUsername ?? 'unknown', avatar_url: '' },
+      author: { username: c.authorUsername ?? 'unknown', login: c.authorLogin ?? null, avatar_url: '' },
       date: c.authorDate,
+      committer_date: c.committerDate || c.authorDate,
+      parent_shas: c.parentShas ?? [],
       html_url: '',
     })),
     checks: (checks?.checkRuns ?? []).map((cr) => ({

@@ -12,6 +12,8 @@ function makePrCommit(overrides: Partial<PrCommit> = {}): PrCommit {
     isMergeCommit: false,
     parentShas: [],
     ...overrides,
+    authorLogin:
+      'authorLogin' in overrides ? (overrides.authorLogin ?? null) : (overrides.authorUsername ?? 'developer-a'),
   }
 }
 
@@ -522,7 +524,7 @@ describe('verifyDeployment - Case 5: base branch merge approval', () => {
           number: 200,
           mergeCommitSha: 'deploy-sha-1000',
           author: { username: 'developer-a' },
-          mergedBy: { username: 'developer-a' }, // Same as commit author — merger path won't help
+          mergedBy: { username: 'other-dev' }, // Same as last real commit author — merger-as-second-eyes exception won't apply, forcing base_merge path
         }),
         reviews: [makePrReview({ submittedAt: '2026-02-25T10:00:00Z' })],
         commits: [
@@ -543,6 +545,7 @@ describe('verifyDeployment - Case 5: base branch merge approval', () => {
             authorUsername: 'developer-a',
             authorDate: '2026-02-25T12:00:00Z',
             message: "Merge branch 'main' into feature/test",
+            parentShas: ['p1', 'p2'],
           }),
         ],
       },
@@ -933,6 +936,7 @@ describe('verifyFourEyesFromPrData - Security: date manipulation', () => {
           sha: 'honest-commit',
           message: 'Honest work',
           authorUsername: 'developer',
+          authorLogin: 'developer',
           authorDate: '2026-02-27T10:00:00Z', // Before approval
           committerDate: '2026-02-27T10:00:00Z',
           isMergeCommit: false,
@@ -942,6 +946,7 @@ describe('verifyFourEyesFromPrData - Security: date manipulation', () => {
           sha: 'backdated-commit',
           message: 'Sneaky change',
           authorUsername: 'developer',
+          authorLogin: 'developer',
           authorDate: '2026-02-27T11:00:00Z', // BACKDATED: claims to be before approval
           committerDate: '2026-02-27T14:00:00Z', // TRUTH: actually pushed after approval
           isMergeCommit: false,

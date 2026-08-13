@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 4
+export const CURRENT_SCHEMA_VERSION = 5
 
 export function assertNever(value: never, message?: string): never {
   throw new Error(message ?? `Unhandled value: ${JSON.stringify(value)}`)
@@ -60,6 +60,7 @@ export const UNVERIFIED_REASONS = [
   'no_approved_reviews',
   'approval_before_last_commit',
   'pr_not_approved',
+  'unlinked_commit_author',
 ] as const
 export type UnverifiedReason = (typeof UNVERIFIED_REASONS)[number]
 
@@ -68,6 +69,7 @@ const _UNVERIFIED_REASON_LABELS: Record<UnverifiedReason, string> = {
   no_approved_reviews: 'Ingen godkjent review',
   approval_before_last_commit: 'Godkjenning før siste commit',
   pr_not_approved: 'PR ikke godkjent',
+  unlinked_commit_author: 'Siste commit har ukjent forfatter-identitet',
 }
 export const UNVERIFIED_REASON_LABELS = _UNVERIFIED_REASON_LABELS
 
@@ -77,6 +79,8 @@ export const UNVERIFIED_REASON_DESCRIPTIONS: Record<UnverifiedReason, string> = 
   approval_before_last_commit:
     'Pull requesten ble godkjent, men det ble pushet nye commits etter godkjenningen. Endringene i de siste committene er ikke sett av en annen person.',
   pr_not_approved: 'Pull requesten er ikke godkjent.',
+  unlinked_commit_author:
+    'Forfatteren av siste commit er ikke koblet til en verifisert GitHub-konto, så det er ikke mulig å bekrefte at godkjenneren er en annen person.',
 }
 
 export const APPROVAL_METHODS = ['pr_review', 'implicit', 'base_merge', 'no_changes', 'pending_baseline'] as const
@@ -211,12 +215,14 @@ export interface PrReview {
   state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING' | 'DISMISSED'
   submittedAt: string
   body: string | null
+  commitId?: string | null
 }
 
 export interface PrCommit {
   sha: string
   message: string
   authorUsername: string
+  authorLogin: string | null
   authorDate: string
   committerDate: string
   isMergeCommit: boolean

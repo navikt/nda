@@ -51,6 +51,7 @@ const commits: PrCommit[] = [
     sha: 'aaa111',
     message: 'Initial implementation',
     authorUsername: 'developer-a',
+    authorLogin: 'developer-a',
     authorDate: '2026-02-20T11:00:00Z',
     committerDate: '2026-02-20T11:00:00Z',
     isMergeCommit: false,
@@ -60,6 +61,7 @@ const commits: PrCommit[] = [
     sha: 'bbb222',
     message: 'Fix review comments',
     authorUsername: 'developer-a',
+    authorLogin: 'developer-a',
     authorDate: '2026-02-22T09:00:00Z',
     committerDate: '2026-02-22T09:00:00Z',
     isMergeCommit: false,
@@ -171,12 +173,14 @@ describe('buildGithubPrDataFromSnapshots', () => {
       avatar_url: '',
       state: 'APPROVED',
       submitted_at: '2026-02-24T10:00:00Z',
+      commit_id: null,
     })
     expect(result.reviewers[1]).toEqual({
       username: 'developer-c',
       avatar_url: '',
       state: 'COMMENTED',
       submitted_at: '2026-02-23T08:00:00Z',
+      commit_id: null,
     })
   })
 
@@ -187,8 +191,10 @@ describe('buildGithubPrDataFromSnapshots', () => {
     expect(result.commits[0]).toEqual({
       sha: 'aaa111',
       message: 'Initial implementation',
-      author: { username: 'developer-a', avatar_url: '' },
+      author: { username: 'developer-a', login: 'developer-a', avatar_url: '' },
       date: '2026-02-20T11:00:00Z',
+      committer_date: '2026-02-20T11:00:00Z',
+      parent_shas: ['parent1'],
       html_url: '',
     })
   })

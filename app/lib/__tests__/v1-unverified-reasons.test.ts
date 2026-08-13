@@ -12,6 +12,8 @@ function makePrCommit(overrides: Partial<PrCommit> = {}): PrCommit {
     isMergeCommit: false,
     parentShas: [],
     ...overrides,
+    authorLogin:
+      'authorLogin' in overrides ? (overrides.authorLogin ?? null) : (overrides.authorUsername ?? 'developer-a'),
   }
 }
 

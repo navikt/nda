@@ -184,7 +184,7 @@ describe('checkImplicitApproval', () => {
   describe('edge cases', () => {
     const settings: ImplicitApprovalSettings = { mode: 'all' }
 
-    it('should handle empty author strings', () => {
+    it('should not qualify when author identities are empty (unresolvable identity)', () => {
       const result = checkImplicitApproval({
         settings,
         prCreator: '',
@@ -192,7 +192,7 @@ describe('checkImplicitApproval', () => {
         lastCommitAuthor: '',
         allCommitAuthors: [],
       })
-      expect(result.qualifies).toBe(true)
+      expect(result.qualifies).toBe(false)
     })
 
     it('should handle single commit PR', () => {

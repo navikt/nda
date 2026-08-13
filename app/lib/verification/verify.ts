@@ -1,6 +1,7 @@
 import {
   assertNever,
   type CompareSummary,
+  type ImplicitApprovalMode,
   type ImplicitApprovalSettings,
   type PrCommit,
   type PrReview,
@@ -169,6 +170,9 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
       commits: input.deployedPr.commits,
       baseBranch: input.deployedPr.metadata.baseBranch,
       mergedBy: input.deployedPr.metadata.mergedBy?.username,
+      prCreator:
+        input.deployedPr.metadata.author.username === 'unknown' ? undefined : input.deployedPr.metadata.author.username,
+      implicitApprovalMode: input.implicitApprovalSettings.mode,
     })
   }
 
@@ -184,7 +188,7 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
 
   for (const commit of input.commitsBetween) {
     if (commit.isMergeCommit) {
-      if (isBaseBranchMergeCommit(commit.message, input.baseBranch)) {
+      if (isBaseBranchMergeCommit(commit.message, input.baseBranch, commit.parentShas)) {
         continue
       }
     }
@@ -310,7 +314,7 @@ function handleImplicitApproval(input: VerificationInput): VerificationResult | 
     prCreator: input.deployedPr.metadata.author.username,
     lastCommitAuthor: getLastCommitAuthor(input.deployedPr.commits),
     mergedBy: input.deployedPr.metadata.mergedBy?.username ?? '',
-    allCommitAuthors: input.deployedPr.commits.map((c) => c.authorUsername),
+    allCommitAuthors: input.deployedPr.commits.map((c) => c.authorLogin),
   })
 
   if (!implicitResult.qualifies) return null
@@ -368,13 +372,15 @@ interface PrDataForVerification {
   commits: PrCommit[]
   baseBranch: string
   mergedBy?: string | null
+  prCreator?: string
+  implicitApprovalMode?: ImplicitApprovalMode
 }
 
 export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
   hasFourEyes: boolean
   reason: string
 } {
-  const { reviewers, commits, baseBranch, mergedBy } = prData
+  const { reviewers, commits, baseBranch, mergedBy, prCreator, implicitApprovalMode } = prData
 
   if (commits.length === 0) {
     return { hasFourEyes: false, reason: 'No commits found in PR' }
@@ -385,18 +391,34 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
 
   for (let i = commits.length - 1; i >= 0; i--) {
     const commit = commits[i]
-    if (!isBaseBranchMergeCommit(commit.message, baseBranch)) {
+    if (!isBaseBranchMergeCommit(commit.message, baseBranch, commit.parentShas)) {
       lastRealCommit = commit
       lastRealCommitIndex = i
       break
     }
   }
 
+  if (!lastRealCommit.authorLogin) {
+    return { hasFourEyes: false, reason: 'unlinked_commit_author' }
+  }
+
+  const lastRealCommitAuthorLower = lastRealCommit.authorLogin.toLowerCase()
+
   const lastRealCommitDate = latestCommitDate(lastRealCommit)
+  const commitShaIndex = new Map(commits.map((c, i) => [c.sha, i]))
 
   const approvedReviewsAfterLastCommit = reviewers.filter((review) => {
     if (review.state !== 'APPROVED' || !review.submittedAt) {
       return false
+    }
+    if (review.username.toLowerCase() === lastRealCommitAuthorLower) {
+      return false
+    }
+    if (review.commitId) {
+      const reviewedCommitIndex = commitShaIndex.get(review.commitId)
+      if (reviewedCommitIndex !== undefined) {
+        return reviewedCommitIndex >= lastRealCommitIndex
+      }
     }
     return new Date(review.submittedAt) > lastRealCommitDate
   })
@@ -414,13 +436,33 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
     return { hasFourEyes: false, reason: 'no_approved_reviews' }
   }
 
-  if (mergedBy) {
+  if (mergedBy && prCreator && implicitApprovalMode && implicitApprovalMode !== 'off') {
     const mergedByLower = mergedBy.toLowerCase()
-    const commitAuthors = new Set(commits.map((c) => c.authorUsername.toLowerCase()))
-    if (!commitAuthors.has(mergedByLower)) {
-      return {
-        hasFourEyes: true,
-        reason: `Approved by ${approvedReviews[0].username} (before last commit), merged by ${mergedBy} who is not a commit author`,
+    const prCreatorLower = prCreator.toLowerCase()
+
+    if (implicitApprovalMode === 'all') {
+      if (mergedByLower !== lastRealCommitAuthorLower && mergedByLower !== prCreatorLower) {
+        return {
+          hasFourEyes: true,
+          reason: `Approved by ${approvedReviews[0].username} (before last commit), merged by ${mergedBy} who is not the last commit author`,
+        }
+      }
+    } else if (implicitApprovalMode === 'dependabot_only') {
+      const isDependabotPR = prCreatorLower === 'dependabot[bot]'
+      const onlyDependabotCommits = commits.every((c) => {
+        const login = c.authorLogin?.toLowerCase()
+        return login === 'dependabot[bot]' || login === 'dependabot'
+      })
+      if (
+        isDependabotPR &&
+        onlyDependabotCommits &&
+        mergedByLower !== 'dependabot[bot]' &&
+        mergedByLower !== 'dependabot'
+      ) {
+        return {
+          hasFourEyes: true,
+          reason: `Approved by ${approvedReviews[0].username} (before last commit), merged by ${mergedBy} who is not the last commit author`,
+        }
       }
     }
   }
@@ -428,7 +470,10 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
   return { hasFourEyes: false, reason: 'approval_before_last_commit' }
 }
 
-function isBaseBranchMergeCommit(message: string, baseBranch = 'main'): boolean {
+function isBaseBranchMergeCommit(message: string, baseBranch = 'main', parentShas?: string[]): boolean {
+  if (parentShas !== undefined && parentShas.length < 2) {
+    return false
+  }
   const patterns = [
     new RegExp(`^Merge branch '${baseBranch}' into`, 'i'),
     new RegExp(`^Merge branch '${baseBranch === 'main' ? 'master' : 'main'}' into`, 'i'),
@@ -453,7 +498,7 @@ function shouldApproveWithBaseMerge(
     return { approved: false, reason: 'no_approval' }
   }
 
-  const mergeCommit = prCommits.find((c) => isBaseBranchMergeCommit(c.message, baseBranch))
+  const mergeCommit = prCommits.find((c) => isBaseBranchMergeCommit(c.message, baseBranch, c.parentShas))
   if (!mergeCommit) {
     return { approved: false, reason: 'no_base_merge_commit_found' }
   }
@@ -481,12 +526,24 @@ function shouldApproveWithBaseMerge(
 export function checkImplicitApproval(params: {
   settings: ImplicitApprovalSettings
   prCreator: string
-  lastCommitAuthor: string
+  lastCommitAuthor: string | null
   mergedBy: string
-  allCommitAuthors: string[]
+  allCommitAuthors: (string | null)[]
 }): { qualifies: boolean; reason?: string } {
   const { settings, prCreator, lastCommitAuthor, mergedBy, allCommitAuthors } = params
   const { mode } = settings
+
+  if (!mergedBy) {
+    return { qualifies: false }
+  }
+
+  if (prCreator === 'unknown') {
+    return { qualifies: false }
+  }
+
+  if (!lastCommitAuthor) {
+    return { qualifies: false }
+  }
 
   const mergedByLower = mergedBy.toLowerCase()
   const prCreatorLower = prCreator.toLowerCase()
@@ -498,11 +555,18 @@ export function checkImplicitApproval(params: {
 
     case 'dependabot_only': {
       const isDependabotPR = prCreatorLower === 'dependabot[bot]'
-      const onlyDependabotCommits = allCommitAuthors.every(
-        (author) => author.toLowerCase() === 'dependabot[bot]' || author.toLowerCase() === 'dependabot',
-      )
+      const onlyDependabotCommits =
+        allCommitAuthors.length > 0 &&
+        allCommitAuthors.every(
+          (author) => author?.toLowerCase() === 'dependabot[bot]' || author?.toLowerCase() === 'dependabot',
+        )
 
-      if (isDependabotPR && onlyDependabotCommits && mergedByLower !== prCreatorLower) {
+      if (
+        isDependabotPR &&
+        onlyDependabotCommits &&
+        mergedByLower !== 'dependabot[bot]' &&
+        mergedByLower !== 'dependabot'
+      ) {
         return {
           qualifies: true,
           reason: 'Dependabot-PR med kun Dependabot-commits, merget av en annen bruker',
@@ -530,15 +594,16 @@ function extractApprovers(reviews: PrReview[]): string[] {
   return reviews.filter((r) => r.state === 'APPROVED').map((r) => r.username)
 }
 
-function getLastCommitAuthor(commits: PrCommit[]): string {
-  if (commits.length === 0) return ''
-  return commits[commits.length - 1].authorUsername
+function getLastCommitAuthor(commits: PrCommit[]): string | null {
+  if (commits.length === 0) return null
+  return commits[commits.length - 1].authorLogin
 }
 
 function mapToUnverifiedReason(reason: string): UnverifiedReason {
   if (reason === 'no_pr') return 'no_pr'
   if (reason === 'no_approved_reviews') return 'no_approved_reviews'
   if (reason === 'approval_before_last_commit') return 'approval_before_last_commit'
+  if (reason === 'unlinked_commit_author') return 'unlinked_commit_author'
   return 'pr_not_approved'
 }
 

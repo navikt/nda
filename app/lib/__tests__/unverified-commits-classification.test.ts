@@ -54,6 +54,7 @@ function makePrCommit(overrides: Partial<PrCommit> = {}): PrCommit {
     isMergeCommit: false,
     parentShas: ['parent1'],
     ...overrides,
+    authorLogin: 'authorLogin' in overrides ? (overrides.authorLogin ?? null) : (overrides.authorUsername ?? 'alice'),
   }
 }
 
@@ -215,7 +216,12 @@ describe('commit classification in findUnverifiedCommits', () => {
       const result = verifyDeployment(
         makeInput({
           commitsBetween: [
-            makeCommit({ sha: 'merge1', message: "Merge branch 'main' into feature-x", isMergeCommit: true }),
+            makeCommit({
+              sha: 'merge1',
+              message: "Merge branch 'main' into feature-x",
+              isMergeCommit: true,
+              parentShas: ['parent1', 'parent2'],
+            }),
             makeCommit({
               sha: 'c1',
               pr: {
@@ -237,6 +243,23 @@ describe('commit classification in findUnverifiedCommits', () => {
       const result = verifyDeployment(
         makeInput({
           commitsBetween: [makeCommit({ sha: 'merge1', message: 'Merge conflict resolution', isMergeCommit: true })],
+        }),
+      )
+      expect(result.status).toBe('unverified_commits')
+      expect(result.unverifiedCommits[0].sha).toBe('merge1')
+    })
+
+    it('does NOT skip a forged base-branch merge message with only a single parent (fake merge commit)', () => {
+      const result = verifyDeployment(
+        makeInput({
+          commitsBetween: [
+            makeCommit({
+              sha: 'merge1',
+              message: "Merge branch 'main' into feature-x",
+              isMergeCommit: true,
+              parentShas: ['parent1'],
+            }),
+          ],
         }),
       )
       expect(result.status).toBe('unverified_commits')
