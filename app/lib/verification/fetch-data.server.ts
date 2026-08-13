@@ -264,17 +264,18 @@ async function getPreviousDeployment(
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
     WHERE d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
-      AND ma.environment_name = $2
-      AND d.detected_github_owner = $3
-      AND d.detected_github_repo_name = $4
+      AND d.monitored_app_id = $2
+      AND ma.environment_name = $3
+      AND d.detected_github_owner = $4
+      AND d.detected_github_repo_name = $5
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
       AND d.commit_sha !~ '^refs/'
   `
-  const params: (number | string)[] = [currentDeploymentId, environmentName, owner, repo]
+  const params: (number | string)[] = [currentDeploymentId, monitoredAppId, environmentName, owner, repo]
 
   if (auditStartYear) {
-    query += ` AND d.created_at >= $5`
+    query += ` AND d.created_at >= $6`
     params.push(`${auditStartYear}-01-01`)
   }
 
