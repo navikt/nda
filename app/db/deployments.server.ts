@@ -110,6 +110,7 @@ export interface GitHubPRData {
     avatar_url: string
     state: string
     submitted_at: string
+    commit_id: string | null
   }>
   checks_passed: boolean | null
   checks_ref?: 'merge_commit' | 'head' | null
@@ -153,9 +154,12 @@ export interface GitHubPRData {
     message: string
     author: {
       username: string
+      login: string | null
       avatar_url: string
     }
     date: string
+    committer_date: string
+    parent_shas: string[]
     html_url: string
   }>
   unreviewed_commits?: Array<{

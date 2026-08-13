@@ -12,6 +12,7 @@ function makeCommit(overrides: Partial<PrCommit> = {}): PrCommit {
     isMergeCommit: false,
     parentShas: ['parent1'],
     ...overrides,
+    authorLogin: 'authorLogin' in overrides ? (overrides.authorLogin ?? null) : (overrides.authorUsername ?? 'alice'),
   }
 }
 
@@ -135,6 +136,7 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
         authorDate: '2026-01-15T10:00:00Z',
         committerDate: '2026-01-15T10:00:00Z',
         isMergeCommit: true,
+        parentShas: ['parent1', 'parent2'],
       })
       const review = makeReview({ submittedAt: '2026-01-14T12:00:00Z' })
 
@@ -149,7 +151,7 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
   })
 
   describe('merger validates four-eyes', () => {
-    it('passes when merger is not a commit author (stale approval)', () => {
+    it('passes when merger is not a commit author (stale approval) and implicit approval is enabled', () => {
       const commit = makeCommit({
         authorUsername: 'alice',
         authorDate: '2026-01-15T10:00:00Z',
@@ -162,9 +164,29 @@ describe('verifyFourEyesFromPrData — helper logic', () => {
         commits: [commit],
         baseBranch: 'main',
         mergedBy: 'charlie',
+        prCreator: 'alice',
+        implicitApprovalMode: 'all',
       })
       expect(result.hasFourEyes).toBe(true)
       expect(result.reason).toContain('merged by charlie')
+    })
+
+    it('does NOT pass when merger is not a commit author but implicit approval is disabled', () => {
+      const commit = makeCommit({
+        authorUsername: 'alice',
+        authorDate: '2026-01-15T10:00:00Z',
+        committerDate: '2026-01-15T10:00:00Z',
+      })
+      const review = makeReview({ submittedAt: '2026-01-14T10:00:00Z' })
+
+      const result = verifyFourEyesFromPrData({
+        reviewers: [review],
+        commits: [commit],
+        baseBranch: 'main',
+        mergedBy: 'charlie',
+        implicitApprovalMode: 'off',
+      })
+      expect(result.hasFourEyes).toBe(false)
     })
 
     it('fails when merger is also a commit author', () => {

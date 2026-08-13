@@ -12,6 +12,8 @@ function makePrCommit(overrides: Partial<PrCommit> = {}): PrCommit {
     isMergeCommit: false,
     parentShas: [],
     ...overrides,
+    authorLogin:
+      'authorLogin' in overrides ? (overrides.authorLogin ?? null) : (overrides.authorUsername ?? 'developer-a'),
   }
 }
 
@@ -44,7 +46,7 @@ function makePrMetadata(overrides: Partial<PrMetadata> = {}): PrMetadata {
     headSha: '8328952808bfbfaebdba21b3d09cb60beec88d28',
     mergeCommitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
     author: { username: 'dependabot[bot]' },
-    mergedBy: { username: 'walbo' },
+    mergedBy: { username: 'reviewer-b' },
     labels: ['dependencies'],
     commitsCount: 1,
     changedFiles: 2,
@@ -114,6 +116,37 @@ describe('verifyFourEyesFromPrData', () => {
       expect(result.reason).toBe('no_approved_reviews')
     })
 
+    it('should reject self-approval even when the review is submitted after the last commit', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'developer-a', submittedAt: '2026-02-27T15:00:00Z' })],
+        commits: [
+          makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:00:00Z' }),
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T14:00:00Z' }),
+        ],
+        baseBranch: 'main',
+        mergedBy: 'developer-a',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
+
+    it('should approve when someone else reviews after the last commit, even if a self-approval also exists', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [
+          makePrReview({ username: 'developer-a', submittedAt: '2026-02-27T14:30:00Z' }),
+          makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T15:00:00Z' }),
+        ],
+        commits: [
+          makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:00:00Z' }),
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T14:00:00Z' }),
+        ],
+        baseBranch: 'main',
+        mergedBy: 'reviewer-b',
+      })
+      expect(result.hasFourEyes).toBe(true)
+      expect(result.reason).toContain('reviewer-b')
+    })
+
     it('should reject when there are no commits', () => {
       const result = verifyFourEyesFromPrData({
         reviewers: [makePrReview()],
@@ -128,14 +161,16 @@ describe('verifyFourEyesFromPrData', () => {
   describe('merger validates four-eyes (dependabot rebase scenario)', () => {
     it('should approve when merger is not a commit author and there are approvals', () => {
       const result = verifyFourEyesFromPrData({
-        reviewers: [makePrReview({ username: 'walbo', submittedAt: '2026-02-27T13:55:27Z' })],
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:55:27Z' })],
         commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:57:06Z' })],
         baseBranch: 'main',
-        mergedBy: 'walbo',
+        mergedBy: 'reviewer-b',
+        prCreator: 'dependabot[bot]',
+        implicitApprovalMode: 'dependabot_only',
       })
       expect(result.hasFourEyes).toBe(true)
-      expect(result.reason).toContain('merged by walbo')
-      expect(result.reason).toContain('not a commit author')
+      expect(result.reason).toContain('merged by reviewer-b')
+      expect(result.reason).toContain('not the last commit author')
     })
 
     it('should not approve when merger is the commit author', () => {
@@ -149,7 +184,71 @@ describe('verifyFourEyesFromPrData', () => {
       expect(result.reason).toBe('approval_before_last_commit')
     })
 
-    it('should not approve when merger matches any commit author (case-insensitive)', () => {
+    it('should NOT approve via merger exception when implicit approval is disabled (default)', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:55:27Z' })],
+        commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:57:06Z' })],
+        baseBranch: 'main',
+        mergedBy: 'reviewer-b',
+        prCreator: 'dependabot[bot]',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
+
+    it('should NOT approve via merger exception when prCreator is missing, even with implicit approval enabled', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:55:27Z' })],
+        commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:57:06Z' })],
+        baseBranch: 'main',
+        mergedBy: 'reviewer-b',
+        implicitApprovalMode: 'all',
+        // prCreator intentionally omitted: without it, "merger must not be PR creator" can't be enforced
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
+
+    it('should NOT approve via merger exception when implicit approval is explicitly disabled', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:55:27Z' })],
+        commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:57:06Z' })],
+        baseBranch: 'main',
+        mergedBy: 'reviewer-b',
+        prCreator: 'dependabot[bot]',
+        implicitApprovalMode: 'off',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
+
+    it('should NOT approve via merger exception in dependabot_only mode when PR was not created by dependabot', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T12:00:00Z' })],
+        commits: [makePrCommit({ authorUsername: 'developer-c', authorDate: '2026-02-27T13:00:00Z' })],
+        baseBranch: 'main',
+        mergedBy: 'reviewer-b',
+        prCreator: 'developer-a', // human-created PR, not dependabot
+        implicitApprovalMode: 'dependabot_only',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
+
+    it('should NOT approve via merger exception in dependabot_only mode when merger is the "dependabot" login variant', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:55:27Z' })],
+        commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:57:06Z' })],
+        baseBranch: 'main',
+        mergedBy: 'dependabot',
+        prCreator: 'dependabot[bot]',
+        implicitApprovalMode: 'dependabot_only',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
+
+    it('should approve when merger authored an earlier commit but not the last one', () => {
       const result = verifyFourEyesFromPrData({
         reviewers: [makePrReview({ submittedAt: '2026-02-27T11:00:00Z' })],
         commits: [
@@ -157,10 +256,12 @@ describe('verifyFourEyesFromPrData', () => {
           makePrCommit({ authorUsername: 'developer-b', authorDate: '2026-02-27T13:00:00Z' }),
         ],
         baseBranch: 'main',
-        mergedBy: 'developer-a', // matches Developer-A case-insensitively
+        mergedBy: 'developer-a', // authored the earlier commit, but not the last one (developer-b)
+        prCreator: 'other-creator',
+        implicitApprovalMode: 'all',
       })
-      expect(result.hasFourEyes).toBe(false)
-      expect(result.reason).toBe('approval_before_last_commit')
+      expect(result.hasFourEyes).toBe(true)
+      expect(result.reason).toContain('not the last commit author')
     })
 
     it('should not approve via merger when there are no approved reviews', () => {
@@ -168,7 +269,7 @@ describe('verifyFourEyesFromPrData', () => {
         reviewers: [makePrReview({ state: 'COMMENTED', submittedAt: '2026-02-27T13:55:27Z' })],
         commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:57:06Z' })],
         baseBranch: 'main',
-        mergedBy: 'walbo',
+        mergedBy: 'reviewer-b',
       })
       expect(result.hasFourEyes).toBe(false)
       expect(result.reason).toBe('no_approved_reviews')
@@ -187,10 +288,10 @@ describe('verifyFourEyesFromPrData', () => {
 
     it('should still prefer review-after-commit when both conditions are met', () => {
       const result = verifyFourEyesFromPrData({
-        reviewers: [makePrReview({ username: 'walbo', submittedAt: '2026-02-27T14:00:00Z' })],
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T14:00:00Z' })],
         commits: [makePrCommit({ authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T13:00:00Z' })],
         baseBranch: 'main',
-        mergedBy: 'walbo',
+        mergedBy: 'reviewer-b',
       })
       expect(result.hasFourEyes).toBe(true)
       expect(result.reason).toContain('after last commit')
@@ -207,6 +308,7 @@ describe('verifyFourEyesFromPrData', () => {
           makePrCommit({
             authorDate: '2026-02-27T14:00:00Z',
             message: "Merge branch 'main' into feature",
+            parentShas: ['parent1', 'parent2'],
           }),
         ],
         baseBranch: 'main',
@@ -214,12 +316,109 @@ describe('verifyFourEyesFromPrData', () => {
       expect(result.hasFourEyes).toBe(true)
       expect(result.reason).toContain('after ignoring 1 base-merge commit(s)')
     })
+
+    it('should NOT ignore a commit merely titled like a base-branch merge if it has fewer than 2 parents (fake merge message)', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T12:30:00Z' })],
+        commits: [
+          makePrCommit({ authorUsername: 'reviewer-b', authorDate: '2026-02-27T11:00:00Z', message: 'Real work' }),
+          makePrCommit({
+            authorUsername: 'developer-a',
+            authorDate: '2026-02-27T13:00:00Z',
+            message: "Merge branch 'main' into feature-x",
+            parentShas: ['single-parent'],
+          }),
+        ],
+        baseBranch: 'main',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
+  })
+
+  describe('unlinked commit author identity', () => {
+    it('should not verify four-eyes when the last commit author has no linked GitHub account', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:30:00Z' })],
+        commits: [
+          makePrCommit({
+            authorUsername: 'Some Local Git Name',
+            authorLogin: null,
+            authorDate: '2026-02-27T12:00:00Z',
+          }),
+        ],
+        baseBranch: 'main',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('unlinked_commit_author')
+    })
+
+    it('should verify four-eyes normally when the last commit author has a linked GitHub account', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:30:00Z' })],
+        commits: [
+          makePrCommit({
+            authorUsername: 'developer-a',
+            authorLogin: 'developer-a',
+            authorDate: '2026-02-27T12:00:00Z',
+          }),
+        ],
+        baseBranch: 'main',
+      })
+      expect(result.hasFourEyes).toBe(true)
+    })
+  })
+
+  describe('commit_id based approval-after-last-commit check', () => {
+    it('should treat a review as valid when its commit_id points at the last real commit, even if timestamp looks stale', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [
+          makePrReview({
+            username: 'reviewer-b',
+            submittedAt: '2020-01-01T00:00:00Z', // clock-manipulated / backdated timestamp
+            commitId: 'last-commit-sha',
+          }),
+        ],
+        commits: [
+          makePrCommit({ sha: 'first-commit-sha', authorUsername: 'developer-a', authorDate: '2026-02-27T11:00:00Z' }),
+          makePrCommit({ sha: 'last-commit-sha', authorUsername: 'developer-a', authorDate: '2026-02-27T12:00:00Z' }),
+        ],
+        baseBranch: 'main',
+      })
+      expect(result.hasFourEyes).toBe(true)
+      expect(result.reason).toContain('after last commit')
+    })
+
+    it('should treat a review as stale when its commit_id points at an earlier commit, even if timestamp looks fresh (backdated last commit)', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [
+          makePrReview({
+            username: 'reviewer-b',
+            submittedAt: '2026-02-27T12:00:00Z',
+            commitId: 'first-commit-sha',
+          }),
+        ],
+        commits: [
+          makePrCommit({ sha: 'first-commit-sha', authorUsername: 'developer-a', authorDate: '2026-02-27T11:00:00Z' }),
+          makePrCommit({
+            sha: 'last-commit-sha',
+            authorUsername: 'developer-a',
+            authorDate: '2020-01-01T00:00:00Z', // backdated to look like it predates the review
+          }),
+        ],
+        baseBranch: 'main',
+        mergedBy: 'developer-a',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
   })
 })
 
 describe('verifyDeployment - squash merge commit matching', () => {
   it('should match squash merge commit to deployed PR via mergeCommitSha', () => {
     const input = makeBaseInput({
+      implicitApprovalSettings: { mode: 'dependabot_only' },
       commitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
       deployedPr: {
         number: 2565,
@@ -228,9 +427,9 @@ describe('verifyDeployment - squash merge commit matching', () => {
           headSha: '8328952808bfbfaebdba21b3d09cb60beec88d28',
           mergeCommitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
           author: { username: 'dependabot[bot]' },
-          mergedBy: { username: 'walbo' },
+          mergedBy: { username: 'reviewer-b' },
         }),
-        reviews: [makePrReview({ username: 'walbo', submittedAt: '2026-02-27T13:55:27Z' })],
+        reviews: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:55:27Z' })],
         commits: [
           makePrCommit({
             sha: '8328952808bfbfaebdba21b3d09cb60beec88d28',
@@ -329,6 +528,7 @@ describe('verifyDeployment - squash merge commit matching', () => {
 
 describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
   const realWorldInput = makeBaseInput({
+    implicitApprovalSettings: { mode: 'dependabot_only' },
     commitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
     deployedPr: {
       number: 2565,
@@ -337,13 +537,13 @@ describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
         headSha: '8328952808bfbfaebdba21b3d09cb60beec88d28',
         mergeCommitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
         author: { username: 'dependabot[bot]' },
-        mergedBy: { username: 'walbo' },
+        mergedBy: { username: 'reviewer-b' },
         mergedAt: '2026-02-27T14:00:13Z',
       }),
       reviews: [
         makePrReview({
           id: 1,
-          username: 'walbo',
+          username: 'reviewer-b',
           state: 'APPROVED',
           submittedAt: '2026-02-27T13:55:27Z',
         }),
@@ -374,7 +574,7 @@ describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
           reviews: [
             makePrReview({
               id: 1,
-              username: 'walbo',
+              username: 'reviewer-b',
               state: 'APPROVED',
               submittedAt: '2026-02-27T13:55:27Z',
             }),
@@ -400,6 +600,17 @@ describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
     expect(result.hasFourEyes).toBe(true)
     expect(result.status).toBe('approved')
     expect(result.unverifiedCommits).toHaveLength(0)
+  })
+
+  it('should NOT approve merger exception when implicit approval mode is off, even with a valid merger', () => {
+    const input = makeBaseInput({
+      ...realWorldInput,
+      implicitApprovalSettings: { mode: 'off' },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.hasFourEyes).toBe(false)
   })
 
   it('should NOT approve if implicit approval is off and mergedBy is not available', () => {
@@ -434,10 +645,10 @@ describe('verifyDeployment - dependabot rebase after approval (e2e)', () => {
   })
 })
 
-describe('verifyDeployment - verification-diff page (implicit approval off)', () => {
-  it('should approve dependabot squash merge with implicit approval off', () => {
+describe('verifyDeployment - verification-diff page (implicit approval required for merger exception)', () => {
+  it('should approve dependabot squash merge when implicit approval is enabled', () => {
     const input = makeBaseInput({
-      implicitApprovalSettings: { mode: 'off' },
+      implicitApprovalSettings: { mode: 'dependabot_only' },
       commitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
       deployedPr: {
         number: 2565,
@@ -446,9 +657,9 @@ describe('verifyDeployment - verification-diff page (implicit approval off)', ()
           headSha: '8328952808bfbfaebdba21b3d09cb60beec88d28',
           mergeCommitSha: '158024d6ef97309f655e8840c958fc48b2b5dccb',
           author: { username: 'dependabot[bot]' },
-          mergedBy: { username: 'walbo' },
+          mergedBy: { username: 'reviewer-b' },
         }),
-        reviews: [makePrReview({ username: 'walbo', submittedAt: '2026-02-27T13:55:27Z' })],
+        reviews: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:55:27Z' })],
         commits: [
           makePrCommit({
             sha: '8328952808bfbfaebdba21b3d09cb60beec88d28',
@@ -478,9 +689,9 @@ describe('verifyDeployment - verification-diff page (implicit approval off)', ()
     expect(result.unverifiedCommits).toHaveLength(0)
   })
 
-  it('should detect diff when old result was unverified but new result is approved', () => {
+  it('should detect diff when old result was unverified but new result is approved (implicit approval on)', () => {
     const input = makeBaseInput({
-      implicitApprovalSettings: { mode: 'off' },
+      implicitApprovalSettings: { mode: 'all' },
       deployedPr: {
         number: 100,
         url: 'https://github.com/org/repo/pull/100',

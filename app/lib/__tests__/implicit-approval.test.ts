@@ -75,6 +75,17 @@ describe('checkImplicitApproval', () => {
       })
       expect(result.qualifies).toBe(false)
     })
+
+    it('does not qualify when merged by the "dependabot" login variant', () => {
+      const result = checkImplicitApproval({
+        settings: { mode: 'dependabot_only' },
+        prCreator: 'dependabot[bot]',
+        lastCommitAuthor: 'dependabot[bot]',
+        mergedBy: 'dependabot',
+        allCommitAuthors: ['dependabot[bot]'],
+      })
+      expect(result.qualifies).toBe(false)
+    })
   })
 
   describe('mode: all', () => {
@@ -113,6 +124,17 @@ describe('checkImplicitApproval', () => {
       expect(result.qualifies).toBe(false)
     })
 
+    it('qualifies when merger authored an earlier (non-last) commit but not the last one', () => {
+      const result = checkImplicitApproval({
+        settings: { mode: 'all' },
+        prCreator: 'alice',
+        lastCommitAuthor: 'charlie',
+        mergedBy: 'bob',
+        allCommitAuthors: ['alice', 'bob', 'charlie'],
+      })
+      expect(result.qualifies).toBe(true)
+    })
+
     it('is case-insensitive', () => {
       const result = checkImplicitApproval({
         settings: { mode: 'all' },
@@ -131,6 +153,63 @@ describe('checkImplicitApproval', () => {
         lastCommitAuthor: 'bob',
         mergedBy: 'ALICE',
         allCommitAuthors: ['bob'],
+      })
+      expect(result.qualifies).toBe(false)
+    })
+  })
+
+  describe('missing mergedBy data', () => {
+    it('does not qualify in "all" mode when mergedBy is empty (missing/unavailable data)', () => {
+      const result = checkImplicitApproval({
+        settings: { mode: 'all' },
+        prCreator: 'alice',
+        lastCommitAuthor: 'alice',
+        mergedBy: '',
+        allCommitAuthors: ['alice'],
+      })
+      expect(result.qualifies).toBe(false)
+    })
+
+    it('does not qualify in "dependabot_only" mode when mergedBy is empty', () => {
+      const result = checkImplicitApproval({
+        settings: { mode: 'dependabot_only' },
+        prCreator: 'dependabot[bot]',
+        lastCommitAuthor: 'dependabot[bot]',
+        mergedBy: '',
+        allCommitAuthors: ['dependabot[bot]'],
+      })
+      expect(result.qualifies).toBe(false)
+    })
+
+    it('does not qualify in "all" mode when prCreator is the "unknown" placeholder (unresolvable PR creator)', () => {
+      const result = checkImplicitApproval({
+        settings: { mode: 'all' },
+        prCreator: 'unknown',
+        lastCommitAuthor: 'alice',
+        mergedBy: 'bob',
+        allCommitAuthors: ['alice'],
+      })
+      expect(result.qualifies).toBe(false)
+    })
+
+    it('does not qualify in "all" mode when lastCommitAuthor is null (unlinked GitHub account)', () => {
+      const result = checkImplicitApproval({
+        settings: { mode: 'all' },
+        prCreator: 'alice',
+        lastCommitAuthor: null,
+        mergedBy: 'bob',
+        allCommitAuthors: ['alice'],
+      })
+      expect(result.qualifies).toBe(false)
+    })
+
+    it('does not qualify in "dependabot_only" mode when allCommitAuthors is empty', () => {
+      const result = checkImplicitApproval({
+        settings: { mode: 'dependabot_only' },
+        prCreator: 'dependabot[bot]',
+        lastCommitAuthor: 'dependabot[bot]',
+        mergedBy: 'developer-b',
+        allCommitAuthors: [],
       })
       expect(result.qualifies).toBe(false)
     })

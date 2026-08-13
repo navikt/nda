@@ -256,6 +256,7 @@ Når en commit ikke kan verifiseres, tildeles en spesifikk årsak:
 | `no_approved_reviews` | Ingen godkjent review | PR eksisterer, men ingen har trykket «Approve» |
 | `approval_before_last_commit` | Godkjenning før siste commit | Noen godkjente PR-en, men så ble det pushet nye commits etterpå |
 | `pr_not_approved` | PR ikke godkjent | Annen grunn til at PR-en mangler gyldig godkjenning |
+| `unlinked_commit_author` | Siste commit har ukjent forfatter-identitet | Siste commit er ikke koblet til en verifisert GitHub-konto (f.eks. e-post som ikke er registrert på kontoen), så identiteten kan ikke sammenlignes trygt mot reviewer/merger |
 
 > **Koderef**: Enum `UnverifiedReason` i [`app/lib/verification/types.ts`](../app/lib/verification/types.ts)
 
@@ -268,32 +269,50 @@ Når en commit ikke kan verifiseres, tildeles en spesifikk årsak:
 Når systemet evaluerer om en PR har fire-øyne-godkjenning, sjekkes følgende:
 
 1. **Finnes godkjente reviews?** — Minst én review med status `APPROVED`
-2. **Er godkjenningen gitt etter siste reelle commit?** — En review gitt *før* siste commit er utdatert (noen kan ha lagt til kode etter godkjenning). For å motvirke manipulering av git-datoer brukes **den seneste av `authorDate` og `committerDate`** — dette krever at begge datoer må manipuleres for å omgå kontrollen
-3. **Ignorering av base branch merge-commits** — Commits av typen `Merge branch 'main' into feature-x` regnes ikke som reelle kodeendringer
+2. **Er godkjenningen gitt etter siste reelle commit — av en annen person enn den som skrev commiten?** — Systemet sammenligner reviewets `commit_id` (SHA-en GitHub registrerer at revieweren faktisk så) mot posisjonen til siste reelle commit i PR-en. Dette er en strukturell sjekk basert på git-historikk, ikke klokkeslett, og lar seg derfor ikke omgå ved å manipulere `git commit --date`. Hvis `commit_id` mangler, faller systemet tilbake til en dato-sammenligning som bruker **den seneste av `authorDate` og `committerDate`** — `committerDate` er git-objektets committer-tidsstempel, som for commits GitHub selv lager (web-redigering, API, squash/rebase-merge) settes serverside, men for vanlige pushede commits kan settes fritt av klienten (`GIT_COMMITTER_DATE`). Reserveløsningen gir dermed forsvar mot at kun `authorDate` manipuleres, ikke en absolutt garanti. En godkjenning fra **samme person som skrev siste commit** (selvgodkjenning) teller **ikke**, uansett tidspunkt — se [Unntaket: Merger som «andre øyne»](#unntaket-merger-som-andre-øyne) for hvordan slike tilfeller *eventuelt* kan godkjennes via mergeren, forutsatt at implisitt godkjenning er aktivert
+3. **Er siste commits forfatter koblet til en ekte GitHub-konto?** — Hvis GitHub ikke klarer å koble commiten til en verifisert konto (f.eks. fordi commit-e-posten ikke er registrert), kan ikke identiteten sammenlignes trygt mot reviewer/merger. Slike commits gir status `unlinked_commit_author` i stedet for å falle tilbake til et upålitelig fritekstnavn
+4. **Ignorering av base branch merge-commits** — Commits av typen `Merge branch 'main' into feature-x` regnes ikke som reelle kodeendringer, **forutsatt at commiten faktisk har minst to foreldre** (ekte git-merge). En vanlig enkeltcommit med tilsvarende commit-melding, men bare én forelder, regnes ikke som merge-commit og blir vurdert på vanlig måte — dette hindrer at noen kan «forkle» en kodeendring som en harmløs merge ved å gi den riktig commit-melding
 
 ### Tidslinjekontroll
 
 ```
-Commit A → Commit B → Review (APPROVED ✅) → Merge
-                                ↑
-                        Godkjenning etter siste commit = OK
+Commit A → Commit B (dev-1) → Review (APPROVED ✅, dev-2) → Merge
+                                          ↑
+                        Godkjenning etter siste commit, av annen person = OK
 
-Commit A → Review (APPROVED ✅) → Commit B → Merge
-                                     ↑
-                        Ny commit etter godkjenning = IKKE OK
+Commit A → Commit B (dev-1) → Review (APPROVED ✅, dev-1) → Merge
+                                          ↑
+                        Selvgodkjenning etter siste commit = IKKE OK
+
+Commit A → Review (APPROVED ✅, dev-2) → Commit B → Merge
+                                              ↑
+                        Ny commit etter godkjenning = IKKE OK (godkjenningen er utdatert,
+                        uansett hvem som skrev commit B)
+
+Commit A → Review (APPROVED ✅, dev-2) → Commit B (dev-2) → Merge (dev-2)
+                                              ↑
+                        Reviewer pusher selv en commit etter egen godkjenning, og merger
+                        selv — utnytter at GitHub ikke nødvendigvis invaliderer gamle
+                        godkjenninger ved nye commits = IKKE OK
 ```
 
 ### Unntaket: Merger som «andre øyne»
 
-Hvis en PR har godkjente reviews, men godkjenningen var **før** siste commit, sjekkes det om **personen som merget PR-en** er en annen enn commit-forfatterne. Hvis ja, regnes merge-handlingen som validering — mergeren så den endelige tilstanden og valgte å merge.
+Hvis en PR har godkjente reviews, men godkjenningen enten var **før** siste commit, eller var en **selvgodkjenning** (samme person som skrev siste commit, uansett tidspunkt), sjekkes det om mergeren likevel kan regnes som «andre øyne» — betinget av hvilken implisitt godkjenning-modus repoet har:
 
-> **Koderef**: Funksjon `verifyFourEyesFromPrData` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts)
+- **`off`**: Unntaket gjelder aldri. Godkjenningen fører til status `approval_before_last_commit`, uansett hvem som merger.
+- **`dependabot_only`**: Unntaket gjelder kun for PR-er opprettet av Dependabot der **alle** commits er skrevet av Dependabot, og mergeren er en annen bruker enn Dependabot selv. Samme betingelser som den generelle implisitte godkjenningen i `dependabot_only`-modus.
+- **`all`**: Unntaket gjelder når mergeren verken er PR-forfatteren eller forfatteren av siste (reelle) commit.
+
+Grunnen til at dette kobles til implisitt godkjenning-innstillingen, er at unntaket i praksis *er* en form for implisitt godkjenning: en (mulig forfalsket eller foreldet) godkjenning kombinert med at noen trykker merge, uten at noen nødvendigvis har sett den endelige diffen. Merk at `dependabot_only` **ikke** gir et generelt merger-unntak for menneske-PR-er — kun for rene Dependabot-PR-er, konsistent med hva innstillingen faktisk lover.
+
+> **Koderef**: Funksjon `verifyFourEyesFromPrData` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts) — parameteren `implicitApprovalMode` styrer dette, med samme betingelser som `checkImplicitApproval`.
 
 ### Base branch merge-deteksjon
 
 Noen ganger oppstår uverifiserte commits fordi utvikleren har merget `main` inn i sin feature-branch. Disse commits ble allerede verifisert da de ble merget til `main` via sine egne PR-er. Systemet gjenkjenner dette mønsteret:
 
-1. Finn merge-commiten (f.eks. `Merge branch 'main' into feature-x`)
+1. Finn merge-commiten (f.eks. `Merge branch 'main' into feature-x`) — **krever at commiten faktisk har minst to foreldre** i git-historikken, ikke bare en commit-melding som ser slik ut
 2. Sjekk at alle uverifiserte commits er datert **før** merge-commiten
 3. Sjekk at PR-en har minst én godkjent review
 
@@ -313,7 +332,13 @@ Implisitt godkjenning er en konfigurerbar mekanisme som lar visse typer deployme
 |-------|-----------|-------|
 | `off` | Av | Ingen implisitt godkjenning. Krever alltid eksplisitt review. |
 | `dependabot_only` | Kun Dependabot | Godkjenner PR-er opprettet av Dependabot med kun Dependabot-commits, **forutsatt** at en annen person merget PR-en. |
-| `all` | Alle PR-er | Godkjenner PR-er der personen som merget er **forskjellig fra** PR-forfatteren og siste commit-forfatter. Merge-handlingen fungerer da som «andre øyne». |
+| `all` | Alle PR-er | Godkjenner PR-er der personen som merget er **forskjellig fra** PR-forfatteren og siste commit-forfatter. Merge-handlingen fungerer da som «andre øyne» — mergeren ser hele den endelige diffen, uavhengig av om vedkommende også har skrevet en tidligere (ikke-siste) commit i PR-en. |
+
+Ingen av modusene gir implisitt godkjenning hvis `mergedBy` mangler (f.eks. manglende data eller slettet bruker) — en tom/ukjent merger regnes aldri som en gyldig «andre øyne». Det samme gjelder hvis PR-forfatteren (`prCreator`) ikke er kjent: siden unntaket krever at mergeren *ikke* er PR-forfatteren, kan det ikke gis uten å vite hvem forfatteren er — manglende `prCreator` (inkludert `'unknown'`-plassholderen som brukes når GitHub ikke oppgir en PR-forfatter) fører derfor alltid til at unntaket ikke slår inn, uansett modus.
+
+I `dependabot_only`-modus sjekkes mergeren mot **begge** kjente Dependabot-identiteter (`dependabot[bot]` og `dependabot`), ikke bare den ene, slik at unntaket ikke feilaktig kan slå inn for en Dependabot-selv-merge under den alternative login-varianten.
+
+Alle identitetssammenligninger i disse sjekkene (selvgodkjenning, dependabot-only-sjekken, merger-unntaket, **og** den generelle implisitte godkjenningen i `checkImplicitApproval`) bruker konsekvent den verifiserte GitHub-loginen (`authorLogin`), aldri det potensielt forfalskbare fritekstnavnet fra git (`authorUsername`) — se [Beskyttelse mot ukoblet commit-identitet](#beskyttelse-mot-ukoblet-commit-identitet) under. Hvis siste commits forfatter mangler en koblet GitHub-konto (`authorLogin` er `null`), gir implisitt godkjenning aldri utslag, uansett modus.
 
 ### Eksempler
 
@@ -324,6 +349,7 @@ Implisitt godkjenning er en konfigurerbar mekanisme som lar visse typer deployme
 **Alle-modus** (`all`):
 - ✅ Utvikler A oppretter PR → Utvikler A committer → Utvikler B merger → Implisitt godkjent
 - ❌ Utvikler A oppretter PR → Utvikler A committer → Utvikler A merger → Ikke godkjent (samme person)
+- ✅ Utvikler A oppretter PR → Utvikler B legger til commit → Utvikler C legger til siste commit → Utvikler B merger → Implisitt godkjent, siden B er forskjellig fra siste commit-forfatter (C) — B ser hele diffen (inkludert sin egen tidligere commit) idet PR-en merges
 
 > **Koderef**: Funksjon `checkImplicitApproval` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts),
 > enum `ImplicitApprovalMode` i [`app/lib/verification/types.ts`](../app/lib/verification/types.ts)
@@ -412,13 +438,35 @@ Systemet bruker en **tre-trinns strategi** for å skille disse scenarioene:
 
 Ved konfliktløsning i merge-commits kan utviklere legge inn vilkårlige kodeendringer som ikke er del av noen PR. Systemet håndterer dette ved å **kun hoppe over base-branch merge-commits** (f.eks. `Merge branch 'main' into feature-x`). Andre merge-commits verifiseres som vanlige commits og flagges dersom de ikke tilhører en godkjent PR.
 
-> 📁 Se `findUnverifiedCommits` i [`verify.ts`](../app/lib/verification/verify.ts) og test i [`verify-coverage-gaps.test.ts`](../app/lib/__tests__/verify-coverage-gaps.test.ts)
+En commit regnes kun som en base-branch merge-commit dersom den **faktisk har minst to foreldre** i git-historikken (`parentShas.length >= 2`) — ikke bare fordi commit-meldingen ser slik ut. Uten denne sjekken kunne en angriper laget en ordinær enkeltcommit med teksten `Merge branch 'main' into feature-x` for å få egen kode hoppet over i verifiseringen.
+
+> 📁 Se `findUnverifiedCommits` og `isBaseBranchMergeCommit` i [`verify.ts`](../app/lib/verification/verify.ts) og test i [`verify-coverage-gaps.test.ts`](../app/lib/__tests__/verify-coverage-gaps.test.ts)
 
 ### Beskyttelse mot dato-manipulering
 
-Git tillater at forfattere setter vilkårlig `authorDate` på commits. En ondsinnet utvikler kan backdatere en commit til å se ut som den ble laget *før* en PR-godkjenning. Systemet motvirker dette ved å bruke **den seneste av `authorDate` og `committerDate`**. `committerDate` settes av git-serveren ved push/rebase og er vanskeligere å manipulere.
+Git tillater at forfattere setter vilkårlig `authorDate` på commits. En ondsinnet utvikler kan backdatere en commit til å se ut som den ble laget *før* en PR-godkjenning.
+
+Den primære beskyttelsen er strukturell, ikke klokkebasert: systemet sammenligner reviewets `commit_id` (SHA-en GitHub registrerer at revieweren faktisk avga sin godkjenning mot) med posisjonen til siste reelle commit i PR-en. Siden dette er en sammenligning av git-historikk og ikke tidsstempler, kan det ikke omgås ved å manipulere datoer i det hele tatt.
+
+Hvis en review mangler `commit_id` (sjeldent, f.eks. eldre cachede data), faller systemet tilbake til å bruke **den seneste av `authorDate` og `committerDate`**. `committerDate` er git-objektets committer-tidsstempel — for commits GitHub selv genererer (web-redigering, API-kall, squash/rebase-merge) settes denne serverside og er vanskelig å forfalske, men for ordinære pushede commits kan klienten sette den fritt (`GIT_COMMITTER_DATE`), akkurat som `authorDate`. Reserveløsningen krever likevel at *begge* datoer manipuleres samtidig for å lure systemet, og er derfor noe sterkere enn å kun sjekke `authorDate` — men gir ingen absolutt garanti. Den brukes uansett kun når `commit_id` ikke er tilgjengelig, og er svakere enn SHA-sjekken.
 
 > 📁 Se `latestCommitDate` og `verifyFourEyesFromPrData` i [`verify.ts`](../app/lib/verification/verify.ts)
+
+### Beskyttelse mot selvgodkjenning
+
+En utvikler kan godkjenne en annen persons PR, deretter pushe en commit til den samme PR-en. Hvis GitHub-repositoriet **ikke** har slått på «Dismiss stale pull request approvals when new commits are pushed», invalideres ikke den eksisterende godkjenningen når den nye commiten kommer inn — branch protection-regelen om at PR-en «krever minst én godkjenning» er da teknisk sett fortsatt oppfylt, selv om godkjenningen kom fra samme person som skrev den siste commiten. Vedkommende kan deretter merge PR-en selv, og GitHub vil ikke stoppe det.
+
+Systemet motvirker dette ved å sammenligne **brukernavnet til revieweren** mot **forfatteren av siste (reelle) commit**: en godkjenning fra samme person som skrev siste commit teller aldri som gyldig fire-øyne-godkjenning — uavhengig av om godkjenningen kom før eller etter commiten. I slike tilfeller kan deploymentet fortsatt godkjennes dersom mergeren er en annen person enn forfatteren av siste commit, **men bare hvis implisitt godkjenning er aktivert** (se [Unntaket: Merger som «andre øyne»](#unntaket-merger-som-andre-øyne)). Med implisitt godkjenning avslått (`mode: off`) fører en slik selvgodkjenning alltid til status `approval_before_last_commit`, uansett hvem som merger.
+
+> 📁 Se `verifyFourEyesFromPrData` i [`verify.ts`](../app/lib/verification/verify.ts) og tester i [`four-eyes-verification.test.ts`](../app/lib/__tests__/four-eyes-verification.test.ts)
+
+### Beskyttelse mot ukoblet commit-identitet
+
+Identitetssjekkene over (selvgodkjenning, merger-unntaket, implisitt godkjenning) forutsetter at systemet kan identifisere hvem som faktisk skrev en commit, med samme brukernavn som brukes i reviews og merge-hendelser (GitHub-login). Hvis en commit sin e-postadresse ikke er registrert på en GitHub-konto, kan ikke GitHub koble commiten til noen konto — og et fritekst git-navn (`git config user.name`) kan trivielt settes til hva som helst og vil aldri matche et ekte brukernavn.
+
+Systemet krever derfor at siste (reelle) commit i en PR har en **verifisert GitHub-login**. Hvis ikke, markeres commiten som `unlinked_commit_author` og regnes som **ikke godkjent**, i stedet for å stille falle tilbake til en identitetssammenligning som uansett aldri kan stemme.
+
+> 📁 Se `verifyFourEyesFromPrData` i [`verify.ts`](../app/lib/verification/verify.ts) og tester i [`four-eyes-verification.test.ts`](../app/lib/__tests__/four-eyes-verification.test.ts)
 
 ### Branch-validering
 

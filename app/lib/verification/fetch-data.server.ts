@@ -559,16 +559,18 @@ async function fetchPrFromGitHub(
     state: r.state as 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING' | 'DISMISSED',
     submittedAt: r.submitted_at,
     body: null,
+    commitId: r.commit_id ?? null,
   }))
 
   const commits: PrCommit[] = prData.commits.map((c) => ({
     sha: c.sha,
     message: c.message,
     authorUsername: c.author.username,
+    authorLogin: c.author.login ?? null,
     authorDate: c.date,
-    committerDate: c.date,
-    isMergeCommit: false,
-    parentShas: [],
+    committerDate: c.committer_date || c.date,
+    isMergeCommit: (c.parent_shas ?? []).length > 1,
+    parentShas: c.parent_shas ?? [],
   }))
 
   const checks: PrChecks = {

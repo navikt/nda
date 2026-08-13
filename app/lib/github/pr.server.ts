@@ -723,7 +723,7 @@ export async function getDetailedPullRequestInfo(
 
     const reviewsByUser = new Map<
       string,
-      { username: string; avatar_url: string; state: string; submitted_at: string }
+      { username: string; avatar_url: string; state: string; submitted_at: string; commit_id: string | null }
     >()
 
     const reviewBodyComments: Array<{
@@ -755,6 +755,7 @@ export async function getDetailedPullRequestInfo(
             avatar_url: review.user.avatar_url,
             state: review.state,
             submitted_at: review.submitted_at,
+            commit_id: review.commit_id ?? null,
           })
         }
         if (review.body?.trim()) {
@@ -893,9 +894,12 @@ export async function getDetailedPullRequestInfo(
       message: commit.commit.message,
       author: {
         username: commit.author?.login || commit.commit.author?.name || 'unknown',
+        login: commit.author?.login ?? null,
         avatar_url: commit.author?.avatar_url || '',
       },
       date: commit.commit.author?.date || '',
+      committer_date: commit.commit.committer?.date || commit.commit.author?.date || '',
+      parent_shas: (commit.parents ?? []).map((p) => p.sha),
       html_url: commit.html_url,
     }))
 
