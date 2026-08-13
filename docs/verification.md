@@ -310,7 +310,7 @@ Hvis en PR har godkjente reviews, men godkjenningen enten var **før** siste com
 
 Grunnen til at dette kobles til implisitt godkjenning-innstillingen, er at unntaket i praksis *er* en form for implisitt godkjenning: en (mulig forfalsket eller foreldet) godkjenning kombinert med at noen trykker merge, uten at noen nødvendigvis har sett den endelige diffen. Merk at `dependabot_only` **ikke** gir et generelt merger-unntak for menneske-PR-er — kun for rene Dependabot-PR-er, konsistent med hva innstillingen faktisk lover.
 
-> **Koderef**: Funksjon `verifyFourEyesFromPrData` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts) — parameteren `implicitApprovalMode` styrer dette, med samme betingelser som `checkImplicitApproval`.
+> **Koderef**: Funksjon `verifyFourEyesFromPrData` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts) — parameteren `implicitApprovalMode` styrer dette, med samme betingelser som `checkImplicitApproval`. Denne sjekken kjøres konsistent for **alle** commit-verifiseringsstier i `findUnverifiedCommits` — den deployede PR-en, PR-en tilknyttet enkeltcommits (`commit.pr`), og PR-en som dekker en merge-commit (`coveringPr`) — slik at merger-unntaket ikke bare gjelder for hoveddeploymentets egen PR, men også for andre PR-er som inngår i et sett med commits mellom to deployments.
 
 ### Base branch merge-deteksjon
 

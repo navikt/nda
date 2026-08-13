@@ -1264,3 +1264,175 @@ describe('verifyDeployment - Merge commit PR coverage (dual-branch scenario)', (
     expect(unverified?.reason).toBe('no_pr')
   })
 })
+
+describe('verifyDeployment - merger-as-second-eyes exception applies to commit.pr and coveringPr paths', () => {
+  it('should apply the merger exception when the covering PR (commit.pr) is a self-approved dependabot bump merged by someone else', () => {
+    const input = makeBaseInput({
+      implicitApprovalSettings: { mode: 'dependabot_only' },
+      commitsBetween: [
+        {
+          sha: 'dependabot-merge-commit',
+          message: 'Bump lib from 1 to 2 (#700)',
+          authorUsername: 'dependabot[bot]',
+          authorDate: '2026-06-11T14:00:00Z',
+          isMergeCommit: false,
+          parentShas: ['prev-main'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/dependabot-merge-commit',
+          pr: {
+            number: 700,
+            title: 'Bump lib from 1 to 2',
+            url: 'https://github.com/navikt/test-app/pull/700',
+            baseBranch: 'main',
+            mergedBy: 'reviewer-b',
+            prCreator: 'dependabot[bot]',
+            reviews: [makePrReview({ username: 'dependabot[bot]', submittedAt: '2026-06-11T13:00:00Z' })],
+            commits: [
+              makePrCommit({
+                sha: 'dependabot-merge-commit',
+                authorUsername: 'dependabot[bot]',
+                authorDate: '2026-06-11T14:00:00Z',
+              }),
+            ],
+          },
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('approved')
+    expect(result.unverifiedCommits).toHaveLength(0)
+  })
+
+  it('should NOT apply the merger exception via commit.pr when implicit approval mode is off', () => {
+    const input = makeBaseInput({
+      implicitApprovalSettings: { mode: 'off' },
+      commitsBetween: [
+        {
+          sha: 'dependabot-merge-commit',
+          message: 'Bump lib from 1 to 2 (#700)',
+          authorUsername: 'dependabot[bot]',
+          authorDate: '2026-06-11T14:00:00Z',
+          isMergeCommit: false,
+          parentShas: ['prev-main'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/dependabot-merge-commit',
+          pr: {
+            number: 700,
+            title: 'Bump lib from 1 to 2',
+            url: 'https://github.com/navikt/test-app/pull/700',
+            baseBranch: 'main',
+            mergedBy: 'reviewer-b',
+            prCreator: 'dependabot[bot]',
+            reviews: [makePrReview({ username: 'dependabot[bot]', submittedAt: '2026-06-11T13:00:00Z' })],
+            commits: [
+              makePrCommit({
+                sha: 'dependabot-merge-commit',
+                authorUsername: 'dependabot[bot]',
+                authorDate: '2026-06-11T14:00:00Z',
+              }),
+            ],
+          },
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+  })
+
+  it('should apply the merger exception when the covering PR (mergedPrByCommitSha / coveringPr) is a self-approved dependabot bump merged by someone else', () => {
+    const dependabotCommit = makePrCommit({
+      sha: 'commit-in-dependabot-pr',
+      authorUsername: 'dependabot[bot]',
+      authorDate: '2026-06-11T14:05:30Z',
+    })
+
+    const input = makeBaseInput({
+      implicitApprovalSettings: { mode: 'dependabot_only' },
+      commitsBetween: [
+        {
+          sha: 'commit-in-dependabot-pr',
+          message: 'Bump lib from 1 to 2',
+          authorUsername: 'dependabot[bot]',
+          authorDate: '2026-06-11T14:05:30Z',
+          isMergeCommit: false,
+          parentShas: ['parent-sha'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/commit-in-dependabot-pr',
+          pr: null,
+        },
+        {
+          sha: 'merge-commit-dependabot',
+          message: 'Merge pull request #701 from navikt/dependabot/lib',
+          authorUsername: 'reviewer-b',
+          authorDate: '2026-06-11T15:00:00Z',
+          isMergeCommit: true,
+          parentShas: ['main-head', 'commit-in-dependabot-pr'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/merge-commit-dependabot',
+          pr: {
+            number: 701,
+            title: 'Bump lib',
+            url: 'https://github.com/navikt/test-app/pull/701',
+            baseBranch: 'main',
+            mergedBy: 'reviewer-b',
+            prCreator: 'dependabot[bot]',
+            reviews: [makePrReview({ username: 'dependabot[bot]', submittedAt: '2026-06-11T14:00:00Z' })],
+            commits: [dependabotCommit],
+          },
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('approved')
+    expect(result.unverifiedCommits).toHaveLength(0)
+  })
+
+  it('should NOT apply the merger exception via coveringPr when implicit approval mode is off', () => {
+    const dependabotCommit = makePrCommit({
+      sha: 'commit-in-dependabot-pr-off',
+      authorUsername: 'dependabot[bot]',
+      authorDate: '2026-06-11T14:05:30Z',
+    })
+
+    const input = makeBaseInput({
+      implicitApprovalSettings: { mode: 'off' },
+      commitsBetween: [
+        {
+          sha: 'commit-in-dependabot-pr-off',
+          message: 'Bump lib from 1 to 2',
+          authorUsername: 'dependabot[bot]',
+          authorDate: '2026-06-11T14:05:30Z',
+          isMergeCommit: false,
+          parentShas: ['parent-sha'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/commit-in-dependabot-pr-off',
+          pr: null,
+        },
+        {
+          sha: 'merge-commit-dependabot-off',
+          message: 'Merge pull request #702 from navikt/dependabot/lib',
+          authorUsername: 'reviewer-b',
+          authorDate: '2026-06-11T15:00:00Z',
+          isMergeCommit: true,
+          parentShas: ['main-head', 'commit-in-dependabot-pr-off'],
+          htmlUrl: 'https://github.com/navikt/test-app/commit/merge-commit-dependabot-off',
+          pr: {
+            number: 702,
+            title: 'Bump lib',
+            url: 'https://github.com/navikt/test-app/pull/702',
+            baseBranch: 'main',
+            mergedBy: 'reviewer-b',
+            prCreator: 'dependabot[bot]',
+            reviews: [makePrReview({ username: 'dependabot[bot]', submittedAt: '2026-06-11T14:00:00Z' })],
+            commits: [dependabotCommit],
+          },
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+  })
+})
