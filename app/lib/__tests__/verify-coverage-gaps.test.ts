@@ -159,6 +159,37 @@ describe('verifyDeployment - Case 2a: no_changes (same commit SHA)', () => {
     expect(result.status).toBe('no_changes')
     expect(result.deployedPr).not.toBeNull()
   })
+
+  it('should not blindly approve no_changes when the underlying PR was self-approved', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+      deployedPr: {
+        number: 833,
+        url: 'https://github.com/navikt/test-app/pull/833',
+        metadata: makePrMetadata({
+          author: { username: 'glad-fjord' },
+          mergedBy: { username: 'glad-fjord' },
+        }),
+        reviews: [makePrReview({ username: 'glad-fjord', submittedAt: '2026-02-27T13:00:00Z' })],
+        commits: [
+          makePrCommit({ sha: 'commit-a', authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T09:00:00Z' }),
+          makePrCommit({ sha: 'commit-b', authorUsername: 'glad-fjord', authorDate: '2026-02-27T12:00:00Z' }),
+        ],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.method).toBeNull()
+  })
 })
 
 describe('verifyDeployment - Case 2b: zero-commit handling', () => {

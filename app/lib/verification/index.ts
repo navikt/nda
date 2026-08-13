@@ -105,6 +105,7 @@ export async function runVerification(
     result.status,
     options.commitSha,
     options.monitoredAppId,
+    result.hasFourEyes,
   )
   if (propagated > 0) {
     logger.info(`   🔗 Propagated verification to ${propagated} sibling deployment(s)`)
@@ -586,7 +587,13 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   if (statusChanged) {
     await storeVerificationResult(dep.id, newResult, { prSnapshotIds: [], commitSnapshotIds: [] }, 'reverification')
-    await propagateVerificationToSiblings(dep.id, newResult.status, dep.commit_sha, dep.monitored_app_id)
+    await propagateVerificationToSiblings(
+      dep.id,
+      newResult.status,
+      dep.commit_sha,
+      dep.monitored_app_id,
+      newResult.hasFourEyes,
+    )
   } else {
     await updateDeploymentVerification(dep.id, newResult, 'reverification')
   }
