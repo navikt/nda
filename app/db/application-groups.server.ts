@@ -359,8 +359,9 @@ export async function propagateVerificationToSiblings(
   status: string,
   commitSha: string,
   monitoredAppId: number,
+  hasFourEyes = true,
 ): Promise<number> {
-  if (!PROPAGATABLE_STATUSES.has(status)) return 0
+  if (!hasFourEyes || !PROPAGATABLE_STATUSES.has(status)) return 0
 
   const result = await pool.query(
     `UPDATE deployments

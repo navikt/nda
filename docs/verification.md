@@ -150,6 +150,8 @@ Hvis dette er **første gang** applikasjonen deployes (ingen tidligere deploymen
 
 Systemet henter listen over commits mellom forrige deployment sin commit-SHA og nåværende deployment sin commit-SHA via GitHub API.
 
+> **Viktig:** `no_changes` betyr kun at det ikke finnes nye commits å diffe mot forrige deployment — det er **ikke** i seg selv en godkjenning. Hvis PR-en som ble deployet (`deployedPr`) er tilgjengelig, kjører systemet likevel den vanlige four-eyes-sjekken mot den før status settes. Er PR-en ikke four-eyes-godkjent (f.eks. selvgodkjenning), returneres status **`unverified_commits`** med `hasFourEyes: false` i stedet for å arve en eventuell tidligere (feilaktig) godkjent status. Dette hindrer at en re-deploy av en commit som opprinnelig ble feilverifisert, fortsetter å vises som godkjent for alltid. Hvis `deployedPr` derimot **ikke** er tilgjengelig (f.eks. direkte push uten PR, eller PR-oppslaget feilet), kan denne re-sjekken ikke utføres, og deploymentet beholder status `no_changes` med `hasFourEyes: true` som før.
+
 ##### Samme commit-SHA (re-deploy)
 - Deploymentet er en **re-deploy** av eksakt samme kode. Status: **`no_changes`**.
 
@@ -168,9 +170,11 @@ Når GitHub compare returnerer 0 commits til tross for ulike SHAer, bruker syste
 **Steg 2: Sjekk nærliggende godkjente deployments (for rollback-scenario)**
 
 Hvis ingen av stegene over bekreftet no-diff:
-1. **Nærliggende deployment med samme commit-SHA** (±30 min) som allerede er godkjent → behandles som retry/duplikat, status: **`no_changes`**.
-2. **Nærliggende deployment med annen commit-SHA** (±30 min) som er godkjent → mulig *superseded deploy* (heuristikk, ikke ancestry-verifisert), status: **`no_changes`**. Typisk ved rapid-fire deploys der webhook-rekkefølge ikke matcher merge-rekkefølge.
+1. **Nærliggende deployment med samme commit-SHA** (±30 min, samme applikasjon) som allerede er godkjent → behandles som retry/duplikat, status: **`no_changes`**.
+2. **Nærliggende deployment med annen commit-SHA** (±30 min, samme applikasjon) som er godkjent → mulig *superseded deploy* (heuristikk, ikke ancestry-verifisert), status: **`no_changes`**. Typisk ved rapid-fire deploys der webhook-rekkefølge ikke matcher merge-rekkefølge.
 3. Ingen nærliggende godkjent deployment → Status: **`error`**. Krever manuell vurdering.
+
+> «Nærliggende deployment» er alltid begrenset til **samme `monitored_app_id`** — apper som deler samme GitHub-repo og miljø (f.eks. flere apper bygget fra samme monorepo), men som ikke er eksplisitt koblet sammen i en applikasjonsgruppe, kan ikke referere til hverandres deploymentrekke.
 
 **Når returneres error?**
 - `compareFailed = true` → GitHub compare API feilet (403 Forbidden, 404 Not Found, 500, osv.). Status: **`error`** — GitHub App må sjekkes.
@@ -219,7 +223,7 @@ Hvert deployment får én av følgende statuser etter verifisering:
 |--------|-----------|-----------|-------------|
 | `approved` | Godkjent | ✅ Ja | Alle commits har godkjent PR-review |
 | `implicitly_approved` | Implisitt godkjent | ✅ Ja | Godkjent via implisitte regler (f.eks. Dependabot) |
-| `no_changes` | Ingen endringer | ✅ Ja | Re-deploy av eksakt samme commit, eller compare/tree bekrefter at det ikke finnes kodeendringer |
+| `no_changes` | Ingen endringer | ✅ Ja | Re-deploy av eksakt samme commit, eller compare/tree bekrefter at det ikke finnes kodeendringer. Hvis en tilgjengelig `deployedPr` viser at PR-en ikke er four-eyes-godkjent, returneres i stedet `unverified_commits` |
 | `pending_baseline` | Første deployment | ⚠️ Nei | Første deployment — brukes som referansepunkt |
 | `unverified_commits` | Uverifiserte commits | ❌ Nei | Én eller flere commits mangler godkjent PR-review |
 | `unauthorized_repository` | Ikke godkjent repo | ❌ Nei | Deploymentets repo er ikke godkjent for applikasjonen |

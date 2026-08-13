@@ -38,26 +38,16 @@ export function verifyDeployment(input: VerificationInput): VerificationResult {
       return handleNoChanges(input)
     }
     if (input.nearbyApprovedDeployWithSameCommit) {
-      return buildResult(input, {
-        hasFourEyes: true,
-        status: 'no_changes',
-        approvalDetails: {
-          method: 'no_changes',
-          approvers: [],
-          reason: `Same commit verified in nearby deployment #${input.nearbyApprovedDeployWithSameCommit.deploymentId} (status: ${input.nearbyApprovedDeployWithSameCommit.status}). GitHub compare returned 0 commits — likely a retry/duplicate deploy.`,
-        },
-      })
+      return handleNoChanges(
+        input,
+        `Same commit verified in nearby deployment #${input.nearbyApprovedDeployWithSameCommit.deploymentId} (status: ${input.nearbyApprovedDeployWithSameCommit.status}). GitHub compare returned 0 commits — likely a retry/duplicate deploy.`,
+      )
     }
     if (input.nearbyApprovedDeploy) {
-      return buildResult(input, {
-        hasFourEyes: true,
-        status: 'no_changes',
-        approvalDetails: {
-          method: 'no_changes',
-          approvers: [],
-          reason: `Superseded deploy — commit is ancestor of nearby approved deployment #${input.nearbyApprovedDeploy.deploymentId} (${input.nearbyApprovedDeploy.commitSha.substring(0, 7)}, status: ${input.nearbyApprovedDeploy.status}). All code in this deploy is already included in the approved deploy.`,
-        },
-      })
+      return handleNoChanges(
+        input,
+        `Superseded deploy — commit is ancestor of nearby approved deployment #${input.nearbyApprovedDeploy.deploymentId} (${input.nearbyApprovedDeploy.commitSha.substring(0, 7)}, status: ${input.nearbyApprovedDeploy.status}). All code in this deploy is already included in the approved deploy.`,
+      )
     }
     return handleCompareError(
       input,
@@ -124,6 +114,30 @@ function handleNoChanges(
   input: VerificationInput,
   reason = 'No new commits since previous deployment',
 ): VerificationResult {
+  if (input.deployedPr) {
+    const prApproval = verifyFourEyesFromPrData({
+      reviewers: input.deployedPr.reviews,
+      commits: input.deployedPr.commits,
+      baseBranch: input.deployedPr.metadata.baseBranch,
+      mergedBy: input.deployedPr.metadata.mergedBy?.username,
+      prCreator:
+        input.deployedPr.metadata.author.username === 'unknown' ? undefined : input.deployedPr.metadata.author.username,
+      implicitApprovalMode: input.implicitApprovalSettings.mode,
+    })
+
+    if (!prApproval.hasFourEyes) {
+      return buildResult(input, {
+        hasFourEyes: false,
+        status: 'unverified_commits',
+        approvalDetails: {
+          method: null,
+          approvers: [],
+          reason: `${reason} — underlying PR is not four-eyes verified: ${prApproval.reason}`,
+        },
+      })
+    }
+  }
+
   return buildResult(input, {
     hasFourEyes: true,
     status: 'no_changes',
