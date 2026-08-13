@@ -21,21 +21,23 @@ async function getPreviousDeployment(
   environmentName: string,
   owner: string,
   repo: string,
+  monitoredAppId: number,
 ): Promise<{ id: number; commitSha: string } | null> {
   const result = await pool.query(
     `SELECT d.id, d.commit_sha
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
-       AND ma.environment_name = $2
-       AND d.detected_github_owner = $3
-       AND d.detected_github_repo_name = $4
+       AND d.monitored_app_id = $2
+       AND ma.environment_name = $3
+       AND d.detected_github_owner = $4
+       AND d.detected_github_repo_name = $5
        AND d.commit_sha IS NOT NULL
        AND d.four_eyes_status NOT IN ('legacy', 'legacy_pending')
        AND d.commit_sha !~ '^refs/'
      ORDER BY d.created_at DESC
      LIMIT 1`,
-    [currentDeploymentId, environmentName, owner, repo],
+    [currentDeploymentId, monitoredAppId, environmentName, owner, repo],
   )
 
   if (result.rows.length === 0) return null
@@ -71,7 +73,7 @@ describe('getPreviousDeployment query', () => {
       githubRepo: repo,
     })
 
-    const prev = await getPreviousDeployment(currentId, 'prod', owner, repo)
+    const prev = await getPreviousDeployment(currentId, 'prod', owner, repo, appId)
     expect(prev).toBeNull()
   })
 
@@ -100,7 +102,7 @@ describe('getPreviousDeployment query', () => {
       githubRepo: repo,
     })
 
-    const prev = await getPreviousDeployment(currentId, 'prod', owner, repo)
+    const prev = await getPreviousDeployment(currentId, 'prod', owner, repo, appId)
     expect(prev).toBeNull()
   })
 
@@ -140,7 +142,7 @@ describe('getPreviousDeployment query', () => {
       githubRepo: repo,
     })
 
-    const prev = await getPreviousDeployment(currentId, 'prod', owner, repo)
+    const prev = await getPreviousDeployment(currentId, 'prod', owner, repo, appId)
     expect(prev).not.toBeNull()
     expect(prev?.id).toBe(validId)
     expect(prev?.commitSha).toBe('aaa111')
@@ -171,7 +173,45 @@ describe('getPreviousDeployment query', () => {
       githubRepo: repo,
     })
 
-    const prev = await getPreviousDeployment(currentId, 'prod', owner, repo)
+    const prev = await getPreviousDeployment(currentId, 'prod', owner, repo, appId)
+    expect(prev).toBeNull()
+  })
+
+  it('should not return a deployment from a different, ungrouped app in the same repo/environment', async () => {
+    const appBackend = await seedApp(pool, {
+      teamSlug: 'team',
+      appName: 'saksoversikt-backend',
+      environment: 'prod-gcp',
+    })
+    const appFrontend = await seedApp(pool, {
+      teamSlug: 'team',
+      appName: 'saksoversikt-frontend',
+      environment: 'prod-gcp',
+    })
+
+    await seedDeployment(pool, {
+      monitoredAppId: appFrontend,
+      teamSlug: 'team',
+      environment: 'prod-gcp',
+      commitSha: 'shared-sha-111',
+      fourEyesStatus: 'approved',
+      createdAt: new Date('2025-01-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appBackend,
+      teamSlug: 'team',
+      environment: 'prod-gcp',
+      commitSha: 'shared-sha-111',
+      fourEyesStatus: 'pending',
+      createdAt: new Date('2025-01-01T10:00:05Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const prev = await getPreviousDeployment(currentId, 'prod-gcp', owner, repo, appBackend)
     expect(prev).toBeNull()
   })
 })
@@ -251,7 +291,7 @@ describe('getPreviousDeploymentFromGroupSibling (group fallback)', () => {
       githubRepo: repo,
     })
 
-    const prev = await getPreviousDeployment(currentId, 'prod-gcp', owner, repo)
+    const prev = await getPreviousDeployment(currentId, 'prod-gcp', owner, repo, appGcp)
     expect(prev).toBeNull()
 
     const siblingPrev = await getPreviousDeploymentFromGroupSibling(currentId, owner, repo, appGcp)
