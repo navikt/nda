@@ -228,6 +228,9 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
         reviewers: commit.pr.reviews,
         commits: commit.pr.commits,
         baseBranch: commit.pr.baseBranch,
+        mergedBy: commit.pr.mergedBy,
+        prCreator: commit.pr.prCreator,
+        implicitApprovalMode: input.implicitApprovalSettings.mode,
       })
 
       if (prApproval.hasFourEyes) {
@@ -252,6 +255,9 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
         reviewers: coveringPr.reviews,
         commits: coveringPr.commits,
         baseBranch: coveringPr.baseBranch,
+        mergedBy: coveringPr.mergedBy,
+        prCreator: coveringPr.prCreator,
+        implicitApprovalMode: input.implicitApprovalSettings.mode,
       })
       if (prApproval.hasFourEyes) {
         continue

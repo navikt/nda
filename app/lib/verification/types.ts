@@ -316,6 +316,8 @@ export interface VerificationInput {
       reviews: PrReview[]
       commits: PrCommit[]
       baseBranch: string
+      mergedBy?: string | null
+      prCreator?: string
       rebaseMatched?: boolean
     } | null
     mismatchedBaseBranches?: string[]
