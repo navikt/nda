@@ -59,6 +59,7 @@ export const UNVERIFIED_REASONS = [
   'no_pr',
   'no_approved_reviews',
   'approval_before_last_commit',
+  'self_approval',
   'pr_not_approved',
   'unlinked_commit_author',
 ] as const
@@ -68,6 +69,7 @@ const _UNVERIFIED_REASON_LABELS: Record<UnverifiedReason, string> = {
   no_pr: 'Ingen PR funnet',
   no_approved_reviews: 'Ingen godkjent review',
   approval_before_last_commit: 'Godkjenning før siste commit',
+  self_approval: 'Selvgodkjenning',
   pr_not_approved: 'PR ikke godkjent',
   unlinked_commit_author: 'Siste commit har ukjent forfatter-identitet',
 }
@@ -78,6 +80,8 @@ export const UNVERIFIED_REASON_DESCRIPTIONS: Record<UnverifiedReason, string> = 
   no_approved_reviews: 'Pull requesten har ingen godkjent code review.',
   approval_before_last_commit:
     'Pull requesten ble godkjent, men det ble pushet nye commits etter godkjenningen. Endringene i de siste committene er ikke sett av en annen person.',
+  self_approval:
+    'Godkjenningen kom fra samme person som skrev siste commit i pull requesten. En selvgodkjenning teller ikke som fire-øyne-kontroll, uansett tidspunkt.',
   pr_not_approved: 'Pull requesten er ikke godkjent.',
   unlinked_commit_author:
     'Forfatteren av siste commit er ikke koblet til en verifisert GitHub-konto, så det er ikke mulig å bekrefte at godkjenneren er en annen person.',

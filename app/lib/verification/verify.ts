@@ -487,6 +487,14 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
     }
   }
 
+  const mostRecentApproval = approvedReviews.reduce((latest, r) =>
+    new Date(r.submittedAt) > new Date(latest.submittedAt) ? r : latest,
+  )
+
+  if (mostRecentApproval.username.toLowerCase() === lastRealCommitAuthorLower) {
+    return { hasFourEyes: false, reason: 'self_approval' }
+  }
+
   return { hasFourEyes: false, reason: 'approval_before_last_commit' }
 }
 
@@ -623,6 +631,7 @@ function mapToUnverifiedReason(reason: string): UnverifiedReason {
   if (reason === 'no_pr') return 'no_pr'
   if (reason === 'no_approved_reviews') return 'no_approved_reviews'
   if (reason === 'approval_before_last_commit') return 'approval_before_last_commit'
+  if (reason === 'self_approval') return 'self_approval'
   if (reason === 'unlinked_commit_author') return 'unlinked_commit_author'
   return 'pr_not_approved'
 }
