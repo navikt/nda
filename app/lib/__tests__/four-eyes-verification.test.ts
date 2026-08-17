@@ -334,6 +334,78 @@ describe('verifyFourEyesFromPrData', () => {
       expect(result.hasFourEyes).toBe(false)
       expect(result.reason).toBe('approval_before_last_commit')
     })
+
+    it('should ignore the PR own merge commit (matched by exact mergeCommitSha) when finding last real commit', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T13:30:00Z' })],
+        commits: [
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T13:00:00Z', message: 'Real work' }),
+          makePrCommit({
+            sha: 'merge-commit-sha',
+            authorUsername: 'developer-a',
+            authorDate: '2026-02-27T14:00:00Z',
+            message: 'Merge pull request #1234 from example-org/feature-branch',
+            parentShas: ['parent1', 'parent2'],
+          }),
+        ],
+        baseBranch: 'main',
+        mergeCommitSha: 'merge-commit-sha',
+      })
+      expect(result.hasFourEyes).toBe(true)
+      expect(result.reason).toContain('after ignoring 1 base-merge commit(s)')
+    })
+
+    it('should ignore the PR own merge commit even when the review pins commitId to the real last commit', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [
+          makePrReview({
+            username: 'reviewer-b',
+            submittedAt: '2026-02-27T13:30:00Z',
+            commitId: 'real-last-commit-sha',
+          }),
+        ],
+        commits: [
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T13:00:00Z', message: 'Real work' }),
+          makePrCommit({
+            sha: 'real-last-commit-sha',
+            authorUsername: 'developer-a',
+            authorDate: '2026-02-27T13:10:00Z',
+            message: 'More real work',
+          }),
+          makePrCommit({
+            sha: 'merge-commit-sha',
+            authorUsername: 'developer-a',
+            authorDate: '2026-02-27T14:00:00Z',
+            message: 'Merge pull request #1234 from example-org/feature-branch',
+            parentShas: ['parent1', 'parent2'],
+          }),
+        ],
+        baseBranch: 'main',
+        mergeCommitSha: 'merge-commit-sha',
+      })
+      expect(result.hasFourEyes).toBe(true)
+      expect(result.reason).toContain('after ignoring 1 base-merge commit(s)')
+    })
+
+    it('should NOT ignore a commit that merely looks like a PR merge commit if its sha does not match mergeCommitSha', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T12:30:00Z' })],
+        commits: [
+          makePrCommit({ authorUsername: 'reviewer-b', authorDate: '2026-02-27T11:00:00Z', message: 'Real work' }),
+          makePrCommit({
+            sha: 'unrelated-merge-commit-sha',
+            authorUsername: 'developer-a',
+            authorDate: '2026-02-27T13:00:00Z',
+            message: 'Merge pull request #1234 from example-org/feature-branch',
+            parentShas: ['parent1', 'parent2'],
+          }),
+        ],
+        baseBranch: 'main',
+        mergeCommitSha: 'a-different-merge-commit-sha',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('approval_before_last_commit')
+    })
   })
 
   describe('unlinked commit author identity', () => {

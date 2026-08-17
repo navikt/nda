@@ -123,6 +123,7 @@ function handleNoChanges(
       prCreator:
         input.deployedPr.metadata.author.username === 'unknown' ? undefined : input.deployedPr.metadata.author.username,
       implicitApprovalMode: input.implicitApprovalSettings.mode,
+      mergeCommitSha: input.deployedPr.metadata.mergeCommitSha,
     })
 
     if (!prApproval.hasFourEyes) {
@@ -187,6 +188,7 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
       prCreator:
         input.deployedPr.metadata.author.username === 'unknown' ? undefined : input.deployedPr.metadata.author.username,
       implicitApprovalMode: input.implicitApprovalSettings.mode,
+      mergeCommitSha: input.deployedPr.metadata.mergeCommitSha,
     })
   }
 
@@ -231,6 +233,7 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
         mergedBy: commit.pr.mergedBy,
         prCreator: commit.pr.prCreator,
         implicitApprovalMode: input.implicitApprovalSettings.mode,
+        mergeCommitSha: commit.pr.mergeCommitSha,
       })
 
       if (prApproval.hasFourEyes) {
@@ -258,6 +261,7 @@ function findUnverifiedCommits(input: VerificationInput): UnverifiedCommit[] {
         mergedBy: coveringPr.mergedBy,
         prCreator: coveringPr.prCreator,
         implicitApprovalMode: input.implicitApprovalSettings.mode,
+        mergeCommitSha: coveringPr.mergeCommitSha,
       })
       if (prApproval.hasFourEyes) {
         continue
@@ -394,13 +398,14 @@ interface PrDataForVerification {
   mergedBy?: string | null
   prCreator?: string
   implicitApprovalMode?: ImplicitApprovalMode
+  mergeCommitSha?: string | null
 }
 
 export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
   hasFourEyes: boolean
   reason: string
 } {
-  const { reviewers, commits, baseBranch, mergedBy, prCreator, implicitApprovalMode } = prData
+  const { reviewers, commits, baseBranch, mergedBy, prCreator, implicitApprovalMode, mergeCommitSha } = prData
 
   if (commits.length === 0) {
     return { hasFourEyes: false, reason: 'No commits found in PR' }
@@ -411,6 +416,10 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
 
   for (let i = commits.length - 1; i >= 0; i--) {
     const commit = commits[i]
+    const isPrOwnMergeCommit = mergeCommitSha !== undefined && mergeCommitSha !== null && commit.sha === mergeCommitSha
+    if (isPrOwnMergeCommit) {
+      continue
+    }
     if (!isBaseBranchMergeCommit(commit.message, baseBranch, commit.parentShas)) {
       lastRealCommit = commit
       lastRealCommitIndex = i

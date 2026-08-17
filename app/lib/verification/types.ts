@@ -318,6 +318,7 @@ export interface VerificationInput {
       baseBranch: string
       mergedBy?: string | null
       prCreator?: string
+      mergeCommitSha?: string | null
       rebaseMatched?: boolean
     } | null
     mismatchedBaseBranches?: string[]
