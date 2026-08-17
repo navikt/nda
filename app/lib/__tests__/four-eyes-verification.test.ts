@@ -156,6 +156,22 @@ describe('verifyFourEyesFromPrData', () => {
       expect(result.reason).toBe('approval_before_last_commit')
     })
 
+    it('should report self_approval when a later self-approval supersedes an earlier approval from someone else', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [
+          makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T09:00:00Z' }),
+          makePrReview({ username: 'developer-a', submittedAt: '2026-02-27T11:00:00Z' }),
+        ],
+        commits: [
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T08:00:00Z' }),
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T10:00:00Z' }),
+        ],
+        baseBranch: 'main',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('self_approval')
+    })
+
     it('should approve when someone else reviews after the last commit, even if a self-approval also exists', () => {
       const result = verifyFourEyesFromPrData({
         reviewers: [

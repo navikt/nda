@@ -487,8 +487,11 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
     }
   }
 
-  const approvedReviewsByOthers = approvedReviews.filter((r) => r.username.toLowerCase() !== lastRealCommitAuthorLower)
-  if (approvedReviewsByOthers.length === 0) {
+  const mostRecentApproval = approvedReviews.reduce((latest, r) =>
+    new Date(r.submittedAt) > new Date(latest.submittedAt) ? r : latest,
+  )
+
+  if (mostRecentApproval.username.toLowerCase() === lastRealCommitAuthorLower) {
     return { hasFourEyes: false, reason: 'self_approval' }
   }
 
