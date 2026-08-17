@@ -306,6 +306,31 @@ describe('verifyFourEyesFromPrData', () => {
       expect(result.reason).toContain('not the last commit author')
     })
 
+    it('should approve a self-approved PR via merger exception when a third person merges', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'developer-a', submittedAt: '2026-02-27T14:00:00Z' })],
+        commits: [makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T13:00:00Z' })],
+        baseBranch: 'main',
+        mergedBy: 'reviewer-b',
+        prCreator: 'developer-a',
+        implicitApprovalMode: 'all',
+      })
+      expect(result.hasFourEyes).toBe(true)
+      expect(result.reason).toContain('not the last commit author')
+    })
+
+    it('should keep self_approval when implicit approval is disabled, even if a third person merges', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'developer-a', submittedAt: '2026-02-27T14:00:00Z' })],
+        commits: [makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T13:00:00Z' })],
+        baseBranch: 'main',
+        mergedBy: 'reviewer-b',
+        prCreator: 'developer-a',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('self_approval')
+    })
+
     it('should not approve via merger when there are no approved reviews', () => {
       const result = verifyFourEyesFromPrData({
         reviewers: [makePrReview({ state: 'COMMENTED', submittedAt: '2026-02-27T13:55:27Z' })],
