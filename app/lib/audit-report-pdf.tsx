@@ -310,6 +310,7 @@ const UNVERIFIED_REASON_LABELS: Record<string, string> = {
   no_pr: 'Ingen PR funnet',
   no_approved_reviews: 'Ingen godkjent review',
   approval_before_last_commit: 'Godkjenning før siste commit',
+  self_approval: 'Selvgodkjenning',
   pr_not_approved: 'PR ikke godkjent',
 }
 

@@ -127,6 +127,32 @@ describe('verifyFourEyesFromPrData', () => {
         mergedBy: 'developer-a',
       })
       expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('self_approval')
+    })
+
+    it('should distinguish self_approval from approval_before_last_commit when the sole approver authored the last commit', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'developer-a', submittedAt: '2026-02-27T11:00:00Z' })],
+        commits: [
+          makePrCommit({ authorUsername: 'developer-b', authorDate: '2026-02-27T09:00:00Z' }),
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T10:00:00Z' }),
+        ],
+        baseBranch: 'main',
+      })
+      expect(result.hasFourEyes).toBe(false)
+      expect(result.reason).toBe('self_approval')
+    })
+
+    it('should keep approval_before_last_commit when a different person approved before the last commit (no self-approval involved)', () => {
+      const result = verifyFourEyesFromPrData({
+        reviewers: [makePrReview({ username: 'reviewer-b', submittedAt: '2026-02-27T09:30:00Z' })],
+        commits: [
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T09:00:00Z' }),
+          makePrCommit({ authorUsername: 'developer-a', authorDate: '2026-02-27T10:00:00Z' }),
+        ],
+        baseBranch: 'main',
+      })
+      expect(result.hasFourEyes).toBe(false)
       expect(result.reason).toBe('approval_before_last_commit')
     })
 
