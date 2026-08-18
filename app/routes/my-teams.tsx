@@ -63,6 +63,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       personalMissingGoalLinks,
       navIdent: identity.navIdent,
       githubUsername,
+      isAdmin: identity.role === 'admin',
     }
   }
 
@@ -208,6 +209,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     personalMissingGoalLinks,
     navIdent: identity.navIdent,
     githubUsername,
+    isAdmin: identity.role === 'admin',
   }
 }
 
@@ -340,6 +342,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     personalMissingGoalLinks,
     navIdent,
     githubUsername,
+    isAdmin,
   } = loaderData
   const profileId = githubUsername || navIdent
 
@@ -375,7 +378,14 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           {noTeamMembersMapped && (
             <Alert variant="info">
               Ingen av medlemmene i dine team er koblet til en GitHub-bruker, så tallene under er 0. Be teammedlemmene
-              registrere GitHub-brukernavn under <Link to="/admin/users">Brukermapping</Link> så blir tallene riktige.
+              registrere GitHub-brukernavnet sitt på profilsiden sin
+              {isAdmin && (
+                <>
+                  {' '}
+                  (eller under <Link to="/admin/users">Brukermapping</Link>)
+                </>
+              )}{' '}
+              så blir tallene riktige.
             </Alert>
           )}
           {unmappedContributors.length > 0 && (
@@ -387,15 +397,27 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                     : `${unmappedContributors.length} deployere i år mangler brukermapping.`}{' '}
                   Deres deployments telles ikke med i de personfiltrerte tallene under.
                 </BodyShort>
-                <BodyShort size="small" textColor="subtle">
-                  Umappede brukernavn: {unmappedContributors.slice(0, 10).join(', ')}
-                  {unmappedContributors.length > 10 && ` og ${unmappedContributors.length - 10} til`}
-                </BodyShort>
-                <div>
-                  <Button as={Link} to="/admin/users" size="small" variant="secondary">
-                    Gå til brukermapping
-                  </Button>
-                </div>
+                <HStack gap="space-8" wrap align="center">
+                  <Detail textColor="subtle">Umappede brukernavn:</Detail>
+                  {unmappedContributors.slice(0, 10).map((username, i) => (
+                    <Link key={username} to={`/users/${encodeURIComponent(username)}`}>
+                      <Detail as="span">
+                        {username}
+                        {i < Math.min(unmappedContributors.length, 10) - 1 && ','}
+                      </Detail>
+                    </Link>
+                  ))}
+                  {unmappedContributors.length > 10 && (
+                    <Detail textColor="subtle">og {unmappedContributors.length - 10} til</Detail>
+                  )}
+                </HStack>
+                {isAdmin && (
+                  <div>
+                    <Button as={Link} to="/admin/users" size="small" variant="secondary">
+                      Gå til brukermapping
+                    </Button>
+                  </div>
+                )}
               </VStack>
             </Alert>
           )}
