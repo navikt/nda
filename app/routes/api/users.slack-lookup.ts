@@ -11,19 +11,19 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   const navIdent = (url.searchParams.get('nav_ident') || '').toUpperCase()
 
   if (!isValidNavIdent(navIdent)) {
-    return Response.json({ slackMemberId: null }, { status: 400, headers: { 'Cache-Control': 'no-store' } })
+    return Response.json({ slackMemberId: null, navIdent }, { status: 400, headers: { 'Cache-Control': 'no-store' } })
   }
 
   const isSelf = navIdent === identity.navIdent.toUpperCase()
   if (!isSelf && !(await canSearchUsers(identity))) {
     return Response.json(
-      { slackMemberId: null, error: 'Ingen tilgang' },
+      { slackMemberId: null, navIdent, error: 'Ingen tilgang' },
       { status: 403, headers: { 'Cache-Control': 'no-store' } },
     )
   }
 
   if (!isSlackConfigured()) {
-    return Response.json({ slackMemberId: null }, { headers: { 'Cache-Control': 'no-store' } })
+    return Response.json({ slackMemberId: null, navIdent }, { headers: { 'Cache-Control': 'no-store' } })
   }
 
   try {
@@ -31,13 +31,13 @@ export async function loader({ request, url }: Route.LoaderArgs) {
     const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent)
 
     if (!graphUser?.email) {
-      return Response.json({ slackMemberId: null }, { headers: { 'Cache-Control': 'no-store' } })
+      return Response.json({ slackMemberId: null, navIdent }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
     const slackMemberId = await lookupSlackUserIdByEmail(graphUser.email)
-    return Response.json({ slackMemberId }, { headers: { 'Cache-Control': 'no-store' } })
+    return Response.json({ slackMemberId, navIdent }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     logger.error('Slack member ID lookup failed:', error)
-    return Response.json({ slackMemberId: null }, { headers: { 'Cache-Control': 'no-store' } })
+    return Response.json({ slackMemberId: null, navIdent }, { headers: { 'Cache-Control': 'no-store' } })
   }
 }
