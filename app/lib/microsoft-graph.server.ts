@@ -8,6 +8,7 @@ interface GraphToken {
 interface GraphUser {
   displayName: string | null
   onPremisesSamAccountName: string | null
+  mail: string | null
 }
 
 interface GraphSearchResponse {
@@ -17,6 +18,7 @@ interface GraphSearchResponse {
 export interface GraphUserResult {
   displayName: string | null
   navIdent: string | null
+  email: string | null
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null
@@ -69,7 +71,7 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
     ConsistencyLevel: 'eventual',
   }
 
-  const select = '$select=displayName,onPremisesSamAccountName'
+  const select = '$select=displayName,onPremisesSamAccountName,mail'
 
   if (isNavIdent) {
     const sanitized = trimmed.toUpperCase().replace(/'/g, "''")
@@ -97,6 +99,7 @@ async function fetchGraphUsers(url: string, headers: Record<string, string>): Pr
   return data.value.map((user) => ({
     displayName: user.displayName,
     navIdent: user.onPremisesSamAccountName,
+    email: user.mail,
   }))
 }
 

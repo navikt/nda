@@ -46,6 +46,7 @@ describe('microsoft-graph', () => {
           {
             displayName: 'Glad Fjord',
             onPremisesSamAccountName: 'Z990001',
+            mail: 'glad.fjord@nav.no',
           },
         ]),
       )
@@ -54,7 +55,7 @@ describe('microsoft-graph', () => {
     const searchGraphUsers = await getSearchFn()
     const results = await searchGraphUsers('Z990001')
 
-    expect(results).toEqual([{ displayName: 'Glad Fjord', navIdent: 'Z990001' }])
+    expect(results).toEqual([{ displayName: 'Glad Fjord', navIdent: 'Z990001', email: 'glad.fjord@nav.no' }])
 
     const graphCall = fetchMock.mock.calls[1]
     const url = graphCall[0] as string
@@ -73,6 +74,7 @@ describe('microsoft-graph', () => {
           {
             displayName: 'Stille Skog',
             onPremisesSamAccountName: 'Z990003',
+            mail: null,
           },
         ]),
       )
@@ -81,7 +83,7 @@ describe('microsoft-graph', () => {
     const searchGraphUsers = await getSearchFn()
     const results = await searchGraphUsers('Stille')
 
-    expect(results).toEqual([{ displayName: 'Stille Skog', navIdent: 'Z990003' }])
+    expect(results).toEqual([{ displayName: 'Stille Skog', navIdent: 'Z990003', email: null }])
 
     const graphCall = fetchMock.mock.calls[1]
     const url = graphCall[0] as string
@@ -113,6 +115,7 @@ describe('microsoft-graph', () => {
           {
             displayName: 'Røe, Modig',
             onPremisesSamAccountName: 'Z990004',
+            mail: null,
           },
         ]),
       )
@@ -121,7 +124,7 @@ describe('microsoft-graph', () => {
     const searchGraphUsers = await getSearchFn()
     const results = await searchGraphUsers('Modig Røe')
 
-    expect(results).toEqual([{ displayName: 'Røe, Modig', navIdent: 'Z990004' }])
+    expect(results).toEqual([{ displayName: 'Røe, Modig', navIdent: 'Z990004', email: null }])
 
     const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
     expect(url).toContain('"displayName:Modig"')

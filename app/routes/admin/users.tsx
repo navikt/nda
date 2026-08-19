@@ -21,6 +21,7 @@ import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/for
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { resolveSlackMemberId } from '~/lib/slack/client.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/users'
@@ -164,7 +165,7 @@ export async function action({ request }: Route.ActionArgs) {
       displayGithubUsername: githubUsernameRaw,
       displayName,
       navIdent,
-      slackMemberId: getFormString(formData, 'slack_member_id') || null,
+      slackMemberId: await resolveSlackMemberId(graphUser.email, getFormString(formData, 'slack_member_id') || null),
     })
     return { success: true }
   }

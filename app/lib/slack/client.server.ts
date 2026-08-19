@@ -68,6 +68,41 @@ export function isSlackConfigured(): boolean {
   return !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN)
 }
 
+function isSlackUserNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'data' in error &&
+    (error as { data?: { error?: string } }).data?.error === 'users_not_found'
+  )
+}
+
+export async function lookupSlackUserIdByEmail(email: string): Promise<string | null> {
+  const app = getSlackApp()
+  if (!app) return null
+
+  try {
+    const result = await callSlackApi('users.lookupByEmail', () => app.client.users.lookupByEmail({ email }))
+    return result.user?.id ?? null
+  } catch (error) {
+    if (!isSlackUserNotFoundError(error)) {
+      logger.error('Slack users.lookupByEmail failed:', error)
+    }
+    return null
+  }
+}
+
+export async function resolveSlackMemberId(
+  email: string | null,
+  submittedSlackMemberId: string | null,
+): Promise<string | null> {
+  if (email) {
+    const autoSlackMemberId = await lookupSlackUserIdByEmail(email)
+    if (autoSlackMemberId) return autoSlackMemberId
+  }
+  return submittedSlackMemberId
+}
+
 function getSlackApp(): App | null {
   if (!isSlackConfigured()) {
     logger.info('[Slack] Not configured (missing SLACK_BOT_TOKEN or SLACK_APP_TOKEN)')

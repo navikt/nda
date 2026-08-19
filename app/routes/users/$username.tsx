@@ -26,6 +26,7 @@ import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/for
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { resolveSlackMemberId } from '~/lib/slack/client.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { formatDisplayNameNatural } from '~/lib/user-display'
 import type { Route } from './+types/$username'
@@ -290,7 +291,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       displayGithubUsername: isSelfService ? githubUsernameRaw : null,
       displayName,
       navIdent: navIdent,
-      slackMemberId: getFormString(formData, 'slack_member_id') || null,
+      slackMemberId: await resolveSlackMemberId(graphUser.email, getFormString(formData, 'slack_member_id') || null),
     })
     return redirect(`/users/${githubUsername}`)
   }

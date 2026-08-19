@@ -455,7 +455,9 @@ describe('getOrCreateUserFromGraph', () => {
   })
 
   it('creates user from Graph when not found locally', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([{ navIdent: 'Z990001', displayName: 'Glad Fjord' }])
+    vi.mocked(searchGraphUsers).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
+    ])
     const result = await getOrCreateUserFromGraph('Z990001')
     expect(result?.nav_ident).toBe('Z990001')
     expect(result?.display_name).toBe('Glad Fjord')
@@ -470,7 +472,7 @@ describe('getOrCreateUserFromGraph', () => {
   })
 
   it('returns null when Graph result has no displayName', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([{ navIdent: 'Z990001', displayName: null }])
+    vi.mocked(searchGraphUsers).mockResolvedValue([{ navIdent: 'Z990001', displayName: null, email: null }])
     const result = await getOrCreateUserFromGraph('Z990001')
     expect(result).toBeNull()
   })
