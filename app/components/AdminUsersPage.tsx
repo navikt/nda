@@ -180,9 +180,7 @@ export function AdminUsersPage<T extends UserMapping = UserMapping>({
                     <UserMappingCard
                       key={mapping.github_username}
                       mapping={mapping}
-                      teamRoles={
-                        mapping.nav_ident ? (userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []
-                      }
+                      teamRoles={mapping.nav_ident ? (userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []}
                       sectionRoles={
                         mapping.nav_ident ? (userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []
                       }
