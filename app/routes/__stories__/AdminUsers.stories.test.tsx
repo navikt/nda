@@ -14,7 +14,7 @@ vi.mock('react-router', async () => {
   }
 })
 
-const { Default, WithUnmappedUsers, Empty, MinimalData, OnlyUnmapped } = composeStories(stories)
+const { Default, WithUnmappedUsers, Empty, MinimalData, OnlyUnmapped, AllTabs } = composeStories(stories)
 
 describe('AdminUsers story baseline characterization', () => {
   it('renders default story with mapped users and no unmapped warning', () => {
@@ -24,17 +24,23 @@ describe('AdminUsers story baseline characterization', () => {
     expect(html).toContain('Glad Fjord')
     expect(html).toContain('minimal-user')
     expect(html).toContain('Ingen tilleggsinformasjon')
-    expect(html).not.toContain('GitHub-brukere uten mapping')
+    expect(html).not.toContain('har deployments men mangler')
   })
 
-  it('renders story with unmapped users warning and list', () => {
+  it('renders tabs with counts for mappings, unmapped users and users without github', () => {
+    const html = renderToStaticMarkup(<AllTabs />)
+
+    expect(html).toContain('Brukere (4)')
+    expect(html).toContain('GitHub-brukere uten mapping (2)')
+    expect(html).toContain('Brukere uten GitHub-konto (2)')
+  })
+
+  it('renders story with unmapped users warning referencing the tab', () => {
     const html = renderToStaticMarkup(<WithUnmappedUsers />)
 
     expect(html).toContain('2 GitHub-brukere har deployments men mangler mapping')
+    expect(html).toContain('Se fanen &quot;GitHub-brukere uten mapping&quot; for detaljer')
     expect(html).toContain('GitHub-brukere uten mapping (2)')
-    expect(html).toContain('unknown-deployer')
-    expect(html).toContain('12 deployments')
-    expect(html).toContain('Legg til mapping')
   })
 
   it('renders empty story info state', () => {
@@ -43,7 +49,7 @@ describe('AdminUsers story baseline characterization', () => {
     expect(html).toContain(
       'Ingen brukermappinger er lagt til ennå. Klikk &quot;Legg til&quot; for å opprette den første.',
     )
-    expect(html).not.toContain('GitHub-brukere uten mapping')
+    expect(html).not.toContain('har deployments men mangler')
   })
 
   it('renders minimal data story with github-only mapping details', () => {
@@ -54,7 +60,7 @@ describe('AdminUsers story baseline characterization', () => {
     expect(html).toContain('Ingen tilleggsinformasjon')
   })
 
-  it('renders only-unmapped story with both empty and warning states', () => {
+  it('renders only-unmapped story with empty mappings state and unmapped tab count', () => {
     const html = renderToStaticMarkup(<OnlyUnmapped />)
 
     expect(html).toContain(
