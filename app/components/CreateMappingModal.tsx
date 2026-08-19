@@ -1,13 +1,11 @@
 import { Alert, BodyShort, Button, Label, Modal, TextField, VStack } from '@navikt/ds-react'
 import { forwardRef, useEffect, useState } from 'react'
-import { Form, useFetcher } from 'react-router'
+import { Form } from 'react-router'
+import { useSlackMemberIdLookup } from '~/hooks/useSlackMemberIdLookup'
 import type { GraphUserResult } from '~/lib/microsoft-graph.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
+import { SlackMemberIdField } from './SlackMemberIdField'
 import { UserSearch } from './UserSearch'
-
-interface SlackLookupResponse {
-  slackMemberId: string | null
-}
 
 export interface CreateMappingModalProps {
   username: string
@@ -49,35 +47,25 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
       nav_ident: canPrefillOwnMapping ? (loggedInNavIdent ?? '') : '',
     })
 
-    const slackLookupFetcher = useFetcher<SlackLookupResponse>()
-    const [autoSlackMemberId, setAutoSlackMemberId] = useState<string | null>(null)
-
-    useEffect(() => {
-      if (slackLookupFetcher.data) {
-        setAutoSlackMemberId(slackLookupFetcher.data.slackMemberId ?? null)
-      }
-    }, [slackLookupFetcher.data])
+    const slackLookup = useSlackMemberIdLookup()
 
     useEffect(() => {
       if (canPrefillOwnMapping && loggedInNavIdent) {
-        setAutoSlackMemberId(null)
-        slackLookupFetcher.load(`/api/users/slack-lookup?nav_ident=${encodeURIComponent(loggedInNavIdent)}`)
+        slackLookup.lookup(loggedInNavIdent)
       }
-    }, [canPrefillOwnMapping, loggedInNavIdent, slackLookupFetcher.load])
+    }, [canPrefillOwnMapping, loggedInNavIdent, slackLookup.lookup])
 
     const handleSelectUser = (user: GraphUserResult) => {
       setMappingFields({
         display_name: formatDisplayNameNatural(user.displayName),
         nav_ident: user.navIdent ?? '',
       })
-      setAutoSlackMemberId(null)
       if (user.navIdent) {
-        slackLookupFetcher.load(`/api/users/slack-lookup?nav_ident=${encodeURIComponent(user.navIdent)}`)
+        slackLookup.lookup(user.navIdent)
+      } else {
+        slackLookup.reset()
       }
     }
-
-    const isSlackLookupInProgress = slackLookupFetcher.state !== 'idle'
-    const isSlackMemberIdAutoDetected = !isSlackLookupInProgress && !!autoSlackMemberId
 
     return (
       <Modal ref={ref} header={{ heading }} width={width}>
@@ -105,7 +93,7 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
                   onSelectUser={handleSelectUser}
                   onClear={() => {
                     setMappingFields({ display_name: '', nav_ident: '' })
-                    setAutoSlackMemberId(null)
+                    slackLookup.reset()
                   }}
                 />
               )}
@@ -127,25 +115,11 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
                   {fieldErrors.nav_ident}
                 </Alert>
               )}
-              <TextField
-                key={isSlackMemberIdAutoDetected ? 'auto' : 'manual'}
-                label="Slack member ID"
-                name={isSlackMemberIdAutoDetected ? undefined : 'slack_member_id'}
-                value={isSlackMemberIdAutoDetected ? (autoSlackMemberId ?? '') : undefined}
-                defaultValue={isSlackMemberIdAutoDetected ? undefined : ''}
-                disabled={isSlackMemberIdAutoDetected}
-                readOnly={isSlackMemberIdAutoDetected}
-                description={
-                  isSlackLookupInProgress
-                    ? 'Slår opp Slack-ID automatisk …'
-                    : isSlackMemberIdAutoDetected
-                      ? 'Funnet automatisk basert på e-postadresse i Slack'
-                      : undefined
-                }
+              <SlackMemberIdField
+                isLoading={slackLookup.isLoading}
+                isAutoDetected={slackLookup.isAutoDetected}
+                autoDetectedValue={slackLookup.slackMemberId}
               />
-              {isSlackMemberIdAutoDetected && (
-                <input type="hidden" name="slack_member_id" value={autoSlackMemberId ?? ''} />
-              )}
             </VStack>
           </Form>
         </Modal.Body>
