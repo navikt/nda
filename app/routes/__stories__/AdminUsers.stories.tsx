@@ -16,7 +16,7 @@ type UnmappedUser = {
 
 type UserWithoutGithub = {
   nav_ident: string
-  display_name: string | null
+  display_name: string
 }
 
 const mockMappings: UserMapping[] = [

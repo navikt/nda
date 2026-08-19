@@ -22,7 +22,7 @@ interface UnmappedUser {
 
 interface UserWithoutGithub {
   nav_ident: string
-  display_name: string | null
+  display_name: string
 }
 
 interface RoleAssignment {

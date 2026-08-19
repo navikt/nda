@@ -3,7 +3,7 @@ import styles from '~/styles/common.module.css'
 
 interface UserWithoutGithub {
   nav_ident: string
-  display_name: string | null
+  display_name: string
 }
 
 interface UsersWithoutGithubListProps {
