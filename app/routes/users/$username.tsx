@@ -26,7 +26,7 @@ import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/for
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
-import { resolveSlackMemberId } from '~/lib/slack/client.server'
+import { resolveSlackMemberId, SlackLookupFailedError } from '~/lib/slack/client.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { formatDisplayNameNatural } from '~/lib/user-display'
 import type { Route } from './+types/$username'
@@ -286,12 +286,23 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { fieldErrors: { nav_ident: 'Brukeren ble funnet i Active Directory, men mangler visningsnavn' } }
     }
 
+    let slackMemberId: string | null
+    try {
+      slackMemberId = await resolveSlackMemberId(graphUser.email, getFormString(formData, 'slack_member_id') || null)
+    } catch (error) {
+      if (error instanceof SlackLookupFailedError) {
+        logger.error('Slack member ID lookup failed during mapping creation', error.cause)
+        return { fieldErrors: { nav_ident: 'Kunne ikke verifisere Slack member ID (Slack API utilgjengelig)' } }
+      }
+      throw error
+    }
+
     await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: isSelfService ? githubUsernameRaw : null,
       displayName,
       navIdent: navIdent,
-      slackMemberId: await resolveSlackMemberId(graphUser.email, getFormString(formData, 'slack_member_id') || null),
+      slackMemberId,
     })
     return redirect(`/users/${githubUsername}`)
   }

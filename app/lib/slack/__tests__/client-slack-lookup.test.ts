@@ -115,4 +115,18 @@ describe('slack client.server - Slack member ID lookup', () => {
 
     expect(result).toBe('U000000')
   })
+
+  it('lookupSlackUserIdByEmail throws SlackLookupFailedError on transient Slack errors', async () => {
+    lookupByEmailMock.mockRejectedValue(new Error('rate_limited'))
+    const { lookupSlackUserIdByEmail, SlackLookupFailedError } = await getClientModule()
+
+    await expect(lookupSlackUserIdByEmail('user@nav.no')).rejects.toBeInstanceOf(SlackLookupFailedError)
+  })
+
+  it('resolveSlackMemberId propagates SlackLookupFailedError instead of falling back on transient errors', async () => {
+    lookupByEmailMock.mockRejectedValue(new Error('rate_limited'))
+    const { resolveSlackMemberId, SlackLookupFailedError } = await getClientModule()
+
+    await expect(resolveSlackMemberId('user@nav.no', 'U000000')).rejects.toBeInstanceOf(SlackLookupFailedError)
+  })
 })

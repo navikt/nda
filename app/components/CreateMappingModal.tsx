@@ -116,6 +116,7 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
                 </Alert>
               )}
               <SlackMemberIdField
+                key={mappingFields.nav_ident}
                 isLoading={slackLookup.isLoading}
                 isAutoDetected={slackLookup.isAutoDetected}
                 autoDetectedValue={slackLookup.slackMemberId}
