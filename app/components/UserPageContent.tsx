@@ -105,6 +105,7 @@ interface UserPageContentProps {
   hasFilters: boolean
   availableBoards: Board[]
   isOwnProfile: boolean
+  canPrefillOwnMapping?: boolean
   landingPage: string
   allSections: Section[]
   actionData?: { success?: boolean | string; error?: string } | null
@@ -138,6 +139,7 @@ export function UserPageContent({
   hasFilters,
   availableBoards,
   isOwnProfile,
+  canPrefillOwnMapping = false,
   landingPage,
   allSections,
   actionData,
@@ -273,10 +275,14 @@ export function UserPageContent({
         </VStack>
       )}
 
-      {!mapping && !isBot && (
+      {!isBot && (!mapping || canPrefillOwnMapping) && (
         <Alert variant="warning">
           <HStack gap="space-16" align="center" justify="space-between" wrap>
-            <BodyShort>Ingen brukermapping funnet for denne brukeren.</BodyShort>
+            <BodyShort>
+              {mapping
+                ? 'Profilen din er ikke knyttet til en GitHub-konto.'
+                : 'Ingen brukermapping funnet for denne brukeren.'}
+            </BodyShort>
             <Button variant="secondary" size="small" icon={<PlusIcon aria-hidden />} onClick={onCreateMapping}>
               Opprett mapping
             </Button>

@@ -158,6 +158,23 @@ export const OwnProfile: Story = {
   },
 }
 
+export const OwnProfileWithoutGithub: Story = {
+  name: 'Egen profil uten GitHub-kobling',
+  args: {
+    ...defaultArgs,
+    username: 'Z990000',
+    mapping: {
+      github_username: null,
+      display_name: 'Glad Fjord',
+      nav_ident: 'Z990000',
+      slack_member_id: null,
+    },
+    isOwnProfile: true,
+    canPrefillOwnMapping: true,
+    monthlyStats: [],
+  },
+}
+
 export const WithGoalLinking: Story = {
   name: 'Med endringsopphav-kobling',
   args: {
