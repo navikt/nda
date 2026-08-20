@@ -926,39 +926,41 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
             {reportData.unverified_commit_deployments.map((entry: UnverifiedCommitDeploymentEntry) => {
               const isApproved = entry.four_eyes_status === 'manually_approved'
               return (
-                <View key={entry.deployment_id} style={styles.manualBox} wrap={false}>
-                  <Text style={styles.manualTitle}>
-                    <Link
-                      src={ndaDeploymentUrl(teamSlug, environmentName, appName, entry.deployment_id)}
-                      style={styles.link}
-                    >
-                      Deployment #{entry.deployment_id}
-                    </Link>
-                    {' - '}
-                    {formatDate(entry.date)}
-                  </Text>
-                  {entry.title && <Text style={[styles.manualDetail, { fontWeight: 600 }]}>{entry.title}</Text>}
-                  <Text style={styles.manualDetail}>
-                    Commit:{' '}
-                    {entry.commit_sha ? (
-                      <Link src={`https://github.com/${repository}/commit/${entry.commit_sha}`} style={styles.link}>
-                        {entry.commit_sha.substring(0, 7)}
+                <View key={entry.deployment_id} style={styles.manualBox}>
+                  <View wrap={false}>
+                    <Text style={styles.manualTitle}>
+                      <Link
+                        src={ndaDeploymentUrl(teamSlug, environmentName, appName, entry.deployment_id)}
+                        style={styles.link}
+                      >
+                        Deployment #{entry.deployment_id}
                       </Link>
-                    ) : (
-                      'N/A'
-                    )}
-                  </Text>
-                  <Text style={styles.manualDetail}>Deployer: {entry.deployer_display_name || entry.deployer}</Text>
-                  <Text style={[styles.manualDetail, { fontWeight: 600, color: isApproved ? '#006A2E' : '#BA3A26' }]}>
-                    {isApproved
-                      ? `✓ Godkjent av: ${entry.approved_by_display_name || entry.approved_by}${entry.approved_at ? ` (${formatDateTime(entry.approved_at)})` : ''}`
-                      : '✗ Ikke godkjent etter fire-øyne-prinsippet'}
-                  </Text>
-                  <Text style={[styles.manualDetail, { marginTop: 4, fontWeight: 600 }]}>
-                    Ikke-godkjente commits ({entry.commits.length}):
-                  </Text>
+                      {' - '}
+                      {formatDate(entry.date)}
+                    </Text>
+                    {entry.title && <Text style={[styles.manualDetail, { fontWeight: 600 }]}>{entry.title}</Text>}
+                    <Text style={styles.manualDetail}>
+                      Commit:{' '}
+                      {entry.commit_sha ? (
+                        <Link src={`https://github.com/${repository}/commit/${entry.commit_sha}`} style={styles.link}>
+                          {entry.commit_sha.substring(0, 7)}
+                        </Link>
+                      ) : (
+                        'N/A'
+                      )}
+                    </Text>
+                    <Text style={styles.manualDetail}>Deployer: {entry.deployer_display_name || entry.deployer}</Text>
+                    <Text style={[styles.manualDetail, { fontWeight: 600, color: isApproved ? '#006A2E' : '#BA3A26' }]}>
+                      {isApproved
+                        ? `✓ Godkjent av: ${entry.approved_by_display_name || entry.approved_by}${entry.approved_at ? ` (${formatDateTime(entry.approved_at)})` : ''}`
+                        : '✗ Ikke godkjent etter fire-øyne-prinsippet'}
+                    </Text>
+                    <Text style={[styles.manualDetail, { marginTop: 4, fontWeight: 600 }]}>
+                      Ikke-godkjente commits ({entry.commits.length}):
+                    </Text>
+                  </View>
                   {entry.commits.map((commit) => (
-                    <View key={commit.sha} style={{ marginLeft: 10, marginBottom: 3 }}>
+                    <View key={commit.sha} style={{ marginLeft: 10, marginBottom: 3 }} wrap={false}>
                       <Text style={{ fontSize: 8 }}>
                         •{' '}
                         <Link src={commit.html_url} style={styles.link}>
