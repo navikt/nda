@@ -21,6 +21,7 @@ import {
   getWorkflowTriggerConfig,
   haveSameCommitTree,
   isCommitOnBranch,
+  WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
 } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { buildBranchMismatch } from './branch-mismatch'
@@ -230,17 +231,46 @@ async function fetchWorkflowTriggerConfig(
   if (!triggerUrl) return undefined
 
   if (!options?.forceRefresh) {
-    const existing = await pool.query<{ workflow_trigger_config: VerificationInput['workflowTrigger'] | null }>(
-      `SELECT workflow_trigger_config FROM deployments WHERE id = $1`,
-      [deploymentId],
-    )
-    if (existing.rows[0]?.workflow_trigger_config) {
-      return existing.rows[0].workflow_trigger_config
-    }
+    const cached = await getCachedWorkflowTriggerConfig(deploymentId)
+    if (cached) return cached
   }
 
   const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
   return workflowTrigger ?? undefined
+}
+
+async function getCachedWorkflowTriggerConfig(
+  deploymentId: number,
+): Promise<VerificationInput['workflowTrigger'] | undefined> {
+  const existing = await pool.query<{ workflow_trigger_config: VerificationInput['workflowTrigger'] | null }>(
+    `SELECT workflow_trigger_config FROM deployments WHERE id = $1`,
+    [deploymentId],
+  )
+  const cached = existing.rows[0]?.workflow_trigger_config
+  if (cached?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) {
+    return cached
+  }
+  return undefined
+}
+
+export async function backfillWorkflowTriggerConfig(
+  deploymentId: number,
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+  currentConfig?: VerificationInput['workflowTrigger'] | null,
+): Promise<boolean> {
+  if (!triggerUrl) return false
+  if (currentConfig?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) return false
+
+  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+  if (!workflowTrigger) return false
+
+  await pool.query(`UPDATE deployments SET workflow_trigger_config = $1::jsonb WHERE id = $2`, [
+    JSON.stringify(workflowTrigger),
+    deploymentId,
+  ])
+  return true
 }
 
 async function getAppSettings(monitoredAppId: number): Promise<{
@@ -895,6 +925,7 @@ interface BulkFetchProgress {
   processed: number
   skipped: number
   fetched: number
+  workflowTriggersFetched: number
   errors: number
 }
 
@@ -919,7 +950,7 @@ export async function fetchVerificationDataForAllDeployments(
   let query = `
     WITH ordered_deployments AS (
       SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
-             d.environment_name, ma.default_branch, d.created_at,
+             d.environment_name, d.trigger_url, d.workflow_trigger_config, ma.default_branch, d.created_at,
              LAG(d.commit_sha) OVER (
                PARTITION BY d.environment_name, d.detected_github_owner, d.detected_github_repo_name
                ORDER BY d.created_at ASC
@@ -977,6 +1008,7 @@ export async function fetchVerificationDataForAllDeployments(
     processed: 0,
     skipped: 0,
     fetched: 0,
+    workflowTriggersFetched: 0,
     errors: 0,
     errorDetails: [],
   }
@@ -996,6 +1028,23 @@ export async function fetchVerificationDataForAllDeployments(
       const owner = deployment.detected_github_owner
       const repo = deployment.detected_github_repo_name
       const commitSha = deployment.commit_sha
+
+      const workflowTriggerFetched = await backfillWorkflowTriggerConfig(
+        deployment.id,
+        owner,
+        repo,
+        deployment.trigger_url,
+        deployment.workflow_trigger_config,
+      )
+      if (workflowTriggerFetched) {
+        result.workflowTriggersFetched++
+        if (jobId) {
+          await logSyncJobMessage(jobId, 'info', `Hentet workflow-trigger for deployment ${deployment.id}`, {
+            commitSha: commitSha.substring(0, 7),
+            repo: `${owner}/${repo}`,
+          })
+        }
+      }
 
       if (!deployment.default_branch) {
         result.skipped++
@@ -1069,7 +1118,7 @@ export async function fetchVerificationDataForAllDeployments(
     await logSyncJobMessage(
       jobId,
       'info',
-      `Datahenting fullført: ${result.fetched} hentet, ${result.skipped} hoppet over, ${result.errors} feil`,
+      `Datahenting fullført: ${result.fetched} hentet, ${result.skipped} hoppet over, ${result.workflowTriggersFetched} workflow-triggere hentet, ${result.errors} feil`,
     )
   }
 

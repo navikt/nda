@@ -12,6 +12,7 @@ export {
   getWorkflowTriggerConfig,
   haveSameCommitTree,
   isCommitOnBranch,
+  WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
   type WorkflowTriggerConfig,
 } from './git.server'
 export { lookupLegacyByCommit, lookupLegacyByPR } from './legacy.server'
