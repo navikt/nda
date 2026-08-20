@@ -10,12 +10,14 @@ export type DeploymentDetailsGridProps = {
   deployment: LoaderData['deployment']
   userMappings: LoaderData['userMappings']
   previousDeploymentForDiff: LoaderData['previousDeploymentForDiff']
+  workflowTrigger: LoaderData['workflowTrigger']
 }
 
 export function DeploymentDetailsGrid({
   deployment,
   userMappings,
   previousDeploymentForDiff,
+  workflowTrigger,
 }: DeploymentDetailsGridProps) {
   const hasPreviousCommit = Boolean(previousDeploymentForDiff?.commit_sha)
   const isSameCommit = hasPreviousCommit && previousDeploymentForDiff?.commit_sha === deployment.commit_sha
@@ -260,6 +262,34 @@ export function DeploymentDetailsGrid({
           </>
         )}
       </HGrid>
+
+      {workflowTrigger && (
+        <VStack gap="space-4">
+          <Detail>Hvordan leveransen ble startet</Detail>
+          <HStack gap="space-8" align="center" wrap>
+            <BodyShort style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+              {workflowTrigger.workflowPath.split('/').pop()}
+            </BodyShort>
+            <Tag data-color="info" variant="outline" size="small">
+              {workflowTrigger.triggerEvent}
+            </Tag>
+          </HStack>
+          <Detail>Trigger-konfigurasjon (on:) fra workflow-filen</Detail>
+          <pre
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '0.8125rem',
+              margin: 0,
+              padding: 'var(--ax-space-16)',
+              overflowX: 'auto',
+              backgroundColor: 'var(--ax-bg-subtle)',
+              borderRadius: 'var(--ax-border-radius-medium)',
+            }}
+          >
+            <code>{workflowTrigger.triggerYaml}</code>
+          </pre>
+        </VStack>
+      )}
     </>
   )
 }

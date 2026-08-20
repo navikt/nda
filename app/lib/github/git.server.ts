@@ -156,6 +156,69 @@ export async function getBranchFromWorkflowRun(
   }
 }
 
+export type WorkflowTriggerConfig = {
+  workflowPath: string
+  triggerEvent: string
+  triggerYaml: string
+}
+
+function extractTriggerBlock(workflowContent: string): string | null {
+  const lines = workflowContent.split('\n')
+  const startIndex = lines.findIndex((line) => /^on:/.test(line) || /^["']?on["']?:/.test(line))
+  if (startIndex === -1) return null
+
+  const triggerLines = [lines[startIndex]]
+  for (let i = startIndex + 1; i < lines.length; i++) {
+    const line = lines[i]
+    const isTopLevelKey = /^\S/.test(line)
+    if (isTopLevelKey) break
+    triggerLines.push(line)
+  }
+
+  while (triggerLines.length > 1 && triggerLines[triggerLines.length - 1].trim() === '') {
+    triggerLines.pop()
+  }
+
+  return triggerLines.join('\n')
+}
+
+export async function getWorkflowTriggerConfig(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+): Promise<WorkflowTriggerConfig | null> {
+  const match = triggerUrl?.match(/\/actions\/runs\/(\d+)/)
+  if (!match) return null
+  const runId = parseInt(match[1], 10)
+
+  try {
+    const client = getGitHubClient()
+    const run = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
+    const workflowPath = run.data.path
+    const triggerEvent = run.data.event
+    const ref = run.data.head_sha
+    if (!workflowPath) return null
+
+    const contentResponse = await client.repos.getContent({ owner, repo, path: workflowPath, ref })
+    const fileData = contentResponse.data
+    if (Array.isArray(fileData) || fileData.type !== 'file' || !fileData.content) return null
+
+    const workflowContent = Buffer.from(fileData.content, 'base64').toString('utf-8')
+    const triggerYaml = extractTriggerBlock(workflowContent)
+    if (!triggerYaml) return null
+
+    return { workflowPath, triggerEvent, triggerYaml }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to get workflow trigger config for run ${runId} in ${owner}/${repo}:`, {
+      error: message,
+      stack_trace: stack,
+    })
+    return null
+  }
+}
+
 export async function getRepositoryDefaultBranch(owner: string, repo: string): Promise<string | null> {
   try {
     const client = getGitHubClient()

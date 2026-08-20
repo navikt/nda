@@ -46,6 +46,7 @@ export interface Deployment {
   slack_message_ts: string | null
   slack_channel_id: string | null
   slack_deploy_message_ts: string | null
+  workflow_trigger_config: { workflowPath: string; triggerEvent: string; triggerYaml: string } | null
 }
 
 export interface GitHubPRData {

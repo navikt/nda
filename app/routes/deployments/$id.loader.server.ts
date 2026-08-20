@@ -301,6 +301,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     capabilities,
     verificationRun,
     nearbyDeployments,
+    workflowTrigger: deployment.workflow_trigger_config,
     slackConfig: {
       enabled: app.slack_notifications_enabled,
       channelId: app.slack_channel_id,
