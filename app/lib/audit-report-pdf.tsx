@@ -657,7 +657,11 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
                   <Text style={[styles.tableHeaderCell, styles.r2col8]}>Nais ID</Text>
                 </View>
                 {monthDeployments.map((d, idx) => (
-                  <View key={d.id} style={[styles.deploymentCard, idx % 2 === 1 ? styles.deploymentCardAlt : {}]}>
+                  <View
+                    key={d.id}
+                    style={[styles.deploymentCard, idx % 2 === 1 ? styles.deploymentCardAlt : {}]}
+                    wrap={false}
+                  >
                     {/* Row 1: #, Dato, Tittel */}
                     <View style={styles.deploymentRow1}>
                       <Text style={[styles.tableCell, styles.r1col1]}>
