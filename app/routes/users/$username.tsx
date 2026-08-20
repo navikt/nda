@@ -392,6 +392,7 @@ export default function UserPage() {
         hasFilters={hasFilters}
         availableBoards={availableBoards}
         isOwnProfile={isOwnProfile}
+        canPrefillOwnMapping={canPrefillOwnMapping}
         landingPage={landingPage}
         allSections={allSections}
         actionData={actionData}

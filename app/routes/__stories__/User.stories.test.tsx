@@ -18,7 +18,8 @@ vi.mock('~/components/DeploymentActivityChart', () => ({
   DeploymentActivityChart: () => null,
 }))
 
-const { Default, NoMapping, PartialMapping, NoDeployments, OwnProfile, WithGoalLinking } = composeStories(stories)
+const { Default, NoMapping, PartialMapping, NoDeployments, OwnProfile, OwnProfileWithoutGithub, WithGoalLinking } =
+  composeStories(stories)
 
 describe('User story baseline characterization', () => {
   it('renders default story with identity cards and deployment list', () => {
@@ -67,6 +68,13 @@ describe('User story baseline characterization', () => {
     expect(html).toContain('Alle seksjoner')
     expect(html).toContain('Seksjon A&amp;Y')
     expect(html).toContain('Pensjon')
+  })
+
+  it('renders mapping prompt for own profile without github account', () => {
+    const html = renderToStaticMarkup(<OwnProfileWithoutGithub />)
+
+    expect(html).toContain('Profilen din er ikke knyttet til en GitHub-konto.')
+    expect(html).toContain('Opprett mapping')
   })
 
   it('renders goal linking actions when boards are available', () => {
