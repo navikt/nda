@@ -1,3 +1,5 @@
+import type { WorkflowTriggerConfig } from '~/lib/github/git.server'
+
 export const CURRENT_SCHEMA_VERSION = 5
 
 export function assertNever(value: never, message?: string): never {
@@ -354,6 +356,8 @@ export interface VerificationInput {
     detectedBranches: string[]
     prNumbers: number[]
   }
+
+  workflowTrigger?: WorkflowTriggerConfig
 }
 
 export interface ImplicitApprovalSettings {
@@ -391,6 +395,8 @@ export interface VerificationResult {
   detectedBranchName?: string
 
   detectedTitle?: string
+
+  workflowTrigger?: WorkflowTriggerConfig
 }
 
 export interface UnverifiedCommit {

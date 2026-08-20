@@ -18,6 +18,7 @@ import {
   getDetailedPullRequestInfo,
   getPullRequestForCommit,
   getSingleCommitMessage,
+  getWorkflowTriggerConfig,
   haveSameCommitTree,
   isCommitOnBranch,
 } from '~/lib/github'
@@ -176,6 +177,8 @@ export async function fetchVerificationData(
   const detectedBranchName: string | undefined =
     deployedPr?.metadata.headBranch ?? (await getBranchFromWorkflowRun(owner, repo, triggerUrl)) ?? undefined
 
+  const workflowTrigger = await fetchWorkflowTriggerConfig(deploymentId, owner, repo, triggerUrl, options)
+
   const rawFirstCommitMessage = await resolveRawCommitMessage({
     deployedPr,
     commitsBetween,
@@ -208,12 +211,36 @@ export async function fetchVerificationData(
     nearbyApprovedDeployWithSameCommit,
     nearbyApprovedDeploy,
     branchMismatch,
+    workflowTrigger,
     dataFreshness: {
       deployedPrFetchedAt: deployedPr ? new Date() : null,
       commitsFetchedAt: commitsBetween.length > 0 ? new Date() : null,
       schemaVersion: CURRENT_SCHEMA_VERSION,
     },
   }
+}
+
+async function fetchWorkflowTriggerConfig(
+  deploymentId: number,
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+  options?: FetchOptions,
+): Promise<VerificationInput['workflowTrigger']> {
+  if (!triggerUrl) return undefined
+
+  if (!options?.forceRefresh) {
+    const existing = await pool.query<{ workflow_trigger_config: VerificationInput['workflowTrigger'] | null }>(
+      `SELECT workflow_trigger_config FROM deployments WHERE id = $1`,
+      [deploymentId],
+    )
+    if (existing.rows[0]?.workflow_trigger_config) {
+      return existing.rows[0].workflow_trigger_config
+    }
+  }
+
+  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+  return workflowTrigger ?? undefined
 }
 
 async function getAppSettings(monitoredAppId: number): Promise<{

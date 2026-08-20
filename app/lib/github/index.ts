@@ -7,9 +7,12 @@ export {
 export {
   getBranchFromWorkflowRun,
   getCommitsBetween,
+  getRepositoryDefaultBranch,
   getSingleCommitMessage,
+  getWorkflowTriggerConfig,
   haveSameCommitTree,
   isCommitOnBranch,
+  type WorkflowTriggerConfig,
 } from './git.server'
 export { lookupLegacyByCommit, lookupLegacyByPR } from './legacy.server'
 export {

@@ -64,6 +64,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
     slackConfig,
     registeredRepos,
     managingTeams,
+    workflowTrigger,
   } = loaderData
   const [searchParams] = useSearchParams()
   const navigation = useNavigation()
@@ -407,6 +408,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
         deployment={deployment}
         userMappings={userMappings}
         previousDeploymentForDiff={previousDeploymentForDiff}
+        workflowTrigger={workflowTrigger}
       />
       {/* PR Approvers - shown prominently before the accordion */}
       {deployment.github_pr_data?.reviewers?.some((r) => r.state === 'APPROVED') && (

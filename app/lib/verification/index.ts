@@ -35,6 +35,9 @@ function applyPassthroughFields(result: VerificationResult, input: VerificationI
   if (input.detectedTitle) {
     result.detectedTitle = input.detectedTitle
   }
+  if (input.workflowTrigger) {
+    result.workflowTrigger = input.workflowTrigger
+  }
 }
 
 function deriveDetectedTitle(
