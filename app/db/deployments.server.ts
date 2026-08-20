@@ -5,6 +5,7 @@ import {
   PENDING_STATUSES,
   PENDING_STATUSES_SQL,
 } from '~/lib/four-eyes-status'
+import type { WorkflowTriggerConfig } from '~/lib/github'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { baselineActionSql } from './baseline-action'
 import { pool } from './connection.server'
@@ -46,7 +47,7 @@ export interface Deployment {
   slack_message_ts: string | null
   slack_channel_id: string | null
   slack_deploy_message_ts: string | null
-  workflow_trigger_config: { workflowPath: string; triggerEvent: string; triggerYaml: string } | null
+  workflow_trigger_config: (Omit<WorkflowTriggerConfig, 'schemaVersion'> & { schemaVersion?: number }) | null
 }
 
 export interface GitHubPRData {

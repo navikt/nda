@@ -156,10 +156,13 @@ export async function getBranchFromWorkflowRun(
   }
 }
 
+export const WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION = 1
+
 export type WorkflowTriggerConfig = {
   workflowPath: string
   triggerEvent: string
   triggerYaml: string
+  schemaVersion: number
 }
 
 function extractTriggerBlock(workflowContent: string): string | null {
@@ -207,7 +210,7 @@ export async function getWorkflowTriggerConfig(
     const triggerYaml = extractTriggerBlock(workflowContent)
     if (!triggerYaml) return null
 
-    return { workflowPath, triggerEvent, triggerYaml }
+    return { workflowPath, triggerEvent, triggerYaml, schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const stack = error instanceof Error ? error.stack : undefined

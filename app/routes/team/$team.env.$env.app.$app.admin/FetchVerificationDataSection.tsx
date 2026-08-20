@@ -180,6 +180,10 @@ export function FetchVerificationDataSection({
                   </Detail>
                   <Detail>Hentet: {(fetchJobStatus.result as Record<string, number>).fetched ?? 0}</Detail>
                   <Detail>Hoppet over: {(fetchJobStatus.result as Record<string, number>).skipped ?? 0}</Detail>
+                  <Detail>
+                    Workflow-triggere hentet:{' '}
+                    {(fetchJobStatus.result as Record<string, number>).workflowTriggersFetched ?? 0}
+                  </Detail>
                   {((fetchJobStatus.result as Record<string, number>).errors ?? 0) > 0 && (
                     <Detail>
                       <span style={{ color: 'var(--ax-text-danger)' }}>
