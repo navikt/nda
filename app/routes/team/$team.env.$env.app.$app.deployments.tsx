@@ -18,6 +18,7 @@ import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { serializeUserLookups } from '~/lib/user-display'
+import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 import type { Route } from './+types/$team.env.$env.app.$app.deployments'
 
 export function meta({ loaderData: data }: Route.MetaArgs) {
@@ -41,6 +42,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const goalObjectiveId = goalParam.startsWith('obj:') ? parseInt(goalParam.slice(4), 10) : undefined
   const deployer = url.searchParams.get('deployer') || undefined
   const sha = url.searchParams.get('sha') || undefined
+  const triggerEvent = url.searchParams.get('trigger') || undefined
+  const workflowPath = url.searchParams.get('workflowFile') || undefined
   const period = (url.searchParams.get('period') || 'last-week') as TimePeriod
   const showGroup = url.searchParams.get('group') === 'true'
   const teamFilter = url.searchParams.get('team') || ''
@@ -109,6 +112,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     per_page: 20,
     four_eyes_status: status,
     method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
+    workflow_trigger_event: triggerEvent,
+    workflow_path: workflowPath,
     goal_filter: goal && ['missing', 'linked'].includes(goal) ? goal : undefined,
     goal_objective_id: goalObjectiveId && !Number.isNaN(goalObjectiveId) ? goalObjectiveId : undefined,
     deployer_username: isUnmappedFilter ? undefined : deployer,
@@ -129,19 +134,25 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const errorDeploymentIds = result.deployments.filter((d) => d.four_eyes_status === 'error').map((d) => d.id)
   const appIds = showGroup && hasGroup ? [app.id, ...siblings.map((s) => s.id)] : [app.id]
 
-  const [errorReasonsResult, allDeployersResult, allContributorsResult, currentUserMapping, goalOptions] =
-    await Promise.all([
-      errorDeploymentIds.length > 0
-        ? pool.query(
-            `SELECT DISTINCT ON (deployment_id) deployment_id, result
+  const [
+    errorReasonsResult,
+    allDeployersResult,
+    allContributorsResult,
+    currentUserMapping,
+    goalOptions,
+    workflowTriggerOptionsResult,
+  ] = await Promise.all([
+    errorDeploymentIds.length > 0
+      ? pool.query(
+          `SELECT DISTINCT ON (deployment_id) deployment_id, result
            FROM verification_runs
            WHERE deployment_id = ANY($1)
            ORDER BY deployment_id, run_at DESC`,
-            [errorDeploymentIds],
-          )
-        : Promise.resolve({ rows: [] as any[] }),
-      pool.query(
-        `SELECT DISTINCT d.deployer_username
+          [errorDeploymentIds],
+        )
+      : Promise.resolve({ rows: [] as any[] }),
+    pool.query(
+      `SELECT DISTINCT d.deployer_username
        FROM deployments d
        INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE d.monitored_app_id = ANY($1)
@@ -149,10 +160,10 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
          AND d.deployer_username != ''
          AND (ma.audit_start_year IS NULL OR d.created_at >= make_date(ma.audit_start_year, 1, 1))
        ORDER BY d.deployer_username`,
-        [appIds],
-      ),
-      pool.query(
-        `SELECT username FROM (
+      [appIds],
+    ),
+    pool.query(
+      `SELECT username FROM (
          SELECT d.deployer_username AS username
          FROM deployments d
          INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
@@ -175,11 +186,22 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
            AND (ma.audit_start_year IS NULL OR d.created_at >= make_date(ma.audit_start_year, 1, 1))
        ) sub
        WHERE username IS NOT NULL AND username != ''`,
-        [appIds],
-      ),
-      currentUser?.navIdent ? getUserByIdentifier(currentUser.navIdent) : Promise.resolve(null),
-      getLinkedObjectivesForApps(appIds),
-    ])
+      [appIds],
+    ),
+    currentUser?.navIdent ? getUserByIdentifier(currentUser.navIdent) : Promise.resolve(null),
+    getLinkedObjectivesForApps(appIds),
+    pool.query(
+      `SELECT DISTINCT
+           d.workflow_trigger_config ->> 'triggerEvent' AS trigger_event,
+           d.workflow_trigger_config ->> 'workflowPath' AS workflow_path
+       FROM deployments d
+       INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+       WHERE d.monitored_app_id = ANY($1)
+         AND d.workflow_trigger_config IS NOT NULL
+         AND (ma.audit_start_year IS NULL OR d.created_at >= make_date(ma.audit_start_year, 1, 1))`,
+      [appIds],
+    ),
+  ])
 
   const errorReasons: Record<number, string> = Object.fromEntries(
     errorReasonsResult.rows
@@ -238,6 +260,22 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     teamOptions.push({ value: t.slug, label: t.name })
   }
 
+  const triggerEventOptions = [
+    ...new Set(
+      workflowTriggerOptionsResult.rows.map((r: any) => r.trigger_event as string | null).filter(Boolean) as string[],
+    ),
+  ]
+    .map((value) => ({ value, label: getWorkflowTriggerLabel(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'no'))
+
+  const workflowFileOptions = [
+    ...new Set(
+      workflowTriggerOptionsResult.rows.map((r: any) => r.workflow_path as string | null).filter(Boolean) as string[],
+    ),
+  ]
+    .map((value) => ({ value, label: value.split('/').pop() ?? value }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'no'))
+
   return {
     app,
     userMappings: serializeUserLookups(userMappings),
@@ -252,6 +290,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     teamFilterEmptyReason,
     hasUnmappedDeployers,
     goalOptions,
+    triggerEventOptions,
+    workflowFileOptions,
     ...result,
   }
 }
@@ -275,6 +315,8 @@ export default function AppDeployments() {
     teamFilterEmptyReason,
     hasUnmappedDeployers,
     goalOptions,
+    triggerEventOptions,
+    workflowFileOptions,
   } = useLoaderData<typeof loader>()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -283,6 +325,8 @@ export default function AppDeployments() {
   const currentGoal = searchParams.get('goal') || ''
   const currentDeployer = searchParams.get('deployer') || ''
   const currentSha = searchParams.get('sha') || ''
+  const currentTrigger = searchParams.get('trigger') || ''
+  const currentWorkflowFile = searchParams.get('workflowFile') || ''
   const currentPeriod = searchParams.get('period') || 'last-week'
   const teamParam = searchParams.get('team') || ''
   const currentTeam = teamParam === 'mine' && !teamOptions.some((o) => o.value === 'mine') ? '' : teamParam
@@ -343,9 +387,13 @@ export default function AppDeployments() {
         currentDeployer={currentDeployer}
         currentSha={currentSha}
         currentTeam={currentTeam}
+        currentTrigger={currentTrigger}
+        currentWorkflowFile={currentWorkflowFile}
         deployerOptions={deployerOptions}
         teamOptions={teamOptions}
         goalOptions={goalOptions}
+        triggerEventOptions={triggerEventOptions}
+        workflowFileOptions={workflowFileOptions}
         hasUnmappedDeployers={hasUnmappedDeployers}
         currentUserGithub={currentUserGithub}
         onFilterChange={updateFilter}

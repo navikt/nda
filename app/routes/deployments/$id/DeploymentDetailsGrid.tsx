@@ -2,8 +2,8 @@ import { CheckmarkIcon, XMarkIcon } from '@navikt/aksel-icons'
 import { BodyShort, CopyButton, Detail, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
+import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 import type { Route } from '../+types/$id'
-import { getWorkflowTriggerLabel } from './workflow-trigger-label'
 
 type LoaderData = Route.ComponentProps['loaderData']
 

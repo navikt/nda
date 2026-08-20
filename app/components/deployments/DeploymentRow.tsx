@@ -7,6 +7,7 @@ import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import type { UserLookupMap } from '~/lib/user-display'
+import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 import styles from '~/styles/common.module.css'
 
 interface DeploymentData {
@@ -24,6 +25,7 @@ interface DeploymentData {
     merged_by?: { username?: string } | null
     [key: string]: unknown
   } | null
+  workflow_trigger_config: { workflowPath: string; triggerEvent: string } | null
   four_eyes_status: string
   has_goal_link?: boolean
   team_slug: string
@@ -147,10 +149,22 @@ export function DeploymentRow({
                 )}
               </Detail>
             )}
+            {deployment.workflow_trigger_config && (
+              <Detail textColor="subtle" style={{ fontFamily: 'monospace' }}>
+                {deployment.workflow_trigger_config.workflowPath.split('/').pop()}
+              </Detail>
+            )}
           </HStack>
-          <Button as={Link} to={detailUrl} variant="tertiary" size="small">
-            Vis
-          </Button>
+          <HStack gap="space-8" align="center">
+            {deployment.workflow_trigger_config && (
+              <Tag data-color="info" variant="outline" size="xsmall">
+                {getWorkflowTriggerLabel(deployment.workflow_trigger_config.triggerEvent)}
+              </Tag>
+            )}
+            <Button as={Link} to={detailUrl} variant="tertiary" size="small">
+              Vis
+            </Button>
+          </HStack>
         </HStack>
 
         {/* Error reason for deployments with error status */}
