@@ -3,6 +3,7 @@ import { BodyShort, CopyButton, Detail, Heading, HGrid, HStack, Tag, VStack } fr
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
 import type { Route } from '../+types/$id'
+import { getWorkflowTriggerLabel } from './workflow-trigger-label'
 
 type LoaderData = Route.ComponentProps['loaderData']
 
@@ -271,23 +272,9 @@ export function DeploymentDetailsGrid({
               {workflowTrigger.workflowPath.split('/').pop()}
             </BodyShort>
             <Tag data-color="info" variant="outline" size="small">
-              {workflowTrigger.triggerEvent}
+              {getWorkflowTriggerLabel(workflowTrigger.triggerEvent)}
             </Tag>
           </HStack>
-          <Detail>Trigger-konfigurasjon (on:) fra workflow-filen</Detail>
-          <pre
-            style={{
-              fontFamily: 'monospace',
-              fontSize: '0.8125rem',
-              margin: 0,
-              padding: 'var(--ax-space-16)',
-              overflowX: 'auto',
-              backgroundColor: 'var(--ax-bg-subtle)',
-              borderRadius: 'var(--ax-border-radius-medium)',
-            }}
-          >
-            <code>{workflowTrigger.triggerYaml}</code>
-          </pre>
         </VStack>
       )}
     </>
