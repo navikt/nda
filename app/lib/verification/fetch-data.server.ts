@@ -14,6 +14,7 @@ import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-stat
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import {
   getBranchFromWorkflowRun,
+  getChecksForCommit,
   getCommitsBetween,
   getDetailedPullRequestInfo,
   getPullRequestForCommit,
@@ -192,6 +193,8 @@ export async function fetchVerificationData(
     ? rawFirstCommitMessage.split('\n')[0].trim().slice(0, 500) || undefined
     : undefined
 
+  const commitChecks = await fetchCommitChecks(owner, repo, commitSha)
+
   return {
     deploymentId,
     commitSha,
@@ -213,11 +216,30 @@ export async function fetchVerificationData(
     nearbyApprovedDeploy,
     branchMismatch,
     workflowTrigger,
+    commitChecks,
     dataFreshness: {
       deployedPrFetchedAt: deployedPr ? new Date() : null,
       commitsFetchedAt: commitsBetween.length > 0 ? new Date() : null,
       schemaVersion: CURRENT_SCHEMA_VERSION,
     },
+  }
+}
+
+async function fetchCommitChecks(
+  owner: string,
+  repo: string,
+  commitSha: string,
+): Promise<VerificationInput['commitChecks']> {
+  try {
+    const result = await getChecksForCommit(owner, repo, commitSha)
+    if (!result) return null
+
+    await saveCommitSnapshot(owner, repo, commitSha, 'checks', result.rawSnapshot)
+
+    return { checked_sha: commitSha, checks_passed: result.checks_passed, checks: result.checks }
+  } catch (error) {
+    logger.warn(`Could not fetch commit checks for ${owner}/${repo}@${commitSha}: ${error}`)
+    return undefined
   }
 }
 

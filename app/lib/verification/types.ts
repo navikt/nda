@@ -1,3 +1,4 @@
+import type { CheckRun } from '~/lib/github'
 import type { WorkflowTriggerConfig } from '~/lib/github/git.server'
 
 export const CURRENT_SCHEMA_VERSION = 5
@@ -358,6 +359,12 @@ export interface VerificationInput {
   }
 
   workflowTrigger?: WorkflowTriggerConfig
+
+  commitChecks?: {
+    checked_sha: string
+    checks_passed: boolean | null
+    checks: CheckRun[]
+  } | null
 }
 
 export interface ImplicitApprovalSettings {
@@ -397,6 +404,12 @@ export interface VerificationResult {
   detectedTitle?: string
 
   workflowTrigger?: WorkflowTriggerConfig
+
+  commitChecks?: {
+    checked_sha: string
+    checks_passed: boolean | null
+    checks: CheckRun[]
+  } | null
 }
 
 export interface UnverifiedCommit {

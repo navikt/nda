@@ -226,16 +226,24 @@ export function DeploymentDetailsGrid({
                     Auto-merge ({deployment.github_pr_data.auto_merge.merge_method})
                   </Tag>
                 )}
-                {deployment.github_pr_data.checks_passed === true && (
-                  <Tag data-color="neutral" variant="outline" size="small">
-                    <CheckmarkIcon aria-hidden style={{ color: 'var(--ax-text-success)' }} /> Checks OK
-                  </Tag>
-                )}
-                {deployment.github_pr_data.checks_passed === false && (
-                  <Tag data-color="danger" variant="outline" size="small">
-                    <XMarkIcon aria-hidden /> Checks failed
-                  </Tag>
-                )}
+                {(() => {
+                  const checksPassed =
+                    deployment.commit_checks_data?.checks_passed ?? deployment.github_pr_data.checks_passed
+                  return (
+                    <>
+                      {checksPassed === true && (
+                        <Tag data-color="neutral" variant="outline" size="small">
+                          <CheckmarkIcon aria-hidden style={{ color: 'var(--ax-text-success)' }} /> Checks OK
+                        </Tag>
+                      )}
+                      {checksPassed === false && (
+                        <Tag data-color="danger" variant="outline" size="small">
+                          <XMarkIcon aria-hidden /> Checks failed
+                        </Tag>
+                      )}
+                    </>
+                  )
+                })()}
               </HStack>
             </VStack>
 

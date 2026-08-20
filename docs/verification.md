@@ -40,7 +40,7 @@ For hvert deployment sjekker systemet:
 | Kilde | Hva hentes | Når |
 |-------|-----------|-----|
 | **Nais API** | Deployments (app, tidspunkt, commit-SHA, miljø) | Periodisk hvert 5. minutt |
-| **GitHub API** | Commits mellom deployments, PR-metadata, reviews, godkjenninger | Ved verifisering av hvert deployment |
+| **GitHub API** | Commits mellom deployments, PR-metadata, reviews, godkjenninger, check runs | Ved verifisering av hvert deployment |
 | **GitHub API (repo metadata)** | `default_branch` for hver overvåket app | Periodisk, maks én gang per app per 24 timer |
 
 #### Auto-deteksjon av default_branch
@@ -325,10 +325,29 @@ Hvis alle tre kriterier er oppfylt → deploymentet godkjennes med metode `base_
 
 > **Koderef**: Funksjoner `isBaseBranchMergeCommit` og `shouldApproveWithBaseMerge` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts)
 
+### Checks — samlet kilde for alle leveransetyper
+
+GitHub Checks API (`checks.listForRef`) fungerer mot en vilkårlig commit-SHA, uavhengig av om commiten er del av en PR eller ikke. Derfor hentes check runs alltid mot `deployment.commit_sha` og lagres i `deployments.commit_checks_data` — dette gjelder **alle** leveransetyper (pull request, direct push og eventuelt andre), ikke bare direct push. Dette er **kun visningsdata** — check-status påvirker ikke fire-øyne-godkjenningsstatusen.
+
+`github_pr_data.checks`/`checks_passed`/`checks_ref` hentes ikke lenger aktivt (`getDetailedPullRequestInfo` setter disse til `null`/`[]` ved nye synkroniseringer), men beholdes i typen og databasen som **legacy fallback** for leveranser som ble synkronisert før denne omleggingen. UI (`PrDetailsAccordion.tsx`) viser `commit_checks_data.checks` når det finnes data der, og faller kun tilbake til `github_pr_data.checks` for eldre rader uten `commit_checks_data`.
+
+> **Koderef**: `fetchCommitChecks()` i [`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts), `getChecksForCommit()` i [`app/lib/github/pr.server.ts`](../app/lib/github/pr.server.ts). Loggcache for check-logger (`app/lib/sync/log-cache.server.ts`) leser fra begge kolonner.
+
+#### Langtidsarkivering av checks-data (11 år)
+
+Deployments må kunne vises korrekt i inntil 11 år, men GitHub sletter/roterer check-run-data etter en kortere periode og lar oss ikke hente på nytt. `deployments.commit_checks_data` er derfor kun en **derivert lesecache** (rask visning i UI), ikke arkivet. Selve arkivet er append-only rader i `github_commit_snapshots` (`data_type = 'checks'`), skrevet via `saveCommitSnapshot()` hver gang checks hentes — aldri overskrevet.
+
+Rådata som lagres i snapshotet (`ChecksSnapshotData` i `app/lib/github/checks-snapshot.ts`) er GitHubs check-run- og annotasjons-objekter i tilnærmet rå form, ikke bare feltene som brukes i dagens UI. Dette unngår at fremtidige UI-/typebehov mangler data som kunne vært lagret, men ikke ble det (se historikk: PR-checks sine `annotations` ble tidligere hentet, men aldri lagret noe sted). Snapshotet har et eget `schemaVersion`-felt (`CHECKS_SNAPSHOT_SCHEMA_VERSION`), uavhengig av det globale `CURRENT_SCHEMA_VERSION`-tallet som styrer ferskhet/re-fetch. `parseCheckRunsSnapshot()` tolker rådata basert på dette feltet — når `CheckRun`-typen endres i fremtiden, økes `CHECKS_SNAPSHOT_SCHEMA_VERSION` og det legges til en ny `case` i parseren, uten å røre allerede lagrede rader.
+
+`app/lib/__tests__/checks-snapshot-compat.test.ts` fryser et eksempel på schema v1-payload og verifiserer at parseren fortsatt kan tolke det — denne testen skal ikke endres når skjemaet utvides, kun suppleres med nye versjoner.
+
+GitHub sin REST API er selv date-versjonert (`X-GitHub-Api-Version`), med en stabil default (`2022-11-28` per i dag) som GitHub aktivt migrerer uversjonerte klienter videre fra ved behov. Vi pinner **ikke** en eksplisitt versjon — det ville krevd aktiv fornyelse før 24-måneders støttevinduet utløper, med fare for et hardt `410 Gone`-brudd om det glemmes, og additive endringer (nye felt) gjelder uansett alle versjoner samtidig. I stedet leser `fetchChecksForRefs()` responsheaderen `X-GitHub-Api-Version-Selected` og lagrer den i `ChecksSnapshotData.githubApiVersion` — rent observasjonelt, slik at enhver arkivert rad kan spores tilbake til nøyaktig hvilken GitHub API-versjon som produserte den. `Deprecation`/`Sunset`-responsheadere logges som advarsel dersom de dukker opp.
+
+> **Koderef**: `app/lib/github/checks-snapshot.ts` (`ChecksSnapshotData`, `parseCheckRunsSnapshot`, `mapRawCheckRunToCheckRun`), `saveCommitSnapshot()`-kallet i `fetchCommitChecks()` ([`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts)), `github_commit_snapshots`-tabellen ([`app/db/migrations/1770090000000_add-github-snapshots.sql`](../app/db/migrations/1770090000000_add-github-snapshots.sql)).
+
 ---
 
 ## Implisitt godkjenning
-
 Implisitt godkjenning er en konfigurerbar mekanisme som lar visse typer deployments bli godkjent uten eksplisitt PR-review. Innstillingen konfigureres per overvåket applikasjon.
 
 ### Moduser

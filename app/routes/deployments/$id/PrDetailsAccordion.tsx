@@ -19,34 +19,46 @@ import type { Route } from '../+types/$id'
 type LoaderData = Route.ComponentProps['loaderData']
 type Deployment = LoaderData['deployment']
 type GithubPrData = NonNullable<Deployment['github_pr_data']>
+type CommitChecksData = NonNullable<Deployment['commit_checks_data']>
 
 export type PrDetailsAccordionProps = {
   deployment: Deployment
-  githubPrData: GithubPrData
+  githubPrData: GithubPrData | null
+  commitChecksData?: CommitChecksData | null
   userMappings: LoaderData['userMappings']
 }
 
-export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: PrDetailsAccordionProps) {
+export function PrDetailsAccordion({
+  deployment,
+  githubPrData,
+  commitChecksData,
+  userMappings,
+}: PrDetailsAccordionProps) {
   const getUserDisplay = (githubUsername: string | undefined | null) => getUserDisplayName(githubUsername, userMappings)
+
+  const usingLegacyPrChecks = !(commitChecksData?.checks && commitChecksData.checks.length > 0)
+  const checks = usingLegacyPrChecks ? (githubPrData?.checks ?? null) : commitChecksData.checks
+  const checksRef = usingLegacyPrChecks ? githubPrData?.checks_ref : undefined
+  const mergedAt = githubPrData?.merged_at
 
   return (
     <Accordion>
       {/* Reviewers - includes requested and completed reviews */}
-      {((githubPrData.reviewers && githubPrData.reviewers.length > 0) ||
-        (githubPrData.requested_reviewers && githubPrData.requested_reviewers.length > 0) ||
-        (githubPrData.requested_teams && githubPrData.requested_teams.length > 0)) && (
+      {((githubPrData?.reviewers && githubPrData.reviewers.length > 0) ||
+        (githubPrData?.requested_reviewers && githubPrData.requested_reviewers.length > 0) ||
+        (githubPrData?.requested_teams && githubPrData.requested_teams.length > 0)) && (
         <Accordion.Item>
           <Accordion.Header>
             Reviewers (
-            {(githubPrData.reviewers?.length || 0) +
-              (githubPrData.requested_reviewers?.length || 0) +
-              (githubPrData.requested_teams?.length || 0)}
+            {(githubPrData?.reviewers?.length || 0) +
+              (githubPrData?.requested_reviewers?.length || 0) +
+              (githubPrData?.requested_teams?.length || 0)}
             )
           </Accordion.Header>
           <Accordion.Content>
             <VStack gap="space-8">
               {/* Completed reviews */}
-              {githubPrData.reviewers?.map((reviewer) => (
+              {githubPrData?.reviewers?.map((reviewer) => (
                 <HStack key={`${reviewer.username}:${reviewer.submitted_at}`} gap="space-8" align="center">
                   {reviewer.state === 'APPROVED' && (
                     <CheckmarkIcon aria-hidden style={{ color: 'var(--ax-text-success)' }} />
@@ -70,7 +82,7 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
               ))}
 
               {/* Requested reviewers (pending) */}
-              {githubPrData.requested_reviewers?.map((r) => (
+              {githubPrData?.requested_reviewers?.map((r) => (
                 <HStack key={`pending:${r.username}`} gap="space-8" align="center">
                   <CircleIcon aria-hidden style={{ color: 'var(--ax-text-warning)' }} />
                   <ExternalLink href={`https://github.com/${r.username}`}>
@@ -80,7 +92,7 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
               ))}
 
               {/* Requested teams (pending) */}
-              {githubPrData.requested_teams?.map((t) => (
+              {githubPrData?.requested_teams?.map((t) => (
                 <HStack key={`team:${t.slug}`} gap="space-8" align="center">
                   <CircleIcon aria-hidden style={{ color: 'var(--ax-text-warning)' }} />
                   <span>{t.name}</span>
@@ -92,18 +104,18 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
       )}
 
       {/* GitHub Checks */}
-      {githubPrData.checks && githubPrData.checks.length > 0 && (
+      {checks && checks.length > 0 && (
         <Accordion.Item>
-          <Accordion.Header>GitHub Checks ({githubPrData.checks.length})</Accordion.Header>
+          <Accordion.Header>GitHub Checks ({checks.length})</Accordion.Header>
           <Accordion.Content>
             <VStack gap="space-12">
-              {githubPrData.checks_ref === 'head' && githubPrData.merged_at && (
+              {checksRef === 'head' && mergedAt && (
                 <Alert variant="info" size="small">
                   Sjekkene er hentet fra PR-branchen. Fra 20. juni 2026 hentes sjekker primært fra merge-commiten på
                   main når tilgjengelig. For eldre data vises sjekker fra PR-branchen.
                 </Alert>
               )}
-              {githubPrData.checks.map((check) => {
+              {checks.map((check) => {
                 const isSuccess = check.conclusion === 'success'
                 const isFailure =
                   check.conclusion === 'failure' ||
@@ -214,7 +226,7 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
       )}
 
       {/* PR Commits */}
-      {githubPrData.commits && githubPrData.commits.length > 0 && (
+      {githubPrData?.commits && githubPrData.commits.length > 0 && (
         <Accordion.Item>
           <Accordion.Header>Commits ({githubPrData.commits.length})</Accordion.Header>
           <Accordion.Content>
@@ -258,7 +270,7 @@ export function PrDetailsAccordion({ deployment, githubPrData, userMappings }: P
       )}
 
       {/* GitHub Comments */}
-      {githubPrData.comments && githubPrData.comments.length > 0 && (
+      {githubPrData?.comments && githubPrData.comments.length > 0 && (
         <Accordion.Item>
           <Accordion.Header>Kommentarer ({githubPrData.comments.length})</Accordion.Header>
           <Accordion.Content>

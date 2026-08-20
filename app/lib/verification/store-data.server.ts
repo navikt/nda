@@ -73,7 +73,8 @@ export async function updateDeploymentVerification(
        github_pr_data = COALESCE($5::jsonb, github_pr_data),
        title = COALESCE($6, $9, title),
        branch_name = COALESCE($8, branch_name),
-       workflow_trigger_config = COALESCE($10::jsonb, workflow_trigger_config)
+       workflow_trigger_config = COALESCE($10::jsonb, workflow_trigger_config),
+       commit_checks_data = COALESCE($11::jsonb, commit_checks_data)
      WHERE id = $3
        AND four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})`,
     [
@@ -99,6 +100,7 @@ export async function updateDeploymentVerification(
       result.detectedBranchName ?? null,
       result.detectedTitle ?? null,
       result.workflowTrigger ? JSON.stringify(result.workflowTrigger) : null,
+      result.commitChecks !== undefined ? JSON.stringify(result.commitChecks) : null,
     ],
   )
 

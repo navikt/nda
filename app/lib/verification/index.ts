@@ -38,6 +38,9 @@ function applyPassthroughFields(result: VerificationResult, input: VerificationI
   if (input.workflowTrigger) {
     result.workflowTrigger = input.workflowTrigger
   }
+  if (input.commitChecks !== undefined) {
+    result.commitChecks = input.commitChecks
+  }
 }
 
 function deriveDetectedTitle(
