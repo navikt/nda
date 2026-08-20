@@ -20,6 +20,7 @@ export {
   backfillWorkflowTriggerConfigForAllApps,
   countDeploymentsMissingWorkflowTriggerConfig,
   fetchVerificationDataForAllDeployments,
+  refreshCommitChecksOnly,
   type WorkflowTriggerBackfillResult,
 } from './fetch-data.server'
 
@@ -42,6 +43,12 @@ function applyPassthroughFields(result: VerificationResult, input: VerificationI
   }
   if (input.workflowTrigger) {
     result.workflowTrigger = input.workflowTrigger
+  }
+  if (input.commitChecks !== undefined) {
+    result.commitChecks = input.commitChecks
+  }
+  if (input.commitChecksAttempted !== undefined) {
+    result.commitChecksAttempted = input.commitChecksAttempted
   }
 }
 

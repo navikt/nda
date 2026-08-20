@@ -1,4 +1,9 @@
 export {
+  CHECKS_SNAPSHOT_SCHEMA_VERSION,
+  type ChecksSnapshotData,
+  parseCheckRunsSnapshot,
+} from './checks-snapshot'
+export {
   type GitHubRateLimitStatus,
   getGitHubClient,
   getGitHubRateLimitRemaining,
@@ -17,6 +22,8 @@ export {
 } from './git.server'
 export { lookupLegacyByCommit, lookupLegacyByPR } from './legacy.server'
 export {
+  type CheckRun,
+  getChecksForCommit,
   getDetailedPullRequestInfo,
   getMergedPullRequestsInWindow,
   getPullRequestForCommit,

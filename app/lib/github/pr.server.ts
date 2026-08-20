@@ -1,6 +1,15 @@
 import type { GitHubPRData } from '~/db/deployments.server'
 import { isDependabotUser } from '~/lib/dependabot'
 import { logger } from '~/lib/logger.server'
+import {
+  CHECKS_SNAPSHOT_SCHEMA_VERSION,
+  type ChecksSnapshotData,
+  computeChecksPassed,
+  isChecksResultDefinitive,
+  mapRawCheckRunToCheckRun,
+  type RawCheckAnnotation,
+  type RawCheckRun,
+} from './checks-snapshot'
 import { getGitHubClient } from './client.server'
 
 const ANNOTATION_CONCURRENCY_LIMIT = 5
@@ -703,6 +712,118 @@ async function _verifyPullRequestFourEyes(
   }
 }
 
+export type CheckRun = GitHubPRData['checks'][number]
+
+type OctokitClient = ReturnType<typeof getGitHubClient>
+
+async function fetchChecksForRefs(
+  client: OctokitClient,
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<{
+  checks_passed: boolean | null
+  checks: CheckRun[]
+  rawSnapshot: ChecksSnapshotData
+  isDefinitive: boolean
+}> {
+  const rawCheckRuns: RawCheckRun[] = []
+  let githubApiVersion: string | undefined
+
+  const captureApiVersionMetadata = (headers: Record<string, unknown>): void => {
+    githubApiVersion ??= headers['x-github-api-version-selected'] as string | undefined
+    const deprecation = headers.deprecation
+    const sunset = headers.sunset
+    if (deprecation || sunset) {
+      logger.warn(
+        `GitHub API version ${githubApiVersion} used for checks on ${owner}/${repo}@${ref} is closing down (deprecation=${deprecation}, sunset=${sunset})`,
+      )
+    }
+  }
+
+  const checkRunsWithAnnotations = await client.paginate(
+    client.checks.listForRef,
+    { owner, repo, ref, per_page: 100 },
+    (response) => {
+      captureApiVersionMetadata(response.headers)
+      return response.data
+    },
+  )
+
+  if (checkRunsWithAnnotations.length > 0) {
+    const annotationResults: Array<{
+      check: (typeof checkRunsWithAnnotations)[0]
+      annotations: RawCheckAnnotation[] | null
+      annotationsFetchFailed: boolean
+    }> = []
+
+    for (let i = 0; i < checkRunsWithAnnotations.length; i += ANNOTATION_CONCURRENCY_LIMIT) {
+      const batch = checkRunsWithAnnotations.slice(i, i + ANNOTATION_CONCURRENCY_LIMIT)
+      const batchResults = await Promise.all(
+        batch.map(async (check) => {
+          let annotations: RawCheckAnnotation[] | null = null
+          let annotationsFetchFailed = false
+          if (check.output?.annotations_count && check.output.annotations_count > 0) {
+            try {
+              annotations = await client.paginate(
+                client.checks.listAnnotations,
+                { owner, repo, check_run_id: check.id, per_page: 100 },
+                (response) => {
+                  captureApiVersionMetadata(response.headers)
+                  return response.data
+                },
+              )
+            } catch (error) {
+              annotationsFetchFailed = true
+              logger.warn(`Could not fetch annotations for check run ${check.id} on ${owner}/${repo}: ${error}`)
+            }
+          }
+          return { check, annotations, annotationsFetchFailed }
+        }),
+      )
+      annotationResults.push(...batchResults)
+    }
+
+    for (const { check, annotations, annotationsFetchFailed } of annotationResults) {
+      rawCheckRuns.push({ ...check, annotations, ...(annotationsFetchFailed ? { annotationsFetchFailed } : {}) })
+    }
+  }
+
+  const rawSnapshot: ChecksSnapshotData = {
+    schemaVersion: CHECKS_SNAPSHOT_SCHEMA_VERSION,
+    githubApiVersion,
+    checkRuns: rawCheckRuns,
+  }
+  const checks_passed = computeChecksPassed(rawCheckRuns)
+  const isDefinitive = isChecksResultDefinitive(rawCheckRuns)
+
+  return { checks_passed, checks: rawCheckRuns.map(mapRawCheckRunToCheckRun), rawSnapshot, isDefinitive }
+}
+
+export async function getChecksForCommit(
+  owner: string,
+  repo: string,
+  sha: string,
+  fallbackSha?: string | null,
+): Promise<{
+  checks_passed: boolean | null
+  checks: CheckRun[]
+  rawSnapshot: ChecksSnapshotData
+  matchedSha: string
+  isDefinitive: boolean
+} | null> {
+  const client = getGitHubClient()
+  const result = await fetchChecksForRefs(client, owner, repo, sha)
+  if (result.checks.length > 0) return { ...result, matchedSha: sha }
+
+  if (fallbackSha && fallbackSha !== sha) {
+    const fallbackResult = await fetchChecksForRefs(client, owner, repo, fallbackSha)
+    if (fallbackResult.checks.length > 0) return { ...fallbackResult, matchedSha: fallbackSha }
+  }
+
+  return null
+}
+
 export async function getDetailedPullRequestInfo(
   owner: string,
   repo: string,
@@ -773,121 +894,8 @@ export async function getDetailedPullRequestInfo(
       }
     }
 
-    let checks_passed: boolean | null = null
-    const checks: Array<{
-      id: number
-      name: string
-      status: string
-      conclusion: string | null
-      started_at: string | null
-      completed_at: string | null
-      html_url: string | null
-      head_sha: string
-      details_url: string | null
-      external_id: string | null
-      check_suite_id: number | null
-      app: { name: string; slug: string | null } | null
-      output: {
-        title: string | null
-        summary: string | null
-        text: string | null
-        annotations_count: number
-      } | null
-      annotations: Array<{
-        path: string | null
-        start_line: number
-        end_line: number
-        start_column: number | null
-        end_column: number | null
-        annotation_level: string
-        message: string
-        title: string | null
-        raw_details: string | null
-      }> | null
-    }> = []
-
-    try {
-      const primaryRef = pr.merge_commit_sha ?? pr.head.sha
-      let checksResponse = await client.checks.listForRef({ owner, repo, ref: primaryRef })
-
-      if (checksResponse.data.total_count === 0 && pr.merge_commit_sha) {
-        checksResponse = await client.checks.listForRef({ owner, repo, ref: pr.head.sha })
-      }
-
-      if (checksResponse.data.total_count > 0) {
-        checks_passed = checksResponse.data.check_runs.every(
-          (check) => check.conclusion === 'success' || check.conclusion === 'skipped',
-        )
-
-        const checkRunsWithAnnotations = checksResponse.data.check_runs
-        const annotationResults: Array<{
-          check: (typeof checkRunsWithAnnotations)[0]
-          annotations: (typeof checks)[number]['annotations']
-        }> = []
-
-        for (let i = 0; i < checkRunsWithAnnotations.length; i += ANNOTATION_CONCURRENCY_LIMIT) {
-          const batch = checkRunsWithAnnotations.slice(i, i + ANNOTATION_CONCURRENCY_LIMIT)
-          const batchResults = await Promise.all(
-            batch.map(async (check) => {
-              let annotations: (typeof checks)[number]['annotations'] = null
-              if (check.output?.annotations_count && check.output.annotations_count > 0) {
-                try {
-                  const allAnnotations = await client.paginate(client.checks.listAnnotations, {
-                    owner,
-                    repo,
-                    check_run_id: check.id,
-                    per_page: 100,
-                  })
-                  annotations = allAnnotations.map((a) => ({
-                    path: a.path ?? null,
-                    start_line: a.start_line,
-                    end_line: a.end_line,
-                    start_column: a.start_column ?? null,
-                    end_column: a.end_column ?? null,
-                    annotation_level: a.annotation_level ?? 'notice',
-                    message: a.message ?? '',
-                    title: a.title ?? null,
-                    raw_details: a.raw_details ?? null,
-                  }))
-                } catch (error) {
-                  logger.warn(`Could not fetch annotations for check ${check.id}: ${error}`)
-                }
-              }
-              return { check, annotations }
-            }),
-          )
-          annotationResults.push(...batchResults)
-        }
-
-        for (const { check, annotations } of annotationResults) {
-          checks.push({
-            id: check.id,
-            name: check.name,
-            status: check.status,
-            conclusion: check.conclusion,
-            started_at: check.started_at,
-            completed_at: check.completed_at,
-            html_url: check.html_url,
-            head_sha: check.head_sha,
-            details_url: check.details_url ?? null,
-            external_id: check.external_id ?? null,
-            check_suite_id: check.check_suite?.id ?? null,
-            app: check.app ? { name: check.app.name, slug: check.app.slug ?? null } : null,
-            output: check.output
-              ? {
-                  title: check.output.title,
-                  summary: check.output.summary,
-                  text: check.output.text,
-                  annotations_count: check.output.annotations_count,
-                }
-              : null,
-            annotations,
-          })
-        }
-      }
-    } catch (error) {
-      logger.warn(`Could not fetch check runs: ${error}`)
-    }
+    const checks_passed: boolean | null = null
+    const checks: CheckRun[] = []
 
     const commits = allCommitsData.map((commit) => ({
       sha: commit.sha,

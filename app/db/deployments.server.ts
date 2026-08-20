@@ -38,6 +38,7 @@ export interface Deployment {
   github_pr_number: number | null
   github_pr_url: string | null
   github_pr_data: GitHubPRData | null
+  commit_checks_data: CommitChecksData | null
   branch_name: string | null
   parent_commits: Array<{ sha: string }> | null
   unverified_commits: UnverifiedCommit[] | null
@@ -182,6 +183,12 @@ export interface GitHubPRData {
     created_at: string
     html_url: string
   }>
+}
+
+export interface CommitChecksData {
+  checked_sha: string
+  checks_passed: boolean | null
+  checks: GitHubPRData['checks']
 }
 
 export interface DeploymentWithApp extends Deployment {

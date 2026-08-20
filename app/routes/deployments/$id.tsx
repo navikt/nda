@@ -460,10 +460,11 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
         </VStack>
       )}
       {/* PR Details Accordion - Reviewers, Checks, Commits */}
-      {deployment.github_pr_data && (
+      {(deployment.github_pr_data || deployment.commit_checks_data) && (
         <PrDetailsAccordion
           deployment={deployment}
           githubPrData={deployment.github_pr_data}
+          commitChecksData={deployment.commit_checks_data}
           userMappings={userMappings}
         />
       )}

@@ -14,6 +14,7 @@ import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-stat
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import {
   getBranchFromWorkflowRun,
+  getChecksForCommit,
   getCommitsBetween,
   getDetailedPullRequestInfo,
   getPullRequestForCommit,
@@ -25,6 +26,7 @@ import {
 } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { buildBranchMismatch } from './branch-mismatch'
+import { updateDeploymentCommitChecks } from './store-data.server'
 import type { RepositoryStatus } from './types'
 import {
   type CompareData,
@@ -192,6 +194,21 @@ export async function fetchVerificationData(
     ? rawFirstCommitMessage.split('\n')[0].trim().slice(0, 500) || undefined
     : undefined
 
+  let commitChecks: VerificationInput['commitChecks']
+  let commitChecksAttempted: boolean | undefined
+  if (!options?.forceRefresh) {
+    const cached = await getCachedCommitChecks(deploymentId)
+    if (cached.isCached) {
+      commitChecks = cached.commitChecks
+      commitChecksAttempted = true
+    }
+  }
+  if (commitChecksAttempted === undefined) {
+    const fetched = await fetchCommitChecks(owner, repo, commitSha, deployedPr?.metadata.headSha)
+    commitChecks = fetched.commitChecks
+    commitChecksAttempted = fetched.attempted
+  }
+
   return {
     deploymentId,
     commitSha,
@@ -213,12 +230,89 @@ export async function fetchVerificationData(
     nearbyApprovedDeploy,
     branchMismatch,
     workflowTrigger,
+    commitChecks,
+    commitChecksAttempted,
     dataFreshness: {
       deployedPrFetchedAt: deployedPr ? new Date() : null,
       commitsFetchedAt: commitsBetween.length > 0 ? new Date() : null,
       schemaVersion: CURRENT_SCHEMA_VERSION,
     },
   }
+}
+
+async function resolvePrHeadShaFallback(
+  owner: string,
+  repo: string,
+  prNumber: number | null,
+): Promise<string | undefined> {
+  if (!prNumber) return undefined
+  const snapshots = await getAllLatestPrSnapshots(owner, repo, prNumber)
+  const metadata = snapshots.get('metadata')?.data as PrMetadata | undefined
+  return metadata?.headSha
+}
+
+export type CommitChecksFetchResult = {
+  commitChecks: VerificationInput['commitChecks']
+  attempted: boolean
+}
+
+export async function fetchCommitChecks(
+  owner: string,
+  repo: string,
+  commitSha: string,
+  fallbackSha?: string | null,
+): Promise<CommitChecksFetchResult> {
+  try {
+    const result = await getChecksForCommit(owner, repo, commitSha, fallbackSha)
+    if (!result) return { commitChecks: undefined, attempted: true }
+
+    await saveCommitSnapshot(owner, repo, result.matchedSha, 'checks', result.rawSnapshot)
+
+    return {
+      commitChecks: { checked_sha: result.matchedSha, checks_passed: result.checks_passed, checks: result.checks },
+      // Only a definitive result (no check runs found, or all check runs completed) counts as "attempted":
+      // otherwise the bulk backfill job would treat an in-progress check run as permanently resolved and
+      // never re-fetch it once the commit's checks actually finish.
+      attempted: result.isDefinitive,
+    }
+  } catch (error) {
+    logger.warn(`Could not fetch commit checks for ${owner}/${repo}@${commitSha}: ${error}`)
+    return { commitChecks: undefined, attempted: false }
+  }
+}
+
+/**
+ * Fetches and stores only commit_checks_data for a deployment that already has its
+ * other verification data (PR/compare snapshots), without re-running the full
+ * verification pipeline. Used both by the "fetch all deployments" admin backfill and
+ * by the periodic job that keeps polling checks for deployments whose four_eyes_status
+ * is already resolved (see reverifyPendingChecks() in app/lib/sync/github-verify.server.ts).
+ */
+export async function refreshCommitChecksOnly(
+  deploymentId: number,
+  owner: string,
+  repo: string,
+  commitSha: string,
+  githubPrNumber: number | null,
+): Promise<CommitChecksFetchResult> {
+  const fallbackSha = await resolvePrHeadShaFallback(owner, repo, githubPrNumber)
+  const result = await fetchCommitChecks(owner, repo, commitSha, fallbackSha)
+  await updateDeploymentCommitChecks(deploymentId, result.commitChecks, result.attempted)
+  return result
+}
+
+async function getCachedCommitChecks(
+  deploymentId: number,
+): Promise<{ isCached: true; commitChecks: VerificationInput['commitChecks'] } | { isCached: false }> {
+  const existing = await pool.query<{
+    commit_checks_data: VerificationInput['commitChecks'] | null
+    commit_checks_checked_at: Date | null
+  }>(`SELECT commit_checks_data, commit_checks_checked_at FROM deployments WHERE id = $1`, [deploymentId])
+  const row = existing.rows[0]
+  // commit_checks_checked_at is only ever set for a definitive result (see fetchCommitChecks above), so
+  // its presence means it's safe to reuse without a redundant GitHub call + duplicate archive snapshot.
+  if (!row?.commit_checks_checked_at) return { isCached: false }
+  return { isCached: true, commitChecks: row.commit_checks_data ?? undefined }
 }
 
 async function fetchWorkflowTriggerConfig(
@@ -1045,7 +1139,9 @@ export async function fetchVerificationDataForAllDeployments(
   let query = `
     WITH ordered_deployments AS (
       SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
-             d.environment_name, d.trigger_url, d.workflow_trigger_config, ma.default_branch, d.created_at,
+             d.environment_name, d.trigger_url, d.workflow_trigger_config, d.commit_checks_data,
+             d.commit_checks_checked_at, d.github_pr_number,
+             ma.default_branch, d.created_at,
              LAG(d.commit_sha) OVER (
                PARTITION BY d.environment_name, d.detected_github_owner, d.detected_github_repo_name
                ORDER BY d.created_at ASC
@@ -1069,7 +1165,8 @@ export async function fetchVerificationDataForAllDeployments(
     )
     SELECT od.*,
            (pr_snap.id IS NOT NULL) AS has_pr_snapshot,
-           (od.prev_commit_sha IS NULL OR cmp_snap.id IS NOT NULL) AS has_compare_snapshot
+           (od.prev_commit_sha IS NULL OR cmp_snap.id IS NOT NULL) AS has_compare_snapshot,
+           (od.commit_checks_checked_at IS NOT NULL) AS has_checks_data
     FROM ordered_deployments od
     LEFT JOIN LATERAL (
       SELECT id FROM github_commit_snapshots gcs
@@ -1149,16 +1246,33 @@ export async function fetchVerificationDataForAllDeployments(
       const baseBranch = deployment.default_branch
 
       const hasCurrentData = deployment.has_pr_snapshot && deployment.has_compare_snapshot
+      const hasChecksData = deployment.has_checks_data
 
-      if (hasCurrentData) {
+      if (hasCurrentData && hasChecksData) {
         result.skipped++
         logger.debug(`Hoppet over deployment ${deployment.id} (data finnes)`, {
           commitSha: commitSha.substring(0, 7),
           repo: `${owner}/${repo}`,
         })
+      } else if (hasCurrentData) {
+        const fetchStart = performance.now()
+        await refreshCommitChecksOnly(deployment.id, owner, repo, commitSha, deployment.github_pr_number)
+        const fetchDuration = Math.round(performance.now() - fetchStart)
+        result.fetched++
+        if (jobId) {
+          await logSyncJobMessage(jobId, 'info', `Hentet checks for deployment ${deployment.id}`, {
+            commitSha: commitSha.substring(0, 7),
+            repo: `${owner}/${repo}`,
+          })
+        }
+        logger.debug(`Hentet checks for deployment ${deployment.id}`, {
+          commitSha: commitSha.substring(0, 7),
+          repo: `${owner}/${repo}`,
+          fetchMs: fetchDuration,
+        })
       } else {
         const fetchStart = performance.now()
-        await fetchVerificationData(
+        const input = await fetchVerificationData(
           deployment.id,
           commitSha,
           `${owner}/${repo}`,
@@ -1167,6 +1281,7 @@ export async function fetchVerificationDataForAllDeployments(
           monitoredAppId,
           { forceRefresh: false }, // Only fetch what's missing
         )
+        await updateDeploymentCommitChecks(deployment.id, input.commitChecks, input.commitChecksAttempted ?? true)
         const fetchDuration = Math.round(performance.now() - fetchStart)
         result.fetched++
         if (jobId) {

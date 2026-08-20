@@ -133,6 +133,35 @@ export function DeploymentDetailsGrid({
           </HStack>
         </VStack>
 
+        {(() => {
+          // Mirrors PrDetailsAccordion's source selection: prefer commit_checks_data whenever it actually
+          // has check runs, and only fall back to the legacy github_pr_data verdict for deployments that
+          // predate commit_checks_data entirely. This avoids showing a stale legacy verdict next to a
+          // fresh (but still in-progress, checks_passed=null) commit_checks_data check list.
+          const hasFreshChecks = (deployment.commit_checks_data?.checks?.length ?? 0) > 0
+          const checksPassed = hasFreshChecks
+            ? deployment.commit_checks_data?.checks_passed
+            : (deployment.github_pr_data?.checks_passed ?? null)
+          if (checksPassed === null || checksPassed === undefined) return null
+          return (
+            <VStack gap="space-4">
+              <Detail>Checks</Detail>
+              <HStack gap="space-8" wrap>
+                {checksPassed === true && (
+                  <Tag data-color="neutral" variant="outline" size="small">
+                    <CheckmarkIcon aria-hidden style={{ color: 'var(--ax-text-success)' }} /> Checks OK
+                  </Tag>
+                )}
+                {checksPassed === false && (
+                  <Tag data-color="danger" variant="outline" size="small">
+                    <XMarkIcon aria-hidden /> Checks failed
+                  </Tag>
+                )}
+              </HStack>
+            </VStack>
+          )
+        })()}
+
         {/* PR-specific fields in same grid */}
 
         {deployment.github_pr_data && (
@@ -224,16 +253,6 @@ export function DeploymentDetailsGrid({
                 {deployment.github_pr_data.auto_merge && (
                   <Tag data-color="info" variant="outline" size="small">
                     Auto-merge ({deployment.github_pr_data.auto_merge.merge_method})
-                  </Tag>
-                )}
-                {deployment.github_pr_data.checks_passed === true && (
-                  <Tag data-color="neutral" variant="outline" size="small">
-                    <CheckmarkIcon aria-hidden style={{ color: 'var(--ax-text-success)' }} /> Checks OK
-                  </Tag>
-                )}
-                {deployment.github_pr_data.checks_passed === false && (
-                  <Tag data-color="danger" variant="outline" size="small">
-                    <XMarkIcon aria-hidden /> Checks failed
                   </Tag>
                 )}
               </HStack>

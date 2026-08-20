@@ -61,7 +61,8 @@ export function buildGithubPrDataFromSnapshots(
     })),
     requested_teams: (metadata.requestedTeams ?? []).map((t) => ({ name: t.name, slug: t.slug })),
     milestone: metadata.milestone ?? null,
-    checks_passed: metadata.checksPassed ?? (checks ? checks.conclusion === 'success' : null),
+    checks_passed:
+      metadata.checksPassed ?? (checks && checks.checkRuns.length > 0 ? checks.conclusion === 'success' : null),
     checks_ref: deriveChecksRef(checks, metadata.mergeCommitSha, metadata.headSha),
     reviewers: (reviews ?? []).map((r) => ({
       username: r.username,
