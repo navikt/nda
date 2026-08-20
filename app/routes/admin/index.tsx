@@ -5,6 +5,7 @@ import {
   ChatIcon,
   CheckmarkCircleIcon,
   CogIcon,
+  DownloadIcon,
   ExclamationmarkTriangleIcon,
   FileTextIcon,
   LaptopIcon,
@@ -272,6 +273,31 @@ export default function AdminIndex() {
                 </Heading>
                 <BodyShort textColor="subtle">
                   Grupper applikasjoner på tvers av NAIS-clustre for felles verifikasjon.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
+        <Link to="/admin/workflow-triggers" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <DownloadIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Workflow-triggere
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Hent manglende eller utdatert trigger-informasjon (hvordan deployments ble startet) for alle
+                  applikasjoner.
                 </BodyShort>
               </div>
             </VStack>
