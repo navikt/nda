@@ -273,6 +273,101 @@ export async function backfillWorkflowTriggerConfig(
   return true
 }
 
+interface DeploymentMissingWorkflowTrigger {
+  id: number
+  detected_github_owner: string
+  detected_github_repo_name: string
+  trigger_url: string
+  workflow_trigger_config: VerificationInput['workflowTrigger'] | null
+}
+
+const MISSING_WORKFLOW_TRIGGER_CONFIG_SQL = `
+  trigger_url IS NOT NULL
+  AND detected_github_owner IS NOT NULL
+  AND detected_github_repo_name IS NOT NULL
+  AND (
+    workflow_trigger_config IS NULL
+    OR (workflow_trigger_config->>'schemaVersion')::int IS DISTINCT FROM $1
+  )
+`
+
+export async function countDeploymentsMissingWorkflowTriggerConfig(): Promise<number> {
+  const result = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM deployments WHERE ${MISSING_WORKFLOW_TRIGGER_CONFIG_SQL}`,
+    [WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION],
+  )
+  return parseInt(result.rows[0].count, 10)
+}
+
+export interface WorkflowTriggerBackfillResult {
+  processed: number
+  total: number
+  fetched: number
+  errors: number
+}
+
+export async function backfillWorkflowTriggerConfigForAllApps(options?: {
+  jobId?: number
+  onProgress?: (progress: WorkflowTriggerBackfillResult) => void | Promise<void>
+}): Promise<WorkflowTriggerBackfillResult> {
+  const jobId = options?.jobId
+
+  const deploymentsResult = await pool.query<DeploymentMissingWorkflowTrigger>(
+    `SELECT id, detected_github_owner, detected_github_repo_name, trigger_url, workflow_trigger_config
+     FROM deployments
+     WHERE ${MISSING_WORKFLOW_TRIGGER_CONFIG_SQL}
+     ORDER BY created_at DESC`,
+    [WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION],
+  )
+  const deployments = deploymentsResult.rows
+
+  const result: WorkflowTriggerBackfillResult = {
+    processed: 0,
+    total: deployments.length,
+    fetched: 0,
+    errors: 0,
+  }
+
+  for (const deployment of deployments) {
+    if (jobId && (await isSyncJobCancelled(jobId))) {
+      break
+    }
+
+    try {
+      const fetched = await backfillWorkflowTriggerConfig(
+        deployment.id,
+        deployment.detected_github_owner,
+        deployment.detected_github_repo_name,
+        deployment.trigger_url,
+        deployment.workflow_trigger_config,
+      )
+      if (fetched) {
+        result.fetched++
+      }
+    } catch (err) {
+      logger.error(
+        `Henting av workflow-trigger feilet for deployment ${deployment.id}`,
+        err instanceof Error ? err : new Error(String(err)),
+      )
+      result.errors++
+    }
+
+    result.processed++
+
+    if (jobId && result.processed % 10 === 0) {
+      await updateSyncJobProgress(jobId, result as unknown as Record<string, unknown>)
+      await heartbeatSyncJob(jobId, 30)
+    }
+    await options?.onProgress?.(result)
+  }
+
+  if (jobId) {
+    await updateSyncJobProgress(jobId, result as unknown as Record<string, unknown>)
+  }
+
+  return result
+}
+
 async function getAppSettings(monitoredAppId: number): Promise<{
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
