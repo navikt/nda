@@ -68,6 +68,61 @@ export function isSlackConfigured(): boolean {
   return !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN)
 }
 
+function isSlackUserNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'data' in error &&
+    (error as { data?: { error?: string } }).data?.error === 'users_not_found'
+  )
+}
+
+export class SlackLookupFailedError extends Error {
+  constructor(cause: unknown) {
+    super('Slack member ID lookup failed')
+    this.cause = cause
+  }
+}
+
+export async function lookupSlackUserIdByEmail(email: string): Promise<string | null> {
+  const app = getSlackApp()
+  if (!app) return null
+
+  try {
+    const result = await callSlackApi('users.lookupByEmail', async () => {
+      try {
+        return await app.client.users.lookupByEmail({ email })
+      } catch (error) {
+        if (isSlackUserNotFoundError(error)) {
+          return { user: undefined }
+        }
+        throw error
+      }
+    })
+    return result.user?.id ?? null
+  } catch (error) {
+    logger.error('Slack users.lookupByEmail failed:', error)
+    throw new SlackLookupFailedError(error)
+  }
+}
+
+/**
+ * Resolves the Slack member ID to persist for a mapping. Prefers the auto-detected ID from
+ * the user's email over any client-submitted value, so a tampered/stale submitted value can
+ * never override a verified match. If the Slack lookup itself fails (e.g. outage), this throws
+ * `SlackLookupFailedError` rather than silently falling back to the unverified submitted value.
+ */
+export async function resolveSlackMemberId(
+  email: string | null,
+  submittedSlackMemberId: string | null,
+): Promise<string | null> {
+  if (email && isSlackConfigured()) {
+    const autoSlackMemberId = await lookupSlackUserIdByEmail(email)
+    if (autoSlackMemberId) return autoSlackMemberId
+  }
+  return submittedSlackMemberId
+}
+
 function getSlackApp(): App | null {
   if (!isSlackConfigured()) {
     logger.info('[Slack] Not configured (missing SLACK_BOT_TOKEN or SLACK_APP_TOKEN)')

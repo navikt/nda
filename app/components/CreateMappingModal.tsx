@@ -1,8 +1,10 @@
 import { Alert, BodyShort, Button, Label, Modal, TextField, VStack } from '@navikt/ds-react'
-import { forwardRef, useState } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 import { Form } from 'react-router'
+import { useSlackMemberIdLookup } from '~/hooks/useSlackMemberIdLookup'
 import type { GraphUserResult } from '~/lib/microsoft-graph.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
+import { SlackMemberIdField } from './SlackMemberIdField'
 import { UserSearch } from './UserSearch'
 
 export interface CreateMappingModalProps {
@@ -45,11 +47,24 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
       nav_ident: canPrefillOwnMapping ? (loggedInNavIdent ?? '') : '',
     })
 
+    const slackLookup = useSlackMemberIdLookup()
+
+    useEffect(() => {
+      if (canPrefillOwnMapping && loggedInNavIdent) {
+        slackLookup.lookup(loggedInNavIdent)
+      }
+    }, [canPrefillOwnMapping, loggedInNavIdent, slackLookup.lookup])
+
     const handleSelectUser = (user: GraphUserResult) => {
       setMappingFields({
         display_name: formatDisplayNameNatural(user.displayName),
         nav_ident: user.navIdent ?? '',
       })
+      if (user.navIdent) {
+        slackLookup.lookup(user.navIdent)
+      } else {
+        slackLookup.reset()
+      }
     }
 
     return (
@@ -76,7 +91,10 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
                   description="Søk med navn eller NAV-ident for å fylle ut feltene under"
                   onSelect={() => {}}
                   onSelectUser={handleSelectUser}
-                  onClear={() => setMappingFields({ display_name: '', nav_ident: '' })}
+                  onClear={() => {
+                    setMappingFields({ display_name: '', nav_ident: '' })
+                    slackLookup.reset()
+                  }}
                 />
               )}
               {mappingFields.nav_ident && (
@@ -97,7 +115,12 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
                   {fieldErrors.nav_ident}
                 </Alert>
               )}
-              <TextField label="Slack member ID" name="slack_member_id" />
+              <SlackMemberIdField
+                key={mappingFields.nav_ident}
+                isLoading={slackLookup.isLoading}
+                isAutoDetected={slackLookup.isAutoDetected}
+                autoDetectedValue={slackLookup.slackMemberId}
+              />
             </VStack>
           </Form>
         </Modal.Body>
