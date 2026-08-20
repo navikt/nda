@@ -551,7 +551,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
     let deployedPr: VerificationInput['deployedPr'] = null
     if (dep.github_pr_number) {
-      const snapshotMap = await getPrSnapshotsForDiff(dep.github_pr_number)
+      const snapshotMap = await getPrSnapshotsForDiff(owner, repo, dep.github_pr_number)
       if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
         deployedPr = {
           number: dep.github_pr_number,

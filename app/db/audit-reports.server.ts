@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { toDateString } from '~/lib/date-utils'
+import { computeDisplayTitle, isExclusivelyThisPr } from '~/lib/delivery-title'
 import { isDependabotUser } from '~/lib/dependabot'
-import { isApprovedStatus } from '~/lib/four-eyes-status'
+import { isApprovedStatus, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import { generateReportId } from '~/lib/report-periods'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
@@ -28,6 +29,8 @@ interface AuditDeploymentRow {
   approved_by_usernames: string[] | null
   pr_author: string | null
   unverified_commits: UnverifiedCommitEntry[] | null
+  delivery_commit_shas: string[] | null
+  pr_commit_shas: string[] | null
 }
 
 interface AuditReport {
@@ -119,6 +122,7 @@ export interface AuditDeploymentEntry {
   pr_url?: string
   slack_link?: string
   goal_links?: AuditGoalLinkEntry[]
+  delivery_commit_count?: number
 }
 
 export interface ManualApprovalEntry {
@@ -351,7 +355,40 @@ export async function getAuditReportData(
        -- Extract PR creator/author from JSON
        d.github_pr_data->'creator'->>'username' AS pr_author,
        -- Include unverified commits JSONB for report appendix
-       d.unverified_commits
+       d.unverified_commits,
+       -- Commit SHAs bundled in this delivery, from the cached GitHub compare snapshot
+       (
+         SELECT ARRAY(SELECT jsonb_array_elements(cmp.data->'commits')->>'sha')
+         FROM github_compare_snapshots cmp
+         WHERE cmp.owner = d.detected_github_owner
+           AND cmp.repo = d.detected_github_repo_name
+           AND cmp.head_sha = d.commit_sha
+           AND cmp.base_sha = (
+             SELECT prev.commit_sha
+             FROM deployments prev
+             WHERE prev.monitored_app_id = d.monitored_app_id
+               AND prev.environment_name = ma.environment_name
+               AND prev.created_at < d.created_at
+               AND prev.commit_sha IS NOT NULL
+               AND prev.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+               AND prev.commit_sha !~ '^refs/'
+             ORDER BY prev.created_at DESC
+             LIMIT 1
+           )
+         ORDER BY cmp.fetched_at DESC
+         LIMIT 1
+       ) AS delivery_commit_shas,
+       -- Commit SHAs belonging to this deployment's PR, if any
+       (
+         SELECT ARRAY(SELECT jsonb_array_elements(pr.data)->>'sha')
+         FROM github_pr_snapshots pr
+         WHERE pr.owner = d.detected_github_owner
+           AND pr.repo = d.detected_github_repo_name
+           AND pr.pr_number = d.github_pr_number
+           AND pr.data_type = 'commits'
+         ORDER BY pr.fetched_at DESC
+         LIMIT 1
+       ) AS pr_commit_shas
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.monitored_app_id = $1
@@ -658,10 +695,16 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
       method = 'manual'
     }
 
+    const deliveryCommitShas = d.delivery_commit_shas ?? []
+    const prCommitShas = d.pr_commit_shas ? new Set(d.pr_commit_shas) : null
+    const exclusivelyThisPr = isExclusivelyThisPr(d.github_pr_number != null, deliveryCommitShas, prCommitShas)
+    const deliveryCommitCount = deliveryCommitShas.length || 1
+    const displayTitle = computeDisplayTitle(d.title, deliveryCommitCount, exclusivelyThisPr)
+
     return {
       id: d.id,
       nais_deployment_id: d.nais_deployment_id || '',
-      title: d.title || '',
+      title: displayTitle || '',
       date: d.created_at.toISOString(),
       commit_sha: d.commit_sha || '',
       method,
@@ -675,6 +718,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
       pr_url: d.github_pr_url || undefined,
       slack_link: manualApproval?.slack_link || undefined,
       goal_links: goal_links_by_deployment.get(d.id) || undefined,
+      delivery_commit_count: deliveryCommitCount,
     }
   })
 
@@ -692,7 +736,16 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     return {
       deployment_id: a.deployment_id,
       nais_deployment_id: deployment?.nais_deployment_id || '',
-      title: deployment?.title || '',
+      title:
+        computeDisplayTitle(
+          deployment?.title ?? null,
+          deployment?.delivery_commit_shas?.length || 1,
+          isExclusivelyThisPr(
+            deployment?.github_pr_number != null,
+            deployment?.delivery_commit_shas ?? [],
+            deployment?.pr_commit_shas ? new Set(deployment.pr_commit_shas) : null,
+          ),
+        ) || '',
       date: deployment?.created_at.toISOString() || '',
       commit_sha: deployment?.commit_sha || '',
       deployer: deployment?.deployer_username || '',
@@ -775,7 +828,16 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
         deployment_id: d.id,
         date: d.created_at.toISOString(),
         commit_sha: d.commit_sha || '',
-        title: d.title || '',
+        title:
+          computeDisplayTitle(
+            d.title,
+            d.delivery_commit_shas?.length || 1,
+            isExclusivelyThisPr(
+              d.github_pr_number != null,
+              d.delivery_commit_shas ?? [],
+              d.pr_commit_shas ? new Set(d.pr_commit_shas) : null,
+            ),
+          ) || '',
         deployer: d.deployer_username || '',
         deployer_display_name: getDisplayName(d.deployer_username),
         four_eyes_status: d.four_eyes_status,

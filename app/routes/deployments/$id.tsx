@@ -43,6 +43,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
   const {
     deployment,
     deliveryCommits,
+    displayTitle,
     comments,
     manualApproval,
     legacyInfo,
@@ -174,7 +175,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
       <div>
         <HStack align="center" gap="space-12" wrap>
           <Heading size="large" level="1" style={{ flex: 1 }}>
-            {deployment.title ||
+            {displayTitle ||
               deployment.github_pr_data?.title ||
               `${deployment.app_name} @ ${deployment.environment_name}`}
           </Heading>
