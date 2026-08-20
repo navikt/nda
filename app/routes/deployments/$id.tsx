@@ -403,7 +403,11 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           )
         })()}
       {/* Deployment Details Section */}
-      <DeploymentDetailsGrid deployment={deployment} userMappings={userMappings} />
+      <DeploymentDetailsGrid
+        deployment={deployment}
+        userMappings={userMappings}
+        previousDeploymentForDiff={previousDeploymentForDiff}
+      />
       {/* PR Approvers - shown prominently before the accordion */}
       {deployment.github_pr_data?.reviewers?.some((r) => r.state === 'APPROVED') && (
         <VStack gap="space-4">

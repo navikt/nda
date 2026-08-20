@@ -18,7 +18,7 @@ export function ErrorReasonWithLink({ errorReason, githubOwner, githubRepoName }
 
     return (
       <Detail textColor="subtle" className="mt-1">
-        {errorReason} <ExternalLink href={compareUrl}>Se compare på GitHub</ExternalLink>
+        {errorReason} <ExternalLink href={compareUrl}>Se endringer på GitHub</ExternalLink>
       </Detail>
     )
   }

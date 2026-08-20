@@ -9,9 +9,18 @@ type LoaderData = Route.ComponentProps['loaderData']
 export type DeploymentDetailsGridProps = {
   deployment: LoaderData['deployment']
   userMappings: LoaderData['userMappings']
+  previousDeploymentForDiff: LoaderData['previousDeploymentForDiff']
 }
 
-export function DeploymentDetailsGrid({ deployment, userMappings }: DeploymentDetailsGridProps) {
+export function DeploymentDetailsGrid({
+  deployment,
+  userMappings,
+  previousDeploymentForDiff,
+}: DeploymentDetailsGridProps) {
+  const hasPreviousCommit = Boolean(previousDeploymentForDiff?.commit_sha)
+  const isSameCommit = hasPreviousCommit && previousDeploymentForDiff?.commit_sha === deployment.commit_sha
+  const canLinkToDiff = deployment.detected_github_owner && deployment.detected_github_repo_name
+
   return (
     <>
       <Heading size="medium" level="2">
@@ -24,6 +33,31 @@ export function DeploymentDetailsGrid({ deployment, userMappings }: DeploymentDe
             <UserName username={deployment.deployer_username} userMappings={userMappings} link="github" />
           </BodyShort>
         </VStack>
+
+        {hasPreviousCommit && (
+          <VStack gap="space-4">
+            <Detail>Endringer siden forrige leveranse</Detail>
+            <BodyShort>
+              {!deployment.commit_sha ? (
+                <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
+                  Endringer utilgjengelig (mangler commit-SHA for denne leveransen)
+                </span>
+              ) : isSameCommit ? (
+                'Denne leveransen er identisk med forrige leveranse (samme commit)'
+              ) : canLinkToDiff ? (
+                <ExternalLink
+                  href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff?.commit_sha}...${deployment.commit_sha}`}
+                >
+                  Se endringer på GitHub (forrige leveranse → denne leveransen)
+                </ExternalLink>
+              ) : (
+                <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
+                  Endringer utilgjengelig (mangler repo-informasjon)
+                </span>
+              )}
+            </BodyShort>
+          </VStack>
+        )}
 
         <VStack gap="space-4">
           <Detail>Commit SHA</Detail>

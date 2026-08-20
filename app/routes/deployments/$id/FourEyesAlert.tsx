@@ -75,7 +75,7 @@ export function FourEyesAlert({
                     <ExternalLink
                       href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
                     >
-                      Se endringer mellom deployments
+                      Se endringer på GitHub (forrige leveranse → denne leveransen)
                     </ExternalLink>
                   )}
                 </HStack>
@@ -179,7 +179,7 @@ export function FourEyesAlert({
               <ExternalLink
                 href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
               >
-                Se endringer på GitHub
+                Se endringer på GitHub (forrige leveranse → denne leveransen)
               </ExternalLink>
             </BodyShort>
           )}
@@ -193,7 +193,7 @@ export function FourEyesAlert({
               <ExternalLink
                 href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
               >
-                Se endringer på GitHub
+                Se endringer på GitHub (forrige leveranse → denne leveransen)
               </ExternalLink>
             </BodyShort>
           )}
@@ -235,7 +235,7 @@ export function FourEyesAlert({
                   {compareUrl && (
                     <>
                       {' '}
-                      <ExternalLink href={compareUrl}>Se compare på GitHub</ExternalLink>
+                      <ExternalLink href={compareUrl}>Se endringer på GitHub</ExternalLink>
                     </>
                   )}
                 </BodyShort>
