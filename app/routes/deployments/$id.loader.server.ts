@@ -19,14 +19,15 @@ import { getLatestVerificationRun } from '~/db/github-data.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
-import { getCompareSnapshotForCommit } from '~/db/verification-diff.server'
+import { getCompareSnapshotForCommit, getPrSnapshotsForDiff } from '~/db/verification-diff.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
+import { computeDisplayTitle, isExclusivelyThisPr } from '~/lib/delivery-title'
 import { getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { serializeUserLookups } from '~/lib/user-display'
 import { isVerificationDebugMode } from '~/lib/verification'
-import type { CompareData } from '~/lib/verification/types'
+import type { CompareData, PrCommit } from '~/lib/verification/types'
 import type { Route } from './+types/$id'
 
 export async function loader({ params, request, url }: Route.LoaderArgs) {
@@ -122,6 +123,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     nearbyDeployments,
     registeredRepos,
     compareSnapshot,
+    prSnapshots,
   ] = await Promise.all([
     getCommentsByDeploymentId(deploymentId),
     getManualApproval(deploymentId),
@@ -140,6 +142,13 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       ? getRepositoriesByAppId(deployment.monitored_app_id)
       : Promise.resolve([]),
     deployment.commit_sha ? getCompareSnapshotForCommit(deployment.commit_sha) : Promise.resolve(null),
+    deployment.github_pr_number && deployment.detected_github_owner && deployment.detected_github_repo_name
+      ? getPrSnapshotsForDiff(
+          deployment.detected_github_owner,
+          deployment.detected_github_repo_name,
+          deployment.github_pr_number,
+        )
+      : Promise.resolve(null),
   ])
 
   const deliveryCommits =
@@ -155,6 +164,18 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
           botDisplayName: getBotDisplayName(c.authorUsername),
         }))
       : null
+
+  const prCommitShas = prSnapshots?.has('commits')
+    ? new Set((prSnapshots.get('commits') as PrCommit[]).map((c) => c.sha))
+    : null
+
+  const exclusivelyThisPr = isExclusivelyThisPr(
+    deployment.github_pr_number != null,
+    (deliveryCommits ?? []).map((c) => c.sha),
+    prCommitShas,
+  )
+
+  const displayTitle = computeDisplayTitle(deployment.title, deliveryCommits?.length ?? 1, exclusivelyThisPr)
 
   const capabilities: DeploymentCapabilities = currentUser
     ? await resolveDeploymentCapabilities(currentUser, deployment.monitored_app_id)
@@ -280,6 +301,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   return {
     deployment,
     deliveryCommits,
+    displayTitle,
     comments,
     manualApproval,
     legacyInfo,

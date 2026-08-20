@@ -114,7 +114,7 @@ export async function computeVerificationDiffs(
 
           let deployedPr: VerificationInput['deployedPr'] = null
           if (row.github_pr_number) {
-            const snapshotMap = await getPrSnapshotsForDiff(row.github_pr_number)
+            const snapshotMap = await getPrSnapshotsForDiff(owner, repo, row.github_pr_number)
             if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
               deployedPr = {
                 number: row.github_pr_number,

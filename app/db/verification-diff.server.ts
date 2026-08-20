@@ -77,12 +77,16 @@ export async function getCompareSnapshotForCommit(
   return result.rows[0] || null
 }
 
-export async function getPrSnapshotsForDiff(prNumber: number): Promise<Map<string, unknown>> {
+export async function getPrSnapshotsForDiff(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<Map<string, unknown>> {
   const result = await pool.query(
     `SELECT data_type, data FROM github_pr_snapshots 
-     WHERE pr_number = $1 
+     WHERE owner = $1 AND repo = $2 AND pr_number = $3
      ORDER BY fetched_at DESC`,
-    [prNumber],
+    [owner, repo, prNumber],
   )
 
   const snapshotMap = new Map<string, unknown>()
