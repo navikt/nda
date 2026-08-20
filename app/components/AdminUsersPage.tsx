@@ -1,10 +1,11 @@
 import { DownloadIcon, PlusIcon, UploadIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Heading, HStack, Modal, Show, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, Heading, HStack, Modal, Show, Tabs, VStack } from '@navikt/ds-react'
 import type { ChangeEvent, RefObject } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Form } from 'react-router'
 import { UnmappedUsersList } from '~/components/UnmappedUsersList'
 import { UserMappingCard } from '~/components/UserMappingCard'
+import { UsersWithoutGithubList } from '~/components/UsersWithoutGithubList'
 
 interface UserMapping {
   github_username: string
@@ -17,6 +18,11 @@ interface UserMapping {
 interface UnmappedUser {
   github_username: string
   deployment_count: number
+}
+
+interface UserWithoutGithub {
+  nav_ident: string
+  display_name: string
 }
 
 interface RoleAssignment {
@@ -38,6 +44,7 @@ interface DevTeam {
 interface AdminUsersPageProps<T extends UserMapping = UserMapping> {
   mappings: T[]
   unmappedUsers: UnmappedUser[]
+  usersWithoutGithub?: UserWithoutGithub[]
   devTeamById?: Map<number, DevTeam>
   userRoleAssignments?: Record<string, RoleAssignment[]>
   userSectionRoleAssignments?: Record<string, SectionRoleAssignment[]>
@@ -55,6 +62,7 @@ interface AdminUsersPageProps<T extends UserMapping = UserMapping> {
 export function AdminUsersPage<T extends UserMapping = UserMapping>({
   mappings,
   unmappedUsers,
+  usersWithoutGithub = [],
   devTeamById = new Map(),
   userRoleAssignments = {},
   userSectionRoleAssignments = {},
@@ -149,36 +157,66 @@ export function AdminUsersPage<T extends UserMapping = UserMapping>({
         {unmappedUsers.length > 0 && (
           <Alert variant="warning">
             {unmappedUsers.length} GitHub-bruker{unmappedUsers.length === 1 ? '' : 'e'} har deployments men mangler
-            mapping. Se listen nederst på siden.
+            mapping. Se fanen "GitHub-brukere uten mapping" for detaljer.
           </Alert>
         )}
 
-        {mappings.length === 0 ? (
-          <Alert variant="info">
-            Ingen brukermappinger er lagt til ennå. Klikk "Legg til" for å opprette den første.
-          </Alert>
-        ) : (
-          <div>
-            {mappings.map((mapping) => (
-              <UserMappingCard
-                key={mapping.github_username}
-                mapping={mapping}
-                teamRoles={mapping.nav_ident ? (userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []}
-                sectionRoles={
-                  mapping.nav_ident ? (userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []
-                }
-                devTeamById={devTeamById}
-                onEdit={onEdit ? () => onEdit(mapping) : undefined}
-                onDelete={() => {
-                  setDeleteTarget(mapping)
-                  deleteModalRef.current?.showModal()
-                }}
-              />
-            ))}
-          </div>
-        )}
+        <Tabs defaultValue="mappings">
+          <Tabs.List>
+            <Tabs.Tab value="mappings" label={`Brukere (${mappings.length})`} />
+            <Tabs.Tab value="unmapped" label={`GitHub-brukere uten mapping (${unmappedUsers.length})`} />
+            <Tabs.Tab value="no-github" label={`Brukere uten GitHub-konto (${usersWithoutGithub.length})`} />
+          </Tabs.List>
 
-        <UnmappedUsersList users={unmappedUsers} onAddMapping={onAddMapping} />
+          <Tabs.Panel value="mappings">
+            <Box paddingBlock="space-16 space-0">
+              {mappings.length === 0 ? (
+                <Alert variant="info">
+                  Ingen brukermappinger er lagt til ennå. Klikk "Legg til" for å opprette den første.
+                </Alert>
+              ) : (
+                <div>
+                  {mappings.map((mapping) => (
+                    <UserMappingCard
+                      key={mapping.github_username}
+                      mapping={mapping}
+                      teamRoles={mapping.nav_ident ? (userRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []}
+                      sectionRoles={
+                        mapping.nav_ident ? (userSectionRoleAssignments[mapping.nav_ident.toUpperCase()] ?? []) : []
+                      }
+                      devTeamById={devTeamById}
+                      onEdit={onEdit ? () => onEdit(mapping) : undefined}
+                      onDelete={() => {
+                        setDeleteTarget(mapping)
+                        deleteModalRef.current?.showModal()
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </Box>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="unmapped">
+            <Box paddingBlock="space-16 space-0">
+              {unmappedUsers.length === 0 ? (
+                <Alert variant="info">Alle GitHub-brukere med deployments har mapping.</Alert>
+              ) : (
+                <UnmappedUsersList users={unmappedUsers} onAddMapping={onAddMapping} />
+              )}
+            </Box>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="no-github">
+            <Box paddingBlock="space-16 space-0">
+              {usersWithoutGithub.length === 0 ? (
+                <Alert variant="info">Ingen brukere uten GitHub-konto.</Alert>
+              ) : (
+                <UsersWithoutGithubList users={usersWithoutGithub} />
+              )}
+            </Box>
+          </Tabs.Panel>
+        </Tabs>
 
         {/* Delete Confirmation Modal */}
         <Modal

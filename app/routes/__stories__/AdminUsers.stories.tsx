@@ -14,6 +14,11 @@ type UnmappedUser = {
   deployment_count: number
 }
 
+type UserWithoutGithub = {
+  nav_ident: string
+  display_name: string
+}
+
 const mockMappings: UserMapping[] = [
   {
     github_username: 'glad-fjord',
@@ -48,6 +53,11 @@ const mockMappings: UserMapping[] = [
 const mockUnmappedUsers: UnmappedUser[] = [
   { github_username: 'unknown-deployer', deployment_count: 12 },
   { github_username: 'new-hire', deployment_count: 3 },
+]
+
+const mockUsersWithoutGithub: UserWithoutGithub[] = [
+  { nav_ident: 'Z990003', display_name: 'Stille Fjell' },
+  { nav_ident: 'Z990004', display_name: 'Varm Bris' },
 ]
 
 const meta: Meta<typeof AdminUsersPage> = {
@@ -120,6 +130,18 @@ export const OnlyUnmapped: Story = {
     mappings: [],
     unmappedUsers: mockUnmappedUsers,
     onAdd: () => {},
+    onAddMapping: () => {},
+  },
+}
+
+export const AllTabs: Story = {
+  name: 'Alle tre faner fylt',
+  args: {
+    mappings: mockMappings,
+    unmappedUsers: mockUnmappedUsers,
+    usersWithoutGithub: mockUsersWithoutGithub,
+    onAdd: () => {},
+    onEdit: () => {},
     onAddMapping: () => {},
   },
 }

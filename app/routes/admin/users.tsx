@@ -1,4 +1,4 @@
-import { Alert, BodyShort, Box, Button, Heading, HStack, Modal, TextField, VStack } from '@navikt/ds-react'
+import { Alert, Button, Heading, HStack, Modal, TextField, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
 import { Form, useActionData, useLoaderData, useNavigation } from 'react-router'
 import { AdminUsersPage } from '~/components/AdminUsersPage'
@@ -23,7 +23,6 @@ import { logger } from '~/lib/logger.server'
 import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { resolveSlackMemberId, SlackLookupFailedError } from '~/lib/slack/client.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
-import styles from '~/styles/common.module.css'
 import type { Route } from './+types/users'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -377,6 +376,7 @@ export default function AdminUsers() {
         <AdminUsersPage
           mappings={mappings}
           unmappedUsers={unmappedUsers}
+          usersWithoutGithub={usersWithoutGithub}
           devTeamById={devTeamById}
           userRoleAssignments={userRoleAssignments}
           userSectionRoleAssignments={userSectionRoleAssignments}
@@ -394,28 +394,6 @@ export default function AdminUsers() {
             }
           }}
         />
-
-        {usersWithoutGithub.length > 0 && (
-          <div>
-            <Heading level="2" size="medium" spacing>
-              Brukere uten GitHub-konto ({usersWithoutGithub.length})
-            </Heading>
-            <div>
-              {usersWithoutGithub.map((u) => (
-                <Box key={u.nav_ident} padding="space-16" background="raised" className={styles.stackedListItem}>
-                  <HStack justify="space-between" align="center">
-                    <VStack gap="space-2">
-                      <BodyShort weight="semibold">{u.display_name}</BodyShort>
-                      <BodyShort size="small" textColor="subtle">
-                        {u.nav_ident}
-                      </BodyShort>
-                    </VStack>
-                  </HStack>
-                </Box>
-              ))}
-            </div>
-          </div>
-        )}
       </VStack>
 
       {/* Add Modal */}
