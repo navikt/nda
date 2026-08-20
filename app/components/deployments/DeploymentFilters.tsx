@@ -25,10 +25,14 @@ interface DeploymentFiltersProps {
   currentSha: string
   currentTeam: string
   currentApp?: string
+  currentTrigger?: string
+  currentWorkflowFile?: string
   deployerOptions: FilterOption[]
   teamOptions: FilterOption[]
   goalOptions: GoalOption[]
   appOptions?: FilterOption[]
+  triggerEventOptions?: FilterOption[]
+  workflowFileOptions?: FilterOption[]
   hasUnmappedDeployers: boolean
   hasNonMemberDeployers?: boolean
   currentUserGithub: string | null
@@ -44,10 +48,14 @@ export function DeploymentFilters({
   currentSha,
   currentTeam,
   currentApp,
+  currentTrigger,
+  currentWorkflowFile,
   deployerOptions,
   teamOptions,
   goalOptions,
   appOptions,
+  triggerEventOptions,
+  workflowFileOptions,
   hasUnmappedDeployers,
   hasNonMemberDeployers,
   currentUserGithub,
@@ -198,6 +206,38 @@ export function DeploymentFilters({
               >
                 <option value="">Alle</option>
                 {appOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+
+            {triggerEventOptions && triggerEventOptions.length > 0 && (
+              <Select
+                label="Trigger"
+                size="small"
+                value={currentTrigger ?? ''}
+                onChange={(e) => onFilterChange('trigger', e.target.value)}
+              >
+                <option value="">Alle</option>
+                {triggerEventOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+
+            {workflowFileOptions && workflowFileOptions.length > 0 && (
+              <Select
+                label="Workflow-fil"
+                size="small"
+                value={currentWorkflowFile ?? ''}
+                onChange={(e) => onFilterChange('workflowFile', e.target.value)}
+              >
+                <option value="">Alle</option>
+                {workflowFileOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>

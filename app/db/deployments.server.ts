@@ -222,6 +222,8 @@ export interface DeploymentFilters {
   unmapped_deployers?: boolean
   commit_sha?: string
   method?: 'pr' | 'direct_push' | 'legacy'
+  workflow_trigger_event?: string
+  workflow_path?: string
   goal_filter?: 'missing' | 'linked'
   goal_objective_id?: number
   goal_key_result_id?: number
@@ -350,6 +352,18 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     whereSql += ` AND d.github_pr_number IS NULL AND d.four_eyes_status != 'legacy'`
   } else if (filters?.method === 'legacy') {
     whereSql += ` AND d.four_eyes_status = 'legacy'`
+  }
+
+  if (filters?.workflow_trigger_event) {
+    whereSql += ` AND d.workflow_trigger_config ->> 'triggerEvent' = $${paramIndex}`
+    params.push(filters.workflow_trigger_event)
+    paramIndex++
+  }
+
+  if (filters?.workflow_path) {
+    whereSql += ` AND d.workflow_trigger_config ->> 'workflowPath' = $${paramIndex}`
+    params.push(filters.workflow_path)
+    paramIndex++
   }
 
   const needsGoalJoin =
