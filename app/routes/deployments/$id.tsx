@@ -18,6 +18,7 @@ import { getFourEyesStatus } from '~/lib/status-display'
 import { UNVERIFIED_REASON_LABELS, type UnverifiedReason } from '~/lib/verification/types'
 import { CommentModal } from '~/routes/deployments/$id/CommentModal'
 import { CommentsSection } from '~/routes/deployments/$id/CommentsSection'
+import { DeliveryCommitsSection } from '~/routes/deployments/$id/DeliveryCommitsSection'
 import { DeploymentDetailsGrid } from '~/routes/deployments/$id/DeploymentDetailsGrid'
 import { DeviationModal } from '~/routes/deployments/$id/DeviationModal'
 import { DeviationsSection } from '~/routes/deployments/$id/DeviationsSection'
@@ -41,6 +42,7 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
 export default function DeploymentDetail({ loaderData, actionData }: Route.ComponentProps) {
   const {
     deployment,
+    deliveryCommits,
     comments,
     manualApproval,
     legacyInfo,
@@ -197,6 +199,28 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
                 Legacy
               </Tag>
             ) : null}
+            {deliveryCommits && deliveryCommits.length > 1 && (
+              <>
+                <Tag data-color="neutral" variant="outline" size="small">
+                  {deliveryCommits.length} commits
+                </Tag>
+                {(() => {
+                  const botCount = deliveryCommits.filter((c) => c.isBot).length
+                  const humanCount = deliveryCommits.length - botCount
+                  if (botCount === 0 || humanCount === 0) return null
+                  return (
+                    <>
+                      <Tag data-color="neutral" variant="outline" size="small">
+                        🤖 {botCount}
+                      </Tag>
+                      <Tag data-color="neutral" variant="outline" size="small">
+                        👤 {humanCount}
+                      </Tag>
+                    </>
+                  )
+                })()}
+              </>
+            )}
             {/* Verify button for non-OK states - available to team members, teknologileder, and admin */}
             {capabilities.canVerify &&
               deployment.commit_sha &&
@@ -260,6 +284,7 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
           )}
         </BodyShort>
       </div>
+      <DeliveryCommitsSection deliveryCommits={deliveryCommits} userMappings={userMappings} />
       <ActionAlert data={actionData} />
       {/* Baseline explanation — shown for baseline with no attributed approver */}
       {deployment.four_eyes_status === 'baseline' &&

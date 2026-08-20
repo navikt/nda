@@ -19,11 +19,14 @@ import { getLatestVerificationRun } from '~/db/github-data.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
+import { getCompareSnapshotForCommit } from '~/db/verification-diff.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
+import { getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { serializeUserLookups } from '~/lib/user-display'
 import { isVerificationDebugMode } from '~/lib/verification'
+import type { CompareData } from '~/lib/verification/types'
 import type { Route } from './+types/$id'
 
 export async function loader({ params, request, url }: Route.LoaderArgs) {
@@ -118,6 +121,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     fullVerificationRun,
     nearbyDeployments,
     registeredRepos,
+    compareSnapshot,
   ] = await Promise.all([
     getCommentsByDeploymentId(deploymentId),
     getManualApproval(deploymentId),
@@ -135,7 +139,22 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     deployment.four_eyes_status === 'unauthorized_repository'
       ? getRepositoriesByAppId(deployment.monitored_app_id)
       : Promise.resolve([]),
+    deployment.commit_sha ? getCompareSnapshotForCommit(deployment.commit_sha) : Promise.resolve(null),
   ])
+
+  const deliveryCommits =
+    compareSnapshot &&
+    previousDeploymentForDiff?.commit_sha &&
+    compareSnapshot.base_sha === previousDeploymentForDiff.commit_sha
+      ? (compareSnapshot.data as CompareData).commits.map((c) => ({
+          sha: c.sha,
+          message: c.message,
+          authorUsername: c.authorUsername,
+          htmlUrl: c.htmlUrl,
+          isBot: isGitHubBot(c.authorUsername),
+          botDisplayName: getBotDisplayName(c.authorUsername),
+        }))
+      : null
 
   const capabilities: DeploymentCapabilities = currentUser
     ? await resolveDeploymentCapabilities(currentUser, deployment.monitored_app_id)
@@ -260,6 +279,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
 
   return {
     deployment,
+    deliveryCommits,
     comments,
     manualApproval,
     legacyInfo,
