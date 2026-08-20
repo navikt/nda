@@ -755,6 +755,7 @@ export async function buildCommitsBetweenFromCache(
           baseBranch: metadata.baseBranch,
           mergedBy: metadata.mergedBy?.username ?? null,
           prCreator: metadata.author.username === 'unknown' ? undefined : metadata.author.username,
+          mergeCommitSha: metadata.mergeCommitSha,
         }
       }
     }
@@ -790,6 +791,7 @@ export async function buildCommitsBetweenFromCache(
           baseBranch: metadata.baseBranch,
           mergedBy: metadata.mergedBy?.username ?? null,
           prCreator: metadata.author.username === 'unknown' ? undefined : metadata.author.username,
+          mergeCommitSha: metadata.mergeCommitSha,
         }
       } catch (error) {
         logger.warn(`Failed to fetch PR #${prNumber} for commit ${commit.sha}: ${error}`)
