@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Form, Link } from 'react-router'
 import { UserName } from '~/components/UserName'
 import type { DeploymentGoalLinkWithDetails } from '~/db/deployment-goal-links.server'
+import { SECTION_ROLE_LABELS, TEAM_ROLE_LABELS } from '~/lib/authorization-types'
 import type { UserLookupMap } from '~/lib/user-display'
 import { ExternalLink } from './ExternalLink'
 import { type GoalSelectionBoard, GoalSelectionFields } from './GoalSelectionFields'
@@ -28,6 +29,8 @@ const LINK_METHOD_LABELS: Record<string, string> = {
   pr_title: 'PR-tittel',
   dependabot_auto: 'Dependabot (auto)',
 }
+
+const APP_ADMIN_ROLES_TEXT = `${TEAM_ROLE_LABELS.tech_lead} eller ${TEAM_ROLE_LABELS.produktleder} for teamet, eller ${SECTION_ROLE_LABELS.teknologileder} eller ${SECTION_ROLE_LABELS.seksjonsleder} for seksjonen`
 
 export type AvailableBoard = GoalSelectionBoard
 
@@ -334,9 +337,8 @@ function MissingBoardHelp({
         )}
 
         <BodyLong size="small" textColor="subtle">
-          Dette krever at du er Tech Lead eller Produktleder for teamet, eller Teknologileder, Seksjonsleder eller
-          Leveranseleder for seksjonen. Har du ikke en av disse rollene, be noen som har det om å koble appen til
-          teamet.
+          Dette krever at du er {APP_ADMIN_ROLES_TEXT}. Har du ikke en av disse rollene, be noen som har det om å koble
+          appen til teamet.
         </BodyLong>
       </VStack>
     </Alert>
