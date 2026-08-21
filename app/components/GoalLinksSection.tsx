@@ -288,8 +288,8 @@ function MissingBoardHelp({
             <>
               Fant ingen måltavler å koble denne leveransen til for <code>{appInfo.appName}</code> (
               {appInfo.environmentName}). Årsaken kan enten være at appen ikke er koblet til noe team med måltavle du
-              har tilgang til (appen eies i Nais av <code>{appInfo.ownerTeamSlug}</code>), eller at teamet appen er
-              koblet til ikke har en aktiv måltavle for perioden denne leveransen tilhører.
+              har tilgang til, eller at teamet appen er koblet til ikke har en aktiv måltavle for perioden denne
+              leveransen tilhører.
             </>
           ) : (
             <>
@@ -305,29 +305,25 @@ function MissingBoardHelp({
             <BodyLong size="small">Hvis appen ikke er koblet til ditt eget team ennå, kan det fikses slik:</BodyLong>
             <BodyLong size="small" as="div">
               <ol style={{ margin: 0, paddingLeft: 'var(--ax-space-24)' }}>
-                <li>Gå til adminsiden for teamet ditt (lenke under).</li>
+                <li>
+                  Gå til adminsiden for teamet ditt:{' '}
+                  {linkableTeams.map((team, index) => (
+                    <span key={team.id}>
+                      {index > 0 && ', '}
+                      <Link to={`/sections/${team.sectionSlug}/teams/${team.slug}/admin#applikasjoner`}>
+                        {team.name}
+                      </Link>
+                    </span>
+                  ))}
+                  .
+                </li>
                 <li>
                   Under «Applikasjoner», trykk «Legg til applikasjon» og søk opp{' '}
-                  {appInfo ? (
-                    <>
-                      <code>{appInfo.appName}</code> (miljø {appInfo.environmentName}, Nais-team{' '}
-                      <code>{appInfo.ownerTeamSlug}</code>)
-                    </>
-                  ) : (
-                    'denne appen'
-                  )}
-                  .
+                  {appInfo ? <code>{appInfo.appName}</code> : 'denne appen'}.
                 </li>
                 <li>Kom tilbake hit — leveransen kan nå kobles til teamets mål (forutsatt en aktiv måltavle).</li>
               </ol>
             </BodyLong>
-            <VStack gap="space-4">
-              {linkableTeams.map((team) => (
-                <Link key={team.id} to={`/sections/${team.sectionSlug}/teams/${team.slug}/admin#applikasjoner`}>
-                  Gå til adminsiden for {team.name}
-                </Link>
-              ))}
-            </VStack>
           </VStack>
         ) : (
           <BodyLong size="small">
