@@ -44,7 +44,7 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@fontsource/source-sans-pro": "^5.2.5",
+    "@fontsource/source-sans-pro": "^5.3.0",
     "@google-cloud/storage": "^7.22.0",
     "@navikt/aksel-icons": "^8.16.1",
     "@navikt/ds-css": "^8.16.1",
