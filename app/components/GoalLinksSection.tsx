@@ -1,12 +1,25 @@
 import { LinkIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
-import { BodyShort, Box, Button, Detail, Heading, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
+import { Alert, BodyLong, BodyShort, Box, Button, Detail, Heading, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
 import { useState } from 'react'
 import { Form, Link } from 'react-router'
 import { UserName } from '~/components/UserName'
 import type { DeploymentGoalLinkWithDetails } from '~/db/deployment-goal-links.server'
+import { SECTION_ROLE_LABELS, TEAM_ROLE_LABELS } from '~/lib/authorization-types'
 import type { UserLookupMap } from '~/lib/user-display'
 import { ExternalLink } from './ExternalLink'
 import { type GoalSelectionBoard, GoalSelectionFields } from './GoalSelectionFields'
+
+export interface GoalLinkAppInfo {
+  appName: string
+  environmentName: string
+}
+
+export interface MyDevTeamForGoalLinking {
+  id: number
+  name: string
+  slug: string
+  sectionSlug: string | null
+}
 
 const LINK_METHOD_LABELS: Record<string, string> = {
   manual: 'Manuell',
@@ -16,6 +29,8 @@ const LINK_METHOD_LABELS: Record<string, string> = {
   dependabot_auto: 'Dependabot (auto)',
 }
 
+const APP_ADMIN_ROLES_TEXT = `${TEAM_ROLE_LABELS.tech_lead} eller ${TEAM_ROLE_LABELS.produktleder} for teamet, eller ${SECTION_ROLE_LABELS.teknologileder} eller ${SECTION_ROLE_LABELS.seksjonsleder} for seksjonen`
+
 export type AvailableBoard = GoalSelectionBoard
 
 interface GoalLinksSectionProps {
@@ -24,6 +39,8 @@ interface GoalLinksSectionProps {
   sectionBoards?: AvailableBoard[]
   canLinkGoal?: boolean
   userMappings?: UserLookupMap
+  appInfo?: GoalLinkAppInfo
+  myDevTeams?: MyDevTeamForGoalLinking[]
 }
 
 export function GoalLinksSection({
@@ -32,6 +49,8 @@ export function GoalLinksSection({
   sectionBoards = [],
   canLinkGoal = false,
   userMappings = {},
+  appInfo,
+  myDevTeams = [],
 }: GoalLinksSectionProps) {
   const [showAddLink, setShowAddLink] = useState(false)
 
@@ -72,6 +91,8 @@ export function GoalLinksSection({
           onCancel={() => setShowAddLink(false)}
           availableBoards={availableBoards}
           sectionBoards={sectionBoards}
+          appInfo={appInfo}
+          myDevTeams={myDevTeams}
         />
       )}
     </VStack>
@@ -182,10 +203,14 @@ function AddGoalLinkForm({
   onCancel,
   availableBoards,
   sectionBoards,
+  appInfo,
+  myDevTeams,
 }: {
   onCancel: () => void
   availableBoards: AvailableBoard[]
   sectionBoards: AvailableBoard[]
+  appInfo?: GoalLinkAppInfo
+  myDevTeams: MyDevTeamForGoalLinking[]
 }) {
   const [hasObjective, setHasObjective] = useState(false)
 
@@ -213,7 +238,10 @@ function AddGoalLinkForm({
   if (!hasBoards && !hasSectionBoards) {
     return (
       <Box padding="space-16" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <BodyShort textColor="subtle">Ingen tilgjengelige måltavler å koble til.</BodyShort>
+        <VStack gap="space-16">
+          <BodyShort textColor="subtle">Ingen tilgjengelige måltavler å koble til.</BodyShort>
+          <MissingBoardHelp appInfo={appInfo} myDevTeams={myDevTeams} />
+        </VStack>
       </Box>
     )
   }
@@ -239,5 +267,76 @@ function AddGoalLinkForm({
         {hasSectionBoards && <Tabs.Panel value="section">{goalForm(sectionBoards)}</Tabs.Panel>}
       </Tabs>
     </Box>
+  )
+}
+
+function MissingBoardHelp({
+  appInfo,
+  myDevTeams,
+}: {
+  appInfo?: GoalLinkAppInfo
+  myDevTeams: MyDevTeamForGoalLinking[]
+}) {
+  const linkableTeams = myDevTeams.filter((t) => t.sectionSlug)
+
+  return (
+    <Alert variant="info" size="small">
+      <VStack gap="space-8">
+        <BodyLong size="small">
+          {appInfo ? (
+            <>
+              Fant ingen måltavler å koble denne leveransen til for <code>{appInfo.appName}</code> (
+              {appInfo.environmentName}). Årsaken kan enten være at applikasjonen ikke er koblet til noe team med
+              måltavle du har tilgang til, eller at teamet applikasjonen er koblet til ikke har en aktiv måltavle for
+              perioden denne leveransen tilhører.
+            </>
+          ) : (
+            <>
+              Fant ingen måltavler å koble denne leveransen til. Årsaken kan enten være at applikasjonen ikke er koblet
+              til noe team med måltavle du har tilgang til, eller at teamet applikasjonen er koblet til ikke har en
+              aktiv måltavle for perioden denne leveransen tilhører.
+            </>
+          )}
+        </BodyLong>
+
+        {linkableTeams.length > 0 ? (
+          <VStack gap="space-8">
+            <BodyLong size="small">
+              Hvis applikasjonen ikke er koblet til ditt eget team ennå, kan det fikses slik:
+            </BodyLong>
+            <BodyLong size="small" as="div">
+              <ol style={{ margin: 0, paddingLeft: 'var(--ax-space-24)' }}>
+                <li>
+                  Gå til adminsiden for teamet ditt:{' '}
+                  {linkableTeams.map((team, index) => (
+                    <span key={team.id}>
+                      {index > 0 && ', '}
+                      <Link to={`/sections/${team.sectionSlug}/teams/${team.slug}/admin#applikasjoner`}>
+                        {team.name}
+                      </Link>
+                    </span>
+                  ))}
+                  .
+                  <BodyShort size="small" textColor="subtle" as="div">
+                    Dette krever at du er {APP_ADMIN_ROLES_TEXT}. Har du ikke en av disse rollene, be noen som har det
+                    om å koble applikasjonen til teamet.
+                  </BodyShort>
+                </li>
+                <li>
+                  Under «Applikasjoner», trykk «Legg til applikasjon» og søk opp{' '}
+                  {appInfo ? <code>{appInfo.appName}</code> : 'denne applikasjonen'}.
+                </li>
+                <li>Kom tilbake hit — leveransen kan nå kobles til teamets mål (forutsatt en aktiv måltavle).</li>
+              </ol>
+            </BodyLong>
+          </VStack>
+        ) : (
+          <BodyLong size="small">
+            Hvis applikasjonen ikke er koblet til ditt team, kan noen med riktig rolle koble den til på teamets
+            adminside («Applikasjoner» → «Legg til applikasjon»).
+          </BodyLong>
+        )}
+      </VStack>
+    </Alert>
   )
 }

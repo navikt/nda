@@ -1,4 +1,4 @@
-import type { AvailableBoard } from '~/components/GoalLinksSection'
+import type { AvailableBoard, MyDevTeamForGoalLinking } from '~/components/GoalLinksSection'
 import { getRepositoriesByAppId } from '~/db/application-repositories.server'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import { getCommentsByDeploymentId, getLegacyInfo, getManualApproval } from '~/db/comments.server'
@@ -191,12 +191,14 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
 
   let availableBoards: AvailableBoard[] = []
   let sectionBoards: AvailableBoard[] = []
+  let myDevTeams: MyDevTeamForGoalLinking[] = []
 
   if (capabilities.canLinkGoal) {
     let devTeams = allDevTeams
     if (currentUser?.navIdent) {
       try {
         const userTeams = await getUserDevTeamsByRole(currentUser.navIdent)
+        myDevTeams = userTeams.map((t) => ({ id: t.id, name: t.name, slug: t.slug, sectionSlug: t.section_slug }))
         const userTeamIds = new Set(userTeams.map((t) => t.id))
         const filtered = allDevTeams.filter((dt) => userTeamIds.has(dt.id))
         if (filtered.length > 0) {
@@ -310,6 +312,11 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     goalLinks,
     availableBoards,
     sectionBoards,
+    myDevTeams,
+    goalLinkAppInfo: {
+      appName: app.app_name,
+      environmentName: app.environment_name,
+    },
     previousDeployment,
     previousDeploymentForDiff,
     nextDeployment,

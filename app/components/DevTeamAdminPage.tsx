@@ -425,7 +425,7 @@ function ApplicationsSection({
   const addModalRef = useRef<HTMLDialogElement>(null)
 
   return (
-    <VStack gap="space-16">
+    <VStack gap="space-16" id="applikasjoner">
       <HStack justify="space-between" align="center">
         <Heading level="2" size="medium">
           Applikasjoner ({linkedApps.length})
