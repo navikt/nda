@@ -316,6 +316,10 @@ function MissingBoardHelp({
                     </span>
                   ))}
                   .
+                  <BodyShort size="small" textColor="subtle" as="div">
+                    Dette krever at du er {APP_ADMIN_ROLES_TEXT}. Har du ikke en av disse rollene, be noen som har det
+                    om å koble appen til teamet.
+                  </BodyShort>
                 </li>
                 <li>
                   Under «Applikasjoner», trykk «Legg til applikasjon» og søk opp{' '}
@@ -331,11 +335,6 @@ function MissingBoardHelp({
             («Applikasjoner» → «Legg til applikasjon»).
           </BodyLong>
         )}
-
-        <BodyLong size="small" textColor="subtle">
-          Dette krever at du er {APP_ADMIN_ROLES_TEXT}. Har du ikke en av disse rollene, be noen som har det om å koble
-          appen til teamet.
-        </BodyLong>
       </VStack>
     </Alert>
   )
