@@ -261,6 +261,38 @@ export const IngenTilgjengeligeTavler: Story = {
   },
 }
 
+export const IngenTavlerMedSnarvei: Story = {
+  name: 'Ingen tilgjengelige tavler (med snarvei til teamadmin)',
+  args: {
+    goalLinks: [],
+    availableBoards: [],
+    sectionBoards: [],
+    canLinkGoal: true,
+    appInfo: {
+      appName: 'saksbehandling-api',
+      environmentName: 'prod',
+      ownerTeamSlug: 'team-a-nais',
+    },
+    myDevTeams: [{ id: 99, name: 'Team Uføre', slug: 'team-ufore', sectionSlug: 'ufore' }],
+  },
+}
+
+export const IngenTavlerUtenEgetTeam: Story = {
+  name: 'Ingen tilgjengelige tavler (bruker uten eget team)',
+  args: {
+    goalLinks: [],
+    availableBoards: [],
+    sectionBoards: [],
+    canLinkGoal: true,
+    appInfo: {
+      appName: 'saksbehandling-api',
+      environmentName: 'prod',
+      ownerTeamSlug: 'team-a-nais',
+    },
+    myDevTeams: [],
+  },
+}
+
 const dependabotAutoLink: DeploymentGoalLinkWithDetails = {
   id: 6,
   deployment_id: 42,

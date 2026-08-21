@@ -49,6 +49,8 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
     goalLinks,
     availableBoards,
     sectionBoards,
+    myDevTeams,
+    goalLinkAppInfo,
     previousDeployment,
     previousDeploymentForDiff,
     nextDeployment,
@@ -690,6 +692,8 @@ export default function DeploymentDetail({ loaderData, actionData }: Route.Compo
         sectionBoards={sectionBoards}
         canLinkGoal={capabilities.canLinkGoal}
         userMappings={userMappings}
+        appInfo={goalLinkAppInfo}
+        myDevTeams={myDevTeams}
       />
 
       <DeviationsSection

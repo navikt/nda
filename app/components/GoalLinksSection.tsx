@@ -1,5 +1,5 @@
 import { LinkIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
-import { BodyShort, Box, Button, Detail, Heading, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
+import { Alert, BodyLong, BodyShort, Box, Button, Detail, Heading, HStack, Tabs, Tag, VStack } from '@navikt/ds-react'
 import { useState } from 'react'
 import { Form, Link } from 'react-router'
 import { UserName } from '~/components/UserName'
@@ -7,6 +7,19 @@ import type { DeploymentGoalLinkWithDetails } from '~/db/deployment-goal-links.s
 import type { UserLookupMap } from '~/lib/user-display'
 import { ExternalLink } from './ExternalLink'
 import { type GoalSelectionBoard, GoalSelectionFields } from './GoalSelectionFields'
+
+export interface GoalLinkAppInfo {
+  appName: string
+  environmentName: string
+  ownerTeamSlug: string
+}
+
+export interface MyDevTeamForGoalLinking {
+  id: number
+  name: string
+  slug: string
+  sectionSlug: string | null
+}
 
 const LINK_METHOD_LABELS: Record<string, string> = {
   manual: 'Manuell',
@@ -24,6 +37,8 @@ interface GoalLinksSectionProps {
   sectionBoards?: AvailableBoard[]
   canLinkGoal?: boolean
   userMappings?: UserLookupMap
+  appInfo?: GoalLinkAppInfo
+  myDevTeams?: MyDevTeamForGoalLinking[]
 }
 
 export function GoalLinksSection({
@@ -32,6 +47,8 @@ export function GoalLinksSection({
   sectionBoards = [],
   canLinkGoal = false,
   userMappings = {},
+  appInfo,
+  myDevTeams = [],
 }: GoalLinksSectionProps) {
   const [showAddLink, setShowAddLink] = useState(false)
 
@@ -72,6 +89,8 @@ export function GoalLinksSection({
           onCancel={() => setShowAddLink(false)}
           availableBoards={availableBoards}
           sectionBoards={sectionBoards}
+          appInfo={appInfo}
+          myDevTeams={myDevTeams}
         />
       )}
     </VStack>
@@ -182,10 +201,14 @@ function AddGoalLinkForm({
   onCancel,
   availableBoards,
   sectionBoards,
+  appInfo,
+  myDevTeams,
 }: {
   onCancel: () => void
   availableBoards: AvailableBoard[]
   sectionBoards: AvailableBoard[]
+  appInfo?: GoalLinkAppInfo
+  myDevTeams: MyDevTeamForGoalLinking[]
 }) {
   const [hasObjective, setHasObjective] = useState(false)
 
@@ -213,7 +236,10 @@ function AddGoalLinkForm({
   if (!hasBoards && !hasSectionBoards) {
     return (
       <Box padding="space-16" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <BodyShort textColor="subtle">Ingen tilgjengelige måltavler å koble til.</BodyShort>
+        <VStack gap="space-16">
+          <BodyShort textColor="subtle">Ingen tilgjengelige måltavler å koble til.</BodyShort>
+          <MissingBoardHelp appInfo={appInfo} myDevTeams={myDevTeams} />
+        </VStack>
       </Box>
     )
   }
@@ -239,5 +265,80 @@ function AddGoalLinkForm({
         {hasSectionBoards && <Tabs.Panel value="section">{goalForm(sectionBoards)}</Tabs.Panel>}
       </Tabs>
     </Box>
+  )
+}
+
+function MissingBoardHelp({
+  appInfo,
+  myDevTeams,
+}: {
+  appInfo?: GoalLinkAppInfo
+  myDevTeams: MyDevTeamForGoalLinking[]
+}) {
+  const linkableTeams = myDevTeams.filter((t) => t.sectionSlug)
+
+  return (
+    <Alert variant="info" size="small">
+      <VStack gap="space-8">
+        <BodyLong size="small">
+          {appInfo ? (
+            <>
+              Applikasjonen <code>{appInfo.appName}</code> ({appInfo.environmentName}) er ikke koblet til noe team
+              med måltavle du har tilgang til. NDA viser bare måltavler for teamet som eier appen i Nais (
+              <code>{appInfo.ownerTeamSlug}</code>) eller team som er eksplisitt koblet til appen.
+            </>
+          ) : (
+            <>
+              Appen er ikke koblet til noe team med måltavle du har tilgang til. NDA viser bare måltavler for teamet
+              som eier appen i Nais, eller team som er eksplisitt koblet til appen.
+            </>
+          )}
+        </BodyLong>
+
+        {linkableTeams.length > 0 ? (
+          <VStack gap="space-8">
+            <BodyLong size="small">
+              For å knytte leveranser fra denne appen til ditt eget teams mål må appen kobles til teamet:
+            </BodyLong>
+            <BodyLong size="small" as="div">
+              <ol style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                <li>Gå til adminsiden for teamet ditt (lenke under).</li>
+                <li>
+                  Under «Applikasjoner», trykk «Legg til applikasjon» og søk opp{' '}
+                  {appInfo ? (
+                    <>
+                      <code>{appInfo.appName}</code> (miljø {appInfo.environmentName}, Nais-team{' '}
+                      <code>{appInfo.ownerTeamSlug}</code>)
+                    </>
+                  ) : (
+                    'denne appen'
+                  )}
+                  .
+                </li>
+                <li>Kom tilbake hit — leveransen kan nå kobles til teamets mål.</li>
+              </ol>
+            </BodyLong>
+            <VStack gap="space-4">
+              {linkableTeams.map((team) => (
+                <Link key={team.id} to={`/sections/${team.sectionSlug}/teams/${team.slug}/admin#applikasjoner`}>
+                  Gå til adminsiden for {team.name}
+                </Link>
+              ))}
+            </VStack>
+          </VStack>
+        ) : (
+          <BodyLong size="small">
+            For å knytte leveranser fra denne appen til ditt teams mål, må appen kobles til teamet på teamets
+            adminside («Applikasjoner» → «Legg til applikasjon»).
+          </BodyLong>
+        )}
+
+        <BodyLong size="small" textColor="subtle">
+          Dette krever at du er Tech Lead eller Produktleder for teamet, eller Teknologileder, Seksjonsleder eller
+          Leveranseleder for seksjonen. Har du ikke en av disse rollene, be noen som har det om å koble appen til
+          teamet.
+        </BodyLong>
+      </VStack>
+    </Alert>
   )
 }
