@@ -1,5 +1,6 @@
 import { fetchWithLogging, logger } from '~/lib/logger.server'
 import type { NomUserResult } from '~/lib/nom-types'
+import { formatDisplayNameNatural } from '~/lib/user-display'
 
 interface NomToken {
   access_token: string
@@ -133,6 +134,42 @@ export async function getNomUsersByNavIdenter(navIdenter: string[]): Promise<Nom
   }
 
   return (result.data?.ressurser ?? []).flatMap((r) => (r.ressurs ? [toUserResult(r.ressurs)] : []))
+}
+
+export type NomUserLookupResult =
+  | { ok: true; navIdent: string; displayName: string; email: string | null }
+  | { ok: false; error: string }
+
+interface NomUserLookupMessages {
+  unavailable: string
+  notFound: string
+  missingDisplayName: string
+}
+
+export async function resolveNomUserByNavIdent(
+  navIdent: string,
+  logContext: string,
+  messages: NomUserLookupMessages,
+): Promise<NomUserLookupResult> {
+  let nomResults: NomUserResult[]
+  try {
+    nomResults = await getNomUsersByNavIdenter([navIdent])
+  } catch (error) {
+    logger.error(`NOM lookup failed during ${logContext}`, error)
+    return { ok: false, error: messages.unavailable }
+  }
+
+  const nomUser = nomResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
+  if (!nomUser) {
+    return { ok: false, error: messages.notFound }
+  }
+
+  const displayName = nomUser.displayName ? formatDisplayNameNatural(nomUser.displayName) : null
+  if (!displayName) {
+    return { ok: false, error: messages.missingDisplayName }
+  }
+
+  return { ok: true, navIdent, displayName, email: nomUser.email }
 }
 
 export async function searchNomUsers(query: string): Promise<NomUserResult[]> {

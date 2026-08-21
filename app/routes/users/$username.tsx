@@ -25,10 +25,9 @@ import { canSearchUsers } from '~/lib/authorization.server'
 import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import { getBotDescription, getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
-import { getNomUsersByNavIdenter } from '~/lib/nom.server'
+import { resolveNomUserByNavIdent } from '~/lib/nom.server'
 import { resolveSlackMemberId, SlackLookupFailedError } from '~/lib/slack/client.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
-import { formatDisplayNameNatural } from '~/lib/user-display'
 import type { Route } from './+types/$username'
 
 export function meta({ loaderData: data }: Route.MetaArgs) {
@@ -268,27 +267,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     const navIdent = navIdentInput as string
-    let nomResults: Awaited<ReturnType<typeof getNomUsersByNavIdenter>>
-    try {
-      nomResults = await getNomUsersByNavIdenter([navIdent])
-    } catch (error) {
-      logger.error('NOM lookup failed during mapping creation', error)
-      return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (NOM utilgjengelig)' } }
-    }
-
-    const nomUser = nomResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
-    if (!nomUser) {
-      return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i NOM' } }
-    }
-
-    const displayName = nomUser.displayName ? formatDisplayNameNatural(nomUser.displayName) : null
-    if (!displayName) {
-      return { fieldErrors: { nav_ident: 'Brukeren ble funnet i NOM, men mangler visningsnavn' } }
+    const nomLookup = await resolveNomUserByNavIdent(navIdent, 'mapping creation', {
+      unavailable: 'Kunne ikke verifisere NAV-ident (NOM utilgjengelig)',
+      notFound: 'NAV-ident ble ikke funnet i NOM',
+      missingDisplayName: 'Brukeren ble funnet i NOM, men mangler visningsnavn',
+    })
+    if (!nomLookup.ok) {
+      return { fieldErrors: { nav_ident: nomLookup.error } }
     }
 
     let slackMemberId: string | null
     try {
-      slackMemberId = await resolveSlackMemberId(nomUser.email, getFormString(formData, 'slack_member_id') || null)
+      slackMemberId = await resolveSlackMemberId(nomLookup.email, getFormString(formData, 'slack_member_id') || null)
     } catch (error) {
       if (error instanceof SlackLookupFailedError) {
         logger.error('Slack member ID lookup failed during mapping creation', error.cause)
@@ -300,7 +290,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: isSelfService ? githubUsernameRaw : null,
-      displayName,
+      displayName: nomLookup.displayName,
       navIdent: navIdent,
       slackMemberId,
     })

@@ -20,9 +20,8 @@ import { requireAdmin } from '~/lib/auth.server'
 import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
-import { getNomUsersByNavIdenter } from '~/lib/nom.server'
+import { resolveNomUserByNavIdent } from '~/lib/nom.server'
 import { resolveSlackMemberId, SlackLookupFailedError } from '~/lib/slack/client.server'
-import { formatDisplayNameNatural } from '~/lib/user-display'
 import type { Route } from './+types/users'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -93,25 +92,16 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const navIdent = navIdentRaw as string
-    let nomResults: Awaited<ReturnType<typeof getNomUsersByNavIdenter>>
-    try {
-      nomResults = await getNomUsersByNavIdenter([navIdent])
-    } catch (error) {
-      logger.error('NOM lookup failed during create-user', error)
-      return { createUserFieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (NOM utilgjengelig)' } }
+    const nomLookup = await resolveNomUserByNavIdent(navIdent, 'create-user', {
+      unavailable: 'Kunne ikke verifisere NAV-ident (NOM utilgjengelig)',
+      notFound: 'NAV-ident ble ikke funnet i NOM',
+      missingDisplayName: 'Brukeren mangler navn i NOM',
+    })
+    if (!nomLookup.ok) {
+      return { createUserFieldErrors: { nav_ident: nomLookup.error } }
     }
 
-    const nomUser = nomResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
-    if (!nomUser) {
-      return { createUserFieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i NOM' } }
-    }
-    const displayName = nomUser.displayName ? formatDisplayNameNatural(nomUser.displayName) : null
-
-    if (!displayName) {
-      return { createUserFieldErrors: { nav_ident: 'Brukeren mangler navn i NOM' } }
-    }
-
-    await upsertUser({ navIdent, displayName })
+    await upsertUser({ navIdent, displayName: nomLookup.displayName })
     return { createUserSuccess: true, createUserNavIdent: navIdent }
   }
 
@@ -141,27 +131,18 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const navIdent = navIdentRaw as string
-    let nomResults: Awaited<ReturnType<typeof getNomUsersByNavIdenter>>
-    try {
-      nomResults = await getNomUsersByNavIdenter([navIdent])
-    } catch (error) {
-      logger.error('NOM lookup failed during admin mapping creation', error)
-      return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (NOM utilgjengelig)' } }
-    }
-
-    const nomUser = nomResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
-    if (!nomUser) {
-      return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i NOM' } }
-    }
-
-    const displayName = nomUser.displayName ? formatDisplayNameNatural(nomUser.displayName) : null
-    if (!displayName) {
-      return { fieldErrors: { nav_ident: 'Brukeren ble funnet i NOM, men mangler visningsnavn' } }
+    const nomLookup = await resolveNomUserByNavIdent(navIdent, 'admin mapping creation', {
+      unavailable: 'Kunne ikke verifisere NAV-ident (NOM utilgjengelig)',
+      notFound: 'NAV-ident ble ikke funnet i NOM',
+      missingDisplayName: 'Brukeren ble funnet i NOM, men mangler visningsnavn',
+    })
+    if (!nomLookup.ok) {
+      return { fieldErrors: { nav_ident: nomLookup.error } }
     }
 
     let slackMemberId: string | null
     try {
-      slackMemberId = await resolveSlackMemberId(nomUser.email, getFormString(formData, 'slack_member_id') || null)
+      slackMemberId = await resolveSlackMemberId(nomLookup.email, getFormString(formData, 'slack_member_id') || null)
     } catch (error) {
       if (error instanceof SlackLookupFailedError) {
         logger.error('Slack member ID lookup failed during admin mapping creation', error.cause)
@@ -173,7 +154,7 @@ export async function action({ request }: Route.ActionArgs) {
     await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: githubUsernameRaw,
-      displayName,
+      displayName: nomLookup.displayName,
       navIdent,
       slackMemberId,
     })

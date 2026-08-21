@@ -190,4 +190,68 @@ describe('nom.server', () => {
     const { searchNomUsers } = await getModule()
     await expect(searchNomUsers('test')).rejects.toThrow('NOM API returned errors: boom')
   })
+
+  describe('resolveNomUserByNavIdent', () => {
+    const messages = {
+      unavailable: 'unavailable-message',
+      notFound: 'not-found-message',
+      missingDisplayName: 'missing-display-name-message',
+    }
+
+    it('returns a normalized displayName and email on success', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockTokenResponse())
+        .mockResolvedValueOnce(
+          mockRessurserResponse([{ navident: 'Z990001', epost: 'glad.fjord@nav.no', visningsnavn: 'Fjord, Glad' }]),
+        )
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { resolveNomUserByNavIdent } = await getModule()
+      const result = await resolveNomUserByNavIdent('Z990001', 'test-context', messages)
+
+      expect(result).toEqual({
+        ok: true,
+        navIdent: 'Z990001',
+        displayName: 'Glad Fjord',
+        email: 'glad.fjord@nav.no',
+      })
+    })
+
+    it('returns the unavailable message when the NOM lookup throws', async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(new Response('Forbidden', { status: 403 }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { resolveNomUserByNavIdent } = await getModule()
+      const result = await resolveNomUserByNavIdent('Z990001', 'test-context', messages)
+
+      expect(result).toEqual({ ok: false, error: messages.unavailable })
+    })
+
+    it('returns the not-found message when no matching user is returned', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockTokenResponse())
+        .mockResolvedValueOnce(mockRessurserResponse([null]))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { resolveNomUserByNavIdent } = await getModule()
+      const result = await resolveNomUserByNavIdent('Z990001', 'test-context', messages)
+
+      expect(result).toEqual({ ok: false, error: messages.notFound })
+    })
+
+    it('returns the missing-displayName message when the matched user has no displayName', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockTokenResponse())
+        .mockResolvedValueOnce(mockRessurserResponse([{ navident: 'Z990001', epost: null, visningsnavn: null }]))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { resolveNomUserByNavIdent } = await getModule()
+      const result = await resolveNomUserByNavIdent('Z990001', 'test-context', messages)
+
+      expect(result).toEqual({ ok: false, error: messages.missingDisplayName })
+    })
+  })
 })
