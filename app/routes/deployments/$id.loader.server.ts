@@ -274,7 +274,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     goalLinkAppInfo: {
       appName: app.app_name,
       environmentName: app.environment_name,
-      ownerTeamSlug: app.team_slug,
     },
     previousDeployment,
     previousDeploymentForDiff,

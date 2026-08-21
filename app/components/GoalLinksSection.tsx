@@ -12,7 +12,6 @@ import { type GoalSelectionBoard, GoalSelectionFields } from './GoalSelectionFie
 export interface GoalLinkAppInfo {
   appName: string
   environmentName: string
-  ownerTeamSlug: string
 }
 
 export interface MyDevTeamForGoalLinking {

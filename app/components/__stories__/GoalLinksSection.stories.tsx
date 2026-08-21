@@ -271,7 +271,6 @@ export const IngenTavlerMedSnarvei: Story = {
     appInfo: {
       appName: 'saksbehandling-api',
       environmentName: 'prod',
-      ownerTeamSlug: 'team-a-nais',
     },
     myDevTeams: [{ id: 99, name: 'Team Uføre', slug: 'team-ufore', sectionSlug: 'ufore' }],
   },
@@ -287,7 +286,6 @@ export const IngenTavlerUtenEgetTeam: Story = {
     appInfo: {
       appName: 'saksbehandling-api',
       environmentName: 'prod',
-      ownerTeamSlug: 'team-a-nais',
     },
     myDevTeams: [],
   },
