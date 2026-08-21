@@ -283,25 +283,25 @@ function MissingBoardHelp({
         <BodyLong size="small">
           {appInfo ? (
             <>
-              Applikasjonen <code>{appInfo.appName}</code> ({appInfo.environmentName}) er ikke koblet til noe team med
-              måltavle du har tilgang til. NDA viser bare måltavler for teamet som eier appen i Nais (
-              <code>{appInfo.ownerTeamSlug}</code>) eller team som er eksplisitt koblet til appen.
+              Fant ingen måltavler å koble denne leveransen til for <code>{appInfo.appName}</code> (
+              {appInfo.environmentName}). Årsaken kan enten være at appen ikke er koblet til noe team med måltavle du
+              har tilgang til (appen eies i Nais av <code>{appInfo.ownerTeamSlug}</code>), eller at teamet appen er
+              koblet til ikke har en aktiv måltavle for perioden denne leveransen tilhører.
             </>
           ) : (
             <>
-              Appen er ikke koblet til noe team med måltavle du har tilgang til. NDA viser bare måltavler for teamet som
-              eier appen i Nais, eller team som er eksplisitt koblet til appen.
+              Fant ingen måltavler å koble denne leveransen til. Årsaken kan enten være at appen ikke er koblet til noe
+              team med måltavle du har tilgang til, eller at teamet appen er koblet til ikke har en aktiv måltavle for
+              perioden denne leveransen tilhører.
             </>
           )}
         </BodyLong>
 
         {linkableTeams.length > 0 ? (
           <VStack gap="space-8">
-            <BodyLong size="small">
-              For å knytte leveranser fra denne appen til ditt eget teams mål må appen kobles til teamet:
-            </BodyLong>
+            <BodyLong size="small">Hvis appen ikke er koblet til ditt eget team ennå, kan det fikses slik:</BodyLong>
             <BodyLong size="small" as="div">
-              <ol style={{ margin: 0, paddingLeft: '1.25rem' }}>
+              <ol style={{ margin: 0, paddingLeft: 'var(--ax-space-24)' }}>
                 <li>Gå til adminsiden for teamet ditt (lenke under).</li>
                 <li>
                   Under «Applikasjoner», trykk «Legg til applikasjon» og søk opp{' '}
@@ -315,7 +315,7 @@ function MissingBoardHelp({
                   )}
                   .
                 </li>
-                <li>Kom tilbake hit — leveransen kan nå kobles til teamets mål.</li>
+                <li>Kom tilbake hit — leveransen kan nå kobles til teamets mål (forutsatt en aktiv måltavle).</li>
               </ol>
             </BodyLong>
             <VStack gap="space-4">
@@ -328,7 +328,7 @@ function MissingBoardHelp({
           </VStack>
         ) : (
           <BodyLong size="small">
-            For å knytte leveranser fra denne appen til ditt teams mål, må appen kobles til teamet på teamets adminside
+            Hvis appen ikke er koblet til ditt team, kan noen med riktig rolle koble den til på teamets adminside
             («Applikasjoner» → «Legg til applikasjon»).
           </BodyLong>
         )}
