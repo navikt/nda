@@ -283,14 +283,14 @@ function MissingBoardHelp({
         <BodyLong size="small">
           {appInfo ? (
             <>
-              Applikasjonen <code>{appInfo.appName}</code> ({appInfo.environmentName}) er ikke koblet til noe team
-              med måltavle du har tilgang til. NDA viser bare måltavler for teamet som eier appen i Nais (
+              Applikasjonen <code>{appInfo.appName}</code> ({appInfo.environmentName}) er ikke koblet til noe team med
+              måltavle du har tilgang til. NDA viser bare måltavler for teamet som eier appen i Nais (
               <code>{appInfo.ownerTeamSlug}</code>) eller team som er eksplisitt koblet til appen.
             </>
           ) : (
             <>
-              Appen er ikke koblet til noe team med måltavle du har tilgang til. NDA viser bare måltavler for teamet
-              som eier appen i Nais, eller team som er eksplisitt koblet til appen.
+              Appen er ikke koblet til noe team med måltavle du har tilgang til. NDA viser bare måltavler for teamet som
+              eier appen i Nais, eller team som er eksplisitt koblet til appen.
             </>
           )}
         </BodyLong>
@@ -328,8 +328,8 @@ function MissingBoardHelp({
           </VStack>
         ) : (
           <BodyLong size="small">
-            For å knytte leveranser fra denne appen til ditt teams mål, må appen kobles til teamet på teamets
-            adminside («Applikasjoner» → «Legg til applikasjon»).
+            For å knytte leveranser fra denne appen til ditt teams mål, må appen kobles til teamet på teamets adminside
+            («Applikasjoner» → «Legg til applikasjon»).
           </BodyLong>
         )}
 
