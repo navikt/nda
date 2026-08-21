@@ -262,7 +262,7 @@ export const IngenTilgjengeligeTavler: Story = {
 }
 
 export const IngenTavlerMedSnarvei: Story = {
-  name: 'Ingen tilgjengelige tavler (med snarvei til teamadmin)',
+  name: 'Ingen tilgjengelige tavler (med snarvei til teamadmin) – trykk «Knytt til mål» for å se',
   args: {
     goalLinks: [],
     availableBoards: [],
@@ -278,7 +278,7 @@ export const IngenTavlerMedSnarvei: Story = {
 }
 
 export const IngenTavlerUtenEgetTeam: Story = {
-  name: 'Ingen tilgjengelige tavler (bruker uten eget team)',
+  name: 'Ingen tilgjengelige tavler (bruker uten eget team) – trykk «Knytt til mål» for å se',
   args: {
     goalLinks: [],
     availableBoards: [],
