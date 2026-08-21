@@ -60,8 +60,6 @@ describe('nom.server', () => {
             navident: 'Z990001',
             epost: 'glad.fjord@nav.no',
             visningsnavn: 'Fjord, Glad',
-            fornavn: 'Glad',
-            etternavn: 'Fjord',
           },
         ]),
       )
@@ -108,9 +106,7 @@ describe('nom.server', () => {
       .fn()
       .mockResolvedValueOnce(mockTokenResponse())
       .mockResolvedValueOnce(
-        mockRessurserResponse([
-          { navident: 'Z990003', epost: null, visningsnavn: 'Skog, Stille', fornavn: 'Stille', etternavn: 'Skog' },
-        ]),
+        mockRessurserResponse([{ navident: 'Z990003', epost: null, visningsnavn: 'Skog, Stille' }]),
       )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -130,9 +126,7 @@ describe('nom.server', () => {
       .fn()
       .mockResolvedValueOnce(mockTokenResponse())
       .mockResolvedValueOnce(
-        mockSearchRessursResponse([
-          { navident: 'Z990004', epost: null, visningsnavn: 'Røe, Modig', fornavn: 'Modig', etternavn: 'Røe' },
-        ]),
+        mockSearchRessursResponse([{ navident: 'Z990004', epost: null, visningsnavn: 'Røe, Modig' }]),
       )
     vi.stubGlobal('fetch', fetchMock)
 

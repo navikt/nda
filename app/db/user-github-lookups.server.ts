@@ -421,37 +421,60 @@ export async function populateUsersFromNom(): Promise<PopulateResult> {
   let skipped = 0
   let errors = 0
 
+  const navIdents: string[] = []
   for (const row of rows) {
     const navIdent = normalizeNavIdent(row.nav_ident)
     if (!navIdent) {
       skipped++
       continue
     }
+    navIdents.push(navIdent)
+  }
+
+  const NOM_BATCH_SIZE = 100
+  for (const batch of chunk(navIdents, NOM_BATCH_SIZE)) {
+    let nomUsersByNavIdent: Map<string, string>
     try {
-      const nomUsers = await getNomUsersByNavIdenter([navIdent])
-      if (nomUsers.length !== 1) {
-        logger.warn('populate-users: skipping nav_ident — expected 1 NOM result', {
+      const nomUsers = await getNomUsersByNavIdenter(batch)
+      nomUsersByNavIdent = new Map(
+        nomUsers.flatMap((user) =>
+          user.navIdent && user.displayName ? [[user.navIdent.toUpperCase(), user.displayName]] : [],
+        ),
+      )
+    } catch (err) {
+      logger.error('populate-users: error fetching NOM batch', err)
+      errors += batch.length
+      continue
+    }
+
+    for (const navIdent of batch) {
+      const displayName = nomUsersByNavIdent.get(navIdent)
+      if (!displayName) {
+        logger.warn('populate-users: skipping nav_ident — no matching NOM result with displayName', {
           nav_ident: navIdent,
-          count: nomUsers.length,
         })
         skipped++
         continue
       }
-      const user = nomUsers[0]
-      if (!user.displayName) {
-        logger.warn('populate-users: skipping nav_ident — missing displayName', { nav_ident: navIdent })
-        skipped++
-        continue
+      try {
+        await upsertUser({ navIdent, displayName })
+        success++
+      } catch (err) {
+        logger.error('populate-users: error upserting nav_ident', err)
+        errors++
       }
-      await upsertUser({ navIdent, displayName: user.displayName })
-      success++
-    } catch (err) {
-      logger.error('populate-users: error processing nav_ident', err)
-      errors++
     }
   }
 
   return { success, skipped, errors }
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
 }
 
 export async function getUsersWithoutGithub(): Promise<{ nav_ident: string; display_name: string }[]> {

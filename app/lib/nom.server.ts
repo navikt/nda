@@ -9,8 +9,6 @@ interface NomRessurs {
   navident: string
   epost: string | null
   visningsnavn: string | null
-  fornavn: string | null
-  etternavn: string | null
 }
 
 interface NomRessurserResponse {
@@ -114,8 +112,6 @@ const RESSURSER_BY_NAV_IDENT_QUERY = `
         navident
         epost
         visningsnavn
-        fornavn
-        etternavn
       }
     }
   }
@@ -127,8 +123,6 @@ const SEARCH_RESSURS_QUERY = `
       navident
       epost
       visningsnavn
-      fornavn
-      etternavn
     }
   }
 `

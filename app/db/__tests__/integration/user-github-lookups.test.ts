@@ -16,6 +16,7 @@ import {
   getUserByIdentifier,
   getUserBySlackMemberId,
   getUsersByIdentifiers,
+  populateUsersFromNom,
 } from '../../user-github-lookups.server'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
@@ -480,5 +481,89 @@ describe('getOrCreateUserFromGraph', () => {
   it('throws when NOM API fails', async () => {
     vi.mocked(getNomUsersByNavIdenter).mockRejectedValue(new Error('NOM API error'))
     await expect(getOrCreateUserFromGraph('Z990001')).rejects.toThrow()
+  })
+})
+
+describe('populateUsersFromNom', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+    vi.mocked(getNomUsersByNavIdenter).mockReset()
+  })
+
+  it('returns all-zero result when there are no users', async () => {
+    const result = await populateUsersFromNom()
+    expect(result).toEqual({ success: 0, skipped: 0, errors: 0 })
+    expect(getNomUsersByNavIdenter).not.toHaveBeenCalled()
+  })
+
+  it('fetches all nav-idents in a single NOM call and upserts matches', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990002', 'Old Name 2')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
+      { navIdent: 'Z990002', displayName: 'Rask Elv', email: 'rask.elv@nav.no' },
+    ])
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 2, skipped: 0, errors: 0 })
+    expect(getNomUsersByNavIdenter).toHaveBeenCalledTimes(1)
+    expect(getNomUsersByNavIdenter).toHaveBeenCalledWith(expect.arrayContaining(['Z990001', 'Z990002']))
+
+    const { rows } = await pool.query(`SELECT nav_ident, display_name FROM users ORDER BY nav_ident`)
+    expect(rows).toEqual([
+      { nav_ident: 'Z990001', display_name: 'Glad Fjord' },
+      { nav_ident: 'Z990002', display_name: 'Rask Elv' },
+    ])
+  })
+
+  it('skips nav-idents with no matching NOM result', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([])
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 0, skipped: 1, errors: 0 })
+  })
+
+  it('skips nav-idents whose NOM result has no displayName', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([{ navIdent: 'Z990001', displayName: null, email: null }])
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 0, skipped: 1, errors: 0 })
+  })
+
+  it('counts every nav-ident in a batch as an error when the NOM call fails', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990002', 'Old Name 2')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockRejectedValue(new Error('NOM API error'))
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 0, skipped: 0, errors: 2 })
+  })
+
+  it('splits large nav-ident lists into multiple batched NOM calls', async () => {
+    const navIdents = Array.from({ length: 150 }, (_, i) => `Z${(990001 + i).toString().padStart(6, '0')}`)
+    for (const navIdent of navIdents) {
+      await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, 'Old Name')`, [navIdent])
+    }
+
+    vi.mocked(getNomUsersByNavIdenter).mockImplementation(async (batch) =>
+      batch.map((navIdent) => ({ navIdent, displayName: `Navn ${navIdent}`, email: null })),
+    )
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 150, skipped: 0, errors: 0 })
+    expect(getNomUsersByNavIdenter).toHaveBeenCalledTimes(2)
+    expect((vi.mocked(getNomUsersByNavIdenter).mock.calls[0][0] as string[]).length).toBe(100)
+    expect((vi.mocked(getNomUsersByNavIdenter).mock.calls[1][0] as string[]).length).toBe(50)
   })
 })
