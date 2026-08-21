@@ -1,4 +1,5 @@
 import { fetchWithLogging, logger } from '~/lib/logger.server'
+import type { NomUserResult } from '~/lib/nom-types'
 
 interface NomToken {
   access_token: string
@@ -19,12 +20,6 @@ interface NomRessurserResponse {
 interface NomSearchRessursResponse {
   data?: { searchRessurs: NomRessurs[] }
   errors?: { message: string }[]
-}
-
-export interface NomUserResult {
-  displayName: string | null
-  navIdent: string | null
-  email: string | null
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null

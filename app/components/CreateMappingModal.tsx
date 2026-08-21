@@ -2,7 +2,7 @@ import { Alert, BodyShort, Button, Label, Modal, TextField, VStack } from '@navi
 import { forwardRef, useEffect, useState } from 'react'
 import { Form } from 'react-router'
 import { useSlackMemberIdLookup } from '~/hooks/useSlackMemberIdLookup'
-import type { NomUserResult } from '~/lib/nom.server'
+import type { NomUserResult } from '~/lib/nom-types'
 import { formatDisplayNameNatural } from '~/lib/user-display'
 import { SlackMemberIdField } from './SlackMemberIdField'
 import { UserSearch } from './UserSearch'

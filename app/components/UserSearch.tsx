@@ -1,6 +1,6 @@
 import { UNSAFE_Combobox } from '@navikt/ds-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { NomUserResult } from '~/lib/nom.server'
+import type { NomUserResult } from '~/lib/nom-types'
 
 interface UserSearchProps {
   label?: string

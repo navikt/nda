@@ -11,7 +11,7 @@ import {
   getAllUsersWithAccounts,
   getGithubUserLookup,
   getGithubUserLookups,
-  getOrCreateUserFromGraph,
+  getOrCreateUserFromNom,
   getUnmappedDeployers,
   getUserByIdentifier,
   getUserBySlackMemberId,
@@ -442,7 +442,7 @@ describe('getUnmappedDeployers', () => {
   })
 })
 
-describe('getOrCreateUserFromGraph', () => {
+describe('getOrCreateUserFromNom', () => {
   beforeEach(async () => {
     await truncateAllTables(pool)
     vi.mocked(getNomUsersByNavIdenter).mockReset()
@@ -450,7 +450,7 @@ describe('getOrCreateUserFromGraph', () => {
 
   it('returns existing user without calling NOM', async () => {
     await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Glad Fjord')`)
-    const result = await getOrCreateUserFromGraph('Z990001')
+    const result = await getOrCreateUserFromNom('Z990001')
     expect(result?.nav_ident).toBe('Z990001')
     expect(getNomUsersByNavIdenter).not.toHaveBeenCalled()
   })
@@ -459,7 +459,7 @@ describe('getOrCreateUserFromGraph', () => {
     vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
       { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
     ])
-    const result = await getOrCreateUserFromGraph('Z990001')
+    const result = await getOrCreateUserFromNom('Z990001')
     expect(result?.nav_ident).toBe('Z990001')
     expect(result?.display_name).toBe('Glad Fjord')
     const { rows } = await pool.query(`SELECT * FROM users WHERE nav_ident = 'Z990001'`)
@@ -468,19 +468,19 @@ describe('getOrCreateUserFromGraph', () => {
 
   it('returns null when NOM finds no match', async () => {
     vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([])
-    const result = await getOrCreateUserFromGraph('Z990001')
+    const result = await getOrCreateUserFromNom('Z990001')
     expect(result).toBeNull()
   })
 
   it('returns null when NOM result has no displayName', async () => {
     vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([{ navIdent: 'Z990001', displayName: null, email: null }])
-    const result = await getOrCreateUserFromGraph('Z990001')
+    const result = await getOrCreateUserFromNom('Z990001')
     expect(result).toBeNull()
   })
 
   it('throws when NOM API fails', async () => {
     vi.mocked(getNomUsersByNavIdenter).mockRejectedValue(new Error('NOM API error'))
-    await expect(getOrCreateUserFromGraph('Z990001')).rejects.toThrow()
+    await expect(getOrCreateUserFromNom('Z990001')).rejects.toThrow()
   })
 })
 
@@ -516,6 +516,20 @@ describe('populateUsersFromNom', () => {
       { nav_ident: 'Z990001', display_name: 'Glad Fjord' },
       { nav_ident: 'Z990002', display_name: 'Rask Elv' },
     ])
+  })
+
+  it('normalizes a comma-formatted NOM displayName before persisting', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Fjord, Glad', email: 'glad.fjord@nav.no' },
+    ])
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 0 })
+    const { rows } = await pool.query(`SELECT display_name FROM users WHERE nav_ident = 'Z990001'`)
+    expect(rows[0].display_name).toBe('Glad Fjord')
   })
 
   it('skips nav-idents with no matching NOM result', async () => {

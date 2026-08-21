@@ -86,7 +86,7 @@ vi.mock('~/db/role-assignments.server', () => ({
 }))
 
 vi.mock('~/db/user-github-lookups.server', () => ({
-  getOrCreateUserFromGraph: mockGetOrCreateUserFromGraph,
+  getOrCreateUserFromNom: mockGetOrCreateUserFromGraph,
   upsertUserAndGithubAccount: mockUpsertUserAndGithubAccount,
 }))
 

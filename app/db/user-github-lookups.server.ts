@@ -438,7 +438,9 @@ export async function populateUsersFromNom(): Promise<PopulateResult> {
       const nomUsers = await getNomUsersByNavIdenter(batch)
       nomUsersByNavIdent = new Map(
         nomUsers.flatMap((user) =>
-          user.navIdent && user.displayName ? [[user.navIdent.toUpperCase(), user.displayName]] : [],
+          user.navIdent && user.displayName
+            ? [[user.navIdent.toUpperCase(), formatDisplayNameNatural(user.displayName)]]
+            : [],
         ),
       )
     } catch (err) {
@@ -498,7 +500,7 @@ export async function getUserByNavIdent(navIdent: string): Promise<User | null> 
   return result.rows[0] ?? null
 }
 
-export async function getOrCreateUserFromGraph(navIdent: string): Promise<User | null> {
+export async function getOrCreateUserFromNom(navIdent: string): Promise<User | null> {
   const normalized = navIdent.trim().toUpperCase()
 
   if (!isValidNavIdent(normalized)) return null
