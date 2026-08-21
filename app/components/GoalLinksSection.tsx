@@ -287,22 +287,24 @@ function MissingBoardHelp({
           {appInfo ? (
             <>
               Fant ingen måltavler å koble denne leveransen til for <code>{appInfo.appName}</code> (
-              {appInfo.environmentName}). Årsaken kan enten være at appen ikke er koblet til noe team med måltavle du
-              har tilgang til, eller at teamet appen er koblet til ikke har en aktiv måltavle for perioden denne
-              leveransen tilhører.
+              {appInfo.environmentName}). Årsaken kan enten være at applikasjonen ikke er koblet til noe team med
+              måltavle du har tilgang til, eller at teamet applikasjonen er koblet til ikke har en aktiv måltavle for
+              perioden denne leveransen tilhører.
             </>
           ) : (
             <>
-              Fant ingen måltavler å koble denne leveransen til. Årsaken kan enten være at appen ikke er koblet til noe
-              team med måltavle du har tilgang til, eller at teamet appen er koblet til ikke har en aktiv måltavle for
-              perioden denne leveransen tilhører.
+              Fant ingen måltavler å koble denne leveransen til. Årsaken kan enten være at applikasjonen ikke er koblet
+              til noe team med måltavle du har tilgang til, eller at teamet applikasjonen er koblet til ikke har en
+              aktiv måltavle for perioden denne leveransen tilhører.
             </>
           )}
         </BodyLong>
 
         {linkableTeams.length > 0 ? (
           <VStack gap="space-8">
-            <BodyLong size="small">Hvis appen ikke er koblet til ditt eget team ennå, kan det fikses slik:</BodyLong>
+            <BodyLong size="small">
+              Hvis applikasjonen ikke er koblet til ditt eget team ennå, kan det fikses slik:
+            </BodyLong>
             <BodyLong size="small" as="div">
               <ol style={{ margin: 0, paddingLeft: 'var(--ax-space-24)' }}>
                 <li>
@@ -318,12 +320,12 @@ function MissingBoardHelp({
                   .
                   <BodyShort size="small" textColor="subtle" as="div">
                     Dette krever at du er {APP_ADMIN_ROLES_TEXT}. Har du ikke en av disse rollene, be noen som har det
-                    om å koble appen til teamet.
+                    om å koble applikasjonen til teamet.
                   </BodyShort>
                 </li>
                 <li>
                   Under «Applikasjoner», trykk «Legg til applikasjon» og søk opp{' '}
-                  {appInfo ? <code>{appInfo.appName}</code> : 'denne appen'}.
+                  {appInfo ? <code>{appInfo.appName}</code> : 'denne applikasjonen'}.
                 </li>
                 <li>Kom tilbake hit — leveransen kan nå kobles til teamets mål (forutsatt en aktiv måltavle).</li>
               </ol>
@@ -331,8 +333,8 @@ function MissingBoardHelp({
           </VStack>
         ) : (
           <BodyLong size="small">
-            Hvis appen ikke er koblet til ditt team, kan noen med riktig rolle koble den til på teamets adminside
-            («Applikasjoner» → «Legg til applikasjon»).
+            Hvis applikasjonen ikke er koblet til ditt team, kan noen med riktig rolle koble den til på teamets
+            adminside («Applikasjoner» → «Legg til applikasjon»).
           </BodyLong>
         )}
       </VStack>
