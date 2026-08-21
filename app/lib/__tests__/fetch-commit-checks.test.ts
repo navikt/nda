@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION } from '~/lib/github/git.server'
 
-const { mockGetChecksForCommit, mockSaveCommitSnapshot } = vi.hoisted(() => ({
+const { mockGetChecksForCommit, mockSaveCommitSnapshot, mockGetWorkflowTriggerConfig } = vi.hoisted(() => ({
   mockGetChecksForCommit: vi.fn(),
   mockSaveCommitSnapshot: vi.fn(),
+  mockGetWorkflowTriggerConfig: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -13,18 +15,21 @@ vi.mock('~/db/application-repositories.server', () => ({
   findRepositoryForApp: vi.fn(),
 }))
 
-vi.mock('~/lib/github', () => ({
-  getBranchFromWorkflowRun: vi.fn(),
-  getChecksForCommit: mockGetChecksForCommit,
-  getCommitsBetween: vi.fn(),
-  getDetailedPullRequestInfo: vi.fn(),
-  getPullRequestForCommit: vi.fn(),
-  getSingleCommitMessage: vi.fn(),
-  getWorkflowTriggerConfig: vi.fn(),
-  haveSameCommitTree: vi.fn(),
-  isCommitOnBranch: vi.fn(),
-  WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION: 1,
-}))
+vi.mock('~/lib/github', async () => {
+  const gitServer = await vi.importActual<typeof import('~/lib/github/git.server')>('~/lib/github/git.server')
+  return {
+    getBranchFromWorkflowRun: vi.fn(),
+    getChecksForCommit: mockGetChecksForCommit,
+    getCommitsBetween: vi.fn(),
+    getDetailedPullRequestInfo: vi.fn(),
+    getPullRequestForCommit: vi.fn(),
+    getSingleCommitMessage: vi.fn(),
+    getWorkflowTriggerConfig: mockGetWorkflowTriggerConfig,
+    haveSameCommitTree: vi.fn(),
+    isCommitOnBranch: vi.fn(),
+    WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION: gitServer.WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+  }
+})
 
 vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrSnapshots: vi.fn(),
@@ -124,7 +129,7 @@ describe('fetchCommitChecks', () => {
     const result = await fetchCommitChecks('navikt', 'nda', 'a'.repeat(40), 'b'.repeat(40))
 
     expect(result.commitChecks?.checked_sha).toBe('b'.repeat(40))
-    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), 'b'.repeat(40))
+    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), 'b'.repeat(40), undefined)
     expect(mockSaveCommitSnapshot).toHaveBeenCalledWith('navikt', 'nda', 'b'.repeat(40), 'checks', {
       schemaVersion: 1,
       checkRuns: [],
@@ -158,6 +163,7 @@ describe('refreshCommitChecksOnly', () => {
     mockSaveCommitSnapshot.mockReset()
     mockGetAllLatestPrSnapshots.mockReset()
     mockUpdateDeploymentCommitChecks.mockReset()
+    mockGetWorkflowTriggerConfig.mockReset()
   })
 
   it('resolves the PR head SHA fallback, fetches checks, and persists the result', async () => {
@@ -173,7 +179,7 @@ describe('refreshCommitChecksOnly', () => {
     const result = await refreshCommitChecksOnly(1, 'navikt', 'nda', 'a'.repeat(40), 42)
 
     expect(mockGetAllLatestPrSnapshots).toHaveBeenCalledWith('navikt', 'nda', 42)
-    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), 'b'.repeat(40))
+    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), 'b'.repeat(40), null)
     expect(result.attempted).toBe(true)
     expect(mockUpdateDeploymentCommitChecks).toHaveBeenCalledWith(1, result.commitChecks, true)
   })
@@ -184,6 +190,55 @@ describe('refreshCommitChecksOnly', () => {
     await refreshCommitChecksOnly(1, 'navikt', 'nda', 'a'.repeat(40), null)
 
     expect(mockGetAllLatestPrSnapshots).not.toHaveBeenCalled()
-    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined)
+    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined, null)
+  })
+
+  it('reuses a check_suite_id from a valid cached workflow_trigger_config without calling GitHub again', async () => {
+    mockGetChecksForCommit.mockResolvedValueOnce(null)
+
+    await refreshCommitChecksOnly(
+      1,
+      'navikt',
+      'nda',
+      'a'.repeat(40),
+      null,
+      'https://github.com/navikt/nda/actions/runs/1',
+      {
+        workflowPath: '.github/workflows/deploy.yml',
+        triggerEvent: 'push',
+        checkSuiteId: 555,
+        schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+      },
+    )
+
+    expect(mockGetWorkflowTriggerConfig).not.toHaveBeenCalled()
+    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined, 555)
+  })
+
+  it('resolves the check_suite_id via GitHub when the cached workflow_trigger_config is stale or missing', async () => {
+    mockGetChecksForCommit.mockResolvedValueOnce(null)
+    mockGetWorkflowTriggerConfig.mockResolvedValueOnce({
+      workflowPath: '.github/workflows/deploy.yml',
+      triggerEvent: 'push',
+      checkSuiteId: 777,
+      schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+    })
+
+    await refreshCommitChecksOnly(
+      1,
+      'navikt',
+      'nda',
+      'a'.repeat(40),
+      null,
+      'https://github.com/navikt/nda/actions/runs/1',
+      null,
+    )
+
+    expect(mockGetWorkflowTriggerConfig).toHaveBeenCalledWith(
+      'navikt',
+      'nda',
+      'https://github.com/navikt/nda/actions/runs/1',
+    )
+    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined, 777)
   })
 })

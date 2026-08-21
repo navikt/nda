@@ -383,3 +383,115 @@ describe('getChecksForCommit', () => {
     expect(result?.isDefinitive).toBe(true)
   })
 })
+
+describe('getChecksForCommit check_suite_id scoping', () => {
+  beforeEach(() => {
+    mockListForRef.mockReset()
+    mockListAnnotations.mockReset()
+    mockPaginate.mockReset()
+  })
+
+  it('only returns check runs belonging to the given check_suite_id, ignoring unrelated check runs on the same SHA', async () => {
+    mockPaginate.mockResolvedValueOnce([
+      {
+        id: 1,
+        name: 'build',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: null,
+        completed_at: null,
+        html_url: null,
+        head_sha: 'commitsha1',
+        details_url: null,
+        external_id: null,
+        check_suite: { id: 100 },
+        app: null,
+        output: { title: null, summary: null, text: null, annotations_count: 0 },
+      },
+      {
+        id: 2,
+        name: 'Dependabot',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: null,
+        completed_at: null,
+        html_url: null,
+        head_sha: 'commitsha1',
+        details_url: null,
+        external_id: null,
+        check_suite: { id: 999 },
+        app: null,
+        output: { title: null, summary: null, text: null, annotations_count: 0 },
+      },
+    ])
+
+    const result = await getChecksForCommit('navikt', 'nda', 'commitsha1', null, 100)
+
+    expect(result?.checks).toHaveLength(1)
+    expect(result?.checks[0].name).toBe('build')
+  })
+
+  it('falls back to all check runs when none match the given check_suite_id', async () => {
+    mockPaginate.mockResolvedValueOnce([
+      {
+        id: 2,
+        name: 'Dependabot',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: null,
+        completed_at: null,
+        html_url: null,
+        head_sha: 'commitsha1',
+        details_url: null,
+        external_id: null,
+        check_suite: { id: 999 },
+        app: null,
+        output: { title: null, summary: null, text: null, annotations_count: 0 },
+      },
+    ])
+
+    const result = await getChecksForCommit('navikt', 'nda', 'commitsha1', null, 100)
+
+    expect(result?.checks).toHaveLength(1)
+    expect(result?.checks[0].name).toBe('Dependabot')
+  })
+
+  it('does not filter when no check_suite_id is given', async () => {
+    mockPaginate.mockResolvedValueOnce([
+      {
+        id: 1,
+        name: 'build',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: null,
+        completed_at: null,
+        html_url: null,
+        head_sha: 'commitsha1',
+        details_url: null,
+        external_id: null,
+        check_suite: { id: 100 },
+        app: null,
+        output: { title: null, summary: null, text: null, annotations_count: 0 },
+      },
+      {
+        id: 2,
+        name: 'Dependabot',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: null,
+        completed_at: null,
+        html_url: null,
+        head_sha: 'commitsha1',
+        details_url: null,
+        external_id: null,
+        check_suite: { id: 999 },
+        app: null,
+        output: { title: null, summary: null, text: null, annotations_count: 0 },
+      },
+    ])
+
+    const result = await getChecksForCommit('navikt', 'nda', 'commitsha1')
+
+    expect(result?.checks).toHaveLength(2)
+  })
+})

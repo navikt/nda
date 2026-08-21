@@ -135,19 +135,20 @@ export async function getSingleCommitMessage(owner: string, repo: string, commit
   }
 }
 
-export async function getBranchFromWorkflowRun(
+type WorkflowRunData = Awaited<ReturnType<ReturnType<typeof getGitHubClient>['actions']['getWorkflowRun']>>['data']
+
+async function resolveWorkflowRun(
   owner: string,
   repo: string,
   triggerUrl: string | null | undefined,
-): Promise<string | null> {
-  if (!triggerUrl) return null
-  const match = triggerUrl.match(/\/actions\/runs\/(\d+)/)
+): Promise<WorkflowRunData | null> {
+  const match = triggerUrl?.match(/\/actions\/runs\/(\d+)/)
   if (!match) return null
   const runId = parseInt(match[1], 10)
   try {
     const client = getGitHubClient()
     const response = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
-    return response.data.head_branch || null
+    return response.data
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const stack = error instanceof Error ? error.stack : undefined
@@ -156,11 +157,21 @@ export async function getBranchFromWorkflowRun(
   }
 }
 
-export const WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION = 2
+export async function getBranchFromWorkflowRun(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+): Promise<string | null> {
+  const run = await resolveWorkflowRun(owner, repo, triggerUrl)
+  return run?.head_branch || null
+}
+
+export const WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION = 3
 
 export type WorkflowTriggerConfig = {
   workflowPath: string
   triggerEvent: string
+  checkSuiteId: number | null
   schemaVersion: number
 }
 
@@ -169,26 +180,14 @@ export async function getWorkflowTriggerConfig(
   repo: string,
   triggerUrl: string | null | undefined,
 ): Promise<WorkflowTriggerConfig | null> {
-  const match = triggerUrl?.match(/\/actions\/runs\/(\d+)/)
-  if (!match) return null
-  const runId = parseInt(match[1], 10)
+  const run = await resolveWorkflowRun(owner, repo, triggerUrl)
+  if (!run?.path) return null
 
-  try {
-    const client = getGitHubClient()
-    const run = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
-    const workflowPath = run.data.path
-    const triggerEvent = run.data.event
-    if (!workflowPath) return null
-
-    return { workflowPath, triggerEvent, schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    const stack = error instanceof Error ? error.stack : undefined
-    logger.warn(`⚠️ Failed to get workflow trigger config for run ${runId} in ${owner}/${repo}:`, {
-      error: message,
-      stack_trace: stack,
-    })
-    return null
+  return {
+    workflowPath: run.path,
+    triggerEvent: run.event,
+    checkSuiteId: run.check_suite_id ?? null,
+    schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
   }
 }
 

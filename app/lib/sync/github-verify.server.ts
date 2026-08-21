@@ -9,6 +9,7 @@ import { isDependabotUser } from '~/lib/dependabot'
 import { isApprovedStatus, REVERIFIABLE_STATUSES, REVERIFIABLE_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
+import type { WorkflowTriggerConfig } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { refreshCommitChecksOnly, runVerification } from '~/lib/verification'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from './goal-keyword-sync.server'
@@ -34,6 +35,8 @@ interface PendingChecksRow {
   detected_github_owner: string
   detected_github_repo_name: string
   github_pr_number: number | null
+  trigger_url: string | null
+  workflow_trigger_config: WorkflowTriggerConfig | null
 }
 
 /**
@@ -49,7 +52,8 @@ export async function reverifyPendingChecks(
   const giveUpBefore = new Date(Date.now() - CHECKS_REVERIFY_GIVE_UP_MS)
 
   const { rows } = await pool.query<PendingChecksRow>(
-    `SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name, d.github_pr_number
+    `SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name, d.github_pr_number,
+            d.trigger_url, d.workflow_trigger_config
      FROM deployments d
      WHERE d.monitored_app_id = $1
        AND d.commit_checks_checked_at IS NULL
@@ -80,6 +84,8 @@ export async function reverifyPendingChecks(
         deployment.detected_github_repo_name,
         deployment.commit_sha,
         deployment.github_pr_number,
+        deployment.trigger_url,
+        deployment.workflow_trigger_config,
       )
       fetched++
     } catch (error) {
