@@ -23,6 +23,7 @@ import {
   haveSameCommitTree,
   isCommitOnBranch,
   WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+  type WorkflowTriggerConfig,
 } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { buildBranchMismatch } from './branch-mismatch'
@@ -204,7 +205,13 @@ export async function fetchVerificationData(
     }
   }
   if (commitChecksAttempted === undefined) {
-    const fetched = await fetchCommitChecks(owner, repo, commitSha, deployedPr?.metadata.headSha)
+    const fetched = await fetchCommitChecks(
+      owner,
+      repo,
+      commitSha,
+      deployedPr?.metadata.headSha,
+      workflowTrigger?.checkSuiteId,
+    )
     commitChecks = fetched.commitChecks
     commitChecksAttempted = fetched.attempted
   }
@@ -261,9 +268,10 @@ export async function fetchCommitChecks(
   repo: string,
   commitSha: string,
   fallbackSha?: string | null,
+  checkSuiteId?: number | null,
 ): Promise<CommitChecksFetchResult> {
   try {
-    const result = await getChecksForCommit(owner, repo, commitSha, fallbackSha)
+    const result = await getChecksForCommit(owner, repo, commitSha, fallbackSha, checkSuiteId)
     if (!result) return { commitChecks: undefined, attempted: true }
 
     await saveCommitSnapshot(owner, repo, result.matchedSha, 'checks', result.rawSnapshot)
@@ -294,11 +302,28 @@ export async function refreshCommitChecksOnly(
   repo: string,
   commitSha: string,
   githubPrNumber: number | null,
+  triggerUrl?: string | null,
+  cachedWorkflowTrigger?: WorkflowTriggerConfig | null,
 ): Promise<CommitChecksFetchResult> {
   const fallbackSha = await resolvePrHeadShaFallback(owner, repo, githubPrNumber)
-  const result = await fetchCommitChecks(owner, repo, commitSha, fallbackSha)
+  const checkSuiteId = await resolveCheckSuiteId(owner, repo, triggerUrl, cachedWorkflowTrigger)
+  const result = await fetchCommitChecks(owner, repo, commitSha, fallbackSha, checkSuiteId)
   await updateDeploymentCommitChecks(deploymentId, result.commitChecks, result.attempted)
   return result
+}
+
+async function resolveCheckSuiteId(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+  cachedWorkflowTrigger: WorkflowTriggerConfig | null | undefined,
+): Promise<number | null> {
+  if (cachedWorkflowTrigger?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) {
+    return cachedWorkflowTrigger.checkSuiteId
+  }
+  if (!triggerUrl) return null
+  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+  return workflowTrigger?.checkSuiteId ?? null
 }
 
 async function getCachedCommitChecks(
@@ -1256,7 +1281,15 @@ export async function fetchVerificationDataForAllDeployments(
         })
       } else if (hasCurrentData) {
         const fetchStart = performance.now()
-        await refreshCommitChecksOnly(deployment.id, owner, repo, commitSha, deployment.github_pr_number)
+        await refreshCommitChecksOnly(
+          deployment.id,
+          owner,
+          repo,
+          commitSha,
+          deployment.github_pr_number,
+          deployment.trigger_url,
+          deployment.workflow_trigger_config,
+        )
         const fetchDuration = Math.round(performance.now() - fetchStart)
         result.fetched++
         if (jobId) {

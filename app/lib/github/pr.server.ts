@@ -716,11 +716,28 @@ export type CheckRun = GitHubPRData['checks'][number]
 
 type OctokitClient = ReturnType<typeof getGitHubClient>
 
+function filterCheckRunsByCheckSuite<T extends { check_suite: { id: number } | null }>(
+  checkRuns: T[],
+  checkSuiteId: number | null | undefined,
+  owner: string,
+  repo: string,
+  ref: string,
+): T[] {
+  if (checkSuiteId == null) return checkRuns
+  const scoped = checkRuns.filter((check) => check.check_suite?.id === checkSuiteId)
+  if (scoped.length > 0 || checkRuns.length === 0) return scoped
+  logger.warn(
+    `No check runs matched check_suite_id ${checkSuiteId} for ${owner}/${repo}@${ref}, falling back to all ${checkRuns.length} check run(s) found for this ref`,
+  )
+  return checkRuns
+}
+
 async function fetchChecksForRefs(
   client: OctokitClient,
   owner: string,
   repo: string,
   ref: string,
+  checkSuiteId?: number | null,
 ): Promise<{
   checks_passed: boolean | null
   checks: CheckRun[]
@@ -750,15 +767,17 @@ async function fetchChecksForRefs(
     },
   )
 
-  if (checkRunsWithAnnotations.length > 0) {
+  const checkRunsToProcess = filterCheckRunsByCheckSuite(checkRunsWithAnnotations, checkSuiteId, owner, repo, ref)
+
+  if (checkRunsToProcess.length > 0) {
     const annotationResults: Array<{
-      check: (typeof checkRunsWithAnnotations)[0]
+      check: (typeof checkRunsToProcess)[0]
       annotations: RawCheckAnnotation[] | null
       annotationsFetchFailed: boolean
     }> = []
 
-    for (let i = 0; i < checkRunsWithAnnotations.length; i += ANNOTATION_CONCURRENCY_LIMIT) {
-      const batch = checkRunsWithAnnotations.slice(i, i + ANNOTATION_CONCURRENCY_LIMIT)
+    for (let i = 0; i < checkRunsToProcess.length; i += ANNOTATION_CONCURRENCY_LIMIT) {
+      const batch = checkRunsToProcess.slice(i, i + ANNOTATION_CONCURRENCY_LIMIT)
       const batchResults = await Promise.all(
         batch.map(async (check) => {
           let annotations: RawCheckAnnotation[] | null = null
@@ -805,6 +824,7 @@ export async function getChecksForCommit(
   repo: string,
   sha: string,
   fallbackSha?: string | null,
+  checkSuiteId?: number | null,
 ): Promise<{
   checks_passed: boolean | null
   checks: CheckRun[]
@@ -813,7 +833,7 @@ export async function getChecksForCommit(
   isDefinitive: boolean
 } | null> {
   const client = getGitHubClient()
-  const result = await fetchChecksForRefs(client, owner, repo, sha)
+  const result = await fetchChecksForRefs(client, owner, repo, sha, checkSuiteId)
   if (result.checks.length > 0) return { ...result, matchedSha: sha }
 
   if (fallbackSha && fallbackSha !== sha) {
