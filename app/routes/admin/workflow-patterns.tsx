@@ -49,21 +49,44 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url)
   const period = (url.searchParams.get('period') || 'last-tertial') as TimePeriod
   const envFilter = url.searchParams.get('env') || 'all'
+  const triggerFilter = url.searchParams.get('trigger') || 'all'
 
   const range = getDateRangeForPeriod(period)
 
-  const params: Array<Date | string | string[]> = []
-  const conditions: string[] = []
+  const baseParams: Array<Date | string | string[]> = []
+  const baseConditions: string[] = []
   if (range) {
-    params.push(range.startDate, range.endDate)
-    conditions.push(`created_at >= $${params.length - 1} AND created_at <= $${params.length}`)
+    baseParams.push(range.startDate, range.endDate)
+    baseConditions.push(`created_at >= $${baseParams.length - 1} AND created_at <= $${baseParams.length}`)
   }
   if (envFilter === 'prod') {
-    params.push(PROD_ENVIRONMENTS)
-    conditions.push(`environment_name = ANY($${params.length})`)
+    baseParams.push(PROD_ENVIRONMENTS)
+    baseConditions.push(`environment_name = ANY($${baseParams.length})`)
   } else if (envFilter === 'dev') {
-    params.push(PROD_ENVIRONMENTS)
-    conditions.push(`environment_name != ALL($${params.length})`)
+    baseParams.push(PROD_ENVIRONMENTS)
+    baseConditions.push(`environment_name != ALL($${baseParams.length})`)
+  }
+
+  const optionsWhereSql = baseConditions.length > 0 ? `WHERE ${baseConditions.join(' AND ')}` : ''
+  const triggerOptionsResult = await pool.query<{ trigger_event: string }>(
+    `SELECT DISTINCT COALESCE(workflow_trigger_config->>'triggerEvent', 'unknown') AS trigger_event
+     FROM deployments
+     ${optionsWhereSql}`,
+    baseParams,
+  )
+  const triggerOptions = triggerOptionsResult.rows
+    .map((r) => r.trigger_event)
+    .map((value) => ({ value, label: value === 'unknown' ? 'Ukjent' : getWorkflowTriggerLabel(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'no'))
+
+  const effectiveTriggerFilter =
+    triggerFilter === 'all' || triggerOptions.some((opt) => opt.value === triggerFilter) ? triggerFilter : 'all'
+
+  const params = [...baseParams]
+  const conditions = [...baseConditions]
+  if (effectiveTriggerFilter !== 'all') {
+    params.push(effectiveTriggerFilter)
+    conditions.push(`COALESCE(workflow_trigger_config->>'triggerEvent', 'unknown') = $${params.length}`)
   }
   const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
@@ -138,12 +161,31 @@ export async function loader({ request }: Route.LoaderArgs) {
   const totalUnknown = teamAppSummaries.reduce((sum, s) => sum + s.unknownCount, 0)
   const overallUnknownPercent = totalDeployments > 0 ? Math.round((totalUnknown / totalDeployments) * 100) : 0
 
-  return { teamAppSummaries, flaggedCount, totalDeployments, totalUnknown, overallUnknownPercent, period, envFilter }
+  return {
+    teamAppSummaries,
+    flaggedCount,
+    totalDeployments,
+    totalUnknown,
+    overallUnknownPercent,
+    period,
+    envFilter,
+    triggerFilter: effectiveTriggerFilter,
+    triggerOptions,
+  }
 }
 
 export default function WorkflowPatternsAdminPage() {
-  const { teamAppSummaries, flaggedCount, totalDeployments, totalUnknown, overallUnknownPercent, period, envFilter } =
-    useLoaderData<typeof loader>()
+  const {
+    teamAppSummaries,
+    flaggedCount,
+    totalDeployments,
+    totalUnknown,
+    overallUnknownPercent,
+    period,
+    envFilter,
+    triggerFilter,
+    triggerOptions,
+  } = useLoaderData<typeof loader>()
 
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -185,6 +227,19 @@ export default function WorkflowPatternsAdminPage() {
           <option value="all">Alle miljøer</option>
           <option value="prod">Kun prod</option>
           <option value="dev">Kun dev</option>
+        </Select>
+        <Select
+          label="Trigger-type"
+          size="small"
+          value={triggerFilter}
+          onChange={(e) => updateFilter('trigger', e.target.value)}
+        >
+          <option value="all">Alle trigger-typer</option>
+          {triggerOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
         </Select>
       </HStack>
 
