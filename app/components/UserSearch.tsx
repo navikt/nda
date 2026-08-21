@@ -1,11 +1,11 @@
 import { UNSAFE_Combobox } from '@navikt/ds-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GraphUserResult } from '~/lib/microsoft-graph.server'
+import type { NomUserResult } from '~/lib/nom.server'
 
 interface UserSearchProps {
   label?: string
   onSelect: (navIdent: string) => void
-  onSelectUser?: (user: GraphUserResult) => void
+  onSelectUser?: (user: NomUserResult) => void
   onClear?: () => void
   resetKey?: string | number
   description?: string
@@ -19,7 +19,7 @@ export function UserSearch({
   resetKey,
   description,
 }: UserSearchProps) {
-  const [results, setResults] = useState<GraphUserResult[]>([])
+  const [results, setResults] = useState<NomUserResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -105,7 +105,7 @@ export function UserSearch({
   )
 }
 
-function formatUserLabel(user: GraphUserResult): string {
+function formatUserLabel(user: NomUserResult): string {
   const parts: string[] = []
   if (user.displayName) parts.push(user.displayName)
   if (user.navIdent) parts.push(user.navIdent)

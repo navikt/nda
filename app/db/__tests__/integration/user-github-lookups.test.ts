@@ -1,11 +1,11 @@
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('~/lib/microsoft-graph.server', () => ({
-  searchGraphUsers: vi.fn(),
+vi.mock('~/lib/nom.server', () => ({
+  getNomUsersByNavIdenter: vi.fn(),
 }))
 
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { getNomUsersByNavIdenter } from '~/lib/nom.server'
 import {
   getActiveGithubAccountByNavIdent,
   getAllUsersWithAccounts,
@@ -444,18 +444,18 @@ describe('getUnmappedDeployers', () => {
 describe('getOrCreateUserFromGraph', () => {
   beforeEach(async () => {
     await truncateAllTables(pool)
-    vi.mocked(searchGraphUsers).mockReset()
+    vi.mocked(getNomUsersByNavIdenter).mockReset()
   })
 
-  it('returns existing user without calling Graph', async () => {
+  it('returns existing user without calling NOM', async () => {
     await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Glad Fjord')`)
     const result = await getOrCreateUserFromGraph('Z990001')
     expect(result?.nav_ident).toBe('Z990001')
-    expect(searchGraphUsers).not.toHaveBeenCalled()
+    expect(getNomUsersByNavIdenter).not.toHaveBeenCalled()
   })
 
-  it('creates user from Graph when not found locally', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([
+  it('creates user from NOM when not found locally', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
       { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
     ])
     const result = await getOrCreateUserFromGraph('Z990001')
@@ -465,20 +465,20 @@ describe('getOrCreateUserFromGraph', () => {
     expect(rows).toHaveLength(1)
   })
 
-  it('returns null when Graph finds no match', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([])
+  it('returns null when NOM finds no match', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([])
     const result = await getOrCreateUserFromGraph('Z990001')
     expect(result).toBeNull()
   })
 
-  it('returns null when Graph result has no displayName', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([{ navIdent: 'Z990001', displayName: null, email: null }])
+  it('returns null when NOM result has no displayName', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([{ navIdent: 'Z990001', displayName: null, email: null }])
     const result = await getOrCreateUserFromGraph('Z990001')
     expect(result).toBeNull()
   })
 
-  it('throws when Graph API fails', async () => {
-    vi.mocked(searchGraphUsers).mockRejectedValue(new Error('Graph API error'))
+  it('throws when NOM API fails', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockRejectedValue(new Error('NOM API error'))
     await expect(getOrCreateUserFromGraph('Z990001')).rejects.toThrow()
   })
 })

@@ -8,8 +8,8 @@ vi.mock('~/lib/authorization.server', () => ({
   canSearchUsers: vi.fn(),
 }))
 
-vi.mock('~/lib/microsoft-graph.server', () => ({
-  searchGraphUsers: vi.fn(),
+vi.mock('~/lib/nom.server', () => ({
+  getNomUsersByNavIdenter: vi.fn(),
 }))
 
 vi.mock('~/lib/slack/client.server', () => ({
@@ -23,7 +23,7 @@ vi.mock('~/lib/logger.server', () => ({
 
 import { requireUser } from '~/lib/auth.server'
 import { canSearchUsers } from '~/lib/authorization.server'
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { getNomUsersByNavIdenter } from '~/lib/nom.server'
 import { isSlackConfigured, lookupSlackUserIdByEmail } from '~/lib/slack/client.server'
 import { loader } from '../../routes/api/users.slack-lookup'
 
@@ -53,7 +53,7 @@ describe('users.slack-lookup loader', () => {
 
   it('allows self-service lookup for the logged in user without canSearchUsers', async () => {
     vi.mocked(canSearchUsers).mockResolvedValue(false)
-    vi.mocked(searchGraphUsers).mockResolvedValue([
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
       { displayName: 'Glad Fjord', navIdent: 'Z990001', email: 'glad.fjord@nav.no' },
     ])
     vi.mocked(lookupSlackUserIdByEmail).mockResolvedValue('U123456')
@@ -85,11 +85,11 @@ describe('users.slack-lookup loader', () => {
     expect(response.status).toBe(200)
     const data = await response.json()
     expect(data.slackMemberId).toBeNull()
-    expect(searchGraphUsers).not.toHaveBeenCalled()
+    expect(getNomUsersByNavIdenter).not.toHaveBeenCalled()
   })
 
-  it('returns null when the NAV-ident has no matching Graph user', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([])
+  it('returns null when the NAV-ident has no matching NOM user', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([])
 
     const response = await loader(makeArgs('Z990002') as never)
 
@@ -98,8 +98,10 @@ describe('users.slack-lookup loader', () => {
     expect(lookupSlackUserIdByEmail).not.toHaveBeenCalled()
   })
 
-  it('returns null when the matching Graph user has no email', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([{ displayName: 'Rask Elv', navIdent: 'Z990002', email: null }])
+  it('returns null when the matching NOM user has no email', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
+      { displayName: 'Rask Elv', navIdent: 'Z990002', email: null },
+    ])
 
     const response = await loader(makeArgs('Z990002') as never)
 
@@ -108,8 +110,8 @@ describe('users.slack-lookup loader', () => {
     expect(lookupSlackUserIdByEmail).not.toHaveBeenCalled()
   })
 
-  it('returns the Slack member ID resolved via the Graph user email', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([
+  it('returns the Slack member ID resolved via the NOM user email', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
       { displayName: 'Rask Elv', navIdent: 'Z990002', email: 'rask.elv@nav.no' },
     ])
     vi.mocked(lookupSlackUserIdByEmail).mockResolvedValue('U654321')
@@ -123,7 +125,7 @@ describe('users.slack-lookup loader', () => {
   })
 
   it('returns null with Cache-Control: no-store when the lookup throws', async () => {
-    vi.mocked(searchGraphUsers).mockRejectedValue(new Error('Graph API error'))
+    vi.mocked(getNomUsersByNavIdenter).mockRejectedValue(new Error('NOM API error'))
 
     const response = await loader(makeArgs('Z990002') as never)
 

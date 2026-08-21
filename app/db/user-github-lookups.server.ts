@@ -1,7 +1,7 @@
 import { isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { getNomUsersByNavIdenter } from '~/lib/nom.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
@@ -412,7 +412,7 @@ interface PopulateResult {
   errors: number
 }
 
-export async function populateUsersFromGraph(): Promise<PopulateResult> {
+export async function populateUsersFromNom(): Promise<PopulateResult> {
   const { rows } = await pool.query<{ nav_ident: string }>(
     `SELECT DISTINCT nav_ident FROM users WHERE deleted_at IS NULL`,
   )
@@ -428,16 +428,16 @@ export async function populateUsersFromGraph(): Promise<PopulateResult> {
       continue
     }
     try {
-      const graphUsers = await searchGraphUsers(navIdent)
-      if (graphUsers.length !== 1) {
-        logger.warn('populate-users: skipping nav_ident — expected 1 Graph result', {
+      const nomUsers = await getNomUsersByNavIdenter([navIdent])
+      if (nomUsers.length !== 1) {
+        logger.warn('populate-users: skipping nav_ident — expected 1 NOM result', {
           nav_ident: navIdent,
-          count: graphUsers.length,
+          count: nomUsers.length,
         })
         skipped++
         continue
       }
-      const user = graphUsers[0]
+      const user = nomUsers[0]
       if (!user.displayName) {
         logger.warn('populate-users: skipping nav_ident — missing displayName', { nav_ident: navIdent })
         skipped++
@@ -483,10 +483,10 @@ export async function getOrCreateUserFromGraph(navIdent: string): Promise<User |
   const existing = await getUserByNavIdent(normalized)
   if (existing) return existing
 
-  const graphResults = await searchGraphUsers(normalized)
+  const nomUsers = await getNomUsersByNavIdenter([normalized])
 
-  const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === normalized)
-  if (!graphUser?.displayName) return null
+  const nomUser = nomUsers.find((u) => u.navIdent?.toUpperCase() === normalized)
+  if (!nomUser?.displayName) return null
 
-  return upsertUser({ navIdent: normalized, displayName: formatDisplayNameNatural(graphUser.displayName) })
+  return upsertUser({ navIdent: normalized, displayName: formatDisplayNameNatural(nomUser.displayName) })
 }
