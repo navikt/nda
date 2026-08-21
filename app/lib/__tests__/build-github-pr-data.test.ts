@@ -217,6 +217,16 @@ describe('buildGithubPrDataFromSnapshots', () => {
     })
   })
 
+  it('returns checks_passed null (not false) when the checks snapshot is a non-null but empty placeholder', () => {
+    const emptyChecks: PrChecks = { conclusion: null, checkRuns: [], statuses: [] }
+    const metadataWithoutChecksPassed: PrMetadata = { ...metadata, checksPassed: null }
+
+    const result = buildGithubPrDataFromSnapshots(metadataWithoutChecksPassed, reviews, commits, emptyChecks, comments)
+
+    expect(result.checks_passed).toBeNull()
+    expect(result.checks).toEqual([])
+  })
+
   it('maps comments from PrComment[] to GitHubPRData format', () => {
     const result = buildGithubPrDataFromSnapshots(metadata, reviews, commits, checks, comments)
 

@@ -6,13 +6,92 @@ import {
   updateDeploymentFourEyes,
 } from '~/db/deployments.server'
 import { isDependabotUser } from '~/lib/dependabot'
-import { isApprovedStatus, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
+import { isApprovedStatus, REVERIFIABLE_STATUSES, REVERIFIABLE_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
-import { runVerification } from '~/lib/verification'
+import { refreshCommitChecksOnly, runVerification } from '~/lib/verification'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from './goal-keyword-sync.server'
 
 const RATE_LIMIT_SAFETY_BUFFER = 200
+
+// Deployments whose four_eyes_status is already resolved (i.e. not in REVERIFIABLE_STATUSES) are never
+// picked up again by verifyDeploymentsFourEyes(), since their status won't change. Checks are independent
+// of four_eyes_status, though, so a deployment whose checks were still in-progress (isDefinitive: false)
+// at the moment its status resolved would otherwise never have its checks refreshed again. GitHub gives no
+// signal for "this check run will never complete" (a check run can in principle stay queued/in_progress
+// forever, e.g. an abandoned self-hosted runner or a third-party GitHub App integration that never posts a
+// final status) - there is no definitive way to detect that from the API. As a pragmatic bound, we stop
+// polling once the deployment is older than this window: GitHub Actions itself enforces a default 6-hour
+// per-job timeout (configurable up to 35 days), so any real, still-running CI should resolve well within a
+// day; anything older than this is treated as abandoned and is no longer retried automatically.
+export const CHECKS_REVERIFY_GIVE_UP_MS = 24 * 60 * 60 * 1000
+export const CHECKS_REVERIFY_LIMIT_PER_APP = 50
+
+interface PendingChecksRow {
+  id: number
+  commit_sha: string
+  detected_github_owner: string
+  detected_github_repo_name: string
+  github_pr_number: number | null
+}
+
+/**
+ * Refreshes commit_checks_data for deployments whose four_eyes_status is already resolved (so they're no
+ * longer visited by verifyDeploymentsFourEyes()) but whose checks are still not definitive
+ * (commit_checks_checked_at IS NULL). Bounded by CHECKS_REVERIFY_GIVE_UP_MS so deployments with checks that
+ * never converge don't get retried forever.
+ */
+export async function reverifyPendingChecks(
+  monitoredAppId: number,
+  limit: number = CHECKS_REVERIFY_LIMIT_PER_APP,
+): Promise<{ fetched: number; errors: number }> {
+  const giveUpBefore = new Date(Date.now() - CHECKS_REVERIFY_GIVE_UP_MS)
+
+  const { rows } = await pool.query<PendingChecksRow>(
+    `SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name, d.github_pr_number
+     FROM deployments d
+     WHERE d.monitored_app_id = $1
+       AND d.commit_checks_checked_at IS NULL
+       AND d.detected_github_owner IS NOT NULL
+       AND d.detected_github_repo_name IS NOT NULL
+       AND ${VALID_COMMIT_SHA_SQL}
+       AND COALESCE(d.four_eyes_status, 'unknown') NOT IN (${REVERIFIABLE_STATUSES_SQL}, 'error')
+       AND d.created_at > $2
+     ORDER BY d.created_at ASC
+     LIMIT $3`,
+    [monitoredAppId, giveUpBefore, limit],
+  )
+
+  let fetched = 0
+  let errors = 0
+
+  for (const deployment of rows) {
+    const rateLimitRemaining = getGitHubRateLimitRemaining()
+    if (rateLimitRemaining !== null && rateLimitRemaining < RATE_LIMIT_SAFETY_BUFFER) {
+      logger.warn(`⚠️  GitHub rate limit near exhaustion (${rateLimitRemaining} remaining), stopping checks reverify`)
+      break
+    }
+
+    try {
+      await refreshCommitChecksOnly(
+        deployment.id,
+        deployment.detected_github_owner,
+        deployment.detected_github_repo_name,
+        deployment.commit_sha,
+        deployment.github_pr_number,
+      )
+      fetched++
+    } catch (error) {
+      errors++
+      logger.error(`❌ Error refreshing pending checks for deployment ${deployment.id}:`, error)
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+
+  return { fetched, errors }
+}
 
 export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { limit?: number }): Promise<{
   verified: number

@@ -73,7 +73,9 @@ export async function updateDeploymentVerification(
        github_pr_data = COALESCE($5::jsonb, github_pr_data),
        title = COALESCE($6, $9, title),
        branch_name = COALESCE($8, branch_name),
-       workflow_trigger_config = COALESCE($10::jsonb, workflow_trigger_config)
+       workflow_trigger_config = COALESCE($10::jsonb, workflow_trigger_config),
+       commit_checks_data = COALESCE($11::jsonb, commit_checks_data),
+       commit_checks_checked_at = CASE WHEN $12 THEN now() ELSE commit_checks_checked_at END
      WHERE id = $3
        AND four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})`,
     [
@@ -99,6 +101,8 @@ export async function updateDeploymentVerification(
       result.detectedBranchName ?? null,
       result.detectedTitle ?? null,
       result.workflowTrigger ? JSON.stringify(result.workflowTrigger) : null,
+      result.commitChecks !== undefined ? JSON.stringify(result.commitChecks) : null,
+      result.commitChecksAttempted ?? false,
     ],
   )
 
@@ -115,17 +119,43 @@ export async function updateDeploymentVerification(
   }
 }
 
+// Deliberately not gated by PROTECTED_STATUSES (unlike updateDeploymentVerification below): commit_checks_data
+// is purely objective, single-source-of-truth data straight from GitHub's Checks API, and is only ever read
+// for display (DeploymentDetailsGrid, PrDetailsAccordion, log-cache job) — never by four-eyes verification,
+// status computation, or approval logic. Backfilling it for a manually approved/baseline/legacy deployment
+// cannot change that deployment's approval status, so there's no reason to withhold the data.
+export async function updateDeploymentCommitChecks(
+  deploymentId: number,
+  commitChecks: VerificationInput['commitChecks'],
+  attempted = true,
+): Promise<void> {
+  // Nothing to persist: no data was fetched and there's no definitive attempt to record.
+  if (!attempted && commitChecks === undefined) return
+
+  await pool.query(
+    `UPDATE deployments
+     SET commit_checks_data = COALESCE($2::jsonb, commit_checks_data),
+         commit_checks_checked_at = CASE WHEN $3 THEN now() ELSE commit_checks_checked_at END
+     WHERE id = $1`,
+    [deploymentId, commitChecks !== undefined ? JSON.stringify(commitChecks) : null, attempted],
+  )
+}
+
 async function buildGithubPrDataFromSnapshotsForPr(
   prNumber: number,
   deploymentId: number,
 ): Promise<ReturnType<typeof buildGithubPrDataFromSnapshots> | null> {
   const deploymentResult = await pool.query(
-    `SELECT detected_github_owner, detected_github_repo_name FROM deployments WHERE id = $1`,
+    `SELECT detected_github_owner, detected_github_repo_name, github_pr_data FROM deployments WHERE id = $1`,
     [deploymentId],
   )
   if (deploymentResult.rows.length === 0) return null
 
-  const { detected_github_owner: owner, detected_github_repo_name: repo } = deploymentResult.rows[0]
+  const {
+    detected_github_owner: owner,
+    detected_github_repo_name: repo,
+    github_pr_data: existingPrData,
+  } = deploymentResult.rows[0]
   if (!owner || !repo) return null
 
   const snapshots = await getAllLatestPrSnapshots(owner, repo, prNumber)
@@ -138,7 +168,17 @@ async function buildGithubPrDataFromSnapshotsForPr(
   const checks = (snapshots.get('checks')?.data as PrChecks) ?? null
   const comments = (snapshots.get('comments')?.data as PrComment[]) ?? null
 
-  return buildGithubPrDataFromSnapshots(metadata, reviews, commits, checks, comments)
+  const prData = buildGithubPrDataFromSnapshots(metadata, reviews, commits, checks, comments)
+
+  const hasFreshChecks = !!checks && checks.checkRuns.length > 0
+  const hasLegacyChecks = !!existingPrData?.checks && existingPrData.checks.length > 0
+  if (!hasFreshChecks && hasLegacyChecks) {
+    prData.checks = existingPrData.checks
+    prData.checks_passed = existingPrData.checks_passed
+    prData.checks_ref = existingPrData.checks_ref ?? null
+  }
+
+  return prData
 }
 
 async function updateCommitCache(

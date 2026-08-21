@@ -49,6 +49,8 @@ export const PENDING_STATUSES: FourEyesStatus[] = ['pending', 'pending_baseline'
 
 export const REVERIFIABLE_STATUSES: FourEyesStatus[] = ['pending', 'pending_baseline', 'unknown']
 
+export const REVERIFIABLE_STATUSES_SQL = REVERIFIABLE_STATUSES.map((s) => `'${s}'`).join(', ')
+
 export const PENDING_STATUSES_SQL = PENDING_STATUSES.map((s) => `'${s}'`).join(', ')
 
 export function notApprovedWhereClause(column: string): string {

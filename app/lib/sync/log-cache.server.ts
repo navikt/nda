@@ -3,12 +3,15 @@ import { isGcsConfigured, logExists, uploadLog } from '~/lib/gcs.server'
 import { getGitHubClient } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 
+type ChecksColumn = 'github_pr_data' | 'commit_checks_data'
+
 interface CheckToCache {
   deployment_id: number
   owner: string
   repo: string
   check_id: number
   check_name: string
+  column: ChecksColumn
 }
 
 interface CacheCheckLogsResult {
@@ -27,22 +30,24 @@ interface CacheCheckLogsResult {
   }
 }
 
+const EMPTY_DIAGNOSTICS: CacheCheckLogsResult['diagnostics'] = {
+  gcsConfigured: true,
+  deploymentsLast7Days: 0,
+  deploymentsWithPrData: 0,
+  deploymentsWithChecks: 0,
+  deploymentsWithRepo: 0,
+  checksTotal: 0,
+  skippedNoRepo: 0,
+  skippedNoId: 0,
+  skippedAlreadyCached: 0,
+  skippedNotCompleted: 0,
+}
+
 async function getUncachedChecks(monitoredAppId: number): Promise<{
   checks: CheckToCache[]
   diagnostics: CacheCheckLogsResult['diagnostics']
 }> {
-  const diagnostics: CacheCheckLogsResult['diagnostics'] = {
-    gcsConfigured: true,
-    deploymentsLast7Days: 0,
-    deploymentsWithPrData: 0,
-    deploymentsWithChecks: 0,
-    deploymentsWithRepo: 0,
-    checksTotal: 0,
-    skippedNoRepo: 0,
-    skippedNoId: 0,
-    skippedAlreadyCached: 0,
-    skippedNotCompleted: 0,
-  }
+  const diagnostics: CacheCheckLogsResult['diagnostics'] = { ...EMPTY_DIAGNOSTICS }
 
   const statsResult = await pool.query<{
     total_deployments: string
@@ -54,7 +59,7 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
     SELECT 
       COUNT(*) as total_deployments,
       COUNT(CASE WHEN d.github_pr_data IS NOT NULL THEN 1 END) as with_pr_data,
-      COUNT(CASE WHEN d.github_pr_data->'checks' IS NOT NULL THEN 1 END) as with_checks,
+      COUNT(CASE WHEN d.github_pr_data->'checks' IS NOT NULL OR d.commit_checks_data->'checks' IS NOT NULL THEN 1 END) as with_checks,
       COUNT(CASE WHEN ar.github_repo_name IS NOT NULL THEN 1 END) as with_repo
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
@@ -84,19 +89,27 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
         conclusion: string | null
         log_cached?: boolean
       }>
-    }
+    } | null
+    commit_checks_data: {
+      checks: Array<{
+        id?: number
+        name: string
+        status: string
+        conclusion: string | null
+        log_cached?: boolean
+      }>
+    } | null
     repository_full_name: string | null
   }>(
     `
-    SELECT d.id, d.github_pr_data,
+    SELECT d.id, d.github_pr_data, d.commit_checks_data,
            ar.github_owner || '/' || ar.github_repo_name as repository_full_name
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
     LEFT JOIN application_repositories ar ON ar.monitored_app_id = ma.id
     WHERE d.monitored_app_id = $1
       AND d.created_at >= NOW() - INTERVAL '7 days'
-      AND d.github_pr_data IS NOT NULL
-      AND d.github_pr_data->'checks' IS NOT NULL
+      AND (d.github_pr_data->'checks' IS NOT NULL OR d.commit_checks_data->'checks' IS NOT NULL)
       AND ma.is_active = true
     ORDER BY d.created_at DESC
     LIMIT 100
@@ -107,35 +120,45 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
   const checks: CheckToCache[] = []
 
   for (const row of result.rows) {
-    if (!row.github_pr_data?.checks || !row.repository_full_name) {
-      if (!row.repository_full_name) diagnostics.skippedNoRepo++
+    if (!row.repository_full_name) {
+      diagnostics.skippedNoRepo++
       continue
     }
     const [owner, repo] = row.repository_full_name.split('/')
     if (!owner || !repo) continue
 
-    for (const check of row.github_pr_data.checks) {
-      diagnostics.checksTotal++
-      if (!check.id) {
-        diagnostics.skippedNoId++
-        continue
-      }
-      if (check.log_cached) {
-        diagnostics.skippedAlreadyCached++
-        continue
-      }
-      if (check.status !== 'completed') {
-        diagnostics.skippedNotCompleted++
-        continue
-      }
+    const sources: Array<{ column: ChecksColumn; checkList: typeof row.github_pr_data }> = [
+      { column: 'github_pr_data', checkList: row.github_pr_data },
+      { column: 'commit_checks_data', checkList: row.commit_checks_data },
+    ]
 
-      checks.push({
-        deployment_id: row.id,
-        owner,
-        repo,
-        check_id: check.id,
-        check_name: check.name,
-      })
+    for (const { column, checkList } of sources) {
+      if (!checkList?.checks) continue
+
+      for (const check of checkList.checks) {
+        diagnostics.checksTotal++
+        if (!check.id) {
+          diagnostics.skippedNoId++
+          continue
+        }
+        if (check.log_cached) {
+          diagnostics.skippedAlreadyCached++
+          continue
+        }
+        if (check.status !== 'completed') {
+          diagnostics.skippedNotCompleted++
+          continue
+        }
+
+        checks.push({
+          deployment_id: row.id,
+          owner,
+          repo,
+          check_id: check.id,
+          check_name: check.name,
+          column,
+        })
+      }
     }
   }
 
@@ -144,21 +167,7 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
 
 export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheckLogsResult> {
   if (!isGcsConfigured()) {
-    return {
-      cached: 0,
-      diagnostics: {
-        gcsConfigured: false,
-        deploymentsLast7Days: 0,
-        deploymentsWithPrData: 0,
-        deploymentsWithChecks: 0,
-        deploymentsWithRepo: 0,
-        checksTotal: 0,
-        skippedNoRepo: 0,
-        skippedNoId: 0,
-        skippedAlreadyCached: 0,
-        skippedNotCompleted: 0,
-      },
-    }
+    return { cached: 0, diagnostics: { ...EMPTY_DIAGNOSTICS, gcsConfigured: false } }
   }
 
   const { checks, diagnostics } = await getUncachedChecks(monitoredAppId)
@@ -172,7 +181,7 @@ export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheck
   for (const check of checks) {
     try {
       if (await logExists(check.owner, check.repo, check.check_id)) {
-        await markLogCached(check.deployment_id, check.check_id)
+        await markLogCached(check.deployment_id, check.check_id, check.column)
         cached++
         continue
       }
@@ -184,12 +193,12 @@ export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheck
       })
 
       await uploadLog(check.owner, check.repo, check.check_id, response.data as string)
-      await markLogCached(check.deployment_id, check.check_id)
+      await markLogCached(check.deployment_id, check.check_id, check.column)
       cached++
     } catch (error) {
       const is404 = error instanceof Error && 'status' in error && (error as { status: number }).status === 404
       if (is404) {
-        await markLogCached(check.deployment_id, check.check_id)
+        await markLogCached(check.deployment_id, check.check_id, check.column)
         logger.info(
           `Log not found (404) for ${check.owner}/${check.repo} check ${check.check_name} (${check.check_id}) — marked as cached`,
         )
@@ -204,21 +213,26 @@ export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheck
   return { cached, diagnostics }
 }
 
-async function markLogCached(deploymentId: number, checkId: number): Promise<void> {
+async function markLogCached(deploymentId: number, checkId: number, column: ChecksColumn): Promise<void> {
   await pool.query(
     `UPDATE deployments
-     SET github_pr_data = jsonb_set(
-       github_pr_data,
+     SET ${column} = jsonb_set(
+       ${column},
        (
          SELECT ARRAY['checks', (idx - 1)::text, 'log_cached']
-         FROM jsonb_array_elements(github_pr_data->'checks') WITH ORDINALITY AS c(elem, idx)
+         FROM jsonb_array_elements(${column}->'checks') WITH ORDINALITY AS c(elem, idx)
          WHERE (elem->>'id')::bigint = $2::bigint
          LIMIT 1
        ),
        'true'::jsonb
      )
      WHERE id = $1
-       AND github_pr_data->'checks' IS NOT NULL`,
+       AND ${column}->'checks' IS NOT NULL
+       AND EXISTS (
+         SELECT 1
+         FROM jsonb_array_elements(${column}->'checks') WITH ORDINALITY AS c(elem, idx)
+         WHERE (elem->>'id')::bigint = $2::bigint
+       )`,
     [deploymentId, checkId],
   )
 }

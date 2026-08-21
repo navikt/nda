@@ -2,7 +2,7 @@ import { withSyncClient } from '~/db/connection.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { cleanupOldSyncJobs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { logger } from '~/lib/logger.server'
-import { verifyDeploymentsFourEyes } from './github-verify.server'
+import { CHECKS_REVERIFY_LIMIT_PER_APP, reverifyPendingChecks, verifyDeploymentsFourEyes } from './github-verify.server'
 import { cacheCheckLogsWithLock } from './log-cache-job.server'
 import { syncNewDeploymentsFromNais } from './nais-sync.server'
 import { withSyncLock } from './with-sync-lock.server'
@@ -56,6 +56,24 @@ export async function verifyDeploymentsWithLock(monitoredAppId: number, limit?: 
   )
 }
 
+async function reverifyPendingChecksWithLock(monitoredAppId: number, limit: number = CHECKS_REVERIFY_LIMIT_PER_APP) {
+  return withSyncLock(
+    'checks_reverify',
+    monitoredAppId,
+    {
+      timeoutMinutes: 15,
+      startMessage: 'Starter reverifisering av ventende checks',
+      startContext: { limit },
+      resultMessage: 'Reverifisering av checks fullført',
+      buildResultContext: (r) => ({
+        fetched: r.fetched,
+        errors: r.errors,
+      }),
+    },
+    () => reverifyPendingChecks(monitoredAppId, limit),
+  )
+}
+
 async function runPeriodicSync(): Promise<void> {
   try {
     const result = await withSyncClient(async () => {
@@ -67,6 +85,7 @@ async function runPeriodicSync(): Promise<void> {
       let syncedCount = 0
       let newDeploymentsCount = 0
       let verifiedCount = 0
+      let checksReverifiedCount = 0
       let cachedLogsCount = 0
       let lockedCount = 0
       let failedCount = 0
@@ -94,6 +113,13 @@ async function runPeriodicSync(): Promise<void> {
               verifyResult.result.verified > 0 ||
               verifyResult.result.failed > 0 ||
               verifyResult.result.skipped > 0
+          }
+
+          const checksReverifyResult = await reverifyPendingChecksWithLock(app.id)
+
+          if (checksReverifyResult.success && checksReverifyResult.result) {
+            checksReverifiedCount += checksReverifyResult.result.fetched
+            didWork = didWork || checksReverifyResult.result.fetched > 0
           }
 
           const cacheResult = await cacheCheckLogsWithLock(app.id)
@@ -133,7 +159,7 @@ async function runPeriodicSync(): Promise<void> {
       }
 
       logger.info(
-        `✅ Periodic sync complete: synced ${syncedCount} apps (${newDeploymentsCount} new deployments), verified ${verifiedCount} deployments, cached ${cachedLogsCount} logs, ${lockedCount} locked, ${failedCount} failed`,
+        `✅ Periodic sync complete: synced ${syncedCount} apps (${newDeploymentsCount} new deployments), verified ${verifiedCount} deployments, reverified checks for ${checksReverifiedCount} deployments, cached ${cachedLogsCount} logs, ${lockedCount} locked, ${failedCount} failed`,
       )
     })
 

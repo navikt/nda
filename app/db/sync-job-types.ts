@@ -7,6 +7,7 @@ export const SYNC_JOB_TYPES = [
   'cache_check_logs',
   'refresh_missing_approver',
   'backfill_workflow_triggers',
+  'checks_reverify',
 ] as const
 export type SyncJobType = (typeof SYNC_JOB_TYPES)[number]
 
@@ -19,6 +20,7 @@ export const SYNC_JOB_TYPE_LABELS: Record<SyncJobType, string> = {
   cache_check_logs: 'Cache sjekk-logger',
   refresh_missing_approver: 'Oppdater manglende godkjenner',
   backfill_workflow_triggers: 'Hent workflow-trigger (alle apper)',
+  checks_reverify: 'Reverifiser ventende checks',
 }
 
 export const SYNC_JOB_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled'] as const
