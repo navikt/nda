@@ -10,6 +10,7 @@ import {
   FileTextIcon,
   LaptopIcon,
   LayersIcon,
+  LineGraphIcon,
   MagnifyingGlassIcon,
   PersonGroupIcon,
   PersonIcon,
@@ -298,6 +299,30 @@ export default function AdminIndex() {
                 <BodyShort textColor="subtle">
                   Hent manglende eller utdatert trigger-informasjon (hvordan deployments ble startet) for alle
                   applikasjoner.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
+        <Link to="/admin/workflow-patterns" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <LineGraphIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Workflow-mønstre
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Analyser hvordan team og applikasjoner starter deployments, på tvers av alle apper.
                 </BodyShort>
               </div>
             </VStack>

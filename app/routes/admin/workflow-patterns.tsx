@@ -1,0 +1,268 @@
+import { ExclamationmarkTriangleIcon } from '@navikt/aksel-icons'
+import { BodyShort, Box, Detail, Heading, HStack, Select, Table, Tag, VStack } from '@navikt/ds-react'
+import { Link, useLoaderData, useSearchParams } from 'react-router'
+import { pool } from '~/db/connection.server'
+import { requireAdmin } from '~/lib/auth.server'
+import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
+import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
+import type { Route } from './+types/workflow-patterns'
+
+export function meta(_args: Route.MetaArgs) {
+  return [{ title: 'Workflow-mønstre (alle apper) - Admin' }]
+}
+
+const PROD_ENVIRONMENTS = ['prod-fss', 'prod-gcp']
+const MANUAL_TRIGGER_EVENTS = ['workflow_dispatch', 'repository_dispatch']
+const MANUAL_PROD_TRIGGER_WARNING_THRESHOLD_PERCENT = 30
+
+interface TriggerBreakdownRow {
+  team_slug: string
+  app_name: string
+  environment_name: string
+  trigger_event: string
+  via_pr: boolean
+  count: string
+}
+
+interface AppTriggerSummary {
+  teamSlug: string
+  appName: string
+  environmentName: string
+  total: number
+  byTrigger: Record<string, number>
+  viaPr: number
+  viaDirectPush: number
+  unknownCount: number
+  unknownPercent: number
+  manualPercent: number
+  isProd: boolean
+  flagged: boolean
+  lowConfidence: boolean
+}
+
+const MIN_KNOWN_SAMPLE_SIZE = 5
+const HIGH_UNKNOWN_THRESHOLD_PERCENT = 50
+
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireAdmin(request)
+
+  const url = new URL(request.url)
+  const period = (url.searchParams.get('period') || 'last-tertial') as TimePeriod
+  const envFilter = url.searchParams.get('env') || 'all'
+
+  const range = getDateRangeForPeriod(period)
+
+  const params: Array<Date | string | string[]> = []
+  const conditions: string[] = []
+  if (range) {
+    params.push(range.startDate, range.endDate)
+    conditions.push(`created_at >= $${params.length - 1} AND created_at <= $${params.length}`)
+  }
+  if (envFilter === 'prod') {
+    params.push(PROD_ENVIRONMENTS)
+    conditions.push(`environment_name = ANY($${params.length})`)
+  } else if (envFilter === 'dev') {
+    params.push(PROD_ENVIRONMENTS)
+    conditions.push(`environment_name != ALL($${params.length})`)
+  }
+  const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+  const result = await pool.query<TriggerBreakdownRow>(
+    `SELECT team_slug, app_name, environment_name,
+            COALESCE(workflow_trigger_config->>'triggerEvent', 'unknown') AS trigger_event,
+            (github_pr_number IS NOT NULL) AS via_pr,
+            COUNT(*)::text AS count
+     FROM deployments
+     ${whereSql}
+     GROUP BY team_slug, app_name, environment_name, trigger_event, via_pr
+     ORDER BY team_slug, app_name, environment_name`,
+    params,
+  )
+
+  const summaries = new Map<string, AppTriggerSummary>()
+  for (const row of result.rows) {
+    const key = `${row.team_slug}|${row.app_name}|${row.environment_name}`
+    const count = parseInt(row.count, 10)
+    let summary = summaries.get(key)
+    if (!summary) {
+      summary = {
+        teamSlug: row.team_slug,
+        appName: row.app_name,
+        environmentName: row.environment_name,
+        total: 0,
+        byTrigger: {},
+        viaPr: 0,
+        viaDirectPush: 0,
+        unknownCount: 0,
+        unknownPercent: 0,
+        manualPercent: 0,
+        isProd: PROD_ENVIRONMENTS.includes(row.environment_name),
+        flagged: false,
+        lowConfidence: false,
+      }
+      summaries.set(key, summary)
+    }
+    summary.total += count
+    summary.byTrigger[row.trigger_event] = (summary.byTrigger[row.trigger_event] ?? 0) + count
+    if (row.via_pr) {
+      summary.viaPr += count
+    } else {
+      summary.viaDirectPush += count
+    }
+  }
+
+  const teamAppSummaries = [...summaries.values()]
+  for (const summary of teamAppSummaries) {
+    summary.unknownCount = summary.byTrigger.unknown ?? 0
+    summary.unknownPercent = summary.total > 0 ? Math.round((summary.unknownCount / summary.total) * 100) : 0
+
+    const knownTotal = summary.total - summary.unknownCount
+    const manualCount = MANUAL_TRIGGER_EVENTS.reduce((sum, event) => sum + (summary.byTrigger[event] ?? 0), 0)
+    const manualRatio = knownTotal > 0 ? manualCount / knownTotal : 0
+    summary.manualPercent = Math.round(manualRatio * 100)
+
+    summary.lowConfidence =
+      summary.unknownPercent >= HIGH_UNKNOWN_THRESHOLD_PERCENT || knownTotal < MIN_KNOWN_SAMPLE_SIZE
+    summary.flagged =
+      summary.isProd && !summary.lowConfidence && manualRatio > MANUAL_PROD_TRIGGER_WARNING_THRESHOLD_PERCENT / 100
+  }
+
+  teamAppSummaries.sort((a, b) => {
+    if (a.teamSlug !== b.teamSlug) return a.teamSlug.localeCompare(b.teamSlug, 'no')
+    if (a.appName !== b.appName) return a.appName.localeCompare(b.appName, 'no')
+    return a.environmentName.localeCompare(b.environmentName, 'no')
+  })
+
+  const flaggedCount = teamAppSummaries.filter((s) => s.flagged).length
+  const totalDeployments = teamAppSummaries.reduce((sum, s) => sum + s.total, 0)
+  const totalUnknown = teamAppSummaries.reduce((sum, s) => sum + s.unknownCount, 0)
+  const overallUnknownPercent = totalDeployments > 0 ? Math.round((totalUnknown / totalDeployments) * 100) : 0
+
+  return { teamAppSummaries, flaggedCount, totalDeployments, totalUnknown, overallUnknownPercent, period, envFilter }
+}
+
+export default function WorkflowPatternsAdminPage() {
+  const { teamAppSummaries, flaggedCount, totalDeployments, totalUnknown, overallUnknownPercent, period, envFilter } =
+    useLoaderData<typeof loader>()
+
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const updateFilter = (key: string, value: string) => {
+    const newParams = new URLSearchParams(searchParams)
+    if (value) {
+      newParams.set(key, value)
+    } else {
+      newParams.delete(key)
+    }
+    setSearchParams(newParams)
+  }
+
+  return (
+    <VStack gap="space-24">
+      <div>
+        <Heading level="1" size="large" spacing>
+          Workflow-mønstre (alle apper)
+        </Heading>
+        <BodyShort textColor="subtle">
+          Analyser hvordan team og applikasjoner starter deployments (trigger-type), for å forstå arbeidsmønstre og
+          identifisere avvik som bør følges opp.
+        </BodyShort>
+        <Detail textColor="subtle">
+          {totalDeployments} deployments i valgt periode, {totalUnknown} ({overallUnknownPercent}%) mangler
+          trigger-informasjon (legacy/ikke synkronisert) og telles som «Ukjent».
+        </Detail>
+      </div>
+
+      <HStack gap="space-16" wrap>
+        <Select label="Periode" size="small" value={period} onChange={(e) => updateFilter('period', e.target.value)}>
+          {TIME_PERIOD_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </Select>
+        <Select label="Miljø" size="small" value={envFilter} onChange={(e) => updateFilter('env', e.target.value)}>
+          <option value="all">Alle miljøer</option>
+          <option value="prod">Kun prod</option>
+          <option value="dev">Kun dev</option>
+        </Select>
+      </HStack>
+
+      {flaggedCount > 0 && (
+        <Box background="warning-soft" padding="space-16" borderRadius="8">
+          <HStack gap="space-8" align="center">
+            <ExclamationmarkTriangleIcon aria-hidden />
+            <BodyShort>
+              {flaggedCount} app-miljø-kombinasjon(er) har mer enn {MANUAL_PROD_TRIGGER_WARNING_THRESHOLD_PERCENT}%
+              manuelt triggede deployments (workflow_dispatch/repository_dispatch) i prod.
+            </BodyShort>
+          </HStack>
+        </Box>
+      )}
+
+      <Table size="small">
+        <Table.Header>
+          <Table.Row>
+            <Table.HeaderCell>Team</Table.HeaderCell>
+            <Table.HeaderCell>App</Table.HeaderCell>
+            <Table.HeaderCell>Miljø</Table.HeaderCell>
+            <Table.HeaderCell>Totalt</Table.HeaderCell>
+            <Table.HeaderCell>Trigger-fordeling</Table.HeaderCell>
+            <Table.HeaderCell>Uten PR</Table.HeaderCell>
+            <Table.HeaderCell>Flagg</Table.HeaderCell>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {teamAppSummaries.map((summary) => {
+            const directPushPercent = summary.total > 0 ? Math.round((summary.viaDirectPush / summary.total) * 100) : 0
+            return (
+              <Table.Row key={`${summary.teamSlug}-${summary.appName}-${summary.environmentName}`}>
+                <Table.DataCell>{summary.teamSlug}</Table.DataCell>
+                <Table.DataCell>
+                  <Link
+                    to={`/team/${summary.teamSlug}/env/${summary.environmentName}/app/${summary.appName}/deployments`}
+                  >
+                    {summary.appName}
+                  </Link>
+                </Table.DataCell>
+                <Table.DataCell>{summary.environmentName}</Table.DataCell>
+                <Table.DataCell>{summary.total}</Table.DataCell>
+                <Table.DataCell>
+                  <HStack gap="space-4" wrap>
+                    {Object.entries(summary.byTrigger)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([triggerEvent, count]) => (
+                        <Tag key={triggerEvent} size="xsmall" variant={triggerEvent === 'unknown' ? 'neutral' : 'info'}>
+                          {triggerEvent === 'unknown' ? 'Ukjent' : getWorkflowTriggerLabel(triggerEvent)}:{' '}
+                          {Math.round((count / summary.total) * 100)}%
+                        </Tag>
+                      ))}
+                  </HStack>
+                </Table.DataCell>
+                <Table.DataCell>
+                  <Detail>{directPushPercent}%</Detail>
+                </Table.DataCell>
+                <Table.DataCell>
+                  <VStack gap="space-4">
+                    {summary.flagged && (
+                      <Tag size="xsmall" variant="warning">
+                        {summary.manualPercent}% manuell i prod
+                      </Tag>
+                    )}
+                    {summary.lowConfidence && summary.total > 0 && (
+                      <Tag size="xsmall" variant="neutral">
+                        Usikkert datagrunnlag ({summary.unknownPercent}% ukjent)
+                      </Tag>
+                    )}
+                  </VStack>
+                </Table.DataCell>
+              </Table.Row>
+            )
+          })}
+        </Table.Body>
+      </Table>
+
+      {teamAppSummaries.length === 0 && <BodyShort textColor="subtle">Ingen data funnet for valgt periode.</BodyShort>}
+    </VStack>
+  )
+}

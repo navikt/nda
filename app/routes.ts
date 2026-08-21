@@ -92,6 +92,7 @@ export default [
     route('admin/soft-deleted', 'routes/admin/soft-deleted.tsx'),
     route('admin/verification-diffs', 'routes/admin/verification-diffs.tsx'),
     route('admin/workflow-triggers', 'routes/admin/workflow-triggers.tsx'),
+    route('admin/workflow-patterns', 'routes/admin/workflow-patterns.tsx'),
     route('admin/env', 'routes/admin/environment.tsx'),
     route('admin/validate-monitored-apps', 'routes/admin/validate-monitored-apps.tsx'),
     route('admin/title-mismatches', 'routes/admin/title-mismatches-redirect.ts'),
