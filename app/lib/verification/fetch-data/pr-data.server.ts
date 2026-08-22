@@ -43,8 +43,7 @@ export async function fetchDeployedPrData(
       const reviews = cachedData.get('reviews')?.data as PrReview[]
       const commits = cachedData.get('commits')?.data as PrCommit[]
 
-      if (!cachedData.has('checks') || !cachedData.has('comments')) {
-      } else {
+      if (cachedData.has('checks') && cachedData.has('comments')) {
         return {
           deployedPr: {
             number: prNumber,
