@@ -2,10 +2,14 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
+import { getBuildVersion } from '../get-build-version';
 
 // Separate Vite config for Storybook (without react-router plugin)
 export default defineConfig({
   plugins: [react(), tsconfigPaths()],
+  define: {
+    __BUILD_VERSION__: JSON.stringify(getBuildVersion()),
+  },
   resolve: {
     alias: {
       // node:path is used in audit-report-pdf.tsx for production font paths.
