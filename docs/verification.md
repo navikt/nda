@@ -337,7 +337,7 @@ Admin-jobben «Hent data for alle deployments» (`fetchVerificationDataForAllDep
 
 GitHub returnerer 404 uansett om en ressurs mangler eller om vi mangler tilgang til den (samme som web-UI, bevisst for å ikke lekke at private ressurser eksisterer) — de to tilfellene kan derfor ikke skilles pålitelig fra hverandre. `fetchCommitChecks()` fanger alle feil uten å skille på statuskode og returnerer `undefined`, slik at `COALESCE` i `updateDeploymentVerification()`/`updateDeploymentCommitChecks()` beholder eksisterende `commit_checks_data` i stedet for å overskrive med tomt resultat. Samme `undefined`-retur brukes også når GitHub svarer OK med 0 check runs for en commit som tidligere har hatt checks — siden checks for en gitt SHA i praksis ikke bør forsvinne uten at det skyldes et forbigående problem, tapt tilgang, eller at GitHubs egen retention har rotert bort dataene, ville en overskriving her risikert å slette allerede lagrede checks (arkivet i `github_commit_snapshots` er upåvirket uansett, siden det kun skrives ved vellykket henting).
 
-> **Koderef**: `fetchCommitChecks()` i [`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts), `getChecksForCommit()` i [`app/lib/github/pr.server.ts`](../app/lib/github/pr.server.ts). Loggcache for check-logger (`app/lib/sync/log-cache.server.ts`) leser fra begge kolonner.
+> **Koderef**: `fetchCommitChecks()` i [`app/lib/verification/fetch-data/commit-checks.server.ts`](../app/lib/verification/fetch-data/commit-checks.server.ts), `getChecksForCommit()` i [`app/lib/github/pr.server.ts`](../app/lib/github/pr.server.ts). Loggcache for check-logger (`app/lib/sync/log-cache.server.ts`) leser fra begge kolonner.
 
 #### Fallback til PR-ens head-SHA
 
@@ -353,7 +353,7 @@ Filtreringen har en fail-safe: matcher **ingen** check runs det oppløste `check
 
 Fallback-forsøket mot PR-ens head-SHA (over) bruker bevisst **ikke** samme `check_suite_id`-filter: det forsøket eksisterer nettopp for CI som kjører på en annen SHA (og dermed annen check suite) enn selve leverings-workflowen, så en `check_suite_id`-scoping ville motvirket hensikten med fallback-en.
 
-> **Koderef**: `filterCheckRunsByCheckSuite()`/`fetchChecksForRefs()` i [`app/lib/github/pr.server.ts`](../app/lib/github/pr.server.ts), `WorkflowTriggerConfig.checkSuiteId` i [`app/lib/github/git.server.ts`](../app/lib/github/git.server.ts) (schema-versjon 3), `resolveCheckSuiteId()` i [`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts).
+> **Koderef**: `filterCheckRunsByCheckSuite()`/`fetchChecksForRefs()` i [`app/lib/github/pr.server.ts`](../app/lib/github/pr.server.ts), `WorkflowTriggerConfig.checkSuiteId` i [`app/lib/github/git.server.ts`](../app/lib/github/git.server.ts) (schema-versjon 3), `resolveCheckSuiteId()` i [`app/lib/verification/fetch-data/commit-checks.server.ts`](../app/lib/verification/fetch-data/commit-checks.server.ts).
 
 #### Ikke overskriv legacy PR-checks med tomt resultat
 
@@ -379,7 +379,7 @@ GitHub gir ingen signal for «denne check-runen vil aldri fullføre» — en che
 
 #### Cache-treff hopper over live-kall til GitHub
 
-`fetchVerificationData()` konsulterte tidligere alltid GitHub live for checks, uavhengig av om `commit_checks_data` allerede var hentet ferdig for gjeldende commit — i motsetning til PR-/compare-/workflow-trigger-data, som alle har en tilsvarende cache-sjekk før live-kall. Dette resulterte i unødvendige GitHub-kall og dupliserte arkivrader (`github_commit_snapshots`) ved hver reverifisering, selv når resultatet allerede var definitivt. `getCachedCommitChecks()` (ny, i `app/lib/verification/fetch-data.server.ts`) sjekker nå `commit_checks_data`/`commit_checks_checked_at` på deployment-raden først; er dataene allerede hentet (`commit_checks_checked_at IS NOT NULL`), gjenbrukes de i stedet for et nytt API-kall — med mindre `options?.forceRefresh` er satt (samme brukerstyrte overstyring som for de andre datakildene).
+`fetchVerificationData()` konsulterte tidligere alltid GitHub live for checks, uavhengig av om `commit_checks_data` allerede var hentet ferdig for gjeldende commit — i motsetning til PR-/compare-/workflow-trigger-data, som alle har en tilsvarende cache-sjekk før live-kall. Dette resulterte i unødvendige GitHub-kall og dupliserte arkivrader (`github_commit_snapshots`) ved hver reverifisering, selv når resultatet allerede var definitivt. `getCachedCommitChecks()` (ny, i `app/lib/verification/fetch-data/commit-checks.server.ts`) sjekker nå `commit_checks_data`/`commit_checks_checked_at` på deployment-raden først; er dataene allerede hentet (`commit_checks_checked_at IS NOT NULL`), gjenbrukes de i stedet for et nytt API-kall — med mindre `options?.forceRefresh` er satt (samme brukerstyrte overstyring som for de andre datakildene).
 
 #### Isolert annotasjons-feil per check run
 
@@ -403,7 +403,7 @@ Rådata som lagres i snapshotet (`ChecksSnapshotData` i `app/lib/github/checks-s
 
 GitHub sin REST API er selv date-versjonert (`X-GitHub-Api-Version`), med en stabil default (`2022-11-28` per i dag) som GitHub aktivt migrerer uversjonerte klienter videre fra ved behov. Vi pinner **ikke** en eksplisitt versjon — det ville krevd aktiv fornyelse før 24-måneders støttevinduet utløper, med fare for et hardt `410 Gone`-brudd om det glemmes, og additive endringer (nye felt) gjelder uansett alle versjoner samtidig. I stedet leser `fetchChecksForRefs()` responsheaderen `X-GitHub-Api-Version-Selected` og lagrer den i `ChecksSnapshotData.githubApiVersion` — rent observasjonelt, slik at enhver arkivert rad kan spores tilbake til nøyaktig hvilken GitHub API-versjon som produserte den. `Deprecation`/`Sunset`-responsheadere logges som advarsel dersom de dukker opp.
 
-> **Koderef**: `app/lib/github/checks-snapshot.ts` (`ChecksSnapshotData`, `parseCheckRunsSnapshot`, `mapRawCheckRunToCheckRun`), `saveCommitSnapshot()`-kallet i `fetchCommitChecks()` ([`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts)), `github_commit_snapshots`-tabellen ([`app/db/migrations/1770090000000_add-github-snapshots.sql`](../app/db/migrations/1770090000000_add-github-snapshots.sql)).
+> **Koderef**: `app/lib/github/checks-snapshot.ts` (`ChecksSnapshotData`, `parseCheckRunsSnapshot`, `mapRawCheckRunToCheckRun`), `saveCommitSnapshot()`-kallet i `fetchCommitChecks()` ([`app/lib/verification/fetch-data/commit-checks.server.ts`](../app/lib/verification/fetch-data/commit-checks.server.ts)), `github_commit_snapshots`-tabellen ([`app/db/migrations/1770090000000_add-github-snapshots.sql`](../app/db/migrations/1770090000000_add-github-snapshots.sql)).
 
 ---
 
@@ -454,7 +454,8 @@ Alle identitetssammenligninger i disse sjekkene (selvgodkjenning, dependabot-onl
 | Fil | Ansvar | Sentrale funksjoner |
 |-----|--------|-------------------|
 | [`app/lib/verification/index.ts`](../app/lib/verification/index.ts) | Komplett verifiseringsflyt (hent → verifiser → lagre) | `runVerification`, `reverifyDeployment`, `runDebugVerification` |
-| [`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts) | Henter data fra GitHub/cache | `fetchVerificationData`, `fetchVerificationDataForAllDeployments` |
+| [`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts) | Henter data fra GitHub/cache | `fetchVerificationData` |
+| [`app/lib/verification/fetch-data/bulk-fetch.server.ts`](../app/lib/verification/fetch-data/bulk-fetch.server.ts) | Bulk-henting av verifiseringsdata for alle deployments i en app | `fetchVerificationDataForAllDeployments` |
 | [`app/lib/verification/store-data.server.ts`](../app/lib/verification/store-data.server.ts) | Lagrer resultat til database | `storeVerificationResult` |
 
 ### Periodisk synkronisering
@@ -510,7 +511,7 @@ Systemet bruker en **tre-trinns strategi** for å skille disse scenarioene:
 
 > **Implementering**: 
 > - Tree-comparison: `haveSameCommitTree()` i [`app/lib/github/git.server.ts`](../app/lib/github/git.server.ts)
-> - Orkestrering: `fetchCommitsBetween()` i [`app/lib/verification/fetch-data.server.ts`](../app/lib/verification/fetch-data.server.ts)
+> - Orkestrering: `fetchCommitsBetween()` i [`app/lib/verification/fetch-data/commits-between.server.ts`](../app/lib/verification/fetch-data/commits-between.server.ts)
 > - Beslutningslogikk: `verifyDeployment()` og `handleNoChanges()` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts)
 > - Tester: [`app/lib/__tests__/verify-coverage-gaps.test.ts`](../app/lib/__tests__/verify-coverage-gaps.test.ts) — Case 2b (no-diff via compare) + GitHub API-feil
 
