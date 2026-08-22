@@ -22,7 +22,7 @@ vi.mock('~/lib/logger.server', () => ({
   },
 }))
 
-import { getChecksForCommit } from '~/lib/github/pr.server'
+import { getChecksForCommit } from '~/lib/github/pr/checks.server'
 
 describe('getChecksForCommit', () => {
   beforeEach(() => {

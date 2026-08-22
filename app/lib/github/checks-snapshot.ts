@@ -1,5 +1,5 @@
 import type { RestEndpointMethodTypes } from '@octokit/rest'
-import type { CheckRun } from './pr.server'
+import type { CheckRun } from './pr/checks.server'
 
 export const CHECKS_SNAPSHOT_SCHEMA_VERSION = 1
 
