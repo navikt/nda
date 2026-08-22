@@ -265,8 +265,8 @@ export default function WorkflowPatternsAdminPage() {
         }
         case 'manual_percent':
           return (a.manualPercent - b.manualPercent) * dir
-        case 'flagged':
-          return (Number(a.flagged) - Number(b.flagged)) * dir
+        case 'low_confidence':
+          return (Number(a.lowConfidence) - Number(b.lowConfidence)) * dir
         default:
           return 0
       }
@@ -381,8 +381,8 @@ export default function WorkflowPatternsAdminPage() {
             <Table.ColumnHeader sortKey="manual_percent" sortable align="right">
               Manuell %
             </Table.ColumnHeader>
-            <Table.ColumnHeader sortKey="flagged" sortable>
-              Flagg
+            <Table.ColumnHeader sortKey="low_confidence" sortable>
+              Datagrunnlag
             </Table.ColumnHeader>
           </Table.Row>
         </Table.Header>
@@ -423,18 +423,11 @@ export default function WorkflowPatternsAdminPage() {
                   <Detail>{summary.manualPercent}%</Detail>
                 </Table.DataCell>
                 <Table.DataCell>
-                  <VStack gap="space-4">
-                    {summary.flagged && (
-                      <Tag size="xsmall" variant="warning">
-                        Flagget
-                      </Tag>
-                    )}
-                    {summary.lowConfidence && summary.total > 0 && (
-                      <Tag size="xsmall" variant="neutral">
-                        Usikkert datagrunnlag ({summary.unknownPercent}% ukjent)
-                      </Tag>
-                    )}
-                  </VStack>
+                  {summary.lowConfidence && summary.total > 0 && (
+                    <Tag size="xsmall" variant="neutral">
+                      Usikkert ({summary.unknownPercent}% ukjent)
+                    </Tag>
+                  )}
                 </Table.DataCell>
               </Table.Row>
             )
