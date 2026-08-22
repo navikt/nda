@@ -1,8 +1,19 @@
 import { NOT_APPROVED_STATUSES, PENDING_STATUSES } from '~/lib/four-eyes-status'
 import { AUDIT_START_YEAR_FILTER } from '../audit-start-year'
 import { pool } from '../connection.server'
-import type { AppReminderConfig, DeploymentWithApp } from '../deployments.server'
+import type { DeploymentWithApp } from '../deployments.server'
 import { getDeploymentById } from '../deployments.server'
+
+export interface AppReminderConfig {
+  id: number
+  team_slug: string
+  environment_name: string
+  app_name: string
+  slack_channel_id: string
+  reminder_time: string
+  reminder_days: string[]
+  reminder_last_sent_at: Date | null
+}
 
 export async function claimDeploymentForSlackNotification(
   deploymentId: number,

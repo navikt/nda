@@ -1,5 +1,15 @@
 import { pool } from '../connection.server'
-import type { StatusTransition } from '../deployments.server'
+
+export interface StatusTransition {
+  id: number
+  deployment_id: number
+  from_status: string | null
+  to_status: string
+  changed_by: string | null
+  change_source: string
+  details: Record<string, unknown> | null
+  created_at: Date
+}
 
 export async function resetVerificationStatus(
   deploymentId: number,

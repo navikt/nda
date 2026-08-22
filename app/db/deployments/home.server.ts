@@ -2,10 +2,22 @@ import { APPROVED_STATUSES, PENDING_STATUSES } from '~/lib/four-eyes-status'
 import { isGitHubBot, NON_BRACKET_BOT_USERNAMES } from '~/lib/github-bots'
 import { baselineActionSql } from '../baseline-action'
 import { pool } from '../connection.server'
-import type { AppWithIssues, DeploymentWithApp } from '../deployments.server'
+import type { DeploymentWithApp } from '../deployments.server'
 import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '../dev-teams.server'
 import { getMembersGithubUsernamesForDevTeamRoles } from '../role-assignments.server'
 import { lowerUsernames, userDeploymentMatchAnySql, userDeploymentMatchSql } from '../user-deployment-match'
+
+export interface AppWithIssues {
+  app_name: string
+  team_slug: string
+  environment_name: string
+  without_four_eyes: number
+  pending_verification: number
+  alert_count: number
+  missing_goal_links: number
+  unmapped_deployer_count: number
+  baseline_action_count: number
+}
 
 interface DevTeamScope {
   naisTeamSlugs: string[]
