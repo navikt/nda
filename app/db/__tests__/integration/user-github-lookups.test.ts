@@ -1,21 +1,22 @@
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('~/lib/microsoft-graph.server', () => ({
-  searchGraphUsers: vi.fn(),
+vi.mock('~/lib/nom.server', () => ({
+  getNomUsersByNavIdenter: vi.fn(),
 }))
 
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { getNomUsersByNavIdenter } from '~/lib/nom.server'
 import {
   getActiveGithubAccountByNavIdent,
   getAllUsersWithAccounts,
   getGithubUserLookup,
   getGithubUserLookups,
-  getOrCreateUserFromGraph,
+  getOrCreateUserFromNom,
   getUnmappedDeployers,
   getUserByIdentifier,
   getUserBySlackMemberId,
   getUsersByIdentifiers,
+  populateUsersFromNom,
 } from '../../user-github-lookups.server'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
@@ -441,44 +442,142 @@ describe('getUnmappedDeployers', () => {
   })
 })
 
-describe('getOrCreateUserFromGraph', () => {
+describe('getOrCreateUserFromNom', () => {
   beforeEach(async () => {
     await truncateAllTables(pool)
-    vi.mocked(searchGraphUsers).mockReset()
+    vi.mocked(getNomUsersByNavIdenter).mockReset()
   })
 
-  it('returns existing user without calling Graph', async () => {
+  it('returns existing user without calling NOM', async () => {
     await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Glad Fjord')`)
-    const result = await getOrCreateUserFromGraph('Z990001')
+    const result = await getOrCreateUserFromNom('Z990001')
     expect(result?.nav_ident).toBe('Z990001')
-    expect(searchGraphUsers).not.toHaveBeenCalled()
+    expect(getNomUsersByNavIdenter).not.toHaveBeenCalled()
   })
 
-  it('creates user from Graph when not found locally', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([
+  it('creates user from NOM when not found locally', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
       { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
     ])
-    const result = await getOrCreateUserFromGraph('Z990001')
+    const result = await getOrCreateUserFromNom('Z990001')
     expect(result?.nav_ident).toBe('Z990001')
     expect(result?.display_name).toBe('Glad Fjord')
     const { rows } = await pool.query(`SELECT * FROM users WHERE nav_ident = 'Z990001'`)
     expect(rows).toHaveLength(1)
   })
 
-  it('returns null when Graph finds no match', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([])
-    const result = await getOrCreateUserFromGraph('Z990001')
+  it('returns null when NOM finds no match', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([])
+    const result = await getOrCreateUserFromNom('Z990001')
     expect(result).toBeNull()
   })
 
-  it('returns null when Graph result has no displayName', async () => {
-    vi.mocked(searchGraphUsers).mockResolvedValue([{ navIdent: 'Z990001', displayName: null, email: null }])
-    const result = await getOrCreateUserFromGraph('Z990001')
+  it('returns null when NOM result has no displayName', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([{ navIdent: 'Z990001', displayName: null, email: null }])
+    const result = await getOrCreateUserFromNom('Z990001')
     expect(result).toBeNull()
   })
 
-  it('throws when Graph API fails', async () => {
-    vi.mocked(searchGraphUsers).mockRejectedValue(new Error('Graph API error'))
-    await expect(getOrCreateUserFromGraph('Z990001')).rejects.toThrow()
+  it('throws when NOM API fails', async () => {
+    vi.mocked(getNomUsersByNavIdenter).mockRejectedValue(new Error('NOM API error'))
+    await expect(getOrCreateUserFromNom('Z990001')).rejects.toThrow()
+  })
+})
+
+describe('populateUsersFromNom', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+    vi.mocked(getNomUsersByNavIdenter).mockReset()
+  })
+
+  it('returns all-zero result when there are no users', async () => {
+    const result = await populateUsersFromNom()
+    expect(result).toEqual({ success: 0, skipped: 0, errors: 0 })
+    expect(getNomUsersByNavIdenter).not.toHaveBeenCalled()
+  })
+
+  it('fetches all nav-idents in a single NOM call and upserts matches', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990002', 'Old Name 2')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
+      { navIdent: 'Z990002', displayName: 'Rask Elv', email: 'rask.elv@nav.no' },
+    ])
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 2, skipped: 0, errors: 0 })
+    expect(getNomUsersByNavIdenter).toHaveBeenCalledTimes(1)
+    expect(getNomUsersByNavIdenter).toHaveBeenCalledWith(expect.arrayContaining(['Z990001', 'Z990002']))
+
+    const { rows } = await pool.query(`SELECT nav_ident, display_name FROM users ORDER BY nav_ident`)
+    expect(rows).toEqual([
+      { nav_ident: 'Z990001', display_name: 'Glad Fjord' },
+      { nav_ident: 'Z990002', display_name: 'Rask Elv' },
+    ])
+  })
+
+  it('normalizes a comma-formatted NOM displayName before persisting', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Fjord, Glad', email: 'glad.fjord@nav.no' },
+    ])
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 0 })
+    const { rows } = await pool.query(`SELECT display_name FROM users WHERE nav_ident = 'Z990001'`)
+    expect(rows[0].display_name).toBe('Glad Fjord')
+  })
+
+  it('skips nav-idents with no matching NOM result', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([])
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 0, skipped: 1, errors: 0 })
+  })
+
+  it('skips nav-idents whose NOM result has no displayName', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockResolvedValue([{ navIdent: 'Z990001', displayName: null, email: null }])
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 0, skipped: 1, errors: 0 })
+  })
+
+  it('counts every nav-ident in a batch as an error when the NOM call fails', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990002', 'Old Name 2')`)
+
+    vi.mocked(getNomUsersByNavIdenter).mockRejectedValue(new Error('NOM API error'))
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 0, skipped: 0, errors: 2 })
+  })
+
+  it('splits large nav-ident lists into multiple batched NOM calls', async () => {
+    const navIdents = Array.from({ length: 150 }, (_, i) => `Z${(990001 + i).toString().padStart(6, '0')}`)
+    for (const navIdent of navIdents) {
+      await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ($1, 'Old Name')`, [navIdent])
+    }
+
+    vi.mocked(getNomUsersByNavIdenter).mockImplementation(async (batch) =>
+      batch.map((navIdent) => ({ navIdent, displayName: `Navn ${navIdent}`, email: null })),
+    )
+
+    const result = await populateUsersFromNom()
+
+    expect(result).toEqual({ success: 150, skipped: 0, errors: 0 })
+    expect(getNomUsersByNavIdenter).toHaveBeenCalledTimes(2)
+    expect((vi.mocked(getNomUsersByNavIdenter).mock.calls[0][0] as string[]).length).toBe(100)
+    expect((vi.mocked(getNomUsersByNavIdenter).mock.calls[1][0] as string[]).length).toBe(50)
   })
 })

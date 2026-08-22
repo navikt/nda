@@ -9,7 +9,7 @@ import {
   removeSectionRole,
 } from '~/db/role-assignments.server'
 import type { Section } from '~/db/sections.server'
-import { getAllUsersWithAccounts, getOrCreateUserFromGraph } from '~/db/user-github-lookups.server'
+import { getAllUsersWithAccounts, getOrCreateUserFromNom } from '~/db/user-github-lookups.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canManageSection } from '~/lib/authorization.server'
@@ -126,9 +126,9 @@ export async function action({ request }: Route.ActionArgs) {
       return fail('Seksjonen finnes ikke eller er deaktivert.')
     }
 
-    let userMapping: Awaited<ReturnType<typeof getOrCreateUserFromGraph>>
+    let userMapping: Awaited<ReturnType<typeof getOrCreateUserFromNom>>
     try {
-      userMapping = await getOrCreateUserFromGraph(navIdent)
+      userMapping = await getOrCreateUserFromNom(navIdent)
     } catch (err) {
       logger.error(`Feil ved brukeropprettelse for ${navIdent}:`, err instanceof Error ? err : new Error(String(err)))
       return fail(`Kunne ikke opprette brukeren ${navIdent}. Prøv igjen senere.`)

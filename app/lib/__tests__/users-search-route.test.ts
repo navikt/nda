@@ -8,8 +8,8 @@ vi.mock('~/lib/authorization.server', () => ({
   canSearchUsers: vi.fn(),
 }))
 
-vi.mock('~/lib/microsoft-graph.server', () => ({
-  searchGraphUsers: vi.fn(),
+vi.mock('~/lib/nom.server', () => ({
+  searchNomUsers: vi.fn(),
 }))
 
 vi.mock('~/lib/logger.server', () => ({
@@ -18,7 +18,7 @@ vi.mock('~/lib/logger.server', () => ({
 
 import { requireUser } from '~/lib/auth.server'
 import { canSearchUsers } from '~/lib/authorization.server'
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { searchNomUsers } from '~/lib/nom.server'
 import { loader } from '../../routes/api/users.search'
 
 function makeArgs(query = '') {
@@ -58,7 +58,7 @@ describe('users.search loader', () => {
 
   it('returns search results with Cache-Control: no-store', async () => {
     const mockResults = [{ displayName: 'Rask Elv', navIdent: 'Z990002', email: null }]
-    vi.mocked(searchGraphUsers).mockResolvedValue(mockResults)
+    vi.mocked(searchNomUsers).mockResolvedValue(mockResults)
 
     const response = await loader(makeArgs('Rask') as never)
 
@@ -66,11 +66,11 @@ describe('users.search loader', () => {
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     const data = await response.json()
     expect(data.results).toEqual(mockResults)
-    expect(searchGraphUsers).toHaveBeenCalledWith('Rask')
+    expect(searchNomUsers).toHaveBeenCalledWith('Rask')
   })
 
   it('returns 500 with Cache-Control: no-store when search fails', async () => {
-    vi.mocked(searchGraphUsers).mockRejectedValue(new Error('Graph API error'))
+    vi.mocked(searchNomUsers).mockRejectedValue(new Error('NOM API error'))
 
     const response = await loader(makeArgs('test query') as never)
 
@@ -81,9 +81,9 @@ describe('users.search loader', () => {
     expect(data.error).toBe('Søket feilet')
   })
 
-  it('does not call searchGraphUsers when query is too short', async () => {
+  it('does not call searchNomUsers when query is too short', async () => {
     await loader(makeArgs('x') as never)
 
-    expect(searchGraphUsers).not.toHaveBeenCalled()
+    expect(searchNomUsers).not.toHaveBeenCalled()
   })
 })
