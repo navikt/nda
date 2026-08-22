@@ -259,6 +259,12 @@ export default function WorkflowPatternsAdminPage() {
           const bPercent = b.total > 0 ? b.viaDirectPush / b.total : 0
           return (aPercent - bPercent) * dir
         }
+        case 'manual_count': {
+          if (a.isProd !== b.isProd) return a.isProd ? -1 : 1
+          return (a.manualCount - b.manualCount) * dir
+        }
+        case 'manual_percent':
+          return (a.manualPercent - b.manualPercent) * dir
         case 'flagged':
           return (Number(a.flagged) - Number(b.flagged)) * dir
         default:
@@ -369,6 +375,12 @@ export default function WorkflowPatternsAdminPage() {
             <Table.ColumnHeader sortKey="direct_push_percent" sortable align="right">
               Uten PR
             </Table.ColumnHeader>
+            <Table.ColumnHeader sortKey="manual_count" sortable align="right">
+              Manuell i prod
+            </Table.ColumnHeader>
+            <Table.ColumnHeader sortKey="manual_percent" sortable align="right">
+              Manuell %
+            </Table.ColumnHeader>
             <Table.ColumnHeader sortKey="flagged" sortable>
               Flagg
             </Table.ColumnHeader>
@@ -404,11 +416,17 @@ export default function WorkflowPatternsAdminPage() {
                 <Table.DataCell align="right">
                   <Detail>{directPushPercent}%</Detail>
                 </Table.DataCell>
+                <Table.DataCell align="right">
+                  <Detail>{summary.isProd ? summary.manualCount : '–'}</Detail>
+                </Table.DataCell>
+                <Table.DataCell align="right">
+                  <Detail>{summary.manualPercent}%</Detail>
+                </Table.DataCell>
                 <Table.DataCell>
                   <VStack gap="space-4">
                     {summary.flagged && (
                       <Tag size="xsmall" variant="warning">
-                        {`${summary.manualCount} ${summary.manualCount === 1 ? 'manuell' : 'manuelle'} i prod (${summary.manualPercent}%)`}
+                        Flagget
                       </Tag>
                     )}
                     {summary.lowConfidence && summary.total > 0 && (
