@@ -586,25 +586,6 @@ async function _getPreviousDeployment(
   return result.rows[0] || null
 }
 
-export type { DeploymentNavFilters } from './deployments/navigation.server'
-export {
-  getNextDeployment,
-  getPreviousDeploymentForDiff,
-  getPreviousDeploymentForNav,
-} from './deployments/navigation.server'
-
-export interface AppDeploymentStats {
-  total: number
-  with_four_eyes: number
-  without_four_eyes: number
-  pending_verification: number
-  last_deployment: Date | null
-  last_deployment_id: number | null
-  four_eyes_percentage: number
-  missing_goal_links?: number
-  baseline_action_count?: number
-}
-
 export type { DeployerMonthlyStats, DeployerTableFilters } from './deployer-stats.server'
 export {
   getDeployerApps,
@@ -612,46 +593,14 @@ export {
   getDeployerMonthlyStats,
   getDeploymentCountByDeployer,
 } from './deployer-stats.server'
-
-export type { SearchResult } from './deployments/search.server'
-export { searchDeployments } from './deployments/search.server'
-
-export interface AppWithIssues {
-  app_name: string
-  team_slug: string
-  environment_name: string
-  without_four_eyes: number
-  pending_verification: number
-  alert_count: number
-  missing_goal_links: number
-  unmapped_deployer_count: number
-  baseline_action_count: number
-}
-
-export interface StatusTransition {
-  id: number
-  deployment_id: number
-  from_status: string | null
-  to_status: string
-  changed_by: string | null
-  change_source: string
-  details: Record<string, unknown> | null
-  created_at: Date
-}
-
-export interface AppReminderConfig {
-  id: number
-  team_slug: string
-  environment_name: string
-  app_name: string
-  slack_channel_id: string
-  reminder_time: string
-  reminder_days: string[]
-  reminder_last_sent_at: Date | null
-}
-
 export { getAppChangeOriginCoverage, getLastDeploymentSummary } from './deployments/api.server'
 export { getPersonalDeploymentsMissingGoalLinks } from './deployments/home.server'
+export type { DeploymentNavFilters } from './deployments/navigation.server'
+export {
+  getNextDeployment,
+  getPreviousDeploymentForDiff,
+  getPreviousDeploymentForNav,
+} from './deployments/navigation.server'
 export {
   claimDeploymentForDeployNotify,
   claimDeploymentForSlackNotification,
@@ -660,6 +609,8 @@ export {
   getDeploymentsNeedingDeployNotify,
   getUnapprovedDeployments,
 } from './deployments/notifications.server'
+export type { SearchResult } from './deployments/search.server'
+export { searchDeployments } from './deployments/search.server'
 export {
   getAppDeploymentStats,
   getAppDeploymentStatsBatch,

@@ -1,8 +1,19 @@
 import { APPROVED_STATUSES, PENDING_STATUSES, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 import { baselineActionSql } from '../baseline-action'
 import { pool } from '../connection.server'
-import type { AppDeploymentStats } from '../deployments.server'
 import { lowerUsernames, userDeploymentMatchAnySql } from '../user-deployment-match'
+
+export interface AppDeploymentStats {
+  total: number
+  with_four_eyes: number
+  without_four_eyes: number
+  pending_verification: number
+  last_deployment: Date | null
+  last_deployment_id: number | null
+  four_eyes_percentage: number
+  missing_goal_links?: number
+  baseline_action_count?: number
+}
 
 interface StatsOptions {
   startDate?: Date
