@@ -1,7 +1,6 @@
-import { Box, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
 import { useLoaderData } from 'react-router'
-import { AppCard, type AppCardData } from '~/components/AppCard'
-import { ExternalLink } from '~/components/ExternalLink'
+import type { AppCardData } from '~/components/AppCard'
+import { TeamEnvPage } from '~/components/TeamEnvPage'
 import { getAlertCountsByApp } from '~/db/alerts.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
@@ -43,32 +42,8 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: `${data?.team ?? 'Team'} / ${data?.env ?? 'Env'} - NDA` }]
 }
 
-export default function TeamEnvPage() {
-  const { team, env, apps } = useLoaderData<typeof loader>()
+export default function TeamEnvRoute() {
+  const loaderData = useLoaderData<typeof loader>()
 
-  return (
-    <Box paddingInline={{ xs: 'space-16', md: 'space-24' }} paddingBlock="space-24">
-      <VStack gap="space-24">
-        <VStack gap="space-8">
-          <Heading level="1" size="xlarge">
-            {team} / {env}
-          </Heading>
-          <HStack gap="space-16" align="center">
-            <Tag size="small" variant="neutral">
-              {apps.length} {apps.length === 1 ? 'applikasjon' : 'applikasjoner'}
-            </Tag>
-            <ExternalLink href={`https://console.nav.cloud.nais.io/team/${team}/applications`}>
-              NAIS Console
-            </ExternalLink>
-          </HStack>
-        </VStack>
-
-        <div>
-          {apps.map((app) => (
-            <AppCard key={app.id} app={app} showEnvironment={false} />
-          ))}
-        </div>
-      </VStack>
-    </Box>
-  )
+  return <TeamEnvPage {...loaderData} />
 }
