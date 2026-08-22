@@ -13,7 +13,7 @@ import type { AuditReport } from './admin-retrieval.server'
 
 interface AuditDeploymentRow {
   id: number
-  nais_deployment_id: string | null
+  nais_deployment_id: string
   title: string | null
   created_at: Date
   commit_sha: string | null
@@ -21,8 +21,8 @@ interface AuditDeploymentRow {
   four_eyes_status: string
   github_pr_number: number | null
   github_pr_url: string | null
-  detected_github_owner: string | null
-  detected_github_repo_name: string | null
+  detected_github_owner: string
+  detected_github_repo_name: string
   team_slug: string
   environment_name: string
   app_name: string
@@ -571,7 +571,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
 
     return {
       id: d.id,
-      nais_deployment_id: d.nais_deployment_id || '',
+      nais_deployment_id: d.nais_deployment_id,
       title: displayTitle || '',
       date: d.created_at.toISOString(),
       commit_sha: d.commit_sha || '',
@@ -603,7 +603,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
 
     return {
       deployment_id: a.deployment_id,
-      nais_deployment_id: deployment?.nais_deployment_id || '',
+      nais_deployment_id: deployment ? deployment.nais_deployment_id : '',
       title:
         computeDisplayTitle(
           deployment?.title ?? null,
