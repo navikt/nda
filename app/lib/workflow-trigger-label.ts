@@ -29,7 +29,7 @@ const TRIGGER_EVENT_DESCRIPTIONS: Record<string, string> = {
   workflow_call:
     'Workflowen er satt opp som en gjenbrukbar workflow som kalles fra en annen workflow (reusable workflow), og arver samme event-kontekst som den kallende workflowen.',
   workflow_run:
-    'Kjører når en annen navngitt workflow er requested eller completed. Brukes ofte for å kjøre priviligerte steg etter at en upriviligert workflow (f.eks. fra en fork) er ferdig.',
+    'Kjører når en annen navngitt workflow er requested eller completed. Brukes ofte for å kjøre privilegerte steg etter at en uprivilegert workflow (f.eks. fra en fork) er ferdig.',
   schedule:
     'Tidsstyrt trigger basert på cron-syntaks, kjører på siste commit på default branch. Kan bli forsinket ved høy last på GitHub Actions.',
   release: 'Kjører ved aktivitet knyttet til en release i repoet (f.eks. publisert, opprettet, slettet).',
