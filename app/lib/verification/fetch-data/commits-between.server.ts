@@ -7,7 +7,7 @@ import {
 } from '~/db/github-data.server'
 import { getCommitsBetween, haveSameCommitTree } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
-import { type FetchOptions, fetchPrFromGitHub, findPrForCommit } from '../fetch-data.server'
+import { type FetchOptions, fetchPrFromGitHub, findPrForCommit } from '../fetch-data/pr-data.server'
 import type { CompareData, CompareSummary, PrCommit, PrMetadata, PrReview, VerificationInput } from '../types'
 
 export function resolveNoDiffDetection(
