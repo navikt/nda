@@ -60,7 +60,7 @@ vi.mock('~/lib/verification/store-data.server', () => ({
   updateDeploymentCommitChecks: mockUpdateDeploymentCommitChecks,
 }))
 
-import { fetchVerificationDataForAllDeployments } from '~/lib/verification/fetch-data.server'
+import { fetchVerificationDataForAllDeployments } from '~/lib/verification/fetch-data/bulk-fetch.server'
 
 function baseDeploymentRow(overrides: Record<string, unknown> = {}) {
   return {
