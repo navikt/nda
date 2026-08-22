@@ -1,10 +1,28 @@
 import { ExclamationmarkTriangleIcon } from '@navikt/aksel-icons'
-import { BodyShort, Box, Detail, Heading, HStack, Select, Table, Tag, VStack } from '@navikt/ds-react'
+import {
+  BodyLong,
+  BodyShort,
+  Box,
+  Detail,
+  Heading,
+  HStack,
+  ReadMore,
+  Select,
+  Table,
+  Tag,
+  VStack,
+} from '@navikt/ds-react'
 import { Link, useLoaderData, useSearchParams } from 'react-router'
+import { ExternalLink } from '~/components/ExternalLink'
 import { pool } from '~/db/connection.server'
 import { requireAdmin } from '~/lib/auth.server'
 import { getDateRangeForPeriod, TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
-import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
+import {
+  GITHUB_TRIGGER_DOCS_URL,
+  getAllKnownWorkflowTriggerEvents,
+  getWorkflowTriggerDescription,
+  getWorkflowTriggerLabel,
+} from '~/lib/workflow-trigger-label'
 import type { Route } from './+types/workflow-patterns'
 
 export function meta(_args: Route.MetaArgs) {
@@ -214,6 +232,28 @@ export default function WorkflowPatternsAdminPage() {
           trigger-informasjon (legacy/ikke synkronisert) og telles som «Ukjent».
         </Detail>
       </div>
+
+      <ReadMore header="Hva betyr de forskjellige trigger-typene?">
+        <VStack gap="space-12">
+          <BodyLong>
+            Trigger-typen forteller hvilken GitHub Actions-hendelse (<code>on:</code>) som startet workflow-kjøringen.
+            Beskrivelsene under er basert på GitHubs offisielle dokumentasjon:{' '}
+            <ExternalLink href={GITHUB_TRIGGER_DOCS_URL}>Events that trigger workflows</ExternalLink>.
+          </BodyLong>
+          {getAllKnownWorkflowTriggerEvents().map(({ event, label, description }) => (
+            <div key={event}>
+              <BodyShort weight="semibold">
+                {label} (<code>{event}</code>)
+              </BodyShort>
+              <BodyShort textColor="subtle">{description}</BodyShort>
+            </div>
+          ))}
+          <div>
+            <BodyShort weight="semibold">Ukjent</BodyShort>
+            <BodyShort textColor="subtle">{getWorkflowTriggerDescription('unknown')}</BodyShort>
+          </div>
+        </VStack>
+      </ReadMore>
 
       <HStack gap="space-16" wrap>
         <Select label="Periode" size="small" value={period} onChange={(e) => updateFilter('period', e.target.value)}>
