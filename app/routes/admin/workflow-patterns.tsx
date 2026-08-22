@@ -32,6 +32,10 @@ export function meta(_args: Route.MetaArgs) {
   return [{ title: 'Workflow-mønstre (alle apper) - Admin' }]
 }
 
+function formatDateTime(value: Date | string): string {
+  return new Date(value).toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' })
+}
+
 const PROD_ENVIRONMENTS = ['prod-fss', 'prod-gcp']
 const MANUAL_TRIGGER_EVENTS = ['workflow_dispatch', 'repository_dispatch']
 
@@ -42,6 +46,7 @@ interface TriggerBreakdownRow {
   trigger_event: string
   via_pr: boolean
   count: string
+  max_created_at: Date | string
 }
 
 interface AppTriggerSummary {
@@ -56,6 +61,7 @@ interface AppTriggerSummary {
   unknownPercent: number
   manualCount: number
   manualPercent: number
+  lastManualDeployAt: Date | string | null
   isProd: boolean
   flagged: boolean
 }
@@ -111,7 +117,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     `SELECT team_slug, app_name, environment_name,
             COALESCE(workflow_trigger_config->>'triggerEvent', 'unknown') AS trigger_event,
             (github_pr_number IS NOT NULL) AS via_pr,
-            COUNT(*)::text AS count
+            COUNT(*)::text AS count,
+            MAX(created_at) AS max_created_at
      FROM deployments
      ${whereSql}
      GROUP BY team_slug, app_name, environment_name, trigger_event, via_pr
@@ -137,6 +144,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         unknownPercent: 0,
         manualCount: 0,
         manualPercent: 0,
+        lastManualDeployAt: null,
         isProd: PROD_ENVIRONMENTS.includes(row.environment_name),
         flagged: false,
       }
@@ -144,6 +152,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
     summary.total += count
     summary.byTrigger[row.trigger_event] = (summary.byTrigger[row.trigger_event] ?? 0) + count
+    if (MANUAL_TRIGGER_EVENTS.includes(row.trigger_event)) {
+      if (!summary.lastManualDeployAt || new Date(row.max_created_at) > new Date(summary.lastManualDeployAt)) {
+        summary.lastManualDeployAt = row.max_created_at
+      }
+    }
     if (row.via_pr) {
       summary.viaPr += count
     } else {
@@ -258,6 +271,12 @@ export default function WorkflowPatternsAdminPage() {
         }
         case 'manual_percent':
           return (a.manualPercent - b.manualPercent) * dir
+        case 'last_manual_deploy_at': {
+          if (!a.lastManualDeployAt && !b.lastManualDeployAt) return 0
+          if (!a.lastManualDeployAt) return 1
+          if (!b.lastManualDeployAt) return -1
+          return (new Date(a.lastManualDeployAt).getTime() - new Date(b.lastManualDeployAt).getTime()) * dir
+        }
         default:
           return 0
       }
@@ -372,6 +391,9 @@ export default function WorkflowPatternsAdminPage() {
             <Table.ColumnHeader sortKey="manual_percent" sortable align="right">
               Manuell %
             </Table.ColumnHeader>
+            <Table.ColumnHeader sortKey="last_manual_deploy_at" sortable>
+              Siste manuelle
+            </Table.ColumnHeader>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -409,6 +431,9 @@ export default function WorkflowPatternsAdminPage() {
                 </Table.DataCell>
                 <Table.DataCell align="right">
                   <Detail>{summary.manualPercent}%</Detail>
+                </Table.DataCell>
+                <Table.DataCell>
+                  <Detail>{summary.lastManualDeployAt ? formatDateTime(summary.lastManualDeployAt) : '–'}</Detail>
                 </Table.DataCell>
               </Table.Row>
             )
