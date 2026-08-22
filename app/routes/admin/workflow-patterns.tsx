@@ -425,7 +425,7 @@ export default function WorkflowPatternsAdminPage() {
                 <Table.DataCell>
                   {summary.lowConfidence && summary.total > 0 && (
                     <Tag size="xsmall" variant="neutral">
-                      Usikkert ({summary.unknownPercent}% ukjent)
+                      {`Usikkert (${summary.total - summary.unknownCount} kjente, ${summary.unknownPercent}% ukjent)`}
                     </Tag>
                   )}
                 </Table.DataCell>
