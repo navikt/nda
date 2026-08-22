@@ -603,7 +603,7 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
 
     return {
       deployment_id: a.deployment_id,
-      nais_deployment_id: deployment ? deployment.nais_deployment_id : '',
+      nais_deployment_id: deployment!.nais_deployment_id,
       title:
         computeDisplayTitle(
           deployment?.title ?? null,
