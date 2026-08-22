@@ -8,11 +8,13 @@ import {
   HStack,
   ReadMore,
   Select,
+  type SortState,
   Switch,
   Table,
   Tag,
   VStack,
 } from '@navikt/ds-react'
+import { useMemo, useState } from 'react'
 import { Link, useLoaderData, useSearchParams } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
 import { pool } from '~/db/connection.server'
@@ -229,6 +231,42 @@ export default function WorkflowPatternsAdminPage() {
   }
   const visibleSummaries = onlyFlagged ? teamAppSummaries.filter((s) => s.flagged) : teamAppSummaries
 
+  const [sort, setSort] = useState<SortState>()
+  const handleSort = (sortKey: string | undefined) => {
+    if (!sortKey) return setSort(undefined)
+    if (sort?.orderBy === sortKey) {
+      sort.direction === 'ascending' ? setSort({ orderBy: sortKey, direction: 'descending' }) : setSort(undefined)
+    } else {
+      setSort({ orderBy: sortKey, direction: 'ascending' })
+    }
+  }
+
+  const sortedSummaries = useMemo(() => {
+    if (!sort) return visibleSummaries
+    const dir = sort.direction === 'ascending' ? 1 : -1
+    return [...visibleSummaries].sort((a, b) => {
+      switch (sort.orderBy) {
+        case 'team_slug':
+          return a.teamSlug.localeCompare(b.teamSlug, 'no') * dir
+        case 'app_name':
+          return a.appName.localeCompare(b.appName, 'no') * dir
+        case 'environment_name':
+          return a.environmentName.localeCompare(b.environmentName, 'no') * dir
+        case 'total':
+          return (a.total - b.total) * dir
+        case 'direct_push_percent': {
+          const aPercent = a.total > 0 ? a.viaDirectPush / a.total : 0
+          const bPercent = b.total > 0 ? b.viaDirectPush / b.total : 0
+          return (aPercent - bPercent) * dir
+        }
+        case 'flagged':
+          return (Number(a.flagged) - Number(b.flagged)) * dir
+        default:
+          return 0
+      }
+    })
+  }, [visibleSummaries, sort])
+
   return (
     <VStack gap="space-24">
       <div>
@@ -312,20 +350,32 @@ export default function WorkflowPatternsAdminPage() {
         </Box>
       )}
 
-      <Table size="small">
+      <Table size="small" sort={sort} onSortChange={handleSort}>
         <Table.Header>
           <Table.Row>
-            <Table.HeaderCell>Team</Table.HeaderCell>
-            <Table.HeaderCell>App</Table.HeaderCell>
-            <Table.HeaderCell>Miljø</Table.HeaderCell>
-            <Table.HeaderCell>Totalt</Table.HeaderCell>
+            <Table.ColumnHeader sortKey="team_slug" sortable>
+              Team
+            </Table.ColumnHeader>
+            <Table.ColumnHeader sortKey="app_name" sortable>
+              App
+            </Table.ColumnHeader>
+            <Table.ColumnHeader sortKey="environment_name" sortable>
+              Miljø
+            </Table.ColumnHeader>
+            <Table.ColumnHeader sortKey="total" sortable align="right">
+              Totalt
+            </Table.ColumnHeader>
             <Table.HeaderCell>Trigger-fordeling</Table.HeaderCell>
-            <Table.HeaderCell>Uten PR</Table.HeaderCell>
-            <Table.HeaderCell>Flagg</Table.HeaderCell>
+            <Table.ColumnHeader sortKey="direct_push_percent" sortable align="right">
+              Uten PR
+            </Table.ColumnHeader>
+            <Table.ColumnHeader sortKey="flagged" sortable>
+              Flagg
+            </Table.ColumnHeader>
           </Table.Row>
         </Table.Header>
         <Table.Body>
-          {visibleSummaries.map((summary) => {
+          {sortedSummaries.map((summary) => {
             const directPushPercent = summary.total > 0 ? Math.round((summary.viaDirectPush / summary.total) * 100) : 0
             return (
               <Table.Row key={`${summary.teamSlug}-${summary.appName}-${summary.environmentName}`}>
@@ -338,7 +388,7 @@ export default function WorkflowPatternsAdminPage() {
                   </Link>
                 </Table.DataCell>
                 <Table.DataCell>{summary.environmentName}</Table.DataCell>
-                <Table.DataCell>{summary.total}</Table.DataCell>
+                <Table.DataCell align="right">{summary.total}</Table.DataCell>
                 <Table.DataCell>
                   <HStack gap="space-4" wrap>
                     {Object.entries(summary.byTrigger)
@@ -351,7 +401,7 @@ export default function WorkflowPatternsAdminPage() {
                       ))}
                   </HStack>
                 </Table.DataCell>
-                <Table.DataCell>
+                <Table.DataCell align="right">
                   <Detail>{directPushPercent}%</Detail>
                 </Table.DataCell>
                 <Table.DataCell>
