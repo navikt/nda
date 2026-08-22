@@ -8,6 +8,7 @@ import {
   HStack,
   ReadMore,
   Select,
+  Switch,
   Table,
   Tag,
   VStack,
@@ -216,6 +217,18 @@ export default function WorkflowPatternsAdminPage() {
     setSearchParams(newParams)
   }
 
+  const onlyFlagged = searchParams.get('onlyFlagged') === 'true'
+  const toggleOnlyFlagged = (checked: boolean) => {
+    const newParams = new URLSearchParams(searchParams)
+    if (checked) {
+      newParams.set('onlyFlagged', 'true')
+    } else {
+      newParams.delete('onlyFlagged')
+    }
+    setSearchParams(newParams)
+  }
+  const visibleSummaries = onlyFlagged ? teamAppSummaries.filter((s) => s.flagged) : teamAppSummaries
+
   return (
     <VStack gap="space-24">
       <div>
@@ -282,6 +295,10 @@ export default function WorkflowPatternsAdminPage() {
         </Select>
       </HStack>
 
+      <Switch checked={onlyFlagged} onChange={(e) => toggleOnlyFlagged(e.target.checked)}>
+        Vis kun app-miljøer som trenger oppfølging (minst én manuell prodsetting)
+      </Switch>
+
       {flaggedCount > 0 && (
         <Box background="warning-soft" padding="space-16" borderRadius="8">
           <HStack gap="space-8" align="center">
@@ -308,7 +325,7 @@ export default function WorkflowPatternsAdminPage() {
           </Table.Row>
         </Table.Header>
         <Table.Body>
-          {teamAppSummaries.map((summary) => {
+          {visibleSummaries.map((summary) => {
             const directPushPercent = summary.total > 0 ? Math.round((summary.viaDirectPush / summary.total) * 100) : 0
             return (
               <Table.Row key={`${summary.teamSlug}-${summary.appName}-${summary.environmentName}`}>
@@ -358,6 +375,9 @@ export default function WorkflowPatternsAdminPage() {
       </Table>
 
       {teamAppSummaries.length === 0 && <BodyShort textColor="subtle">Ingen data funnet for valgt periode.</BodyShort>}
+      {teamAppSummaries.length > 0 && visibleSummaries.length === 0 && (
+        <BodyShort textColor="subtle">Ingen app-miljøer trenger oppfølging for valgte filtre.</BodyShort>
+      )}
     </VStack>
   )
 }
