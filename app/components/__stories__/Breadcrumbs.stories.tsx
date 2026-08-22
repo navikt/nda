@@ -90,7 +90,7 @@ function renderBreadcrumbsStory(initialEntry: string) {
 }
 
 export const Home: Story = {
-  name: 'Hjem (ingen breadcrumbs)',
+  name: 'Hjem',
   render: () => renderBreadcrumbsStory('/'),
 }
 
