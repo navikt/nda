@@ -58,11 +58,7 @@ interface AppTriggerSummary {
   manualPercent: number
   isProd: boolean
   flagged: boolean
-  lowConfidence: boolean
 }
-
-const MIN_KNOWN_SAMPLE_SIZE = 5
-const HIGH_UNKNOWN_THRESHOLD_PERCENT = 50
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
@@ -143,7 +139,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         manualPercent: 0,
         isProd: PROD_ENVIRONMENTS.includes(row.environment_name),
         flagged: false,
-        lowConfidence: false,
       }
       summaries.set(key, summary)
     }
@@ -165,8 +160,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     summary.manualCount = MANUAL_TRIGGER_EVENTS.reduce((sum, event) => sum + (summary.byTrigger[event] ?? 0), 0)
     summary.manualPercent = knownTotal > 0 ? Math.round((summary.manualCount / knownTotal) * 100) : 0
 
-    summary.lowConfidence =
-      summary.unknownPercent >= HIGH_UNKNOWN_THRESHOLD_PERCENT || knownTotal < MIN_KNOWN_SAMPLE_SIZE
     summary.flagged = summary.isProd && summary.manualCount > 0
   }
 
@@ -265,8 +258,6 @@ export default function WorkflowPatternsAdminPage() {
         }
         case 'manual_percent':
           return (a.manualPercent - b.manualPercent) * dir
-        case 'low_confidence':
-          return (Number(a.lowConfidence) - Number(b.lowConfidence)) * dir
         default:
           return 0
       }
@@ -381,9 +372,6 @@ export default function WorkflowPatternsAdminPage() {
             <Table.ColumnHeader sortKey="manual_percent" sortable align="right">
               Manuell %
             </Table.ColumnHeader>
-            <Table.ColumnHeader sortKey="low_confidence" sortable>
-              Datagrunnlag
-            </Table.ColumnHeader>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -421,13 +409,6 @@ export default function WorkflowPatternsAdminPage() {
                 </Table.DataCell>
                 <Table.DataCell align="right">
                   <Detail>{summary.manualPercent}%</Detail>
-                </Table.DataCell>
-                <Table.DataCell>
-                  {summary.lowConfidence && summary.total > 0 && (
-                    <Tag size="xsmall" variant="neutral">
-                      {`Usikkert (${summary.total - summary.unknownCount} kjente, ${summary.unknownPercent}% ukjent)`}
-                    </Tag>
-                  )}
                 </Table.DataCell>
               </Table.Row>
             )
