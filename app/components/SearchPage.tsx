@@ -1,7 +1,14 @@
 import { LayersIcon, MagnifyingGlassIcon, PersonGroupIcon } from '@navikt/aksel-icons'
 import { BodyShort, Box, Heading, Hide, HStack, Search, Show, Tag, VStack } from '@navikt/ds-react'
 import { Form, Link } from 'react-router'
-import type { SearchResult } from '~/db/deployments.server'
+
+interface SearchResult {
+  type: 'deployment' | 'user' | 'team' | 'app' | 'group' | 'dev_team'
+  id?: number
+  url: string
+  title: string
+  subtitle?: string
+}
 
 export interface SearchPageProps {
   query: string
