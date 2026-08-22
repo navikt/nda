@@ -3,13 +3,12 @@ import type { PoolClient } from 'pg'
 import { toDateString } from '~/lib/date-utils'
 import { computeDisplayTitle, isExclusivelyThisPr } from '~/lib/delivery-title'
 import { isDependabotUser } from '~/lib/dependabot'
-import { isApprovedStatus, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import { generateReportId } from '~/lib/report-periods'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 import { getDeviationsForPeriod } from './deviations.server'
-import { findDeploymentIdsMissingApprover } from './verification-diff.server'
 
 interface AuditDeploymentRow {
   id: number
@@ -205,82 +204,8 @@ export interface AuditReportSummary {
   formats: string[]
 }
 
-export interface AuditReadinessCheck {
-  is_ready: boolean
-  total_deployments: number
-  approved_count: number
-  legacy_count: number
-  pending_count: number
-  pending_deployments: Array<{
-    id: number
-    created_at: Date
-    commit_sha: string | null
-    deployer_username: string | null
-    four_eyes_status: string
-  }>
-  missing_approver_count: number
-  missing_approver_deployments: Array<{
-    id: number
-    created_at: Date
-    commit_sha: string | null
-    deployer_username: string | null
-    four_eyes_status: string
-  }>
-}
-
-export async function checkAuditReadiness(
-  monitoredAppId: number,
-  periodStart: Date,
-  periodEnd: Date,
-): Promise<AuditReadinessCheck> {
-  const startDate = periodStart
-  const endDate = periodEnd
-
-  const result = await pool.query<{
-    id: number
-    created_at: Date
-    commit_sha: string | null
-    deployer_username: string | null
-    four_eyes_status: string
-    environment_name: string
-  }>(
-    `SELECT d.id, d.created_at, d.commit_sha, d.deployer_username, d.four_eyes_status, ma.environment_name
-     FROM deployments d
-     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-     WHERE d.monitored_app_id = $1
-       AND d.created_at >= $2
-       AND d.created_at <= $3
-       AND ma.environment_name IN ('prod-fss', 'prod-gcp')
-       AND ${AUDIT_START_YEAR_FILTER}
-     ORDER BY d.created_at ASC`,
-    [monitoredAppId, startDate, endDate],
-  )
-
-  const deployments = result.rows
-
-  const approved = deployments.filter((d) => isApprovedStatus(d.four_eyes_status))
-  const legacy = deployments.filter((d) => d.four_eyes_status === 'legacy')
-  const pending = deployments.filter((d) => !isApprovedStatus(d.four_eyes_status) && d.four_eyes_status !== 'legacy')
-
-  const approvedIds = approved.map((d) => d.id)
-  let missingApprover: typeof approved = []
-
-  if (approvedIds.length > 0) {
-    const missingIds = await findDeploymentIdsMissingApprover(approvedIds)
-    missingApprover = approved.filter((d) => missingIds.has(d.id))
-  }
-
-  return {
-    is_ready: pending.length === 0 && missingApprover.length === 0 && deployments.length > 0,
-    total_deployments: deployments.length,
-    approved_count: approved.length,
-    legacy_count: legacy.length,
-    pending_count: pending.length,
-    pending_deployments: pending.slice(0, 10),
-    missing_approver_count: missingApprover.length,
-    missing_approver_deployments: missingApprover.slice(0, 10),
-  }
-}
+export type { AuditReadinessCheck } from './audit-reports/readiness.server'
+export { checkAuditReadiness } from './audit-reports/readiness.server'
 
 export async function getAuditReportData(
   monitoredAppId: number,
