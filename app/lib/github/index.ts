@@ -21,10 +21,5 @@ export {
   type WorkflowTriggerConfig,
 } from './git.server'
 export { lookupLegacyByCommit, lookupLegacyByPR } from './legacy.server'
-export {
-  type CheckRun,
-  getChecksForCommit,
-  getDetailedPullRequestInfo,
-  getMergedPullRequestsInWindow,
-  getPullRequestForCommit,
-} from './pr.server'
+export { type CheckRun, getChecksForCommit } from './pr/checks.server'
+export { getDetailedPullRequestInfo, getMergedPullRequestsInWindow, getPullRequestForCommit } from './pr.server'

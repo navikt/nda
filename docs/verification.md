@@ -337,7 +337,7 @@ Admin-jobben «Hent data for alle deployments» (`fetchVerificationDataForAllDep
 
 GitHub returnerer 404 uansett om en ressurs mangler eller om vi mangler tilgang til den (samme som web-UI, bevisst for å ikke lekke at private ressurser eksisterer) — de to tilfellene kan derfor ikke skilles pålitelig fra hverandre. `fetchCommitChecks()` fanger alle feil uten å skille på statuskode og returnerer `undefined`, slik at `COALESCE` i `updateDeploymentVerification()`/`updateDeploymentCommitChecks()` beholder eksisterende `commit_checks_data` i stedet for å overskrive med tomt resultat. Samme `undefined`-retur brukes også når GitHub svarer OK med 0 check runs for en commit som tidligere har hatt checks — siden checks for en gitt SHA i praksis ikke bør forsvinne uten at det skyldes et forbigående problem, tapt tilgang, eller at GitHubs egen retention har rotert bort dataene, ville en overskriving her risikert å slette allerede lagrede checks (arkivet i `github_commit_snapshots` er upåvirket uansett, siden det kun skrives ved vellykket henting).
 
-> **Koderef**: `fetchCommitChecks()` i [`app/lib/verification/fetch-data/commit-checks.server.ts`](../app/lib/verification/fetch-data/commit-checks.server.ts), `getChecksForCommit()` i [`app/lib/github/pr.server.ts`](../app/lib/github/pr.server.ts). Loggcache for check-logger (`app/lib/sync/log-cache.server.ts`) leser fra begge kolonner.
+> **Koderef**: `fetchCommitChecks()` i [`app/lib/verification/fetch-data/commit-checks.server.ts`](../app/lib/verification/fetch-data/commit-checks.server.ts), `getChecksForCommit()` i [`app/lib/github/pr/checks.server.ts`](../app/lib/github/pr/checks.server.ts). Loggcache for check-logger (`app/lib/sync/log-cache.server.ts`) leser fra begge kolonner.
 
 #### Fallback til PR-ens head-SHA
 
@@ -353,7 +353,7 @@ Filtreringen har en fail-safe: matcher **ingen** check runs det oppløste `check
 
 Fallback-forsøket mot PR-ens head-SHA (over) bruker bevisst **ikke** samme `check_suite_id`-filter: det forsøket eksisterer nettopp for CI som kjører på en annen SHA (og dermed annen check suite) enn selve leverings-workflowen, så en `check_suite_id`-scoping ville motvirket hensikten med fallback-en.
 
-> **Koderef**: `filterCheckRunsByCheckSuite()`/`fetchChecksForRefs()` i [`app/lib/github/pr.server.ts`](../app/lib/github/pr.server.ts), `WorkflowTriggerConfig.checkSuiteId` i [`app/lib/github/git.server.ts`](../app/lib/github/git.server.ts) (schema-versjon 3), `resolveCheckSuiteId()` i [`app/lib/verification/fetch-data/commit-checks.server.ts`](../app/lib/verification/fetch-data/commit-checks.server.ts).
+> **Koderef**: `filterCheckRunsByCheckSuite()`/`fetchChecksForRefs()` i [`app/lib/github/pr/checks.server.ts`](../app/lib/github/pr/checks.server.ts), `WorkflowTriggerConfig.checkSuiteId` i [`app/lib/github/git.server.ts`](../app/lib/github/git.server.ts) (schema-versjon 3), `resolveCheckSuiteId()` i [`app/lib/verification/fetch-data/commit-checks.server.ts`](../app/lib/verification/fetch-data/commit-checks.server.ts).
 
 #### Ikke overskriv legacy PR-checks med tomt resultat
 
