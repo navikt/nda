@@ -1,23 +1,14 @@
-import { BodyShort, Box, HStack, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { type ComponentProps, useMemo, useState } from 'react'
-import { DeploymentFilters, DeploymentRow, PaginationControls } from '~/components/deployments'
+import type { ComponentProps } from 'react'
+import { AppDeploymentsPage } from '~/components/AppDeploymentsPage'
+import type { DeploymentFilters, DeploymentRow } from '~/components/deployments'
 import type { UserLookupMap } from '~/lib/user-display'
 import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 
+type AppDeploymentsPageProps = ComponentProps<typeof AppDeploymentsPage>
 type DeploymentData = ComponentProps<typeof DeploymentRow>['deployment']
 type FilterOption = ComponentProps<typeof DeploymentFilters>['deployerOptions'][number]
 type GoalOption = ComponentProps<typeof DeploymentFilters>['goalOptions'][number]
-
-interface DeploymentsStoryPageProps {
-  deployments: DeploymentData[]
-  total: number
-  page: number
-  totalPages: number
-  errorReasons?: Record<number, string>
-  showGroup?: boolean
-  currentEnv?: string
-}
 
 const userMappings: UserLookupMap = {
   'glad-fjord': { display_name: 'Glad Fjord', nav_ident: 'Z990001' },
@@ -30,6 +21,32 @@ const userMappings: UserLookupMap = {
 const teamLabelBySlug: Record<string, string> = {
   pensjondeployer: 'Pensjon Deployer',
   pensjonsamhandling: 'Pensjon Samhandling',
+}
+
+const app: AppDeploymentsPageProps['app'] = {
+  id: 1,
+  team_slug: 'pensjondeployer',
+  environment_name: 'prod-fss',
+  app_name: 'pensjon-pen',
+  is_active: true,
+  default_branch: 'main',
+  default_branch_synced_at: new Date('2026-02-01T09:00:00Z'),
+  audit_start_year: 2024,
+  test_requirement: 'integration_tests',
+  slack_channel_id: null,
+  slack_notifications_enabled: false,
+  reminder_enabled: false,
+  reminder_time: null,
+  reminder_days: null,
+  reminder_last_sent_at: null,
+  slack_notifications_enabled_at: null,
+  slack_deploy_channel_id: null,
+  slack_deploy_notify_enabled: false,
+  slack_deploy_notify_enabled_at: null,
+  application_group_id: null,
+  not_found_in_nais_at: null,
+  created_at: new Date('2025-01-01T00:00:00Z'),
+  updated_at: new Date('2026-02-01T09:00:00Z'),
 }
 
 const baseDeployment: DeploymentData = {
@@ -208,107 +225,31 @@ function getWorkflowFileOptions(): FilterOption[] {
     .sort((left, right) => left.label.localeCompare(right.label, 'no'))
 }
 
-function DeploymentsStoryPage({
-  deployments,
-  total,
-  page: initialPage,
-  totalPages,
-  errorReasons = {},
-  showGroup = false,
-  currentEnv = 'prod-fss',
-}: DeploymentsStoryPageProps) {
-  const [page, setPage] = useState(initialPage)
-  const [filters, setFilters] = useState({
-    period: 'last-week',
-    status: '',
-    method: '',
-    goal: '',
-    deployer: '',
-    sha: '',
-    team: '',
-    trigger: '',
-    workflowFile: '',
-  })
-
-  const searchParams = useMemo(() => {
-    const params = new URLSearchParams()
-    for (const [key, value] of Object.entries(filters)) {
-      if (value) params.set(key, value)
-    }
-    params.set('page', String(page))
-    return params
-  }, [filters, page])
-
-  const deployerOptions = useMemo(() => getDeployerOptions(), [])
-  const teamOptions = useMemo(() => getTeamOptions(), [])
-  const triggerEventOptions = useMemo(() => getTriggerEventOptions(), [])
-  const workflowFileOptions = useMemo(() => getWorkflowFileOptions(), [])
-
-  const updateFilter = (key: string, value: string) => {
-    setFilters((current) => ({
-      ...current,
-      [key]: value,
-    }))
-    setPage(1)
-  }
-
-  return (
-    <VStack gap="space-32">
-      <DeploymentFilters
-        currentPeriod={filters.period}
-        currentStatus={filters.status}
-        currentMethod={filters.method}
-        currentGoal={filters.goal}
-        currentDeployer={filters.deployer}
-        currentSha={filters.sha}
-        currentTeam={filters.team}
-        currentTrigger={filters.trigger}
-        currentWorkflowFile={filters.workflowFile}
-        deployerOptions={deployerOptions}
-        teamOptions={teamOptions}
-        goalOptions={goalOptions}
-        triggerEventOptions={triggerEventOptions}
-        workflowFileOptions={workflowFileOptions}
-        hasUnmappedDeployers
-        currentUserGithub="glad-fjord"
-        onFilterChange={updateFilter}
-      />
-
-      <HStack justify="space-between" align="center" wrap>
-        <BodyShort textColor="subtle">
-          {total} deployment{total !== 1 ? 's' : ''} funnet
-          {showGroup && ' (alle miljøer)'}
-        </BodyShort>
-      </HStack>
-
-      <div>
-        {deployments.length === 0 ? (
-          <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-            <BodyShort>Ingen deployments funnet med valgte filtre.</BodyShort>
-          </Box>
-        ) : (
-          deployments.map((deployment) => (
-            <DeploymentRow
-              key={deployment.id}
-              deployment={deployment}
-              userMappings={userMappings}
-              errorReason={errorReasons[deployment.id]}
-              showEnv={showGroup}
-              currentEnv={currentEnv}
-              searchParams={searchParams}
-            />
-          ))
-        )}
-      </div>
-
-      <PaginationControls page={page} totalPages={totalPages} onPageChange={setPage} />
-    </VStack>
-  )
+const baseArgs: AppDeploymentsPageProps = {
+  app,
+  deployments: fixtureDeployments.slice(0, 3),
+  total: 42,
+  page: 1,
+  total_pages: 3,
+  userMappings,
+  deployerOptions: getDeployerOptions(),
+  currentUserGithub: 'glad-fjord',
+  hasGroup: false,
+  showGroup: false,
+  appGroup: null,
+  groupSiblings: [],
+  errorReasons: {},
+  teamOptions: getTeamOptions(),
+  teamFilterEmptyReason: null,
+  hasUnmappedDeployers: true,
+  goalOptions,
+  triggerEventOptions: getTriggerEventOptions(),
+  workflowFileOptions: getWorkflowFileOptions(),
 }
 
-const meta: Meta<typeof DeploymentsStoryPage> = {
+const meta: Meta<typeof AppDeploymentsPage> = {
   title: 'Pages/Deployments',
-  component: DeploymentsStoryPage,
+  component: AppDeploymentsPage,
   decorators: [
     (Story) => (
       <div style={{ maxWidth: '1000px' }}>
@@ -320,54 +261,49 @@ const meta: Meta<typeof DeploymentsStoryPage> = {
 
 export default meta
 
-type Story = StoryObj<typeof DeploymentsStoryPage>
+type Story = StoryObj<typeof AppDeploymentsPage>
 
 export const Default: Story = {
-  args: {
-    deployments: fixtureDeployments.slice(0, 3),
-    total: 42,
-    page: 1,
-    totalPages: 3,
-  },
+  args: baseArgs,
 }
 
 export const Empty: Story = {
   name: 'Ingen resultater',
   args: {
+    ...baseArgs,
     deployments: [],
     total: 0,
     page: 1,
-    totalPages: 0,
+    total_pages: 0,
   },
 }
 
 export const SinglePage: Story = {
   name: 'Én side',
   args: {
-    deployments: fixtureDeployments.slice(0, 3),
+    ...baseArgs,
     total: 3,
-    page: 1,
-    totalPages: 1,
+    total_pages: 1,
   },
 }
 
 export const MiddlePage: Story = {
   name: 'Midterste side',
   args: {
-    deployments: fixtureDeployments.slice(0, 3),
+    ...baseArgs,
     total: 100,
     page: 3,
-    totalPages: 5,
+    total_pages: 5,
   },
 }
 
 export const MixedStatuses: Story = {
   name: 'Blandet status',
   args: {
+    ...baseArgs,
     deployments: fixtureDeployments,
     total: 5,
-    page: 1,
-    totalPages: 1,
+    total_pages: 1,
     errorReasons: {
       5: 'GitHub-verifisering feilet fordi PR-data manglet ved siste kjøring.',
     },
