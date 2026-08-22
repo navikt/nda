@@ -31,7 +31,6 @@ export function meta(_args: Route.MetaArgs) {
 
 const PROD_ENVIRONMENTS = ['prod-fss', 'prod-gcp']
 const MANUAL_TRIGGER_EVENTS = ['workflow_dispatch', 'repository_dispatch']
-const MANUAL_PROD_TRIGGER_WARNING_THRESHOLD_PERCENT = 30
 
 interface TriggerBreakdownRow {
   team_slug: string
@@ -52,6 +51,7 @@ interface AppTriggerSummary {
   viaDirectPush: number
   unknownCount: number
   unknownPercent: number
+  manualCount: number
   manualPercent: number
   isProd: boolean
   flagged: boolean
@@ -136,6 +136,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         viaDirectPush: 0,
         unknownCount: 0,
         unknownPercent: 0,
+        manualCount: 0,
         manualPercent: 0,
         isProd: PROD_ENVIRONMENTS.includes(row.environment_name),
         flagged: false,
@@ -158,14 +159,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     summary.unknownPercent = summary.total > 0 ? Math.round((summary.unknownCount / summary.total) * 100) : 0
 
     const knownTotal = summary.total - summary.unknownCount
-    const manualCount = MANUAL_TRIGGER_EVENTS.reduce((sum, event) => sum + (summary.byTrigger[event] ?? 0), 0)
-    const manualRatio = knownTotal > 0 ? manualCount / knownTotal : 0
-    summary.manualPercent = Math.round(manualRatio * 100)
+    summary.manualCount = MANUAL_TRIGGER_EVENTS.reduce((sum, event) => sum + (summary.byTrigger[event] ?? 0), 0)
+    summary.manualPercent = knownTotal > 0 ? Math.round((summary.manualCount / knownTotal) * 100) : 0
 
     summary.lowConfidence =
       summary.unknownPercent >= HIGH_UNKNOWN_THRESHOLD_PERCENT || knownTotal < MIN_KNOWN_SAMPLE_SIZE
-    summary.flagged =
-      summary.isProd && !summary.lowConfidence && manualRatio > MANUAL_PROD_TRIGGER_WARNING_THRESHOLD_PERCENT / 100
+    summary.flagged = summary.isProd && summary.manualCount > 0
   }
 
   teamAppSummaries.sort((a, b) => {
@@ -288,8 +287,9 @@ export default function WorkflowPatternsAdminPage() {
           <HStack gap="space-8" align="center">
             <ExclamationmarkTriangleIcon aria-hidden />
             <BodyShort>
-              {flaggedCount} app-miljø-kombinasjon(er) har mer enn {MANUAL_PROD_TRIGGER_WARNING_THRESHOLD_PERCENT}%
-              manuelt triggede deployments (workflow_dispatch/repository_dispatch) i prod.
+              {flaggedCount} app-miljø-kombinasjon(er) har minst én manuelt trigget deployment
+              (workflow_dispatch/repository_dispatch) i prod. NDA kan ikke bekrefte at innholdet i en manuell
+              prodsetting er verifisert.
             </BodyShort>
           </HStack>
         </Box>
@@ -341,7 +341,7 @@ export default function WorkflowPatternsAdminPage() {
                   <VStack gap="space-4">
                     {summary.flagged && (
                       <Tag size="xsmall" variant="warning">
-                        {summary.manualPercent}% manuell i prod
+                        {`${summary.manualCount} ${summary.manualCount === 1 ? 'manuell' : 'manuelle'} i prod (${summary.manualPercent}%)`}
                       </Tag>
                     )}
                     {summary.lowConfidence && summary.total > 0 && (
