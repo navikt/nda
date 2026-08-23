@@ -1,20 +1,10 @@
-import { composeStories } from '@storybook/react'
-import type { ReactNode } from 'react'
+import { composeStories, setProjectAnnotations } from '@storybook/react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import preview from '../../../.storybook/preview'
 import * as stories from './Search.stories'
 
-vi.mock('react-router', async () => {
-  const React = await import('react')
-
-  return {
-    Link: ({ children, to, ...props }: { children?: ReactNode; to?: string } & Record<string, unknown>) =>
-      React.createElement('a', { href: to as string, ...props }, children),
-    Form: ({ children, ...props }: { children: ReactNode; [key: string]: unknown }) => (
-      <form {...props}>{children}</form>
-    ),
-  }
-})
+setProjectAnnotations(preview)
 
 const { Empty, ManyResults, NoResults, WithResults } = composeStories(stories)
 
@@ -25,6 +15,7 @@ describe('Search story baseline characterization', () => {
     expect(html).toContain('Søk')
     expect(html).toContain('Bruk søkefeltet i header for å søke')
     expect(html).toContain('name="q"')
+    expect(html).toContain('search-result-item:hover')
   })
 
   it('renders result entries and type tags for result scenario', () => {
@@ -33,6 +24,7 @@ describe('Search story baseline characterization', () => {
     expect(html).toContain('resultater for &quot;john&quot;')
     expect(html).toContain('Deployment')
     expect(html).toContain('Bruker')
+    expect(html).toContain('search-result-item')
   })
 
   it('renders no-results message for no-hit scenario', () => {
@@ -45,7 +37,14 @@ describe('Search story baseline characterization', () => {
     const html = renderToStaticMarkup(<ManyResults />)
 
     expect(html).toContain('def456ghi789')
-    expect(html).toContain('ghi789jkl012')
+    expect(html).toContain('Pensjon rapportgruppe')
+    expect(html).toContain('Pensjon kjerneteam')
+    expect(html).toContain('pensjondeployer')
+    expect(html).toContain('pensjon-opptjening')
     expect(html).toContain('/users/jane-doe')
+    expect(html).toContain('Gruppe')
+    expect(html).toContain('Utviklerteam')
+    expect(html).toContain('Nais-team')
+    expect(html).toContain('App')
   })
 })
