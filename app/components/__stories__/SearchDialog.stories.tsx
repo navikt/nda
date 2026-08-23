@@ -46,8 +46,8 @@ const mockResults: SearchResult[] = [
 ]
 
 function mockFetchSearch(results: SearchResult[], delayMs = 0) {
-  const originalFetch = global.fetch
-  global.fetch = (async (input: RequestInfo | URL) => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString()
     if (url.includes('/api/search')) {
       if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
@@ -56,7 +56,7 @@ function mockFetchSearch(results: SearchResult[], delayMs = 0) {
     return originalFetch(input)
   }) as typeof fetch
   return () => {
-    global.fetch = originalFetch
+    globalThis.fetch = originalFetch
   }
 }
 
@@ -85,7 +85,9 @@ export const SearchResults: Story = {
     const canvas = within(canvasElement)
 
     await userEvent.click(canvas.getByText('Søk...'))
-    const searchInput = await within(document.body).findByLabelText('Søk')
+    const searchInput = await within(document.body).findByPlaceholderText(
+      'Søk på team, applikasjon, navn, NAV-ident, SHA...',
+    )
     await userEvent.type(searchInput, 'pensjon')
 
     await waitFor(() => expect(within(document.body).getByText('Deployment #123')).toBeInTheDocument())
@@ -101,7 +103,9 @@ export const EmptyState: Story = {
     const canvas = within(canvasElement)
 
     await userEvent.click(canvas.getByText('Søk...'))
-    const searchInput = await within(document.body).findByLabelText('Søk')
+    const searchInput = await within(document.body).findByPlaceholderText(
+      'Søk på team, applikasjon, navn, NAV-ident, SHA...',
+    )
     await userEvent.type(searchInput, 'xyz123')
 
     await waitFor(() => expect(within(document.body).getByText('Ingen resultater for "xyz123"')).toBeInTheDocument())
@@ -117,8 +121,12 @@ export const LoadingState: Story = {
     const canvas = within(canvasElement)
 
     await userEvent.click(canvas.getByText('Søk...'))
-    const searchInput = await within(document.body).findByLabelText('Søk')
+    const searchInput = await within(document.body).findByPlaceholderText(
+      'Søk på team, applikasjon, navn, NAV-ident, SHA...',
+    )
     await userEvent.type(searchInput, 'pensjon')
+
+    await waitFor(() => expect(within(document.body).getByTitle('Venter…')).toBeInTheDocument())
 
     restoreFetch()
   },

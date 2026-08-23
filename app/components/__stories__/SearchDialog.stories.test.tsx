@@ -1,36 +1,47 @@
-import { composeStories, setProjectAnnotations } from '@storybook/react'
-import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+// @vitest-environment happy-dom
+import '@testing-library/jest-dom/vitest'
+import { composeStory, setProjectAnnotations } from '@storybook/react'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import preview from '../../../.storybook/preview'
-import * as stories from './SearchDialog.stories'
+import meta, { EmptyState, KeyboardShortcut, LoadingState, SearchResults } from './SearchDialog.stories'
 
 setProjectAnnotations(preview)
 
-const { SearchResults, EmptyState, LoadingState, KeyboardShortcut } = composeStories(stories)
+afterEach(cleanup)
 
-describe('SearchDialog story baseline characterization', () => {
-  it('renders the real SearchDialog trigger for the search-results scenario', () => {
-    const html = renderToStaticMarkup(<SearchResults />)
+const SearchResultsStory = composeStory(SearchResults, meta)
+const EmptyStateStory = composeStory(EmptyState, meta)
+const LoadingStateStory = composeStory(LoadingState, meta)
+const KeyboardShortcutStory = composeStory(KeyboardShortcut, meta)
 
-    expect(html).toContain('Søk...')
-    expect(html).toContain('⌘K')
+describe('SearchDialog story interaction characterization', () => {
+  it('shows real search results after typing a query', async () => {
+    const { container } = render(<SearchResultsStory />)
+    await SearchResultsStory.play?.({ canvasElement: container })
+
+    expect(screen.getByText('Deployment #123')).toBeInTheDocument()
+    expect(screen.getByText('Ola Nordmann')).toBeInTheDocument()
   })
 
-  it('renders the real SearchDialog trigger for the empty-state scenario', () => {
-    const html = renderToStaticMarkup(<EmptyState />)
+  it('shows the empty-results message when the search yields no hits', async () => {
+    const { container } = render(<EmptyStateStory />)
+    await EmptyStateStory.play?.({ canvasElement: container })
 
-    expect(html).toContain('Søk...')
+    expect(screen.getByText('Ingen resultater for "xyz123"')).toBeInTheDocument()
   })
 
-  it('renders the real SearchDialog trigger for the loading scenario', () => {
-    const html = renderToStaticMarkup(<LoadingState />)
+  it('shows the loading indicator while the search request is pending', async () => {
+    const { container } = render(<LoadingStateStory />)
+    await LoadingStateStory.play?.({ canvasElement: container })
 
-    expect(html).toContain('Søk...')
+    expect(screen.getByTitle('Venter…')).toBeInTheDocument()
   })
 
-  it('renders the real SearchDialog trigger with keyboard shortcut hint', () => {
-    const html = renderToStaticMarkup(<KeyboardShortcut />)
+  it('renders the keyboard shortcut hint on the trigger', async () => {
+    const { container } = render(<KeyboardShortcutStory />)
+    await KeyboardShortcutStory.play?.({ canvasElement: container })
 
-    expect(html).toContain('⌘K')
+    expect(screen.getByText('⌘K')).toBeInTheDocument()
   })
 })
