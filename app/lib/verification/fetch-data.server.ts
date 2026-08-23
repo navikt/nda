@@ -9,7 +9,7 @@ import { fetchCommitsBetween } from './fetch-data/commits-between.server'
 import { type FetchOptions, fetchDeployedPrData, fetchPrFromGitHub } from './fetch-data/pr-data.server'
 import { getPreviousDeployment } from './fetch-data/previous-deployment.server'
 import { fetchWorkflowTriggerConfig } from './fetch-data/workflow-triggers.server'
-import type { RepositoryStatus } from './types'
+import type { PrDataType, RepositoryStatus } from './types'
 import {
   type CompareSummary,
   CURRENT_SCHEMA_VERSION,
@@ -298,24 +298,29 @@ async function _refreshPrData(
   const typesToFetch = dataTypes ?? ['metadata', 'reviews', 'commits', 'checks', 'comments']
 
   try {
-    const { metadata, reviews, commits, checks, comments } = await fetchPrFromGitHub(owner, repo, prNumber)
+    const { metadata, reviews, commits, checks, comments, raw } = await fetchPrFromGitHub(owner, repo, prNumber)
 
-    const snapshots: Array<{ dataType: 'metadata' | 'reviews' | 'commits' | 'checks' | 'comments'; data: unknown }> = []
+    const snapshots: Array<{ dataType: PrDataType; data: unknown }> = []
 
     if (typesToFetch.includes('metadata')) {
       snapshots.push({ dataType: 'metadata', data: metadata })
+      snapshots.push({ dataType: 'raw_pr', data: raw.pr })
     }
     if (typesToFetch.includes('reviews')) {
       snapshots.push({ dataType: 'reviews', data: reviews })
+      snapshots.push({ dataType: 'raw_reviews', data: raw.reviews })
     }
     if (typesToFetch.includes('commits')) {
       snapshots.push({ dataType: 'commits', data: commits })
+      snapshots.push({ dataType: 'raw_commits', data: raw.commits })
     }
     if (typesToFetch.includes('checks')) {
       snapshots.push({ dataType: 'checks', data: checks })
     }
     if (typesToFetch.includes('comments')) {
       snapshots.push({ dataType: 'comments', data: comments })
+      snapshots.push({ dataType: 'raw_comments', data: raw.issueComments })
+      snapshots.push({ dataType: 'raw_review_comments', data: raw.reviewComments })
     }
 
     await savePrSnapshotsBatch(owner, repo, prNumber, snapshots)

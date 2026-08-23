@@ -5,6 +5,7 @@ import {
   savePrSnapshotsBatch,
 } from '~/db/github-data.server'
 import { getDetailedPullRequestInfo, getPullRequestForCommit } from '~/lib/github'
+import type { RawPrSnapshotData } from '~/lib/github/pr-snapshot'
 import type { PrChecks, PrComment, PrCommit, PrMetadata, PrReview, VerificationInput } from '../types'
 import { CURRENT_SCHEMA_VERSION } from '../types'
 
@@ -59,15 +60,10 @@ export async function fetchDeployedPrData(
     }
   }
 
-  const { metadata, reviews, commits, checks, comments } = await fetchPrFromGitHub(owner, repo, prNumber)
+  const fetched = await fetchPrFromGitHub(owner, repo, prNumber)
+  const { metadata, reviews, commits } = fetched
 
-  await savePrSnapshotsBatch(owner, repo, prNumber, [
-    { dataType: 'metadata', data: metadata },
-    { dataType: 'reviews', data: reviews },
-    { dataType: 'commits', data: commits },
-    { dataType: 'checks', data: checks },
-    { dataType: 'comments', data: comments },
-  ])
+  await persistPrSnapshots(owner, repo, prNumber, fetched)
 
   return {
     deployedPr: {
@@ -148,12 +144,15 @@ export async function fetchPrFromGitHub(
   commits: PrCommit[]
   checks: PrChecks
   comments: PrComment[]
+  raw: RawPrSnapshotData
 }> {
-  const prData = await getDetailedPullRequestInfo(owner, repo, prNumber)
+  const result = await getDetailedPullRequestInfo(owner, repo, prNumber)
 
-  if (!prData) {
+  if (!result) {
     throw new Error(`Failed to fetch PR #${prNumber} from ${owner}/${repo}`)
   }
+
+  const { prData, raw } = result
 
   const metadata: PrMetadata = {
     number: prNumber,
@@ -276,5 +275,25 @@ export async function fetchPrFromGitHub(
     updatedAt: c.created_at,
   }))
 
-  return { metadata, reviews, commits, checks, comments }
+  return { metadata, reviews, commits, checks, comments, raw }
+}
+
+export async function persistPrSnapshots(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  data: Awaited<ReturnType<typeof fetchPrFromGitHub>>,
+): Promise<void> {
+  await savePrSnapshotsBatch(owner, repo, prNumber, [
+    { dataType: 'metadata', data: data.metadata },
+    { dataType: 'reviews', data: data.reviews },
+    { dataType: 'commits', data: data.commits },
+    { dataType: 'checks', data: data.checks },
+    { dataType: 'comments', data: data.comments },
+    { dataType: 'raw_pr', data: data.raw.pr },
+    { dataType: 'raw_reviews', data: data.raw.reviews },
+    { dataType: 'raw_commits', data: data.raw.commits },
+    { dataType: 'raw_comments', data: data.raw.issueComments },
+    { dataType: 'raw_review_comments', data: data.raw.reviewComments },
+  ])
 }

@@ -93,7 +93,18 @@ export const UNVERIFIED_REASON_DESCRIPTIONS: Record<UnverifiedReason, string> = 
 export const APPROVAL_METHODS = ['pr_review', 'implicit', 'base_merge', 'no_changes', 'pending_baseline'] as const
 export type ApprovalMethod = (typeof APPROVAL_METHODS)[number] | null
 
-export type PrDataType = 'metadata' | 'reviews' | 'commits' | 'comments' | 'checks' | 'files'
+export type PrDataType =
+  | 'metadata'
+  | 'reviews'
+  | 'commits'
+  | 'comments'
+  | 'checks'
+  | 'files'
+  | 'raw_pr'
+  | 'raw_reviews'
+  | 'raw_commits'
+  | 'raw_comments'
+  | 'raw_review_comments'
 
 export type CommitDataType = 'metadata' | 'status' | 'checks' | 'prs'
 

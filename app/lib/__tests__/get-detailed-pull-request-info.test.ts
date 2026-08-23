@@ -140,7 +140,7 @@ describe('getDetailedPullRequestInfo', () => {
   it('assembles the full detailed PR data shape from raw GitHub responses', async () => {
     const result = await getDetailedPullRequestInfo('navikt', 'nda', 18220)
 
-    expect(result).toEqual({
+    expect(result?.prData).toEqual({
       title: 'Fix calculation',
       body: 'Fixes the bug',
       labels: ['bug', 'priority-high'],
@@ -217,6 +217,12 @@ describe('getDetailedPullRequestInfo', () => {
         },
       ],
     })
+
+    expect(result?.raw.pr.title).toBe('Fix calculation')
+    expect(result?.raw.reviews).toHaveLength(2)
+    expect(result?.raw.commits).toHaveLength(1)
+    expect(result?.raw.issueComments).toHaveLength(1)
+    expect(result?.raw.reviewComments).toHaveLength(1)
   })
 
   it('returns null when GitHub responds with an error', async () => {

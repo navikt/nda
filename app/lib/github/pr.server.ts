@@ -2,7 +2,14 @@ import type { GitHubPRData } from '~/db/deployments.server'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
 import type { CheckRun } from './pr/checks.server'
-import { mapPrComments, mapPrCommits, mapPrMetadata, mapPrReviewBodyComments, mapPrReviews } from './pr-snapshot'
+import {
+  mapPrComments,
+  mapPrCommits,
+  mapPrMetadata,
+  mapPrReviewBodyComments,
+  mapPrReviews,
+  type RawPrSnapshotData,
+} from './pr-snapshot'
 
 const prCommitsCache = new Map<string, string[]>()
 
@@ -388,7 +395,7 @@ export async function getDetailedPullRequestInfo(
   owner: string,
   repo: string,
   pull_number: number,
-): Promise<GitHubPRData | null> {
+): Promise<{ prData: GitHubPRData; raw: RawPrSnapshotData } | null> {
   const client = getGitHubClient()
 
   try {
@@ -412,12 +419,21 @@ export async function getDetailedPullRequestInfo(
     )
 
     return {
-      ...mapPrMetadata(pr),
-      reviewers: mapPrReviews(allReviews),
-      checks_passed,
-      checks,
-      commits: mapPrCommits(allCommitsData),
-      comments,
+      prData: {
+        ...mapPrMetadata(pr),
+        reviewers: mapPrReviews(allReviews),
+        checks_passed,
+        checks,
+        commits: mapPrCommits(allCommitsData),
+        comments,
+      },
+      raw: {
+        pr,
+        reviews: allReviews,
+        commits: allCommitsData,
+        issueComments: allIssueComments,
+        reviewComments: allReviewComments,
+      },
     }
   } catch (error) {
     logger.error('Error fetching detailed PR info:', error)

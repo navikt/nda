@@ -7,6 +7,14 @@ export type RawPrCommit = RestEndpointMethodTypes['pulls']['listCommits']['respo
 export type RawIssueComment = RestEndpointMethodTypes['issues']['listComments']['response']['data'][number]
 export type RawReviewComment = RestEndpointMethodTypes['pulls']['listReviewComments']['response']['data'][number]
 
+export interface RawPrSnapshotData {
+  pr: RawPr
+  reviews: RawPrReview[]
+  commits: RawPrCommit[]
+  issueComments: RawIssueComment[]
+  reviewComments: RawReviewComment[]
+}
+
 export interface PrMetadataFields {
   title: string
   body: string | null
