@@ -1,6 +1,7 @@
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
 import { getGitHubClient } from './client.server'
+import { mapCompareResponse } from './compare-snapshot'
 
 export async function getCommitsBetween(
   owner: string,
@@ -26,21 +27,11 @@ export async function getCommitsBetween(
     logger.info(`      - Behind by: ${response.data.behind_by} commits`)
     logger.info(`      - Total commits: ${response.data.total_commits}`)
 
-    const rawCommits = response.data.commits || []
-    const rawFiles = response.data.files || []
-    logger.info(`      - Commits array length: ${rawCommits.length}`)
-    logger.info(`      - Files array length: ${rawFiles.length}`)
+    logger.info(`      - Commits array length: ${(response.data.commits || []).length}`)
+    logger.info(`      - Files array length: ${(response.data.files || []).length}`)
 
-    const commits = rawCommits.map((commit) => ({
-      sha: commit.sha,
-      message: commit.commit.message,
-      authorUsername: commit.author?.login || commit.commit.author?.name || 'unknown',
-      authorDate: commit.commit.author?.date || '',
-      committerDate: commit.commit.committer?.date || commit.commit.author?.date || '',
-      htmlUrl: commit.html_url,
-      isMergeCommit: (commit.parents?.length || 0) > 1,
-      parentShas: commit.parents?.map((p) => p.sha) || [],
-    }))
+    const compareData = mapCompareResponse(response.data)
+    const { commits } = compareData
 
     logger.info(`✅ Found ${commits.length} commit(s) between ${base.substring(0, 7)} and ${head.substring(0, 7)}`)
 
@@ -53,17 +44,7 @@ export async function getCommitsBetween(
       })
     }
 
-    return {
-      compare: {
-        status: response.data.status,
-        aheadBy: response.data.ahead_by,
-        behindBy: response.data.behind_by,
-        totalCommits: response.data.total_commits,
-        changedFiles: rawFiles.length,
-        noDiffDetected: false,
-      },
-      commits,
-    }
+    return compareData
   } catch (error) {
     logger.error(`❌ Error comparing commits ${base.substring(0, 7)}...${head.substring(0, 7)}:`, error)
     return null
