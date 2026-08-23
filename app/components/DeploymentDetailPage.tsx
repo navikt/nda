@@ -11,16 +11,10 @@ import { Form, Link, useNavigation, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
 import { ExternalLink } from '~/components/ExternalLink'
-import {
-  type AvailableBoard,
-  type GoalLinkAppInfo,
-  GoalLinksSection,
-  type MyDevTeamForGoalLinking,
-} from '~/components/GoalLinksSection'
+import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
 import { type FourEyesStatus, isApprovedStatus, isProtectedStatus } from '~/lib/four-eyes-status'
 import { getFourEyesStatus } from '~/lib/status-display'
-import type { UserLookupMap } from '~/lib/user-display'
 import { UNVERIFIED_REASON_LABELS, type UnverifiedReason } from '~/lib/verification/types'
 import { CommentModal } from '~/routes/deployments/$id/CommentModal'
 import { CommentsSection } from '~/routes/deployments/$id/CommentsSection'
@@ -35,228 +29,13 @@ import { ManualApprovalSection } from '~/routes/deployments/$id/ManualApprovalSe
 import { PrDetailsAccordion } from '~/routes/deployments/$id/PrDetailsAccordion'
 import { ResetVerificationModal } from '~/routes/deployments/$id/ResetVerificationModal'
 import { StatusHistorySection } from '~/routes/deployments/$id/StatusHistorySection'
+import type { Route } from '../routes/deployments/+types/$id'
+
+export type DeploymentDetailLoaderData = Route.ComponentProps['loaderData']
 
 export type DeploymentDetailPageProps = {
   loaderData: DeploymentDetailLoaderData
-  actionData?: Record<string, unknown> | null
-}
-
-type GitHubUser = { username: string; avatar_url?: string }
-type Reviewer = { username: string; state: string; submitted_at: string }
-type RequestedTeam = { name: string; slug: string }
-type PrCommit = { sha: string; message: string; html_url: string; date: string; author?: GitHubUser }
-type PrComment = { id: number; body: string; created_at: string; html_url: string; user?: GitHubUser }
-type UnreviewedCommit = { sha: string; html_url: string; author: string; date: string; message: string; reason: string }
-type UnverifiedCommit = {
-  sha: string
-  message: string
-  author: string
-  date: string
-  html_url: string
-  pr_number: number | null
-  reason: string
-}
-type CheckRun = {
-  id?: number
-  name: string
-  status: string
-  conclusion: string | null
-  started_at: string | null
-  completed_at: string | null
-  html_url?: string | null
-  details_url?: string | null
-  app?: { name: string; slug: string | null } | null
-  output?: { title: string | null; summary: string | null; annotations_count: number } | null
-  log_cached?: boolean
-  annotations?: unknown[] | null
-}
-type GithubPrData = {
-  title: string
-  body: string | null
-  creator?: GitHubUser
-  merger?: GitHubUser | null
-  created_at: string
-  merged_at: string | null
-  base_branch: string
-  head_branch?: string | null
-  merge_commit_sha?: string | null
-  draft?: boolean
-  locked?: boolean
-  auto_merge?: { merge_method: string } | null
-  assignees?: GitHubUser[]
-  requested_reviewers?: GitHubUser[]
-  requested_teams?: RequestedTeam[]
-  milestone?: { title: string; state: string } | null
-  checks_passed?: boolean | null
-  commits_count: number
-  changed_files: number
-  additions: number
-  deletions: number
-  comments_count?: number
-  review_comments_count?: number
-  labels: string[]
-  reviewers: Reviewer[]
-  commits: PrCommit[]
-  comments: PrComment[]
-  checks?: CheckRun[] | null
-  checks_ref?: string | null
-  unreviewed_commits?: UnreviewedCommit[]
-}
-type DeploymentResource = { kind: string; name: string }
-type DeploymentParentCommit = { sha: string }
-type DeploymentRecord = {
-  id: number
-  monitored_app_id: number
-  team_slug: string
-  app_name: string
-  environment_name: string
-  title?: string | null
-  created_at: string | Date
-  synced_at?: string | Date | null
-  deployer_username: string | null
-  commit_sha: string | null
-  nais_deployment_id: string
-  branch_name?: string | null
-  default_branch: string | null
-  trigger_url?: string | null
-  github_pr_number: number | null
-  github_pr_url: string | null
-  detected_github_owner: string
-  detected_github_repo_name: string
-  four_eyes_status: string
-  has_goal_link?: boolean
-  slack_message_ts?: string | null
-  parent_commits?: DeploymentParentCommit[] | null
-  resources?: DeploymentResource[] | null
-  unverified_commits?: UnverifiedCommit[] | null
-  commit_checks_data?: { checks_passed: boolean | null; checks: CheckRun[] } | null
-  github_pr_data: GithubPrData | null
-  workflow_trigger_config?: WorkflowTriggerConfig | null
-}
-type DeliveryCommit = {
-  sha: string
-  message: string
-  authorUsername: string
-  htmlUrl: string
-  isBot: boolean
-  botDisplayName: string | null
-}
-type DeploymentComment = {
-  id: number
-  created_at: string | Date
-  registered_by: string | null
-  comment_text: string
-  slack_link: string | null
-}
-type ManualApproval = {
-  approved_by: string | null
-  approved_at: string | Date | null
-  comment_text: string | null
-  slack_link: string | null
-}
-type LegacyInfo = {
-  registered_by: string | null
-  created_at: string | Date | null
-  comment_text: string | null
-  slack_link: string | null
-} | null
-type StatusHistoryEntry = {
-  id: number
-  change_source: string
-  from_status: string | null
-  to_status: string
-  changed_by: string | null
-  created_at: string | Date
-  details: Record<string, unknown> | null
-}
-type Deviation = {
-  id: number
-  created_at: string | Date
-  registered_by: string | null
-  registered_by_name?: string | null
-  resolved_at?: string | Date | null
-  resolved_by?: string | null
-  resolved_by_name?: string | null
-  resolution_note?: string | null
-  severity?: 'low' | 'medium' | 'high' | 'critical' | null
-  intent?: 'accidental' | 'unknown' | 'malicious' | null
-  follow_up_role?: 'product_lead' | 'delivery_lead' | 'section_lead' | null
-  breach_type?: string | null
-  reason: string
-}
-type GoalLink = Parameters<typeof GoalLinksSection>[0]['goalLinks'][number]
-type PreviousDeployment = {
-  id: number
-  commit_sha: string | null
-  created_at: string | Date
-  four_eyes_status: string
-} | null
-type PreviousDeploymentForDiff = { commit_sha: string | null } | null
-type NextDeployment = { id: number } | null
-type DeploymentCapabilities = {
-  canApprove: boolean
-  canVerify: boolean
-  canDeviate: boolean
-  canLinkGoal: boolean
-  canNotify: boolean
-  canLookupLegacy: boolean
-  canResetVerification: boolean
-}
-type VerificationRun = {
-  status: string
-  runAt: string | Date
-  schemaVersion: number
-  result?: Record<string, unknown>
-} | null
-type NearbyDeployment = {
-  id: number
-  commit_sha: string
-  created_at: string
-  four_eyes_status: string
-  deployer_username: string | null
-  title: string | null
-}
-type SlackConfig = { enabled: boolean; channelId: string | null; alreadySent: boolean } | null
-type RegisteredRepo = { owner: string; name: string }
-type ManagingTeam = { name: string; slug: string; sectionSlug: string | null }
-type WorkflowTriggerConfig = {
-  workflowPath: string
-  triggerEvent: string
-  checkSuiteId: number | null
-  schemaVersion?: number
-} | null
-
-export interface DeploymentDetailLoaderData {
-  deployment: DeploymentRecord
-  deliveryCommits: DeliveryCommit[] | null
-  displayTitle: string | null
-  comments: DeploymentComment[]
-  manualApproval: ManualApproval | null
-  legacyInfo: LegacyInfo
-  statusHistory: StatusHistoryEntry[]
-  deviations: Deviation[]
-  goalLinks: GoalLink[]
-  availableBoards: AvailableBoard[]
-  sectionBoards: AvailableBoard[]
-  myDevTeams: MyDevTeamForGoalLinking[]
-  goalLinkAppInfo?: GoalLinkAppInfo
-  previousDeployment: PreviousDeployment
-  previousDeploymentForDiff: PreviousDeploymentForDiff
-  nextDeployment: NextDeployment
-  userMappings: UserLookupMap
-  appUrl: string
-  currentUserNavIdent?: string | null
-  isCurrentUserInvolved: boolean
-  involvementReason: string | null
-  isDebugMode: boolean
-  isAdmin: boolean
-  capabilities: DeploymentCapabilities
-  verificationRun: VerificationRun
-  nearbyDeployments: NearbyDeployment[]
-  slackConfig: SlackConfig
-  registeredRepos: RegisteredRepo[]
-  managingTeams: ManagingTeam[]
-  workflowTrigger: WorkflowTriggerConfig
+  actionData?: Route.ComponentProps['actionData']
 }
 
 export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetailPageProps) {
@@ -552,17 +331,17 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
       {!isApprovedStatus((deployment.four_eyes_status ?? '') as FourEyesStatus) && (
         <FourEyesAlert
           status={status}
-          deployment={deployment as never}
-          previousDeploymentForDiff={previousDeploymentForDiff as never}
-          registeredRepos={registeredRepos as never}
-          managingTeams={managingTeams as never}
-          appUrl={appUrl as never}
-          capabilities={capabilities as never}
+          deployment={deployment}
+          previousDeploymentForDiff={previousDeploymentForDiff}
+          registeredRepos={registeredRepos}
+          managingTeams={managingTeams}
+          appUrl={appUrl}
+          capabilities={capabilities}
           isVerifying={isVerifying}
-          isAdmin={isAdmin as never}
-          verificationRun={verificationRun as never}
-          nearbyDeployments={nearbyDeployments as never}
-          userMappings={userMappings as never}
+          isAdmin={isAdmin}
+          verificationRun={verificationRun}
+          nearbyDeployments={nearbyDeployments}
+          userMappings={userMappings}
         />
       )}
       {!isApprovedStatus((deployment.four_eyes_status ?? '') as FourEyesStatus) &&
@@ -626,10 +405,10 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
           ) : null
         })()}
       <DeploymentDetailsGrid
-        deployment={deployment as never}
-        userMappings={userMappings as never}
-        previousDeploymentForDiff={previousDeploymentForDiff as never}
-        workflowTrigger={workflowTrigger as never}
+        deployment={deployment}
+        userMappings={userMappings}
+        previousDeploymentForDiff={previousDeploymentForDiff}
+        workflowTrigger={workflowTrigger}
       />
       {deployment.github_pr_data?.reviewers?.some((r) => r.state === 'APPROVED') && (
         <VStack gap="space-4">
@@ -655,10 +434,10 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
       )}
       {(deployment.github_pr_data || deployment.commit_checks_data) && (
         <PrDetailsAccordion
-          deployment={deployment as never}
-          githubPrData={deployment.github_pr_data as never}
-          commitChecksData={deployment.commit_checks_data as never}
-          userMappings={userMappings as never}
+          deployment={deployment}
+          githubPrData={deployment.github_pr_data}
+          commitChecksData={deployment.commit_checks_data}
+          userMappings={userMappings}
         />
       )}
       {deployment.resources && deployment.resources.length > 0 && (
@@ -667,7 +446,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
             Kubernetes Resources
           </Heading>
           <HStack gap="space-8" wrap>
-            {deployment.resources.map((resource) => (
+            {deployment.resources.map((resource: { kind: string; name: string }) => (
               <Tag data-color="info" key={`${resource.kind}:${resource.name}`} variant="outline" size="small">
                 {resource.kind}: {resource.name}
               </Tag>
@@ -762,7 +541,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
         <div>
           <Alert variant="error">
             <Heading size="small" level="3" spacing>
-              <ExclamationmarkTriangleIcon aria-hidden /> Ureviewed commits funnet
+              <ExclamationmarkTriangleIcon aria-hidden /> Ikke godkjente commits funnet
             </Heading>
             <BodyShort spacing>
               Følgende commits var på main mellom PR base og merge, men mangler godkjenning:
@@ -831,18 +610,18 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
       {requiresManualApproval && (
         <ManualApprovalSection
           status={status}
-          deployment={deployment as never}
-          previousDeploymentForDiff={previousDeploymentForDiff as never}
-          isCurrentUserInvolved={isCurrentUserInvolved as never}
-          involvementReason={involvementReason as never}
-          capabilities={capabilities as never}
+          deployment={deployment}
+          previousDeploymentForDiff={previousDeploymentForDiff}
+          isCurrentUserInvolved={isCurrentUserInvolved}
+          involvementReason={involvementReason}
+          capabilities={capabilities}
         />
       )}
       {isLegacy && !legacyInfo && !manualApproval && capabilities.canLookupLegacy && (
-        <LegacyLookupSection actionData={actionData as never} userMappings={userMappings as never} />
+        <LegacyLookupSection actionData={actionData} userMappings={userMappings} />
       )}
       {(isPendingApproval || (legacyInfo && !manualApproval)) && (
-        <LegacyPendingApproval legacyInfo={legacyInfo as never} capabilities={capabilities as never} />
+        <LegacyPendingApproval legacyInfo={legacyInfo} capabilities={capabilities} />
       )}
       {manualApproval && (
         <Alert variant="success">
@@ -879,13 +658,13 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
       )}
       {statusHistory.length > 0 && (
         <StatusHistorySection
-          statusHistory={statusHistory as never}
-          deployment={deployment as never}
-          previousDeployment={previousDeployment as never}
-          nearbyDeployments={nearbyDeployments as never}
-          verificationRun={verificationRun as never}
-          isAdmin={isAdmin as never}
-          userMappings={userMappings as never}
+          statusHistory={statusHistory}
+          deployment={deployment}
+          previousDeployment={previousDeployment}
+          nearbyDeployments={nearbyDeployments}
+          verificationRun={verificationRun}
+          isAdmin={isAdmin}
+          userMappings={userMappings}
         />
       )}
       <GoalLinksSection
@@ -898,16 +677,16 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
         myDevTeams={myDevTeams}
       />
       <DeviationsSection
-        deviations={deviations as never}
-        capabilities={capabilities as never}
-        userMappings={userMappings as never}
+        deviations={deviations}
+        capabilities={capabilities}
+        userMappings={userMappings}
         deviationDialogRef={deviationDialogRef}
       />
       <DeviationModal modalRef={deviationDialogRef} />
       <CommentsSection
-        comments={comments as never}
-        capabilities={capabilities as never}
-        userMappings={userMappings as never}
+        comments={comments}
+        capabilities={capabilities}
+        userMappings={userMappings}
         commentDialogRef={commentDialogRef}
       />
       <CommentModal modalRef={commentDialogRef} />
