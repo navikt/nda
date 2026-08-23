@@ -2,7 +2,7 @@ import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
 import { getPullRequestForCommit, getPullRequestReviews } from './pr.server'
 
-interface LegacyLookupResult {
+export interface LegacyLookupResult {
   success: boolean
   error?: string
   data?: {

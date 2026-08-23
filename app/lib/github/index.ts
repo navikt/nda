@@ -20,6 +20,6 @@ export {
   WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
   type WorkflowTriggerConfig,
 } from './git.server'
-export { lookupLegacyByCommit, lookupLegacyByPR } from './legacy.server'
+export { type LegacyLookupResult, lookupLegacyByCommit, lookupLegacyByPR } from './legacy.server'
 export { type CheckRun, getChecksForCommit } from './pr/checks.server'
 export { getDetailedPullRequestInfo, getMergedPullRequestsInWindow, getPullRequestForCommit } from './pr.server'
