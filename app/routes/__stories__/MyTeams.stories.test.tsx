@@ -12,8 +12,15 @@ vi.mock('react-router', async () => {
   }
 })
 
-const { MedTavler, IngenTeamValgt, ManglerEndringsopphav, IngenGitHubMapping, MedGrupperteApps } =
-  composeStories(stories)
+const {
+  MedTavler,
+  IngenTeamValgt,
+  ManglerEndringsopphav,
+  IngenGitHubMapping,
+  MedGrupperteApps,
+  IngenTeammedlemmerMappet,
+  MedUmappedeDeployere,
+} = composeStories(stories)
 
 describe('MyTeams story baseline characterization', () => {
   it('renders healthy baseline with team metrics, board section, and summary state', () => {
@@ -61,5 +68,20 @@ describe('MyTeams story baseline characterization', () => {
     expect(html).toContain('pensjon-penny')
     expect(html).toContain('prod-gcp')
     expect(html).toContain('Koble mine deployments')
+  })
+
+  it('renders no-team-members-mapped alert', () => {
+    const html = renderToStaticMarkup(<IngenTeammedlemmerMappet />)
+
+    expect(html).toContain('Ingen av medlemmene i dine team er koblet til en GitHub-bruker')
+  })
+
+  it('renders unmapped contributors alert with admin link', () => {
+    const html = renderToStaticMarkup(<MedUmappedeDeployere />)
+
+    expect(html).toContain('2 deployere i år mangler brukermapping.')
+    expect(html).toContain('Umappede brukernavn:')
+    expect(html).toContain('bruker1')
+    expect(html).toContain('Gå til brukermapping')
   })
 })
