@@ -12,49 +12,50 @@ describe('DeploymentDetail story baseline characterization', () => {
   it('Approved story keeps deployment summary and PR details', () => {
     const html = renderToStaticMarkup(<Approved />)
 
-    expect(html).toContain('Deployment #123')
+    expect(html).toContain('feat: Add new feature for pension calculation')
     expect(html).toContain('Godkjent')
-    expect(html).toContain('john-doe')
+    expect(html).toContain('Glad Fjord')
     expect(html).toContain('navikt/pensjon-pen')
     expect(html).toContain('#42')
-    expect(html).toContain('feat: Add new feature for pension calculation')
-    expect(html).toContain('jane-smith')
-    expect(html).toContain('bob-wilson')
+    expect(html).toContain('GitHub Checks')
+    expect(html).toContain('Godkjent av')
+    expect(html).toContain('Kubernetes Resources')
   })
 
-  it('NotApproved story keeps admin action panel visible', () => {
+  it('NotApproved story keeps real non-approved warnings and follow-up actions', () => {
     const html = renderToStaticMarkup(<NotApproved />)
 
     expect(html).toContain('Ikke-godkjente commits')
-    expect(html).toContain('Admin-handlinger')
-    expect(html).toContain('Re-verifiser')
-    expect(html).toContain('Godkjenn manuelt')
+    expect(html).toContain('Send Slack-varsel')
+    expect(html).toContain('Registrer avvik')
+    expect(html).toContain('Legg til kommentar')
+    expect(html).toContain('Verifiser')
   })
 
-  it('Pending story keeps pending label and admin actions', () => {
+  it('Pending story keeps pending label without status history section', () => {
     const html = renderToStaticMarkup(<Pending />)
 
-    expect(html).toContain('Venter')
-    expect(html).toContain('Admin-handlinger')
-    expect(html).toContain('Re-verifiser')
-    expect(html).toContain('Godkjenn manuelt')
+    expect(html).toContain('Venter på verifisering')
+    expect(html).toContain('Verifiser nå')
+    expect(html).not.toContain('Statushistorikk')
   })
 
-  it('DirectPush story keeps no-PR baseline behavior', () => {
+  it('DirectPush story keeps no-PR behavior from the real component', () => {
     const html = renderToStaticMarkup(<DirectPush />)
 
-    expect(html).toContain('Direkte push')
-    expect(html).toContain('hotfix: Emergency fix for production bug')
-    expect(html).not.toContain('Pull Request')
-    expect(html).not.toContain('Opprettet av')
-    expect(html).not.toContain('#42')
+    expect(html).toContain('Direct Push')
+    expect(html).toContain('Krever manuell godkjenning')
+    expect(html).toContain('Se endringer på GitHub')
+    expect(html).not.toContain('Pull Request</')
+    expect(html).not.toContain('GitHub Checks')
   })
 
-  it('ManuallyApproved story keeps admin actions hidden', () => {
+  it('ManuallyApproved story keeps manual approval alert visible', () => {
     const html = renderToStaticMarkup(<ManuallyApproved />)
 
     expect(html).toContain('Manuelt godkjent')
-    expect(html).not.toContain('Admin-handlinger')
-    expect(html).not.toContain('Godkjenn manuelt')
+    expect(html).toContain('Gjennomgått i Slack med Rask Elv.')
+    expect(html).toContain('Se Slack-dokumentasjon')
+    expect(html).not.toContain('Krever manuell godkjenning')
   })
 })
