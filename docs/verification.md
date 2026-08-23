@@ -323,7 +323,7 @@ Noen ganger oppstår uverifiserte commits fordi utvikleren har merget `main` inn
 
 Hvis alle tre kriterier er oppfylt → deploymentet godkjennes med metode `base_merge`.
 
-> **Koderef**: Funksjoner `isBaseBranchMergeCommit` og `shouldApproveWithBaseMerge` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts)
+> **Koderef**: Funksjoner `isBaseBranchMergeCommit` og `shouldApproveWithBaseMerge` i [`app/lib/verification/implicit-approval.ts`](../app/lib/verification/implicit-approval.ts)
 
 ### Checks — samlet kilde for alle leveransetyper
 
@@ -435,7 +435,7 @@ Alle identitetssammenligninger i disse sjekkene (selvgodkjenning, dependabot-onl
 - ❌ Utvikler A oppretter PR → Utvikler A committer → Utvikler A merger → Ikke godkjent (samme person)
 - ✅ Utvikler A oppretter PR → Utvikler B legger til commit → Utvikler C legger til siste commit → Utvikler B merger → Implisitt godkjent, siden B er forskjellig fra siste commit-forfatter (C) — B ser hele diffen (inkludert sin egen tidligere commit) idet PR-en merges
 
-> **Koderef**: Funksjon `checkImplicitApproval` i [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts),
+> **Koderef**: Funksjon `checkImplicitApproval` i [`app/lib/verification/implicit-approval.ts`](../app/lib/verification/implicit-approval.ts),
 > enum `ImplicitApprovalMode` i [`app/lib/verification/types.ts`](../app/lib/verification/types.ts)
 
 ---
@@ -446,7 +446,8 @@ Alle identitetssammenligninger i disse sjekkene (selvgodkjenning, dependabot-onl
 
 | Fil | Ansvar | Sentrale funksjoner |
 |-----|--------|-------------------|
-| [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts) | Beslutningslogikk for fire-øyne-verifisering | `verifyDeployment`, `verifyFourEyesFromPrData`, `shouldApproveWithBaseMerge`, `checkImplicitApproval` |
+| [`app/lib/verification/verify.ts`](../app/lib/verification/verify.ts) | Beslutningslogikk for fire-øyne-verifisering | `verifyDeployment`, `verifyFourEyesFromPrData` |
+| [`app/lib/verification/implicit-approval.ts`](../app/lib/verification/implicit-approval.ts) | Merge-commit-deteksjon og implisitt godkjenning | `shouldApproveWithBaseMerge`, `checkImplicitApproval`, `isBaseBranchMergeCommit` |
 | [`app/lib/verification/types.ts`](../app/lib/verification/types.ts) | Typer, enumer og labels | `VerificationStatus`, `UnverifiedReason`, `ImplicitApprovalMode`, `VerificationInput`, `VerificationResult` |
 
 ### Orkestrering (henting, lagring, kjøring)
@@ -525,7 +526,7 @@ Ved konfliktløsning i merge-commits kan utviklere legge inn vilkårlige kodeend
 
 En commit regnes kun som en base-branch merge-commit dersom den **faktisk har minst to foreldre** i git-historikken (`parentShas.length >= 2`) — ikke bare fordi commit-meldingen ser slik ut. Uten denne sjekken kunne en angriper laget en ordinær enkeltcommit med teksten `Merge branch 'main' into feature-x` for å få egen kode hoppet over i verifiseringen.
 
-> 📁 Se `findUnverifiedCommits` og `isBaseBranchMergeCommit` i [`verify.ts`](../app/lib/verification/verify.ts) og test i [`verify-coverage-gaps.test.ts`](../app/lib/__tests__/verify-coverage-gaps.test.ts)
+> 📁 Se `findUnverifiedCommits` i [`verify.ts`](../app/lib/verification/verify.ts) og `isBaseBranchMergeCommit` i [`implicit-approval.ts`](../app/lib/verification/implicit-approval.ts), samt test i [`verify-coverage-gaps.test.ts`](../app/lib/__tests__/verify-coverage-gaps.test.ts)
 
 ### Beskyttelse mot dato-manipulering
 
@@ -535,7 +536,7 @@ Den primære beskyttelsen er strukturell, ikke klokkebasert: systemet sammenlign
 
 Hvis en review mangler `commit_id` (sjeldent, f.eks. eldre cachede data), faller systemet tilbake til å bruke **den seneste av `authorDate` og `committerDate`**. `committerDate` er git-objektets committer-tidsstempel — for commits GitHub selv genererer (web-redigering, API-kall, squash/rebase-merge) settes denne serverside og er vanskelig å forfalske, men for ordinære pushede commits kan klienten sette den fritt (`GIT_COMMITTER_DATE`), akkurat som `authorDate`. Reserveløsningen krever likevel at *begge* datoer manipuleres samtidig for å lure systemet, og er derfor noe sterkere enn å kun sjekke `authorDate` — men gir ingen absolutt garanti. Den brukes uansett kun når `commit_id` ikke er tilgjengelig, og er svakere enn SHA-sjekken.
 
-> 📁 Se `latestCommitDate` og `verifyFourEyesFromPrData` i [`verify.ts`](../app/lib/verification/verify.ts)
+> 📁 Se `latestCommitDate` i [`implicit-approval.ts`](../app/lib/verification/implicit-approval.ts) og `verifyFourEyesFromPrData` i [`verify.ts`](../app/lib/verification/verify.ts)
 
 ### Beskyttelse mot selvgodkjenning
 
