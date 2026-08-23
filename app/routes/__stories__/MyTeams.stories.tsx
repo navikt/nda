@@ -1,308 +1,36 @@
-import { BarChartIcon, CheckmarkCircleIcon, ExclamationmarkTriangleIcon, LinkIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
-import type { ReactNode } from 'react'
-import { Link } from 'react-router'
-import { type ActiveBoardData, ActiveBoardSection, type ActiveBoardSectionProps } from '~/components/ActiveBoardSection'
-import { AppCard, type AppCardData } from '~/components/AppCard'
+import type { AppCardData } from '~/components/AppCard'
+import { MyTeamsPage, type MyTeamsPageProps } from '~/components/MyTeamsPage'
 
-interface DevTeamInfo {
-  id: number
-  name: string
-  slug: string
-  section_slug: string
-  nais_team_slugs: string[]
-}
+const defaultArgs = {
+  noTeamMembersMapped: false,
+  unmappedContributors: [],
+  personalMissingGoalLinks: 0,
+  navIdent: 'Z990001',
+  githubUsername: 'glad-fjord',
+  isAdmin: false,
+} satisfies Pick<
+  MyTeamsPageProps,
+  | 'noTeamMembersMapped'
+  | 'unmappedContributors'
+  | 'personalMissingGoalLinks'
+  | 'navIdent'
+  | 'githubUsername'
+  | 'isAdmin'
+>
 
-interface DevTeamSummaryStats {
-  total_apps: number
-  total_deployments: number
-  with_four_eyes: number
-  without_four_eyes: number
-  pending_verification: number
-  linked_to_goal: number
-  four_eyes_coverage: number
-  goal_coverage: number
-  four_eyes_percentage: number
-  goal_percentage: number
-  apps_with_issues: number
-}
-
-interface MyTeamsPageProps {
-  selectedDevTeams: DevTeamInfo[]
-  teamStats: DevTeamSummaryStats | null
-  issueApps: AppCardData[]
-  boardSummaries: {
-    board: ActiveBoardData
-    objectives: ActiveBoardSectionProps['objectives']
-    teamBasePath: string
-    teamName: string
-  }[]
-  profileId?: string
-  personalMissingGoalLinks?: number | null
-}
-
-function SummaryCard({
-  title,
-  value,
-  icon,
-  variant = 'neutral',
-}: {
-  title: string
-  value: string | number
-  icon: ReactNode
-  variant?: 'success' | 'warning' | 'error' | 'neutral'
-}) {
-  const bgMap = {
-    success: 'success-soft' as const,
-    warning: 'warning-soft' as const,
-    error: 'danger-soft' as const,
-    neutral: 'neutral-soft' as const,
-  }
-
-  return (
-    <Box padding="space-20" borderRadius="8" background={bgMap[variant]}>
-      <VStack gap="space-4">
-        <HStack gap="space-8" align="center">
-          {icon}
-          <Detail textColor="subtle">{title}</Detail>
-        </HStack>
-        <Heading size="large" level="3">
-          {value}
-        </Heading>
-      </VStack>
-    </Box>
-  )
-}
-
-function formatCoverage(ratio: number): string {
-  const pct = Math.round(ratio * 100)
-  if (ratio > 0 && pct === 0) return '<1%'
-  if (ratio < 1 && pct === 100) return '99%'
-  return `${pct}%`
-}
-
-function getHealthVariant(ratio: number): 'success' | 'warning' | 'error' | 'neutral' {
-  if (ratio >= 1) return 'success'
-  if (ratio >= 0.9) return 'warning'
-  if (ratio > 0) return 'error'
-  return 'neutral'
-}
-
-function getHealthLabel(fourEyes: number, goalCoverage: number): string {
-  const min = Math.min(fourEyes, goalCoverage)
-  if (min >= 1) return 'God'
-  if (min >= 0.9) return 'Akseptabel'
-  if (min > 0) return 'Trenger oppfølging'
-  return 'Ingen data'
-}
-
-function getHealthIcon(fourEyes: number, goalCoverage: number): ReactNode {
-  const min = Math.min(fourEyes, goalCoverage)
-  if (min >= 0.9) return <CheckmarkCircleIcon aria-hidden />
-  return <ExclamationmarkTriangleIcon aria-hidden />
-}
-
-function PersonalGoalStatus({
-  personalMissingGoalLinks,
-  profileId,
-}: {
-  personalMissingGoalLinks: number | null
-  profileId: string | undefined
-}) {
-  if (personalMissingGoalLinks === null) {
-    return (
-      <Alert variant="info">
-        <VStack gap="space-8">
-          <BodyShort>
-            For å se dine egne deployments som mangler kobling til mål, må du legge til GitHub-brukernavnet ditt i
-            NDA-profilen.
-          </BodyShort>
-          {profileId && (
-            <div>
-              <Button as={Link} to={`/users/${profileId}`} size="small" variant="secondary">
-                Åpne min profil
-              </Button>
-            </div>
-          )}
-        </VStack>
-      </Alert>
-    )
-  }
-
-  if (personalMissingGoalLinks > 0) {
-    return (
-      <Alert variant="warning">
-        <VStack gap="space-8">
-          <BodyShort>
-            <strong>{personalMissingGoalLinks} av dine deployments mangler endringsopphav.</strong> Koble dem til mål
-            eller nøkkelresultater i NDA.
-          </BodyShort>
-          {profileId && (
-            <div>
-              <Button as={Link} to={`/users/${profileId}?goal=without_goal`} size="small" variant="secondary">
-                Koble mine deployments
-              </Button>
-            </div>
-          )}
-        </VStack>
-      </Alert>
-    )
-  }
-
-  return (
-    <HStack gap="space-8" align="center">
-      <CheckmarkCircleIcon aria-hidden style={{ color: 'var(--ax-text-success)' }} />
-      <BodyShort size="small" textColor="subtle">
-        Alle dine deployments har endringsopphav
-      </BodyShort>
-    </HStack>
-  )
-}
-
-function MyTeamsPage({
-  selectedDevTeams,
-  teamStats,
-  issueApps,
-  boardSummaries,
-  profileId,
-  personalMissingGoalLinks = 0,
-}: MyTeamsPageProps) {
-  return (
-    <VStack gap="space-32">
-      <div>
-        <Heading level="1" size="xlarge" spacing>
-          Mine team
-        </Heading>
-        <BodyShort textColor="subtle">Helsetilstand for dine utviklingsteam</BodyShort>
-      </div>
-
-      {selectedDevTeams.length === 0 && (
-        <Alert variant="info">
-          <VStack gap="space-8">
-            <BodyShort>
-              Du har ikke valgt noen utviklingsteam ennå. Gå til profilen din for å velge hvilke team du tilhører.
-            </BodyShort>
-            {profileId && (
-              <div>
-                <Button as={Link} to={`/users/${profileId}`} size="small" variant="secondary">
-                  Min profil
-                </Button>
-              </div>
-            )}
-          </VStack>
-        </Alert>
-      )}
-
-      {selectedDevTeams.length > 0 && teamStats && (
-        <VStack gap="space-24">
-          <HGrid gap="space-16" columns={{ xs: 1, sm: 2, lg: 4 }}>
-            <SummaryCard
-              title="Deployments i år"
-              value={teamStats.total_deployments}
-              icon={<BarChartIcon aria-hidden />}
-            />
-            <SummaryCard
-              title="4-øyne dekning"
-              value={formatCoverage(teamStats.four_eyes_coverage)}
-              icon={<CheckmarkCircleIcon aria-hidden />}
-              variant={getHealthVariant(teamStats.four_eyes_coverage)}
-            />
-            <SummaryCard
-              title="Endringsopphav"
-              value={formatCoverage(teamStats.goal_coverage)}
-              icon={<LinkIcon aria-hidden />}
-              variant={getHealthVariant(teamStats.goal_coverage)}
-            />
-            <SummaryCard
-              title="Samlet helsetilstand"
-              value={getHealthLabel(teamStats.four_eyes_coverage, teamStats.goal_coverage)}
-              icon={getHealthIcon(teamStats.four_eyes_coverage, teamStats.goal_coverage)}
-              variant={getHealthVariant(Math.min(teamStats.four_eyes_coverage, teamStats.goal_coverage))}
-            />
-          </HGrid>
-
-          <HStack gap="space-8" wrap>
-            <Button as={Link} to="/my-apps" size="small" variant="primary">
-              Alle mine applikasjoner
-            </Button>
-            {selectedDevTeams.map((team) => (
-              <Button
-                key={team.id}
-                as={Link}
-                to={`/sections/${team.section_slug}/teams/${team.slug}`}
-                size="small"
-                variant="secondary"
-              >
-                {team.name}
-              </Button>
-            ))}
-          </HStack>
-
-          {boardSummaries.length > 0 && (
-            <VStack gap="space-16">
-              <Heading level="3" size="small">
-                Aktive måltavler
-              </Heading>
-              <VStack gap="space-16">
-                {boardSummaries.map((bs) => (
-                  <ActiveBoardSection
-                    key={bs.board.id}
-                    board={bs.board}
-                    objectives={bs.objectives}
-                    teamBasePath={bs.teamBasePath}
-                    teamName={bs.teamName}
-                    headingLevel="4"
-                  />
-                ))}
-              </VStack>
-            </VStack>
-          )}
-
-          {personalMissingGoalLinks === 0 && issueApps.length === 0 ? (
-            <HStack gap="space-8" align="center">
-              <CheckmarkCircleIcon aria-hidden style={{ color: 'var(--ax-text-success)' }} />
-              <BodyShort size="small" textColor="subtle">
-                Alle dine deployments har endringsopphav og alle applikasjoner er i orden
-              </BodyShort>
-            </HStack>
-          ) : (
-            <>
-              <PersonalGoalStatus personalMissingGoalLinks={personalMissingGoalLinks} profileId={profileId} />
-              {issueApps.length > 0 && (
-                <VStack gap="space-16">
-                  <Heading level="3" size="small">
-                    Applikasjoner som trenger oppfølging ({issueApps.length})
-                  </Heading>
-                  <div>
-                    {issueApps.map((app) => (
-                      <AppCard key={app.id} app={app} />
-                    ))}
-                  </div>
-                </VStack>
-              )}
-            </>
-          )}
-        </VStack>
-      )}
-    </VStack>
-  )
-}
-
-const mockTeams: DevTeamInfo[] = [
+const mockTeams: MyTeamsPageProps['selectedDevTeams'] = [
   {
     id: 1,
     name: 'Skjermbildemodernisering',
     slug: 'skjermbildemodernisering',
     section_slug: 'pensjon',
-    nais_team_slugs: ['pensjon-skjerm'],
   },
   {
     id: 2,
     name: 'Starte pensjon',
     slug: 'starte-pensjon',
     section_slug: 'pensjon',
-    nais_team_slugs: ['pensjon-start'],
   },
 ]
 
@@ -316,6 +44,7 @@ const mockBoards: MyTeamsPageProps['boardSummaries'] = [
       period_end: '2026-04-30',
     },
     teamBasePath: '/sections/pensjon/teams/skjermbildemodernisering',
+    deploymentsPath: '/sections/pensjon/teams/skjermbildemodernisering/deployments',
     teamName: 'Skjermbildemodernisering',
     objectives: [
       {
@@ -356,6 +85,7 @@ const mockBoards: MyTeamsPageProps['boardSummaries'] = [
       period_end: '2026-04-30',
     },
     teamBasePath: '/sections/pensjon/teams/starte-pensjon',
+    deploymentsPath: '/sections/pensjon/teams/starte-pensjon/deployments',
     teamName: 'Starte pensjon',
     objectives: [
       {
@@ -387,7 +117,7 @@ const mockBoards: MyTeamsPageProps['boardSummaries'] = [
   },
 ]
 
-const mockTeamStatsHealthy: DevTeamSummaryStats = {
+const mockTeamStatsHealthy: NonNullable<MyTeamsPageProps['teamStats']> = {
   total_apps: 8,
   total_deployments: 142,
   with_four_eyes: 142,
@@ -401,7 +131,7 @@ const mockTeamStatsHealthy: DevTeamSummaryStats = {
   apps_with_issues: 0,
 }
 
-const mockTeamStatsLowCoverage: DevTeamSummaryStats = {
+const mockTeamStatsLowCoverage: NonNullable<MyTeamsPageProps['teamStats']> = {
   total_apps: 8,
   total_deployments: 142,
   with_four_eyes: 110,
@@ -436,111 +166,6 @@ const mockIssueApps: AppCardData[] = [
   },
 ]
 
-const meta: Meta<typeof MyTeamsPage> = {
-  title: 'Pages/MyTeams',
-  component: MyTeamsPage,
-  decorators: [
-    (Story) => (
-      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <Story />
-      </div>
-    ),
-  ],
-  parameters: {
-    layout: 'fullscreen',
-  },
-}
-
-export default meta
-
-type Story = StoryObj<typeof MyTeamsPage>
-
-export const MedTavler: Story = {
-  name: 'Med aktive måltavler',
-  args: {
-    selectedDevTeams: mockTeams,
-    teamStats: mockTeamStatsHealthy,
-    issueApps: [],
-    boardSummaries: mockBoards,
-  },
-}
-
-export const MedTavlerOgIssues: Story = {
-  name: 'Med tavler og applikasjoner som trenger oppfølging',
-  args: {
-    selectedDevTeams: mockTeams,
-    teamStats: mockTeamStatsLowCoverage,
-    issueApps: mockIssueApps,
-    boardSummaries: mockBoards,
-  },
-}
-
-export const EnTavle: Story = {
-  name: 'Kun én tavle (full bredde)',
-  args: {
-    selectedDevTeams: [mockTeams[0]],
-    teamStats: mockTeamStatsHealthy,
-    issueApps: [],
-    boardSummaries: [mockBoards[0]],
-  },
-}
-
-export const UtenTavler: Story = {
-  name: 'Uten aktive måltavler',
-  args: {
-    selectedDevTeams: mockTeams,
-    teamStats: mockTeamStatsHealthy,
-    issueApps: [],
-    boardSummaries: [],
-  },
-}
-
-export const IngenTeamValgt: Story = {
-  name: 'Ingen team valgt (tomstate)',
-  args: {
-    selectedDevTeams: [],
-    teamStats: null,
-    issueApps: [],
-    boardSummaries: [],
-    profileId: 'ola.nordmann',
-  },
-}
-
-export const AlleHarEndringsopphav: Story = {
-  name: 'Endringsopphav: alle OK',
-  args: {
-    selectedDevTeams: mockTeams,
-    teamStats: mockTeamStatsHealthy,
-    issueApps: [],
-    boardSummaries: mockBoards,
-    personalMissingGoalLinks: 0,
-  },
-}
-
-export const ManglerEndringsopphav: Story = {
-  name: 'Endringsopphav: mangler kobling',
-  args: {
-    selectedDevTeams: mockTeams,
-    teamStats: mockTeamStatsLowCoverage,
-    issueApps: mockIssueApps,
-    boardSummaries: mockBoards,
-    personalMissingGoalLinks: 47,
-    profileId: 'pcmoen',
-  },
-}
-
-export const IngenGitHubMapping: Story = {
-  name: 'Endringsopphav: ingen GitHub-mapping',
-  args: {
-    selectedDevTeams: mockTeams,
-    teamStats: mockTeamStatsHealthy,
-    issueApps: [],
-    boardSummaries: mockBoards,
-    personalMissingGoalLinks: null,
-    profileId: 'ola.nordmann',
-  },
-}
-
 const mockIssueAppsWithGroup: AppCardData[] = [
   {
     id: 100,
@@ -568,18 +193,6 @@ const mockIssueAppsWithGroup: AppCardData[] = [
   },
 ]
 
-export const MedGrupperteApps: Story = {
-  name: 'Med grupperte applikasjoner',
-  args: {
-    selectedDevTeams: mockTeams,
-    teamStats: mockTeamStatsLowCoverage,
-    issueApps: mockIssueAppsWithGroup,
-    boardSummaries: mockBoards,
-    personalMissingGoalLinks: 12,
-    profileId: 'pcmoen',
-  },
-}
-
 const mockIssueAppsWithBaseline: AppCardData[] = [
   {
     id: 200,
@@ -601,14 +214,168 @@ const mockIssueAppsWithBaseline: AppCardData[] = [
   },
 ]
 
+const meta: Meta<typeof MyTeamsPage> = {
+  title: 'Pages/MyTeams',
+  component: MyTeamsPage,
+  decorators: [
+    (Story) => (
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        <Story />
+      </div>
+    ),
+  ],
+  parameters: {
+    layout: 'fullscreen',
+  },
+}
+
+export default meta
+
+type Story = StoryObj<typeof MyTeamsPage>
+
+export const MedTavler: Story = {
+  name: 'Med aktive måltavler',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsHealthy,
+    issueApps: [],
+    boardSummaries: mockBoards,
+  },
+}
+
+export const MedTavlerOgIssues: Story = {
+  name: 'Med tavler og applikasjoner som trenger oppfølging',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsLowCoverage,
+    issueApps: mockIssueApps,
+    boardSummaries: mockBoards,
+  },
+}
+
+export const EnTavle: Story = {
+  name: 'Kun én tavle (full bredde)',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: [mockTeams[0]],
+    teamStats: mockTeamStatsHealthy,
+    issueApps: [],
+    boardSummaries: [mockBoards[0]],
+  },
+}
+
+export const UtenTavler: Story = {
+  name: 'Uten aktive måltavler',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsHealthy,
+    issueApps: [],
+    boardSummaries: [],
+  },
+}
+
+export const IngenTeamValgt: Story = {
+  name: 'Ingen team valgt (tomstate)',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: [],
+    teamStats: null,
+    issueApps: [],
+    boardSummaries: [],
+    navIdent: 'Z990042',
+    githubUsername: null,
+  },
+}
+
+export const AlleHarEndringsopphav: Story = {
+  name: 'Endringsopphav: alle OK',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsHealthy,
+    issueApps: [],
+    boardSummaries: mockBoards,
+    personalMissingGoalLinks: 0,
+  },
+}
+
+export const ManglerEndringsopphav: Story = {
+  name: 'Endringsopphav: mangler kobling',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsLowCoverage,
+    issueApps: mockIssueApps,
+    boardSummaries: mockBoards,
+    personalMissingGoalLinks: 47,
+    githubUsername: 'pcmoen',
+  },
+}
+
+export const IngenGitHubMapping: Story = {
+  name: 'Endringsopphav: ingen GitHub-mapping',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsHealthy,
+    issueApps: [],
+    boardSummaries: mockBoards,
+    personalMissingGoalLinks: null,
+    navIdent: 'Z990042',
+    githubUsername: null,
+  },
+}
+
+export const MedGrupperteApps: Story = {
+  name: 'Med grupperte applikasjoner',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsLowCoverage,
+    issueApps: mockIssueAppsWithGroup,
+    boardSummaries: mockBoards,
+    personalMissingGoalLinks: 12,
+    githubUsername: 'pcmoen',
+  },
+}
+
 export const MedBaselineHandling: Story = {
   name: 'Baseline: apper som trenger baseline-handling',
   args: {
+    ...defaultArgs,
     selectedDevTeams: mockTeams,
     teamStats: mockTeamStatsLowCoverage,
     issueApps: mockIssueAppsWithBaseline,
     boardSummaries: [],
     personalMissingGoalLinks: 0,
-    profileId: 'pcmoen',
+    githubUsername: 'pcmoen',
+  },
+}
+
+export const IngenTeammedlemmerMappet: Story = {
+  name: 'Ingen teammedlemmer mappet',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsHealthy,
+    issueApps: [],
+    boardSummaries: mockBoards,
+    noTeamMembersMapped: true,
+  },
+}
+
+export const MedUmappedeDeployere: Story = {
+  name: 'Med umappede deployere',
+  args: {
+    ...defaultArgs,
+    selectedDevTeams: mockTeams,
+    teamStats: mockTeamStatsLowCoverage,
+    issueApps: mockIssueApps,
+    boardSummaries: mockBoards,
+    unmappedContributors: ['bruker1', 'bruker2'],
+    isAdmin: true,
   },
 }
