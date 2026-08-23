@@ -1,295 +1,255 @@
-import {
-  CheckmarkCircleIcon,
-  ClockIcon,
-  ExclamationmarkTriangleIcon,
-  MinusCircleIcon,
-  XMarkOctagonIcon,
-} from '@navikt/aksel-icons'
-import {
-  Alert,
-  BodyShort,
-  Box,
-  Button,
-  CopyButton,
-  Detail,
-  Heading,
-  HGrid,
-  HStack,
-  Tag,
-  VStack,
-} from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { Form, Link } from 'react-router'
-import { BaselineInfo } from '~/components/BaselineInfo'
+import { createMemoryRouter, RouterProvider } from 'react-router'
 import {
-  type FourEyesStatus,
-  getFourEyesStatusLabel,
-  isApprovedStatus,
-  isNotApprovedStatus,
-  isPendingStatus,
-} from '~/lib/four-eyes-status'
+  type DeploymentDetailLoaderData,
+  DeploymentDetailPage,
+  type DeploymentDetailPageProps,
+} from '~/components/DeploymentDetailPage'
+import type { UserLookupMap } from '~/lib/user-display'
 
-type DeploymentDetail = {
-  id: number
-  commit_sha: string
-  commit_message: string
-  deployer_username: string | null
-  deploy_started_at: string
-  four_eyes_status: FourEyesStatus
-  approval_source: string | null
-  github_pr_number: number | null
-  github_pr_url: string | null
-  detected_github_owner: string
-  detected_github_repo_name: string
-  github_pr_data?: {
-    title: string
-    creator?: { username: string }
-    merger?: { username: string }
-    reviewers?: { username: string; state: string; submitted_at?: string }[]
-  }
+const userMappings: UserLookupMap = {
+  'john-doe': { display_name: 'Glad Fjord', nav_ident: 'Z990001' },
+  'jane-smith': { display_name: 'Rask Elv', nav_ident: 'Z990002' },
+  'bob-wilson': { display_name: 'Klok Skog', nav_ident: 'Z990003' },
+  'release-bot': { display_name: 'Release Bot', nav_ident: null },
+  'ops-reviewer': { display_name: 'Stødig Varde', nav_ident: 'Z990004' },
+  'qa-reviewer': { display_name: 'Vaken Dal', nav_ident: 'Z990005' },
 }
 
-function getStatusIcon(status: FourEyesStatus) {
-  if (isApprovedStatus(status)) {
-    return <CheckmarkCircleIcon aria-hidden />
-  }
-  if (isPendingStatus(status)) {
-    return <ClockIcon aria-hidden />
-  }
-  if (status === 'error') {
-    return <ExclamationmarkTriangleIcon aria-hidden />
-  }
-  if (isNotApprovedStatus(status)) {
-    return <XMarkOctagonIcon aria-hidden />
-  }
-  return <MinusCircleIcon aria-hidden />
+const baseDeployment = {
+  id: 123,
+  monitored_app_id: 99,
+  team_slug: 'pensjondeployer',
+  app_name: 'pensjon-pen',
+  environment_name: 'prod-fss',
+  created_at: new Date('2026-02-08T10:30:00Z'),
+  deployer_username: 'john-doe',
+  commit_sha: 'abc123def456789012345678901234567890abcd',
+  nais_deployment_id: 'nais-depl-123',
+  branch_name: 'main',
+  default_branch: 'main',
+  trigger_url: 'https://github.com/navikt/pensjon-pen/actions/runs/123456789',
+  github_pr_number: 42,
+  github_pr_url: 'https://github.com/navikt/pensjon-pen/pull/42',
+  detected_github_owner: 'navikt',
+  detected_github_repo_name: 'pensjon-pen',
+  four_eyes_status: 'approved',
+  parent_commits: [
+    { sha: 'fff1111111111111111111111111111111111111' },
+    { sha: 'eee2222222222222222222222222222222222222' },
+  ],
+  resources: [
+    { kind: 'Deployment', name: 'pensjon-pen' },
+    { kind: 'HorizontalPodAutoscaler', name: 'pensjon-pen' },
+  ],
+  unverified_commits: [],
+  commit_checks_data: {
+    checks_passed: true,
+    checks: [
+      {
+        id: 777,
+        name: 'CI / build',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: '2026-02-08T09:55:00Z',
+        completed_at: '2026-02-08T09:56:10Z',
+        html_url: 'https://github.com/navikt/pensjon-pen/runs/777',
+        details_url: 'https://github.com/navikt/pensjon-pen/runs/777?check_suite_focus=true',
+        app: { name: 'GitHub Actions', slug: 'github-actions' },
+        output: { title: 'Build complete', summary: '', annotations_count: 0 },
+        log_cached: false,
+      },
+    ],
+  },
+  github_pr_data: {
+    title: 'feat: Add new feature for pension calculation',
+    body: '<p>Oppsummering av endringen.</p>',
+    creator: { username: 'john-doe' },
+    merger: { username: 'jane-smith' },
+    created_at: '2026-02-08T08:30:00Z',
+    merged_at: '2026-02-08T10:00:00Z',
+    base_branch: 'main',
+    head_branch: 'feature/new-pension-flow',
+    merge_commit_sha: 'ddd3333333333333333333333333333333333333',
+    draft: false,
+    locked: false,
+    auto_merge: { merge_method: 'squash' },
+    assignees: [{ username: 'qa-reviewer' }],
+    milestone: { title: 'Q1 mål', state: 'open' },
+    checks_passed: true,
+    commits_count: 3,
+    changed_files: 8,
+    additions: 120,
+    deletions: 14,
+    comments_count: 2,
+    review_comments_count: 1,
+    labels: ['feature', 'pensjon'],
+    reviewers: [
+      { username: 'jane-smith', state: 'APPROVED', submitted_at: '2026-02-08T09:45:00Z' },
+      { username: 'bob-wilson', state: 'APPROVED', submitted_at: '2026-02-08T09:50:00Z' },
+    ],
+    requested_reviewers: [{ username: 'ops-reviewer' }],
+    requested_teams: [{ name: 'Platform', slug: 'platform' }],
+    commits: [
+      {
+        sha: 'abc123def456789012345678901234567890abcd',
+        message: 'feat: Add new feature for pension calculation\n\nDetailed body',
+        html_url: 'https://github.com/navikt/pensjon-pen/commit/abc123def456789012345678901234567890abcd',
+        date: '2026-02-08T09:00:00Z',
+        author: { username: 'john-doe', avatar_url: 'https://example.com/john.png' },
+      },
+    ],
+    comments: [
+      {
+        id: 9001,
+        body: 'Ser bra ut',
+        created_at: '2026-02-08T09:40:00Z',
+        html_url: 'https://github.com/navikt/pensjon-pen/pull/42#issuecomment-1',
+        user: { username: 'jane-smith', avatar_url: 'https://example.com/jane.png' },
+      },
+    ],
+    unreviewed_commits: [],
+  },
 }
 
-function getStatusColor(status: FourEyesStatus): 'success' | 'warning' | 'danger' | 'neutral' | 'info' {
-  if (isApprovedStatus(status)) {
-    return 'success'
-  }
-  if (isPendingStatus(status)) {
-    return 'warning'
-  }
-  if (isNotApprovedStatus(status)) {
-    return 'danger'
-  }
-  return 'neutral'
-}
-
-function DeploymentDetailPage({
-  deployment,
-  previousId,
-  nextId,
-  isAdmin = false,
-  canApproveBaseline = false,
-}: {
-  deployment: DeploymentDetail
-  previousId: number | null
-  nextId: number | null
-  isAdmin?: boolean
-  canApproveBaseline?: boolean
-}) {
-  const statusColor = getStatusColor(deployment.four_eyes_status)
-
-  return (
-    <VStack gap="space-32">
-      {/* Header with navigation */}
-      <HStack gap="space-16" align="center" justify="space-between" wrap>
-        <VStack gap="space-4">
-          <HStack gap="space-8" align="center">
-            <Heading level="1" size="medium">
-              Deployment #{deployment.id}
-            </Heading>
-            <Tag variant="moderate" data-color={statusColor} icon={getStatusIcon(deployment.four_eyes_status)}>
-              {getFourEyesStatusLabel(deployment.four_eyes_status)}
-            </Tag>
-          </HStack>
-          <Detail textColor="subtle">{new Date(deployment.deploy_started_at).toLocaleString('no-NO')}</Detail>
-        </VStack>
-
-        <HStack gap="space-8">
-          <Button variant="tertiary" size="small" disabled={!previousId}>
-            ← Forrige
-          </Button>
-          <Button variant="tertiary" size="small" disabled={!nextId}>
-            Neste →
-          </Button>
-          {canApproveBaseline && (
-            <Form method="post" style={{ display: 'inline' }}>
-              <input type="hidden" name="intent" value="approve_baseline" />
-              <Button
-                type="submit"
-                size="small"
-                variant="primary"
-                icon={<CheckmarkCircleIcon aria-hidden />}
-                title="Godkjenn dette deploymentet som baseline"
-              >
-                Godkjenn baseline
-              </Button>
-            </Form>
-          )}
-        </HStack>
-      </HStack>
-
-      {/* Baseline explanation for pending_baseline */}
-      {deployment.four_eyes_status === 'pending_baseline' && (
-        <Alert variant="warning">
-          <Heading size="small" level="3" spacing>
-            Foreslått baseline
-          </Heading>
-          <VStack gap="space-8">
-            <BodyShort>
-              Første deployment for dette miljøet. Må godkjennes manuelt som baseline før videre verifisering.
-            </BodyShort>
-            <BaselineInfo />
-          </VStack>
-        </Alert>
-      )}
-
-      {/* Baseline explanation for baseline missing attributed approver */}
-      {deployment.four_eyes_status === 'baseline' && canApproveBaseline && (
-        <Alert variant="warning">
-          <Heading size="small" level="3" spacing>
-            Godkjenner ikke registrert
-          </Heading>
-          <VStack gap="space-8">
-            <BodyShort>
-              Baseline ble godkjent uten at godkjenneren ble registrert. Godkjenn baseline på nytt for å dokumentere
-              hvem som bekrefter at koden var godkjent.
-            </BodyShort>
-            <BaselineInfo />
-          </VStack>
-        </Alert>
-      )}
-
-      {/* Overview Cards */}
-      <HGrid gap="space-16" columns={{ xs: 1, md: 2, lg: 4 }}>
-        <Box padding="space-16" borderRadius="8" background="sunken">
-          <VStack gap="space-4">
-            <Detail textColor="subtle">Deployer</Detail>
-            {deployment.deployer_username ? (
-              <Link to={`/users/${deployment.deployer_username}`}>
-                <BodyShort weight="semibold">{deployment.deployer_username}</BodyShort>
-              </Link>
-            ) : (
-              <BodyShort>(ukjent)</BodyShort>
-            )}
-          </VStack>
-        </Box>
-
-        <Box padding="space-16" borderRadius="8" background="sunken">
-          <VStack gap="space-4">
-            <Detail textColor="subtle">Commit</Detail>
-            <HStack gap="space-8" align="center">
-              <BodyShort style={{ fontFamily: 'monospace' }}>{deployment.commit_sha.substring(0, 7)}</BodyShort>
-              <CopyButton copyText={deployment.commit_sha} size="xsmall" />
-            </HStack>
-          </VStack>
-        </Box>
-
-        <Box padding="space-16" borderRadius="8" background="sunken">
-          <VStack gap="space-4">
-            <Detail textColor="subtle">Repository</Detail>
-            <BodyShort>
-              {deployment.detected_github_owner}/{deployment.detected_github_repo_name}
-            </BodyShort>
-          </VStack>
-        </Box>
-
-        {deployment.github_pr_number && (
-          <Box padding="space-16" borderRadius="8" background="sunken">
-            <VStack gap="space-4">
-              <Detail textColor="subtle">Pull Request</Detail>
-              <BodyShort weight="semibold">#{deployment.github_pr_number}</BodyShort>
-            </VStack>
-          </Box>
-        )}
-      </HGrid>
-
-      {/* Commit message */}
-      <Box padding="space-20" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-        <VStack gap="space-12">
-          <Heading level="2" size="small">
-            Commit
-          </Heading>
-          <BodyShort style={{ whiteSpace: 'pre-wrap' }}>{deployment.commit_message}</BodyShort>
-        </VStack>
-      </Box>
-
-      {/* PR Data (if available) */}
-      {deployment.github_pr_data && (
-        <Box padding="space-20" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
-          <VStack gap="space-16">
-            <Heading level="2" size="small">
-              Pull Request
-            </Heading>
-            <BodyShort weight="semibold">{deployment.github_pr_data.title}</BodyShort>
-
-            <HStack gap="space-24" wrap>
-              {deployment.github_pr_data.creator && (
-                <VStack gap="space-4">
-                  <Detail textColor="subtle">Opprettet av</Detail>
-                  <Link to={`/users/${deployment.github_pr_data.creator.username}`}>
-                    {deployment.github_pr_data.creator.username}
-                  </Link>
-                </VStack>
-              )}
-              {deployment.github_pr_data.merger && (
-                <VStack gap="space-4">
-                  <Detail textColor="subtle">Merget av</Detail>
-                  <Link to={`/users/${deployment.github_pr_data.merger.username}`}>
-                    {deployment.github_pr_data.merger.username}
-                  </Link>
-                </VStack>
-              )}
-            </HStack>
-
-            {deployment.github_pr_data.reviewers && deployment.github_pr_data.reviewers.length > 0 && (
-              <VStack gap="space-8">
-                <Detail textColor="subtle">Godkjent av</Detail>
-                <HStack gap="space-8" wrap>
-                  {deployment.github_pr_data.reviewers
-                    .filter((r) => r.state === 'APPROVED')
-                    .map((reviewer) => (
-                      <Tag
-                        key={reviewer.username}
-                        size="small"
-                        variant="moderate"
-                        data-color="success"
-                        icon={<CheckmarkCircleIcon aria-hidden />}
-                      >
-                        {reviewer.username}
-                      </Tag>
-                    ))}
-                </HStack>
-              </VStack>
-            )}
-          </VStack>
-        </Box>
-      )}
-
-      {/* Admin actions */}
-      {isAdmin && deployment.four_eyes_status !== 'approved' && (
-        <Box padding="space-20" borderRadius="8" background="raised" borderColor="warning-subtle" borderWidth="1">
-          <VStack gap="space-16">
-            <Heading level="2" size="small">
-              Admin-handlinger
-            </Heading>
-            <HStack gap="space-8">
-              <Button variant="secondary" size="small">
-                Re-verifiser
-              </Button>
-              <Button variant="primary" size="small">
-                Godkjenn manuelt
-              </Button>
-            </HStack>
-          </VStack>
-        </Box>
-      )}
-    </VStack>
-  )
+const baseLoaderData: DeploymentDetailLoaderData = {
+  deployment: baseDeployment,
+  deliveryCommits: [
+    {
+      sha: 'abc123def456789012345678901234567890abcd',
+      message: 'feat: Add new feature for pension calculation',
+      htmlUrl: 'https://github.com/navikt/pensjon-pen/commit/abc123def456789012345678901234567890abcd',
+      authorUsername: 'john-doe',
+      isBot: false,
+      botDisplayName: null,
+    },
+    {
+      sha: 'bbb123def456789012345678901234567890abcd',
+      message: 'chore: update workflow metadata',
+      htmlUrl: 'https://github.com/navikt/pensjon-pen/commit/bbb123def456789012345678901234567890abcd',
+      authorUsername: 'release-bot',
+      isBot: true,
+      botDisplayName: 'Release Bot',
+    },
+  ],
+  displayTitle: 'feat: Add new feature for pension calculation',
+  comments: [
+    {
+      id: 1,
+      created_at: '2026-02-08T11:00:00Z',
+      registered_by: 'jane-smith',
+      comment_text: 'Review dokumentert i Slack.',
+      slack_link: 'https://nav-no.slack.com/archives/C123/p123',
+    },
+  ],
+  manualApproval: null,
+  legacyInfo: null,
+  statusHistory: [
+    {
+      id: 1,
+      change_source: 'verification',
+      from_status: 'pending',
+      to_status: 'approved',
+      changed_by: 'jane-smith',
+      created_at: '2026-02-08T10:05:00Z',
+      details: null,
+    },
+  ],
+  deviations: [],
+  goalLinks: [
+    {
+      id: 1,
+      deployment_id: 123,
+      objective_id: 10,
+      key_result_id: 11,
+      external_url: null,
+      external_url_title: null,
+      comment: 'Koblet automatisk fra PR-tittel',
+      link_method: 'pr_title',
+      linked_by: 'john-doe',
+      is_active: true,
+      created_at: '2026-02-08T10:30:00Z',
+      objective_title: 'Forbedre saksbehandleropplevelsen',
+      key_result_title: 'Redusere feil i pensjonsberegning',
+      board_period_label: 'Q1 2026',
+      board_period_type: 'quarter',
+      dev_team_slug: 'pensjon-oppfolging',
+      section_slug: 'pensjon',
+      objective_is_active: true,
+      key_result_is_active: true,
+    },
+  ],
+  availableBoards: [
+    {
+      id: 1,
+      period_label: 'Q1 2026',
+      dev_team_name: 'Pensjon Oppfølging',
+      objectives: [
+        {
+          id: 10,
+          title: 'Forbedre saksbehandleropplevelsen',
+          key_results: [{ id: 11, title: 'Redusere feil i pensjonsberegning' }],
+        },
+      ],
+    },
+  ],
+  sectionBoards: [],
+  myDevTeams: [{ id: 1, name: 'Pensjon Oppfølging', slug: 'pensjon-oppfolging', sectionSlug: 'pensjon' }],
+  goalLinkAppInfo: { appName: 'pensjon-pen', environmentName: 'prod-fss' },
+  previousDeployment: {
+    id: 122,
+    commit_sha: '9999999999999999999999999999999999999999',
+    created_at: '2026-02-08T08:00:00Z',
+    four_eyes_status: 'approved',
+  },
+  previousDeploymentForDiff: {
+    commit_sha: '9999999999999999999999999999999999999999',
+  },
+  nextDeployment: { id: 124 },
+  userMappings,
+  appUrl: '/team/pensjondeployer/env/prod-fss/app/pensjon-pen',
+  isCurrentUserInvolved: false,
+  involvementReason: null,
+  isDebugMode: false,
+  isAdmin: false,
+  capabilities: {
+    canVerify: true,
+    canApprove: true,
+    canNotify: true,
+    canLinkGoal: true,
+    canDeviate: true,
+    canLookupLegacy: true,
+    canResetVerification: true,
+  },
+  verificationRun: {
+    status: 'completed',
+    runAt: '2026-02-08T10:05:00Z',
+    schemaVersion: 5,
+    result: {},
+  },
+  nearbyDeployments: [
+    {
+      id: 121,
+      commit_sha: '9999999999999999999999999999999999999999',
+      created_at: '2026-02-08T07:50:00Z',
+      four_eyes_status: 'approved',
+      deployer_username: 'jane-smith',
+      title: 'Tidligere godkjent deploy',
+    },
+  ],
+  slackConfig: {
+    enabled: true,
+    channelId: 'C123456',
+    alreadySent: false,
+  },
+  registeredRepos: [{ owner: 'navikt', name: 'pensjon-pen' }],
+  managingTeams: [{ slug: 'pensjon-oppfolging', name: 'Pensjon Oppfølging', sectionSlug: 'pensjon' }],
+  workflowTrigger: {
+    workflowPath: '.github/workflows/deploy.yml',
+    triggerEvent: 'workflow_dispatch',
+    checkSuiteId: 123,
+    schemaVersion: 1,
+  },
 }
 
 const meta: Meta<typeof DeploymentDetailPage> = {
@@ -302,161 +262,246 @@ const meta: Meta<typeof DeploymentDetailPage> = {
       </div>
     ),
   ],
+  parameters: {
+    router: { skip: true },
+  },
 }
 
 export default meta
 
-type Story = StoryObj<typeof DeploymentDetailPage>
+type Story = StoryObj<typeof meta>
 
-const baseDeployment: DeploymentDetail = {
-  id: 123,
-  commit_sha: 'abc123def456789012345678901234567890abcd',
-  commit_message:
-    'feat: Add new feature for pension calculation\n\nThis commit adds support for the new calculation model.',
-  deployer_username: 'john-doe',
-  deploy_started_at: '2026-02-08T10:30:00Z',
-  four_eyes_status: 'approved',
-  approval_source: 'pr_approval',
-  github_pr_number: 42,
-  github_pr_url: 'https://github.com/navikt/pensjon-pen/pull/42',
-  detected_github_owner: 'navikt',
-  detected_github_repo_name: 'pensjon-pen',
-  github_pr_data: {
-    title: 'feat: Add new feature for pension calculation',
-    creator: { username: 'john-doe' },
-    merger: { username: 'jane-smith' },
-    reviewers: [
-      { username: 'jane-smith', state: 'APPROVED', submitted_at: '2026-02-08T09:45:00Z' },
-      { username: 'bob-wilson', state: 'APPROVED', submitted_at: '2026-02-08T10:15:00Z' },
+type StoryProps = Partial<DeploymentDetailPageProps> & {
+  loaderData?: Partial<DeploymentDetailLoaderData>
+  initialEntry?: string
+}
+
+function mergeDeployment(overrides?: Partial<DeploymentDetailLoaderData['deployment']>) {
+  return {
+    ...baseLoaderData.deployment,
+    ...overrides,
+    github_pr_data:
+      overrides && 'github_pr_data' in overrides
+        ? (overrides.github_pr_data ?? null)
+        : baseLoaderData.deployment.github_pr_data,
+    commit_checks_data:
+      overrides && 'commit_checks_data' in overrides
+        ? (overrides.commit_checks_data ?? null)
+        : baseLoaderData.deployment.commit_checks_data,
+  }
+}
+
+function renderDeploymentDetailStory({
+  loaderData,
+  actionData = null,
+  initialEntry = '/team/pensjondeployer/env/prod-fss/app/pensjon-pen/deployments/123?period=last-week',
+}: StoryProps) {
+  const mergedLoaderData: DeploymentDetailLoaderData = {
+    ...baseLoaderData,
+    ...loaderData,
+    deployment: mergeDeployment(loaderData?.deployment),
+  }
+
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/team/:team/env/:env/app/:app/deployments/:id',
+        element: <DeploymentDetailPage loaderData={mergedLoaderData} actionData={actionData} />,
+      },
     ],
-  },
+    { initialEntries: [initialEntry] },
+  )
+
+  return <RouterProvider router={router} />
 }
 
 export const Approved: Story = {
   name: 'Godkjent',
   args: {
-    deployment: baseDeployment,
-    previousId: 122,
-    nextId: 124,
-    isAdmin: false,
+    loaderData: baseLoaderData,
   },
+  render: (args) => renderDeploymentDetailStory(args),
 }
 
 export const NotApproved: Story = {
   name: 'Ikke godkjent',
   args: {
-    deployment: {
-      ...baseDeployment,
-      four_eyes_status: 'unverified_commits',
-      approval_source: null,
+    loaderData: {
+      ...baseLoaderData,
+      isAdmin: true,
+      deployment: {
+        ...baseLoaderData.deployment,
+        four_eyes_status: 'unverified_commits',
+        unverified_commits: [
+          {
+            sha: '4444444444444444444444444444444444444444',
+            html_url: 'https://github.com/navikt/pensjon-pen/commit/4444444444444444444444444444444444444444',
+            message: 'fix: rett edge case i beregning',
+            author: 'john-doe',
+            date: '2026-02-08T09:58:00Z',
+            reason: 'no_approved_reviews',
+            pr_number: 43,
+          },
+        ],
+      },
+      slackConfig: { enabled: true, channelId: 'C123456', alreadySent: false },
+      verificationRun: {
+        ...(baseLoaderData.verificationRun ?? {
+          status: 'completed',
+          runAt: '2026-02-08T10:05:00Z',
+          schemaVersion: 5,
+          result: {},
+        }),
+        result: { approvalDetails: { reason: 'Missing approval' } },
+      },
     },
-    previousId: 122,
-    nextId: 124,
-    isAdmin: true,
   },
+  render: (args) => renderDeploymentDetailStory(args),
 }
 
 export const Pending: Story = {
   name: 'Venter verifisering',
   args: {
-    deployment: {
-      ...baseDeployment,
-      four_eyes_status: 'pending',
-      approval_source: null,
+    loaderData: {
+      ...baseLoaderData,
+      deployment: {
+        ...baseLoaderData.deployment,
+        four_eyes_status: 'pending',
+      },
+      statusHistory: [],
+      slackConfig: { enabled: true, channelId: 'C123456', alreadySent: true },
     },
-    previousId: null,
-    nextId: 124,
-    isAdmin: true,
   },
+  render: (args) => renderDeploymentDetailStory(args),
 }
 
 export const DirectPush: Story = {
   name: 'Direct Push (ingen PR)',
   args: {
-    deployment: {
-      ...baseDeployment,
-      four_eyes_status: 'direct_push',
-      github_pr_number: null,
-      github_pr_url: null,
-      github_pr_data: undefined,
-      commit_message: 'hotfix: Emergency fix for production bug',
+    loaderData: {
+      ...baseLoaderData,
+      isAdmin: true,
+      deployment: {
+        ...baseLoaderData.deployment,
+        four_eyes_status: 'direct_push',
+        github_pr_number: null,
+        github_pr_url: null,
+        github_pr_data: null,
+        commit_checks_data: null,
+      },
+      displayTitle: null,
+      deliveryCommits: baseLoaderData.deliveryCommits ? [baseLoaderData.deliveryCommits[0]] : null,
+      comments: [],
+      goalLinks: [],
+      statusHistory: [],
+      previousDeploymentForDiff: {
+        commit_sha: '9999999999999999999999999999999999999999',
+      },
     },
-    previousId: 122,
-    nextId: null,
-    isAdmin: true,
   },
+  render: (args) => renderDeploymentDetailStory(args),
 }
 
 export const ManuallyApproved: Story = {
   name: 'Manuelt godkjent',
   args: {
-    deployment: {
-      ...baseDeployment,
-      four_eyes_status: 'manually_approved',
-      approval_source: 'manual',
+    loaderData: {
+      ...baseLoaderData,
+      deployment: {
+        ...baseLoaderData.deployment,
+        four_eyes_status: 'manually_approved',
+      },
+      manualApproval: {
+        approved_by: 'bob-wilson',
+        approved_at: '2026-02-08T10:20:00Z',
+        comment_text: 'Gjennomgått i Slack med Rask Elv.',
+        slack_link: 'https://nav-no.slack.com/archives/C123/p456',
+      },
     },
-    previousId: 122,
-    nextId: 124,
-    isAdmin: false,
   },
+  render: (args) => renderDeploymentDetailStory(args),
 }
 
 export const PendingBaseline: Story = {
   name: 'Baseline: venter godkjenning (pending_baseline)',
   args: {
-    deployment: {
-      ...baseDeployment,
-      id: 16833,
-      four_eyes_status: 'pending_baseline',
-      approval_source: null,
-      github_pr_number: null,
-      github_pr_url: null,
-      github_pr_data: undefined,
-      commit_message: 'Initial deployment — satt som baseline for fremtidig sammenligning.',
+    loaderData: {
+      ...baseLoaderData,
+      deployment: {
+        ...baseLoaderData.deployment,
+        id: 16833,
+        four_eyes_status: 'pending_baseline',
+        github_pr_number: null,
+        github_pr_url: null,
+        github_pr_data: null,
+      },
+      previousDeployment: null,
+      previousDeploymentForDiff: null,
+      nextDeployment: { id: 16834 },
+      statusHistory: [],
     },
-    previousId: null,
-    nextId: 16834,
-    isAdmin: false,
-    canApproveBaseline: true,
   },
+  render: (args) => renderDeploymentDetailStory(args),
 }
 
 export const BaselineMissingApprover: Story = {
   name: 'Baseline: godkjent uten kjent godkjenner (trenger re-approve)',
   args: {
-    deployment: {
-      ...baseDeployment,
-      id: 16833,
-      four_eyes_status: 'baseline',
-      approval_source: null,
-      github_pr_number: null,
-      github_pr_url: null,
-      github_pr_data: undefined,
-      commit_message: 'Initial deployment — baseline satt, men godkjenner er ukjent.',
+    loaderData: {
+      ...baseLoaderData,
+      deployment: {
+        ...baseLoaderData.deployment,
+        id: 16833,
+        four_eyes_status: 'baseline',
+        github_pr_number: null,
+        github_pr_url: null,
+        github_pr_data: null,
+      },
+      statusHistory: [
+        {
+          id: 2,
+          change_source: 'verification',
+          from_status: 'pending_baseline',
+          to_status: 'baseline',
+          changed_by: null,
+          created_at: '2026-02-08T10:05:00Z',
+          details: null,
+        },
+      ],
+      previousDeployment: null,
+      previousDeploymentForDiff: null,
     },
-    previousId: null,
-    nextId: 16834,
-    isAdmin: false,
-    canApproveBaseline: true,
   },
+  render: (args) => renderDeploymentDetailStory(args),
 }
 
 export const BaselineApprovedWithApprover: Story = {
   name: 'Baseline: godkjent med kjent godkjenner (ingen handling nødvendig)',
   args: {
-    deployment: {
-      ...baseDeployment,
-      id: 16833,
-      four_eyes_status: 'baseline',
-      approval_source: 'baseline_approval',
-      github_pr_number: null,
-      github_pr_url: null,
-      github_pr_data: undefined,
-      commit_message: 'Initial deployment — baseline godkjent av Glad Fjord.',
+    loaderData: {
+      ...baseLoaderData,
+      deployment: {
+        ...baseLoaderData.deployment,
+        id: 16833,
+        four_eyes_status: 'baseline',
+        github_pr_number: null,
+        github_pr_url: null,
+        github_pr_data: null,
+      },
+      statusHistory: [
+        {
+          id: 3,
+          change_source: 'baseline_approval',
+          from_status: 'pending_baseline',
+          to_status: 'baseline',
+          changed_by: 'jane-smith',
+          created_at: '2026-02-08T10:05:00Z',
+          details: null,
+        },
+      ],
+      previousDeployment: null,
+      previousDeploymentForDiff: null,
     },
-    previousId: null,
-    nextId: 16834,
-    isAdmin: false,
-    canApproveBaseline: false,
   },
+  render: (args) => renderDeploymentDetailStory(args),
 }
