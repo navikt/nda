@@ -2,7 +2,7 @@ import { LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { AUDIT_START_YEAR_FILTER } from '../../audit-start-year'
 import { pool } from '../../connection.server'
 import { getDeviationsForPeriod } from '../../deviations.server'
-import type { AuditDeploymentRow, AuditGoalLinkEntry } from '../generation.server'
+import type { AuditDeploymentRow, AuditGoalLinkEntry } from './types'
 
 export async function getAuditReportData(
   monitoredAppId: number,
