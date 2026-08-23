@@ -37,17 +37,10 @@ import { GithubVerificationProgress } from '~/components/GithubVerificationProgr
 import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
 import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { StatCard } from '~/components/StatCard'
+import { SYNC_JOB_STATUS_LABELS, type SyncJobStatus } from '~/db/sync-job-types'
 import { TIME_PERIOD_OPTIONS } from '~/lib/time-periods'
 
-export type SyncJobStatus = 'completed' | 'running' | 'failed' | 'cancelled' | 'pending'
-
-const SYNC_JOB_STATUS_LABELS: Record<SyncJobStatus, string> = {
-  completed: 'Fullført',
-  running: 'Kjører',
-  failed: 'Feilet',
-  cancelled: 'Avbrutt',
-  pending: 'Venter',
-}
+export type { SyncJobStatus }
 
 export interface AppDetailApp {
   id: number
