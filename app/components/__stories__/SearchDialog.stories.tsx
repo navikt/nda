@@ -1,170 +1,141 @@
-import { BodyShort, Box, Detail, HStack, Tag, VStack } from '@navikt/ds-react'
 import type { Meta, StoryObj } from '@storybook/react'
+import { createMemoryRouter, RouterProvider } from 'react-router'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { SearchDialog } from '~/components/SearchDialog'
+import type { SearchResult } from '~/db/deployments/search.server'
 
-const meta: Meta = {
+const mockResults: SearchResult[] = [
+  {
+    type: 'deployment',
+    id: 123,
+    url: '/team/pensjonopptjening/env/prod-fss/app/pensjon-pen/deployments/123',
+    title: 'Deployment #123',
+    subtitle: 'pensjon-pen • abc1234',
+  },
+  {
+    type: 'deployment',
+    id: 122,
+    url: '/team/pensjonopptjening/env/prod-fss/app/pensjon-pen/deployments/122',
+    title: 'Deployment #122',
+    subtitle: 'pensjon-pen • def5678',
+  },
+  {
+    type: 'dev_team',
+    url: '/dev-teams/pensjon-opptjening',
+    title: 'Pensjon Opptjening',
+    subtitle: 'Utviklerteam · 14 apper',
+  },
+  {
+    type: 'team',
+    url: '/team/pensjonopptjening',
+    title: 'pensjonopptjening',
+    subtitle: '14 applikasjoner',
+  },
+  {
+    type: 'app',
+    url: '/team/pensjonopptjening/env/prod-fss/app/pensjon-pen',
+    title: 'pensjon-pen',
+    subtitle: 'pensjonopptjening',
+  },
+  {
+    type: 'user',
+    url: '/user/ola-nordmann',
+    title: 'Ola Nordmann',
+    subtitle: 'olanord • 42 deployment(s)',
+  },
+]
+
+function mockFetchSearch(results: SearchResult[], delayMs = 0) {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    if (url.includes('/api/search')) {
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+      return new Response(JSON.stringify({ results }), { status: 200 })
+    }
+    return originalFetch(input)
+  }) as typeof fetch
+  return () => {
+    globalThis.fetch = originalFetch
+  }
+}
+
+const meta: Meta<typeof SearchDialog> = {
   title: 'Components/SearchDialog',
+  component: SearchDialog,
+  parameters: {
+    router: { skip: true },
+  },
+  decorators: [
+    (Story) => {
+      const router = createMemoryRouter([{ path: '*', element: <Story /> }], { initialEntries: ['/'] })
+      return <RouterProvider router={router} />
+    },
+  ],
 }
 
 export default meta
 
-type Story = StoryObj
-
-function SearchResultItem({
-  type,
-  title,
-  subtitle,
-  selected,
-}: {
-  type: 'deployment' | 'user' | 'team' | 'dev_team' | 'app'
-  title: string
-  subtitle?: string
-  selected?: boolean
-}) {
-  const variantMap: Record<typeof type, string> = {
-    deployment: 'info',
-    team: 'success',
-    app: 'warning',
-    dev_team: 'moderate',
-    user: 'neutral',
-  }
-  const labelMap: Record<typeof type, string> = {
-    deployment: 'Leveranse',
-    team: 'Nais-team',
-    app: 'Applikasjon',
-    dev_team: 'Utviklerteam',
-    user: 'Bruker',
-  }
-
-  return (
-    <Box
-      padding="space-12"
-      background={selected ? 'neutral-moderate' : 'default'}
-      borderRadius="4"
-      style={{ cursor: 'pointer' }}
-    >
-      <HStack gap="space-12" align="center">
-        <VStack gap="space-2" style={{ flex: 1 }}>
-          <HStack gap="space-8" align="center">
-            <BodyShort size="small" weight="semibold">
-              {title}
-            </BodyShort>
-            <Tag variant={variantMap[type] as 'info'} size="xsmall">
-              {labelMap[type]}
-            </Tag>
-          </HStack>
-          {subtitle && <Detail textColor="subtle">{subtitle}</Detail>}
-        </VStack>
-      </HStack>
-    </Box>
-  )
-}
+type Story = StoryObj<typeof meta>
 
 export const SearchResults: Story = {
   name: 'Søkeresultater',
-  render: () => (
-    <Box
-      padding="space-16"
-      background="raised"
-      borderRadius="8"
-      borderColor="neutral-subtle"
-      borderWidth="1"
-      style={{ maxWidth: '500px' }}
-    >
-      <VStack gap="space-8">
-        <Detail textColor="subtle">Søkeresultater for "pensjon"</Detail>
-        <VStack gap="space-4">
-          <SearchResultItem type="deployment" title="Deployment #123" subtitle="pensjon-pen • abc1234" selected />
-          <SearchResultItem type="deployment" title="Deployment #122" subtitle="pensjon-pen • def5678" />
-          <SearchResultItem type="dev_team" title="Pensjon Opptjening" subtitle="Utviklerteam · 14 apper" />
-          <SearchResultItem type="team" title="pensjonopptjening" subtitle="14 applikasjoner" />
-          <SearchResultItem type="app" title="pensjon-pen" subtitle="pensjonopptjening" />
-          <SearchResultItem type="user" title="Ola Nordmann" subtitle="olanord • 42 deployment(s)" />
-        </VStack>
-      </VStack>
-    </Box>
-  ),
+  play: async ({ canvasElement }) => {
+    const restoreFetch = mockFetchSearch(mockResults)
+    const canvas = within(canvasElement)
+
+    await userEvent.click(canvas.getByText('Søk...'))
+    const searchInput = await within(document.body).findByPlaceholderText(
+      'Søk på team, applikasjon, navn, NAV-ident, SHA...',
+    )
+    await userEvent.type(searchInput, 'pensjon')
+
+    await waitFor(() => expect(within(document.body).getByText('Deployment #123')).toBeInTheDocument())
+
+    restoreFetch()
+  },
 }
 
 export const EmptyState: Story = {
   name: 'Ingen resultater',
-  render: () => (
-    <Box
-      padding="space-16"
-      background="raised"
-      borderRadius="8"
-      borderColor="neutral-subtle"
-      borderWidth="1"
-      style={{ maxWidth: '500px' }}
-    >
-      <VStack gap="space-8">
-        <Detail textColor="subtle">Søkeresultater for "xyz123"</Detail>
-        <BodyShort textColor="subtle">Ingen resultater funnet</BodyShort>
-      </VStack>
-    </Box>
-  ),
+  play: async ({ canvasElement }) => {
+    const restoreFetch = mockFetchSearch([])
+    const canvas = within(canvasElement)
+
+    await userEvent.click(canvas.getByText('Søk...'))
+    const searchInput = await within(document.body).findByPlaceholderText(
+      'Søk på team, applikasjon, navn, NAV-ident, SHA...',
+    )
+    await userEvent.type(searchInput, 'xyz123')
+
+    await waitFor(() => expect(within(document.body).getByText('Ingen resultater for "xyz123"')).toBeInTheDocument())
+
+    restoreFetch()
+  },
 }
 
 export const LoadingState: Story = {
   name: 'Laster',
-  render: () => (
-    <Box
-      padding="space-16"
-      background="raised"
-      borderRadius="8"
-      borderColor="neutral-subtle"
-      borderWidth="1"
-      style={{ maxWidth: '500px' }}
-    >
-      <VStack gap="space-8">
-        <Detail textColor="subtle">Søker...</Detail>
-        <HStack justify="center" padding="space-16">
-          <div
-            style={{
-              width: '24px',
-              height: '24px',
-              border: '2px solid var(--ax-border-neutral)',
-              borderTopColor: 'transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-            }}
-          />
-        </HStack>
-      </VStack>
-    </Box>
-  ),
+  play: async ({ canvasElement }) => {
+    const restoreFetch = mockFetchSearch(mockResults, 5000)
+    const canvas = within(canvasElement)
+
+    await userEvent.click(canvas.getByText('Søk...'))
+    const searchInput = await within(document.body).findByPlaceholderText(
+      'Søk på team, applikasjon, navn, NAV-ident, SHA...',
+    )
+    await userEvent.type(searchInput, 'pensjon')
+
+    await waitFor(() => expect(within(document.body).getByTitle('Venter…')).toBeInTheDocument())
+
+    restoreFetch()
+  },
 }
 
 export const KeyboardShortcut: Story = {
   name: 'Tastatursnarvei',
-  render: () => (
-    <Box padding="space-24">
-      <VStack gap="space-16">
-        <BodyShort>Åpne søkedialog med:</BodyShort>
-        <HStack gap="space-8">
-          <Box
-            as="kbd"
-            paddingInline="space-8"
-            paddingBlock="space-4"
-            background="neutral-moderate"
-            borderRadius="4"
-            style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-          >
-            ⌘
-          </Box>
-          <BodyShort>+</BodyShort>
-          <Box
-            as="kbd"
-            paddingInline="space-8"
-            paddingBlock="space-4"
-            background="neutral-moderate"
-            borderRadius="4"
-            style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-          >
-            K
-          </Box>
-        </HStack>
-        <Detail textColor="subtle">Eller Ctrl+K på Windows/Linux</Detail>
-      </VStack>
-    </Box>
-  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('⌘K')).toBeInTheDocument()
+  },
 }
