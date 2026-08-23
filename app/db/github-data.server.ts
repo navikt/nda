@@ -380,99 +380,6 @@ async function _markCommitDataUnavailable(
   }
 }
 
-export async function saveVerificationRun(
-  deploymentId: number,
-  result: {
-    status: string
-    result: unknown
-  },
-  snapshotIds: {
-    prSnapshotIds: number[]
-    commitSnapshotIds: number[]
-  },
-): Promise<number> {
-  const queryResult = await pool.query(
-    `INSERT INTO verification_runs 
-       (deployment_id, schema_version, pr_snapshot_ids, commit_snapshot_ids, result, status)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id`,
-    [
-      deploymentId,
-      CURRENT_SCHEMA_VERSION,
-      snapshotIds.prSnapshotIds,
-      snapshotIds.commitSnapshotIds,
-      JSON.stringify(result.result),
-      result.status,
-    ],
-  )
-  return queryResult.rows[0].id
-}
-
-export async function getLatestVerificationRun(deploymentId: number): Promise<{
-  id: number
-  schemaVersion: number
-  runAt: Date
-  prSnapshotIds: number[]
-  commitSnapshotIds: number[]
-  result: unknown
-  status: string
-} | null> {
-  const result = await pool.query(
-    `SELECT id, schema_version, run_at, pr_snapshot_ids, commit_snapshot_ids, 
-            result, status
-     FROM verification_runs
-     WHERE deployment_id = $1
-     ORDER BY run_at DESC
-     LIMIT 1`,
-    [deploymentId],
-  )
-
-  if (result.rows.length === 0) {
-    return null
-  }
-
-  const row = result.rows[0]
-  return {
-    id: row.id,
-    schemaVersion: row.schema_version,
-    runAt: row.run_at,
-    prSnapshotIds: row.pr_snapshot_ids,
-    commitSnapshotIds: row.commit_snapshot_ids,
-    result: row.result,
-    status: row.status,
-  }
-}
-
-async function _getVerificationRunHistory(
-  deploymentId: number,
-  options?: { limit?: number },
-): Promise<
-  Array<{
-    id: number
-    schemaVersion: number
-    runAt: Date
-    status: string
-  }>
-> {
-  const limit = options?.limit ?? 10
-
-  const result = await pool.query(
-    `SELECT id, schema_version, run_at, status
-     FROM verification_runs
-     WHERE deployment_id = $1
-     ORDER BY run_at DESC
-     LIMIT $2`,
-    [deploymentId, limit],
-  )
-
-  return result.rows.map((row: { id: number; schema_version: number; run_at: Date; status: string }) => ({
-    id: row.id,
-    schemaVersion: row.schema_version,
-    runAt: row.run_at,
-    status: row.status,
-  }))
-}
-
 async function _cleanupOldSnapshots(options?: {
   keepCount?: number
   olderThanDays?: number
@@ -523,3 +430,5 @@ export {
   getLatestCompareSnapshot,
   saveCompareSnapshot,
 } from './github-data/compare-stats.server'
+
+export { getLatestVerificationRun, saveVerificationRun } from './github-data/verification-runs.server'
