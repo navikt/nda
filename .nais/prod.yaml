@@ -98,6 +98,12 @@ spec:
       value: "true"
     - name: BUCKET_NAME_PENSJON_DEPLOYMENT_AUDIT_LOGS
       value: pensjon-deployment-audit-logs
+    - name: NOM_API_URL
+      value: http://nom-api-graphql.nom/graphql
+    - name: NOM_API_SCOPE
+      value: api://prod-gcp.nom.nom-api-graphql/.default
+    - name: USER_LOOKUP_PROVIDER
+      value: nom
 
   envFrom:
     - secret: nais-deployment-audit
@@ -107,6 +113,9 @@ spec:
       rules:
         - application: kiss
     outbound:
+      rules:
+        - application: nom-api-graphql
+          namespace: nom
       external:
         - host: api.github.com
         - host: pipelines.actions.githubusercontent.com

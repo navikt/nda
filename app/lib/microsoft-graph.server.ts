@@ -1,4 +1,6 @@
+import { chunk } from '~/lib/chunk'
 import { fetchWithLogging, logger } from '~/lib/logger.server'
+import type { UserLookupResult } from '~/lib/user-lookup-types'
 
 interface GraphToken {
   access_token: string
@@ -13,12 +15,6 @@ interface GraphUser {
 
 interface GraphSearchResponse {
   value: GraphUser[]
-}
-
-export interface GraphUserResult {
-  displayName: string | null
-  navIdent: string | null
-  email: string | null
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null
@@ -58,7 +54,7 @@ async function getAccessToken(): Promise<string> {
   return data.access_token
 }
 
-export async function searchGraphUsers(query: string): Promise<GraphUserResult[]> {
+export async function searchGraphUsers(query: string): Promise<UserLookupResult[]> {
   const trimmed = query.trim()
   if (!trimmed) return []
 
@@ -86,7 +82,30 @@ export async function searchGraphUsers(query: string): Promise<GraphUserResult[]
   return fetchGraphUsers(url, headers)
 }
 
-async function fetchGraphUsers(url: string, headers: Record<string, string>): Promise<GraphUserResult[]> {
+const GRAPH_BATCH_SIZE = 15
+
+export async function getGraphUsersByNavIdenter(navIdenter: string[]): Promise<UserLookupResult[]> {
+  if (navIdenter.length === 0) return []
+
+  const token = await getAccessToken()
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    ConsistencyLevel: 'eventual',
+  }
+  const select = '$select=displayName,onPremisesSamAccountName,mail'
+
+  const results: UserLookupResult[] = []
+  for (const batch of chunk(navIdenter, GRAPH_BATCH_SIZE)) {
+    const filter = batch
+      .map((navIdent) => `onPremisesSamAccountName eq '${navIdent.toUpperCase().replace(/'/g, "''")}'`)
+      .join(' or ')
+    const url = `https://graph.microsoft.com/v1.0/users?$filter=${encodeURIComponent(filter)}&${select}&$count=true&$top=${batch.length}`
+    results.push(...(await fetchGraphUsers(url, headers)))
+  }
+  return results
+}
+
+async function fetchGraphUsers(url: string, headers: Record<string, string>): Promise<UserLookupResult[]> {
   const response = await fetchWithLogging('microsoft_graph', url, { headers })
 
   if (!response.ok) {

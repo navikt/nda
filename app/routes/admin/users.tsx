@@ -10,7 +10,7 @@ import {
   getAllUsersWithAccounts,
   getUnmappedDeployers,
   getUsersWithoutGithub,
-  populateUsersFromGraph,
+  populateUsersFromDirectory,
   softDeleteGithubAccount,
   type UserWithAccount,
   upsertUser,
@@ -20,9 +20,8 @@ import { requireAdmin } from '~/lib/auth.server'
 import { getFormString, isValidGitHubUsername, isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { resolveSlackMemberId, SlackLookupFailedError } from '~/lib/slack/client.server'
-import { formatDisplayNameNatural } from '~/lib/user-display'
+import { resolveUserByNavIdent } from '~/lib/user-lookup.server'
 import type { Route } from './+types/users'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -93,25 +92,16 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const navIdent = navIdentRaw as string
-    let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
-    try {
-      graphResults = await searchGraphUsers(navIdent)
-    } catch (error) {
-      logger.error('Graph API lookup failed during create-user', error)
-      return { createUserFieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
+    const lookup = await resolveUserByNavIdent(navIdent, 'create-user', {
+      unavailable: 'Kunne ikke verifisere NAV-ident (brukerkatalogen er utilgjengelig)',
+      notFound: 'NAV-ident ble ikke funnet i brukerkatalogen',
+      missingDisplayName: 'Brukeren mangler navn i brukerkatalogen',
+    })
+    if (!lookup.ok) {
+      return { createUserFieldErrors: { nav_ident: lookup.error } }
     }
 
-    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
-    if (!graphUser) {
-      return { createUserFieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
-    }
-    const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
-
-    if (!displayName) {
-      return { createUserFieldErrors: { nav_ident: 'Brukeren mangler navn i Active Directory' } }
-    }
-
-    await upsertUser({ navIdent, displayName })
+    await upsertUser({ navIdent, displayName: lookup.displayName })
     return { createUserSuccess: true, createUserNavIdent: navIdent }
   }
 
@@ -141,27 +131,18 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const navIdent = navIdentRaw as string
-    let graphResults: Awaited<ReturnType<typeof searchGraphUsers>>
-    try {
-      graphResults = await searchGraphUsers(navIdent)
-    } catch (error) {
-      logger.error('Graph API lookup failed during admin mapping creation', error)
-      return { fieldErrors: { nav_ident: 'Kunne ikke verifisere NAV-ident (Graph API utilgjengelig)' } }
-    }
-
-    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent.toUpperCase())
-    if (!graphUser) {
-      return { fieldErrors: { nav_ident: 'NAV-ident ble ikke funnet i Active Directory' } }
-    }
-
-    const displayName = graphUser.displayName ? formatDisplayNameNatural(graphUser.displayName) : null
-    if (!displayName) {
-      return { fieldErrors: { nav_ident: 'Brukeren ble funnet i Active Directory, men mangler visningsnavn' } }
+    const lookup = await resolveUserByNavIdent(navIdent, 'admin mapping creation', {
+      unavailable: 'Kunne ikke verifisere NAV-ident (brukerkatalogen er utilgjengelig)',
+      notFound: 'NAV-ident ble ikke funnet i brukerkatalogen',
+      missingDisplayName: 'Brukeren ble funnet i brukerkatalogen, men mangler visningsnavn',
+    })
+    if (!lookup.ok) {
+      return { fieldErrors: { nav_ident: lookup.error } }
     }
 
     let slackMemberId: string | null
     try {
-      slackMemberId = await resolveSlackMemberId(graphUser.email, getFormString(formData, 'slack_member_id') || null)
+      slackMemberId = await resolveSlackMemberId(lookup.email, getFormString(formData, 'slack_member_id') || null)
     } catch (error) {
       if (error instanceof SlackLookupFailedError) {
         logger.error('Slack member ID lookup failed during admin mapping creation', error.cause)
@@ -173,7 +154,7 @@ export async function action({ request }: Route.ActionArgs) {
     await upsertUserAndGithubAccount({
       githubUsername,
       displayGithubUsername: githubUsernameRaw,
-      displayName,
+      displayName: lookup.displayName,
       navIdent,
       slackMemberId,
     })
@@ -205,14 +186,14 @@ export async function action({ request }: Route.ActionArgs) {
   }
   if (intent === 'populate-users') {
     try {
-      const result = await populateUsersFromGraph()
+      const result = await populateUsersFromDirectory()
       return {
         success: true,
-        message: `Importerte ${result.success} brukere fra Graph API (${result.skipped} hoppet over, ${result.errors} feil)`,
+        message: `Importerte ${result.success} brukere fra brukerkatalogen (${result.skipped} hoppet over, ${result.errors} feil)`,
       }
     } catch (error) {
       logger.error('populate-users action failed', error)
-      return { error: 'Kunne ikke importere brukere fra Graph API' }
+      return { error: 'Kunne ikke importere brukere fra brukerkatalogen' }
     }
   }
 
@@ -317,11 +298,11 @@ export default function AdminUsers() {
       <VStack gap="space-16">
         <div>
           <Heading level="2" size="small" spacing>
-            Importer brukere fra Entra ID
+            Importer brukere fra brukerkatalogen
           </Heading>
           <VStack gap="space-8">
             <p>
-              Henter alle aktive NAV-identer fra <code>users</code>-tabellen, slår opp i Graph API og oppdaterer
+              Henter alle aktive NAV-identer fra <code>users</code>-tabellen, slår opp i brukerkatalogen og oppdaterer
               brukerdata. Idempotent — trygt å kjøre flere ganger.
               {usersCount > 0 && ` (${usersCount} brukere i tabellen nå)`}
             </p>
@@ -331,7 +312,7 @@ export default function AdminUsers() {
               <Form method="post">
                 <input type="hidden" name="intent" value="populate-users" />
                 <Button type="submit" variant="secondary" loading={isPopulating}>
-                  Importer brukere fra Graph API
+                  Importer brukere fra brukerkatalogen
                 </Button>
               </Form>
             </HStack>
