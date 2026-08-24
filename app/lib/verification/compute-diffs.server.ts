@@ -6,7 +6,7 @@ import {
   getPreviousDeploymentForDiff,
   getPrSnapshotsForDiff,
 } from '~/db/verification-diff.server'
-import { isProtectedStatus } from '~/lib/four-eyes-status'
+import { isProtectedStatus, PENDING_BASELINE_DEMOTABLE_STATUSES } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { buildCommitsBetweenFromCache, fetchVerificationData } from './fetch-data.server'
 import type { CompareData, PrCommit, PrMetadata, PrReview, VerificationInput } from './types'
@@ -57,7 +57,8 @@ export async function computeVerificationDiffs(
 
   for (const row of deployments) {
     try {
-      if (isProtectedStatus(row.four_eyes_status ?? '')) {
+      const isDemotable = PENDING_BASELINE_DEMOTABLE_STATUSES.includes(row.four_eyes_status as never)
+      if (isProtectedStatus(row.four_eyes_status ?? '') && !isDemotable) {
         result.skipped++
         result.deploymentsChecked++
         continue
@@ -196,8 +197,9 @@ export async function computeVerificationDiffs(
       const normalizedOldStatus = normalizeStatus(row.four_eyes_status)
       const normalizedNewStatus = normalizeStatus(newResult.status)
       const statusDifferent = normalizedOldStatus !== normalizedNewStatus
+      const demotableToPendingBaseline = isDemotable && newResult.status === 'pending_baseline'
 
-      if (statusDifferent) {
+      if (statusDifferent && (!isDemotable || demotableToPendingBaseline)) {
         diffs.push({
           deploymentId: row.id,
           oldStatus: row.four_eyes_status,

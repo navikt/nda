@@ -1,6 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { PENDING_BASELINE_DEMOTABLE_STATUSES_SQL, PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -18,7 +18,7 @@ afterEach(async () => {
 })
 
 describe('baseline protection from re-verification overwrite', () => {
-  it('should NOT overwrite baseline status via UPDATE', async () => {
+  it('should NOT overwrite baseline status to non-pending_baseline via PROTECTED update', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-base', appName: 'app-base', environment: 'prod' })
     const depId = await seedDeployment(pool, {
       monitoredAppId: appId,
@@ -33,14 +33,39 @@ describe('baseline protection from re-verification overwrite', () => {
        SET four_eyes_status = $1
        WHERE id = $2
          AND four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})`,
-      ['pending_baseline', depId],
+      ['approved', depId],
     )
 
     const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [depId])
     expect(rows[0].four_eyes_status).toBe('baseline')
   })
 
-  it('should NOT overwrite manually_approved status via UPDATE', async () => {
+  it('should overwrite baseline to pending_baseline for audit year cleanup', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-base2', appName: 'app-base2', environment: 'prod' })
+    const depId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-base2',
+      environment: 'prod',
+      fourEyesStatus: 'baseline',
+      commitSha: 'abc124',
+    })
+
+    await pool.query(
+      `UPDATE deployments
+       SET four_eyes_status = $1
+       WHERE id = $2
+         AND (
+           four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
+           OR (four_eyes_status IN (${PENDING_BASELINE_DEMOTABLE_STATUSES_SQL}) AND $1 = 'pending_baseline')
+         )`,
+      ['pending_baseline', depId],
+    )
+
+    const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [depId])
+    expect(rows[0].four_eyes_status).toBe('pending_baseline')
+  })
+
+  it('should NOT overwrite manually_approved status to non-pending_baseline via PROTECTED update', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-manual', appName: 'app-manual', environment: 'prod' })
     const depId = await seedDeployment(pool, {
       monitoredAppId: appId,
@@ -62,6 +87,31 @@ describe('baseline protection from re-verification overwrite', () => {
     expect(rows[0].four_eyes_status).toBe('manually_approved')
   })
 
+  it('should overwrite manually_approved to pending_baseline for audit year cleanup', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-manual2', appName: 'app-manual2', environment: 'prod' })
+    const depId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-manual2',
+      environment: 'prod',
+      fourEyesStatus: 'manually_approved',
+      commitSha: 'def457',
+    })
+
+    await pool.query(
+      `UPDATE deployments
+       SET four_eyes_status = $1
+       WHERE id = $2
+         AND (
+           four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
+           OR (four_eyes_status IN (${PENDING_BASELINE_DEMOTABLE_STATUSES_SQL}) AND $1 = 'pending_baseline')
+         )`,
+      ['pending_baseline', depId],
+    )
+
+    const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [depId])
+    expect(rows[0].four_eyes_status).toBe('pending_baseline')
+  })
+
   it('should NOT overwrite legacy status via UPDATE', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-legacy', appName: 'app-legacy', environment: 'prod' })
     const depId = await seedDeployment(pool, {
@@ -76,7 +126,10 @@ describe('baseline protection from re-verification overwrite', () => {
       `UPDATE deployments
        SET four_eyes_status = $1
        WHERE id = $2
-         AND four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})`,
+         AND (
+           four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
+           OR (four_eyes_status IN (${PENDING_BASELINE_DEMOTABLE_STATUSES_SQL}) AND $1 = 'pending_baseline')
+         )`,
       ['pending', depId],
     )
 
