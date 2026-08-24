@@ -231,6 +231,7 @@ export interface DeploymentCapabilities {
   canNotify: boolean
   canLookupLegacy: boolean
   canResetVerification: boolean
+  canMoveBaseline: boolean
 }
 
 export async function resolveDeploymentCapabilities(
@@ -246,6 +247,7 @@ export async function resolveDeploymentCapabilities(
       canNotify: true,
       canLookupLegacy: true,
       canResetVerification: true,
+      canMoveBaseline: true,
     }
   }
 
@@ -263,6 +265,7 @@ export async function resolveDeploymentCapabilities(
       canNotify: false,
       canLookupLegacy: false,
       canResetVerification: false,
+      canMoveBaseline: false,
     }
   }
 
@@ -270,6 +273,7 @@ export async function resolveDeploymentCapabilities(
   const rolesInManagingTeams = teamRoles.filter((r) => managingSet.has(r.dev_team_id))
   const hasAnyRole = rolesInManagingTeams.length > 0
   const isTeamLeader = rolesInManagingTeams.some((r) => isTeamLeaderRole(r.role))
+  const isTechLead = rolesInManagingTeams.some((r) => r.role === 'tech_lead')
 
   const isTechnologileder = await (async () => {
     if (sectionRoles.length === 0) return false
@@ -292,5 +296,6 @@ export async function resolveDeploymentCapabilities(
     canNotify: hasAnyRole,
     canLookupLegacy: hasAnyRole,
     canResetVerification: false,
+    canMoveBaseline: isTechLead,
   }
 }

@@ -3,6 +3,7 @@ import {
   ChatIcon,
   CheckmarkCircleIcon,
   CheckmarkIcon,
+  ClockDashedIcon,
   ExclamationmarkTriangleIcon,
 } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
@@ -26,6 +27,7 @@ import { FourEyesAlert } from '~/routes/deployments/$id/FourEyesAlert'
 import { LegacyLookupSection } from '~/routes/deployments/$id/LegacyLookupSection'
 import { LegacyPendingApproval } from '~/routes/deployments/$id/LegacyPendingApproval'
 import { ManualApprovalSection } from '~/routes/deployments/$id/ManualApprovalSection'
+import { MoveBaselineModal } from '~/routes/deployments/$id/MoveBaselineModal'
 import { PrDetailsAccordion } from '~/routes/deployments/$id/PrDetailsAccordion'
 import { ResetVerificationModal } from '~/routes/deployments/$id/ResetVerificationModal'
 import { StatusHistorySection } from '~/routes/deployments/$id/StatusHistorySection'
@@ -63,6 +65,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
     isDebugMode,
     isAdmin,
     capabilities,
+    baselineMove,
     verificationRun,
     nearbyDeployments,
     slackConfig,
@@ -89,6 +92,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
   const commentDialogRef = useRef<HTMLDialogElement>(null)
   const deviationDialogRef = useRef<HTMLDialogElement>(null)
   const resetVerificationDialogRef = useRef<HTMLDialogElement>(null)
+  const moveBaselineDialogRef = useRef<HTMLDialogElement>(null)
   const status = getFourEyesStatus(deployment)
 
   return (
@@ -263,6 +267,18 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
                   </Button>
                 </Form>
               )}
+            {baselineMove?.eligible && (
+              <Button
+                type="button"
+                size="small"
+                variant="secondary"
+                icon={<ClockDashedIcon aria-hidden />}
+                title="Flytt baseline bakover til dette deploymentet"
+                onClick={() => moveBaselineDialogRef.current?.showModal()}
+              >
+                Flytt baseline hit
+              </Button>
+            )}
           </HStack>
         </HStack>
         <BodyShort textColor="subtle">
@@ -691,6 +707,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
       />
       <CommentModal modalRef={commentDialogRef} />
       <ResetVerificationModal modalRef={resetVerificationDialogRef} />
+      {baselineMove?.eligible && <MoveBaselineModal modalRef={moveBaselineDialogRef} anchors={baselineMove.anchors} />}
     </VStack>
   )
 }

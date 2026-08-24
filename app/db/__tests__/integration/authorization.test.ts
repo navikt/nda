@@ -974,6 +974,7 @@ describe('resolveDeploymentCapabilities', () => {
       canNotify: true,
       canLookupLegacy: true,
       canResetVerification: true,
+      canMoveBaseline: true,
     })
   })
 
@@ -998,6 +999,7 @@ describe('resolveDeploymentCapabilities', () => {
       canNotify: true,
       canLookupLegacy: true,
       canResetVerification: false,
+      canMoveBaseline: false,
     })
   })
 
@@ -1022,6 +1024,7 @@ describe('resolveDeploymentCapabilities', () => {
       canNotify: true,
       canLookupLegacy: true,
       canResetVerification: false,
+      canMoveBaseline: false,
     })
   })
 
@@ -1046,7 +1049,25 @@ describe('resolveDeploymentCapabilities', () => {
       canNotify: true,
       canLookupLegacy: true,
       canResetVerification: false,
+      canMoveBaseline: true,
     })
+  })
+
+  it('denies canMoveBaseline to tech_lead of a non-managing team', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const managingTeamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const otherTeamId = await seedDevTeam(pool, 'team-b', 'Team B', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      managingTeamId,
+      appId,
+    ])
+
+    const tl = makeUser('T333333')
+    await assignTeamRole(tl.navIdent, otherTeamId, 'tech_lead', 'admin')
+
+    const result = await resolveDeploymentCapabilities(tl, appId)
+    expect(result.canMoveBaseline).toBe(false)
   })
 
   it('denies all capabilities to user without managing team role', async () => {
@@ -1063,6 +1084,7 @@ describe('resolveDeploymentCapabilities', () => {
       canNotify: false,
       canLookupLegacy: false,
       canResetVerification: false,
+      canMoveBaseline: false,
     })
   })
 
@@ -1091,6 +1113,7 @@ describe('resolveDeploymentCapabilities', () => {
       canNotify: false,
       canLookupLegacy: false,
       canResetVerification: false,
+      canMoveBaseline: false,
     })
   })
 
@@ -1115,6 +1138,7 @@ describe('resolveDeploymentCapabilities', () => {
       canNotify: false,
       canLookupLegacy: false,
       canResetVerification: false,
+      canMoveBaseline: false,
     })
   })
 
@@ -1140,6 +1164,7 @@ describe('resolveDeploymentCapabilities', () => {
       canNotify: false,
       canLookupLegacy: false,
       canResetVerification: false,
+      canMoveBaseline: false,
     })
   })
 })

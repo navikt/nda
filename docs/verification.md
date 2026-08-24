@@ -146,6 +146,20 @@ Hvis dette er **første gang** applikasjonen deployes (ingen tidligere deploymen
 
 **Gruppe-fallback:** Hvis appen tilhører en *applikasjonsgruppe* og det ikke finnes en forrige deployment i **samme miljø**, leter systemet etter en forrige deployment fra **samme Git-repo i et søskenmiljø** innenfor gruppen. Dette unngår unødvendige `pending_baseline` når en ny miljøvariant (f.eks. prod-gcp) legges til for en app som allerede har historikk i et annet miljø (f.eks. prod-fss).
 
+#### Baseline: godkjenning og flytting bakover
+
+En `pending_baseline` godkjennes manuelt fra deployment-siden («Godkjenn baseline») og får status `baseline` med en `baseline_approval`-rad i statushistorikken.
+
+Havner baselinen på feil deployment — typisk når crawlet historikk gjør at den reelle første deployen filtreres bort eller registreres i feil rekkefølge — kan en **tech lead** (eller admin) flytte baselinen **bakover i tid** fra deployment-siden («Flytt baseline hit»). Handlingen er avgrenset til flytting bakover og krever begrunnelse. Mål-deploymentet må:
+
+- ligge **før** en eksisterende `baseline`/`pending_baseline` i samme app og repo
+- ha en gyldig commit-SHA (ikke `refs/...`) og ikke være legacy
+- ligge innenfor revisjonsperioden (`audit_start_year`)
+
+Flyttingen skjer i én transaksjon: Mål-deploymentet får status `baseline` (med `baseline_approval` i historikken), og alle senere `baseline`/`pending_baseline` i samme app og repo nedgraderes til `pending` med en `baseline_move`-rad. De nedgraderte deploymentene plukkes opp av den periodiske verifiseringen og re-verifiseres mot den nye baselinen — dermed forsvinner også et hengende baseline-forslag som egentlig har en eldre historikk.
+
+> 📁 Se `moveBaselineToDeployment` i [`baseline-move.server.ts`](../app/db/deployments/baseline-move.server.ts)
+
 #### Steg 2: Er det noen nye commits?
 
 Systemet henter listen over commits mellom forrige deployment sin commit-SHA og nåværende deployment sin commit-SHA via GitHub API.

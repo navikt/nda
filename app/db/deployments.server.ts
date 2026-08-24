@@ -594,6 +594,7 @@ export {
   getDeploymentCountByDeployer,
 } from './deployer-stats.server'
 export { getAppChangeOriginCoverage, getLastDeploymentSummary } from './deployments/api.server'
+export { getBaselineMoveContext, moveBaselineToDeployment } from './deployments/baseline-move.server'
 export { getPersonalDeploymentsMissingGoalLinks } from './deployments/home.server'
 export type { DeploymentNavFilters } from './deployments/navigation.server'
 export {

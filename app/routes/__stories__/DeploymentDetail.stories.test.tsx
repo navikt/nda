@@ -6,7 +6,7 @@ import * as stories from './DeploymentDetail.stories'
 
 setProjectAnnotations(preview)
 
-const { Approved, DirectPush, ManuallyApproved, NotApproved, Pending } = composeStories(stories)
+const { Approved, DirectPush, ManuallyApproved, MoveBaseline, NotApproved, Pending } = composeStories(stories)
 
 describe('DeploymentDetail story baseline characterization', () => {
   it('Approved story keeps deployment summary and PR details', () => {
@@ -57,5 +57,18 @@ describe('DeploymentDetail story baseline characterization', () => {
     expect(html).toContain('Gjennomgått i Slack med Rask Elv.')
     expect(html).toContain('Se Slack-dokumentasjon')
     expect(html).not.toContain('Krever manuell godkjenning')
+  })
+
+  it('MoveBaseline story shows the move-baseline action for tech leads', () => {
+    const html = renderToStaticMarkup(<MoveBaseline />)
+
+    expect(html).toContain('Flytt baseline hit')
+    expect(html).toContain('Foreslått baseline')
+  })
+
+  it('Approved story does not offer the move-baseline action without eligibility', () => {
+    const html = renderToStaticMarkup(<Approved />)
+
+    expect(html).not.toContain('Flytt baseline hit')
   })
 })

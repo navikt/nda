@@ -279,7 +279,9 @@ const baseLoaderData: DeploymentDetailLoaderData = {
     canDeviate: true,
     canLookupLegacy: true,
     canResetVerification: true,
+    canMoveBaseline: false,
   },
+  baselineMove: null,
   verificationRun: {
     id: 1,
     status: 'completed',
@@ -574,6 +576,30 @@ export const BaselineApprovedWithApprover: Story = {
       ],
       previousDeployment: null,
       previousDeploymentForDiff: null,
+    },
+  },
+  render: (args) => renderDeploymentDetailStory(args),
+}
+
+export const MoveBaseline: Story = {
+  name: 'Baseline: kan flyttes hit (tech lead)',
+  args: {
+    loaderData: {
+      ...baseLoaderData,
+      deployment: {
+        ...baseLoaderData.deployment,
+        id: 16820,
+        four_eyes_status: 'unverified_commits',
+      },
+      capabilities: {
+        ...baseLoaderData.capabilities,
+        canMoveBaseline: true,
+      },
+      baselineMove: {
+        eligible: true,
+        anchors: [{ id: 16833, created_at: '2026-02-10T09:00:00+00:00', four_eyes_status: 'pending_baseline' }],
+      },
+      statusHistory: [],
     },
   },
   render: (args) => renderDeploymentDetailStory(args),

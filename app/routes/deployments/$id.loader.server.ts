@@ -6,6 +6,7 @@ import { pool } from '~/db/connection.server'
 import { getLinksForDeployment } from '~/db/deployment-goal-links.server'
 import {
   type DeploymentNavFilters,
+  getBaselineMoveContext,
   getDeploymentById,
   getNextDeployment,
   getPreviousDeploymentForDiff,
@@ -187,7 +188,10 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
         canNotify: false,
         canLookupLegacy: false,
         canResetVerification: false,
+        canMoveBaseline: false,
       }
+
+  const baselineMove = capabilities.canMoveBaseline ? await getBaselineMoveContext(deploymentId) : null
 
   let availableBoards: AvailableBoard[] = []
   let sectionBoards: AvailableBoard[] = []
@@ -328,6 +332,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     isDebugMode: isVerificationDebugMode || isAdmin,
     isAdmin,
     capabilities,
+    baselineMove,
     verificationRun,
     nearbyDeployments,
     workflowTrigger: deployment.workflow_trigger_config,

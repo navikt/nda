@@ -2,7 +2,12 @@ import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { createComment, deleteComment } from '~/db/comments.server'
 import { addDeploymentGoalLink, removeDeploymentGoalLink } from '~/db/deployment-goal-links.server'
 import { resetVerificationStatus } from '~/db/deployments/status-history.server'
-import { getDeploymentById, recordBaselineApproval, updateDeploymentFourEyes } from '~/db/deployments.server'
+import {
+  getDeploymentById,
+  moveBaselineToDeployment,
+  recordBaselineApproval,
+  updateDeploymentFourEyes,
+} from '~/db/deployments.server'
 import { createDeviation } from '~/db/deviations.server'
 import { getDeviationSlackChannel } from '~/db/global-settings.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
@@ -30,6 +35,7 @@ const INTENT_CAPABILITY: Record<string, keyof DeploymentCapabilities> = {
   approve_legacy: 'canApprove',
   reject_legacy: 'canApprove',
   approve_baseline: 'canApprove',
+  move_baseline: 'canMoveBaseline',
   verify_four_eyes: 'canVerify',
   register_deviation: 'canDeviate',
   delete_comment: 'canDeviate',
@@ -39,6 +45,15 @@ const INTENT_CAPABILITY: Record<string, keyof DeploymentCapabilities> = {
   lookup_legacy_github: 'canLookupLegacy',
   reset_verification: 'canResetVerification',
 }
+
+const MOVE_BASELINE_ERROR_MESSAGES = {
+  not_found: 'Deployment ikke funnet',
+  already_baseline: 'Deploymenten er allerede baseline',
+  legacy_status: 'Legacy-deployments kan ikke settes som baseline',
+  invalid_commit_sha: 'Deploymenten mangler gyldig commit-SHA og kan ikke brukes som baseline',
+  outside_audit_window: 'Deploymenten ligger før revisjonsperioden og kan ikke brukes som baseline',
+  no_later_anchor: 'Fant ingen senere baseline eller foreslått baseline å flytte bakover',
+} as const
 
 export async function action({
   request,
@@ -323,6 +338,26 @@ export async function action({
       return { success: 'Deployment godkjent som baseline' }
     } catch (_error) {
       return { error: 'Kunne ikke godkjenne baseline' }
+    }
+  }
+
+  if (intent === 'move_baseline') {
+    const reason = getFormString(formData, 'reason')
+    if (!reason) {
+      return { error: 'Begrunnelse er påkrevd for å flytte baseline' }
+    }
+    try {
+      const result = await moveBaselineToDeployment(deploymentId, identity.navIdent, reason)
+      if (!result.moved) {
+        return { error: MOVE_BASELINE_ERROR_MESSAGES[result.reason] }
+      }
+      const suffix = result.demotedCount === 1 ? '' : 'er'
+      return {
+        success: `Baseline flyttet hit. ${result.demotedCount} senere deployment${suffix} er nedgradert og re-verifiseres automatisk.`,
+      }
+    } catch (error) {
+      logger.error('Error moving baseline', error)
+      return { error: 'Kunne ikke flytte baseline' }
     }
   }
 
