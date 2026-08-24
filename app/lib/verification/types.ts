@@ -95,6 +95,8 @@ export type ApprovalMethod = (typeof APPROVAL_METHODS)[number] | null
 
 export type PrDataType = 'metadata' | 'reviews' | 'commits' | 'comments' | 'checks' | 'files'
 
+export type PrRawDataType = 'pr' | 'reviews' | 'commits' | 'comments' | 'review_comments'
+
 export type CommitDataType = 'metadata' | 'status' | 'checks' | 'prs'
 
 export interface SnapshotBase {
@@ -110,6 +112,20 @@ export interface PrSnapshot extends SnapshotBase {
   repo: string
   prNumber: number
   dataType: PrDataType
+  data: unknown
+}
+
+export interface PrRawSnapshot {
+  id: number
+  owner: string
+  repo: string
+  githubRepoId: number
+  prNumber: number
+  dataType: PrRawDataType
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+  fetchedAt: Date
   data: unknown
 }
 

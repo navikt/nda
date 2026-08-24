@@ -22,6 +22,7 @@ vi.mock('~/lib/github', async () => {
     getChecksForCommit: mockGetChecksForCommit,
     getCommitsBetween: vi.fn(),
     getDetailedPullRequestInfo: vi.fn(),
+    getMutablePrDataFromGitHub: vi.fn(),
     getPullRequestForCommit: vi.fn(),
     getSingleCommitMessage: vi.fn(),
     getWorkflowTriggerConfig: mockGetWorkflowTriggerConfig,
@@ -33,12 +34,13 @@ vi.mock('~/lib/github', async () => {
 
 vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrSnapshots: vi.fn(),
+  getAllLatestPrRawSnapshots: vi.fn(),
   getLatestCommitSnapshot: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
-  markPrDataUnavailable: vi.fn(),
   saveCommitSnapshot: mockSaveCommitSnapshot,
   saveCompareSnapshot: vi.fn(),
   savePrSnapshotsBatch: vi.fn(),
+  savePrRawSnapshotsBatch: vi.fn(),
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
@@ -61,11 +63,12 @@ vi.mock('~/lib/verification/store-data.server', () => ({
   updateDeploymentCommitChecks: vi.fn(),
 }))
 
-import { getAllLatestPrSnapshots } from '~/db/github-data.server'
+import { getAllLatestPrRawSnapshots, getAllLatestPrSnapshots } from '~/db/github-data.server'
 import { fetchCommitChecks, refreshCommitChecksOnly } from '~/lib/verification/fetch-data.server'
 import { updateDeploymentCommitChecks } from '~/lib/verification/store-data.server'
 
 const mockGetAllLatestPrSnapshots = getAllLatestPrSnapshots as unknown as ReturnType<typeof vi.fn>
+const mockGetAllLatestPrRawSnapshots = getAllLatestPrRawSnapshots as unknown as ReturnType<typeof vi.fn>
 const mockUpdateDeploymentCommitChecks = updateDeploymentCommitChecks as unknown as ReturnType<typeof vi.fn>
 
 describe('fetchCommitChecks', () => {
@@ -162,6 +165,8 @@ describe('refreshCommitChecksOnly', () => {
     mockGetChecksForCommit.mockReset()
     mockSaveCommitSnapshot.mockReset()
     mockGetAllLatestPrSnapshots.mockReset()
+    mockGetAllLatestPrRawSnapshots.mockReset()
+    mockGetAllLatestPrRawSnapshots.mockResolvedValue(new Map())
     mockUpdateDeploymentCommitChecks.mockReset()
     mockGetWorkflowTriggerConfig.mockReset()
   })

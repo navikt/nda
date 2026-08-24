@@ -1,12 +1,11 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { markPrDataUnavailable, savePrSnapshotsBatch } from '~/db/github-data.server'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
 import { buildBranchMismatch } from './branch-mismatch'
 import { fetchCommitChecks, getCachedCommitChecks } from './fetch-data/commit-checks.server'
 import { fetchCommitsBetween } from './fetch-data/commits-between.server'
-import { type FetchOptions, fetchDeployedPrData, fetchPrFromGitHub } from './fetch-data/pr-data.server'
+import { type FetchOptions, fetchDeployedPrData } from './fetch-data/pr-data.server'
 import { getPreviousDeployment } from './fetch-data/previous-deployment.server'
 import { fetchWorkflowTriggerConfig } from './fetch-data/workflow-triggers.server'
 import type { RepositoryStatus } from './types'
@@ -221,7 +220,7 @@ export type { CommitChecksFetchResult } from './fetch-data/commit-checks.server'
 export { fetchCommitChecks, refreshCommitChecksOnly } from './fetch-data/commit-checks.server'
 export { buildCommitsBetweenFromCache, resolveNoDiffDetection } from './fetch-data/commits-between.server'
 export type { FetchOptions } from './fetch-data/pr-data.server'
-export { fetchPrFromGitHub, findPrForCommit } from './fetch-data/pr-data.server'
+export { fetchPrFromGitHub, findPrForCommit, getPrDataForDiff } from './fetch-data/pr-data.server'
 export type { WorkflowTriggerBackfillResult } from './fetch-data/workflow-triggers.server'
 export {
   backfillWorkflowTriggerConfig,
@@ -287,48 +286,4 @@ export async function resolveRawCommitMessage({
     return commitMsg ?? undefined
   }
   return undefined
-}
-
-async function _refreshPrData(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[],
-): Promise<void> {
-  const typesToFetch = dataTypes ?? ['metadata', 'reviews', 'commits', 'checks', 'comments']
-
-  try {
-    const { metadata, reviews, commits, checks, comments } = await fetchPrFromGitHub(owner, repo, prNumber)
-
-    const snapshots: Array<{ dataType: 'metadata' | 'reviews' | 'commits' | 'checks' | 'comments'; data: unknown }> = []
-
-    if (typesToFetch.includes('metadata')) {
-      snapshots.push({ dataType: 'metadata', data: metadata })
-    }
-    if (typesToFetch.includes('reviews')) {
-      snapshots.push({ dataType: 'reviews', data: reviews })
-    }
-    if (typesToFetch.includes('commits')) {
-      snapshots.push({ dataType: 'commits', data: commits })
-    }
-    if (typesToFetch.includes('checks')) {
-      snapshots.push({ dataType: 'checks', data: checks })
-    }
-    if (typesToFetch.includes('comments')) {
-      snapshots.push({ dataType: 'comments', data: comments })
-    }
-
-    await savePrSnapshotsBatch(owner, repo, prNumber, snapshots)
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      'status' in error &&
-      ((error as { status: number }).status === 404 || (error as { status: number }).status === 410)
-    ) {
-      for (const dataType of typesToFetch) {
-        await markPrDataUnavailable(owner, repo, prNumber, dataType)
-      }
-    }
-    throw error
-  }
 }

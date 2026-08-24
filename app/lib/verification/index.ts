@@ -2,24 +2,21 @@ import { getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { pool } from '~/db/connection.server'
 import { TITLE_COALESCE_SQL } from '~/db/deployments.server'
-import {
-  getCompareSnapshotForCommit,
-  getPreviousDeploymentForDiff,
-  getPrSnapshotsForDiff,
-} from '~/db/verification-diff.server'
+import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { getMergedPullRequestsInWindow } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
-import { buildCommitsBetweenFromCache, fetchVerificationData } from './fetch-data.server'
+import { buildCommitsBetweenFromCache, fetchVerificationData, getPrDataForDiff } from './fetch-data.server'
 import { storeVerificationResult, updateDeploymentVerification } from './store-data.server'
-import type { CompareData, PrCommit, PrMetadata, PrReview, VerificationInput, VerificationResult } from './types'
+import type { CompareData, VerificationInput, VerificationResult } from './types'
 import { verifyDeployment } from './verify'
 
 export { fetchVerificationDataForAllDeployments } from './fetch-data/bulk-fetch.server'
 export {
   backfillWorkflowTriggerConfigForAllApps,
   countDeploymentsMissingWorkflowTriggerConfig,
+  getPrDataForDiff,
   refreshCommitChecksOnly,
   type WorkflowTriggerBackfillResult,
 } from './fetch-data.server'
@@ -563,14 +560,14 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
     let deployedPr: VerificationInput['deployedPr'] = null
     if (dep.github_pr_number) {
-      const snapshotMap = await getPrSnapshotsForDiff(owner, repo, dep.github_pr_number)
-      if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
+      const prData = await getPrDataForDiff(owner, repo, dep.github_pr_number)
+      if (prData) {
         deployedPr = {
           number: dep.github_pr_number,
           url: `https://github.com/${owner}/${repo}/pull/${dep.github_pr_number}`,
-          metadata: snapshotMap.get('metadata') as PrMetadata,
-          reviews: snapshotMap.get('reviews') as PrReview[],
-          commits: snapshotMap.get('commits') as PrCommit[],
+          metadata: prData.metadata,
+          reviews: prData.reviews,
+          commits: prData.commits,
         }
       }
     }

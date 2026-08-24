@@ -77,27 +77,6 @@ export async function getCompareSnapshotForCommit(
   return result.rows[0] || null
 }
 
-export async function getPrSnapshotsForDiff(
-  owner: string,
-  repo: string,
-  prNumber: number,
-): Promise<Map<string, unknown>> {
-  const result = await pool.query(
-    `SELECT data_type, data FROM github_pr_snapshots 
-     WHERE owner = $1 AND repo = $2 AND pr_number = $3
-     ORDER BY fetched_at DESC`,
-    [owner, repo, prNumber],
-  )
-
-  const snapshotMap = new Map<string, unknown>()
-  for (const snap of result.rows) {
-    if (!snapshotMap.has(snap.data_type)) {
-      snapshotMap.set(snap.data_type, snap.data)
-    }
-  }
-  return snapshotMap
-}
-
 interface MissingApproverDeployment {
   id: number
   commit_sha: string | null

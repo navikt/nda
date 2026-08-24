@@ -21,7 +21,6 @@ vi.mock('~/db/verification-diff.server', () => ({
   getDeploymentsForDiffComputation: vi.fn(),
   getCompareSnapshotForCommit: vi.fn(),
   getPreviousDeploymentForDiff: vi.fn(),
-  getPrSnapshotsForDiff: vi.fn(),
 }))
 
 vi.mock('~/lib/logger.server', () => ({
@@ -31,6 +30,7 @@ vi.mock('~/lib/logger.server', () => ({
 vi.mock('~/lib/verification/fetch-data.server', () => ({
   buildCommitsBetweenFromCache: vi.fn(),
   fetchVerificationData: vi.fn(),
+  getPrDataForDiff: vi.fn(),
 }))
 
 vi.mock('~/lib/verification/verify', () => ({
@@ -42,17 +42,20 @@ import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
   getPreviousDeploymentForDiff,
-  getPrSnapshotsForDiff,
 } from '~/db/verification-diff.server'
 import { logger } from '~/lib/logger.server'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
-import { buildCommitsBetweenFromCache, fetchVerificationData } from '~/lib/verification/fetch-data.server'
+import {
+  buildCommitsBetweenFromCache,
+  fetchVerificationData,
+  getPrDataForDiff,
+} from '~/lib/verification/fetch-data.server'
 import { verifyDeployment } from '~/lib/verification/verify'
 
 const mockGetDeployments = getDeploymentsForDiffComputation as Mock
 const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
-const mockGetPrSnapshots = getPrSnapshotsForDiff as Mock
+const mockGetPrDataForDiff = getPrDataForDiff as Mock
 const mockGetImplicitApproval = getImplicitApprovalSettings as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
@@ -94,11 +97,11 @@ function makeCompareSnapshot() {
 }
 
 function makePrSnapshotMap() {
-  const map = new Map()
-  map.set('metadata', { title: 'PR', base_branch: 'main', merged_at: '2026-01-01T12:00:00Z' })
-  map.set('reviews', [{ username: 'reviewer', state: 'APPROVED', submitted_at: '2026-01-01T11:00:00Z' }])
-  map.set('commits', [{ sha: 'c1', message: 'feat', author: { username: 'user1' }, date: '2026-01-01T10:00:00Z' }])
-  return map
+  return {
+    metadata: { title: 'PR', base_branch: 'main', merged_at: '2026-01-01T12:00:00Z' },
+    reviews: [{ username: 'reviewer', state: 'APPROVED', submitted_at: '2026-01-01T11:00:00Z' }],
+    commits: [{ sha: 'c1', message: 'feat', author: { username: 'user1' }, date: '2026-01-01T10:00:00Z' }],
+  }
 }
 
 function makeVerificationInput(): Record<string, unknown> {
@@ -129,7 +132,7 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved' })])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
     mockGetPreviousDeployment.mockResolvedValue(null)
-    mockGetPrSnapshots.mockResolvedValue(makePrSnapshotMap())
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
     mockBuildCommitsBetween.mockResolvedValue([])
 
     const cacheOnlyResult = { status: 'unverified_commits', approvalDetails: { reason: 'no_pr_found' } }
@@ -152,7 +155,7 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetDeployments.mockResolvedValue([makeDeploymentRow({ github_pr_number: 100 })])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
     mockGetPreviousDeployment.mockResolvedValue(null)
-    mockGetPrSnapshots.mockResolvedValue(new Map())
+    mockGetPrDataForDiff.mockResolvedValue(null)
     mockBuildCommitsBetween.mockResolvedValue([])
 
     const verifyResult = { status: 'approved', approvalDetails: { reason: 'pr_approved' } }
@@ -173,7 +176,7 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved' })])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
     mockGetPreviousDeployment.mockResolvedValue(null)
-    mockGetPrSnapshots.mockResolvedValue(makePrSnapshotMap())
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
     mockBuildCommitsBetween.mockResolvedValue([])
 
     const cacheOnlyResult = { status: 'unverified_commits', approvalDetails: { reason: 'no_pr_found' } }
@@ -194,7 +197,7 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved' })])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
     mockGetPreviousDeployment.mockResolvedValue(null)
-    mockGetPrSnapshots.mockResolvedValue(makePrSnapshotMap())
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
     mockBuildCommitsBetween.mockResolvedValue([])
 
     const verifyResult = { status: 'approved', approvalDetails: { reason: 'pr_approved' } }
@@ -218,7 +221,7 @@ describe('computeVerificationDiffs double-check logic', () => {
       commit_sha: 'expected-base-sha',
       created_at: new Date('2026-01-01T00:00:00Z'),
     })
-    mockGetPrSnapshots.mockResolvedValue(makePrSnapshotMap())
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
 
     const freshInput = makeVerificationInput()
     mockFetchVerificationData.mockResolvedValue(freshInput)

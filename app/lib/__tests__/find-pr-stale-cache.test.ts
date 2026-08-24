@@ -3,11 +3,12 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 vi.mock('~/db/github-data.server', () => ({
   getLatestCommitSnapshot: vi.fn(),
   getAllLatestPrSnapshots: vi.fn(),
+  getAllLatestPrRawSnapshots: vi.fn(),
   saveCommitSnapshot: vi.fn(),
   savePrSnapshotsBatch: vi.fn(),
+  savePrRawSnapshotsBatch: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
   saveCompareSnapshot: vi.fn(),
-  markPrDataUnavailable: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -28,6 +29,7 @@ vi.mock('~/db/sync-jobs.server', () => ({
 vi.mock('~/lib/github', () => ({
   getPullRequestForCommit: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
+  getMutablePrDataFromGitHub: vi.fn(),
   getCommitsBetween: vi.fn(),
   haveSameCommitTree: vi.fn(),
   isCommitOnBranch: vi.fn(),
@@ -37,7 +39,12 @@ vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-import { getAllLatestPrSnapshots, getLatestCommitSnapshot, saveCommitSnapshot } from '~/db/github-data.server'
+import {
+  getAllLatestPrRawSnapshots,
+  getAllLatestPrSnapshots,
+  getLatestCommitSnapshot,
+  saveCommitSnapshot,
+} from '~/db/github-data.server'
 import { getDetailedPullRequestInfo, getPullRequestForCommit } from '~/lib/github'
 import { buildCommitsBetweenFromCache } from '~/lib/verification/fetch-data.server'
 import type { CompareData } from '~/lib/verification/types'
@@ -47,6 +54,7 @@ const mockGetCommitSnapshot = getLatestCommitSnapshot as Mock
 const mockGetPrForCommit = getPullRequestForCommit as Mock
 const mockSaveCommitSnapshot = saveCommitSnapshot as Mock
 const mockGetAllPrSnapshots = getAllLatestPrSnapshots as Mock
+const mockGetAllPrRawSnapshots = getAllLatestPrRawSnapshots as Mock
 const mockGetDetailedPrInfo = getDetailedPullRequestInfo as Mock
 
 function makeCompareData(
@@ -116,47 +124,64 @@ describe('findPrForCommit stale cache handling', () => {
     })
 
     mockGetDetailedPrInfo.mockResolvedValue({
-      number: 100,
-      title: 'Feature branch',
-      body: null,
-      draft: false,
-      created_at: '2026-04-27T10:00:00Z',
-      merged_at: '2026-04-27T16:00:00Z',
-      merge_commit_sha: 'abc123',
-      base_branch: 'main',
-      base_sha: 'base123',
-      head_branch: 'feature-branch',
-      head_sha: 'head123',
-      creator: { username: 'user1', avatar_url: '' },
-      merger: { username: 'user1', avatar_url: '' },
-      merged_by: { username: 'user1', avatar_url: '' },
-      labels: [],
-      commits_count: 1,
-      changed_files: 1,
-      additions: 10,
-      deletions: 5,
-      comments_count: 0,
-      review_comments_count: 0,
-      locked: false,
-      mergeable: true,
-      mergeable_state: 'clean',
-      rebaseable: true,
-      maintainer_can_modify: false,
-      auto_merge: null,
-      assignees: [],
-      requested_reviewers: [],
-      requested_teams: [],
-      milestone: null,
-      checks_passed: true,
-      reviewers: [{ username: 'reviewer1', state: 'APPROVED', submitted_at: '2026-04-27T14:00:00Z' }],
-      commits: [
-        { sha: 'commit1', message: 'feat: add feature', author: { username: 'user1' }, date: '2026-04-27T12:00:00Z' },
-      ],
-      checks: [],
-      comments: [],
+      prData: {
+        number: 100,
+        title: 'Feature branch',
+        body: null,
+        draft: false,
+        created_at: '2026-04-27T10:00:00Z',
+        merged_at: '2026-04-27T16:00:00Z',
+        merge_commit_sha: 'abc123',
+        base_branch: 'main',
+        base_sha: 'base123',
+        head_branch: 'feature-branch',
+        head_sha: 'head123',
+        creator: { username: 'user1', avatar_url: '' },
+        merger: { username: 'user1', avatar_url: '' },
+        merged_by: { username: 'user1', avatar_url: '' },
+        labels: [],
+        commits_count: 1,
+        changed_files: 1,
+        additions: 10,
+        deletions: 5,
+        comments_count: 0,
+        review_comments_count: 0,
+        locked: false,
+        mergeable: true,
+        mergeable_state: 'clean',
+        rebaseable: true,
+        maintainer_can_modify: false,
+        auto_merge: null,
+        assignees: [],
+        requested_reviewers: [],
+        requested_teams: [],
+        milestone: null,
+        checks_passed: true,
+        reviewers: [{ username: 'reviewer1', state: 'APPROVED', submitted_at: '2026-04-27T14:00:00Z' }],
+        commits: [
+          {
+            sha: 'commit1',
+            message: 'feat: add feature',
+            author: { username: 'user1' },
+            date: '2026-04-27T12:00:00Z',
+          },
+        ],
+        checks: [],
+        comments: [],
+      },
+      raw: {
+        pr: {},
+        reviews: [],
+        commits: [],
+        issueComments: [],
+        reviewComments: [],
+      },
+      githubRepoId: 1,
+      apiVersion: { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null },
     })
 
     mockGetAllPrSnapshots.mockResolvedValue(new Map())
+    mockGetAllPrRawSnapshots.mockResolvedValue(new Map())
 
     const compareData = makeCompareData([
       {

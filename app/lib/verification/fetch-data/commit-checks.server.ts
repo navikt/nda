@@ -1,5 +1,5 @@
 import { pool } from '~/db/connection.server'
-import { getAllLatestPrSnapshots, saveCommitSnapshot } from '~/db/github-data.server'
+import { saveCommitSnapshot } from '~/db/github-data.server'
 import {
   getChecksForCommit,
   getWorkflowTriggerConfig,
@@ -8,7 +8,8 @@ import {
 } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { updateDeploymentCommitChecks } from '../store-data.server'
-import type { PrMetadata, VerificationInput } from '../types'
+import type { VerificationInput } from '../types'
+import { getCachedPrData } from './pr-data.server'
 
 async function resolvePrHeadShaFallback(
   owner: string,
@@ -16,9 +17,8 @@ async function resolvePrHeadShaFallback(
   prNumber: number | null,
 ): Promise<string | undefined> {
   if (!prNumber) return undefined
-  const snapshots = await getAllLatestPrSnapshots(owner, repo, prNumber)
-  const metadata = snapshots.get('metadata')?.data as PrMetadata | undefined
-  return metadata?.headSha
+  const prData = await getCachedPrData(owner, repo, prNumber)
+  return prData?.head_sha
 }
 
 export type CommitChecksFetchResult = {

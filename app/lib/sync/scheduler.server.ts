@@ -1,4 +1,5 @@
 import { withSyncClient } from '~/db/connection.server'
+import { cleanupOldSnapshots } from '~/db/github-data.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { cleanupOldSyncJobs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { logger } from '~/lib/logger.server'
@@ -145,6 +146,17 @@ async function runPeriodicSync(): Promise<void> {
       const cleaned = await cleanupOldSyncJobs(50)
       if (cleaned > 0) {
         logger.info(`🧹 Cleaned up ${cleaned} old sync job records`)
+      }
+
+      const cleanedSnapshots = await cleanupOldSnapshots()
+      if (
+        cleanedSnapshots.prSnapshotsDeleted > 0 ||
+        cleanedSnapshots.commitSnapshotsDeleted > 0 ||
+        cleanedSnapshots.prRawSnapshotsDeleted > 0
+      ) {
+        logger.info(
+          `🧹 Cleaned up ${cleanedSnapshots.prSnapshotsDeleted} PR snapshots, ${cleanedSnapshots.commitSnapshotsDeleted} commit snapshots, ${cleanedSnapshots.prRawSnapshotsDeleted} raw PR snapshots`,
+        )
       }
 
       try {

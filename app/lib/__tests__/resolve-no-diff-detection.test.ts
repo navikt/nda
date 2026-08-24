@@ -5,12 +5,14 @@ vi.mock('~/db/application-repositories.server', () => ({ findRepositoryForApp: v
 vi.mock('~/db/connection.server', () => ({ pool: { query: vi.fn() } }))
 vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrSnapshots: vi.fn(),
+  getAllLatestPrRawSnapshots: vi.fn(),
   getLatestCommitSnapshot: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
   markPrDataUnavailable: vi.fn(),
   saveCommitSnapshot: vi.fn(),
   saveCompareSnapshot: vi.fn(),
   savePrSnapshotsBatch: vi.fn(),
+  savePrRawSnapshotsBatch: vi.fn(),
 }))
 vi.mock('~/db/sync-jobs.server', () => ({
   heartbeatSyncJob: vi.fn(),
@@ -23,6 +25,7 @@ vi.mock('~/lib/git-constants', () => ({ VALID_COMMIT_SHA_SQL: 'true' }))
 vi.mock('~/lib/github', () => ({
   getCommitsBetween: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
+  getMutablePrDataFromGitHub: vi.fn(),
   getPullRequestForCommit: vi.fn(),
   haveSameCommitTree: vi.fn(),
   isCommitOnBranch: vi.fn(),

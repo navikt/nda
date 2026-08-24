@@ -1,8 +1,12 @@
 import type { GitHubPRData } from '~/db/deployments.server'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
-import type { CheckRun } from './pr/checks.server'
-import { mapPrComments, mapPrCommits, mapPrMetadata, mapPrReviewBodyComments, mapPrReviews } from './pr-snapshot'
+import {
+  type ApiVersionMetadata,
+  captureApiVersionMetadata,
+  derivePrDataFromRaw,
+  type RawPrSnapshotData,
+} from './pr-snapshot'
 
 const prCommitsCache = new Map<string, string[]>()
 
@@ -388,39 +392,115 @@ export async function getDetailedPullRequestInfo(
   owner: string,
   repo: string,
   pull_number: number,
-): Promise<GitHubPRData | null> {
+): Promise<{
+  prData: GitHubPRData
+  raw: RawPrSnapshotData
+  githubRepoId: number
+  apiVersion: ApiVersionMetadata
+} | null> {
   const client = getGitHubClient()
 
   try {
+    let apiVersion: ApiVersionMetadata | null = null
+    const captureHeaders = (headers: Record<string, unknown>): void => {
+      apiVersion = captureApiVersionMetadata(headers, apiVersion)
+    }
+
     const [prResponse, allReviews, allCommitsData, allIssueComments, allReviewComments] = await Promise.all([
       client.pulls.get({ owner, repo, pull_number }),
-      client.paginate(client.pulls.listReviews, { owner, repo, pull_number, per_page: 100 }),
-      client.paginate(client.pulls.listCommits, { owner, repo, pull_number, per_page: 100 }),
-      client.paginate(client.issues.listComments, { owner, repo, issue_number: pull_number, per_page: 100 }),
-      client.paginate(client.pulls.listReviewComments, { owner, repo, pull_number, per_page: 100 }),
+      client.paginate(client.pulls.listReviews, { owner, repo, pull_number, per_page: 100 }, (response) => {
+        captureHeaders(response.headers)
+        return response.data
+      }),
+      client.paginate(client.pulls.listCommits, { owner, repo, pull_number, per_page: 100 }, (response) => {
+        captureHeaders(response.headers)
+        return response.data
+      }),
+      client.paginate(
+        client.issues.listComments,
+        { owner, repo, issue_number: pull_number, per_page: 100 },
+        (response) => {
+          captureHeaders(response.headers)
+          return response.data
+        },
+      ),
+      client.paginate(client.pulls.listReviewComments, { owner, repo, pull_number, per_page: 100 }, (response) => {
+        captureHeaders(response.headers)
+        return response.data
+      }),
     ])
 
+    captureHeaders(prResponse.headers)
+
     const pr = prResponse.data
-
-    const checks_passed: boolean | null = null
-    const checks: CheckRun[] = []
-
-    const reviewBodyComments = mapPrReviewBodyComments(allReviews)
-    const baseComments = mapPrComments(allIssueComments, allReviewComments)
-    const comments = [...baseComments, ...reviewBodyComments].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-    )
+    const raw: RawPrSnapshotData = {
+      pr,
+      reviews: allReviews,
+      commits: allCommitsData,
+      issueComments: allIssueComments,
+      reviewComments: allReviewComments,
+    }
 
     return {
-      ...mapPrMetadata(pr),
-      reviewers: mapPrReviews(allReviews),
-      checks_passed,
-      checks,
-      commits: mapPrCommits(allCommitsData),
-      comments,
+      prData: derivePrDataFromRaw(raw),
+      raw,
+      githubRepoId: pr.base.repo.id,
+      apiVersion: apiVersion ?? { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null },
     }
   } catch (error) {
     logger.error('Error fetching detailed PR info:', error)
+    return null
+  }
+}
+
+export async function getMutablePrDataFromGitHub(
+  owner: string,
+  repo: string,
+  pull_number: number,
+): Promise<{
+  githubRepoId: number
+  reviews: RawPrSnapshotData['reviews']
+  issueComments: RawPrSnapshotData['issueComments']
+  reviewComments: RawPrSnapshotData['reviewComments']
+  apiVersion: ApiVersionMetadata
+} | null> {
+  const client = getGitHubClient()
+
+  try {
+    let apiVersion: ApiVersionMetadata | null = null
+    const captureHeaders = (headers: Record<string, unknown>): void => {
+      apiVersion = captureApiVersionMetadata(headers, apiVersion)
+    }
+
+    const [repoResponse, allReviews, allIssueComments, allReviewComments] = await Promise.all([
+      client.repos.get({ owner, repo }),
+      client.paginate(client.pulls.listReviews, { owner, repo, pull_number, per_page: 100 }, (response) => {
+        captureHeaders(response.headers)
+        return response.data
+      }),
+      client.paginate(
+        client.issues.listComments,
+        { owner, repo, issue_number: pull_number, per_page: 100 },
+        (response) => {
+          captureHeaders(response.headers)
+          return response.data
+        },
+      ),
+      client.paginate(client.pulls.listReviewComments, { owner, repo, pull_number, per_page: 100 }, (response) => {
+        captureHeaders(response.headers)
+        return response.data
+      }),
+    ])
+
+    return {
+      githubRepoId: repoResponse.data.id,
+      reviews: allReviews,
+      issueComments: allIssueComments,
+      reviewComments: allReviewComments,
+      apiVersion: apiVersion ?? { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null },
+    }
+  } catch (error) {
+    logger.error('Error fetching mutable PR data:', error)
     return null
   }
 }

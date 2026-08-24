@@ -1,14 +1,15 @@
-import {
-  getAllLatestPrSnapshots,
-  getLatestCompareSnapshot,
-  saveCommitSnapshot,
-  saveCompareSnapshot,
-  savePrSnapshotsBatch,
-} from '~/db/github-data.server'
+import { getLatestCompareSnapshot, saveCommitSnapshot, saveCompareSnapshot } from '~/db/github-data.server'
 import { getCommitsBetween, haveSameCommitTree } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
-import { type FetchOptions, fetchPrFromGitHub, findPrForCommit } from '../fetch-data/pr-data.server'
-import type { CompareData, CompareSummary, PrCommit, PrMetadata, PrReview, VerificationInput } from '../types'
+import {
+  type FetchOptions,
+  fetchPrFromGitHub,
+  findPrForCommit,
+  getCachedPrData,
+  mapPrDataToVerificationTypes,
+  persistPrSnapshots,
+} from '../fetch-data/pr-data.server'
+import type { CompareData, CompareSummary, VerificationInput } from '../types'
 
 export function resolveNoDiffDetection(
   compareData: CompareData,
@@ -112,13 +113,9 @@ export async function buildCommitsBetweenFromCache(
     let prData: VerificationInput['commitsBetween'][0]['pr'] = null
 
     if (prNumber && !options?.forceRefresh) {
-      const cachedData = await getAllLatestPrSnapshots(owner, repo, prNumber)
-
-      if (cachedData.has('metadata') && cachedData.has('reviews') && cachedData.has('commits')) {
-        const metadata = cachedData.get('metadata')?.data as PrMetadata
-        const reviews = cachedData.get('reviews')?.data as PrReview[]
-        const prCommits = cachedData.get('commits')?.data as PrCommit[]
-
+      const cachedPrData = await getCachedPrData(owner, repo, prNumber, ['reviews', 'commits'])
+      if (cachedPrData) {
+        const { metadata, reviews, commits: prCommits } = mapPrDataToVerificationTypes(prNumber, cachedPrData)
         prData = {
           number: prNumber,
           title: metadata.title,
@@ -137,13 +134,7 @@ export async function buildCommitsBetweenFromCache(
       if (!prFetch) {
         prFetch = fetchPrFromGitHub(owner, repo, prNumber)
           .then(async (data) => {
-            await savePrSnapshotsBatch(owner, repo, prNumber, [
-              { dataType: 'metadata', data: data.metadata },
-              { dataType: 'reviews', data: data.reviews },
-              { dataType: 'commits', data: data.commits },
-              { dataType: 'checks', data: data.checks },
-              { dataType: 'comments', data: data.comments },
-            ])
+            await persistPrSnapshots(owner, repo, prNumber, data)
             return data
           })
           .catch((error) => {

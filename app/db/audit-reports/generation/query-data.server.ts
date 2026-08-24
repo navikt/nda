@@ -100,16 +100,37 @@ export async function getAuditReportData(
          ORDER BY cmp.fetched_at DESC
          LIMIT 1
        ) AS delivery_commit_shas,
-       -- Commit SHAs belonging to this deployment's PR, if any
-       (
-         SELECT ARRAY(SELECT jsonb_array_elements(pr.data)->>'sha')
-         FROM github_pr_snapshots pr
-         WHERE pr.owner = d.detected_github_owner
-           AND pr.repo = d.detected_github_repo_name
-           AND pr.pr_number = d.github_pr_number
-           AND pr.data_type = 'commits'
-         ORDER BY pr.fetched_at DESC
-         LIMIT 1
+       -- Commit SHAs belonging to this deployment's PR, if any (raw snapshot preferred, legacy as fallback)
+       COALESCE(
+         (
+           SELECT ARRAY(SELECT jsonb_array_elements(pr.data)->>'sha')
+           FROM github_pr_raw_snapshots pr
+           WHERE pr.owner = d.detected_github_owner
+             AND pr.repo = d.detected_github_repo_name
+             AND pr.pr_number = d.github_pr_number
+             AND pr.data_type = 'commits'
+             AND pr.github_repo_id = (
+               SELECT github_repo_id
+               FROM github_pr_raw_snapshots
+               WHERE owner = d.detected_github_owner
+                 AND repo = d.detected_github_repo_name
+                 AND pr_number = d.github_pr_number
+               ORDER BY fetched_at DESC
+               LIMIT 1
+             )
+           ORDER BY pr.fetched_at DESC
+           LIMIT 1
+         ),
+         (
+           SELECT ARRAY(SELECT jsonb_array_elements(pr.data)->>'sha')
+           FROM github_pr_snapshots pr
+           WHERE pr.owner = d.detected_github_owner
+             AND pr.repo = d.detected_github_repo_name
+             AND pr.pr_number = d.github_pr_number
+             AND pr.data_type = 'commits'
+           ORDER BY pr.fetched_at DESC
+           LIMIT 1
+         )
        ) AS pr_commit_shas
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id

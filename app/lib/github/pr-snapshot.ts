@@ -7,6 +7,33 @@ export type RawPrCommit = RestEndpointMethodTypes['pulls']['listCommits']['respo
 export type RawIssueComment = RestEndpointMethodTypes['issues']['listComments']['response']['data'][number]
 export type RawReviewComment = RestEndpointMethodTypes['pulls']['listReviewComments']['response']['data'][number]
 
+export interface RawPrSnapshotData {
+  pr: RawPr
+  reviews: RawPrReview[]
+  commits: RawPrCommit[]
+  issueComments: RawIssueComment[]
+  reviewComments: RawReviewComment[]
+}
+
+export interface ApiVersionMetadata {
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+}
+
+export function captureApiVersionMetadata(
+  headers: Record<string, unknown>,
+  current: ApiVersionMetadata | null,
+): ApiVersionMetadata {
+  const headerVersion = headers['x-github-api-version-selected'] as string | undefined
+  return {
+    apiVersion:
+      current?.apiVersion && current.apiVersion !== 'unknown' ? current.apiVersion : (headerVersion ?? 'unknown'),
+    apiDeprecatedAt: current?.apiDeprecatedAt ?? (headers.deprecation as string | undefined) ?? null,
+    apiSunsetAt: current?.apiSunsetAt ?? (headers.sunset as string | undefined) ?? null,
+  }
+}
+
 export interface PrMetadataFields {
   title: string
   body: string | null
@@ -216,4 +243,21 @@ export function mapPrComments(
   }))
 
   return [...issueComments, ...reviewComments]
+}
+
+export function derivePrDataFromRaw(raw: RawPrSnapshotData): GitHubPRData {
+  const reviewBodyComments = mapPrReviewBodyComments(raw.reviews)
+  const baseComments = mapPrComments(raw.issueComments, raw.reviewComments)
+  const comments = [...baseComments, ...reviewBodyComments].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  )
+
+  return {
+    ...mapPrMetadata(raw.pr),
+    reviewers: mapPrReviews(raw.reviews),
+    checks_passed: null,
+    checks: [],
+    commits: mapPrCommits(raw.commits),
+    comments,
+  }
 }

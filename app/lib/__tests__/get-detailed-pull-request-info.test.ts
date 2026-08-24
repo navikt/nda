@@ -42,13 +42,14 @@ describe('getDetailedPullRequestInfo', () => {
     mockPaginate.mockReset()
 
     mockPullsGet.mockResolvedValue({
+      headers: {},
       data: {
         title: 'Fix calculation',
         body: 'Fixes the bug',
         labels: ['bug', { name: 'priority-high' }],
         created_at: '2026-02-20T10:00:00Z',
         merged_at: '2026-02-25T14:30:00Z',
-        base: { ref: 'main', sha: 'abc123' },
+        base: { ref: 'main', sha: 'abc123', repo: { id: 999 } },
         head: { ref: 'feature/x', sha: 'def456' },
         merge_commit_sha: 'merge789',
         commits: 3,
@@ -73,74 +74,98 @@ describe('getDetailedPullRequestInfo', () => {
       },
     })
 
-    mockPaginate.mockImplementation((fn: unknown) => {
-      if (fn === mockPullsListReviews) {
-        return Promise.resolve([
-          {
-            id: 1,
-            user: { login: 'developer-b', avatar_url: 'https://avatar/b' },
-            state: 'COMMENTED',
-            submitted_at: '2026-02-23T08:00:00Z',
-            commit_id: 'sha1',
-            body: '   ',
-            html_url: 'https://github.com/pr/1#review-1',
-          },
-          {
-            id: 2,
-            user: { login: 'developer-b', avatar_url: 'https://avatar/b' },
-            state: 'APPROVED',
-            submitted_at: '2026-02-24T08:00:00Z',
-            commit_id: 'sha2',
-            body: 'LGTM overall',
-            html_url: 'https://github.com/pr/1#review-2',
-          },
-        ])
-      }
-      if (fn === mockPullsListCommits) {
-        return Promise.resolve([
-          {
-            sha: 'aaa111',
-            html_url: 'https://github.com/commit/aaa111',
-            author: { login: 'developer-a', avatar_url: 'https://avatar/a' },
-            parents: [{ sha: 'parent1' }],
-            commit: {
-              message: 'Initial implementation',
-              author: { name: 'Developer A', date: '2026-02-20T11:00:00Z' },
-              committer: { date: '2026-02-20T11:05:00Z' },
-            },
-          },
-        ])
-      }
-      if (fn === mockIssuesListComments) {
-        return Promise.resolve([
-          {
-            id: 10,
-            body: 'Please fix this',
-            user: { login: 'developer-c', avatar_url: 'https://avatar/c' },
-            created_at: '2026-02-21T09:00:00Z',
-            html_url: 'https://github.com/issue-comment/10',
-          },
-        ])
-      }
-      if (fn === mockPullsListReviewComments) {
-        return Promise.resolve([
-          {
-            id: 20,
-            body: 'Inline nit',
-            user: { login: 'developer-b', avatar_url: 'https://avatar/b' },
-            created_at: '2026-02-22T09:00:00Z',
-            html_url: 'https://github.com/review-comment/20',
-          },
-        ])
-      }
-      return Promise.resolve([])
-    })
+    mockPaginate.mockImplementation(
+      (
+        fn: unknown,
+        _options: unknown,
+        mapFn?: (response: { headers: Record<string, unknown>; data: unknown[] }) => unknown,
+      ) => {
+        const respond = (data: unknown[]): unknown => (mapFn ? mapFn({ headers: {}, data }) : data)
+
+        if (fn === mockPullsListReviews) {
+          return Promise.resolve(
+            respond([
+              {
+                id: 1,
+                user: { login: 'developer-b', avatar_url: 'https://avatar/b' },
+                state: 'COMMENTED',
+                submitted_at: '2026-02-23T08:00:00Z',
+                commit_id: 'sha1',
+                body: '   ',
+                html_url: 'https://github.com/pr/1#review-1',
+              },
+              {
+                id: 2,
+                user: { login: 'developer-b', avatar_url: 'https://avatar/b' },
+                state: 'APPROVED',
+                submitted_at: '2026-02-24T08:00:00Z',
+                commit_id: 'sha2',
+                body: 'LGTM overall',
+                html_url: 'https://github.com/pr/1#review-2',
+              },
+            ]),
+          )
+        }
+        if (fn === mockPullsListCommits) {
+          return Promise.resolve(
+            respond([
+              {
+                sha: 'aaa111',
+                html_url: 'https://github.com/commit/aaa111',
+                author: { login: 'developer-a', avatar_url: 'https://avatar/a' },
+                parents: [{ sha: 'parent1' }],
+                commit: {
+                  message: 'Initial implementation',
+                  author: { name: 'Developer A', date: '2026-02-20T11:00:00Z' },
+                  committer: { date: '2026-02-20T11:05:00Z' },
+                },
+              },
+            ]),
+          )
+        }
+        if (fn === mockIssuesListComments) {
+          return Promise.resolve(
+            respond([
+              {
+                id: 10,
+                body: 'Please fix this',
+                user: { login: 'developer-c', avatar_url: 'https://avatar/c' },
+                created_at: '2026-02-21T09:00:00Z',
+                html_url: 'https://github.com/issue-comment/10',
+              },
+            ]),
+          )
+        }
+        if (fn === mockPullsListReviewComments) {
+          return Promise.resolve(
+            respond([
+              {
+                id: 20,
+                body: 'Inline nit',
+                user: { login: 'developer-b', avatar_url: 'https://avatar/b' },
+                created_at: '2026-02-22T09:00:00Z',
+                html_url: 'https://github.com/review-comment/20',
+              },
+            ]),
+          )
+        }
+        return Promise.resolve(respond([]))
+      },
+    )
   })
 
   it('assembles the full detailed PR data shape from raw GitHub responses', async () => {
     const result = await getDetailedPullRequestInfo('navikt', 'nda', 18220)
 
-    expect(result).toEqual({
+    expect(result?.githubRepoId).toBe(999)
+    expect(result?.apiVersion).toEqual({ apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null })
+    expect(result?.raw.pr).toBeDefined()
+    expect(result?.raw.reviews).toHaveLength(2)
+    expect(result?.raw.commits).toHaveLength(1)
+    expect(result?.raw.issueComments).toHaveLength(1)
+    expect(result?.raw.reviewComments).toHaveLength(1)
+
+    expect(result?.prData).toEqual({
       title: 'Fix calculation',
       body: 'Fixes the bug',
       labels: ['bug', 'priority-high'],
@@ -216,6 +241,38 @@ describe('getDetailedPullRequestInfo', () => {
           html_url: 'https://github.com/pr/1#review-2',
         },
       ],
+    })
+  })
+
+  it('captures api version metadata from paginated response headers', async () => {
+    mockPaginate.mockImplementation(
+      (
+        fn: unknown,
+        _options: unknown,
+        mapFn?: (response: { headers: Record<string, unknown>; data: unknown[] }) => unknown,
+      ) => {
+        if (fn === mockPullsListReviews) {
+          return Promise.resolve(
+            mapFn?.({
+              headers: {
+                'x-github-api-version-selected': '2022-11-28',
+                deprecation: '2027-01-01T00:00:00Z',
+                sunset: '2027-06-01T00:00:00Z',
+              },
+              data: [],
+            }),
+          )
+        }
+        return Promise.resolve(mapFn ? mapFn({ headers: {}, data: [] }) : [])
+      },
+    )
+
+    const result = await getDetailedPullRequestInfo('navikt', 'nda', 18220)
+
+    expect(result?.apiVersion).toEqual({
+      apiVersion: '2022-11-28',
+      apiDeprecatedAt: '2027-01-01T00:00:00Z',
+      apiSunsetAt: '2027-06-01T00:00:00Z',
     })
   })
 
