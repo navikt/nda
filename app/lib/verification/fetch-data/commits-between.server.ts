@@ -1,4 +1,9 @@
-import { getLatestCompareSnapshot, saveCommitSnapshot, saveCompareSnapshot } from '~/db/github-data.server'
+import {
+  getLatestCompareSnapshot,
+  saveCommitSnapshot,
+  saveCompareRawSnapshot,
+  saveCompareSnapshot,
+} from '~/db/github-data.server'
 import { getCommitsBetween, haveSameCommitTree } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import {
@@ -47,12 +52,14 @@ export async function fetchCommitsBetween(
   }
 
   logger.info(`   🌐 Fetching compare from GitHub: ${fromSha.substring(0, 7)}...${toSha.substring(0, 7)}`)
-  const compareData = await getCommitsBetween(owner, repo, fromSha, toSha)
+  const compareResult = await getCommitsBetween(owner, repo, fromSha, toSha)
 
-  if (!compareData) {
+  if (!compareResult) {
     logger.warn(`Could not fetch commits between ${fromSha} and ${toSha}`)
     return null
   }
+
+  const { compareData, rawData, apiVersion, githubRepoId } = compareResult
 
   const isEmptyCompare = compareData.commits.length === 0 && compareData.compare.changedFiles === 0
   const shouldTryTreeFallback = isEmptyCompare && compareData.compare.status !== 'identical' && fromSha !== toSha
@@ -78,6 +85,8 @@ export async function fetchCommitsBetween(
       `Skipping compare snapshot cache for ${fromSha.substring(0, 7)}...${toSha.substring(0, 7)}: tree fallback inconclusive`,
     )
   }
+
+  await saveCompareRawSnapshot(owner, repo, githubRepoId, fromSha, toSha, rawData, apiVersion)
 
   for (const commit of storedCompareData.commits) {
     await saveCommitSnapshot(owner, repo, commit.sha, 'metadata', commit)

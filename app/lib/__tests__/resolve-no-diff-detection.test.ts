@@ -10,6 +10,7 @@ vi.mock('~/db/github-data.server', () => ({
   getLatestCompareSnapshot: vi.fn(),
   markPrDataUnavailable: vi.fn(),
   saveCommitSnapshot: vi.fn(),
+  saveCompareRawSnapshot: vi.fn(),
   saveCompareSnapshot: vi.fn(),
   savePrSnapshotsBatch: vi.fn(),
   savePrRawSnapshotsBatch: vi.fn(),
