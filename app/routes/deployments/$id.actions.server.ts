@@ -50,6 +50,7 @@ const MOVE_BASELINE_ERROR_MESSAGES = {
   not_found: 'Deployment ikke funnet',
   already_baseline: 'Deploymenten er allerede baseline',
   legacy_status: 'Legacy-deployments kan ikke settes som baseline',
+  missing_repository: 'Deploymenten mangler repository-informasjon og kan ikke brukes som baseline',
   invalid_commit_sha: 'Deploymenten mangler gyldig commit-SHA og kan ikke brukes som baseline',
   outside_audit_window: 'Deploymenten ligger før revisjonsperioden og kan ikke brukes som baseline',
   no_later_anchor: 'Fant ingen senere baseline eller foreslått baseline å flytte bakover',

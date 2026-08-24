@@ -153,7 +153,7 @@ En `pending_baseline` godkjennes manuelt fra deployment-siden («Godkjenn baseli
 Havner baselinen på feil deployment — typisk når crawlet historikk gjør at den reelle første deployen filtreres bort eller registreres i feil rekkefølge — kan en **tech lead** (eller admin) flytte baselinen **bakover i tid** fra deployment-siden («Flytt baseline hit»). Handlingen er avgrenset til flytting bakover og krever begrunnelse. Mål-deploymentet må:
 
 - ligge **før** en eksisterende `baseline`/`pending_baseline` i samme app og repo
-- ha en gyldig commit-SHA (ikke `refs/...`) og ikke være legacy
+- ha repository-informasjon og en gyldig commit-SHA (ikke `refs/...`), og ikke være legacy
 - ligge innenfor revisjonsperioden (`audit_start_year`)
 
 Flyttingen skjer i én transaksjon: Mål-deploymentet får status `baseline` (med `baseline_approval` i historikken), og alle senere `baseline`/`pending_baseline` i samme app og repo nedgraderes til `pending` med en `baseline_move`-rad. De nedgraderte deploymentene plukkes opp av den periodiske verifiseringen og re-verifiseres mot den nye baselinen — dermed forsvinner også et hengende baseline-forslag som egentlig har en eldre historikk.

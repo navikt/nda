@@ -166,6 +166,53 @@ describe('moveBaselineToDeployment', () => {
     expect(await getStatus(otherRepoAnchor)).toBe('pending_baseline')
   })
 
+  it('leaves baseline anchors earlier than the target untouched', async () => {
+    const appId = await seedFlyttApp()
+    const olderBaseline = await seedRepoDeployment(appId, {
+      createdAt: new Date('2026-01-01T10:00:00Z'),
+      fourEyesStatus: 'baseline',
+    })
+    const target = await seedRepoDeployment(appId, {
+      createdAt: new Date('2026-01-15T10:00:00Z'),
+      fourEyesStatus: 'pending',
+    })
+    const proposed = await seedRepoDeployment(appId, {
+      createdAt: new Date('2026-02-01T10:00:00Z'),
+      fourEyesStatus: 'pending_baseline',
+    })
+
+    const result = await moveBaselineToDeployment(target, TECH_LEAD, 'Begrunnelse')
+
+    expect(result).toEqual({ moved: true, demotedCount: 1 })
+    expect(await getStatus(olderBaseline)).toBe('baseline')
+    expect(await getHistory(olderBaseline)).toHaveLength(0)
+    expect(await getStatus(proposed)).toBe('pending')
+  })
+
+  it('refuses a target without repository information', async () => {
+    const appId = await seedFlyttApp()
+    const target = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-flytt',
+      environment: 'prod-gcp',
+      commitSha: 'sha-uten-repo',
+      createdAt: new Date('2026-01-05T10:00:00Z'),
+      fourEyesStatus: 'pending',
+    })
+    await seedRepoDeployment(appId, {
+      createdAt: new Date('2026-02-01T10:00:00Z'),
+      fourEyesStatus: 'pending_baseline',
+    })
+
+    const result = await moveBaselineToDeployment(target, TECH_LEAD, 'Begrunnelse')
+
+    expect(result).toEqual({ moved: false, reason: 'missing_repository' })
+    expect(await getStatus(target)).toBe('pending')
+
+    const context = await getBaselineMoveContext(target)
+    expect(context?.eligible).toBe(false)
+  })
+
   it('refuses a target that is already baseline', async () => {
     const appId = await seedFlyttApp()
     const target = await seedRepoDeployment(appId, {

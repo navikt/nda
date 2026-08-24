@@ -16,6 +16,7 @@ type MoveBaselineFailureReason =
   | 'not_found'
   | 'already_baseline'
   | 'legacy_status'
+  | 'missing_repository'
   | 'invalid_commit_sha'
   | 'outside_audit_window'
   | 'no_later_anchor'
@@ -25,11 +26,14 @@ type MoveBaselineResult = { moved: true; demotedCount: number } | { moved: false
 function isEligibleTarget(row: {
   four_eyes_status: string | null
   commit_sha: string | null
+  detected_github_owner: string | null
+  detected_github_repo_name: string | null
   within_audit_window: boolean
 }): MoveBaselineFailureReason | null {
   const status = row.four_eyes_status ?? ''
   if (status === 'baseline') return 'already_baseline'
   if (isLegacyStatus(status)) return 'legacy_status'
+  if (!row.detected_github_owner || !row.detected_github_repo_name) return 'missing_repository'
   if (!row.commit_sha || row.commit_sha.startsWith('refs/')) return 'invalid_commit_sha'
   if (!row.within_audit_window) return 'outside_audit_window'
   return null
@@ -40,6 +44,8 @@ export async function getBaselineMoveContext(deploymentId: number): Promise<Base
     `SELECT
        d.four_eyes_status,
        d.commit_sha,
+       d.detected_github_owner,
+       d.detected_github_repo_name,
        (ma.audit_start_year IS NULL OR d.created_at >= make_date(ma.audit_start_year, 1, 1)) AS within_audit_window,
        COALESCE(
          (SELECT json_agg(
