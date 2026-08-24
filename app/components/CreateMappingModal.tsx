@@ -2,8 +2,8 @@ import { Alert, BodyShort, Button, Label, Modal, TextField, VStack } from '@navi
 import { forwardRef, useEffect, useState } from 'react'
 import { Form } from 'react-router'
 import { useSlackMemberIdLookup } from '~/hooks/useSlackMemberIdLookup'
-import type { GraphUserResult } from '~/lib/microsoft-graph.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
+import type { UserLookupResult } from '~/lib/user-lookup-types'
 import { SlackMemberIdField } from './SlackMemberIdField'
 import { UserSearch } from './UserSearch'
 
@@ -55,7 +55,7 @@ export const CreateMappingModal = forwardRef<HTMLDialogElement, CreateMappingMod
       }
     }, [canPrefillOwnMapping, loggedInNavIdent, slackLookup.lookup])
 
-    const handleSelectUser = (user: GraphUserResult) => {
+    const handleSelectUser = (user: UserLookupResult) => {
       setMappingFields({
         display_name: formatDisplayNameNatural(user.displayName),
         nav_ident: user.navIdent ?? '',

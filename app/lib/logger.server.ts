@@ -57,7 +57,7 @@ function logToDb(level: 'info' | 'warn' | 'error' | 'debug', message: string, de
   logSyncJobMessage(ctx.jobId, level, stripEmoji(message), details).catch(() => {})
 }
 
-type OutgoingHttpArea = 'github' | 'slack' | 'microsoft_graph' | 'nais_auth' | 'nais_graphql'
+type OutgoingHttpArea = 'github' | 'slack' | 'microsoft_graph' | 'nais_auth' | 'nais_graphql' | 'nom'
 
 export function logOutgoingHttp(details: {
   area: OutgoingHttpArea

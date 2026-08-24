@@ -33,7 +33,7 @@ import {
   removeTeamRole,
 } from '~/db/role-assignments.server'
 import { getSectionBySlug } from '~/db/sections.server'
-import { getOrCreateUserFromGraph, upsertUserAndGithubAccount } from '~/db/user-github-lookups.server'
+import { getOrCreateUserFromDirectory, upsertUserAndGithubAccount } from '~/db/user-github-lookups.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
 import { canAssignTeamRole, resolveTeamAdminCapabilities } from '~/lib/authorization.server'
@@ -194,9 +194,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       throw new Response('Du har ikke tilgang til å tildele denne rollen', { status: 403 })
     }
 
-    let knownUser: Awaited<ReturnType<typeof getOrCreateUserFromGraph>>
+    let knownUser: Awaited<ReturnType<typeof getOrCreateUserFromDirectory>>
     try {
-      knownUser = await getOrCreateUserFromGraph(navIdent)
+      knownUser = await getOrCreateUserFromDirectory(navIdent)
     } catch (err) {
       logger.error(`Feil ved brukeropprettelse for ${navIdent}:`, err instanceof Error ? err : new Error(String(err)))
       return fail(`Kunne ikke opprette brukeren ${navIdent}. Prøv igjen senere.`)
@@ -258,9 +258,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       return fail(`${navIdent} er ikke registrert som medlem av dette teamet.`)
     }
 
-    let knownUser: Awaited<ReturnType<typeof getOrCreateUserFromGraph>>
+    let knownUser: Awaited<ReturnType<typeof getOrCreateUserFromDirectory>>
     try {
-      knownUser = await getOrCreateUserFromGraph(navIdent)
+      knownUser = await getOrCreateUserFromDirectory(navIdent)
     } catch (err) {
       logger.error(`Feil ved brukeroppslag for ${navIdent}:`, err instanceof Error ? err : new Error(String(err)))
       return fail(`Kunne ikke opprette brukeren ${navIdent}. Prøv igjen senere.`)

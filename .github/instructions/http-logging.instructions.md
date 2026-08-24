@@ -22,3 +22,4 @@ All outgoing HTTP calls must use helpers from `app/lib/logger.server.ts` — ena
 | `microsoft_graph` | Microsoft Graph + NAIS token |
 | `nais_auth` | NAIS M2M token introspection |
 | `nais_graphql` | NAIS GraphQL API |
+| `nom` | NOM (NAV Organisasjonsmaster) GraphQL API + NAIS token |

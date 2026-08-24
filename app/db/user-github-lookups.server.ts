@@ -1,8 +1,9 @@
+import { chunk } from '~/lib/chunk'
 import { isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
 import { logger } from '~/lib/logger.server'
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { formatDisplayNameNatural } from '~/lib/user-display'
+import { getUsersByNavIdenter } from '~/lib/user-lookup.server'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
 
@@ -412,7 +413,7 @@ interface PopulateResult {
   errors: number
 }
 
-export async function populateUsersFromGraph(): Promise<PopulateResult> {
+export async function populateUsersFromDirectory(): Promise<PopulateResult> {
   const { rows } = await pool.query<{ nav_ident: string }>(
     `SELECT DISTINCT nav_ident FROM users WHERE deleted_at IS NULL`,
   )
@@ -421,33 +422,50 @@ export async function populateUsersFromGraph(): Promise<PopulateResult> {
   let skipped = 0
   let errors = 0
 
+  const navIdents: string[] = []
   for (const row of rows) {
     const navIdent = normalizeNavIdent(row.nav_ident)
     if (!navIdent) {
       skipped++
       continue
     }
+    navIdents.push(navIdent)
+  }
+
+  const LOOKUP_BATCH_SIZE = 100
+  for (const batch of chunk(navIdents, LOOKUP_BATCH_SIZE)) {
+    let displayNameByNavIdent: Map<string, string>
     try {
-      const graphUsers = await searchGraphUsers(navIdent)
-      if (graphUsers.length !== 1) {
-        logger.warn('populate-users: skipping nav_ident — expected 1 Graph result', {
+      const users = await getUsersByNavIdenter(batch)
+      displayNameByNavIdent = new Map(
+        users.flatMap((user) =>
+          user.navIdent && user.displayName
+            ? [[user.navIdent.toUpperCase(), formatDisplayNameNatural(user.displayName)]]
+            : [],
+        ),
+      )
+    } catch (err) {
+      logger.error('populate-users: error fetching directory batch', err)
+      errors += batch.length
+      continue
+    }
+
+    for (const navIdent of batch) {
+      const displayName = displayNameByNavIdent.get(navIdent)
+      if (!displayName) {
+        logger.warn('populate-users: skipping nav_ident — no matching directory result with displayName', {
           nav_ident: navIdent,
-          count: graphUsers.length,
         })
         skipped++
         continue
       }
-      const user = graphUsers[0]
-      if (!user.displayName) {
-        logger.warn('populate-users: skipping nav_ident — missing displayName', { nav_ident: navIdent })
-        skipped++
-        continue
+      try {
+        await upsertUser({ navIdent, displayName })
+        success++
+      } catch (err) {
+        logger.error('populate-users: error upserting nav_ident', err)
+        errors++
       }
-      await upsertUser({ navIdent, displayName: user.displayName })
-      success++
-    } catch (err) {
-      logger.error('populate-users: error processing nav_ident', err)
-      errors++
     }
   }
 
@@ -475,7 +493,7 @@ export async function getUserByNavIdent(navIdent: string): Promise<User | null> 
   return result.rows[0] ?? null
 }
 
-export async function getOrCreateUserFromGraph(navIdent: string): Promise<User | null> {
+export async function getOrCreateUserFromDirectory(navIdent: string): Promise<User | null> {
   const normalized = navIdent.trim().toUpperCase()
 
   if (!isValidNavIdent(normalized)) return null
@@ -483,10 +501,10 @@ export async function getOrCreateUserFromGraph(navIdent: string): Promise<User |
   const existing = await getUserByNavIdent(normalized)
   if (existing) return existing
 
-  const graphResults = await searchGraphUsers(normalized)
+  const users = await getUsersByNavIdenter([normalized])
 
-  const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === normalized)
-  if (!graphUser?.displayName) return null
+  const user = users.find((u) => u.navIdent?.toUpperCase() === normalized)
+  if (!user?.displayName) return null
 
-  return upsertUser({ navIdent: normalized, displayName: formatDisplayNameNatural(graphUser.displayName) })
+  return upsertUser({ navIdent: normalized, displayName: formatDisplayNameNatural(user.displayName) })
 }
