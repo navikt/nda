@@ -15,7 +15,6 @@ vi.mock('~/db/connection.server', () => ({
 vi.mock('~/db/verification-diff.server', () => ({
   getCompareSnapshotForCommit: vi.fn(),
   getPreviousDeploymentForDiff: vi.fn(),
-  getPrSnapshotsForDiff: vi.fn(),
 }))
 
 vi.mock('~/lib/four-eyes-status', () => ({
@@ -29,6 +28,7 @@ vi.mock('~/lib/logger.server', () => ({
 vi.mock('~/lib/verification/fetch-data.server', () => ({
   buildCommitsBetweenFromCache: vi.fn(),
   fetchVerificationData: vi.fn(),
+  getPrDataForDiff: vi.fn(),
 }))
 
 vi.mock('~/lib/verification/store-data.server', () => ({

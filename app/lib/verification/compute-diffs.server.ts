@@ -4,12 +4,11 @@ import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
   getPreviousDeploymentForDiff,
-  getPrSnapshotsForDiff,
 } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
-import { buildCommitsBetweenFromCache, fetchVerificationData } from './fetch-data.server'
-import type { CompareData, PrCommit, PrMetadata, PrReview, VerificationInput } from './types'
+import { buildCommitsBetweenFromCache, fetchVerificationData, getPrDataForDiff } from './fetch-data.server'
+import type { CompareData, VerificationInput } from './types'
 import { verifyDeployment } from './verify'
 
 interface ComputeDiffsOptions {
@@ -114,14 +113,14 @@ export async function computeVerificationDiffs(
 
           let deployedPr: VerificationInput['deployedPr'] = null
           if (row.github_pr_number) {
-            const snapshotMap = await getPrSnapshotsForDiff(owner, repo, row.github_pr_number)
-            if (snapshotMap.has('metadata') && snapshotMap.has('reviews') && snapshotMap.has('commits')) {
+            const prData = await getPrDataForDiff(owner, repo, row.github_pr_number)
+            if (prData) {
               deployedPr = {
                 number: row.github_pr_number,
                 url: `https://github.com/${owner}/${repo}/pull/${row.github_pr_number}`,
-                metadata: snapshotMap.get('metadata') as PrMetadata,
-                reviews: snapshotMap.get('reviews') as PrReview[],
-                commits: snapshotMap.get('commits') as PrCommit[],
+                metadata: prData.metadata,
+                reviews: prData.reviews,
+                commits: prData.commits,
               }
             }
           }

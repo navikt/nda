@@ -1,12 +1,150 @@
+import type { GitHubPRData } from '~/db/deployments.server'
 import {
+  getAllLatestPrRawSnapshots,
   getAllLatestPrSnapshots,
   getLatestCommitSnapshot,
   saveCommitSnapshot,
-  savePrSnapshotsBatch,
+  savePrRawSnapshotsBatch,
 } from '~/db/github-data.server'
-import { getDetailedPullRequestInfo, getPullRequestForCommit } from '~/lib/github'
+import { getDetailedPullRequestInfo, getMutablePrDataFromGitHub, getPullRequestForCommit } from '~/lib/github'
+import type {
+  ApiVersionMetadata,
+  RawIssueComment,
+  RawPr,
+  RawPrCommit,
+  RawPrReview,
+  RawPrSnapshotData,
+  RawReviewComment,
+} from '~/lib/github/pr-snapshot'
+import { derivePrDataFromRaw } from '~/lib/github/pr-snapshot'
+import { buildGithubPrDataFromSnapshots } from '../build-github-pr-data'
 import type { PrChecks, PrComment, PrCommit, PrMetadata, PrReview, VerificationInput } from '../types'
 import { CURRENT_SCHEMA_VERSION } from '../types'
+
+export async function getDerivedPrDataFromRawSnapshots(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GitHubPRData | null> {
+  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
+  const prSnapshot = rawSnapshots.get('pr')
+  if (!prSnapshot) return null
+
+  if (!rawSnapshots.has('reviews') || !rawSnapshots.has('commits')) return null
+
+  const raw: RawPrSnapshotData = {
+    pr: prSnapshot.data as RawPr,
+    reviews: rawSnapshots.get('reviews')?.data as RawPrReview[],
+    commits: rawSnapshots.get('commits')?.data as RawPrCommit[],
+    issueComments: (rawSnapshots.get('comments')?.data as RawIssueComment[]) ?? [],
+    reviewComments: (rawSnapshots.get('review_comments')?.data as RawReviewComment[]) ?? [],
+  }
+
+  return derivePrDataFromRaw(raw)
+}
+
+export type LegacyPrDataType = 'reviews' | 'commits' | 'checks' | 'comments'
+
+async function getLegacyPrData(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  requiredTypes: LegacyPrDataType[] = [],
+): Promise<GitHubPRData | null> {
+  const snapshots = await getAllLatestPrSnapshots(owner, repo, prNumber)
+  const metadata = snapshots.get('metadata')?.data as PrMetadata | undefined
+  if (!metadata) return null
+  if (requiredTypes.some((type) => !snapshots.has(type))) return null
+
+  const reviews = (snapshots.get('reviews')?.data as PrReview[]) ?? null
+  const commits = (snapshots.get('commits')?.data as PrCommit[]) ?? null
+  const checks = (snapshots.get('checks')?.data as PrChecks) ?? null
+  const comments = (snapshots.get('comments')?.data as PrComment[]) ?? null
+
+  return buildGithubPrDataFromSnapshots(metadata, reviews, commits, checks, comments)
+}
+
+export async function getCachedPrData(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  requiredLegacyTypes: LegacyPrDataType[] = [],
+): Promise<GitHubPRData | null> {
+  const fromRaw = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+  if (fromRaw) return fromRaw
+  return getLegacyPrData(owner, repo, prNumber, requiredLegacyTypes)
+}
+
+export async function getPrDataForDiff(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<{ metadata: PrMetadata; reviews: PrReview[]; commits: PrCommit[] } | null> {
+  const prData = await getCachedPrData(owner, repo, prNumber, ['reviews', 'commits'])
+  if (!prData) return null
+  const { metadata, reviews, commits } = mapPrDataToVerificationTypes(prNumber, prData)
+  return { metadata, reviews, commits }
+}
+
+export async function fetchMutablePrDataFromGitHub(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<{
+  githubRepoId: number
+  reviews: RawPrReview[]
+  issueComments: RawIssueComment[]
+  reviewComments: RawReviewComment[]
+  apiVersion: ApiVersionMetadata
+}> {
+  const result = await getMutablePrDataFromGitHub(owner, repo, prNumber)
+
+  if (!result) {
+    throw new Error(`Failed to fetch mutable PR data for PR #${prNumber} from ${owner}/${repo}`)
+  }
+
+  return result
+}
+
+export async function persistMutablePrSnapshots(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  githubRepoId: number,
+  data: Awaited<ReturnType<typeof fetchMutablePrDataFromGitHub>>,
+): Promise<void> {
+  await savePrRawSnapshotsBatch(owner, repo, prNumber, githubRepoId, data.apiVersion, [
+    { dataType: 'reviews', data: data.reviews },
+    { dataType: 'comments', data: data.issueComments },
+    { dataType: 'review_comments', data: data.reviewComments },
+  ])
+}
+
+/**
+ * Refreshes reviews, issue comments and review comments for a merged PR.
+ * GitHub still allows adding reviews and comments after a PR is merged, so these
+ * are re-fetched. PR metadata (branches, SHAs, merge state) and commits are frozen
+ * by GitHub once merged and are intentionally not re-fetched here.
+ * Returns null if the repository was deleted and recreated under the same name
+ * (current github_repo_id no longer matches the cached one), so the caller can
+ * fall back to a full refetch instead of mixing data from two different repositories.
+ */
+export async function refreshMutablePrData(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<GitHubPRData | null> {
+  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
+  const prSnapshot = rawSnapshots.get('pr')
+  if (!prSnapshot) return null
+
+  const fetched = await fetchMutablePrDataFromGitHub(owner, repo, prNumber)
+  if (fetched.githubRepoId !== prSnapshot.githubRepoId) return null
+
+  await persistMutablePrSnapshots(owner, repo, prNumber, fetched.githubRepoId, fetched)
+
+  return getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+}
 
 export interface FetchOptions {
   forceRefresh?: boolean
@@ -36,21 +174,36 @@ export async function fetchDeployedPrData(
   }
 
   if (!options?.forceRefresh) {
-    const cachedData = await getAllLatestPrSnapshots(owner, repo, prNumber)
+    const cachedPrData = await getCachedPrData(owner, repo, prNumber, ['reviews', 'commits', 'checks', 'comments'])
+    if (cachedPrData) {
+      const mapped = mapPrDataToVerificationTypes(prNumber, cachedPrData)
+      return {
+        deployedPr: {
+          number: prNumber,
+          url: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
+          metadata: mapped.metadata,
+          reviews: mapped.reviews,
+          commits: mapped.commits,
+        },
+        mismatchedBaseBranches,
+        mismatchedPrNumbers,
+      }
+    }
+  }
 
-    if (cachedData.has('metadata') && cachedData.has('reviews') && cachedData.has('commits')) {
-      const metadata = cachedData.get('metadata')?.data as PrMetadata
-      const reviews = cachedData.get('reviews')?.data as PrReview[]
-      const commits = cachedData.get('commits')?.data as PrCommit[]
-
-      if (cachedData.has('checks') && cachedData.has('comments')) {
+  if (options?.forceRefresh) {
+    const cachedPrData = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+    if (cachedPrData?.merged_at) {
+      const refreshed = await refreshMutablePrData(owner, repo, prNumber)
+      if (refreshed) {
+        const mapped = mapPrDataToVerificationTypes(prNumber, refreshed)
         return {
           deployedPr: {
             number: prNumber,
             url: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-            metadata,
-            reviews,
-            commits,
+            metadata: mapped.metadata,
+            reviews: mapped.reviews,
+            commits: mapped.commits,
           },
           mismatchedBaseBranches,
           mismatchedPrNumbers,
@@ -59,15 +212,10 @@ export async function fetchDeployedPrData(
     }
   }
 
-  const { metadata, reviews, commits, checks, comments } = await fetchPrFromGitHub(owner, repo, prNumber)
+  const fetched = await fetchPrFromGitHub(owner, repo, prNumber)
+  const { metadata, reviews, commits } = fetched
 
-  await savePrSnapshotsBatch(owner, repo, prNumber, [
-    { dataType: 'metadata', data: metadata },
-    { dataType: 'reviews', data: reviews },
-    { dataType: 'commits', data: commits },
-    { dataType: 'checks', data: checks },
-    { dataType: 'comments', data: comments },
-  ])
+  await persistPrSnapshots(owner, repo, prNumber, fetched)
 
   return {
     deployedPr: {
@@ -138,23 +286,16 @@ export async function findPrForCommit(
   }
 }
 
-export async function fetchPrFromGitHub(
-  owner: string,
-  repo: string,
+export function mapPrDataToVerificationTypes(
   prNumber: number,
-): Promise<{
+  prData: GitHubPRData,
+): {
   metadata: PrMetadata
   reviews: PrReview[]
   commits: PrCommit[]
   checks: PrChecks
   comments: PrComment[]
-}> {
-  const prData = await getDetailedPullRequestInfo(owner, repo, prNumber)
-
-  if (!prData) {
-    throw new Error(`Failed to fetch PR #${prNumber} from ${owner}/${repo}`)
-  }
-
+} {
   const metadata: PrMetadata = {
     number: prNumber,
     title: prData.title,
@@ -277,4 +418,45 @@ export async function fetchPrFromGitHub(
   }))
 
   return { metadata, reviews, commits, checks, comments }
+}
+
+export async function fetchPrFromGitHub(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<{
+  metadata: PrMetadata
+  reviews: PrReview[]
+  commits: PrCommit[]
+  checks: PrChecks
+  comments: PrComment[]
+  raw: RawPrSnapshotData
+  githubRepoId: number
+  apiVersion: ApiVersionMetadata
+}> {
+  const result = await getDetailedPullRequestInfo(owner, repo, prNumber)
+
+  if (!result) {
+    throw new Error(`Failed to fetch PR #${prNumber} from ${owner}/${repo}`)
+  }
+
+  const { prData, raw, githubRepoId, apiVersion } = result
+  const mapped = mapPrDataToVerificationTypes(prNumber, prData)
+
+  return { ...mapped, raw, githubRepoId, apiVersion }
+}
+
+export async function persistPrSnapshots(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  data: Awaited<ReturnType<typeof fetchPrFromGitHub>>,
+): Promise<void> {
+  await savePrRawSnapshotsBatch(owner, repo, prNumber, data.githubRepoId, data.apiVersion, [
+    { dataType: 'pr', data: data.raw.pr },
+    { dataType: 'reviews', data: data.raw.reviews },
+    { dataType: 'commits', data: data.raw.commits },
+    { dataType: 'comments', data: data.raw.issueComments },
+    { dataType: 'review_comments', data: data.raw.reviewComments },
+  ])
 }

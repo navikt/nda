@@ -22,6 +22,7 @@ vi.mock('~/lib/github', () => ({
   getChecksForCommit: mockGetChecksForCommit,
   getCommitsBetween: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
+  getMutablePrDataFromGitHub: vi.fn(),
   getPullRequestForCommit: vi.fn(),
   getSingleCommitMessage: vi.fn(),
   getWorkflowTriggerConfig: vi.fn(),
@@ -32,12 +33,14 @@ vi.mock('~/lib/github', () => ({
 
 vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrSnapshots: vi.fn(),
+  getAllLatestPrRawSnapshots: vi.fn(),
   getLatestCommitSnapshot: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
   markPrDataUnavailable: vi.fn(),
   saveCommitSnapshot: mockSaveCommitSnapshot,
   saveCompareSnapshot: vi.fn(),
   savePrSnapshotsBatch: vi.fn(),
+  savePrRawSnapshotsBatch: vi.fn(),
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({

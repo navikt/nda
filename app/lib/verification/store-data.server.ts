@@ -1,18 +1,11 @@
 import { updateCommitPrVerification } from '~/db/commits.server'
 import { pool } from '~/db/connection.server'
 import { logStatusTransition } from '~/db/deployments.server'
-import { getAllLatestPrSnapshots, saveVerificationRun } from '~/db/github-data.server'
+import { saveVerificationRun } from '~/db/github-data.server'
 import { PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
-import { buildGithubPrDataFromSnapshots } from './build-github-pr-data'
-import type {
-  PrChecks,
-  PrComment,
-  PrCommit,
-  PrMetadata,
-  PrReview,
-  VerificationInput,
-  VerificationResult,
-} from './types'
+import type { buildGithubPrDataFromSnapshots } from './build-github-pr-data'
+import { getCachedPrData } from './fetch-data/pr-data.server'
+import type { VerificationInput, VerificationResult } from './types'
 
 export async function storeVerificationResult(
   deploymentId: number,
@@ -158,19 +151,12 @@ async function buildGithubPrDataFromSnapshotsForPr(
   } = deploymentResult.rows[0]
   if (!owner || !repo) return null
 
-  const snapshots = await getAllLatestPrSnapshots(owner, repo, prNumber)
+  const cachedPrData = await getCachedPrData(owner, repo, prNumber)
+  if (!cachedPrData) return null
 
-  const metadata = snapshots.get('metadata')?.data as PrMetadata | undefined
-  if (!metadata) return null
+  const prData = { ...cachedPrData }
 
-  const reviews = (snapshots.get('reviews')?.data as PrReview[]) ?? null
-  const commits = (snapshots.get('commits')?.data as PrCommit[]) ?? null
-  const checks = (snapshots.get('checks')?.data as PrChecks) ?? null
-  const comments = (snapshots.get('comments')?.data as PrComment[]) ?? null
-
-  const prData = buildGithubPrDataFromSnapshots(metadata, reviews, commits, checks, comments)
-
-  const hasFreshChecks = !!checks && checks.checkRuns.length > 0
+  const hasFreshChecks = prData.checks.length > 0
   const hasLegacyChecks = !!existingPrData?.checks && existingPrData.checks.length > 0
   if (!hasFreshChecks && hasLegacyChecks) {
     prData.checks = existingPrData.checks

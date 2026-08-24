@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockPoolQuery, mockGetAllLatestPrSnapshots } = vi.hoisted(() => ({
+const { mockPoolQuery, mockGetAllLatestPrSnapshots, mockGetAllLatestPrRawSnapshots } = vi.hoisted(() => ({
   mockPoolQuery: vi.fn(),
   mockGetAllLatestPrSnapshots: vi.fn(),
+  mockGetAllLatestPrRawSnapshots: vi.fn().mockResolvedValue(new Map()),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -19,7 +20,11 @@ vi.mock('~/db/deployments.server', () => ({
 
 vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrSnapshots: mockGetAllLatestPrSnapshots,
+  getAllLatestPrRawSnapshots: mockGetAllLatestPrRawSnapshots,
   saveVerificationRun: vi.fn().mockResolvedValue(1),
+  getLatestCommitSnapshot: vi.fn(),
+  saveCommitSnapshot: vi.fn(),
+  savePrRawSnapshotsBatch: vi.fn(),
 }))
 
 vi.mock('~/lib/logger.server', () => ({

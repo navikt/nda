@@ -1,130 +1,14 @@
 import { pool } from '~/db/connection.server'
+import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
 import {
   type CommitDataType,
   type CommitSnapshot,
   CURRENT_SCHEMA_VERSION,
   type PrDataType,
+  type PrRawDataType,
+  type PrRawSnapshot,
   type PrSnapshot,
 } from '~/lib/verification/types'
-
-async function savePrSnapshot(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  dataType: PrDataType,
-  data: unknown,
-  options?: {
-    source?: 'github' | 'cached'
-    githubAvailable?: boolean
-  },
-): Promise<number> {
-  const result = await pool.query(
-    `INSERT INTO github_pr_snapshots 
-       (owner, repo, pr_number, data_type, schema_version, data, source, github_available)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id`,
-    [
-      owner,
-      repo,
-      prNumber,
-      dataType,
-      CURRENT_SCHEMA_VERSION,
-      JSON.stringify(data),
-      options?.source ?? 'github',
-      options?.githubAvailable ?? true,
-    ],
-  )
-  return result.rows[0].id
-}
-
-async function getLatestPrSnapshot(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  dataType: PrDataType,
-  options?: {
-    requireCurrentSchema?: boolean
-  },
-): Promise<PrSnapshot | null> {
-  const requireCurrent = options?.requireCurrentSchema ?? true
-
-  const result = await pool.query(
-    `SELECT id, owner, repo, pr_number, data_type, schema_version, 
-            fetched_at, source, github_available, data
-     FROM github_pr_snapshots
-     WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND data_type = $4
-       ${requireCurrent ? `AND schema_version = ${CURRENT_SCHEMA_VERSION}` : ''}
-     ORDER BY fetched_at DESC
-     LIMIT 1`,
-    [owner, repo, prNumber, dataType],
-  )
-
-  if (result.rows.length === 0) {
-    return null
-  }
-
-  const row = result.rows[0]
-  return {
-    id: row.id,
-    owner: row.owner,
-    repo: row.repo,
-    prNumber: row.pr_number,
-    dataType: row.data_type,
-    schemaVersion: row.schema_version,
-    fetchedAt: row.fetched_at,
-    source: row.source,
-    githubAvailable: row.github_available,
-    data: row.data,
-  }
-}
-
-async function _getPrSnapshotHistory(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  dataType: PrDataType,
-  options?: {
-    limit?: number
-  },
-): Promise<PrSnapshot[]> {
-  const limit = options?.limit ?? 100
-
-  const result = await pool.query(
-    `SELECT id, owner, repo, pr_number, data_type, schema_version, 
-            fetched_at, source, github_available, data
-     FROM github_pr_snapshots
-     WHERE owner = $1 AND repo = $2 AND pr_number = $3 AND data_type = $4
-     ORDER BY fetched_at DESC
-     LIMIT $5`,
-    [owner, repo, prNumber, dataType, limit],
-  )
-
-  return result.rows.map(
-    (row: {
-      id: number
-      owner: string
-      repo: string
-      pr_number: number
-      data_type: string
-      schema_version: number
-      fetched_at: Date
-      source: string
-      github_available: boolean
-      data: unknown
-    }) => ({
-      id: row.id,
-      owner: row.owner,
-      repo: row.repo,
-      prNumber: row.pr_number,
-      dataType: row.data_type as PrDataType,
-      schemaVersion: row.schema_version,
-      fetchedAt: row.fetched_at,
-      source: row.source as 'github' | 'cached',
-      githubAvailable: row.github_available,
-      data: row.data,
-    }),
-  )
-}
 
 export async function getAllLatestPrSnapshots(
   owner: string,
@@ -137,9 +21,8 @@ export async function getAllLatestPrSnapshots(
             fetched_at, source, github_available, data
      FROM github_pr_snapshots
      WHERE owner = $1 AND repo = $2 AND pr_number = $3
-       AND schema_version = $4
      ORDER BY data_type, fetched_at DESC`,
-    [owner, repo, prNumber, CURRENT_SCHEMA_VERSION],
+    [owner, repo, prNumber],
   )
 
   const snapshots = new Map<PrDataType, PrSnapshot>()
@@ -344,46 +227,93 @@ async function _saveCommitSnapshotsBatch(
   return result.rows.map((row: { id: number }) => row.id)
 }
 
-export async function markPrDataUnavailable(
+export async function savePrRawSnapshotsBatch(
   owner: string,
   repo: string,
   prNumber: number,
-  dataType: PrDataType,
-): Promise<void> {
-  const lastGood = await getLatestPrSnapshot(owner, repo, prNumber, dataType, {
-    requireCurrentSchema: false,
+  githubRepoId: number,
+  apiVersion: ApiVersionMetadata,
+  snapshots: Array<{ dataType: PrRawDataType; data: unknown }>,
+): Promise<number[]> {
+  if (snapshots.length === 0) return []
+
+  const values: unknown[] = []
+  const placeholders: string[] = []
+
+  snapshots.forEach((snapshot, idx) => {
+    const offset = idx * 9
+    placeholders.push(
+      `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`,
+    )
+    values.push(
+      githubRepoId,
+      owner,
+      repo,
+      prNumber,
+      snapshot.dataType,
+      apiVersion.apiVersion,
+      apiVersion.apiDeprecatedAt,
+      apiVersion.apiSunsetAt,
+      JSON.stringify(snapshot.data),
+    )
   })
 
-  if (lastGood) {
-    await savePrSnapshot(owner, repo, prNumber, dataType, lastGood.data, {
-      source: 'cached',
-      githubAvailable: false,
-    })
-  }
+  const result = await pool.query(
+    `INSERT INTO github_pr_raw_snapshots
+       (github_repo_id, owner, repo, pr_number, data_type, api_version, api_deprecated_at, api_sunset_at, data)
+     VALUES ${placeholders.join(', ')}
+     RETURNING id`,
+    values,
+  )
+
+  return result.rows.map((row: { id: number }) => row.id)
 }
 
-async function _markCommitDataUnavailable(
+export async function getAllLatestPrRawSnapshots(
   owner: string,
   repo: string,
-  sha: string,
-  dataType: CommitDataType,
-): Promise<void> {
-  const lastGood = await getLatestCommitSnapshot(owner, repo, sha, dataType, {
-    requireCurrentSchema: false,
-  })
+  prNumber: number,
+): Promise<Map<PrRawDataType, PrRawSnapshot>> {
+  const result = await pool.query(
+    `SELECT DISTINCT ON (data_type)
+            id, owner, repo, github_repo_id, pr_number, data_type,
+            api_version, api_deprecated_at, api_sunset_at, fetched_at, data
+     FROM github_pr_raw_snapshots
+     WHERE owner = $1 AND repo = $2 AND pr_number = $3
+       AND github_repo_id = (
+         SELECT github_repo_id
+         FROM github_pr_raw_snapshots
+         WHERE owner = $1 AND repo = $2 AND pr_number = $3
+         ORDER BY fetched_at DESC
+         LIMIT 1
+       )
+     ORDER BY data_type, fetched_at DESC`,
+    [owner, repo, prNumber],
+  )
 
-  if (lastGood) {
-    await saveCommitSnapshot(owner, repo, sha, dataType, lastGood.data, {
-      source: 'cached',
-      githubAvailable: false,
+  const snapshots = new Map<PrRawDataType, PrRawSnapshot>()
+  for (const row of result.rows) {
+    snapshots.set(row.data_type as PrRawDataType, {
+      id: row.id,
+      owner: row.owner,
+      repo: row.repo,
+      githubRepoId: Number(row.github_repo_id),
+      prNumber: row.pr_number,
+      dataType: row.data_type,
+      apiVersion: row.api_version,
+      apiDeprecatedAt: row.api_deprecated_at ? new Date(row.api_deprecated_at).toISOString() : null,
+      apiSunsetAt: row.api_sunset_at ? new Date(row.api_sunset_at).toISOString() : null,
+      fetchedAt: row.fetched_at,
+      data: row.data,
     })
   }
+  return snapshots
 }
 
-async function _cleanupOldSnapshots(options?: {
+export async function cleanupOldSnapshots(options?: {
   keepCount?: number
   olderThanDays?: number
-}): Promise<{ prSnapshotsDeleted: number; commitSnapshotsDeleted: number }> {
+}): Promise<{ prSnapshotsDeleted: number; commitSnapshotsDeleted: number; prRawSnapshotsDeleted: number }> {
   const keepCount = options?.keepCount ?? 5
   const olderThanDays = options?.olderThanDays ?? 90
 
@@ -419,9 +349,26 @@ async function _cleanupOldSnapshots(options?: {
     [keepCount],
   )
 
+  const prRawResult = await pool.query(
+    `DELETE FROM github_pr_raw_snapshots
+     WHERE id IN (
+       SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (
+           PARTITION BY github_repo_id, pr_number, data_type 
+           ORDER BY fetched_at DESC
+         ) as rn
+         FROM github_pr_raw_snapshots
+         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
+       ) ranked
+       WHERE rn > $1
+     )`,
+    [keepCount],
+  )
+
   return {
     prSnapshotsDeleted: prResult.rowCount ?? 0,
     commitSnapshotsDeleted: commitResult.rowCount ?? 0,
+    prRawSnapshotsDeleted: prRawResult.rowCount ?? 0,
   }
 }
 

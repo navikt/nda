@@ -22,4 +22,9 @@ export {
 } from './git.server'
 export { type LegacyLookupResult, lookupLegacyByCommit, lookupLegacyByPR } from './legacy.server'
 export { type CheckRun, getChecksForCommit } from './pr/checks.server'
-export { getDetailedPullRequestInfo, getMergedPullRequestsInWindow, getPullRequestForCommit } from './pr.server'
+export {
+  getDetailedPullRequestInfo,
+  getMergedPullRequestsInWindow,
+  getMutablePrDataFromGitHub,
+  getPullRequestForCommit,
+} from './pr.server'
