@@ -4,12 +4,12 @@ import { UserSearch } from '~/components/UserSearch'
 
 function mockFetchUserSearch(response: { status: number; body: unknown }) {
   const originalFetch = globalThis.fetch
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
     if (url.includes('/api/users/search')) {
       return new Response(JSON.stringify(response.body), { status: response.status })
     }
-    return originalFetch(input)
+    return originalFetch(input, init)
   }) as typeof fetch
   return () => {
     globalThis.fetch = originalFetch
@@ -18,8 +18,12 @@ function mockFetchUserSearch(response: { status: number; body: unknown }) {
 
 function mockFetchUserSearchRejecting() {
   const originalFetch = globalThis.fetch
-  globalThis.fetch = (async () => {
-    throw new Error('network down')
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    if (url.includes('/api/users/search')) {
+      throw new Error('network down')
+    }
+    return originalFetch(input, init)
   }) as typeof fetch
   return () => {
     globalThis.fetch = originalFetch
@@ -45,15 +49,17 @@ export const SearchResults: Story = {
       status: 200,
       body: { results: [{ displayName: 'Glad Fjord', navIdent: 'Z990001', email: 'glad.fjord@nav.no' }] },
     })
-    const canvas = within(canvasElement)
+    try {
+      const canvas = within(canvasElement)
 
-    await userEvent.type(canvas.getByRole('combobox'), 'Glad Fjord')
+      await userEvent.type(canvas.getByRole('combobox'), 'Glad Fjord')
 
-    await waitFor(() =>
-      expect(within(document.body).getByRole('option', { name: 'Glad Fjord (Z990001)' })).toBeInTheDocument(),
-    )
-
-    restoreFetch()
+      await waitFor(() =>
+        expect(within(document.body).getByRole('option', { name: 'Glad Fjord (Z990001)' })).toBeInTheDocument(),
+      )
+    } finally {
+      restoreFetch()
+    }
   },
 }
 
@@ -64,13 +70,15 @@ export const ErrorFromApi: Story = {
       status: 502,
       body: { results: [], error: 'Brukeroppslag er utilgjengelig' },
     })
-    const canvas = within(canvasElement)
+    try {
+      const canvas = within(canvasElement)
 
-    await userEvent.type(canvas.getByRole('combobox'), 'Glad Fjord')
+      await userEvent.type(canvas.getByRole('combobox'), 'Glad Fjord')
 
-    await waitFor(() => expect(canvas.getByText('Brukeroppslag er utilgjengelig')).toBeInTheDocument())
-
-    restoreFetch()
+      await waitFor(() => expect(canvas.getByText('Brukeroppslag er utilgjengelig')).toBeInTheDocument())
+    } finally {
+      restoreFetch()
+    }
   },
 }
 
@@ -78,12 +86,14 @@ export const NetworkError: Story = {
   name: 'Nettverksfeil',
   play: async ({ canvasElement }) => {
     const restoreFetch = mockFetchUserSearchRejecting()
-    const canvas = within(canvasElement)
+    try {
+      const canvas = within(canvasElement)
 
-    await userEvent.type(canvas.getByRole('combobox'), 'Glad Fjord')
+      await userEvent.type(canvas.getByRole('combobox'), 'Glad Fjord')
 
-    await waitFor(() => expect(canvas.getByText('Søket feilet')).toBeInTheDocument())
-
-    restoreFetch()
+      await waitFor(() => expect(canvas.getByText('Søket feilet')).toBeInTheDocument())
+    } finally {
+      restoreFetch()
+    }
   },
 }
