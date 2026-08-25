@@ -174,6 +174,19 @@ export interface ChecksRawSnapshot {
   data: unknown
 }
 
+export interface WorkflowRunRawSnapshot {
+  id: number
+  owner: string
+  repo: string
+  githubRepoId: number
+  runId: number
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+  fetchedAt: Date
+  data: unknown
+}
+
 export interface CompareSummary {
   status: string
   aheadBy: number

@@ -1,3 +1,4 @@
+import { saveWorkflowRunRawSnapshot } from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
 import { getGitHubClient } from './client.server'
@@ -140,12 +141,31 @@ async function resolveWorkflowRun(
   try {
     const client = getGitHubClient()
     const response = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
+    await archiveWorkflowRunRawSnapshot(owner, repo, runId, response.data, response.headers)
     return response.data
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const stack = error instanceof Error ? error.stack : undefined
     logger.warn(`⚠️ Failed to get workflow run ${runId} for ${owner}/${repo}:`, { error: message, stack_trace: stack })
     return null
+  }
+}
+
+async function archiveWorkflowRunRawSnapshot(
+  owner: string,
+  repo: string,
+  runId: number,
+  data: WorkflowRunData,
+  headers: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) return
+    const apiVersion = captureApiVersionMetadata(headers, null)
+    await saveWorkflowRunRawSnapshot(owner, repo, githubRepoId, runId, data, apiVersion)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`⚠️ Failed to archive workflow run ${runId} for ${owner}/${repo}:`, { error: message })
   }
 }
 
