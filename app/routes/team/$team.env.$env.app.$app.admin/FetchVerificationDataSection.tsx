@@ -114,9 +114,14 @@ export function FetchVerificationDataSection({
                 {fetchJobStatus?.status === 'running' ? 'Henter data...' : 'Hent data for alle deployments'}
               </Button>
               {fetchJobStatus?.status !== 'running' && (
-                <Switch size="small" name="debug">
-                  Debug-logging
-                </Switch>
+                <HStack gap="space-12" align="center" wrap>
+                  <Switch size="small" name="debug">
+                    Debug-logging
+                  </Switch>
+                  <Switch size="small" name="refresh_display_data">
+                    Oppdater visningsdata (samtalekommentarer, tittel, beskrivelse, etiketter)
+                  </Switch>
+                </HStack>
               )}
             </HStack>
           </Form>

@@ -1,13 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockPoolQuery, mockGetChecksForCommit, mockSaveCommitSnapshot, mockUpdateDeploymentCommitChecks } = vi.hoisted(
-  () => ({
-    mockPoolQuery: vi.fn(),
-    mockGetChecksForCommit: vi.fn(),
-    mockSaveCommitSnapshot: vi.fn(),
-    mockUpdateDeploymentCommitChecks: vi.fn(),
-  }),
-)
+const {
+  mockPoolQuery,
+  mockGetChecksForCommit,
+  mockSaveCommitSnapshot,
+  mockUpdateDeploymentCommitChecks,
+  mockGetAllLatestPrRawSnapshots,
+  mockSavePrRawSnapshotsBatch,
+  mockGetDisplayDataFromGitHub,
+} = vi.hoisted(() => ({
+  mockPoolQuery: vi.fn(),
+  mockGetChecksForCommit: vi.fn(),
+  mockSaveCommitSnapshot: vi.fn(),
+  mockUpdateDeploymentCommitChecks: vi.fn(),
+  mockGetAllLatestPrRawSnapshots: vi.fn(),
+  mockSavePrRawSnapshotsBatch: vi.fn(),
+  mockGetDisplayDataFromGitHub: vi.fn(),
+}))
 
 vi.mock('~/db/connection.server', () => ({
   pool: { query: mockPoolQuery },
@@ -22,6 +31,7 @@ vi.mock('~/lib/github', () => ({
   getChecksForCommit: mockGetChecksForCommit,
   getCommitsBetween: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
+  getDisplayDataFromGitHub: mockGetDisplayDataFromGitHub,
   getMutablePrDataFromGitHub: vi.fn(),
   getPullRequestForCommit: vi.fn(),
   getSingleCommitMessage: vi.fn(),
@@ -33,14 +43,14 @@ vi.mock('~/lib/github', () => ({
 
 vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrSnapshots: vi.fn(),
-  getAllLatestPrRawSnapshots: vi.fn(),
+  getAllLatestPrRawSnapshots: mockGetAllLatestPrRawSnapshots,
   getLatestCommitSnapshot: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
   markPrDataUnavailable: vi.fn(),
   saveCommitSnapshot: mockSaveCommitSnapshot,
   saveCompareSnapshot: vi.fn(),
   savePrSnapshotsBatch: vi.fn(),
-  savePrRawSnapshotsBatch: vi.fn(),
+  savePrRawSnapshotsBatch: mockSavePrRawSnapshotsBatch,
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
@@ -91,6 +101,9 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
     mockGetChecksForCommit.mockReset()
     mockSaveCommitSnapshot.mockReset()
     mockUpdateDeploymentCommitChecks.mockReset()
+    mockGetAllLatestPrRawSnapshots.mockReset()
+    mockSavePrRawSnapshotsBatch.mockReset()
+    mockGetDisplayDataFromGitHub.mockReset()
   })
 
   it('skips deployments that already have PR/compare data and commit_checks_data', async () => {
@@ -167,5 +180,95 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
 
     expect(result.fetched).toBe(1)
     expect(mockUpdateDeploymentCommitChecks).toHaveBeenCalledWith(1, undefined, false)
+  })
+
+  it('refreshes only PR display data (not reviews/commits) when refreshDisplayData is set for a fully cached deployment', async () => {
+    mockPoolQuery
+      .mockResolvedValueOnce({ rows: [{ audit_start_year: null }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [baseDeploymentRow({ has_checks_data: true, github_pr_number: 42 })],
+      })
+
+    const rawPr = {
+      base: { ref: 'main', sha: 'base123', repo: { id: 42 } },
+      head: { ref: 'feature', sha: 'head123' },
+      title: 'Some PR',
+      body: null,
+      labels: [],
+      created_at: '2026-01-01T00:00:00Z',
+      merged_at: null,
+      merge_commit_sha: null,
+      commits: 1,
+      changed_files: 1,
+      additions: 1,
+      deletions: 1,
+      comments: 0,
+      review_comments: 0,
+      draft: false,
+      mergeable: null,
+      mergeable_state: null,
+      rebaseable: null,
+      locked: false,
+      maintainer_can_modify: false,
+      auto_merge: null,
+      user: { login: 'dev', avatar_url: '' },
+      merged_by: null,
+      assignees: [],
+      requested_reviewers: [],
+      requested_teams: [],
+      milestone: null,
+    }
+
+    mockGetAllLatestPrRawSnapshots.mockResolvedValue(
+      new Map([
+        ['pr', { githubRepoId: 42, data: rawPr }],
+        ['reviews', { data: [] }],
+        ['commits', { data: [] }],
+      ]),
+    )
+    mockGetDisplayDataFromGitHub.mockResolvedValueOnce({
+      githubRepoId: 42,
+      pr: { ...rawPr, title: 'Updated title' },
+      issueComments: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+    })
+    mockSavePrRawSnapshotsBatch.mockResolvedValueOnce([1, 2])
+
+    const result = await fetchVerificationDataForAllDeployments(1, { refreshDisplayData: true })
+
+    expect(result.fetched).toBe(1)
+    expect(result.skipped).toBe(0)
+    expect(mockGetDisplayDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 42)
+    expect(mockGetChecksForCommit).not.toHaveBeenCalled()
+    expect(mockSavePrRawSnapshotsBatch).toHaveBeenCalledWith(
+      'navikt',
+      'nda',
+      42,
+      42,
+      { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      [
+        { dataType: 'pr', data: expect.objectContaining({ title: 'Updated title' }) },
+        { dataType: 'comments', data: [] },
+      ],
+    )
+  })
+
+  it('counts as skipped, not fetched, when the display data refresh fails to find a raw snapshot', async () => {
+    mockPoolQuery
+      .mockResolvedValueOnce({ rows: [{ audit_start_year: null }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [baseDeploymentRow({ has_checks_data: true, github_pr_number: 42 })],
+      })
+
+    mockGetAllLatestPrRawSnapshots.mockResolvedValue(new Map())
+
+    const result = await fetchVerificationDataForAllDeployments(1, { refreshDisplayData: true })
+
+    expect(result.fetched).toBe(0)
+    expect(result.skipped).toBe(1)
+    expect(mockGetDisplayDataFromGitHub).not.toHaveBeenCalled()
+    expect(mockSavePrRawSnapshotsBatch).not.toHaveBeenCalled()
   })
 })

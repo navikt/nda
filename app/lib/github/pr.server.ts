@@ -504,3 +504,47 @@ export async function getMutablePrDataFromGitHub(
     return null
   }
 }
+
+export async function getDisplayDataFromGitHub(
+  owner: string,
+  repo: string,
+  pull_number: number,
+): Promise<{
+  githubRepoId: number
+  pr: RawPrSnapshotData['pr']
+  issueComments: RawPrSnapshotData['issueComments']
+  apiVersion: ApiVersionMetadata
+} | null> {
+  const client = getGitHubClient()
+
+  try {
+    let apiVersion: ApiVersionMetadata | null = null
+    const captureHeaders = (headers: Record<string, unknown>): void => {
+      apiVersion = captureApiVersionMetadata(headers, apiVersion)
+    }
+
+    const [prResponse, allIssueComments] = await Promise.all([
+      client.pulls.get({ owner, repo, pull_number }),
+      client.paginate(
+        client.issues.listComments,
+        { owner, repo, issue_number: pull_number, per_page: 100 },
+        (response) => {
+          captureHeaders(response.headers)
+          return response.data
+        },
+      ),
+    ])
+
+    captureHeaders(prResponse.headers)
+
+    return {
+      githubRepoId: prResponse.data.base.repo.id,
+      pr: prResponse.data,
+      issueComments: allIssueComments,
+      apiVersion: apiVersion ?? { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null },
+    }
+  } catch (error) {
+    logger.error('Error fetching PR display data:', error)
+    return null
+  }
+}

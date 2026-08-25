@@ -6,7 +6,12 @@ import {
   saveCommitSnapshot,
   savePrRawSnapshotsBatch,
 } from '~/db/github-data.server'
-import { getDetailedPullRequestInfo, getMutablePrDataFromGitHub, getPullRequestForCommit } from '~/lib/github'
+import {
+  getDetailedPullRequestInfo,
+  getDisplayDataFromGitHub,
+  getMutablePrDataFromGitHub,
+  getPullRequestForCommit,
+} from '~/lib/github'
 import type {
   ApiVersionMetadata,
   RawIssueComment,
@@ -146,8 +151,25 @@ export async function refreshMutablePrData(
   return getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
 }
 
+export async function refreshDisplayData(owner: string, repo: string, prNumber: number): Promise<GitHubPRData | null> {
+  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
+  const prSnapshot = rawSnapshots.get('pr')
+  if (!prSnapshot) return null
+
+  const fetched = await getDisplayDataFromGitHub(owner, repo, prNumber)
+  if (!fetched || fetched.githubRepoId !== prSnapshot.githubRepoId) return null
+
+  await savePrRawSnapshotsBatch(owner, repo, prNumber, fetched.githubRepoId, fetched.apiVersion, [
+    { dataType: 'pr', data: fetched.pr },
+    { dataType: 'comments', data: fetched.issueComments },
+  ])
+
+  return getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+}
+
 export interface FetchOptions {
   forceRefresh?: boolean
+  refreshDisplayData?: boolean
   dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[]
 }
 
@@ -171,6 +193,24 @@ export async function fetchDeployedPrData(
   )
   if (!prNumber) {
     return { deployedPr: null, mismatchedBaseBranches, mismatchedPrNumbers }
+  }
+
+  if (options?.refreshDisplayData) {
+    const refreshed = await refreshDisplayData(owner, repo, prNumber)
+    if (refreshed) {
+      const mapped = mapPrDataToVerificationTypes(prNumber, refreshed)
+      return {
+        deployedPr: {
+          number: prNumber,
+          url: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
+          metadata: mapped.metadata,
+          reviews: mapped.reviews,
+          commits: mapped.commits,
+        },
+        mismatchedBaseBranches,
+        mismatchedPrNumbers,
+      }
+    }
   }
 
   if (!options?.forceRefresh) {

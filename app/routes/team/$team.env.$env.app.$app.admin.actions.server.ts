@@ -38,10 +38,11 @@ import { isImplicitApprovalMode } from '~/lib/verification/types'
 async function processFetchDataJobAsync(jobId: number, appId: number) {
   const options = await getSyncJobOptions(jobId)
   const debug = options?.debug === true
+  const refreshDisplayData = options?.refreshDisplayData === true
 
   await runWithJobContext(jobId, 'fetch_verification_data', appId, debug, async () => {
     try {
-      const result = await fetchVerificationDataForAllDeployments(appId, { jobId })
+      const result = await fetchVerificationDataForAllDeployments(appId, { jobId, refreshDisplayData })
       const job = await getSyncJobById(jobId)
       if (job?.status === 'cancelled') {
         return
@@ -278,7 +279,12 @@ export async function action({ request }: { request: Request; params: Record<str
 
   if (action === 'fetch_verification_data') {
     const debug = formData.get('debug') === 'on'
-    const jobId = await acquireSyncLock('fetch_verification_data', appId, 5, debug ? { debug: true } : undefined)
+    const refreshDisplayData = formData.get('refresh_display_data') === 'on'
+    const jobOptions =
+      debug || refreshDisplayData
+        ? { ...(debug ? { debug: true } : {}), ...(refreshDisplayData ? { refreshDisplayData: true } : {}) }
+        : undefined
+    const jobId = await acquireSyncLock('fetch_verification_data', appId, 5, jobOptions)
     if (!jobId) {
       return { error: 'En datahenting kjører allerede for denne appen' }
     }
