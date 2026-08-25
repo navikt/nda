@@ -24,6 +24,7 @@ export { type LegacyLookupResult, lookupLegacyByCommit, lookupLegacyByPR } from 
 export { type CheckRun, getChecksForCommit } from './pr/checks.server'
 export {
   getDetailedPullRequestInfo,
+  getDisplayDataFromGitHub,
   getMergedPullRequestsInWindow,
   getMutablePrDataFromGitHub,
   getPullRequestForCommit,

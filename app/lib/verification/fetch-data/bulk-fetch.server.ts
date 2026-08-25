@@ -6,6 +6,7 @@ import { fetchVerificationData, getAppSettings } from '../fetch-data.server'
 import { updateDeploymentCommitChecks } from '../store-data.server'
 import { CURRENT_SCHEMA_VERSION } from '../types'
 import { refreshCommitChecksOnly } from './commit-checks.server'
+import { refreshDisplayData as refreshPrDisplayData } from './pr-data.server'
 import { backfillWorkflowTriggerConfig } from './workflow-triggers.server'
 
 export interface BulkFetchProgress {
@@ -23,10 +24,11 @@ export interface BulkFetchResult extends BulkFetchProgress {
 
 export async function fetchVerificationDataForAllDeployments(
   monitoredAppId: number,
-  options?: { jobId?: number },
+  options?: { jobId?: number; refreshDisplayData?: boolean },
   onProgress?: (progress: BulkFetchProgress) => void,
 ): Promise<BulkFetchResult> {
   const jobId = options?.jobId
+  const refreshDisplayData = options?.refreshDisplayData
 
   const settingsStart = performance.now()
   const appSettings = await getAppSettings(monitoredAppId)
@@ -148,11 +150,25 @@ export async function fetchVerificationDataForAllDeployments(
       const hasChecksData = deployment.has_checks_data
 
       if (hasCurrentData && hasChecksData) {
-        result.skipped++
-        logger.debug(`Hoppet over deployment ${deployment.id} (data finnes)`, {
-          commitSha: commitSha.substring(0, 7),
-          repo: `${owner}/${repo}`,
-        })
+        const refreshed =
+          refreshDisplayData && deployment.github_pr_number
+            ? await refreshPrDisplayData(owner, repo, deployment.github_pr_number)
+            : null
+        if (refreshed) {
+          result.fetched++
+          if (jobId) {
+            await logSyncJobMessage(jobId, 'info', `Oppdaterte visningsdata for deployment ${deployment.id}`, {
+              commitSha: commitSha.substring(0, 7),
+              repo: `${owner}/${repo}`,
+            })
+          }
+        } else {
+          result.skipped++
+          logger.debug(`Hoppet over deployment ${deployment.id} (data finnes)`, {
+            commitSha: commitSha.substring(0, 7),
+            repo: `${owner}/${repo}`,
+          })
+        }
       } else if (hasCurrentData) {
         const fetchStart = performance.now()
         await refreshCommitChecksOnly(
@@ -164,6 +180,9 @@ export async function fetchVerificationDataForAllDeployments(
           deployment.trigger_url,
           deployment.workflow_trigger_config,
         )
+        if (refreshDisplayData && deployment.github_pr_number) {
+          await refreshPrDisplayData(owner, repo, deployment.github_pr_number)
+        }
         const fetchDuration = Math.round(performance.now() - fetchStart)
         result.fetched++
         if (jobId) {
