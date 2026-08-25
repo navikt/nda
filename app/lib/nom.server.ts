@@ -12,13 +12,18 @@ interface NomRessurs {
   visningsnavn: string | null
 }
 
+interface NomSearchRessurs {
+  navident: string
+  visningsnavn: string | null
+}
+
 interface NomRessurserResponse {
   data?: { ressurser: { ressurs: NomRessurs | null }[] }
   errors?: { message: string }[]
 }
 
 interface NomSearchRessursResponse {
-  data?: { searchRessurs: NomRessurs[] }
+  data?: { searchRessurs: NomSearchRessurs[] }
   errors?: { message: string }[]
 }
 
@@ -80,6 +85,26 @@ function toUserResult(ressurs: NomRessurs): UserLookupResult {
   }
 }
 
+function toSearchUserResult(ressurs: NomSearchRessurs): UserLookupResult {
+  return {
+    displayName: ressurs.visningsnavn,
+    navIdent: ressurs.navident,
+    email: null,
+  }
+}
+
+function assertNoFatalErrors<T>(result: { data?: T; errors?: { message: string }[] }, hasData: (data: T) => boolean) {
+  if (!result.errors?.length) return
+
+  if (result.data && hasData(result.data)) {
+    logger.warn('NOM API returned partial errors, using available data', { errorCount: result.errors.length })
+    return
+  }
+
+  logger.error('NOM API returned errors', { errors: result.errors })
+  throw new Error(`NOM API returned errors: ${result.errors.map((e) => e.message).join(', ')}`)
+}
+
 async function queryNom<T>(query: string, variables: Record<string, unknown>): Promise<T> {
   const [token, url] = [await getAccessToken(), getApiUrl()]
 
@@ -116,7 +141,6 @@ const SEARCH_RESSURS_QUERY = `
   query SearchRessurs($term: String!) {
     searchRessurs(term: $term) {
       navident
-      epost
       visningsnavn
     }
   }
@@ -127,10 +151,7 @@ export async function getNomUsersByNavIdenter(navIdenter: string[]): Promise<Use
 
   const result = await queryNom<NomRessurserResponse>(RESSURSER_BY_NAV_IDENT_QUERY, { navIdenter })
 
-  if (result.errors?.length) {
-    logger.error('NOM API returned errors', { errors: result.errors })
-    throw new Error(`NOM API returned errors: ${result.errors.map((e) => e.message).join(', ')}`)
-  }
+  assertNoFatalErrors(result, (data) => data.ressurser.some((r) => r.ressurs !== null))
 
   return (result.data?.ressurser ?? []).flatMap((r) => (r.ressurs ? [toUserResult(r.ressurs)] : []))
 }
@@ -147,10 +168,7 @@ export async function searchNomUsers(query: string): Promise<UserLookupResult[]>
 
   const result = await queryNom<NomSearchRessursResponse>(SEARCH_RESSURS_QUERY, { term: trimmed })
 
-  if (result.errors?.length) {
-    logger.error('NOM API returned errors', { errors: result.errors })
-    throw new Error(`NOM API returned errors: ${result.errors.map((e) => e.message).join(', ')}`)
-  }
+  assertNoFatalErrors(result, (data) => data.searchRessurs.length > 0)
 
-  return (result.data?.searchRessurs ?? []).map(toUserResult)
+  return (result.data?.searchRessurs ?? []).map(toSearchUserResult)
 }

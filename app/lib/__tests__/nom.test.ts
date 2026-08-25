@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('~/lib/logger.server', () => ({
-  logger: { error: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn() },
   fetchWithLogging: async (_area: string, url: string | URL, options?: RequestInit) => fetch(url, options),
   logOutgoingHttp: vi.fn(),
 }))
@@ -125,9 +125,7 @@ describe('nom.server', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(mockTokenResponse())
-      .mockResolvedValueOnce(
-        mockSearchRessursResponse([{ navident: 'Z990004', epost: null, visningsnavn: 'Røe, Modig' }]),
-      )
+      .mockResolvedValueOnce(mockSearchRessursResponse([{ navident: 'Z990004', visningsnavn: 'Røe, Modig' }]))
     vi.stubGlobal('fetch', fetchMock)
 
     const { searchNomUsers } = await getModule()
@@ -138,6 +136,7 @@ describe('nom.server', () => {
     const apiCall = fetchMock.mock.calls[1]
     const body = JSON.parse(apiCall[1]?.body as string)
     expect(body.query).toContain('SearchRessurs')
+    expect(body.query).not.toContain('epost')
     expect(body.variables).toEqual({ term: 'Modig Røe' })
   })
 
@@ -189,5 +188,59 @@ describe('nom.server', () => {
 
     const { searchNomUsers } = await getModule()
     await expect(searchNomUsers('test')).rejects.toThrow('NOM API returned errors: boom')
+  })
+
+  it('returns available results when the search returns partial GraphQL errors', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockTokenResponse())
+      .mockResolvedValueOnce(
+        Response.json({
+          data: { searchRessurs: [{ navident: 'Z990005', visningsnavn: 'Fjell, Rolig' }] },
+          errors: [{ message: 'AD har ingen data på nav-ident: Z990099' }],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { searchNomUsers } = await getModule()
+    const results = await searchNomUsers('Rolig')
+
+    expect(results).toEqual([{ displayName: 'Fjell, Rolig', navIdent: 'Z990005', email: null }])
+  })
+
+  it('returns available results when the nav-ident lookup returns partial GraphQL errors', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockTokenResponse())
+      .mockResolvedValueOnce(
+        Response.json({
+          data: { ressurser: [{ ressurs: { navident: 'Z990006', epost: null, visningsnavn: 'Vik, Rolig' } }] },
+          errors: [{ message: 'AD har ingen data på nav-ident: Z990099' }],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { getNomUsersByNavIdenter } = await getModule()
+    const results = await getNomUsersByNavIdenter(['Z990006'])
+
+    expect(results).toEqual([{ displayName: 'Vik, Rolig', navIdent: 'Z990006', email: null }])
+  })
+
+  it('throws when the nav-ident lookup returns errors and only null ressurs entries', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockTokenResponse())
+      .mockResolvedValueOnce(
+        Response.json({
+          data: { ressurser: [{ ressurs: null }] },
+          errors: [{ message: 'AD har ingen data på nav-ident: Z990099' }],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { getNomUsersByNavIdenter } = await getModule()
+    await expect(getNomUsersByNavIdenter(['Z990099'])).rejects.toThrow(
+      'NOM API returned errors: AD har ingen data på nav-ident: Z990099',
+    )
   })
 })
