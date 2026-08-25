@@ -9,7 +9,7 @@ export async function truncateAllTables(pool: Pool): Promise<void> {
   if (rows.length === 0) return
 
   const tableList = rows.map((r) => `"${r.tablename}"`).join(', ')
-  await pool.query(`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`)
+  await pool.query(`TRUNCATE TABLE ${tableList} CASCADE`)
 }
 
 export async function seedSection(pool: Pool, slug: string, name?: string): Promise<number> {
