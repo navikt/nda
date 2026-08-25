@@ -392,6 +392,7 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
 }
 
 export {
+  getDerivedCompareDataFromRawSnapshot,
   getGitHubDataStatsForApp,
   getLatestCompareRawSnapshot,
   getLatestCompareSnapshot,

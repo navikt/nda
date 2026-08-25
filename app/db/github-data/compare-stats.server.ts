@@ -1,5 +1,6 @@
 import { pool } from '~/db/connection.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
+import { mapCompareResponse, type RawCompareResponse } from '~/lib/github/compare-snapshot'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
 import {
   type CompareData,
@@ -147,6 +148,21 @@ export async function getLatestCompareRawSnapshot(
     apiSunsetAt: row.api_sunset_at ? new Date(row.api_sunset_at).toISOString() : null,
     fetchedAt: row.fetched_at,
     data: row.data,
+  }
+}
+
+export async function getDerivedCompareDataFromRawSnapshot(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+): Promise<CompareData | null> {
+  const rawSnapshot = await getLatestCompareRawSnapshot(owner, repo, baseSha, headSha)
+  if (!rawSnapshot) return null
+  try {
+    return mapCompareResponse(rawSnapshot.data as RawCompareResponse)
+  } catch {
+    return null
   }
 }
 

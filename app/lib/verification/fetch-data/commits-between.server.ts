@@ -1,4 +1,5 @@
 import {
+  getDerivedCompareDataFromRawSnapshot,
   getLatestCompareSnapshot,
   saveCommitSnapshot,
   saveCompareRawSnapshot,
@@ -47,6 +48,44 @@ export async function fetchCommitsBetween(
       return {
         commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, cachedCompare.data, options),
         compareSummary: cachedCompare.data.compare,
+      }
+    }
+
+    const derivedCompareData = await getDerivedCompareDataFromRawSnapshot(owner, repo, fromSha, toSha)
+    if (derivedCompareData) {
+      logger.info(
+        `   🗃️  Deriving compare data from raw snapshot (${derivedCompareData.commits.length} commits, ${derivedCompareData.compare.changedFiles} files)`,
+      )
+
+      const isEmptyCompare = derivedCompareData.commits.length === 0 && derivedCompareData.compare.changedFiles === 0
+      const shouldTryTreeFallback =
+        isEmptyCompare && derivedCompareData.compare.status !== 'identical' && fromSha !== toSha
+      let hasSameTree: boolean | null = null
+      if (shouldTryTreeFallback) {
+        hasSameTree = await haveSameCommitTree(owner, repo, fromSha, toSha)
+      }
+
+      const { noDiffDetected, shouldPersistCompare } = resolveNoDiffDetection(
+        derivedCompareData,
+        fromSha,
+        toSha,
+        hasSameTree,
+      )
+
+      const storedDerivedCompareData: CompareData = {
+        ...derivedCompareData,
+        compare: {
+          ...derivedCompareData.compare,
+          noDiffDetected,
+        },
+      }
+
+      if (shouldPersistCompare) {
+        await saveCompareSnapshot(owner, repo, fromSha, toSha, storedDerivedCompareData, { source: 'cached' })
+      }
+      return {
+        commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, storedDerivedCompareData, options),
+        compareSummary: storedDerivedCompareData.compare,
       }
     }
   }

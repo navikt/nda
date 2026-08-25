@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 vi.mock('~/db/github-data.server', () => ({
+  getDerivedCompareDataFromRawSnapshot: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
   saveCommitSnapshot: vi.fn(),
   saveCompareRawSnapshot: vi.fn(),
@@ -24,11 +25,17 @@ vi.mock('~/lib/verification/fetch-data/pr-data.server', () => ({
   persistPrSnapshots: vi.fn(),
 }))
 
-import { getLatestCompareSnapshot, saveCompareRawSnapshot, saveCompareSnapshot } from '~/db/github-data.server'
+import {
+  getDerivedCompareDataFromRawSnapshot,
+  getLatestCompareSnapshot,
+  saveCompareRawSnapshot,
+  saveCompareSnapshot,
+} from '~/db/github-data.server'
 import { getCommitsBetween, haveSameCommitTree } from '~/lib/github'
 import { fetchCommitsBetween } from '~/lib/verification/fetch-data/commits-between.server'
 
 const mockGetLatestCompareSnapshot = getLatestCompareSnapshot as Mock
+const mockGetDerivedCompareDataFromRawSnapshot = getDerivedCompareDataFromRawSnapshot as Mock
 const mockSaveCompareSnapshot = saveCompareSnapshot as Mock
 const mockSaveCompareRawSnapshot = saveCompareRawSnapshot as Mock
 const mockGetCommitsBetween = getCommitsBetween as Mock
@@ -38,6 +45,7 @@ describe('fetchCommitsBetween raw persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetLatestCompareSnapshot.mockResolvedValue(null)
+    mockGetDerivedCompareDataFromRawSnapshot.mockResolvedValue(null)
   })
 
   it('persists the raw compare response alongside the transformed snapshot', async () => {
