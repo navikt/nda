@@ -177,7 +177,7 @@ describe('nom.server', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const { searchNomUsers } = await getModule()
-    await expect(searchNomUsers('test')).rejects.toThrow('NOM API request failed: 403')
+    await expect(searchNomUsers('test')).rejects.toThrow('NOM API request failed: 403 - Forbidden')
   })
 
   it('throws when the NOM API returns GraphQL errors', async () => {
@@ -189,5 +189,39 @@ describe('nom.server', () => {
 
     const { searchNomUsers } = await getModule()
     await expect(searchNomUsers('test')).rejects.toThrow('NOM API returned errors: boom')
+  })
+
+  it('includes the response body in the error when token acquisition fails', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'invalid_target', error_description: 'Unknown scope' }), {
+        status: 400,
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { searchNomUsers } = await getModule()
+    await expect(searchNomUsers('test')).rejects.toThrow(
+      'Token acquisition failed: 400 - {"error":"invalid_target","error_description":"Unknown scope"}',
+    )
+
+    const { logger } = await import('~/lib/logger.server')
+    expect(logger.error).toHaveBeenCalledWith('Failed to acquire NOM token', {
+      status: 400,
+      body: '{"error":"invalid_target","error_description":"Unknown scope"}',
+    })
+  })
+
+  it('omits the trailing dash when the error response body is empty', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { searchNomUsers } = await getModule()
+
+    try {
+      await searchNomUsers('test')
+      throw new Error('expected searchNomUsers to throw')
+    } catch (error) {
+      expect((error as Error).message).toBe('Token acquisition failed: 500')
+    }
   })
 })

@@ -24,6 +24,17 @@ interface NomSearchRessursResponse {
 
 let cachedToken: { token: string; expiresAt: number } | null = null
 
+const MAX_ERROR_BODY_LENGTH = 500
+
+async function readErrorBody(response: Response): Promise<string | undefined> {
+  try {
+    const text = await response.text()
+    return text ? text.slice(0, MAX_ERROR_BODY_LENGTH) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function getAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expiresAt) {
     return cachedToken.token
@@ -49,8 +60,9 @@ async function getAccessToken(): Promise<string> {
   })
 
   if (!response.ok) {
-    logger.error('Failed to acquire NOM token', { status: response.status })
-    throw new Error(`Token acquisition failed: ${response.status}`)
+    const body = await readErrorBody(response)
+    logger.error('Failed to acquire NOM token', { status: response.status, body })
+    throw new Error(`Token acquisition failed: ${response.status}${body ? ` - ${body}` : ''}`)
   }
 
   const data: NomToken = await response.json()
@@ -93,8 +105,9 @@ async function queryNom<T>(query: string, variables: Record<string, unknown>): P
   })
 
   if (!response.ok) {
-    logger.error('NOM API request failed', { status: response.status })
-    throw new Error(`NOM API request failed: ${response.status}`)
+    const body = await readErrorBody(response)
+    logger.error('NOM API request failed', { status: response.status, body })
+    throw new Error(`NOM API request failed: ${response.status}${body ? ` - ${body}` : ''}`)
   }
 
   return response.json()
