@@ -96,7 +96,7 @@ export async function haveSameCommitTree(
   }
 }
 
-async function archiveCommitRawSnapshot(
+export async function archiveCommitRawSnapshot(
   owner: string,
   repo: string,
   sha: string,
@@ -171,6 +171,7 @@ export async function getSingleCommitMessage(owner: string, repo: string, commit
   try {
     const client = getGitHubClient()
     const response = await client.repos.getCommit({ owner, repo, ref: commitSha })
+    await archiveCommitRawSnapshot(owner, repo, commitSha, response.data, response.headers)
     return response.data.commit.message || null
   } catch (error) {
     logger.warn(
