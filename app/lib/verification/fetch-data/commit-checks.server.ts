@@ -1,7 +1,8 @@
 import { pool } from '~/db/connection.server'
-import { saveCommitSnapshot } from '~/db/github-data.server'
+import { saveChecksRawSnapshot, saveCommitSnapshot } from '~/db/github-data.server'
 import {
   getChecksForCommit,
+  getRepositoryId,
   getWorkflowTriggerConfig,
   WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
   type WorkflowTriggerConfig,
@@ -34,8 +35,33 @@ export async function fetchCommitChecks(
   checkSuiteId?: number | null,
 ): Promise<CommitChecksFetchResult> {
   try {
+    // Resolve the repository id before fetching checks: if the repo is deleted and recreated
+    // between these two requests, we want the id to reflect the generation the checks response
+    // actually belongs to, not a newer one obtained afterwards.
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) {
+      logger.warn(`Could not resolve github_repo_id for ${owner}/${repo}, skipping raw checks archive`)
+      return { commitChecks: undefined, attempted: false }
+    }
+
+    const observedAt = new Date()
     const result = await getChecksForCommit(owner, repo, commitSha, fallbackSha, checkSuiteId)
-    if (!result) return { commitChecks: undefined, attempted: true }
+
+    await saveChecksRawSnapshot(
+      owner,
+      repo,
+      githubRepoId,
+      result.matchedSha,
+      result.matchedCheckSuiteId,
+      result.isDefinitive,
+      result.rawCheckRuns,
+      result.apiVersion,
+      observedAt,
+    )
+
+    if (result.checks.length === 0) {
+      return { commitChecks: undefined, attempted: result.isDefinitive }
+    }
 
     await saveCommitSnapshot(owner, repo, result.matchedSha, 'checks', result.rawSnapshot)
 

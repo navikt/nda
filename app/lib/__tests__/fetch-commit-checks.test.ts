@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION } from '~/lib/github/git.server'
 
-const { mockGetChecksForCommit, mockSaveCommitSnapshot, mockGetWorkflowTriggerConfig } = vi.hoisted(() => ({
+const {
+  mockGetChecksForCommit,
+  mockSaveCommitSnapshot,
+  mockGetWorkflowTriggerConfig,
+  mockGetRepositoryId,
+  mockSaveChecksRawSnapshot,
+} = vi.hoisted(() => ({
   mockGetChecksForCommit: vi.fn(),
   mockSaveCommitSnapshot: vi.fn(),
   mockGetWorkflowTriggerConfig: vi.fn(),
+  mockGetRepositoryId: vi.fn(),
+  mockSaveChecksRawSnapshot: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -24,6 +32,7 @@ vi.mock('~/lib/github', async () => {
     getDetailedPullRequestInfo: vi.fn(),
     getMutablePrDataFromGitHub: vi.fn(),
     getPullRequestForCommit: vi.fn(),
+    getRepositoryId: mockGetRepositoryId,
     getSingleCommitMessage: vi.fn(),
     getWorkflowTriggerConfig: mockGetWorkflowTriggerConfig,
     haveSameCommitTree: vi.fn(),
@@ -37,6 +46,7 @@ vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrRawSnapshots: vi.fn(),
   getLatestCommitSnapshot: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
+  saveChecksRawSnapshot: mockSaveChecksRawSnapshot,
   saveCommitSnapshot: mockSaveCommitSnapshot,
   saveCompareSnapshot: vi.fn(),
   savePrSnapshotsBatch: vi.fn(),
@@ -75,14 +85,61 @@ describe('fetchCommitChecks', () => {
   beforeEach(() => {
     mockGetChecksForCommit.mockReset()
     mockSaveCommitSnapshot.mockReset()
+    mockGetRepositoryId.mockReset()
+    mockGetRepositoryId.mockResolvedValue(123)
+    mockSaveChecksRawSnapshot.mockReset()
   })
 
-  it('returns commitChecks undefined (not null) when GitHub reports zero check runs, so COALESCE preserves cached data, but still marks the attempt as completed', async () => {
-    mockGetChecksForCommit.mockResolvedValueOnce(null)
+  it('returns commitChecks undefined and archives the definitive empty result when GitHub reports zero check runs, so COALESCE preserves cached data, but still marks the attempt as completed', async () => {
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: null,
+      checks: [],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
 
     const result = await fetchCommitChecks('navikt', 'nda', 'a'.repeat(40))
 
     expect(result).toEqual({ commitChecks: undefined, attempted: true })
+    expect(mockSaveCommitSnapshot).not.toHaveBeenCalled()
+    expect(mockSaveChecksRawSnapshot).toHaveBeenCalledWith(
+      'navikt',
+      'nda',
+      123,
+      'a'.repeat(40),
+      null,
+      true,
+      [],
+      {
+        apiVersion: '2022-11-28',
+        apiDeprecatedAt: null,
+        apiSunsetAt: null,
+      },
+      expect.any(Date),
+    )
+  })
+
+  it('does not archive and returns attempted: false when the repository id cannot be resolved', async () => {
+    mockGetRepositoryId.mockResolvedValueOnce(null)
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: true,
+      checks: [{ name: 'build', status: 'completed', conclusion: 'success' }],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
+
+    const result = await fetchCommitChecks('navikt', 'nda', 'a'.repeat(40))
+
+    expect(result).toEqual({ commitChecks: undefined, attempted: false })
+    expect(mockSaveChecksRawSnapshot).not.toHaveBeenCalled()
     expect(mockSaveCommitSnapshot).not.toHaveBeenCalled()
   })
 
@@ -100,7 +157,10 @@ describe('fetchCommitChecks', () => {
       checks_passed: true,
       checks: [{ name: 'build', status: 'completed', conclusion: 'success' }],
       rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
       matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
       isDefinitive: true,
     })
 
@@ -118,6 +178,21 @@ describe('fetchCommitChecks', () => {
       schemaVersion: 1,
       checkRuns: [],
     })
+    expect(mockSaveChecksRawSnapshot).toHaveBeenCalledWith(
+      'navikt',
+      'nda',
+      123,
+      'a'.repeat(40),
+      null,
+      true,
+      [],
+      {
+        apiVersion: '2022-11-28',
+        apiDeprecatedAt: null,
+        apiSunsetAt: null,
+      },
+      expect.any(Date),
+    )
   })
 
   it('retries against the fallback SHA and reports the matched SHA when the primary commit has no checks', async () => {
@@ -125,7 +200,10 @@ describe('fetchCommitChecks', () => {
       checks_passed: false,
       checks: [{ name: 'build', status: 'completed', conclusion: 'failure' }],
       rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
       matchedSha: 'b'.repeat(40),
+      matchedCheckSuiteId: null,
       isDefinitive: true,
     })
 
@@ -144,7 +222,10 @@ describe('fetchCommitChecks', () => {
       checks_passed: null,
       checks: [{ name: 'build', status: 'in_progress', conclusion: null }],
       rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
       matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
       isDefinitive: false,
     })
 
@@ -169,6 +250,8 @@ describe('refreshCommitChecksOnly', () => {
     mockGetAllLatestPrRawSnapshots.mockResolvedValue(new Map())
     mockUpdateDeploymentCommitChecks.mockReset()
     mockGetWorkflowTriggerConfig.mockReset()
+    mockGetRepositoryId.mockReset()
+    mockGetRepositoryId.mockResolvedValue(123)
   })
 
   it('resolves the PR head SHA fallback, fetches checks, and persists the result', async () => {
@@ -177,7 +260,10 @@ describe('refreshCommitChecksOnly', () => {
       checks_passed: true,
       checks: [{ name: 'build', status: 'completed', conclusion: 'success' }],
       rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
       matchedSha: 'b'.repeat(40),
+      matchedCheckSuiteId: null,
       isDefinitive: true,
     })
 
@@ -190,7 +276,16 @@ describe('refreshCommitChecksOnly', () => {
   })
 
   it('skips the PR head SHA fallback lookup when there is no PR number', async () => {
-    mockGetChecksForCommit.mockResolvedValueOnce(null)
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: null,
+      checks: [],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
 
     await refreshCommitChecksOnly(1, 'navikt', 'nda', 'a'.repeat(40), null)
 
@@ -199,7 +294,16 @@ describe('refreshCommitChecksOnly', () => {
   })
 
   it('reuses a check_suite_id from a valid cached workflow_trigger_config without calling GitHub again', async () => {
-    mockGetChecksForCommit.mockResolvedValueOnce(null)
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: null,
+      checks: [],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
 
     await refreshCommitChecksOnly(
       1,
@@ -221,7 +325,16 @@ describe('refreshCommitChecksOnly', () => {
   })
 
   it('resolves the check_suite_id via GitHub when the cached workflow_trigger_config is stale or missing', async () => {
-    mockGetChecksForCommit.mockResolvedValueOnce(null)
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: null,
+      checks: [],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
     mockGetWorkflowTriggerConfig.mockResolvedValueOnce({
       workflowPath: '.github/workflows/deploy.yml',
       triggerEvent: 'push',

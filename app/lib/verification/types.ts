@@ -159,6 +159,21 @@ export interface CompareRawSnapshot {
   data: unknown
 }
 
+export interface ChecksRawSnapshot {
+  id: number
+  owner: string
+  repo: string
+  githubRepoId: number
+  sha: string
+  checkSuiteId: number | null
+  isDefinitive: boolean
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+  fetchedAt: Date
+  data: unknown
+}
+
 export interface CompareSummary {
   status: string
   aheadBy: number
