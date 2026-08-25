@@ -102,11 +102,8 @@ spec:
       value: http://nom-api-graphql.nom/graphql
     - name: NOM_API_SCOPE
       value: api://prod-gcp.nom.nom-api-graphql/.default
-    # Keep entra_id active in prod until NOM_API_URL/NOM_API_SCOPE and the
-    # nom-api-graphql accessPolicy below are verified with #nom-teamet.
-    # Switch to "nom" once confirmed working in dev-gcp/prod.
     - name: USER_LOOKUP_PROVIDER
-      value: entra_id
+      value: nom
 
   envFrom:
     - secret: nais-deployment-audit
