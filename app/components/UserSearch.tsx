@@ -1,4 +1,4 @@
-import { UNSAFE_Combobox } from '@navikt/ds-react'
+import { ErrorMessage, UNSAFE_Combobox, VStack } from '@navikt/ds-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UserLookupResult } from '~/lib/user-lookup-types'
 
@@ -21,6 +21,7 @@ export function UserSearch({
 }: UserSearchProps) {
   const [results, setResults] = useState<UserLookupResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -35,11 +36,13 @@ export function UserSearch({
 
     if (query.trim().length < 2) {
       setResults([])
+      setError(null)
       setIsLoading(false)
       return
     }
 
     setIsLoading(true)
+    setError(null)
 
     debounceRef.current = setTimeout(async () => {
       const controller = new AbortController()
@@ -49,17 +52,19 @@ export function UserSearch({
         const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
           signal: controller.signal,
         })
+        const data = await response.json()
+        if (controller.signal.aborted) return
+
         if (!response.ok) {
           setResults([])
+          setError(data?.error || 'Søket feilet')
           return
         }
-        const data = await response.json()
-        if (!controller.signal.aborted) {
-          setResults(data.results ?? [])
-        }
+        setResults(data.results ?? [])
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return
         setResults([])
+        setError('Søket feilet')
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false)
@@ -83,25 +88,32 @@ export function UserSearch({
     }))
 
   return (
-    <UNSAFE_Combobox
-      key={resetKey}
-      label={label}
-      description={description}
-      options={options}
-      filteredOptions={options}
-      isLoading={isLoading}
-      onToggleSelected={(value, isSelected) => {
-        if (isSelected) {
-          onSelect(value)
-          const user = results.find((r) => r.navIdent === value)
-          if (user) onSelectUser?.(user)
-        } else {
-          onClear?.()
-        }
-      }}
-      onChange={(query) => search(query)}
-      shouldAutocomplete={false}
-    />
+    <VStack gap="space-4">
+      <UNSAFE_Combobox
+        key={resetKey}
+        label={label}
+        description={description}
+        options={options}
+        filteredOptions={options}
+        isLoading={isLoading}
+        onToggleSelected={(value, isSelected) => {
+          if (isSelected) {
+            onSelect(value)
+            const user = results.find((r) => r.navIdent === value)
+            if (user) onSelectUser?.(user)
+          } else {
+            onClear?.()
+          }
+        }}
+        onChange={(query) => search(query)}
+        shouldAutocomplete={false}
+      />
+      {error && (
+        <ErrorMessage size="small" showIcon>
+          {error}
+        </ErrorMessage>
+      )}
+    </VStack>
   )
 }
 
