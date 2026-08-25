@@ -22,6 +22,9 @@ export async function setup() {
     log: () => {}, // suppress migration output
   })
 
+  console.log('📸 Snapshotting migrated schema as template...')
+  await container.snapshot()
+
   console.log('✅ Test database ready')
 }
 
