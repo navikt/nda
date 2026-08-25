@@ -5,7 +5,6 @@ import { seedSection, truncateAllTables } from './helpers'
 let pool: Pool
 
 beforeAll(() => {
-  console.log(`[sections.test.ts] pid=${process.pid} DATABASE_URL=${process.env.DATABASE_URL}`)
   pool = new Pool({ connectionString: process.env.DATABASE_URL })
 })
 afterAll(async () => {

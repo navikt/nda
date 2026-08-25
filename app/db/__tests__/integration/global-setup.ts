@@ -1,5 +1,7 @@
 import { join } from 'node:path'
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { Pool } from 'pg'
+import { truncateAllTables } from './helpers'
 
 let container: StartedPostgreSqlContainer | undefined
 
@@ -21,6 +23,11 @@ export async function setup() {
     schema: 'public',
     log: () => {}, // suppress migration output
   })
+
+  console.log('🧹 Clearing seed data before snapshotting...')
+  const pool = new Pool({ connectionString: connectionUri })
+  await truncateAllTables(pool)
+  await pool.end()
 
   console.log('📸 Snapshotting migrated schema as template...')
   await container.snapshot()
