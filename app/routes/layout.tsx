@@ -15,8 +15,16 @@ import {
   Spacer,
   VStack,
 } from '@navikt/ds-react'
-import { useEffect, useRef, useState } from 'react'
-import { isRouteErrorResponse, Link, Outlet, useFetcher, useLocation, useNavigate, useRouteError } from 'react-router'
+import {
+  isRouteErrorResponse,
+  Link,
+  Outlet,
+  useFetcher,
+  useLocation,
+  useNavigate,
+  useRouteError,
+  useRouteLoaderData,
+} from 'react-router'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { SearchDialog } from '~/components/SearchDialog'
 import { getUserByIdentifier } from '~/db/user-github-lookups.server'
@@ -24,6 +32,8 @@ import { useTheme } from '~/hooks/useTheme'
 import { getUserSections, requireUser } from '~/lib/auth.server'
 import styles from '../styles/common.module.css'
 import type { Route } from './+types/layout'
+
+type LayoutUser = Route.ComponentProps['loaderData']['user']
 
 export async function loader({ request }: Route.LoaderArgs) {
   const identity = await requireUser(request)
@@ -46,15 +56,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 }
 
-export default function Layout({ loaderData }: Route.ComponentProps) {
-  const { user } = loaderData
+function AppHeader({ user }: { user: LayoutUser | undefined }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
   const fetcher = useFetcher()
-  const [_searchQuery, setSearchQuery] = useState('')
 
   const toggleAdminMode = () => {
+    if (!user) return
     fetcher.submit(
       { intent: 'toggleAdminMode', elevate: user.adminSuppressed ? 'true' : 'false' },
       { method: 'POST', action: '/' },
@@ -70,161 +79,157 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
 
   const navItems = [
     { path: '/sections', label: 'Seksjoner' },
-    ...(user.role === 'admin' ? [{ path: '/admin', label: 'Admin' }] : []),
+    ...(user?.role === 'admin' ? [{ path: '/admin', label: 'Admin' }] : []),
   ]
 
-  const prevPathRef = useRef(location.pathname)
-  useEffect(() => {
-    if (prevPathRef.current !== location.pathname) {
-      setSearchQuery('')
-      prevPathRef.current = location.pathname
-    }
-  })
-
   return (
-    <div className={styles.layoutContainer}>
-      <InternalHeader>
-        {/* Mobile: Hamburger menu on the left */}
-        <ActionMenu>
-          <Hide above="md" asChild>
-            <ActionMenu.Trigger>
-              <InternalHeader.Button>
-                <MenuHamburgerIcon title="Meny" style={{ fontSize: '1.5rem' }} />
-              </InternalHeader.Button>
-            </ActionMenu.Trigger>
-          </Hide>
-          <ActionMenu.Content>
-            <ActionMenu.Group label="Navigasjon">
+    <InternalHeader>
+      <ActionMenu>
+        <Hide above="md" asChild>
+          <ActionMenu.Trigger>
+            <InternalHeader.Button>
+              <MenuHamburgerIcon title="Meny" style={{ fontSize: '1.5rem' }} />
+            </InternalHeader.Button>
+          </ActionMenu.Trigger>
+        </Hide>
+        <ActionMenu.Content>
+          <ActionMenu.Group label="Navigasjon">
+            <ActionMenu.Item
+              onSelect={() => navigate('/search')}
+              className={isActive('/search') ? styles.navLinkActive : undefined}
+            >
+              Søk
+            </ActionMenu.Item>
+            {navItems.map((item) => (
               <ActionMenu.Item
-                onSelect={() => navigate('/search')}
-                className={isActive('/search') ? styles.navLinkActive : undefined}
+                key={item.path}
+                onSelect={() => navigate(item.path)}
+                className={isActive(item.path) ? styles.navLinkActive : undefined}
               >
-                Søk
+                {item.label}
               </ActionMenu.Item>
-              {navItems.map((item) => (
-                <ActionMenu.Item
-                  key={item.path}
-                  onSelect={() => navigate(item.path)}
-                  className={isActive(item.path) ? styles.navLinkActive : undefined}
-                >
-                  {item.label}
-                </ActionMenu.Item>
-              ))}
+            ))}
+          </ActionMenu.Group>
+        </ActionMenu.Content>
+      </ActionMenu>
+
+      <InternalHeader.Title as={Link} to="/">
+        NDA
+      </InternalHeader.Title>
+
+      <Show above="md" asChild>
+        <HStack align="center" style={{ alignSelf: 'center', paddingInline: 'var(--ax-space-20)' }}>
+          <SearchDialog />
+        </HStack>
+      </Show>
+
+      <Spacer />
+
+      {navItems.map((item) => (
+        <Show key={item.path} above="md" asChild>
+          <InternalHeader.Title
+            as={Link}
+            to={item.path}
+            className={isActive(item.path) ? styles.navLinkActive : styles.navLink}
+          >
+            {item.label}
+          </InternalHeader.Title>
+        </Show>
+      ))}
+
+      {user ? (
+        <ActionMenu>
+          <ActionMenu.Trigger>
+            <InternalHeader.UserButton
+              name={user.displayName}
+              description={user.isActualAdmin && !user.adminSuppressed ? 'Admin' : undefined}
+            />
+          </ActionMenu.Trigger>
+          <ActionMenu.Content align="end">
+            <ActionMenu.Label>
+              <dl style={{ margin: 0 }}>
+                <BodyShort as="dt" size="small" weight="semibold">
+                  {user.displayName}
+                </BodyShort>
+                <Detail as="dd" style={{ margin: 0 }}>
+                  {user.navIdent}
+                </Detail>
+              </dl>
+            </ActionMenu.Label>
+            <ActionMenu.Item
+              onSelect={() => navigate(`/users/${user.githubUsername || user.navIdent}`)}
+              icon={<PersonIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
+            >
+              Min profil
+            </ActionMenu.Item>
+            <ActionMenu.Divider />
+            {user.isActualAdmin && (
+              <>
+                <ActionMenu.Group label="Admin-modus">
+                  <ActionMenu.Item
+                    onSelect={toggleAdminMode}
+                    icon={<ShieldLockIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
+                  >
+                    {user.adminSuppressed ? 'Aktiver admin-modus' : 'Deaktiver admin-modus'}
+                  </ActionMenu.Item>
+                </ActionMenu.Group>
+                <ActionMenu.Divider />
+              </>
+            )}
+            {user.sections.length > 0 && (
+              <>
+                <ActionMenu.Group label="Seksjoner">
+                  {user.sections.map((section) => (
+                    <ActionMenu.Item key={section.slug} onSelect={() => navigate(`/sections/${section.slug}`)}>
+                      {section.name}
+                      {section.role === 'admin' && (
+                        <Detail as="span" textColor="subtle" style={{ marginLeft: 'var(--ax-space-8)' }}>
+                          admin
+                        </Detail>
+                      )}
+                    </ActionMenu.Item>
+                  ))}
+                </ActionMenu.Group>
+                <ActionMenu.Divider />
+              </>
+            )}
+            <ActionMenu.Group label="Tema">
+              <ActionMenu.Item
+                onSelect={() => setTheme('light')}
+                disabled={theme === 'light'}
+                icon={<SunIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
+              >
+                Lyst tema
+              </ActionMenu.Item>
+              <ActionMenu.Item
+                onSelect={() => setTheme('dark')}
+                disabled={theme === 'dark'}
+                icon={<MoonIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
+              >
+                Mørkt tema
+              </ActionMenu.Item>
             </ActionMenu.Group>
           </ActionMenu.Content>
         </ActionMenu>
+      ) : (
+        <InternalHeader.Button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+          {theme === 'light' ? (
+            <MoonIcon title="Bytt til mørkt tema" style={{ fontSize: '1.5rem' }} />
+          ) : (
+            <SunIcon title="Bytt til lyst tema" style={{ fontSize: '1.5rem' }} />
+          )}
+        </InternalHeader.Button>
+      )}
+    </InternalHeader>
+  )
+}
 
-        <InternalHeader.Title as={Link} to="/">
-          NDA
-        </InternalHeader.Title>
+export default function Layout({ loaderData }: Route.ComponentProps) {
+  const { user } = loaderData
 
-        {/* Global search dialog */}
-        <Show above="md" asChild>
-          <HStack align="center" style={{ alignSelf: 'center', paddingInline: 'var(--ax-space-20)' }}>
-            <SearchDialog />
-          </HStack>
-        </Show>
-
-        <Spacer />
-
-        {/* Desktop: Inline navigation */}
-        {navItems.map((item) => (
-          <Show key={item.path} above="md" asChild>
-            <InternalHeader.Title
-              as={Link}
-              to={item.path}
-              className={isActive(item.path) ? styles.navLinkActive : styles.navLink}
-            >
-              {item.label}
-            </InternalHeader.Title>
-          </Show>
-        ))}
-
-        {/* User menu */}
-        {user ? (
-          <ActionMenu>
-            <ActionMenu.Trigger>
-              <InternalHeader.UserButton
-                name={user.displayName}
-                description={user.isActualAdmin && !user.adminSuppressed ? 'Admin' : undefined}
-              />
-            </ActionMenu.Trigger>
-            <ActionMenu.Content align="end">
-              <ActionMenu.Label>
-                <dl style={{ margin: 0 }}>
-                  <BodyShort as="dt" size="small" weight="semibold">
-                    {user.displayName}
-                  </BodyShort>
-                  <Detail as="dd" style={{ margin: 0 }}>
-                    {user.navIdent}
-                  </Detail>
-                </dl>
-              </ActionMenu.Label>
-              <ActionMenu.Item
-                onSelect={() => navigate(`/users/${user.githubUsername || user.navIdent}`)}
-                icon={<PersonIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
-              >
-                Min profil
-              </ActionMenu.Item>
-              <ActionMenu.Divider />
-              {user.isActualAdmin && (
-                <>
-                  <ActionMenu.Group label="Admin-modus">
-                    <ActionMenu.Item
-                      onSelect={toggleAdminMode}
-                      icon={<ShieldLockIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
-                    >
-                      {user.adminSuppressed ? 'Aktiver admin-modus' : 'Deaktiver admin-modus'}
-                    </ActionMenu.Item>
-                  </ActionMenu.Group>
-                  <ActionMenu.Divider />
-                </>
-              )}
-              {user.sections.length > 0 && (
-                <>
-                  <ActionMenu.Group label="Seksjoner">
-                    {user.sections.map((section) => (
-                      <ActionMenu.Item key={section.slug} onSelect={() => navigate(`/sections/${section.slug}`)}>
-                        {section.name}
-                        {section.role === 'admin' && (
-                          <Detail as="span" textColor="subtle" style={{ marginLeft: 'var(--ax-space-8)' }}>
-                            admin
-                          </Detail>
-                        )}
-                      </ActionMenu.Item>
-                    ))}
-                  </ActionMenu.Group>
-                  <ActionMenu.Divider />
-                </>
-              )}
-              <ActionMenu.Group label="Tema">
-                <ActionMenu.Item
-                  onSelect={() => setTheme('light')}
-                  disabled={theme === 'light'}
-                  icon={<SunIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
-                >
-                  Lyst tema
-                </ActionMenu.Item>
-                <ActionMenu.Item
-                  onSelect={() => setTheme('dark')}
-                  disabled={theme === 'dark'}
-                  icon={<MoonIcon aria-hidden style={{ fontSize: '1.5rem' }} />}
-                >
-                  Mørkt tema
-                </ActionMenu.Item>
-              </ActionMenu.Group>
-            </ActionMenu.Content>
-          </ActionMenu>
-        ) : (
-          <InternalHeader.Button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
-            {theme === 'light' ? (
-              <MoonIcon title="Bytt til mørkt tema" style={{ fontSize: '1.5rem' }} />
-            ) : (
-              <SunIcon title="Bytt til lyst tema" style={{ fontSize: '1.5rem' }} />
-            )}
-          </InternalHeader.Button>
-        )}
-      </InternalHeader>
+  return (
+    <div className={styles.layoutContainer}>
+      <AppHeader user={user} />
 
       <Page>
         <VStack gap="space-32">
@@ -241,6 +246,7 @@ export default function Layout({ loaderData }: Route.ComponentProps) {
 export function ErrorBoundary() {
   const error = useRouteError()
   const location = useLocation()
+  const layoutData = useRouteLoaderData<typeof loader>('routes/layout')
 
   let title = 'Noe gikk galt'
   let message = 'En uventet feil oppstod.'
@@ -249,8 +255,19 @@ export function ErrorBoundary() {
 
   if (isRouteErrorResponse(error)) {
     statusCode = error.status
-    title = error.status === 404 ? 'Siden ble ikke funnet' : `Feil ${error.status}`
-    message = error.status === 404 ? 'Siden du leter etter finnes ikke.' : error.statusText || message
+    const bodyMessage = typeof error.data === 'string' && error.data.trim() ? error.data : undefined
+    const isGenericGuardMessage = bodyMessage?.startsWith('Forbidden')
+
+    if (error.status === 404) {
+      title = 'Siden ble ikke funnet'
+      message = 'Siden du leter etter finnes ikke.'
+    } else if (error.status === 403) {
+      title = 'Ingen tilgang'
+      message = (!isGenericGuardMessage && bodyMessage) || 'Du har ikke tilgang til denne siden.'
+    } else {
+      title = `Feil ${error.status}`
+      message = bodyMessage || error.statusText || message
+    }
   } else if (error instanceof Error) {
     message = error.message
     stack = error.stack
@@ -268,11 +285,7 @@ export function ErrorBoundary() {
 
   return (
     <div className={styles.layoutContainer}>
-      <InternalHeader>
-        <InternalHeader.Title as={Link} to="/">
-          NDA
-        </InternalHeader.Title>
-      </InternalHeader>
+      <AppHeader user={layoutData?.user} />
 
       <Page>
         <VStack gap="space-32">
