@@ -1,7 +1,7 @@
 import { requireUser } from '~/lib/auth.server'
 import { canSearchUsers } from '~/lib/authorization.server'
 import { logger } from '~/lib/logger.server'
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
+import { searchUsers } from '~/lib/user-lookup.server'
 import type { Route } from './+types/users.search'
 
 export async function loader({ request, url }: Route.LoaderArgs) {
@@ -21,7 +21,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   }
 
   try {
-    const results = await searchGraphUsers(query)
+    const results = await searchUsers(query)
     return Response.json({ results }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     logger.error('User search failed:', error)

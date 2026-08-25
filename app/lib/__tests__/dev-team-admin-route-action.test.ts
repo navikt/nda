@@ -12,7 +12,7 @@ const {
   mockClientRelease,
   mockPoolConnect,
   mockGetDevTeamMembersWithRoles,
-  mockGetOrCreateUserFromGraph,
+  mockGetOrCreateUserFromDirectory,
   mockUpsertUserAndGithubAccount,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
@@ -26,7 +26,7 @@ const {
   mockClientRelease: vi.fn(),
   mockPoolConnect: vi.fn(),
   mockGetDevTeamMembersWithRoles: vi.fn(),
-  mockGetOrCreateUserFromGraph: vi.fn(),
+  mockGetOrCreateUserFromDirectory: vi.fn(),
   mockUpsertUserAndGithubAccount: vi.fn(),
 }))
 
@@ -86,7 +86,7 @@ vi.mock('~/db/role-assignments.server', () => ({
 }))
 
 vi.mock('~/db/user-github-lookups.server', () => ({
-  getOrCreateUserFromGraph: mockGetOrCreateUserFromGraph,
+  getOrCreateUserFromDirectory: mockGetOrCreateUserFromDirectory,
   upsertUserAndGithubAccount: mockUpsertUserAndGithubAccount,
 }))
 
@@ -238,7 +238,7 @@ describe('sections team admin action - link_github', () => {
         assigned_at: new Date(),
       },
     ])
-    mockGetOrCreateUserFromGraph.mockResolvedValue({ nav_ident: 'Z990001', display_name: 'Glad Fjord' })
+    mockGetOrCreateUserFromDirectory.mockResolvedValue({ nav_ident: 'Z990001', display_name: 'Glad Fjord' })
     mockUpsertUserAndGithubAccount.mockResolvedValue(undefined)
   })
 

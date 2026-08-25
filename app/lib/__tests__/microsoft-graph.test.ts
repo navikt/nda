@@ -37,6 +37,11 @@ describe('microsoft-graph', () => {
     return mod.searchGraphUsers
   }
 
+  async function getBatchFn() {
+    const mod = await import('../microsoft-graph.server')
+    return mod.getGraphUsersByNavIdenter
+  }
+
   it('searches by NAV-ident using $filter with onPremisesSamAccountName', async () => {
     const fetchMock = vi
       .fn()
@@ -167,5 +172,75 @@ describe('microsoft-graph', () => {
     const headers = graphCall[1]?.headers as Record<string, string>
     expect(headers.ConsistencyLevel).toBe('eventual')
     expect(headers.Authorization).toBe('Bearer test-token')
+  })
+
+  describe('getGraphUsersByNavIdenter', () => {
+    it('returns empty array for an empty list without calling the token endpoint', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+
+      const getGraphUsersByNavIdenter = await getBatchFn()
+      const results = await getGraphUsersByNavIdenter([])
+
+      expect(results).toEqual([])
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('builds an OR filter across the given NAV-idents in a single batch', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockTokenResponse())
+        .mockResolvedValueOnce(
+          mockGraphResponse([
+            { displayName: 'Glad Fjord', onPremisesSamAccountName: 'Z990001', mail: 'glad.fjord@nav.no' },
+            { displayName: 'Rask Elv', onPremisesSamAccountName: 'Z990002', mail: 'rask.elv@nav.no' },
+          ]),
+        )
+      vi.stubGlobal('fetch', fetchMock)
+
+      const getGraphUsersByNavIdenter = await getBatchFn()
+      const results = await getGraphUsersByNavIdenter(['Z990001', 'Z990002'])
+
+      expect(results).toEqual([
+        { displayName: 'Glad Fjord', navIdent: 'Z990001', email: 'glad.fjord@nav.no' },
+        { displayName: 'Rask Elv', navIdent: 'Z990002', email: 'rask.elv@nav.no' },
+      ])
+
+      const url = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
+      expect(url).toContain("onPremisesSamAccountName eq 'Z990001'")
+      expect(url).toContain("onPremisesSamAccountName eq 'Z990002'")
+      expect(url).toContain(' or ')
+      expect(url).toContain('$top=2')
+    })
+
+    it('splits the request into multiple batches when exceeding the batch size', async () => {
+      const navIdenter = Array.from({ length: 16 }, (_, i) => `Z9900${i.toString().padStart(2, '0')}`)
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockTokenResponse())
+        .mockResolvedValueOnce(mockGraphResponse([]))
+        .mockResolvedValueOnce(mockGraphResponse([]))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const getGraphUsersByNavIdenter = await getBatchFn()
+      await getGraphUsersByNavIdenter(navIdenter)
+
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      const firstBatchUrl = decodeURIComponent(fetchMock.mock.calls[1][0] as string)
+      const secondBatchUrl = decodeURIComponent(fetchMock.mock.calls[2][0] as string)
+      expect(firstBatchUrl).toContain('$top=15')
+      expect(secondBatchUrl).toContain('$top=1')
+    })
+
+    it('throws when Graph API returns an error', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(mockTokenResponse())
+        .mockResolvedValueOnce(new Response('Forbidden', { status: 403 }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const getGraphUsersByNavIdenter = await getBatchFn()
+      await expect(getGraphUsersByNavIdenter(['Z990001'])).rejects.toThrow('Graph API search failed: 403')
+    })
   })
 })

@@ -2,8 +2,8 @@ import { requireUser } from '~/lib/auth.server'
 import { canSearchUsers } from '~/lib/authorization.server'
 import { isValidNavIdent } from '~/lib/form-validators'
 import { logger } from '~/lib/logger.server'
-import { searchGraphUsers } from '~/lib/microsoft-graph.server'
 import { isSlackConfigured, lookupSlackUserIdByEmail } from '~/lib/slack/client.server'
+import { getUsersByNavIdenter } from '~/lib/user-lookup.server'
 import type { Route } from './+types/users.slack-lookup'
 
 export async function loader({ request, url }: Route.LoaderArgs) {
@@ -27,14 +27,14 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   }
 
   try {
-    const graphResults = await searchGraphUsers(navIdent)
-    const graphUser = graphResults.find((u) => u.navIdent?.toUpperCase() === navIdent)
+    const users = await getUsersByNavIdenter([navIdent])
+    const user = users.find((u) => u.navIdent?.toUpperCase() === navIdent)
 
-    if (!graphUser?.email) {
+    if (!user?.email) {
       return Response.json({ slackMemberId: null, navIdent }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
-    const slackMemberId = await lookupSlackUserIdByEmail(graphUser.email)
+    const slackMemberId = await lookupSlackUserIdByEmail(user.email)
     return Response.json({ slackMemberId, navIdent }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     logger.error('Slack member ID lookup failed:', error)
