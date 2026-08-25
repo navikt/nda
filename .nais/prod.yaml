@@ -101,7 +101,7 @@ spec:
     - name: NOM_API_URL
       value: http://nom-api-graphql.nom/graphql
     - name: NOM_API_SCOPE
-      value: api://prod-gcp.nom.nom-api-graphql/.default
+      value: api://prod-gcp.nom.nom-api/.default
     - name: USER_LOOKUP_PROVIDER
       value: nom
 
@@ -114,7 +114,7 @@ spec:
         - application: kiss
     outbound:
       rules:
-        - application: nom-api-graphql
+        - application: nom-api
           namespace: nom
       external:
         - host: api.github.com
