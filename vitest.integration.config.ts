@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     include: ['app/db/__tests__/integration/**/*.test.ts'],
     globalSetup: ['app/db/__tests__/integration/global-setup.ts'],
-    setupFiles: ['app/db/__tests__/integration/worker-db-setup.ts'],
+    setupFiles: ['app/db/__tests__/integration/test-database-setup.ts'],
     testTimeout: 30_000,
     hookTimeout: 60_000,
     fileParallelism: true,
