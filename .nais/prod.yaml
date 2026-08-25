@@ -99,7 +99,7 @@ spec:
     - name: BUCKET_NAME_PENSJON_DEPLOYMENT_AUDIT_LOGS
       value: pensjon-deployment-audit-logs
     - name: NOM_API_URL
-      value: http://nom-api-graphql.nom/graphql
+      value: http://nom-api.nom/graphql
     - name: NOM_API_SCOPE
       value: api://prod-gcp.nom.nom-api/.default
     - name: USER_LOOKUP_PROVIDER
