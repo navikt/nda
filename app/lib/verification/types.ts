@@ -367,6 +367,8 @@ export interface VerificationInput {
     deployedPrFetchedAt: Date | null
     commitsFetchedAt: Date | null
     schemaVersion: number
+    prDerivedFromRaw?: boolean
+    compareDerivedFromRaw?: boolean
   }
 
   compareFailed?: boolean

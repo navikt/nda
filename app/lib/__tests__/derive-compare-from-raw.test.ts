@@ -78,6 +78,7 @@ describe('fetchCommitsBetween deriving compare data from raw snapshot', () => {
     )
     expect(result?.compareSummary.status).toBe('ahead')
     expect(result?.commitsBetween).toHaveLength(1)
+    expect(result?.derivedFromRaw).toBe(true)
   })
 
   it('recomputes noDiffDetected as true for a derived identical compare', async () => {
@@ -98,6 +99,7 @@ describe('fetchCommitsBetween deriving compare data from raw snapshot', () => {
 
     expect(mockHaveSameCommitTree).not.toHaveBeenCalled()
     expect(result?.compareSummary.noDiffDetected).toBe(true)
+    expect(result?.derivedFromRaw).toBe(true)
     expect(mockSaveCompareSnapshot).toHaveBeenCalledWith(
       'navikt',
       'nda',
@@ -121,9 +123,10 @@ describe('fetchCommitsBetween deriving compare data from raw snapshot', () => {
       githubRepoId: 999,
     })
 
-    await fetchCommitsBetween('navikt', 'nda', 'base-sha', 'head-sha', 'main', '2026-01-01')
+    const result = await fetchCommitsBetween('navikt', 'nda', 'base-sha', 'head-sha', 'main', '2026-01-01')
 
     expect(mockGetCommitsBetween).toHaveBeenCalledWith('navikt', 'nda', 'base-sha', 'head-sha')
+    expect(result?.derivedFromRaw).toBe(false)
   })
 
   it('does not derive from raw when forceRefresh is set', async () => {

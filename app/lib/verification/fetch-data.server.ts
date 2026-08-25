@@ -55,6 +55,7 @@ export async function fetchVerificationData(
   let commitsBetween: VerificationInput['commitsBetween'] = []
   let compareSummary: CompareSummary | null = null
   let compareFailed = false
+  let compareDerivedFromRaw = false
   if (previousDeployment) {
     const result = await fetchCommitsBetween(
       owner,
@@ -70,6 +71,7 @@ export async function fetchVerificationData(
     } else {
       commitsBetween = result.commitsBetween
       compareSummary = result.compareSummary
+      compareDerivedFromRaw = result.derivedFromRaw
     }
   }
   const noDiffAlreadyConfirmed = compareSummary?.noDiffDetected === true
@@ -212,6 +214,8 @@ export async function fetchVerificationData(
       deployedPrFetchedAt: deployedPr ? new Date() : null,
       commitsFetchedAt: commitsBetween.length > 0 ? new Date() : null,
       schemaVersion: CURRENT_SCHEMA_VERSION,
+      prDerivedFromRaw: deployedPrResult.derivedFromRaw,
+      compareDerivedFromRaw,
     },
   }
 }

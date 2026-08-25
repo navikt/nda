@@ -38,7 +38,11 @@ export async function fetchCommitsBetween(
   baseBranch: string,
   _previousDeploymentDate: string,
   options?: FetchOptions,
-): Promise<{ commitsBetween: VerificationInput['commitsBetween']; compareSummary: CompareSummary } | null> {
+): Promise<{
+  commitsBetween: VerificationInput['commitsBetween']
+  compareSummary: CompareSummary
+  derivedFromRaw: boolean
+} | null> {
   if (!options?.forceRefresh) {
     const cachedCompare = await getLatestCompareSnapshot(owner, repo, fromSha, toSha)
     if (cachedCompare) {
@@ -48,6 +52,7 @@ export async function fetchCommitsBetween(
       return {
         commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, cachedCompare.data, options),
         compareSummary: cachedCompare.data.compare,
+        derivedFromRaw: false,
       }
     }
 
@@ -86,6 +91,7 @@ export async function fetchCommitsBetween(
       return {
         commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, storedDerivedCompareData, options),
         compareSummary: storedDerivedCompareData.compare,
+        derivedFromRaw: true,
       }
     }
   }
@@ -134,6 +140,7 @@ export async function fetchCommitsBetween(
   return {
     commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, storedCompareData, options),
     compareSummary: storedCompareData.compare,
+    derivedFromRaw: false,
   }
 }
 

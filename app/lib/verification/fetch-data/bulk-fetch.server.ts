@@ -14,6 +14,7 @@ export interface BulkFetchProgress {
   processed: number
   skipped: number
   fetched: number
+  derivedFromRaw: number
   workflowTriggersFetched: number
   errors: number
 }
@@ -101,6 +102,7 @@ export async function fetchVerificationDataForAllDeployments(
     processed: 0,
     skipped: 0,
     fetched: 0,
+    derivedFromRaw: 0,
     workflowTriggersFetched: 0,
     errors: 0,
     errorDetails: [],
@@ -210,16 +212,23 @@ export async function fetchVerificationDataForAllDeployments(
         await updateDeploymentCommitChecks(deployment.id, input.commitChecks, input.commitChecksAttempted ?? true)
         const fetchDuration = Math.round(performance.now() - fetchStart)
         result.fetched++
+        const derivedFromRaw =
+          Boolean(input.dataFreshness.prDerivedFromRaw) || Boolean(input.dataFreshness.compareDerivedFromRaw)
+        if (derivedFromRaw) {
+          result.derivedFromRaw++
+        }
         if (jobId) {
           await logSyncJobMessage(jobId, 'info', `Hentet data for deployment ${deployment.id}`, {
             commitSha: commitSha.substring(0, 7),
             repo: `${owner}/${repo}`,
+            derivedFromRaw,
           })
         }
         logger.debug(`Hentet data for deployment ${deployment.id}`, {
           commitSha: commitSha.substring(0, 7),
           repo: `${owner}/${repo}`,
           fetchMs: fetchDuration,
+          derivedFromRaw,
         })
       }
 
@@ -254,7 +263,7 @@ export async function fetchVerificationDataForAllDeployments(
     await logSyncJobMessage(
       jobId,
       'info',
-      `Datahenting fullført: ${result.fetched} hentet, ${result.skipped} hoppet over, ${result.workflowTriggersFetched} workflow-triggere hentet, ${result.errors} feil`,
+      `Datahenting fullført: ${result.fetched} hentet (${result.derivedFromRaw} derivert fra rådata), ${result.skipped} hoppet over, ${result.workflowTriggersFetched} workflow-triggere hentet, ${result.errors} feil`,
     )
   }
 

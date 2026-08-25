@@ -184,6 +184,9 @@ export function FetchVerificationDataSection({
                     {(fetchJobStatus.result as Record<string, number>).total ?? 0}
                   </Detail>
                   <Detail>Hentet: {(fetchJobStatus.result as Record<string, number>).fetched ?? 0}</Detail>
+                  <Detail>
+                    Derivert fra rådata: {(fetchJobStatus.result as Record<string, number>).derivedFromRaw ?? 0}
+                  </Detail>
                   <Detail>Hoppet over: {(fetchJobStatus.result as Record<string, number>).skipped ?? 0}</Detail>
                   <Detail>
                     Workflow-triggere hentet:{' '}

@@ -138,6 +138,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
 
     expect(result.fetched).toBe(1)
     expect(result.skipped).toBe(0)
+    expect(result.derivedFromRaw).toBe(0)
     expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined, null)
     expect(mockSaveCommitSnapshot).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), 'checks', {
       schemaVersion: 1,
