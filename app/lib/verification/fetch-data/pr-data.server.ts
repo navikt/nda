@@ -183,6 +183,7 @@ export async function fetchDeployedPrData(
   deployedPr: VerificationInput['deployedPr']
   mismatchedBaseBranches: string[]
   mismatchedPrNumbers: number[]
+  derivedFromRaw: boolean
 }> {
   const { prNumber, mismatchedBaseBranches, mismatchedPrNumbers } = await findPrForCommit(
     owner,
@@ -192,7 +193,7 @@ export async function fetchDeployedPrData(
     { forceRefresh: options?.forceRefresh },
   )
   if (!prNumber) {
-    return { deployedPr: null, mismatchedBaseBranches, mismatchedPrNumbers }
+    return { deployedPr: null, mismatchedBaseBranches, mismatchedPrNumbers, derivedFromRaw: false }
   }
 
   if (options?.refreshDisplayData) {
@@ -209,12 +210,15 @@ export async function fetchDeployedPrData(
         },
         mismatchedBaseBranches,
         mismatchedPrNumbers,
+        derivedFromRaw: false,
       }
     }
   }
 
   if (!options?.forceRefresh) {
-    const cachedPrData = await getCachedPrData(owner, repo, prNumber, ['reviews', 'commits', 'checks', 'comments'])
+    const fromRaw = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+    const cachedPrData =
+      fromRaw ?? (await getLegacyPrData(owner, repo, prNumber, ['reviews', 'commits', 'checks', 'comments']))
     if (cachedPrData) {
       const mapped = mapPrDataToVerificationTypes(prNumber, cachedPrData)
       return {
@@ -227,6 +231,7 @@ export async function fetchDeployedPrData(
         },
         mismatchedBaseBranches,
         mismatchedPrNumbers,
+        derivedFromRaw: Boolean(fromRaw),
       }
     }
   }
@@ -247,6 +252,7 @@ export async function fetchDeployedPrData(
           },
           mismatchedBaseBranches,
           mismatchedPrNumbers,
+          derivedFromRaw: false,
         }
       }
     }
@@ -267,6 +273,7 @@ export async function fetchDeployedPrData(
     },
     mismatchedBaseBranches,
     mismatchedPrNumbers,
+    derivedFromRaw: false,
   }
 }
 
