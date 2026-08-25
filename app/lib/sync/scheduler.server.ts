@@ -152,10 +152,11 @@ async function runPeriodicSync(): Promise<void> {
       if (
         cleanedSnapshots.prSnapshotsDeleted > 0 ||
         cleanedSnapshots.commitSnapshotsDeleted > 0 ||
-        cleanedSnapshots.prRawSnapshotsDeleted > 0
+        cleanedSnapshots.prRawSnapshotsDeleted > 0 ||
+        cleanedSnapshots.compareRawSnapshotsDeleted > 0
       ) {
         logger.info(
-          `🧹 Cleaned up ${cleanedSnapshots.prSnapshotsDeleted} PR snapshots, ${cleanedSnapshots.commitSnapshotsDeleted} commit snapshots, ${cleanedSnapshots.prRawSnapshotsDeleted} raw PR snapshots`,
+          `🧹 Cleaned up ${cleanedSnapshots.prSnapshotsDeleted} PR snapshots, ${cleanedSnapshots.commitSnapshotsDeleted} commit snapshots, ${cleanedSnapshots.prRawSnapshotsDeleted} raw PR snapshots, ${cleanedSnapshots.compareRawSnapshotsDeleted} raw compare snapshots`,
         )
       }
 

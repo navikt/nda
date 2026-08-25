@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockCompareCommits = vi.fn()
+const mockReposGet = vi.fn()
 
 vi.mock('~/lib/github/client.server', () => ({
   getGitHubClient: () => ({
     repos: {
       compareCommits: mockCompareCommits,
+      get: mockReposGet,
     },
   }),
 }))
@@ -23,10 +25,15 @@ import { getCommitsBetween } from '~/lib/github/git.server'
 describe('getCommitsBetween', () => {
   beforeEach(() => {
     mockCompareCommits.mockReset()
+    mockReposGet.mockReset()
+    mockReposGet.mockResolvedValue({ data: { id: 999 } })
   })
 
   it('maps the compare response into CompareData', async () => {
     mockCompareCommits.mockResolvedValue({
+      headers: {
+        'x-github-api-version-selected': '2022-11-28',
+      },
       data: {
         status: 'ahead',
         ahead_by: 2,
@@ -62,7 +69,7 @@ describe('getCommitsBetween', () => {
 
     const result = await getCommitsBetween('navikt', 'nda', 'base-sha', 'head-sha')
 
-    expect(result).toEqual({
+    expect(result?.compareData).toEqual({
       compare: {
         status: 'ahead',
         aheadBy: 2,
@@ -94,6 +101,13 @@ describe('getCommitsBetween', () => {
         },
       ],
     })
+    expect(result?.rawData).toMatchObject({ status: 'ahead', total_commits: 2 })
+    expect(result?.apiVersion).toEqual({
+      apiVersion: '2022-11-28',
+      apiDeprecatedAt: null,
+      apiSunsetAt: null,
+    })
+    expect(result?.githubRepoId).toBe(999)
   })
 
   it('returns null when GitHub responds with an error', async () => {

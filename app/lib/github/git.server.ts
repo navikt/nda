@@ -1,25 +1,34 @@
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
 import { getGitHubClient } from './client.server'
-import { mapCompareResponse } from './compare-snapshot'
+import { mapCompareResponse, type RawCompareResponse } from './compare-snapshot'
+import { type ApiVersionMetadata, captureApiVersionMetadata } from './pr-snapshot'
 
 export async function getCommitsBetween(
   owner: string,
   repo: string,
   base: string,
   head: string,
-): Promise<CompareData | null> {
+): Promise<{
+  compareData: CompareData
+  rawData: RawCompareResponse
+  apiVersion: ApiVersionMetadata
+  githubRepoId: number
+} | null> {
   try {
     const client = getGitHubClient()
 
     logger.info(`🔍 Comparing commits ${base.substring(0, 7)}...${head.substring(0, 7)} in ${owner}/${repo}`)
 
-    const response = await client.repos.compareCommits({
-      owner,
-      repo,
-      base,
-      head,
-    })
+    const [response, repoResponse] = await Promise.all([
+      client.repos.compareCommits({
+        owner,
+        repo,
+        base,
+        head,
+      }),
+      client.repos.get({ owner, repo }),
+    ])
 
     logger.info(`   📊 GitHub API response:`)
     logger.info(`      - Status: ${response.data.status}`)
@@ -44,7 +53,9 @@ export async function getCommitsBetween(
       })
     }
 
-    return compareData
+    const apiVersion = captureApiVersionMetadata(response.headers, null)
+
+    return { compareData, rawData: response.data, apiVersion, githubRepoId: repoResponse.data.id }
   } catch (error) {
     logger.error(`❌ Error comparing commits ${base.substring(0, 7)}...${head.substring(0, 7)}:`, error)
     return null

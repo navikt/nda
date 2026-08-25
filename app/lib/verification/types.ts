@@ -145,6 +145,20 @@ export interface CompareSnapshot extends SnapshotBase {
   data: CompareData
 }
 
+export interface CompareRawSnapshot {
+  id: number
+  owner: string
+  repo: string
+  githubRepoId: number
+  baseSha: string
+  headSha: string
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+  fetchedAt: Date
+  data: unknown
+}
+
 export interface CompareSummary {
   status: string
   aheadBy: number
