@@ -96,6 +96,7 @@ export function UserSearch({
       filteredOptions={options}
       isLoading={isLoading}
       error={error}
+      isListOpen={error ? false : undefined}
       onToggleSelected={(value, isSelected) => {
         if (isSelected) {
           onSelect(value)

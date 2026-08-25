@@ -29,6 +29,13 @@ describe('UserSearch story interaction characterization', () => {
     expect(screen.getByText('Brukeroppslag er utilgjengelig')).toBeInTheDocument()
   })
 
+  it('closes the options dropdown so the error message is not hidden behind it', async () => {
+    const { container } = render(<ErrorFromApiStory />)
+    await ErrorFromApiStory.play?.({ canvasElement: container })
+
+    expect(container.querySelector('.aksel-combobox__list')).toHaveClass('aksel-combobox__list--closed')
+  })
+
   it('shows a generic error message when the search request throws', async () => {
     const { container } = render(<NetworkErrorStory />)
     await NetworkErrorStory.play?.({ canvasElement: container })
