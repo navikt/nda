@@ -195,3 +195,30 @@ export async function getRepositoryDefaultBranch(owner: string, repo: string): P
     return null
   }
 }
+
+const REPOSITORY_ID_CACHE_TTL_MS = 5 * 60 * 1000
+
+const repositoryIdCache = new Map<string, { promise: Promise<number | null>; expiresAt: number }>()
+
+export async function getRepositoryId(owner: string, repo: string): Promise<number | null> {
+  const cacheKey = `${owner}/${repo}`
+  const cached = repositoryIdCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.promise
+
+  const promise = (async () => {
+    try {
+      const client = getGitHubClient()
+      const response = await client.repos.get({ owner, repo })
+      return response.data.id
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const stack = error instanceof Error ? error.stack : undefined
+      logger.warn(`⚠️ Failed to fetch repository id for ${owner}/${repo}:`, { error: message, stack_trace: stack })
+      repositoryIdCache.delete(cacheKey)
+      return null
+    }
+  })()
+
+  repositoryIdCache.set(cacheKey, { promise, expiresAt: Date.now() + REPOSITORY_ID_CACHE_TTL_MS })
+  return promise
+}

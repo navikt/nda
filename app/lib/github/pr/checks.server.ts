@@ -10,6 +10,7 @@ import {
   type RawCheckRun,
 } from '../checks-snapshot'
 import { getGitHubClient } from '../client.server'
+import { type ApiVersionMetadata, captureApiVersionMetadata } from '../pr-snapshot'
 
 const ANNOTATION_CONCURRENCY_LIMIT = 5
 
@@ -23,14 +24,14 @@ function filterCheckRunsByCheckSuite<T extends { check_suite: { id: number } | n
   owner: string,
   repo: string,
   ref: string,
-): T[] {
-  if (checkSuiteId == null) return checkRuns
+): { checkRuns: T[]; effectiveCheckSuiteId: number | null } {
+  if (checkSuiteId == null) return { checkRuns, effectiveCheckSuiteId: null }
   const scoped = checkRuns.filter((check) => check.check_suite?.id === checkSuiteId)
-  if (scoped.length > 0 || checkRuns.length === 0) return scoped
+  if (scoped.length > 0 || checkRuns.length === 0) return { checkRuns: scoped, effectiveCheckSuiteId: checkSuiteId }
   logger.warn(
     `No check runs matched check_suite_id ${checkSuiteId} for ${owner}/${repo}@${ref}, falling back to all ${checkRuns.length} check run(s) found for this ref`,
   )
-  return checkRuns
+  return { checkRuns, effectiveCheckSuiteId: null }
 }
 
 async function fetchChecksForRefs(
@@ -42,19 +43,20 @@ async function fetchChecksForRefs(
 ): Promise<{
   checks_passed: boolean | null
   checks: CheckRun[]
+  rawCheckRuns: RawCheckRun[]
   rawSnapshot: ChecksSnapshotData
   isDefinitive: boolean
+  apiVersion: ApiVersionMetadata
+  effectiveCheckSuiteId: number | null
 }> {
   const rawCheckRuns: RawCheckRun[] = []
-  let githubApiVersion: string | undefined
+  let apiVersion: ApiVersionMetadata = { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null }
 
-  const captureApiVersionMetadata = (headers: Record<string, unknown>): void => {
-    githubApiVersion ??= headers['x-github-api-version-selected'] as string | undefined
-    const deprecation = headers.deprecation
-    const sunset = headers.sunset
-    if (deprecation || sunset) {
+  const trackApiVersionMetadata = (headers: Record<string, unknown>): void => {
+    apiVersion = captureApiVersionMetadata(headers, apiVersion)
+    if (apiVersion.apiDeprecatedAt || apiVersion.apiSunsetAt) {
       logger.warn(
-        `GitHub API version ${githubApiVersion} used for checks on ${owner}/${repo}@${ref} is closing down (deprecation=${deprecation}, sunset=${sunset})`,
+        `GitHub API version ${apiVersion.apiVersion} used for checks on ${owner}/${repo}@${ref} is closing down (deprecation=${apiVersion.apiDeprecatedAt}, sunset=${apiVersion.apiSunsetAt})`,
       )
     }
   }
@@ -63,12 +65,18 @@ async function fetchChecksForRefs(
     client.checks.listForRef,
     { owner, repo, ref, per_page: 100 },
     (response) => {
-      captureApiVersionMetadata(response.headers)
+      trackApiVersionMetadata(response.headers)
       return response.data
     },
   )
 
-  const checkRunsToProcess = filterCheckRunsByCheckSuite(checkRunsWithAnnotations, checkSuiteId, owner, repo, ref)
+  const { checkRuns: checkRunsToProcess, effectiveCheckSuiteId } = filterCheckRunsByCheckSuite(
+    checkRunsWithAnnotations,
+    checkSuiteId,
+    owner,
+    repo,
+    ref,
+  )
 
   if (checkRunsToProcess.length > 0) {
     const annotationResults: Array<{
@@ -89,7 +97,7 @@ async function fetchChecksForRefs(
                 client.checks.listAnnotations,
                 { owner, repo, check_run_id: check.id, per_page: 100 },
                 (response) => {
-                  captureApiVersionMetadata(response.headers)
+                  trackApiVersionMetadata(response.headers)
                   return response.data
                 },
               )
@@ -111,13 +119,21 @@ async function fetchChecksForRefs(
 
   const rawSnapshot: ChecksSnapshotData = {
     schemaVersion: CHECKS_SNAPSHOT_SCHEMA_VERSION,
-    githubApiVersion,
+    githubApiVersion: apiVersion.apiVersion,
     checkRuns: rawCheckRuns,
   }
   const checks_passed = computeChecksPassed(rawCheckRuns)
   const isDefinitive = isChecksResultDefinitive(rawCheckRuns)
 
-  return { checks_passed, checks: rawCheckRuns.map(mapRawCheckRunToCheckRun), rawSnapshot, isDefinitive }
+  return {
+    checks_passed,
+    checks: rawCheckRuns.map(mapRawCheckRunToCheckRun),
+    rawCheckRuns,
+    rawSnapshot,
+    isDefinitive,
+    apiVersion,
+    effectiveCheckSuiteId,
+  }
 }
 
 export async function getChecksForCommit(
@@ -129,18 +145,22 @@ export async function getChecksForCommit(
 ): Promise<{
   checks_passed: boolean | null
   checks: CheckRun[]
+  rawCheckRuns: RawCheckRun[]
   rawSnapshot: ChecksSnapshotData
   matchedSha: string
+  matchedCheckSuiteId: number | null
   isDefinitive: boolean
-} | null> {
+  apiVersion: ApiVersionMetadata
+}> {
   const client = getGitHubClient()
   const result = await fetchChecksForRefs(client, owner, repo, sha, checkSuiteId)
-  if (result.checks.length > 0) return { ...result, matchedSha: sha }
+  if (result.checks.length > 0) return { ...result, matchedSha: sha, matchedCheckSuiteId: result.effectiveCheckSuiteId }
 
   if (fallbackSha && fallbackSha !== sha) {
     const fallbackResult = await fetchChecksForRefs(client, owner, repo, fallbackSha)
-    if (fallbackResult.checks.length > 0) return { ...fallbackResult, matchedSha: fallbackSha }
+    if (fallbackResult.checks.length > 0)
+      return { ...fallbackResult, matchedSha: fallbackSha, matchedCheckSuiteId: null }
   }
 
-  return null
+  return { ...result, matchedSha: sha, matchedCheckSuiteId: result.effectiveCheckSuiteId }
 }

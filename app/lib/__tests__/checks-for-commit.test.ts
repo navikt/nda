@@ -31,12 +31,14 @@ describe('getChecksForCommit', () => {
     mockPaginate.mockReset()
   })
 
-  it('returns null when there are no check runs for the commit', async () => {
+  it('returns a definitive empty result when there are no check runs for the commit', async () => {
     mockPaginate.mockResolvedValueOnce([])
 
     const result = await getChecksForCommit('navikt', 'nda', 'commitsha1')
 
-    expect(result).toBeNull()
+    expect(result).toEqual(
+      expect.objectContaining({ checks: [], checks_passed: null, isDefinitive: true, matchedSha: 'commitsha1' }),
+    )
     expect(mockPaginate).toHaveBeenCalledWith(
       mockListForRef,
       {
@@ -86,12 +88,14 @@ describe('getChecksForCommit', () => {
     )
   })
 
-  it('returns null when both the primary and fallback SHA have zero check runs', async () => {
+  it('returns a definitive empty result when both the primary and fallback SHA have zero check runs', async () => {
     mockPaginate.mockResolvedValueOnce([]).mockResolvedValueOnce([])
 
     const result = await getChecksForCommit('navikt', 'nda', 'mergecommitsha1', 'headsha1')
 
-    expect(result).toBeNull()
+    expect(result).toEqual(
+      expect.objectContaining({ checks: [], checks_passed: null, isDefinitive: true, matchedSha: 'mergecommitsha1' }),
+    )
     expect(mockPaginate).toHaveBeenCalledTimes(2)
   })
 
@@ -429,6 +433,7 @@ describe('getChecksForCommit check_suite_id scoping', () => {
 
     expect(result?.checks).toHaveLength(1)
     expect(result?.checks[0].name).toBe('build')
+    expect(result.matchedCheckSuiteId).toBe(100)
   })
 
   it('falls back to all check runs when none match the given check_suite_id', async () => {
@@ -454,6 +459,7 @@ describe('getChecksForCommit check_suite_id scoping', () => {
 
     expect(result?.checks).toHaveLength(1)
     expect(result?.checks[0].name).toBe('Dependabot')
+    expect(result.matchedCheckSuiteId).toBeNull()
   })
 
   it('does not filter when no check_suite_id is given', async () => {

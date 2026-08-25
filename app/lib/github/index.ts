@@ -13,6 +13,7 @@ export {
   getBranchFromWorkflowRun,
   getCommitsBetween,
   getRepositoryDefaultBranch,
+  getRepositoryId,
   getSingleCommitMessage,
   getWorkflowTriggerConfig,
   haveSameCommitTree,

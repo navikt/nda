@@ -8,6 +8,7 @@ const {
   mockGetAllLatestPrRawSnapshots,
   mockSavePrRawSnapshotsBatch,
   mockGetDisplayDataFromGitHub,
+  mockGetRepositoryId,
 } = vi.hoisted(() => ({
   mockPoolQuery: vi.fn(),
   mockGetChecksForCommit: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockGetAllLatestPrRawSnapshots: vi.fn(),
   mockSavePrRawSnapshotsBatch: vi.fn(),
   mockGetDisplayDataFromGitHub: vi.fn(),
+  mockGetRepositoryId: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -34,6 +36,7 @@ vi.mock('~/lib/github', () => ({
   getDisplayDataFromGitHub: mockGetDisplayDataFromGitHub,
   getMutablePrDataFromGitHub: vi.fn(),
   getPullRequestForCommit: vi.fn(),
+  getRepositoryId: mockGetRepositoryId,
   getSingleCommitMessage: vi.fn(),
   getWorkflowTriggerConfig: vi.fn(),
   haveSameCommitTree: vi.fn(),
@@ -47,6 +50,7 @@ vi.mock('~/db/github-data.server', () => ({
   getLatestCommitSnapshot: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
   markPrDataUnavailable: vi.fn(),
+  saveChecksRawSnapshot: vi.fn(),
   saveCommitSnapshot: mockSaveCommitSnapshot,
   saveCompareSnapshot: vi.fn(),
   savePrSnapshotsBatch: vi.fn(),
@@ -104,6 +108,8 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
     mockGetAllLatestPrRawSnapshots.mockReset()
     mockSavePrRawSnapshotsBatch.mockReset()
     mockGetDisplayDataFromGitHub.mockReset()
+    mockGetRepositoryId.mockReset()
+    mockGetRepositoryId.mockResolvedValue(123)
   })
 
   it('skips deployments that already have PR/compare data and commit_checks_data', async () => {
@@ -130,7 +136,10 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
       checks_passed: true,
       checks: [{ name: 'build', status: 'completed', conclusion: 'success' }],
       rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
       matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
       isDefinitive: true,
     })
 
@@ -161,7 +170,16 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
 
-    mockGetChecksForCommit.mockResolvedValueOnce(null)
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: null,
+      checks: [],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
 
     const result = await fetchVerificationDataForAllDeployments(1)
 

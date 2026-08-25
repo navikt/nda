@@ -315,6 +315,7 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
   commitSnapshotsDeleted: number
   prRawSnapshotsDeleted: number
   compareRawSnapshotsDeleted: number
+  checksRawSnapshotsDeleted: number
 }> {
   const keepCount = options?.keepCount ?? 5
   const olderThanDays = options?.olderThanDays ?? 90
@@ -383,14 +384,36 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
     [keepCount],
   )
 
+  const checksRawResult = await pool.query(
+    `DELETE FROM github_checks_raw_snapshots
+     WHERE id IN (
+       SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (
+           PARTITION BY github_repo_id, sha, check_suite_id
+           ORDER BY fetched_at DESC
+         ) as rn
+         FROM github_checks_raw_snapshots
+         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
+       ) ranked
+       WHERE rn > $1
+     )`,
+    [keepCount],
+  )
+
   return {
     prSnapshotsDeleted: prResult.rowCount ?? 0,
     commitSnapshotsDeleted: commitResult.rowCount ?? 0,
     prRawSnapshotsDeleted: prRawResult.rowCount ?? 0,
     compareRawSnapshotsDeleted: compareRawResult.rowCount ?? 0,
+    checksRawSnapshotsDeleted: checksRawResult.rowCount ?? 0,
   }
 }
 
+export {
+  getDerivedChecksDataFromRawSnapshot,
+  getLatestDefinitiveChecksRawSnapshot,
+  saveChecksRawSnapshot,
+} from './github-data/checks-raw-snapshots.server'
 export {
   getDerivedCompareDataFromRawSnapshot,
   getGitHubDataStatsForApp,
