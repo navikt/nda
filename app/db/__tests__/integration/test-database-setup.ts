@@ -25,3 +25,5 @@ try {
 }
 
 process.env.DATABASE_URL = withDatabase(baseUrl, testDatabase)
+
+console.log(`[test-database-setup] pid=${process.pid} testDatabase=${testDatabase}`)

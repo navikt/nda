@@ -6,6 +6,7 @@ import { seedApp, seedDeployment, seedDevTeam, seedSection, truncateAllTables } 
 let pool: Pool
 
 beforeAll(() => {
+  console.log(`[non-member-goal-filter-team-scope.test.ts] pid=${process.pid} DATABASE_URL=${process.env.DATABASE_URL}`)
   pool = new Pool({ connectionString: process.env.DATABASE_URL })
 })
 afterAll(async () => {
