@@ -1,4 +1,8 @@
-import { saveWorkflowRunRawSnapshot } from '~/db/github-data.server'
+import {
+  saveCommitOnBranchRawSnapshot,
+  saveCommitRawSnapshot,
+  saveWorkflowRunRawSnapshot,
+} from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
 import { getGitHubClient } from './client.server'
@@ -77,6 +81,11 @@ export async function haveSameCommitTree(
       client.repos.getCommit({ owner, repo, ref: headSha }),
     ])
 
+    await Promise.all([
+      archiveCommitRawSnapshot(owner, repo, baseSha, baseCommit.data, baseCommit.headers),
+      archiveCommitRawSnapshot(owner, repo, headSha, headCommit.data, headCommit.headers),
+    ])
+
     return baseCommit.data.commit.tree?.sha === headCommit.data.commit.tree?.sha
   } catch (error) {
     logger.warn(
@@ -84,6 +93,24 @@ export async function haveSameCommitTree(
       error as Record<string, unknown>,
     )
     return null
+  }
+}
+
+async function archiveCommitRawSnapshot(
+  owner: string,
+  repo: string,
+  sha: string,
+  data: unknown,
+  headers: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) return
+    const apiVersion = captureApiVersionMetadata(headers, null)
+    await saveCommitRawSnapshot(owner, repo, githubRepoId, sha, data, apiVersion)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`⚠️ Failed to archive commit ${sha.substring(0, 7)} for ${owner}/${repo}:`, { error: message })
   }
 }
 
@@ -103,6 +130,8 @@ export async function isCommitOnBranch(
       head: branch,
     })
 
+    await archiveCommitOnBranchRawSnapshot(owner, repo, commitSha, branch, response.data, response.headers)
+
     const status = response.data.status
     return status === 'identical' || status === 'ahead'
   } catch (error) {
@@ -111,6 +140,30 @@ export async function isCommitOnBranch(
       error as Record<string, unknown>,
     )
     return null
+  }
+}
+
+async function archiveCommitOnBranchRawSnapshot(
+  owner: string,
+  repo: string,
+  commitSha: string,
+  branch: string,
+  data: unknown,
+  headers: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) return
+    const apiVersion = captureApiVersionMetadata(headers, null)
+    await saveCommitOnBranchRawSnapshot(owner, repo, githubRepoId, commitSha, branch, data, apiVersion)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(
+      `⚠️ Failed to archive commit-on-branch check for ${commitSha.substring(0, 7)}@${branch} in ${owner}/${repo}:`,
+      {
+        error: message,
+      },
+    )
   }
 }
 

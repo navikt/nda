@@ -317,6 +317,8 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
   compareRawSnapshotsDeleted: number
   checksRawSnapshotsDeleted: number
   workflowRunsRawSnapshotsDeleted: number
+  commitRawSnapshotsDeleted: number
+  commitOnBranchRawSnapshotsDeleted: number
 }> {
   const keepCount = options?.keepCount ?? 5
   const olderThanDays = options?.olderThanDays ?? 90
@@ -417,6 +419,38 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
     [keepCount],
   )
 
+  const commitRawResult = await pool.query(
+    `DELETE FROM github_commit_raw_snapshots
+     WHERE id IN (
+       SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (
+           PARTITION BY github_repo_id, sha
+           ORDER BY fetched_at DESC
+         ) as rn
+         FROM github_commit_raw_snapshots
+         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
+       ) ranked
+       WHERE rn > $1
+     )`,
+    [keepCount],
+  )
+
+  const commitOnBranchRawResult = await pool.query(
+    `DELETE FROM github_commit_on_branch_raw_snapshots
+     WHERE id IN (
+       SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (
+           PARTITION BY github_repo_id, commit_sha, branch
+           ORDER BY fetched_at DESC
+         ) as rn
+         FROM github_commit_on_branch_raw_snapshots
+         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
+       ) ranked
+       WHERE rn > $1
+     )`,
+    [keepCount],
+  )
+
   return {
     prSnapshotsDeleted: prResult.rowCount ?? 0,
     commitSnapshotsDeleted: commitResult.rowCount ?? 0,
@@ -424,6 +458,8 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
     compareRawSnapshotsDeleted: compareRawResult.rowCount ?? 0,
     checksRawSnapshotsDeleted: checksRawResult.rowCount ?? 0,
     workflowRunsRawSnapshotsDeleted: workflowRunsRawResult.rowCount ?? 0,
+    commitRawSnapshotsDeleted: commitRawResult.rowCount ?? 0,
+    commitOnBranchRawSnapshotsDeleted: commitOnBranchRawResult.rowCount ?? 0,
   }
 }
 
@@ -433,6 +469,11 @@ export {
   saveChecksRawSnapshot,
 } from './github-data/checks-raw-snapshots.server'
 export {
+  getLatestCommitOnBranchRawSnapshot,
+  saveCommitOnBranchRawSnapshot,
+} from './github-data/commit-on-branch-raw-snapshots.server'
+export { getLatestCommitRawSnapshot, saveCommitRawSnapshot } from './github-data/commit-raw-snapshots.server'
+export {
   getDerivedCompareDataFromRawSnapshot,
   getGitHubDataStatsForApp,
   getLatestCompareRawSnapshot,
@@ -440,7 +481,6 @@ export {
   saveCompareRawSnapshot,
   saveCompareSnapshot,
 } from './github-data/compare-stats.server'
-
 export { getLatestVerificationRun, saveVerificationRun } from './github-data/verification-runs.server'
 export {
   getLatestWorkflowRunRawSnapshot,
