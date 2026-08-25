@@ -3,6 +3,9 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { Pool } from 'pg'
 import { truncateAllTables } from './helpers'
 
+export const TEMPLATE_DATABASE_ENV_VAR = 'NDA_TEMPLATE_DATABASE'
+const DEFAULT_TEMPLATE_DATABASE = 'migrated_template'
+
 let container: StartedPostgreSqlContainer | undefined
 
 export async function setup() {
@@ -26,11 +29,16 @@ export async function setup() {
 
   console.log('🧹 Clearing seed data before snapshotting...')
   const pool = new Pool({ connectionString: connectionUri })
-  await truncateAllTables(pool)
-  await pool.end()
+  try {
+    await truncateAllTables(pool)
+  } finally {
+    await pool.end()
+  }
 
   console.log('📸 Snapshotting migrated schema as template...')
+  container.withSnapshotName(DEFAULT_TEMPLATE_DATABASE)
   await container.snapshot()
+  process.env[TEMPLATE_DATABASE_ENV_VAR] = DEFAULT_TEMPLATE_DATABASE
 
   console.log('✅ Test database ready')
 }
