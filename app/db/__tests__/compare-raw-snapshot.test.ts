@@ -5,7 +5,11 @@ vi.mock('~/db/connection.server', () => ({
 }))
 
 import { pool } from '~/db/connection.server'
-import { getLatestCompareRawSnapshot, saveCompareRawSnapshot } from '~/db/github-data.server'
+import {
+  getDerivedCompareDataFromRawSnapshot,
+  getLatestCompareRawSnapshot,
+  saveCompareRawSnapshot,
+} from '~/db/github-data.server'
 
 const mockPoolQuery = pool.query as Mock
 
@@ -84,5 +88,67 @@ describe('getLatestCompareRawSnapshot', () => {
       fetchedAt,
       data: { status: 'ahead' },
     })
+  })
+})
+
+describe('getDerivedCompareDataFromRawSnapshot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns null when no raw snapshot exists', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [] })
+
+    const result = await getDerivedCompareDataFromRawSnapshot('navikt', 'nda', 'base-sha', 'head-sha')
+
+    expect(result).toBeNull()
+  })
+
+  it('maps the stored raw response into CompareData', async () => {
+    mockPoolQuery.mockResolvedValue({
+      rows: [
+        {
+          id: 3,
+          owner: 'navikt',
+          repo: 'nda',
+          github_repo_id: 999,
+          base_sha: 'base-sha',
+          head_sha: 'head-sha',
+          api_version: '2022-11-28',
+          api_deprecated_at: null,
+          api_sunset_at: null,
+          fetched_at: new Date('2026-01-01T00:00:00Z'),
+          data: { status: 'ahead', ahead_by: 1, behind_by: 0, total_commits: 1, files: [], commits: [] },
+        },
+      ],
+    })
+
+    const result = await getDerivedCompareDataFromRawSnapshot('navikt', 'nda', 'base-sha', 'head-sha')
+
+    expect(result?.compare.status).toBe('ahead')
+  })
+
+  it('returns null instead of throwing when the stored raw response is malformed', async () => {
+    mockPoolQuery.mockResolvedValue({
+      rows: [
+        {
+          id: 3,
+          owner: 'navikt',
+          repo: 'nda',
+          github_repo_id: 999,
+          base_sha: 'base-sha',
+          head_sha: 'head-sha',
+          api_version: '2022-11-28',
+          api_deprecated_at: null,
+          api_sunset_at: null,
+          fetched_at: new Date('2026-01-01T00:00:00Z'),
+          data: { commits: [{ sha: 'aaa', commit: null }] },
+        },
+      ],
+    })
+
+    const result = await getDerivedCompareDataFromRawSnapshot('navikt', 'nda', 'base-sha', 'head-sha')
+
+    expect(result).toBeNull()
   })
 })
