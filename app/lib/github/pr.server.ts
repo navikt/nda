@@ -1,8 +1,8 @@
 import type { GitHubPRData } from '~/db/deployments.server'
-import { saveCommitAssociatedPrsRawSnapshot } from '~/db/github-data.server'
+import { saveCommitAssociatedPrsRawSnapshot, savePrRawSnapshotsBatch } from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
-import { getRepositoryId } from './git.server'
+import { archiveCommitRawSnapshot, getRepositoryId } from './git.server'
 import {
   type ApiVersionMetadata,
   captureApiVersionMetadata,
@@ -48,6 +48,23 @@ async function archiveCommitAssociatedPrsRawSnapshot(
     logger.warn(`⚠️ Failed to archive commit-associated PRs for ${sha.substring(0, 7)} in ${owner}/${repo}:`, {
       error: message,
     })
+  }
+}
+
+async function archivePrCommitsRawSnapshot(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  data: unknown,
+  apiVersion: ApiVersionMetadata,
+): Promise<void> {
+  try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) return
+    await savePrRawSnapshotsBatch(owner, repo, prNumber, githubRepoId, apiVersion, [{ dataType: 'commits', data }])
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`⚠️ Failed to archive commits for PR #${prNumber} in ${owner}/${repo}:`, { error: message })
   }
 }
 
@@ -126,6 +143,7 @@ export async function getPullRequestForCommit(
         if (!prCommitShas || !prCommitsMetadata) {
           try {
             let allPrCommits: Awaited<ReturnType<typeof client.pulls.listCommits>>['data'] = []
+            let prCommitsApiVersion: ApiVersionMetadata | null = null
             let prCommitsPage = 1
 
             while (true) {
@@ -138,12 +156,21 @@ export async function getPullRequestForCommit(
               })
 
               allPrCommits = allPrCommits.concat(prCommitsResponse.data)
+              prCommitsApiVersion = captureApiVersionMetadata(prCommitsResponse.headers, prCommitsApiVersion)
 
               if (prCommitsResponse.data.length < 100) {
                 break
               }
               prCommitsPage++
             }
+
+            await archivePrCommitsRawSnapshot(
+              owner,
+              repo,
+              pr.number,
+              allPrCommits,
+              prCommitsApiVersion ?? { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null },
+            )
 
             prCommitShas = allPrCommits.map((c) => c.sha)
             prCommitsCache.set(cacheKey, prCommitShas)
@@ -186,6 +213,7 @@ export async function getPullRequestForCommit(
               repo,
               ref: sha,
             })
+            await archiveCommitRawSnapshot(owner, repo, sha, commitResponse.data, commitResponse.headers)
             const commitData = commitResponse.data
 
             const commitAuthor = (commitData.commit.author?.name || commitData.author?.login || 'unknown').toLowerCase()
