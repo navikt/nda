@@ -1,6 +1,7 @@
 import { ChatIcon, ClockIcon } from '@navikt/aksel-icons'
 import { Link as AkselLink, Alert, BodyShort, Box, Detail, Heading, HStack, Table, Tag, VStack } from '@navikt/ds-react'
 import { ConfigChangeTag, NotificationTypeTag, type SlackNotificationType } from '~/components/slack-notification-tags'
+import { configSettingLabel, formatAuditLogTimestamp, formatChangedBy } from '~/lib/app-config-audit-log-display'
 
 export type { SlackNotificationType }
 
@@ -50,18 +51,7 @@ export interface SlackConfigChangeEntry {
 
 function formatDate(date: Date | string | null): string {
   if (!date) return '-'
-  const d = typeof date === 'string' ? new Date(date) : date
-  return d.toLocaleString('nb-NO', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function configSettingLabel(settingKey: SlackConfigSettingKey): string {
-  return settingKey === 'slack_notifications_enabled' ? 'Godkjenningsvarsler' : 'Deployment-varsler'
+  return formatAuditLogTimestamp(date)
 }
 
 function configChangeDescription(entry: SlackConfigChangeEntry): string {
@@ -165,7 +155,9 @@ export function SlackNotificationHistoryPage({
                           <ConfigChangeTag />
                         </Table.DataCell>
                         <Table.DataCell>{configChangeDescription(change)}</Table.DataCell>
-                        <Table.DataCell>{change.changed_by_name || change.changed_by_nav_ident}</Table.DataCell>
+                        <Table.DataCell>
+                          {formatChangedBy(change.changed_by_name, change.changed_by_nav_ident)}
+                        </Table.DataCell>
                         <Table.DataCell>-</Table.DataCell>
                         <Table.DataCell>-</Table.DataCell>
                       </Table.ExpandableRow>
