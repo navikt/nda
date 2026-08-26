@@ -200,3 +200,24 @@ export async function closePool(): Promise<void> {
     poolInstance = null
   }
 }
+
+export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  return withDbSpan('TRANSACTION', 'BEGIN; ... COMMIT;', async () => {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await fn(client)
+      await client.query('COMMIT')
+      return result
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK')
+      } catch (rollbackErr) {
+        logger.error('Failed to roll back transaction', rollbackErr)
+      }
+      throw err
+    } finally {
+      client.release()
+    }
+  })
+}

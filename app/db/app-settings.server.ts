@@ -1,4 +1,6 @@
+import type { PoolClient } from 'pg'
 import { logger } from '~/lib/logger.server'
+import { SLACK_CONFIG_SETTING_KEYS } from '~/lib/slack/config-setting-keys'
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool } from './connection.server'
 
@@ -22,6 +24,8 @@ interface AppConfigAuditLogEntry {
   created_at: Date
 }
 
+export type { AppConfigAuditLogEntry }
+
 export interface ImplicitApprovalSettings {
   mode: ImplicitApprovalMode
   [key: string]: unknown
@@ -30,6 +34,8 @@ export interface ImplicitApprovalSettings {
 export const DEFAULT_IMPLICIT_APPROVAL_SETTINGS: ImplicitApprovalSettings = {
   mode: 'off',
 }
+
+export { SLACK_CONFIG_SETTING_KEYS }
 
 const SETTING_KEYS = {
   IMPLICIT_APPROVAL: 'implicit_approval',
@@ -105,6 +111,33 @@ async function updateAppSetting<T extends Record<string, unknown>>(params: {
   return settingResult.rows[0]
 }
 
+export async function recordAppConfigAuditLog(
+  params: {
+    monitoredAppId: number
+    settingKey: string
+    oldValue: Record<string, unknown> | null
+    newValue: Record<string, unknown>
+    changedByNavIdent: string
+    changedByName?: string
+    changeReason?: string
+  },
+  client?: PoolClient,
+): Promise<void> {
+  const { monitoredAppId, settingKey, oldValue, newValue, changedByNavIdent, changedByName, changeReason } = params
+  const queryable = client ?? pool
+
+  await queryable.query(
+    `INSERT INTO app_config_audit_log 
+     (monitored_app_id, changed_by_nav_ident, changed_by_name, setting_key, old_value, new_value, change_reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [monitoredAppId, changedByNavIdent, changedByName || null, settingKey, oldValue, newValue, changeReason || null],
+  )
+
+  logger.info(
+    `📝 Config audit log recorded for setting '${settingKey}' on app ${monitoredAppId} by ${changedByNavIdent}`,
+  )
+}
+
 export async function updateImplicitApprovalSettings(params: {
   monitoredAppId: number
   settings: ImplicitApprovalSettings
@@ -122,21 +155,28 @@ export async function updateImplicitApprovalSettings(params: {
   })
 }
 
+interface AppConfigAuditLogOptions {
+  settingKey?: string | readonly string[]
+  limit?: number
+  offset?: number
+}
+
 export async function getAppConfigAuditLog(
   monitoredAppId: number,
-  options?: {
-    settingKey?: string
-    limit?: number
-    offset?: number
-  },
+  options?: AppConfigAuditLogOptions,
 ): Promise<AppConfigAuditLogEntry[]> {
   let query = 'SELECT * FROM app_config_audit_log WHERE monitored_app_id = $1'
-  const params: (number | string)[] = [monitoredAppId]
+  const params: (number | string | readonly string[])[] = [monitoredAppId]
   let paramIndex = 2
 
   if (options?.settingKey) {
-    query += ` AND setting_key = $${paramIndex++}`
-    params.push(options.settingKey)
+    if (Array.isArray(options.settingKey)) {
+      query += ` AND setting_key = ANY($${paramIndex++})`
+      params.push(options.settingKey)
+    } else {
+      query += ` AND setting_key = $${paramIndex++}`
+      params.push(options.settingKey)
+    }
   }
 
   query += ' ORDER BY created_at DESC'

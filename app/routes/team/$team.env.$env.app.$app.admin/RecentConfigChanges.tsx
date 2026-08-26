@@ -1,4 +1,5 @@
 import { Box, Detail, Label, VStack } from '@navikt/ds-react'
+import { configSettingLabel, formatAuditLogTimestamp, formatChangedBy } from '~/lib/app-config-audit-log-display'
 import type { Route } from '../+types/$team.env.$env.app.$app.admin'
 
 type LoaderData = Route.ComponentProps['loaderData']
@@ -14,8 +15,9 @@ export function RecentConfigChanges({ recentConfigChanges }: RecentConfigChanges
         <VStack gap="space-4">
           {recentConfigChanges.map((change) => (
             <Detail key={change.id} textColor="subtle">
-              {new Date(change.created_at).toLocaleString('no-NO')} -{' '}
-              {change.changed_by_name || change.changed_by_nav_ident}: {change.setting_key}
+              {formatAuditLogTimestamp(change.created_at)} -{' '}
+              {formatChangedBy(change.changed_by_name, change.changed_by_nav_ident)}:{' '}
+              {configSettingLabel(change.setting_key)}
             </Detail>
           ))}
         </VStack>
