@@ -323,6 +323,10 @@ For detaljert dokumentasjon av hvordan fire-øyne-prinsippet verifiseres, se [do
 - Implisitt godkjenning (moduser og regler)
 - Kodereferanser for sporbarhet
 
+Datalagring og caching av GitHub-data (checks-henting, fallback-SHA, konvergens) er dokumentert i [docs/data-storage.md](docs/data-storage.md).
+
+Arkivering av rå GitHub API-svar for rapport-/visningsdata og four-eyes-beslutningsporter er dokumentert i [docs/raw-data-archival.md](docs/raw-data-archival.md).
+
 ## 🤝 Bidrag
 
 Internt Nav-verktøy. Bidrag velkomne!
