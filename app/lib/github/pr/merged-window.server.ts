@@ -1,5 +1,8 @@
+import { savePrWindowRawSnapshot } from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from '../client.server'
+import { getRepositoryId } from '../git.server'
+import { captureApiVersionMetadata } from '../pr-snapshot'
 
 interface MergedPullRequestInWindow {
   number: number
@@ -63,6 +66,7 @@ export async function getMergedPullRequestsInWindow(
           repo,
           pull_number: pullNumber,
         })
+        await archivePrWindowRawSnapshot(owner, repo, pullNumber, prResponse.data, prResponse.headers)
         const pr = prResponse.data
         if (!pr.merged_at) return null
         if (pr.base.ref !== baseBranch) return null
@@ -97,4 +101,22 @@ export async function getMergedPullRequestsInWindow(
     .filter((pr): pr is MergedPullRequestInWindow => pr !== null)
 
   return mergedPrs.sort((a, b) => new Date(a.mergedAt).getTime() - new Date(b.mergedAt).getTime())
+}
+
+export async function archivePrWindowRawSnapshot(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  data: unknown,
+  headers: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) return
+    const apiVersion = captureApiVersionMetadata(headers, null)
+    await savePrWindowRawSnapshot(owner, repo, githubRepoId, prNumber, data, apiVersion)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`⚠️ Failed to archive PR #${prNumber} for ${owner}/${repo}:`, { error: message })
+  }
 }

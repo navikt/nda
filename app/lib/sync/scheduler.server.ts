@@ -157,10 +157,12 @@ async function runPeriodicSync(): Promise<void> {
         cleanedSnapshots.checksRawSnapshotsDeleted > 0 ||
         cleanedSnapshots.workflowRunsRawSnapshotsDeleted > 0 ||
         cleanedSnapshots.commitRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.commitOnBranchRawSnapshotsDeleted > 0
+        cleanedSnapshots.commitOnBranchRawSnapshotsDeleted > 0 ||
+        cleanedSnapshots.commitAssociatedPrsRawSnapshotsDeleted > 0 ||
+        cleanedSnapshots.prWindowRawSnapshotsDeleted > 0
       ) {
         logger.info(
-          `🧹 Cleaned up ${cleanedSnapshots.prSnapshotsDeleted} PR snapshots, ${cleanedSnapshots.commitSnapshotsDeleted} commit snapshots, ${cleanedSnapshots.prRawSnapshotsDeleted} raw PR snapshots, ${cleanedSnapshots.compareRawSnapshotsDeleted} raw compare snapshots, ${cleanedSnapshots.checksRawSnapshotsDeleted} raw checks snapshots, ${cleanedSnapshots.workflowRunsRawSnapshotsDeleted} raw workflow run snapshots, ${cleanedSnapshots.commitRawSnapshotsDeleted} raw commit snapshots, ${cleanedSnapshots.commitOnBranchRawSnapshotsDeleted} raw commit-on-branch snapshots`,
+          `🧹 Cleaned up ${cleanedSnapshots.prSnapshotsDeleted} PR snapshots, ${cleanedSnapshots.commitSnapshotsDeleted} commit snapshots, ${cleanedSnapshots.prRawSnapshotsDeleted} raw PR snapshots, ${cleanedSnapshots.compareRawSnapshotsDeleted} raw compare snapshots, ${cleanedSnapshots.checksRawSnapshotsDeleted} raw checks snapshots, ${cleanedSnapshots.workflowRunsRawSnapshotsDeleted} raw workflow run snapshots, ${cleanedSnapshots.commitRawSnapshotsDeleted} raw commit snapshots, ${cleanedSnapshots.commitOnBranchRawSnapshotsDeleted} raw commit-on-branch snapshots, ${cleanedSnapshots.commitAssociatedPrsRawSnapshotsDeleted} raw commit-associated-PR snapshots, ${cleanedSnapshots.prWindowRawSnapshotsDeleted} raw PR-window snapshots`,
         )
       }
 

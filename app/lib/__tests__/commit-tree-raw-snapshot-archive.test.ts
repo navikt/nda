@@ -27,7 +27,7 @@ vi.mock('~/db/connection.server', () => ({
 }))
 
 import { pool } from '~/db/connection.server'
-import { haveSameCommitTree, isCommitOnBranch } from '~/lib/github/git.server'
+import { getSingleCommitMessage, haveSameCommitTree, isCommitOnBranch } from '~/lib/github/git.server'
 
 const mockPoolQuery = pool.query as Mock
 
@@ -130,5 +130,47 @@ describe('isCommitOnBranch', () => {
     const result = await isCommitOnBranch('navikt', 'db-failure-branch-repo', 'abc123', 'main')
 
     expect(result).toBe(true)
+  })
+})
+
+describe('getSingleCommitMessage', () => {
+  beforeEach(() => {
+    mockReposGet.mockReset()
+    mockGetCommit.mockReset()
+    mockPoolQuery.mockReset()
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 1 }] })
+  })
+
+  it('archives the raw commit response after fetching the commit message', async () => {
+    mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+    mockGetCommit.mockResolvedValueOnce({
+      data: { commit: { message: 'fix: something' } },
+      headers: { 'x-github-api-version-selected': '2022-11-28' },
+    })
+
+    const result = await getSingleCommitMessage('navikt', 'commit-message-archive-repo', 'abc123')
+
+    expect(result).toBe('fix: something')
+
+    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_commit_raw_snapshots'), [
+      999,
+      'navikt',
+      'commit-message-archive-repo',
+      'abc123',
+      '2022-11-28',
+      null,
+      null,
+      JSON.stringify({ commit: { message: 'fix: something' } }),
+    ])
+  })
+
+  it('still returns the commit message even if archiving fails', async () => {
+    mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+    mockGetCommit.mockResolvedValueOnce({ data: { commit: { message: 'fix: something' } }, headers: {} })
+    mockPoolQuery.mockRejectedValue(new Error('db down'))
+
+    const result = await getSingleCommitMessage('navikt', 'db-failure-repo', 'abc123')
+
+    expect(result).toBe('fix: something')
   })
 })

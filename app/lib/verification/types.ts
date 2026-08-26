@@ -214,6 +214,32 @@ export interface CommitOnBranchRawSnapshot {
   data: unknown
 }
 
+export interface CommitAssociatedPrsRawSnapshot {
+  id: number
+  owner: string
+  repo: string
+  githubRepoId: number
+  sha: string
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+  fetchedAt: Date
+  data: unknown
+}
+
+export interface PrWindowRawSnapshot {
+  id: number
+  owner: string
+  repo: string
+  githubRepoId: number
+  prNumber: number
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+  fetchedAt: Date
+  data: unknown
+}
+
 export interface CompareSummary {
   status: string
   aheadBy: number

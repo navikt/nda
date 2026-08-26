@@ -1,6 +1,8 @@
 import type { GitHubPRData } from '~/db/deployments.server'
+import { saveCommitAssociatedPrsRawSnapshot } from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
+import { getRepositoryId } from './git.server'
 import {
   type ApiVersionMetadata,
   captureApiVersionMetadata,
@@ -29,6 +31,26 @@ interface PullRequestLookupResult {
   allAssociatedPrs: Array<{ number: number; baseBranch: string }>
 }
 
+async function archiveCommitAssociatedPrsRawSnapshot(
+  owner: string,
+  repo: string,
+  sha: string,
+  data: unknown,
+  headers: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) return
+    const apiVersion = captureApiVersionMetadata(headers, null)
+    await saveCommitAssociatedPrsRawSnapshot(owner, repo, githubRepoId, sha, data, apiVersion)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`⚠️ Failed to archive commit-associated PRs for ${sha.substring(0, 7)} in ${owner}/${repo}:`, {
+      error: message,
+    })
+  }
+}
+
 export async function getPullRequestForCommit(
   owner: string,
   repo: string,
@@ -48,6 +70,8 @@ export async function getPullRequestForCommit(
       repo,
       commit_sha: sha,
     })
+
+    await archiveCommitAssociatedPrsRawSnapshot(owner, repo, sha, response.data, response.headers)
 
     logger.info(`📊 Found ${response.data.length} PR(s) associated with commit ${sha}`)
 

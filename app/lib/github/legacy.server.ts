@@ -1,5 +1,7 @@
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from './client.server'
+import { archiveCommitRawSnapshot } from './git.server'
+import { archivePrWindowRawSnapshot } from './pr/merged-window.server'
 import { getPullRequestForCommit, getPullRequestReviews } from './pr.server'
 
 export interface LegacyLookupResult {
@@ -38,6 +40,8 @@ export async function lookupLegacyByCommit(
       repo,
       ref: sha,
     })
+
+    await archiveCommitRawSnapshot(owner, repo, sha, commitResponse.data, commitResponse.headers)
 
     const commit = commitResponse.data
     const commitDate = new Date(commit.commit.author?.date || commit.commit.committer?.date || '')
@@ -106,6 +110,8 @@ export async function lookupLegacyByPR(
       repo,
       pull_number: prNumber,
     })
+
+    await archivePrWindowRawSnapshot(owner, repo, prNumber, prResponse.data, prResponse.headers)
 
     const pr = prResponse.data
 
