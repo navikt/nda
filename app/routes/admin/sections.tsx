@@ -3,8 +3,9 @@ import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, Tag, Tex
 import { type ReactNode, useState } from 'react'
 import { Form, Link, useLoaderData } from 'react-router'
 import { getDevTeamStatsBatch } from '~/db/dashboard-stats.server'
-import { createSection, getAllSectionsWithTeams, type SectionWithTeams } from '~/db/sections.server'
+import { createSection, getAllSectionsWithTeams, type SectionWithTeams, sectionSlugExists } from '~/db/sections.server'
 import { requireAdmin, requireUser } from '~/lib/auth.server'
+import { generateUniqueSlug } from '~/lib/slug.server'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/sections'
 
@@ -80,16 +81,17 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = formData.get('intent') as string
 
   if (intent === 'create') {
-    const slug = (formData.get('slug') as string)?.trim()
     const name = (formData.get('name') as string)?.trim()
     const entraGroupAdmin = (formData.get('entra_group_admin') as string)?.trim() || undefined
     const entraGroupUser = (formData.get('entra_group_user') as string)?.trim() || undefined
+    const requestedSlug = (formData.get('slug') as string)?.trim()
 
-    if (!slug || !name) {
-      return { error: 'Slug og navn er påkrevd.' }
+    if (!name) {
+      return { error: 'Navn er påkrevd.' }
     }
 
     try {
+      const slug = await generateUniqueSlug(requestedSlug || name, sectionSlugExists)
       await createSection(slug, name, entraGroupAdmin, entraGroupUser)
       return { success: true }
     } catch (error) {
@@ -152,12 +154,18 @@ export default function AdminSections() {
                 Opprett ny seksjon
               </Heading>
               <HStack gap="space-16" wrap>
-                <TextField label="Slug" name="slug" size="small" placeholder="f.eks. pensjon" autoComplete="off" />
                 <TextField
                   label="Visningsnavn"
                   name="name"
                   size="small"
                   placeholder="f.eks. Pensjon og uføre"
+                  autoComplete="off"
+                />
+                <TextField
+                  label="Slug (valgfritt)"
+                  name="slug"
+                  size="small"
+                  placeholder="Genereres automatisk fra navn"
                   autoComplete="off"
                 />
               </HStack>

@@ -26,6 +26,11 @@ export async function getSectionBySlug(slug: string): Promise<Section | null> {
   return result.rows[0] ?? null
 }
 
+export async function sectionSlugExists(slug: string): Promise<boolean> {
+  const result = await pool.query('SELECT 1 FROM sections WHERE slug = $1', [slug])
+  return (result.rowCount ?? 0) > 0
+}
+
 export async function getSectionWithTeams(slug: string): Promise<SectionWithTeams | null> {
   const result = await pool.query(
     `SELECT s.*, COALESCE(array_agg(st.team_slug ORDER BY st.team_slug) FILTER (WHERE st.team_slug IS NOT NULL), '{}') as team_slugs

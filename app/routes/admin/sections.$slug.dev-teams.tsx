@@ -19,6 +19,7 @@ import {
   createDevTeam,
   type DevTeamApplication,
   type DevTeamWithNaisTeams,
+  devTeamSlugExists,
   getAvailableAppsForDevTeam,
   getDevTeamApplications,
   getDevTeamsBySection,
@@ -29,6 +30,7 @@ import {
 import { getSectionBySlug, getSectionWithTeams, setSectionTeams, updateSection } from '~/db/sections.server'
 import { requireUser } from '~/lib/auth.server'
 import { canManageSection } from '~/lib/authorization.server'
+import { generateUniqueSlug } from '~/lib/slug.server'
 import type { Route } from './+types/sections.$slug.dev-teams'
 
 export function meta({ loaderData: data }: Route.MetaArgs) {
@@ -58,7 +60,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     availableAppsByTeam[team.id] = await getAvailableAppsForDevTeam(team.id)
   }
 
-  return { section, devTeams, appsByTeam, availableAppsByTeam }
+  return { section, devTeams, appsByTeam, availableAppsByTeam, isAdmin: user.role === 'admin' }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -104,14 +106,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === 'create') {
-    const slug = (formData.get('slug') as string)?.trim()
     const name = (formData.get('name') as string)?.trim()
+    const requestedSlug = user.role === 'admin' ? (formData.get('slug') as string)?.trim() : undefined
 
-    if (!slug || !name) {
-      return { error: 'Slug og navn er påkrevd.' }
+    if (!name) {
+      return { error: 'Navn er påkrevd.' }
     }
 
     try {
+      const slug = await generateUniqueSlug(requestedSlug || name, devTeamSlugExists)
       await createDevTeam(section.id, slug, name)
       return { success: true }
     } catch (error) {
@@ -165,7 +168,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function AdminSectionEdit() {
-  const { section, devTeams, appsByTeam, availableAppsByTeam } = useLoaderData<typeof loader>()
+  const { section, devTeams, appsByTeam, availableAppsByTeam, isAdmin } = useLoaderData<typeof loader>()
   const [editingId, setEditingId] = useState<number | null>(null)
   const [managingAppsId, setManagingAppsId] = useState<number | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -306,19 +309,21 @@ export default function AdminSectionEdit() {
                 </Heading>
                 <HStack gap="space-16" wrap>
                   <TextField
-                    label="Slug"
-                    name="slug"
-                    size="small"
-                    placeholder="f.eks. team-pensjon-ytelse"
-                    autoComplete="off"
-                  />
-                  <TextField
                     label="Visningsnavn"
                     name="name"
                     size="small"
                     placeholder="f.eks. Team Pensjon Ytelse"
                     autoComplete="off"
                   />
+                  {isAdmin && (
+                    <TextField
+                      label="Slug (valgfritt)"
+                      name="slug"
+                      size="small"
+                      placeholder="Genereres automatisk fra navn"
+                      autoComplete="off"
+                    />
+                  )}
                 </HStack>
                 <HStack gap="space-8">
                   <Button type="submit" size="small">
@@ -340,7 +345,7 @@ export default function AdminSectionEdit() {
             <Table.Header>
               <Table.Row>
                 <Table.HeaderCell>Utviklingsteam</Table.HeaderCell>
-                <Table.HeaderCell>Slug</Table.HeaderCell>
+                {isAdmin && <Table.HeaderCell>Slug</Table.HeaderCell>}
                 <Table.HeaderCell>Nais-team</Table.HeaderCell>
                 <Table.HeaderCell>Applikasjoner</Table.HeaderCell>
                 <Table.HeaderCell />
@@ -356,6 +361,7 @@ export default function AdminSectionEdit() {
                   availableApps={availableAppsByTeam[team.id] ?? []}
                   isEditing={editingId === team.id}
                   isManagingApps={managingAppsId === team.id}
+                  isAdmin={isAdmin}
                   onEdit={() => setEditingId(team.id)}
                   onCancel={() => setEditingId(null)}
                   onManageApps={() => setManagingAppsId(managingAppsId === team.id ? null : team.id)}
@@ -377,6 +383,7 @@ function DevTeamRow({
   availableApps,
   isEditing,
   isManagingApps,
+  isAdmin,
   onEdit,
   onCancel,
   onManageApps,
@@ -388,6 +395,7 @@ function DevTeamRow({
   availableApps: { id: number; team_slug: string; environment_name: string; app_name: string; is_linked: boolean }[]
   isEditing: boolean
   isManagingApps: boolean
+  isAdmin: boolean
   onEdit: () => void
   onCancel: () => void
   onManageApps: () => void
@@ -396,7 +404,7 @@ function DevTeamRow({
   if (isEditing) {
     return (
       <Table.Row>
-        <Table.DataCell colSpan={5}>
+        <Table.DataCell colSpan={isAdmin ? 5 : 4}>
           <Form method="post" onSubmit={onCancel}>
             <input type="hidden" name="intent" value="update" />
             <input type="hidden" name="id" value={team.id} />
@@ -437,7 +445,7 @@ function DevTeamRow({
 
     return (
       <Table.Row>
-        <Table.DataCell colSpan={5}>
+        <Table.DataCell colSpan={isAdmin ? 5 : 4}>
           <Form method="post" onSubmit={onCancelApps}>
             <input type="hidden" name="intent" value="update_apps" />
             <input type="hidden" name="id" value={team.id} />
@@ -483,9 +491,11 @@ function DevTeamRow({
   return (
     <Table.Row>
       <Table.DataCell>{team.name}</Table.DataCell>
-      <Table.DataCell>
-        <code>{team.slug}</code>
-      </Table.DataCell>
+      {isAdmin && (
+        <Table.DataCell>
+          <code>{team.slug}</code>
+        </Table.DataCell>
+      )}
       <Table.DataCell>
         <HStack gap="space-4" wrap>
           {team.nais_team_slugs.map((slug) => (

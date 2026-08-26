@@ -117,6 +117,11 @@ export async function getDevTeamsForApps(
   return result.rows
 }
 
+export async function devTeamSlugExists(slug: string): Promise<boolean> {
+  const result = await pool.query('SELECT 1 FROM dev_teams WHERE slug = $1', [slug])
+  return (result.rowCount ?? 0) > 0
+}
+
 export async function createDevTeam(sectionId: number, slug: string, name: string): Promise<DevTeam> {
   const result = await pool.query('INSERT INTO dev_teams (section_id, slug, name) VALUES ($1, $2, $3) RETURNING *', [
     sectionId,
