@@ -107,14 +107,17 @@ async function isTeamLeaderOfManagingTeam(actor: UserIdentity, monitoredAppId: n
   return teamRoles.some((r) => managingSet.has(r.dev_team_id) && isTeamLeaderRole(r.role))
 }
 
-export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+async function isAdminOrTeamLeaderOfManagingTeam(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
   if (isEntraAdmin(actor)) return true
   return isTeamLeaderOfManagingTeam(actor, monitoredAppId)
 }
 
+export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+  return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId)
+}
+
 export async function canAccessAppAdmin(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
-  if (isEntraAdmin(actor)) return true
-  return isTeamLeaderOfManagingTeam(actor, monitoredAppId)
+  return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId)
 }
 
 export async function canAdministerTeam(actor: UserIdentity, devTeamId: number): Promise<boolean> {

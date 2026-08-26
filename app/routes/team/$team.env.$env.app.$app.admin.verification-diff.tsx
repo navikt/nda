@@ -109,6 +109,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return { diffs, missingApproverDeployments, appContext, lastComputed, latestJob }
 }
 
+async function getDeploymentAppIds(deploymentIds: number[]): Promise<Map<number, number>> {
+  if (deploymentIds.length === 0) return new Map()
+  const result = await pool.query<{ id: number; monitored_app_id: number }>(
+    'SELECT id, monitored_app_id FROM deployments WHERE id = ANY($1)',
+    [deploymentIds],
+  )
+  return new Map(result.rows.map((row) => [row.id, row.monitored_app_id]))
+}
+
 export async function action({ request, params }: Route.ActionArgs) {
   const user = await requireUser(request)
 
@@ -127,6 +136,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   const deploymentId = parseInt(formData.get('deployment_id') as string, 10)
 
   if (actionType === 'apply_reverification' && deploymentId) {
+    const deploymentAppIds = await getDeploymentAppIds([deploymentId])
+    if (deploymentAppIds.get(deploymentId) !== monitoredApp.id) {
+      return { error: `Deployment ${deploymentId} tilhører ikke denne applikasjonen` }
+    }
     try {
       const result = await reverifyDeployment(deploymentId)
       if (!result) {
@@ -153,11 +166,16 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (actionType === 'apply_all') {
     const ids = formData.getAll('deployment_ids').map((id) => parseInt(id as string, 10))
+    const deploymentAppIds = await getDeploymentAppIds(ids)
     let applied = 0
     let skipped = 0
     let errors = 0
 
     for (const id of ids) {
+      if (deploymentAppIds.get(id) !== monitoredApp.id) {
+        errors++
+        continue
+      }
       try {
         const result = await reverifyDeployment(id)
         if (result?.changed) {
