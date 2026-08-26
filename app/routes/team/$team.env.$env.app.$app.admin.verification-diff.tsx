@@ -20,7 +20,8 @@ import { pool } from '~/db/connection.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getLatestSyncJob, getSyncJobById } from '~/db/sync-jobs.server'
 import { getApprovedDeploymentsMissingApprover } from '~/db/verification-diff.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canAccessAppAdmin } from '~/lib/authorization.server'
 import {
   type FourEyesStatus,
   getFourEyesStatusLabel,
@@ -45,13 +46,17 @@ interface DeploymentDiff {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
 
   const { team, env, app } = params
 
   const monitoredApp = await getMonitoredApplicationByIdentity(team, env, app)
   if (!monitoredApp) {
     return { diffs: [], missingApproverDeployments: [], appContext: null, lastComputed: null, latestJob: null }
+  }
+
+  if (!(await canAccessAppAdmin(user, monitoredApp.id))) {
+    throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
   const appContext = {
@@ -105,9 +110,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
 
   const { team, env, app } = params
+
+  const monitoredApp = await getMonitoredApplicationByIdentity(team, env, app)
+  if (!monitoredApp) {
+    return { error: 'App ikke funnet' }
+  }
+  if (!(await canAccessAppAdmin(user, monitoredApp.id))) {
+    return { error: 'Du har ikke tilgang til å administrere denne applikasjonen' }
+  }
 
   const formData = await request.formData()
   const actionType = formData.get('action') as string
@@ -166,6 +179,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     const jobId = parseInt(formData.get('job_id') as string, 10)
     if (!jobId) return { error: 'Mangler job_id' }
     const job = await getSyncJobById(jobId)
+    if (!job || job.monitored_app_id !== monitoredApp.id) {
+      return { error: 'Fant ikke jobb for denne applikasjonen' }
+    }
     return { computeJobStatus: job }
   }
 

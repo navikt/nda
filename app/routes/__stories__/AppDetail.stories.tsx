@@ -110,7 +110,7 @@ type StoryProps = Partial<AppDetailPageProps> & {
 function renderAppDetailStory({
   loaderData,
   actionData = null,
-  isAdmin = false,
+  canAccessAdmin = false,
   initialEntry = '/team/pensjondeployer/env/prod-fss/app/pensjon-pen?period=last-week',
 }: StoryProps) {
   const mergedLoaderData: AppDetailLoaderData = {
@@ -134,7 +134,9 @@ function renderAppDetailStory({
     [
       {
         path: '/team/:team/env/:env/app/:app',
-        element: <AppDetailPage loaderData={mergedLoaderData} actionData={actionData} isAdmin={isAdmin} />,
+        element: (
+          <AppDetailPage loaderData={mergedLoaderData} actionData={actionData} canAccessAdmin={canAccessAdmin} />
+        ),
       },
     ],
     {
@@ -148,7 +150,7 @@ function renderAppDetailStory({
 export const Default: Story = {
   args: {
     loaderData: baseLoaderData,
-    isAdmin: false,
+    canAccessAdmin: false,
   },
   render: (args) => renderAppDetailStory(args),
 }
@@ -161,7 +163,7 @@ export const AdminView: Story = {
       pendingRepos: [mockPendingRepository],
       repositories: [mockRepository, mockPendingRepository, ...baseLoaderData.historicalRepos],
     },
-    isAdmin: true,
+    canAccessAdmin: true,
   },
   render: (args) => renderAppDetailStory(args),
 }
@@ -175,7 +177,7 @@ export const WithAlerts: Story = {
       pendingRepos: [mockPendingRepository],
       repositories: [mockRepository, mockPendingRepository, ...baseLoaderData.historicalRepos],
     },
-    isAdmin: true,
+    canAccessAdmin: true,
   },
   render: (args) => renderAppDetailStory(args),
 }
@@ -195,7 +197,7 @@ export const NoRepository: Story = {
       siblings: [],
       devTeams: [],
     },
-    isAdmin: true,
+    canAccessAdmin: true,
   },
   render: (args) => renderAppDetailStory(args),
 }
@@ -208,7 +210,7 @@ export const DevEnvironment: Story = {
       app: { ...baseLoaderData.app, environment_name: 'dev-fss' },
       auditReports: [],
     },
-    isAdmin: false,
+    canAccessAdmin: false,
   },
   render: (args) => renderAppDetailStory(args),
 }
@@ -220,7 +222,7 @@ export const WithBaselineWarning: Story = {
       ...baseLoaderData,
       deploymentStats: { ...baseLoaderData.deploymentStats, baseline_action_count: 1 },
     },
-    isAdmin: false,
+    canAccessAdmin: false,
   },
   render: (args) => renderAppDetailStory(args),
 }

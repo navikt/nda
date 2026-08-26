@@ -3,7 +3,8 @@ import { Link } from 'react-router'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { SYNC_JOB_STATUS_LABELS, SYNC_JOB_TYPE_LABELS, type SyncJob, type SyncJobStatus } from '~/db/sync-job-types'
 import { getSyncJobsForApp } from '~/db/sync-jobs.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canAccessAppAdmin } from '~/lib/authorization.server'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.sync-jobs'
 
 export function meta() {
@@ -11,11 +12,15 @@ export function meta() {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
 
   const app = await getMonitoredApplicationByIdentity(params.team, params.env, params.app)
   if (!app) {
     throw new Response('Application not found', { status: 404 })
+  }
+
+  if (!(await canAccessAppAdmin(user, app.id))) {
+    throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
   const jobs = await getSyncJobsForApp(app.id, { limit: 200 })

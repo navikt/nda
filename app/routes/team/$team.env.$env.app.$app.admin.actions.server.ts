@@ -24,7 +24,8 @@ import {
   updateSyncJobProgress,
 } from '~/db/sync-jobs.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canAccessAppAdmin } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
@@ -85,12 +86,52 @@ async function processComputeDiffsJobAsync(jobId: number, appId: number) {
   })
 }
 
+const JOB_ID_ACTIONS = new Set([
+  'check_fetch_job_status',
+  'cancel_fetch_job',
+  'force_release_job',
+  'check_compute_diffs_status',
+])
+
+function getFormString(formData: FormData, key: string): string | null {
+  const value = formData.get(key)
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
 export async function action({ request }: { request: Request; params: Record<string, string | undefined> }) {
-  const user = await requireAdmin(request)
+  const user = await requireUser(request)
 
   const formData = await request.formData()
   const action = formData.get('action') as string
   const appId = parseInt(formData.get('app_id') as string, 10)
+
+  if (JOB_ID_ACTIONS.has(action)) {
+    const jobId = parseInt(formData.get('job_id') as string, 10)
+    if (!Number.isFinite(jobId)) {
+      return { error: 'Mangler job_id' }
+    }
+    const job = await getSyncJobById(jobId)
+    if (!job || job.monitored_app_id == null || !(await canAccessAppAdmin(user, job.monitored_app_id))) {
+      return { error: 'Du har ikke tilgang til denne jobben' }
+    }
+  } else if (action === 'send_reminder') {
+    const teamSlug = getFormString(formData, 'team_slug')
+    const environmentName = getFormString(formData, 'environment_name')
+    const appName = getFormString(formData, 'app_name')
+    if (!teamSlug || !environmentName || !appName) {
+      return { error: 'Mangler team_slug, environment_name eller app_name' }
+    }
+    const reminderApp = await getMonitoredApplicationByIdentity(teamSlug, environmentName, appName)
+    if (!reminderApp || !(await canAccessAppAdmin(user, reminderApp.id))) {
+      return { error: 'Du har ikke tilgang til å administrere denne applikasjonen' }
+    }
+  } else if (Number.isFinite(appId)) {
+    if (!(await canAccessAppAdmin(user, appId))) {
+      return { error: 'Du har ikke tilgang til å administrere denne applikasjonen' }
+    }
+  } else {
+    return { error: 'Ugyldig eller manglende app-ID' }
+  }
 
   if (action === 'update_default_branch') {
     const defaultBranch = formData.get('default_branch') as string
@@ -412,11 +453,13 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'send_reminder') {
-    const app = await getMonitoredApplicationByIdentity(
-      formData.get('team_slug') as string,
-      formData.get('environment_name') as string,
-      formData.get('app_name') as string,
-    )
+    const teamSlug = getFormString(formData, 'team_slug')
+    const environmentName = getFormString(formData, 'environment_name')
+    const appName = getFormString(formData, 'app_name')
+    if (!teamSlug || !environmentName || !appName) {
+      return { error: 'Mangler team_slug, environment_name eller app_name' }
+    }
+    const app = await getMonitoredApplicationByIdentity(teamSlug, environmentName, appName)
     if (!app?.slack_channel_id) {
       return { error: 'Slack-kanal er ikke konfigurert for denne appen' }
     }

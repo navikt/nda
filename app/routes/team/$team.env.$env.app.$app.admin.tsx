@@ -13,7 +13,8 @@ import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.s
 import type { SyncJob } from '~/db/sync-job-types'
 import { getLatestSyncJob } from '~/db/sync-jobs.server'
 import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canAccessAppAdmin } from '~/lib/authorization.server'
 import type { UserLookupMap } from '~/lib/user-display'
 import { AuditStartYearSettings } from '~/routes/team/$team.env.$env.app.$app.admin/AuditStartYearSettings'
 import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
@@ -35,13 +36,18 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
 
   const { team, env, app: appName } = params
 
   const app = await getMonitoredApplicationByIdentity(team, env, appName)
   if (!app) {
     throw new Response('Application not found', { status: 404 })
+  }
+
+  const canAccess = await canAccessAppAdmin(user, app.id)
+  if (!canAccess) {
+    throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
   const isProdApp = app.environment_name.startsWith('prod-')
