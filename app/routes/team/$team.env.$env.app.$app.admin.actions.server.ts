@@ -27,7 +27,7 @@ import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
 import { canAccessAppAdmin } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
-import { isValidSlackChannel } from '~/lib/form-validators'
+import { getFormString, isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
 import { processReportJobAsync } from '~/lib/report-job-processor.server'
 import { isValidReportPeriodType } from '~/lib/report-periods'
@@ -92,11 +92,6 @@ const JOB_ID_ACTIONS = new Set([
   'force_release_job',
   'check_compute_diffs_status',
 ])
-
-function getFormString(formData: FormData, key: string): string | null {
-  const value = formData.get(key)
-  return typeof value === 'string' && value.length > 0 ? value : null
-}
 
 export async function action({ request }: { request: Request; params: Record<string, string | undefined> }) {
   const user = await requireUser(request)

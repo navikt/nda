@@ -16,7 +16,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const jobId = Number.parseInt(jobIdParam, 10)
 
   if (!Number.isFinite(jobId)) {
-    throw new Response('Not found', { status: 404 })
+    throw new Response('Invalid job ID', { status: 400 })
   }
 
   const [app, job] = await Promise.all([getMonitoredApplicationByIdentity(team, env, appName), getSyncJobById(jobId)])
