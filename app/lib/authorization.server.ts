@@ -98,15 +98,26 @@ export async function canApproveDeployment(actor: UserIdentity, monitoredAppId: 
   return teamRoles.some((r) => managingSet.has(r.dev_team_id))
 }
 
-export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
-  if (isEntraAdmin(actor)) return true
-
+async function isTeamLeaderOfManagingTeam(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
   const managingTeamIds = await getManagingTeamIds(monitoredAppId)
   if (managingTeamIds.length === 0) return false
 
   const managingSet = new Set(managingTeamIds)
   const { teamRoles } = await getUserRoles(actor.navIdent)
   return teamRoles.some((r) => managingSet.has(r.dev_team_id) && isTeamLeaderRole(r.role))
+}
+
+async function isAdminOrTeamLeaderOfManagingTeam(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+  if (isEntraAdmin(actor)) return true
+  return isTeamLeaderOfManagingTeam(actor, monitoredAppId)
+}
+
+export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+  return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId)
+}
+
+export async function canAccessAppAdmin(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+  return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId)
 }
 
 export async function canAdministerTeam(actor: UserIdentity, devTeamId: number): Promise<boolean> {

@@ -2,17 +2,22 @@ import { BodyShort, Box, Heading, Table, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { getDeploymentsWithStatusChanges } from '~/db/deployments.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canAccessAppAdmin } from '~/lib/authorization.server'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import { formatChangeSource, getFourEyesStatus } from '~/lib/status-display'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.status-history'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
 
   const app = await getMonitoredApplicationByIdentity(params.team, params.env, params.app)
   if (!app) {
     throw new Response('Application not found', { status: 404 })
+  }
+
+  if (!(await canAccessAppAdmin(user, app.id))) {
+    throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
   const deployments = await getDeploymentsWithStatusChanges(app.id)

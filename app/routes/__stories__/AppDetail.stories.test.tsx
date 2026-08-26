@@ -22,6 +22,7 @@ describe('AppDetail story baseline characterization', () => {
     expect(html).toContain('Historiske repositories (1)')
     expect(html).toContain('Utviklingsteam:')
     expect(html).not.toContain('Administrer')
+    expect(html).not.toContain('Se sync-jobber')
   })
 
   it('renders admin actions, sync job link and pending repository approvals in admin view', () => {
