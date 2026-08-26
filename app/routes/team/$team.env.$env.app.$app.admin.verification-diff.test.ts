@@ -173,6 +173,16 @@ describe('verification-diff action - IDOR protection', () => {
 
       expect(result).toEqual({ computeJobStatus: { id: 7, monitored_app_id: 1 } })
     })
+
+    it('returns an explicit error for a missing or non-numeric job_id', async () => {
+      const formData = new FormData()
+      formData.set('action', 'check_compute_status')
+
+      const result = await action({ request: makeRequest(formData), params } as never)
+
+      expect(result).toEqual({ error: 'Mangler eller ugyldig job_id' })
+      expect(mockGetSyncJobById).not.toHaveBeenCalled()
+    })
   })
 
   it('rejects all mutating actions when the actor lacks admin access to the app', async () => {
