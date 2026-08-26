@@ -38,13 +38,10 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   }
 
   const identity = await getUserIdentity(request)
-  const capabilities =
-    (app.not_found_in_nais_at || !app.is_active) && identity ? await resolveAppCapabilities(identity, app.id) : null
-  const canDeactivate = app.not_found_in_nais_at ? (capabilities?.canDeactivate ?? false) : false
-  const canReactivate = !app.is_active ? (capabilities?.canReactivate ?? false) : false
-  const canAccessAdmin = identity ? await canAccessAppAdmin(identity, app.id) : false
 
   const [
+    capabilities,
+    canAccessAdmin,
     repositories,
     deploymentStats,
     alerts,
@@ -55,6 +52,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     verificationProgress,
     observedVerifyIntervalMs,
   ] = await Promise.all([
+    (app.not_found_in_nais_at || !app.is_active) && identity ? resolveAppCapabilities(identity, app.id) : null,
+    identity ? canAccessAppAdmin(identity, app.id) : false,
     getRepositoriesByAppId(app.id),
     getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
     getUnresolvedAlertsByApp(app.id),
@@ -65,6 +64,9 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     getPendingVerificationCount(app.id),
     getObservedSyncIntervalMs(app.id, 'github_verify'),
   ])
+
+  const canDeactivate = app.not_found_in_nais_at ? (capabilities?.canDeactivate ?? false) : false
+  const canReactivate = !app.is_active ? (capabilities?.canReactivate ?? false) : false
 
   const { group, siblings } = groupContext
 

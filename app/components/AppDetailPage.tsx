@@ -240,9 +240,12 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
           </Button>
         ) : (
           <Tooltip content="Du har ikke tilgang til å administrere denne applikasjonen">
-            <Button disabled variant="tertiary" size="small" icon={<CogIcon aria-hidden />}>
-              Administrer
-            </Button>
+            {/* biome-ignore lint/a11y/noNoninteractiveTabindex: wrapper must be focusable so the Tooltip is reachable by keyboard/screen readers when the inner Button is disabled */}
+            <span tabIndex={0}>
+              <Button disabled variant="tertiary" size="small" icon={<CogIcon aria-hidden />}>
+                Administrer
+              </Button>
+            </span>
           </Tooltip>
         )}
       </HStack>

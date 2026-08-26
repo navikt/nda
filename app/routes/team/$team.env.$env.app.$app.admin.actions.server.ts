@@ -100,11 +100,7 @@ export async function action({ request }: { request: Request; params: Record<str
   const action = formData.get('action') as string
   const appId = parseInt(formData.get('app_id') as string, 10)
 
-  if (Number.isFinite(appId)) {
-    if (!(await canAccessAppAdmin(user, appId))) {
-      return { error: 'Du har ikke tilgang til å administrere denne applikasjonen' }
-    }
-  } else if (JOB_ID_ACTIONS.has(action)) {
+  if (JOB_ID_ACTIONS.has(action)) {
     const jobId = parseInt(formData.get('job_id') as string, 10)
     if (!Number.isFinite(jobId)) {
       return { error: 'Mangler job_id' }
@@ -120,6 +116,10 @@ export async function action({ request }: { request: Request; params: Record<str
       formData.get('app_name') as string,
     )
     if (!reminderApp || !(await canAccessAppAdmin(user, reminderApp.id))) {
+      return { error: 'Du har ikke tilgang til å administrere denne applikasjonen' }
+    }
+  } else if (Number.isFinite(appId)) {
+    if (!(await canAccessAppAdmin(user, appId))) {
       return { error: 'Du har ikke tilgang til å administrere denne applikasjonen' }
     }
   } else {
