@@ -12,7 +12,7 @@ import { getGitHubDataStatsForApp } from '~/db/github-data.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import type { SyncJob } from '~/db/sync-job-types'
 import { getLatestSyncJob } from '~/db/sync-jobs.server'
-import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
+import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
 import { canAccessAppAdmin } from '~/lib/authorization.server'
 import type { UserLookupMap } from '~/lib/user-display'
@@ -52,18 +52,23 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const isProdApp = app.environment_name.startsWith('prod-')
 
-  const [implicitApprovalSettings, recentConfigChanges, auditReports, latestFetchJob, githubDataStats, userMappings] =
+  const [implicitApprovalSettings, recentConfigChanges, auditReports, latestFetchJob, githubDataStats] =
     await Promise.all([
       getImplicitApprovalSettings(app.id),
       getAppConfigAuditLog(app.id, { limit: 10 }),
       getAuditReportsForAppAdmin(app.id),
       getLatestSyncJob(app.id, 'fetch_verification_data'),
       getGitHubDataStatsForApp(app.id, app.audit_start_year),
-      getAllUsersWithAccounts(),
     ])
 
+  const referencedNavIdents = Array.from(
+    new Set(auditReports.flatMap((report) => [report.archived_by, report.superseded_by]).filter((id) => id != null)),
+  )
+  const userMappings = await getUsersByIdentifiers(referencedNavIdents)
   const displayNameMap: Record<string, string> = Object.fromEntries(
-    userMappings.map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
+    Array.from(userMappings.entries())
+      .filter(([, u]) => u.display_name != null)
+      .map(([navIdent, u]) => [navIdent.toUpperCase(), u.display_name as string]),
   )
 
   return {
