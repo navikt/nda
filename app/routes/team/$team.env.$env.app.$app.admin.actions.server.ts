@@ -11,6 +11,7 @@ import {
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
+import type { SyncJob } from '~/db/sync-job-types'
 import {
   acquireSyncLock,
   cancelSyncJob,
@@ -100,6 +101,8 @@ export async function action({ request }: { request: Request; params: Record<str
   const action = formData.get('action') as string
   const appId = parseInt(formData.get('app_id') as string, 10)
 
+  let authorizedJob: SyncJob | null = null
+
   if (JOB_ID_ACTIONS.has(action)) {
     const jobId = parseInt(formData.get('job_id') as string, 10)
     if (!Number.isFinite(jobId)) {
@@ -109,6 +112,7 @@ export async function action({ request }: { request: Request; params: Record<str
     if (!job || job.monitored_app_id == null || !(await canAccessAppAdmin(user, job.monitored_app_id))) {
       return { error: 'Du har ikke tilgang til denne jobben' }
     }
+    authorizedJob = job
   } else if (action === 'send_reminder') {
     const teamSlug = getFormString(formData, 'team_slug')
     const environmentName = getFormString(formData, 'environment_name')
@@ -333,12 +337,7 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'check_fetch_job_status') {
-    const jobId = parseInt(formData.get('job_id') as string, 10)
-    if (!jobId) {
-      return { error: 'Mangler job_id' }
-    }
-    const job = await getSyncJobById(jobId)
-    return { fetchJobStatus: job }
+    return { fetchJobStatus: authorizedJob }
   }
 
   if (action === 'cancel_fetch_job') {
@@ -392,12 +391,7 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'check_compute_diffs_status') {
-    const jobId = parseInt(formData.get('job_id') as string, 10)
-    if (!jobId) {
-      return { error: 'Mangler job_id' }
-    }
-    const job = await getSyncJobById(jobId)
-    return { computeDiffsJobStatus: job }
+    return { computeDiffsJobStatus: authorizedJob }
   }
 
   if (action === 'update_slack_config') {

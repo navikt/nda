@@ -172,4 +172,26 @@ describe('admin actions - JOB_ID_ACTIONS IDOR protection', () => {
     expect(mockCancelSyncJob).toHaveBeenCalledWith(5)
     expect(result).toEqual({ success: 'Jobben ble avbrutt' })
   })
+
+  it('reuses the job fetched during authorization for check_fetch_job_status instead of refetching it', async () => {
+    const formData = new FormData()
+    formData.set('action', 'check_fetch_job_status')
+    formData.set('job_id', '5')
+
+    const result = await action({ request: makeRequest(formData), params: {} } as never)
+
+    expect(mockGetSyncJobById).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ fetchJobStatus: { id: 5, monitored_app_id: 1, status: 'completed' } })
+  })
+
+  it('reuses the job fetched during authorization for check_compute_diffs_status instead of refetching it', async () => {
+    const formData = new FormData()
+    formData.set('action', 'check_compute_diffs_status')
+    formData.set('job_id', '5')
+
+    const result = await action({ request: makeRequest(formData), params: {} } as never)
+
+    expect(mockGetSyncJobById).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ computeDiffsJobStatus: { id: 5, monitored_app_id: 1, status: 'completed' } })
+  })
 })
