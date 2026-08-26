@@ -341,11 +341,10 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'cancel_fetch_job') {
-    const jobId = parseInt(formData.get('job_id') as string, 10)
-    if (!jobId) {
-      return { error: 'Mangler job_id' }
+    if (!authorizedJob) {
+      return { error: 'Mangler eller ugyldig job_id' }
     }
-    const cancelled = await cancelSyncJob(jobId)
+    const cancelled = await cancelSyncJob(authorizedJob.id)
     if (!cancelled) {
       return { error: 'Kunne ikke avbryte jobben (kanskje den allerede er ferdig?)' }
     }
@@ -353,11 +352,10 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'force_release_job') {
-    const jobId = parseInt(formData.get('job_id') as string, 10)
-    if (!jobId) {
-      return { error: 'Mangler job_id' }
+    if (!authorizedJob) {
+      return { error: 'Mangler eller ugyldig job_id' }
     }
-    const released = await forceReleaseSyncJob(jobId)
+    const released = await forceReleaseSyncJob(authorizedJob.id)
     if (!released) {
       return { error: 'Kunne ikke frigjøre jobben' }
     }
