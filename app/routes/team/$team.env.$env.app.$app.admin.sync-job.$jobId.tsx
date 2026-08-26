@@ -19,14 +19,18 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     throw new Response('Invalid job ID', { status: 400 })
   }
 
-  const [app, job] = await Promise.all([getMonitoredApplicationByIdentity(team, env, appName), getSyncJobById(jobId)])
-
-  if (!app || !job || job.monitored_app_id !== app.id) {
+  const app = await getMonitoredApplicationByIdentity(team, env, appName)
+  if (!app) {
     throw new Response('Not found', { status: 404 })
   }
 
   if (!(await canAccessAppAdmin(user, app.id))) {
     throw new Response('Forbidden - admin access required', { status: 403 })
+  }
+
+  const job = await getSyncJobById(jobId)
+  if (!job || job.monitored_app_id !== app.id) {
+    throw new Response('Not found', { status: 404 })
   }
 
   const afterIdParam = Number.parseInt(url.searchParams.get('afterId') || '0', 10)
