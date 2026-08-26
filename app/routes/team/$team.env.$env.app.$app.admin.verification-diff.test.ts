@@ -4,6 +4,7 @@ const {
   mockRequireUser,
   mockGetMonitoredApplicationByIdentity,
   mockCanAccessAppAdmin,
+  mockRequireAppAdminAccess,
   mockGetSyncJobById,
   mockPoolQuery,
   mockReverifyDeployment,
@@ -13,6 +14,7 @@ const {
   mockRequireUser: vi.fn(),
   mockGetMonitoredApplicationByIdentity: vi.fn(),
   mockCanAccessAppAdmin: vi.fn(),
+  mockRequireAppAdminAccess: vi.fn(),
   mockGetSyncJobById: vi.fn(),
   mockPoolQuery: vi.fn(),
   mockReverifyDeployment: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock('~/lib/auth.server', () => ({
 
 vi.mock('~/lib/authorization.server', () => ({
   canAccessAppAdmin: mockCanAccessAppAdmin,
+  requireAppAdminAccess: mockRequireAppAdminAccess,
 }))
 
 vi.mock('~/db/monitored-applications.server', () => ({
@@ -75,12 +78,25 @@ describe('verification-diff loader - authorization', () => {
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
     mockGetMonitoredApplicationByIdentity.mockResolvedValue({ id: 1, team_slug: 'pensjondeployer' })
     mockCanAccessAppAdmin.mockResolvedValue(true)
+    mockRequireAppAdminAccess.mockResolvedValue({
+      user: { navIdent: 'Z990010', name: 'Rask Elv' },
+      app: { id: 1, team_slug: 'pensjondeployer' },
+    })
     mockPoolQuery.mockResolvedValue({ rows: [] })
     mockGetApprovedDeploymentsMissingApprover.mockResolvedValue([])
   })
 
+  it('returns 404 when the application does not exist, consistent with other admin routes', async () => {
+    mockRequireAppAdminAccess.mockRejectedValue(new Response('Application not found', { status: 404 }))
+
+    await expect(loader({ request: makeGetRequest(), params } as never)).rejects.toMatchObject({ status: 404 })
+
+    expect(mockPoolQuery).not.toHaveBeenCalled()
+    expect(mockGetApprovedDeploymentsMissingApprover).not.toHaveBeenCalled()
+  })
+
   it('checks canAccessAppAdmin before querying deployment diffs or missing approvers', async () => {
-    mockCanAccessAppAdmin.mockResolvedValue(false)
+    mockRequireAppAdminAccess.mockRejectedValue(new Response('Forbidden - admin access required', { status: 403 }))
 
     await expect(loader({ request: makeGetRequest(), params } as never)).rejects.toMatchObject({ status: 403 })
 
@@ -91,7 +107,7 @@ describe('verification-diff loader - authorization', () => {
   it('returns diffs when the actor has admin access to the app', async () => {
     const result = await loader({ request: makeGetRequest(), params } as never)
 
-    expect(mockCanAccessAppAdmin).toHaveBeenCalledWith({ navIdent: 'Z990010', name: 'Rask Elv' }, 1)
+    expect(mockRequireAppAdminAccess).toHaveBeenCalledWith(expect.any(Request), params)
     expect(result.diffs).toEqual([])
   })
 })

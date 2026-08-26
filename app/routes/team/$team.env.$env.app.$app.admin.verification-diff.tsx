@@ -21,7 +21,7 @@ import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.s
 import { getLatestSyncJob, getSyncJobById } from '~/db/sync-jobs.server'
 import { getApprovedDeploymentsMissingApprover } from '~/db/verification-diff.server'
 import { requireUser } from '~/lib/auth.server'
-import { canAccessAppAdmin } from '~/lib/authorization.server'
+import { canAccessAppAdmin, requireAppAdminAccess } from '~/lib/authorization.server'
 import {
   type FourEyesStatus,
   getFourEyesStatusLabel,
@@ -46,18 +46,7 @@ interface DeploymentDiff {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const user = await requireUser(request)
-
-  const { team, env, app } = params
-
-  const monitoredApp = await getMonitoredApplicationByIdentity(team, env, app)
-  if (!monitoredApp) {
-    return { diffs: [], missingApproverDeployments: [], appContext: null, lastComputed: null, latestJob: null }
-  }
-
-  if (!(await canAccessAppAdmin(user, monitoredApp.id))) {
-    throw new Response('Forbidden - admin access required', { status: 403 })
-  }
+  const { app: monitoredApp } = await requireAppAdminAccess(request, params)
 
   const appContext = {
     teamSlug: monitoredApp.team_slug,
