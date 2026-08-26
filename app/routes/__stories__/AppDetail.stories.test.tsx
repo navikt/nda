@@ -21,12 +21,7 @@ describe('AppDetail story baseline characterization', () => {
     expect(html).toContain('Aktivt repository')
     expect(html).toContain('Historiske repositories (1)')
     expect(html).toContain('Utviklingsteam:')
-    expect(html).toContain('Administrer')
-    const administrerButton = html.match(
-      /<button[^>]*>(?:(?!<\/button>)[\s\S])*Administrer(?:(?!<\/button>)[\s\S])*<\/button>/,
-    )
-    expect(administrerButton).not.toBeNull()
-    expect(administrerButton?.[0]).toMatch(/\bdisabled\b/)
+    expect(html).not.toContain('Administrer')
     expect(html).not.toContain('Se sync-jobber')
   })
 

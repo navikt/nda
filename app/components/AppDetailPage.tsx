@@ -26,7 +26,6 @@ import {
   Show,
   Tag,
   Textarea,
-  Tooltip,
   VStack,
 } from '@navikt/ds-react'
 import { useState } from 'react'
@@ -234,19 +233,10 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
             )}
           </HStack>
         </div>
-        {canAccessAdmin ? (
+        {canAccessAdmin && (
           <Button as={Link} to={`${appUrl}/admin`} variant="tertiary" size="small" icon={<CogIcon aria-hidden />}>
             Administrer
           </Button>
-        ) : (
-          <Tooltip content="Du har ikke tilgang til å administrere denne applikasjonen">
-            {/* biome-ignore lint/a11y/noNoninteractiveTabindex: wrapper must be focusable so the Tooltip is reachable by keyboard/screen readers when the inner Button is disabled */}
-            <span tabIndex={0}>
-              <Button disabled variant="tertiary" size="small" icon={<CogIcon aria-hidden />}>
-                Administrer
-              </Button>
-            </span>
-          </Tooltip>
         )}
       </HStack>
 
