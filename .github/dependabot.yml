@@ -36,6 +36,24 @@ updates:
           - "@testcontainers/postgresql"
           - 'testcontainers'
 
+  - package-ecosystem: npm
+    directory: /landing
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+      semver-minor-days: 7
+      semver-patch-days: 7
+    open-pull-requests-limit: 10
+    ignore:
+      # Ikke bump major på Node-avhengigheter, ønsker å manuelt bytte til ny major-versjon når den er i LTS-stadiet
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps):"
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
