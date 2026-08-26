@@ -2,8 +2,7 @@ import { ExclamationmarkTriangleIcon } from '@navikt/aksel-icons'
 import { Link as AkselLink, BodyShort, Box, Detail, Heading, HStack, Tag, ToggleGroup, VStack } from '@navikt/ds-react'
 import { Link, useLoaderData, useSearchParams } from 'react-router'
 import { getDeviationsByAppId } from '~/db/deviations.server'
-import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireAppAdminAccess } from '~/lib/authorization.server'
 import {
   DEVIATION_FOLLOW_UP_ROLE_LABELS,
   DEVIATION_INTENT_LABELS,
@@ -16,12 +15,7 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export async function loader({ params, request, url }: Route.LoaderArgs) {
-  await requireAdmin(request)
-  const { team, env, app: appName } = params
-  const app = await getMonitoredApplicationByIdentity(team, env, appName)
-  if (!app) {
-    throw new Response('Application not found', { status: 404 })
-  }
+  const { app } = await requireAppAdminAccess(request, params)
 
   const filter = url.searchParams.get('filter') || 'all'
   const resolved = filter === 'resolved' ? true : filter === 'open' ? false : undefined
