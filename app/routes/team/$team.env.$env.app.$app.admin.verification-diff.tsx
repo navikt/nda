@@ -165,7 +165,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (actionType === 'apply_all') {
-    const ids = formData.getAll('deployment_ids').map((id) => parseInt(id as string, 10))
+    const ids = formData
+      .getAll('deployment_ids')
+      .map((id) => Number.parseInt(id as string, 10))
+      .filter((id) => Number.isFinite(id))
     const deploymentAppIds = await getDeploymentAppIds(ids)
     let applied = 0
     let skipped = 0
