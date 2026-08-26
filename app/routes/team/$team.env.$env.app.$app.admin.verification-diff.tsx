@@ -179,6 +179,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     const jobId = parseInt(formData.get('job_id') as string, 10)
     if (!jobId) return { error: 'Mangler job_id' }
     const job = await getSyncJobById(jobId)
+    if (!job || job.monitored_app_id !== monitoredApp.id) {
+      return { error: 'Fant ikke jobb for denne applikasjonen' }
+    }
     return { computeJobStatus: job }
   }
 

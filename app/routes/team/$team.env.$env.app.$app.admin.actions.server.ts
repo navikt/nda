@@ -93,6 +93,11 @@ const JOB_ID_ACTIONS = new Set([
   'check_compute_diffs_status',
 ])
 
+function getFormString(formData: FormData, key: string): string | null {
+  const value = formData.get(key)
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
 export async function action({ request }: { request: Request; params: Record<string, string | undefined> }) {
   const user = await requireUser(request)
 
@@ -110,11 +115,13 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Du har ikke tilgang til denne jobben' }
     }
   } else if (action === 'send_reminder') {
-    const reminderApp = await getMonitoredApplicationByIdentity(
-      formData.get('team_slug') as string,
-      formData.get('environment_name') as string,
-      formData.get('app_name') as string,
-    )
+    const teamSlug = getFormString(formData, 'team_slug')
+    const environmentName = getFormString(formData, 'environment_name')
+    const appName = getFormString(formData, 'app_name')
+    if (!teamSlug || !environmentName || !appName) {
+      return { error: 'Mangler team_slug, environment_name eller app_name' }
+    }
+    const reminderApp = await getMonitoredApplicationByIdentity(teamSlug, environmentName, appName)
     if (!reminderApp || !(await canAccessAppAdmin(user, reminderApp.id))) {
       return { error: 'Du har ikke tilgang til å administrere denne applikasjonen' }
     }
@@ -446,11 +453,13 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'send_reminder') {
-    const app = await getMonitoredApplicationByIdentity(
-      formData.get('team_slug') as string,
-      formData.get('environment_name') as string,
-      formData.get('app_name') as string,
-    )
+    const teamSlug = getFormString(formData, 'team_slug')
+    const environmentName = getFormString(formData, 'environment_name')
+    const appName = getFormString(formData, 'app_name')
+    if (!teamSlug || !environmentName || !appName) {
+      return { error: 'Mangler team_slug, environment_name eller app_name' }
+    }
+    const app = await getMonitoredApplicationByIdentity(teamSlug, environmentName, appName)
     if (!app?.slack_channel_id) {
       return { error: 'Slack-kanal er ikke konfigurert for denne appen' }
     }

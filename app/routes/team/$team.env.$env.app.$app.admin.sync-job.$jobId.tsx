@@ -13,11 +13,15 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const user = await requireUser(request)
 
   const { team, env, app: appName, jobId: jobIdParam } = params
-  const jobId = parseInt(jobIdParam, 10)
+  const jobId = Number.parseInt(jobIdParam, 10)
+
+  if (!Number.isFinite(jobId)) {
+    throw new Response('Not found', { status: 404 })
+  }
 
   const [app, job] = await Promise.all([getMonitoredApplicationByIdentity(team, env, appName), getSyncJobById(jobId)])
 
-  if (!app || !job) {
+  if (!app || !job || job.monitored_app_id !== app.id) {
     throw new Response('Not found', { status: 404 })
   }
 
@@ -25,7 +29,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
-  const afterId = parseInt(url.searchParams.get('afterId') || '0', 10)
+  const afterIdParam = Number.parseInt(url.searchParams.get('afterId') || '0', 10)
+  const afterId = Number.isFinite(afterIdParam) ? afterIdParam : 0
   const logs = await getSyncJobLogs(jobId, { afterId })
 
   return {
