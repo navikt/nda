@@ -1,4 +1,4 @@
-import { useActionData, useLoaderData, useRouteLoaderData } from 'react-router'
+import { useActionData, useLoaderData } from 'react-router'
 import { AppDetailPage } from '~/components/AppDetailPage'
 import { getUnresolvedAlertsByApp, resolveRepositoryAlert } from '~/db/alerts.server'
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
@@ -15,13 +15,12 @@ import { getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
 import { getLatestSyncJob, getObservedSyncIntervalMs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { getUserIdentity } from '~/lib/auth.server'
-import { resolveAppCapabilities } from '~/lib/authorization.server'
+import { canAccessAppAdmin, resolveAppCapabilities } from '~/lib/authorization.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import { VERIFY_LIMIT_PER_APP } from '~/lib/sync'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { isImplicitApprovalMode } from '~/lib/verification/types'
-import type { loader as layoutLoader } from '../layout'
 import type { Route } from './+types/$team.env.$env.app.$app'
 
 export async function loader({ params, request, url }: Route.LoaderArgs) {
@@ -43,6 +42,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     (app.not_found_in_nais_at || !app.is_active) && identity ? await resolveAppCapabilities(identity, app.id) : null
   const canDeactivate = app.not_found_in_nais_at ? (capabilities?.canDeactivate ?? false) : false
   const canReactivate = !app.is_active ? (capabilities?.canReactivate ?? false) : false
+  const canAccessAdmin = identity ? await canAccessAppAdmin(identity, app.id) : false
 
   const [
     repositories,
@@ -79,6 +79,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     app,
     canDeactivate,
     canReactivate,
+    canAccessAdmin,
     repositories,
     activeRepo,
     pendingRepos,
@@ -250,8 +251,6 @@ export async function action({ params, request }: Route.ActionArgs) {
 export default function AppDetailRoute() {
   const loaderData = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
-  const layoutData = useRouteLoaderData<typeof layoutLoader>('routes/layout')
-  const isAdmin = layoutData?.user?.role === 'admin'
 
-  return <AppDetailPage loaderData={loaderData} actionData={actionData} isAdmin={isAdmin} />
+  return <AppDetailPage loaderData={loaderData} actionData={actionData} canAccessAdmin={loaderData.canAccessAdmin} />
 }

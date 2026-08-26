@@ -26,6 +26,7 @@ import {
   Show,
   Tag,
   Textarea,
+  Tooltip,
   VStack,
 } from '@navikt/ds-react'
 import { useState } from 'react'
@@ -148,10 +149,10 @@ export interface AppDetailLoaderData {
 export interface AppDetailPageProps {
   loaderData: AppDetailLoaderData
   actionData?: Record<string, unknown> | null
-  isAdmin: boolean
+  canAccessAdmin: boolean
 }
 
-export function AppDetailPage({ loaderData, actionData, isAdmin }: AppDetailPageProps) {
+export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDetailPageProps) {
   const {
     app,
     canDeactivate,
@@ -226,17 +227,23 @@ export function AppDetailPage({ loaderData, actionData, isAdmin }: AppDetailPage
                 Ingen synkronisering registrert
               </Tag>
             )}
-            {isAdmin && (
+            {canAccessAdmin && (
               <Link to={`${appUrl}/admin/sync-jobs`} style={{ fontSize: '0.75rem' }}>
                 Se sync-jobber
               </Link>
             )}
           </HStack>
         </div>
-        {isAdmin && (
+        {canAccessAdmin ? (
           <Button as={Link} to={`${appUrl}/admin`} variant="tertiary" size="small" icon={<CogIcon aria-hidden />}>
             Administrer
           </Button>
+        ) : (
+          <Tooltip content="Du har ikke tilgang til å administrere denne applikasjonen">
+            <Button disabled variant="tertiary" size="small" icon={<CogIcon aria-hidden />}>
+              Administrer
+            </Button>
+          </Tooltip>
         )}
       </HStack>
 
