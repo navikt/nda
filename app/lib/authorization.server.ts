@@ -1,6 +1,9 @@
 import { pool } from '~/db/connection.server'
+import type { MonitoredApplication } from '~/db/monitored-applications.server'
+import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getUserRoles } from '~/db/role-assignments.server'
 import type { UserIdentity } from './auth.server'
+import { requireUser } from './auth.server'
 import type { SectionRole, TeamRole } from './authorization-types'
 import { isTeamLeaderRole } from './authorization-types'
 
@@ -55,13 +58,17 @@ export async function canAssignTeamRole(
   return false
 }
 
-async function getManagingTeamIds(monitoredAppId: number): Promise<number[]> {
+async function getManagingTeamIds(
+  monitoredAppId: number,
+  options: { includeInactiveApp?: boolean } = {},
+): Promise<number[]> {
+  const appActiveFilter = options.includeInactiveApp ? '' : 'AND ma.is_active = true'
   const { rows } = await pool.query<{ dev_team_id: number }>(
     `-- Path 1: Direct app link
      SELECT dta.dev_team_id
      FROM dev_team_applications dta
      JOIN dev_teams dt ON dt.id = dta.dev_team_id AND dt.is_active = true
-     JOIN monitored_applications ma ON ma.id = dta.monitored_app_id AND ma.is_active = true
+     JOIN monitored_applications ma ON ma.id = dta.monitored_app_id ${appActiveFilter}
      WHERE dta.monitored_app_id = $1 AND dta.deleted_at IS NULL
 
      UNION
@@ -71,7 +78,7 @@ async function getManagingTeamIds(monitoredAppId: number): Promise<number[]> {
      FROM dev_team_nais_teams dnt
      JOIN dev_teams dt ON dt.id = dnt.dev_team_id AND dt.is_active = true
      JOIN monitored_applications ma ON ma.team_slug = dnt.nais_team_slug
-     WHERE ma.id = $1 AND dnt.deleted_at IS NULL AND ma.is_active = true
+     WHERE ma.id = $1 AND dnt.deleted_at IS NULL ${appActiveFilter}
 
      UNION
 
@@ -81,7 +88,7 @@ async function getManagingTeamIds(monitoredAppId: number): Promise<number[]> {
      JOIN dev_teams dt ON dt.id = dtag.dev_team_id AND dt.is_active = true
      JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
      JOIN monitored_applications ma ON ma.application_group_id = ag.id
-     WHERE ma.id = $1 AND dtag.deleted_at IS NULL AND ma.is_active = true`,
+     WHERE ma.id = $1 AND dtag.deleted_at IS NULL ${appActiveFilter}`,
     [monitoredAppId],
   )
   return rows.map((r) => r.dev_team_id)
@@ -98,15 +105,57 @@ export async function canApproveDeployment(actor: UserIdentity, monitoredAppId: 
   return teamRoles.some((r) => managingSet.has(r.dev_team_id))
 }
 
-export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
-  if (isEntraAdmin(actor)) return true
-
-  const managingTeamIds = await getManagingTeamIds(monitoredAppId)
+async function isTeamLeaderOfManagingTeam(
+  actor: UserIdentity,
+  monitoredAppId: number,
+  options: { includeInactiveApp?: boolean } = {},
+): Promise<boolean> {
+  const managingTeamIds = await getManagingTeamIds(monitoredAppId, options)
   if (managingTeamIds.length === 0) return false
 
   const managingSet = new Set(managingTeamIds)
   const { teamRoles } = await getUserRoles(actor.navIdent)
   return teamRoles.some((r) => managingSet.has(r.dev_team_id) && isTeamLeaderRole(r.role))
+}
+
+async function isAdminOrTeamLeaderOfManagingTeam(
+  actor: UserIdentity,
+  monitoredAppId: number,
+  options: { includeInactiveApp?: boolean } = {},
+): Promise<boolean> {
+  if (isEntraAdmin(actor)) return true
+  return isTeamLeaderOfManagingTeam(actor, monitoredAppId, options)
+}
+
+export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+  return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId)
+}
+
+export async function canAccessAppAdmin(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+  return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId, { includeInactiveApp: true })
+}
+
+export interface AppAdminAccess {
+  user: UserIdentity
+  app: MonitoredApplication
+}
+
+export async function requireAppAdminAccess(
+  request: Request,
+  params: { team: string; env: string; app: string },
+): Promise<AppAdminAccess> {
+  const user = await requireUser(request)
+
+  const app = await getMonitoredApplicationByIdentity(params.team, params.env, params.app)
+  if (!app) {
+    throw new Response('Application not found', { status: 404 })
+  }
+
+  if (!(await canAccessAppAdmin(user, app.id))) {
+    throw new Response('Forbidden - admin access required', { status: 403 })
+  }
+
+  return { user, app }
 }
 
 export async function canAdministerTeam(actor: UserIdentity, devTeamId: number): Promise<boolean> {

@@ -20,7 +20,8 @@ import { pool } from '~/db/connection.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getLatestSyncJob, getSyncJobById } from '~/db/sync-jobs.server'
 import { getApprovedDeploymentsMissingApprover } from '~/db/verification-diff.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canAccessAppAdmin, requireAppAdminAccess } from '~/lib/authorization.server'
 import {
   type FourEyesStatus,
   getFourEyesStatusLabel,
@@ -45,14 +46,7 @@ interface DeploymentDiff {
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireAdmin(request)
-
-  const { team, env, app } = params
-
-  const monitoredApp = await getMonitoredApplicationByIdentity(team, env, app)
-  if (!monitoredApp) {
-    return { diffs: [], missingApproverDeployments: [], appContext: null, lastComputed: null, latestJob: null }
-  }
+  const { app: monitoredApp } = await requireAppAdminAccess(request, params)
 
   const appContext = {
     teamSlug: monitoredApp.team_slug,
@@ -104,16 +98,40 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return { diffs, missingApproverDeployments, appContext, lastComputed, latestJob }
 }
 
+async function getDeploymentAppIds(deploymentIds: number[]): Promise<Map<number, number>> {
+  if (deploymentIds.length === 0) return new Map()
+  const result = await pool.query<{ id: number; monitored_app_id: number }>(
+    'SELECT id, monitored_app_id FROM deployments WHERE id = ANY($1)',
+    [deploymentIds],
+  )
+  return new Map(result.rows.map((row) => [row.id, row.monitored_app_id]))
+}
+
 export async function action({ request, params }: Route.ActionArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
 
   const { team, env, app } = params
+
+  const monitoredApp = await getMonitoredApplicationByIdentity(team, env, app)
+  if (!monitoredApp) {
+    return { error: 'App ikke funnet' }
+  }
+  if (!(await canAccessAppAdmin(user, monitoredApp.id))) {
+    return { error: 'Du har ikke tilgang til å administrere denne applikasjonen' }
+  }
 
   const formData = await request.formData()
   const actionType = formData.get('action') as string
   const deploymentId = parseInt(formData.get('deployment_id') as string, 10)
 
-  if (actionType === 'apply_reverification' && deploymentId) {
+  if (actionType === 'apply_reverification') {
+    if (!Number.isFinite(deploymentId)) {
+      return { error: 'Mangler eller ugyldig deployment_id' }
+    }
+    const deploymentAppIds = await getDeploymentAppIds([deploymentId])
+    if (deploymentAppIds.get(deploymentId) !== monitoredApp.id) {
+      return { error: `Deployment ${deploymentId} tilhører ikke denne applikasjonen` }
+    }
     try {
       const result = await reverifyDeployment(deploymentId)
       if (!result) {
@@ -139,12 +157,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (actionType === 'apply_all') {
-    const ids = formData.getAll('deployment_ids').map((id) => parseInt(id as string, 10))
+    const ids = formData
+      .getAll('deployment_ids')
+      .map((id) => Number.parseInt(id as string, 10))
+      .filter((id) => Number.isFinite(id))
+    const deploymentAppIds = await getDeploymentAppIds(ids)
     let applied = 0
     let skipped = 0
     let errors = 0
 
     for (const id of ids) {
+      if (deploymentAppIds.get(id) !== monitoredApp.id) {
+        errors++
+        continue
+      }
       try {
         const result = await reverifyDeployment(id)
         if (result?.changed) {
@@ -164,8 +190,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (actionType === 'check_compute_status') {
     const jobId = parseInt(formData.get('job_id') as string, 10)
-    if (!jobId) return { error: 'Mangler job_id' }
+    if (!Number.isFinite(jobId)) return { error: 'Mangler eller ugyldig job_id' }
     const job = await getSyncJobById(jobId)
+    if (!job || job.monitored_app_id !== monitoredApp.id) {
+      return { error: 'Fant ikke jobb for denne applikasjonen' }
+    }
     return { computeJobStatus: job }
   }
 

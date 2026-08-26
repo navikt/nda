@@ -9,11 +9,10 @@ import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { getAppConfigAuditLog, getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getGitHubDataStatsForApp } from '~/db/github-data.server'
-import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import type { SyncJob } from '~/db/sync-job-types'
 import { getLatestSyncJob } from '~/db/sync-jobs.server'
-import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
+import { requireAppAdminAccess } from '~/lib/authorization.server'
 import type { UserLookupMap } from '~/lib/user-display'
 import { AuditStartYearSettings } from '~/routes/team/$team.env.$env.app.$app.admin/AuditStartYearSettings'
 import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
@@ -35,29 +34,27 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  await requireAdmin(request)
-
-  const { team, env, app: appName } = params
-
-  const app = await getMonitoredApplicationByIdentity(team, env, appName)
-  if (!app) {
-    throw new Response('Application not found', { status: 404 })
-  }
+  const { app } = await requireAppAdminAccess(request, params)
 
   const isProdApp = app.environment_name.startsWith('prod-')
 
-  const [implicitApprovalSettings, recentConfigChanges, auditReports, latestFetchJob, githubDataStats, userMappings] =
+  const [implicitApprovalSettings, recentConfigChanges, auditReports, latestFetchJob, githubDataStats] =
     await Promise.all([
       getImplicitApprovalSettings(app.id),
       getAppConfigAuditLog(app.id, { limit: 10 }),
       getAuditReportsForAppAdmin(app.id),
       getLatestSyncJob(app.id, 'fetch_verification_data'),
       getGitHubDataStatsForApp(app.id, app.audit_start_year),
-      getAllUsersWithAccounts(),
     ])
 
+  const referencedNavIdents = Array.from(
+    new Set(auditReports.flatMap((report) => [report.archived_by, report.superseded_by]).filter((id) => id != null)),
+  )
+  const userMappings = await getUsersByIdentifiers(referencedNavIdents)
   const displayNameMap: Record<string, string> = Object.fromEntries(
-    userMappings.map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
+    Array.from(userMappings.entries())
+      .filter(([, u]) => u.display_name != null)
+      .map(([navIdent, u]) => [navIdent.toUpperCase(), u.display_name as string]),
   )
 
   return {
