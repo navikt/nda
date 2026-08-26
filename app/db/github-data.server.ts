@@ -321,6 +321,7 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
   commitOnBranchRawSnapshotsDeleted: number
   commitAssociatedPrsRawSnapshotsDeleted: number
   prWindowRawSnapshotsDeleted: number
+  checkAnnotationsRawSnapshotsDeleted: number
 }> {
   const keepCount = options?.keepCount ?? 5
   const olderThanDays = options?.olderThanDays ?? 90
@@ -485,6 +486,22 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
     [keepCount],
   )
 
+  const checkAnnotationsRawResult = await pool.query(
+    `DELETE FROM github_check_annotations_raw_snapshots
+     WHERE id IN (
+       SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (
+           PARTITION BY github_repo_id, check_run_id
+           ORDER BY fetched_at DESC
+         ) as rn
+         FROM github_check_annotations_raw_snapshots
+         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
+       ) ranked
+       WHERE rn > $1
+     )`,
+    [keepCount],
+  )
+
   return {
     prSnapshotsDeleted: prResult.rowCount ?? 0,
     commitSnapshotsDeleted: commitResult.rowCount ?? 0,
@@ -496,9 +513,14 @@ export async function cleanupOldSnapshots(options?: { keepCount?: number; olderT
     commitOnBranchRawSnapshotsDeleted: commitOnBranchRawResult.rowCount ?? 0,
     commitAssociatedPrsRawSnapshotsDeleted: commitAssociatedPrsRawResult.rowCount ?? 0,
     prWindowRawSnapshotsDeleted: prWindowRawResult.rowCount ?? 0,
+    checkAnnotationsRawSnapshotsDeleted: checkAnnotationsRawResult.rowCount ?? 0,
   }
 }
 
+export {
+  getLatestCheckAnnotationsRawSnapshot,
+  saveCheckAnnotationsRawSnapshot,
+} from './github-data/check-annotations-raw-snapshots.server'
 export {
   getDerivedChecksDataFromRawSnapshot,
   getLatestDefinitiveChecksRawSnapshot,

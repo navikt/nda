@@ -240,6 +240,19 @@ export interface PrWindowRawSnapshot {
   data: unknown
 }
 
+export interface CheckAnnotationsRawSnapshot {
+  id: number
+  owner: string
+  repo: string
+  githubRepoId: number
+  checkRunId: number
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+  fetchedAt: Date
+  data: unknown
+}
+
 export interface CompareSummary {
   status: string
   aheadBy: number
