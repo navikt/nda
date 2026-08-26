@@ -1,7 +1,8 @@
 import { ChatIcon, ClockIcon } from '@navikt/aksel-icons'
 import { Link as AkselLink, Alert, BodyShort, Box, Detail, Heading, HStack, Table, Tag, VStack } from '@navikt/ds-react'
-import { ConfigChangeTag, NotificationTypeTag } from '~/components/slack-notification-tags'
-import type { SlackNotificationType } from '~/db/slack-notifications.server'
+import { ConfigChangeTag, NotificationTypeTag, type SlackNotificationType } from '~/components/slack-notification-tags'
+
+export type { SlackNotificationType }
 
 export interface SlackNotificationHistoryApp {
   app_name: string
