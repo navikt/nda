@@ -61,7 +61,7 @@ async function getManagingTeamIds(monitoredAppId: number): Promise<number[]> {
      SELECT dta.dev_team_id
      FROM dev_team_applications dta
      JOIN dev_teams dt ON dt.id = dta.dev_team_id AND dt.is_active = true
-     JOIN monitored_applications ma ON ma.id = dta.monitored_app_id AND ma.is_active = true
+     JOIN monitored_applications ma ON ma.id = dta.monitored_app_id
      WHERE dta.monitored_app_id = $1 AND dta.deleted_at IS NULL
 
      UNION
@@ -71,7 +71,7 @@ async function getManagingTeamIds(monitoredAppId: number): Promise<number[]> {
      FROM dev_team_nais_teams dnt
      JOIN dev_teams dt ON dt.id = dnt.dev_team_id AND dt.is_active = true
      JOIN monitored_applications ma ON ma.team_slug = dnt.nais_team_slug
-     WHERE ma.id = $1 AND dnt.deleted_at IS NULL AND ma.is_active = true
+     WHERE ma.id = $1 AND dnt.deleted_at IS NULL
 
      UNION
 
@@ -81,7 +81,7 @@ async function getManagingTeamIds(monitoredAppId: number): Promise<number[]> {
      JOIN dev_teams dt ON dt.id = dtag.dev_team_id AND dt.is_active = true
      JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
      JOIN monitored_applications ma ON ma.application_group_id = ag.id
-     WHERE ma.id = $1 AND dtag.deleted_at IS NULL AND ma.is_active = true`,
+     WHERE ma.id = $1 AND dtag.deleted_at IS NULL`,
     [monitoredAppId],
   )
   return rows.map((r) => r.dev_team_id)
