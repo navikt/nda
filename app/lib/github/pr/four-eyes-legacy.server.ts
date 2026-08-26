@@ -1,6 +1,9 @@
+import { savePrRawSnapshotsBatch } from '~/db/github-data.server'
 import { isDependabotUser } from '~/lib/dependabot'
 import { logger } from '~/lib/logger.server'
 import { getGitHubClient } from '../client.server'
+import { getRepositoryId } from '../git.server'
+import { type ApiVersionMetadata, captureApiVersionMetadata } from '../pr-snapshot'
 
 interface PullRequestReview {
   id: number
@@ -11,6 +14,23 @@ interface PullRequestReview {
   submitted_at: string | null
 }
 
+async function archivePrReviewsRawSnapshot(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  data: unknown,
+  apiVersion: ApiVersionMetadata,
+): Promise<void> {
+  try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) return
+    await savePrRawSnapshotsBatch(owner, repo, prNumber, githubRepoId, apiVersion, [{ dataType: 'reviews', data }])
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`⚠️ Failed to archive reviews for PR #${prNumber} in ${owner}/${repo}:`, { error: message })
+  }
+}
+
 export async function getPullRequestReviews(
   owner: string,
   repo: string,
@@ -18,12 +38,23 @@ export async function getPullRequestReviews(
 ): Promise<PullRequestReview[]> {
   const client = getGitHubClient()
 
-  const allReviews = await client.paginate(client.pulls.listReviews, {
+  let apiVersion: ApiVersionMetadata | null = null
+  const allReviews = await client.paginate(
+    client.pulls.listReviews,
+    { owner, repo, pull_number, per_page: 100 },
+    (response) => {
+      apiVersion = captureApiVersionMetadata(response.headers, apiVersion)
+      return response.data
+    },
+  )
+
+  await archivePrReviewsRawSnapshot(
     owner,
     repo,
     pull_number,
-    per_page: 100,
-  })
+    allReviews,
+    apiVersion ?? { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null },
+  )
 
   return allReviews as PullRequestReview[]
 }
