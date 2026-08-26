@@ -67,8 +67,12 @@ export async function getApplicationsByTeamAndEnv(
   return result.rows
 }
 
-export async function getMonitoredApplicationById(id: number): Promise<MonitoredApplication | null> {
-  const result = await pool.query('SELECT * FROM monitored_applications WHERE id = $1', [id])
+export async function getMonitoredApplicationById(
+  id: number,
+  client?: PoolClient,
+): Promise<MonitoredApplication | null> {
+  const queryable = client ?? pool
+  const result = await queryable.query('SELECT * FROM monitored_applications WHERE id = $1', [id])
   return result.rows[0] || null
 }
 
@@ -127,7 +131,9 @@ export async function updateMonitoredApplication(
     reminder_days?: string[]
     not_found_in_nais_at?: Date | null
   },
+  client?: PoolClient,
 ): Promise<MonitoredApplication> {
+  const queryable = client ?? pool
   const updates: string[] = []
   const values: any[] = []
   let paramCount = 1
@@ -212,7 +218,7 @@ export async function updateMonitoredApplication(
   }
 
   values.push(id)
-  const result = await pool.query(
+  const result = await queryable.query(
     `UPDATE monitored_applications SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramCount} RETURNING *`,
     values,
   )

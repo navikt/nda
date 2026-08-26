@@ -9,6 +9,7 @@ import {
   hasActiveReportForPeriod,
   restoreAuditReport,
 } from '~/db/audit-reports.server'
+import { withTransaction } from '~/db/connection.server'
 import {
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
@@ -376,23 +377,32 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)' }
     }
 
-    const currentApp = await getMonitoredApplicationById(appId)
+    await withTransaction(async (client) => {
+      const currentApp = await getMonitoredApplicationById(appId, client)
 
-    await updateMonitoredApplication(appId, {
-      slack_channel_id: slackChannelId,
-      slack_notifications_enabled: slackNotificationsEnabled,
+      await updateMonitoredApplication(
+        appId,
+        {
+          slack_channel_id: slackChannelId,
+          slack_notifications_enabled: slackNotificationsEnabled,
+        },
+        client,
+      )
+
+      if (currentApp && currentApp.slack_notifications_enabled !== slackNotificationsEnabled) {
+        await recordAppConfigAuditLog(
+          {
+            monitoredAppId: appId,
+            settingKey: SLACK_CONFIG_SETTING_KEYS[0],
+            oldValue: { enabled: currentApp.slack_notifications_enabled, channel_id: currentApp.slack_channel_id },
+            newValue: { enabled: slackNotificationsEnabled, channel_id: slackChannelId },
+            changedByNavIdent: user.navIdent,
+            changedByName: user.name,
+          },
+          client,
+        )
+      }
     })
-
-    if (currentApp && currentApp.slack_notifications_enabled !== slackNotificationsEnabled) {
-      await recordAppConfigAuditLog({
-        monitoredAppId: appId,
-        settingKey: SLACK_CONFIG_SETTING_KEYS[0],
-        oldValue: { enabled: currentApp.slack_notifications_enabled, channel_id: currentApp.slack_channel_id },
-        newValue: { enabled: slackNotificationsEnabled, channel_id: slackChannelId },
-        changedByNavIdent: user.navIdent,
-        changedByName: user.name,
-      })
-    }
 
     return { success: 'Slack-innstillinger oppdatert!' }
   }
@@ -405,26 +415,35 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)' }
     }
 
-    const currentApp = await getMonitoredApplicationById(appId)
+    await withTransaction(async (client) => {
+      const currentApp = await getMonitoredApplicationById(appId, client)
 
-    await updateMonitoredApplication(appId, {
-      slack_deploy_channel_id: slackDeployChannelId,
-      slack_deploy_notify_enabled: slackDeployNotifyEnabled,
-    })
-
-    if (currentApp && currentApp.slack_deploy_notify_enabled !== slackDeployNotifyEnabled) {
-      await recordAppConfigAuditLog({
-        monitoredAppId: appId,
-        settingKey: SLACK_CONFIG_SETTING_KEYS[1],
-        oldValue: {
-          enabled: currentApp.slack_deploy_notify_enabled,
-          channel_id: currentApp.slack_deploy_channel_id,
+      await updateMonitoredApplication(
+        appId,
+        {
+          slack_deploy_channel_id: slackDeployChannelId,
+          slack_deploy_notify_enabled: slackDeployNotifyEnabled,
         },
-        newValue: { enabled: slackDeployNotifyEnabled, channel_id: slackDeployChannelId },
-        changedByNavIdent: user.navIdent,
-        changedByName: user.name,
-      })
-    }
+        client,
+      )
+
+      if (currentApp && currentApp.slack_deploy_notify_enabled !== slackDeployNotifyEnabled) {
+        await recordAppConfigAuditLog(
+          {
+            monitoredAppId: appId,
+            settingKey: SLACK_CONFIG_SETTING_KEYS[1],
+            oldValue: {
+              enabled: currentApp.slack_deploy_notify_enabled,
+              channel_id: currentApp.slack_deploy_channel_id,
+            },
+            newValue: { enabled: slackDeployNotifyEnabled, channel_id: slackDeployChannelId },
+            changedByNavIdent: user.navIdent,
+            changedByName: user.name,
+          },
+          client,
+        )
+      }
+    })
 
     return { success: 'Deployment-varsler oppdatert!' }
   }

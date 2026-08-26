@@ -1,6 +1,7 @@
+import type { SlackNotificationType } from '~/lib/slack/notification-type'
 import { pool } from './connection.server'
 
-export type SlackNotificationType = 'approval' | 'deploy'
+export type { SlackNotificationType }
 
 interface SlackNotification {
   id: number

@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { logger } from '~/lib/logger.server'
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool } from './connection.server'
@@ -109,18 +110,22 @@ async function updateAppSetting<T extends Record<string, unknown>>(params: {
   return settingResult.rows[0]
 }
 
-export async function recordAppConfigAuditLog(params: {
-  monitoredAppId: number
-  settingKey: string
-  oldValue: Record<string, unknown> | null
-  newValue: Record<string, unknown>
-  changedByNavIdent: string
-  changedByName?: string
-  changeReason?: string
-}): Promise<void> {
+export async function recordAppConfigAuditLog(
+  params: {
+    monitoredAppId: number
+    settingKey: string
+    oldValue: Record<string, unknown> | null
+    newValue: Record<string, unknown>
+    changedByNavIdent: string
+    changedByName?: string
+    changeReason?: string
+  },
+  client?: PoolClient,
+): Promise<void> {
   const { monitoredAppId, settingKey, oldValue, newValue, changedByNavIdent, changedByName, changeReason } = params
+  const queryable = client ?? pool
 
-  await pool.query(
+  await queryable.query(
     `INSERT INTO app_config_audit_log 
      (monitored_app_id, changed_by_nav_ident, changed_by_name, setting_key, old_value, new_value, change_reason)
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -136,7 +141,7 @@ export async function recordAppConfigAuditLog(params: {
   )
 
   logger.info(
-    `📝 Setting '${settingKey}' updated for app ${monitoredAppId} by ${changedByNavIdent}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`,
+    `📝 Config audit log recorded for setting '${settingKey}' on app ${monitoredAppId} by ${changedByNavIdent}`,
   )
 }
 

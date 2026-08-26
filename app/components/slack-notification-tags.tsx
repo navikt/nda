@@ -1,6 +1,7 @@
 import { Tag } from '@navikt/ds-react'
+import type { SlackNotificationType } from '~/lib/slack/notification-type'
 
-export type SlackNotificationType = 'approval' | 'deploy'
+export type { SlackNotificationType }
 
 export function NotificationTypeTag({ notificationType }: { notificationType: SlackNotificationType }) {
   if (notificationType === 'deploy') {

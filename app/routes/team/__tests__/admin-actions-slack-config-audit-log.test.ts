@@ -27,6 +27,10 @@ vi.mock('~/db/audit-reports.server', () => ({
   restoreAuditReport: vi.fn(),
 }))
 
+vi.mock('~/db/connection.server', () => ({
+  withTransaction: async (fn: (client: unknown) => Promise<unknown>) => fn({}),
+}))
+
 vi.mock('~/db/monitored-applications.server', () => ({
   getMonitoredApplicationById: mockGetMonitoredApplicationById,
   getMonitoredApplicationByIdentity: vi.fn(),
@@ -120,6 +124,7 @@ describe('admin actions - Slack config toggles', () => {
         changedByNavIdent: 'Z990001',
         changedByName: 'Glad Fjord',
       }),
+      expect.anything(),
     )
   })
 
@@ -148,6 +153,7 @@ describe('admin actions - Slack config toggles', () => {
         oldValue: { enabled: true, channel_id: 'C0DEPLOY1' },
         newValue: { enabled: false, channel_id: 'C0DEPLOY1' },
       }),
+      expect.anything(),
     )
   })
 
