@@ -1,5 +1,6 @@
 import { redirect, useLoaderData } from 'react-router'
-import { SlackNotificationHistoryPage } from '~/components/SlackNotificationHistoryPage'
+import { type SlackConfigSettingKey, SlackNotificationHistoryPage } from '~/components/SlackNotificationHistoryPage'
+import { getAppConfigAuditLog, SLACK_CONFIG_SETTING_KEYS } from '~/db/app-settings.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import {
   getSlackInteractions,
@@ -9,6 +10,10 @@ import {
 import { getUserIdentity } from '~/lib/auth.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import type { Route } from './+types/$team.env.$env.app.$app.slack'
+
+function isSlackConfigSettingKey(settingKey: string): settingKey is SlackConfigSettingKey {
+  return (SLACK_CONFIG_SETTING_KEYS as readonly string[]).includes(settingKey)
+}
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   const { team, env, app: appName } = requireTeamEnvAppParams(params)
@@ -23,7 +28,21 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  const notifications = await getSlackNotificationsByApp(app.id, 100)
+  const [notifications, rawConfigChanges] = await Promise.all([
+    getSlackNotificationsByApp(app.id, 100),
+    getAppConfigAuditLog(app.id, { settingKey: SLACK_CONFIG_SETTING_KEYS, limit: 100 }),
+  ])
+
+  const configChanges = rawConfigChanges
+    .filter((change) => isSlackConfigSettingKey(change.setting_key))
+    .map((change) => ({
+      id: change.id,
+      setting_key: change.setting_key as SlackConfigSettingKey,
+      changed_by_nav_ident: change.changed_by_nav_ident,
+      changed_by_name: change.changed_by_name,
+      new_value: change.new_value as { enabled?: boolean; channel_id?: string | null },
+      created_at: change.created_at,
+    }))
 
   const notificationsWithDetails = await Promise.all(
     notifications.map(async (notification) => {
@@ -42,6 +61,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   return {
     app,
     notifications: notificationsWithDetails,
+    configChanges,
   }
 }
 
@@ -50,7 +70,7 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
 }
 
 export default function AppSlackPage() {
-  const { app, notifications } = useLoaderData<typeof loader>()
+  const { app, notifications, configChanges } = useLoaderData<typeof loader>()
 
-  return <SlackNotificationHistoryPage app={app} notifications={notifications} />
+  return <SlackNotificationHistoryPage app={app} notifications={notifications} configChanges={configChanges} />
 }

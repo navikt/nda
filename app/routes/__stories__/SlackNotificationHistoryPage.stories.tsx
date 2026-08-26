@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import {
+  type SlackConfigChangeEntry,
   type SlackNotificationHistoryApp,
   type SlackNotificationHistoryEntry,
   SlackNotificationHistoryPage,
@@ -52,6 +53,24 @@ const deployNotification: SlackNotificationHistoryEntry = {
   interactions: [],
 }
 
+const disabledEvent: SlackConfigChangeEntry = {
+  id: 1,
+  setting_key: 'slack_deploy_notify_enabled',
+  changed_by_nav_ident: 'Z990002',
+  changed_by_name: 'Rask Elv',
+  new_value: { enabled: false, channel_id: 'C0DEPLOY1' },
+  created_at: '2026-03-01T08:00:00Z',
+}
+
+const reenabledEvent: SlackConfigChangeEntry = {
+  id: 2,
+  setting_key: 'slack_deploy_notify_enabled',
+  changed_by_nav_ident: 'Z990002',
+  changed_by_name: 'Rask Elv',
+  new_value: { enabled: true, channel_id: 'C0DEPLOY1' },
+  created_at: '2026-05-15T10:30:00Z',
+}
+
 const meta: Meta<typeof SlackNotificationHistoryPage> = {
   title: 'Features/SlackNotificationHistoryPage',
   component: SlackNotificationHistoryPage,
@@ -64,6 +83,15 @@ export const WithHistory: Story = {
   args: {
     app,
     notifications: [deployNotification, approvalNotification],
+  },
+}
+
+export const WithConfigChanges: Story = {
+  name: 'Melding og konfigurasjonsendringer flettet sammen',
+  args: {
+    app,
+    notifications: [deployNotification, approvalNotification],
+    configChanges: [reenabledEvent, disabledEvent],
   },
 }
 

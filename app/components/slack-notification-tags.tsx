@@ -16,3 +16,11 @@ export function NotificationTypeTag({ notificationType }: { notificationType: Sl
     </Tag>
   )
 }
+
+export function ConfigChangeTag() {
+  return (
+    <Tag data-color="neutral" variant="strong" size="xsmall">
+      Konfigurasjon
+    </Tag>
+  )
+}
