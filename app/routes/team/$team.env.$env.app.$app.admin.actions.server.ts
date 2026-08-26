@@ -1,8 +1,4 @@
-import {
-  recordAppConfigAuditLog,
-  SLACK_CONFIG_SETTING_KEYS,
-  updateImplicitApprovalSettings,
-} from '~/db/app-settings.server'
+import { recordAppConfigAuditLog, updateImplicitApprovalSettings } from '~/db/app-settings.server'
 import {
   archiveAuditReport,
   checkAuditReadiness,
@@ -396,7 +392,7 @@ export async function action({ request }: { request: Request; params: Record<str
         await recordAppConfigAuditLog(
           {
             monitoredAppId: appId,
-            settingKey: SLACK_CONFIG_SETTING_KEYS[0],
+            settingKey: 'slack_notifications_enabled',
             oldValue: { enabled: currentApp.slack_notifications_enabled, channel_id: currentApp.slack_channel_id },
             newValue: { enabled: slackNotificationsEnabled, channel_id: slackChannelId },
             changedByNavIdent: user.navIdent,
@@ -437,7 +433,7 @@ export async function action({ request }: { request: Request; params: Record<str
         await recordAppConfigAuditLog(
           {
             monitoredAppId: appId,
-            settingKey: SLACK_CONFIG_SETTING_KEYS[1],
+            settingKey: 'slack_deploy_notify_enabled',
             oldValue: {
               enabled: currentApp.slack_deploy_notify_enabled,
               channel_id: currentApp.slack_deploy_channel_id,

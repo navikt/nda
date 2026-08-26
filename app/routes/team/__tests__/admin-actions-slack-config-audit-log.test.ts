@@ -16,7 +16,6 @@ vi.mock('~/lib/auth.server', () => ({ requireAdmin: mockRequireAdmin }))
 
 vi.mock('~/db/app-settings.server', () => ({
   recordAppConfigAuditLog: mockRecordAppConfigAuditLog,
-  SLACK_CONFIG_SETTING_KEYS: ['slack_notifications_enabled', 'slack_deploy_notify_enabled'],
   updateImplicitApprovalSettings: vi.fn(),
 }))
 
