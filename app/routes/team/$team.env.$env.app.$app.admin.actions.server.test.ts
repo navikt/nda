@@ -158,7 +158,7 @@ describe('admin actions - JOB_ID_ACTIONS IDOR protection', () => {
 
     const result = await action({ request: makeRequest(formData), params: {} } as never)
 
-    expect(result).toEqual({ error: 'Mangler job_id' })
+    expect(result).toEqual({ error: 'Mangler eller ugyldig job_id' })
     expect(mockGetSyncJobById).not.toHaveBeenCalled()
   })
 

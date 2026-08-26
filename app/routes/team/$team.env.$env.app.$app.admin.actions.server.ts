@@ -106,7 +106,7 @@ export async function action({ request }: { request: Request; params: Record<str
   if (JOB_ID_ACTIONS.has(action)) {
     const jobId = parseInt(formData.get('job_id') as string, 10)
     if (!Number.isFinite(jobId)) {
-      return { error: 'Mangler job_id' }
+      return { error: 'Mangler eller ugyldig job_id' }
     }
     const job = await getSyncJobById(jobId)
     if (!job || job.monitored_app_id == null || !(await canAccessAppAdmin(user, job.monitored_app_id))) {
