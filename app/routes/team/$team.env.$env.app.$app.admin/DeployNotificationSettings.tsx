@@ -1,6 +1,7 @@
-import { BodyShort, Box, Button, Heading, Switch, TextField, VStack } from '@navikt/ds-react'
+import { BodyShort, Box, Button, Heading, HStack, Switch, TextField, VStack } from '@navikt/ds-react'
 import { Form } from 'react-router'
 import type { Route } from '../+types/$team.env.$env.app.$app.admin'
+import { SlackHistoryLink } from './SlackHistoryLink'
 
 type LoaderData = Route.ComponentProps['loaderData']
 
@@ -12,15 +13,18 @@ export function DeployNotificationSettings({ app }: DeployNotificationSettingsPr
   return (
     <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
       <VStack gap="space-16">
-        <div>
-          <Heading size="small" level="2">
-            Deployment-varsler
-          </Heading>
-          <BodyShort textColor="subtle" size="small">
-            Send automatiske varsler til Slack når nye deployments oppdages. Inkluderer PR-tittel, hvem som opprettet,
-            godkjente og merget PR-en.
-          </BodyShort>
-        </div>
+        <HStack gap="space-8" align="center" justify="space-between">
+          <div>
+            <Heading size="small" level="2">
+              Deployment-varsler
+            </Heading>
+            <BodyShort textColor="subtle" size="small">
+              Send automatiske varsler til Slack når nye deployments oppdages. Inkluderer PR-tittel, hvem som opprettet,
+              godkjente og merget PR-en.
+            </BodyShort>
+          </div>
+          <SlackHistoryLink teamSlug={app.team_slug} environmentName={app.environment_name} appName={app.app_name} />
+        </HStack>
 
         <Form method="post">
           <input type="hidden" name="action" value="update_slack_deploy_config" />

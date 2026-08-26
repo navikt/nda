@@ -1,3 +1,4 @@
+import type { SlackNotificationType } from '~/lib/slack/notification-type'
 import { pool } from './connection.server'
 
 interface SlackNotification {
@@ -10,6 +11,7 @@ interface SlackNotification {
   sent_at: Date
   updated_at: Date | null
   sent_by: string | null
+  notification_type: SlackNotificationType
 }
 
 interface SlackNotificationUpdate {
@@ -39,11 +41,12 @@ export async function createSlackNotification(data: {
   messageBlocks: Record<string, unknown>[]
   messageText?: string
   sentBy?: string
+  notificationType?: SlackNotificationType
 }): Promise<SlackNotification> {
   const result = await pool.query(
     `INSERT INTO slack_notifications 
-     (deployment_id, channel_id, message_ts, message_blocks, message_text, sent_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+     (deployment_id, channel_id, message_ts, message_blocks, message_text, sent_by, notification_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
       data.deploymentId,
@@ -52,6 +55,7 @@ export async function createSlackNotification(data: {
       JSON.stringify(data.messageBlocks),
       data.messageText,
       data.sentBy,
+      data.notificationType ?? 'approval',
     ],
   )
 

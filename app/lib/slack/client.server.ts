@@ -176,14 +176,19 @@ export async function sendDeploymentNotification(
 
     const messageTs = result.ts
     if (messageTs) {
-      await createSlackNotification({
-        deploymentId: notification.deploymentId,
-        channelId: channel,
-        messageTs,
-        messageBlocks: blocks as unknown as Record<string, unknown>[],
-        messageText: text,
-        sentBy,
-      })
+      try {
+        await createSlackNotification({
+          deploymentId: notification.deploymentId,
+          channelId: channel,
+          messageTs,
+          messageBlocks: blocks as unknown as Record<string, unknown>[],
+          messageText: text,
+          sentBy,
+          notificationType: 'approval',
+        })
+      } catch (historyError) {
+        logger.error('Failed to record Slack notification history:', historyError)
+      }
     }
 
     return messageTs || null
@@ -555,6 +560,19 @@ async function notifyNewDeploymentIfNeeded(
       // Ignore deletion errors
     }
     return false
+  }
+
+  try {
+    await createSlackNotification({
+      deploymentId: deployment.id,
+      channelId,
+      messageTs,
+      messageBlocks: blocks as unknown as Record<string, unknown>[],
+      messageText: text,
+      notificationType: 'deploy',
+    })
+  } catch (error) {
+    logger.error(`Failed to record deploy notification history for deployment ${deployment.id}:`, error)
   }
 
   logger.info(`Deploy notification sent for deployment ${deployment.id} to channel ${channelId}`)

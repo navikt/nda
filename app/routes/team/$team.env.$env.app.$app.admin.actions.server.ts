@@ -1,10 +1,11 @@
-import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
+import { recordAppConfigAuditLog, updateImplicitApprovalSettings } from '~/db/app-settings.server'
 import {
   archiveAuditReport,
   checkAuditReadiness,
   hasActiveReportForPeriod,
   restoreAuditReport,
 } from '~/db/audit-reports.server'
+import { withTransaction } from '~/db/connection.server'
 import {
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
@@ -30,10 +31,58 @@ import { isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
 import { processReportJobAsync } from '~/lib/report-job-processor.server'
 import { isValidReportPeriodType } from '~/lib/report-periods'
+import type { SlackConfigSettingKey } from '~/lib/slack/config-setting-keys'
 import { serializeUserLookups } from '~/lib/user-display'
 import { fetchVerificationDataForAllDeployments } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
 import { isImplicitApprovalMode } from '~/lib/verification/types'
+
+class AppNotFoundError extends Error {}
+
+async function updateSlackSettingWithAudit(params: {
+  appId: number
+  settingKey: SlackConfigSettingKey
+  enabledField: 'slack_notifications_enabled' | 'slack_deploy_notify_enabled'
+  channelField: 'slack_channel_id' | 'slack_deploy_channel_id'
+  channelId: string | null
+  enabled: boolean
+  changedByNavIdent: string
+  changedByName?: string
+}): Promise<{ error?: string }> {
+  const { appId, settingKey, enabledField, channelField, channelId, enabled, changedByNavIdent, changedByName } = params
+
+  try {
+    await withTransaction(async (client) => {
+      const currentApp = await getMonitoredApplicationById(appId, client)
+      if (!currentApp) {
+        throw new AppNotFoundError()
+      }
+
+      await updateMonitoredApplication(appId, { [channelField]: channelId, [enabledField]: enabled }, client)
+
+      if (currentApp[enabledField] !== enabled || currentApp[channelField] !== channelId) {
+        await recordAppConfigAuditLog(
+          {
+            monitoredAppId: appId,
+            settingKey,
+            oldValue: { enabled: currentApp[enabledField], channel_id: currentApp[channelField] },
+            newValue: { enabled, channel_id: channelId },
+            changedByNavIdent,
+            changedByName,
+          },
+          client,
+        )
+      }
+    })
+  } catch (err) {
+    if (err instanceof AppNotFoundError) {
+      return { error: 'Fant ikke applikasjonen' }
+    }
+    throw err
+  }
+
+  return {}
+}
 
 async function processFetchDataJobAsync(jobId: number, appId: number) {
   const options = await getSyncJobOptions(jobId)
@@ -372,10 +421,20 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)' }
     }
 
-    await updateMonitoredApplication(appId, {
-      slack_channel_id: slackChannelId,
-      slack_notifications_enabled: slackNotificationsEnabled,
+    const result = await updateSlackSettingWithAudit({
+      appId,
+      settingKey: 'slack_notifications_enabled',
+      enabledField: 'slack_notifications_enabled',
+      channelField: 'slack_channel_id',
+      channelId: slackChannelId,
+      enabled: slackNotificationsEnabled,
+      changedByNavIdent: user.navIdent,
+      changedByName: user.name,
     })
+    if (result.error) {
+      return { error: result.error }
+    }
+
     return { success: 'Slack-innstillinger oppdatert!' }
   }
 
@@ -387,10 +446,20 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)' }
     }
 
-    await updateMonitoredApplication(appId, {
-      slack_deploy_channel_id: slackDeployChannelId,
-      slack_deploy_notify_enabled: slackDeployNotifyEnabled,
+    const result = await updateSlackSettingWithAudit({
+      appId,
+      settingKey: 'slack_deploy_notify_enabled',
+      enabledField: 'slack_deploy_notify_enabled',
+      channelField: 'slack_deploy_channel_id',
+      channelId: slackDeployChannelId,
+      enabled: slackDeployNotifyEnabled,
+      changedByNavIdent: user.navIdent,
+      changedByName: user.name,
     })
+    if (result.error) {
+      return { error: result.error }
+    }
+
     return { success: 'Deployment-varsler oppdatert!' }
   }
 
