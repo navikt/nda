@@ -1,29 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {
-  mockRequireUser,
-  mockGetMonitoredApplicationByIdentity,
-  mockCanAccessAppAdmin,
-  mockGetSyncJobById,
-  mockGetSyncJobLogs,
-} = vi.hoisted(() => ({
-  mockRequireUser: vi.fn(),
-  mockGetMonitoredApplicationByIdentity: vi.fn(),
-  mockCanAccessAppAdmin: vi.fn(),
+const { mockRequireAppAdminAccess, mockGetSyncJobById, mockGetSyncJobLogs } = vi.hoisted(() => ({
+  mockRequireAppAdminAccess: vi.fn(),
   mockGetSyncJobById: vi.fn(),
   mockGetSyncJobLogs: vi.fn(),
 }))
 
-vi.mock('~/lib/auth.server', () => ({
-  requireUser: mockRequireUser,
-}))
-
 vi.mock('~/lib/authorization.server', () => ({
-  canAccessAppAdmin: mockCanAccessAppAdmin,
-}))
-
-vi.mock('~/db/monitored-applications.server', () => ({
-  getMonitoredApplicationByIdentity: mockGetMonitoredApplicationByIdentity,
+  requireAppAdminAccess: mockRequireAppAdminAccess,
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
@@ -46,9 +30,10 @@ function makeParams(jobId: string) {
 describe('sync-job detail loader - IDOR protection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
-    mockGetMonitoredApplicationByIdentity.mockResolvedValue({ id: 1 })
-    mockCanAccessAppAdmin.mockResolvedValue(true)
+    mockRequireAppAdminAccess.mockResolvedValue({
+      user: { navIdent: 'Z990010', name: 'Rask Elv' },
+      app: { id: 1 },
+    })
     mockGetSyncJobById.mockResolvedValue({ id: 5, monitored_app_id: 1, job_type: 'fetch_data', status: 'completed' })
     mockGetSyncJobLogs.mockResolvedValue([])
   })
@@ -58,12 +43,12 @@ describe('sync-job detail loader - IDOR protection', () => {
       loader({ params: makeParams('not-a-number'), request: makeRequest(), url: new URL(makeRequest().url) } as never),
     ).rejects.toMatchObject({ status: 400 })
 
-    expect(mockCanAccessAppAdmin).not.toHaveBeenCalled()
+    expect(mockRequireAppAdminAccess).not.toHaveBeenCalled()
     expect(mockGetSyncJobById).not.toHaveBeenCalled()
   })
 
   it('checks authorization before fetching the job (no info leak via 404 vs 403)', async () => {
-    mockCanAccessAppAdmin.mockResolvedValue(false)
+    mockRequireAppAdminAccess.mockRejectedValue(new Response('Forbidden - admin access required', { status: 403 }))
 
     await expect(
       loader({ params: makeParams('5'), request: makeRequest(), url: new URL(makeRequest().url) } as never),

@@ -1,23 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireUser, mockGetMonitoredApplicationByIdentity, mockCanAccessAppAdmin, mockGetDeviationsByAppId } =
-  vi.hoisted(() => ({
-    mockRequireUser: vi.fn(),
-    mockGetMonitoredApplicationByIdentity: vi.fn(),
-    mockCanAccessAppAdmin: vi.fn(),
-    mockGetDeviationsByAppId: vi.fn(),
-  }))
-
-vi.mock('~/lib/auth.server', () => ({
-  requireUser: mockRequireUser,
+const { mockRequireAppAdminAccess, mockGetDeviationsByAppId } = vi.hoisted(() => ({
+  mockRequireAppAdminAccess: vi.fn(),
+  mockGetDeviationsByAppId: vi.fn(),
 }))
 
 vi.mock('~/lib/authorization.server', () => ({
-  canAccessAppAdmin: mockCanAccessAppAdmin,
-}))
-
-vi.mock('~/db/monitored-applications.server', () => ({
-  getMonitoredApplicationByIdentity: mockGetMonitoredApplicationByIdentity,
+  requireAppAdminAccess: mockRequireAppAdminAccess,
 }))
 
 vi.mock('~/db/deviations.server', () => ({
@@ -37,14 +26,15 @@ function makeParams() {
 describe('deviations loader - authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
-    mockGetMonitoredApplicationByIdentity.mockResolvedValue({ id: 1, team_slug: 'pensjondeployer' })
-    mockCanAccessAppAdmin.mockResolvedValue(true)
+    mockRequireAppAdminAccess.mockResolvedValue({
+      user: { navIdent: 'Z990010', name: 'Rask Elv' },
+      app: { id: 1, team_slug: 'pensjondeployer' },
+    })
     mockGetDeviationsByAppId.mockResolvedValue([])
   })
 
   it('checks canAccessAppAdmin before fetching any deviations', async () => {
-    mockCanAccessAppAdmin.mockResolvedValue(false)
+    mockRequireAppAdminAccess.mockRejectedValue(new Response('Forbidden - admin access required', { status: 403 }))
     const request = makeRequest()
 
     await expect(loader({ params: makeParams(), request, url: new URL(request.url) } as never)).rejects.toMatchObject({
@@ -59,7 +49,7 @@ describe('deviations loader - authorization', () => {
 
     const result = await loader({ params: makeParams(), request, url: new URL(request.url) } as never)
 
-    expect(mockCanAccessAppAdmin).toHaveBeenCalledWith({ navIdent: 'Z990010', name: 'Rask Elv' }, 1)
+    expect(mockRequireAppAdminAccess).toHaveBeenCalledWith(request, makeParams())
     expect(result.deviations).toEqual([])
   })
 })

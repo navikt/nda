@@ -1,6 +1,9 @@
 import { pool } from '~/db/connection.server'
+import type { MonitoredApplication } from '~/db/monitored-applications.server'
+import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getUserRoles } from '~/db/role-assignments.server'
 import type { UserIdentity } from './auth.server'
+import { requireUser } from './auth.server'
 import type { SectionRole, TeamRole } from './authorization-types'
 import { isTeamLeaderRole } from './authorization-types'
 
@@ -118,6 +121,29 @@ export async function canDeviateDeployment(actor: UserIdentity, monitoredAppId: 
 
 export async function canAccessAppAdmin(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
   return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId)
+}
+
+export interface AppAdminAccess {
+  user: UserIdentity
+  app: MonitoredApplication
+}
+
+export async function requireAppAdminAccess(
+  request: Request,
+  params: { team: string; env: string; app: string },
+): Promise<AppAdminAccess> {
+  const user = await requireUser(request)
+
+  const app = await getMonitoredApplicationByIdentity(params.team, params.env, params.app)
+  if (!app) {
+    throw new Response('Application not found', { status: 404 })
+  }
+
+  if (!(await canAccessAppAdmin(user, app.id))) {
+    throw new Response('Forbidden - admin access required', { status: 403 })
+  }
+
+  return { user, app }
 }
 
 export async function canAdministerTeam(actor: UserIdentity, devTeamId: number): Promise<boolean> {

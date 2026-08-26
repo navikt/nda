@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  mockRequireUser,
-  mockGetMonitoredApplicationByIdentity,
-  mockCanAccessAppAdmin,
+  mockRequireAppAdminAccess,
   mockGetImplicitApprovalSettings,
   mockGetAppConfigAuditLog,
   mockGetAuditReportsForAppAdmin,
@@ -11,9 +9,7 @@ const {
   mockGetGitHubDataStatsForApp,
   mockGetUsersByIdentifiers,
 } = vi.hoisted(() => ({
-  mockRequireUser: vi.fn(),
-  mockGetMonitoredApplicationByIdentity: vi.fn(),
-  mockCanAccessAppAdmin: vi.fn(),
+  mockRequireAppAdminAccess: vi.fn(),
   mockGetImplicitApprovalSettings: vi.fn(),
   mockGetAppConfigAuditLog: vi.fn(),
   mockGetAuditReportsForAppAdmin: vi.fn(),
@@ -22,16 +18,8 @@ const {
   mockGetUsersByIdentifiers: vi.fn(),
 }))
 
-vi.mock('~/lib/auth.server', () => ({
-  requireUser: mockRequireUser,
-}))
-
 vi.mock('~/lib/authorization.server', () => ({
-  canAccessAppAdmin: mockCanAccessAppAdmin,
-}))
-
-vi.mock('~/db/monitored-applications.server', () => ({
-  getMonitoredApplicationByIdentity: mockGetMonitoredApplicationByIdentity,
+  requireAppAdminAccess: mockRequireAppAdminAccess,
 }))
 
 vi.mock('~/db/app-settings.server', () => ({
@@ -71,13 +59,10 @@ const params = { team: 'pensjondeployer', env: 'prod-fss', app: 'pensjon-pen' }
 describe('admin loader - scoped user lookups (no org-wide directory leak)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
-    mockGetMonitoredApplicationByIdentity.mockResolvedValue({
-      id: 1,
-      environment_name: 'prod-fss',
-      audit_start_year: 2024,
+    mockRequireAppAdminAccess.mockResolvedValue({
+      user: { navIdent: 'Z990010', name: 'Rask Elv' },
+      app: { id: 1, environment_name: 'prod-fss', audit_start_year: 2024 },
     })
-    mockCanAccessAppAdmin.mockResolvedValue(true)
     mockGetImplicitApprovalSettings.mockResolvedValue(null)
     mockGetAppConfigAuditLog.mockResolvedValue([])
     mockGetLatestSyncJob.mockResolvedValue(null)
@@ -120,7 +105,7 @@ describe('admin loader - scoped user lookups (no org-wide directory leak)', () =
   })
 
   it('checks canAccessAppAdmin before any admin data is fetched', async () => {
-    mockCanAccessAppAdmin.mockResolvedValue(false)
+    mockRequireAppAdminAccess.mockRejectedValue(new Response('Forbidden - admin access required', { status: 403 }))
 
     await expect(loader({ params, request: makeRequest() } as never)).rejects.toMatchObject({ status: 403 })
 

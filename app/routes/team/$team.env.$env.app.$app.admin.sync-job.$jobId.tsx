@@ -1,8 +1,6 @@
 import { SyncJobDetailView } from '~/components/SyncJobDetailView'
-import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getSyncJobById, getSyncJobLogs, SYNC_JOB_STATUS_LABELS, SYNC_JOB_TYPE_LABELS } from '~/db/sync-jobs.server'
-import { requireUser } from '~/lib/auth.server'
-import { canAccessAppAdmin } from '~/lib/authorization.server'
+import { requireAppAdminAccess } from '~/lib/authorization.server'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.sync-job.$jobId'
 
 export function meta({ loaderData: data }: Route.MetaArgs) {
@@ -10,23 +8,14 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
 }
 
 export async function loader({ params, request, url }: Route.LoaderArgs) {
-  const user = await requireUser(request)
-
-  const { team, env, app: appName, jobId: jobIdParam } = params
+  const { jobId: jobIdParam } = params
   const jobId = Number.parseInt(jobIdParam, 10)
 
   if (!Number.isFinite(jobId)) {
     throw new Response('Invalid job ID', { status: 400 })
   }
 
-  const app = await getMonitoredApplicationByIdentity(team, env, appName)
-  if (!app) {
-    throw new Response('Not found', { status: 404 })
-  }
-
-  if (!(await canAccessAppAdmin(user, app.id))) {
-    throw new Response('Forbidden - admin access required', { status: 403 })
-  }
+  const { app } = await requireAppAdminAccess(request, params)
 
   const job = await getSyncJobById(jobId)
   if (!job || job.monitored_app_id !== app.id) {

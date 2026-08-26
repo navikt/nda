@@ -1,23 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireUser, mockGetMonitoredApplicationByIdentity, mockCanAccessAppAdmin, mockGetSyncJobsForApp } =
-  vi.hoisted(() => ({
-    mockRequireUser: vi.fn(),
-    mockGetMonitoredApplicationByIdentity: vi.fn(),
-    mockCanAccessAppAdmin: vi.fn(),
-    mockGetSyncJobsForApp: vi.fn(),
-  }))
-
-vi.mock('~/lib/auth.server', () => ({
-  requireUser: mockRequireUser,
+const { mockRequireAppAdminAccess, mockGetSyncJobsForApp } = vi.hoisted(() => ({
+  mockRequireAppAdminAccess: vi.fn(),
+  mockGetSyncJobsForApp: vi.fn(),
 }))
 
 vi.mock('~/lib/authorization.server', () => ({
-  canAccessAppAdmin: mockCanAccessAppAdmin,
-}))
-
-vi.mock('~/db/monitored-applications.server', () => ({
-  getMonitoredApplicationByIdentity: mockGetMonitoredApplicationByIdentity,
+  requireAppAdminAccess: mockRequireAppAdminAccess,
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
@@ -42,14 +31,15 @@ function makeParams() {
 describe('sync-jobs loader - authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
-    mockGetMonitoredApplicationByIdentity.mockResolvedValue({ id: 1, team_slug: 'pensjondeployer' })
-    mockCanAccessAppAdmin.mockResolvedValue(true)
+    mockRequireAppAdminAccess.mockResolvedValue({
+      user: { navIdent: 'Z990010', name: 'Rask Elv' },
+      app: { id: 1, team_slug: 'pensjondeployer' },
+    })
     mockGetSyncJobsForApp.mockResolvedValue([])
   })
 
   it('checks canAccessAppAdmin before fetching any sync jobs', async () => {
-    mockCanAccessAppAdmin.mockResolvedValue(false)
+    mockRequireAppAdminAccess.mockRejectedValue(new Response('Forbidden - admin access required', { status: 403 }))
     const request = makeRequest()
 
     await expect(loader({ params: makeParams(), request } as never)).rejects.toMatchObject({ status: 403 })
@@ -62,7 +52,7 @@ describe('sync-jobs loader - authorization', () => {
 
     const result = await loader({ params: makeParams(), request } as never)
 
-    expect(mockCanAccessAppAdmin).toHaveBeenCalledWith({ navIdent: 'Z990010', name: 'Rask Elv' }, 1)
+    expect(mockRequireAppAdminAccess).toHaveBeenCalledWith(request, makeParams())
     expect(result.jobs).toEqual([])
   })
 })
