@@ -135,7 +135,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   const actionType = formData.get('action') as string
   const deploymentId = parseInt(formData.get('deployment_id') as string, 10)
 
-  if (actionType === 'apply_reverification' && deploymentId) {
+  if (actionType === 'apply_reverification') {
+    if (!Number.isFinite(deploymentId)) {
+      return { error: 'Mangler eller ugyldig deployment_id' }
+    }
     const deploymentAppIds = await getDeploymentAppIds([deploymentId])
     if (deploymentAppIds.get(deploymentId) !== monitoredApp.id) {
       return { error: `Deployment ${deploymentId} tilhører ikke denne applikasjonen` }

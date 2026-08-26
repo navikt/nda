@@ -101,6 +101,17 @@ describe('verification-diff action - IDOR protection', () => {
       expect(mockReverifyDeployment).toHaveBeenCalledWith(42)
       expect(result).toEqual(expect.objectContaining({ applied: 42 }))
     })
+
+    it('returns an explicit error for a missing or non-numeric deployment_id instead of silently returning null', async () => {
+      const formData = new FormData()
+      formData.set('action', 'apply_reverification')
+
+      const result = await action({ request: makeRequest(formData), params } as never)
+
+      expect(result).toEqual({ error: 'Mangler eller ugyldig deployment_id' })
+      expect(mockPoolQuery).not.toHaveBeenCalled()
+      expect(mockReverifyDeployment).not.toHaveBeenCalled()
+    })
   })
 
   describe('apply_all', () => {
