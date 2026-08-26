@@ -377,9 +377,12 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)' }
     }
 
-    await withTransaction(async (client) => {
-      const currentApp = await getMonitoredApplicationById(appId, client)
+    const currentApp = await getMonitoredApplicationById(appId)
+    if (!currentApp) {
+      return { error: 'Fant ikke applikasjonen' }
+    }
 
+    await withTransaction(async (client) => {
       await updateMonitoredApplication(
         appId,
         {
@@ -389,7 +392,7 @@ export async function action({ request }: { request: Request; params: Record<str
         client,
       )
 
-      if (currentApp && currentApp.slack_notifications_enabled !== slackNotificationsEnabled) {
+      if (currentApp.slack_notifications_enabled !== slackNotificationsEnabled) {
         await recordAppConfigAuditLog(
           {
             monitoredAppId: appId,
@@ -415,9 +418,12 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)' }
     }
 
-    await withTransaction(async (client) => {
-      const currentApp = await getMonitoredApplicationById(appId, client)
+    const currentApp = await getMonitoredApplicationById(appId)
+    if (!currentApp) {
+      return { error: 'Fant ikke applikasjonen' }
+    }
 
+    await withTransaction(async (client) => {
       await updateMonitoredApplication(
         appId,
         {
@@ -427,7 +433,7 @@ export async function action({ request }: { request: Request; params: Record<str
         client,
       )
 
-      if (currentApp && currentApp.slack_deploy_notify_enabled !== slackDeployNotifyEnabled) {
+      if (currentApp.slack_deploy_notify_enabled !== slackDeployNotifyEnabled) {
         await recordAppConfigAuditLog(
           {
             monitoredAppId: appId,

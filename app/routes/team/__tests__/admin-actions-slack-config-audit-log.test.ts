@@ -176,4 +176,42 @@ describe('admin actions - Slack config toggles', () => {
 
     expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
   })
+
+  it('returns an error and does not update or log when the app is not found (approval config)', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue(null)
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_slack_config',
+        app_id: '42',
+        slack_notifications_enabled: 'true',
+        slack_channel_id: 'C0123456',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Fant ikke applikasjonen' })
+    expect(mockUpdateMonitoredApplication).not.toHaveBeenCalled()
+    expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('returns an error and does not update or log when the app is not found (deploy config)', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue(null)
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_slack_deploy_config',
+        app_id: '42',
+        slack_deploy_notify_enabled: 'true',
+        slack_deploy_channel_id: 'C0DEPLOY1',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Fant ikke applikasjonen' })
+    expect(mockUpdateMonitoredApplication).not.toHaveBeenCalled()
+    expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
+  })
 })
