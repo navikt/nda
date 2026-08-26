@@ -54,7 +54,7 @@ vi.mock('~/lib/logger.server', () => ({
   logger: { error: vi.fn() },
 }))
 
-import { action } from './$team.env.$env.app.$app.admin.verification-diff'
+import { action, loader } from './$team.env.$env.app.$app.admin.verification-diff'
 
 function makeRequest(formData: FormData): Request {
   return new Request('http://localhost/team/pensjondeployer/env/prod-fss/app/pensjon-pen/admin/verification-diff', {
@@ -63,7 +63,38 @@ function makeRequest(formData: FormData): Request {
   })
 }
 
+function makeGetRequest(): Request {
+  return new Request('http://localhost/team/pensjondeployer/env/prod-fss/app/pensjon-pen/admin/verification-diff')
+}
+
 const params = { team: 'pensjondeployer', env: 'prod-fss', app: 'pensjon-pen' }
+
+describe('verification-diff loader - authorization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
+    mockGetMonitoredApplicationByIdentity.mockResolvedValue({ id: 1, team_slug: 'pensjondeployer' })
+    mockCanAccessAppAdmin.mockResolvedValue(true)
+    mockPoolQuery.mockResolvedValue({ rows: [] })
+    mockGetApprovedDeploymentsMissingApprover.mockResolvedValue([])
+  })
+
+  it('checks canAccessAppAdmin before querying deployment diffs or missing approvers', async () => {
+    mockCanAccessAppAdmin.mockResolvedValue(false)
+
+    await expect(loader({ request: makeGetRequest(), params } as never)).rejects.toMatchObject({ status: 403 })
+
+    expect(mockPoolQuery).not.toHaveBeenCalled()
+    expect(mockGetApprovedDeploymentsMissingApprover).not.toHaveBeenCalled()
+  })
+
+  it('returns diffs when the actor has admin access to the app', async () => {
+    const result = await loader({ request: makeGetRequest(), params } as never)
+
+    expect(mockCanAccessAppAdmin).toHaveBeenCalledWith({ navIdent: 'Z990010', name: 'Rask Elv' }, 1)
+    expect(result.diffs).toEqual([])
+  })
+})
 
 describe('verification-diff action - IDOR protection', () => {
   beforeEach(() => {
