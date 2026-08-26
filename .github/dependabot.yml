@@ -36,10 +36,10 @@ updates:
           - "@testcontainers/postgresql"
           - 'testcontainers'
 
-  - package-ecosystem: npm
-    directory: /landing
+  - package-ecosystem: "npm"
+    directory: "/landing"
     schedule:
-      interval: daily
+      interval: "daily"
     cooldown:
       default-days: 7
       semver-minor-days: 7
