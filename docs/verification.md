@@ -467,6 +467,19 @@ Begge arkiveringene er best-effort og ikke koblet inn i lesestien: `haveSameComm
 
 > **Koderef**: `haveSameCommitTree()`/`isCommitOnBranch()` i [`app/lib/github/git.server.ts`](../app/lib/github/git.server.ts), `saveCommitRawSnapshot()`/`getLatestCommitRawSnapshot()` i [`app/db/github-data/commit-raw-snapshots.server.ts`](../app/db/github-data/commit-raw-snapshots.server.ts), `saveCommitOnBranchRawSnapshot()`/`getLatestCommitOnBranchRawSnapshot()` i [`app/db/github-data/commit-on-branch-raw-snapshots.server.ts`](../app/db/github-data/commit-on-branch-raw-snapshots.server.ts), `github_commit_raw_snapshots`-tabellen ([`app/db/migrations/1787673000000_add-github-commit-raw-snapshots.sql`](../app/db/migrations/1787673000000_add-github-commit-raw-snapshots.sql)), `github_commit_on_branch_raw_snapshots`-tabellen ([`app/db/migrations/1787673100000_add-github-commit-on-branch-raw-snapshots.sql`](../app/db/migrations/1787673100000_add-github-commit-on-branch-raw-snapshots.sql)).
 
+### Rådataarkiv for rebase-matching i getPullRequestForCommit()
+
+`getPullRequestForCommit()` (kalt med `verifyCommitIsInPR=true` fra `findPrForCommit()` i hovedpipelinen) avgjør hvilken PR som regnes som «den deployede PR-en» i four-eyes-vurderingen — dette er et beslutnings-input, ikke bare et rapportfelt. Når en commit ikke finnes direkte blant en kandidat-PRs commits (typisk fordi PR-en ble rebaset/squashet), forsøker koden en rebase-match basert på forfatter/dato/commit-melding, ved å hente:
+
+- `pulls.listCommits` for hver kandidat-PR — fulle commit-objekter, tidligere kun redusert til `{sha, author, authorDate, messageFirstLine}` i en in-memory `Map` (`prCommitsMetadataCache`), som forsvinner ved restart.
+- `repos.getCommit` for target-SHA-en — samme reduksjon, samme in-memory-cache-mangel.
+
+Begge kallene arkiverer nå det ufiltrerte GitHub-svaret i `github_pr_raw_snapshots` (`data_type: 'commits'`) og `github_commit_raw_snapshots`, samme tabeller og mønster som allerede brukes for PR-commits og enkelt-commits andre steder. Siden PR-commit-lister kan endre seg over tid (force-push), er dette — som med `commitOnBaseBranch` — et revisjonsspor for hva GitHub svarte på matchetidspunktet, ikke en gjenbrukbar cache for selve matchingen.
+
+Arkiveringen er best-effort og ikke koblet inn i lesestien: `getPullRequestForCommit()` gjør fortsatt alltid de samme GitHub-kallene (uendret oppførsel, inkludert den eksisterende in-memory-cachen), og skriver kun til rådataarkivet som et sideeffekt-kall etter et vellykket API-svar.
+
+> **Koderef**: `getPullRequestForCommit()` i [`app/lib/github/pr.server.ts`](../app/lib/github/pr.server.ts), `savePrRawSnapshotsBatch()` i [`app/db/github-data.server.ts`](../app/db/github-data.server.ts), `archiveCommitRawSnapshot()` i [`app/lib/github/git.server.ts`](../app/lib/github/git.server.ts).
+
 ### Rådataarkiv for rapport-/visningsdata (ikke selve beslutningen)
 
 Kriteriet over («inngang til selve four-eyes-avgjørelsen») dekker ikke alt: enkelte GitHub-kall driver rapporter og visning som man ønsker å kunne endre eller utvide senere uten et nytt, tidssensitivt GitHub-kall. Fem slike kall arkiverer nå det ufiltrerte GitHub-svaret, etter samme mønster som over:
