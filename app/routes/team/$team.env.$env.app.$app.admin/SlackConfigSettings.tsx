@@ -41,7 +41,7 @@ export function SlackConfigSettings({ app }: SlackConfigSettingsProps) {
               label="Slack-kanal"
               name="slack_channel_id"
               defaultValue={app.slack_channel_id || ''}
-              description="Kanal-ID (f.eks. C01234567) eller kanalnavn (f.eks. #min-kanal)"
+              description="Kanal-ID (f.eks. C01234567) eller kanalnavn (f.eks. #min-kanal). NDA-appen i Slack må inviteres som medlem i kanalen for å kunne sende meldinger dit (/invite @nda)."
               size="small"
               style={{ maxWidth: '300px' }}
             />
