@@ -27,6 +27,8 @@ const readyReadiness: AuditReadinessCheck = {
   pending_deployments: [],
   missing_approver_count: 0,
   missing_approver_deployments: [],
+  manual_trigger_count: 0,
+  manual_trigger_deployments: [],
 }
 
 const notReadyReadiness: AuditReadinessCheck = {
@@ -73,6 +75,17 @@ const notReadyReadiness: AuditReadinessCheck = {
       commit_sha: 'mno3456789012',
       deployer_username: 'gladfjord',
       four_eyes_status: 'approved',
+    },
+  ],
+  manual_trigger_count: 1,
+  manual_trigger_deployments: [
+    {
+      id: 301,
+      created_at: new Date('2025-09-05'),
+      commit_sha: 'pqr6789012345',
+      deployer_username: 'raskelv',
+      four_eyes_status: 'approved',
+      trigger_event: 'workflow_dispatch',
     },
   ],
 }

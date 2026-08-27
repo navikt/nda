@@ -25,6 +25,7 @@ import {
   getAllKnownWorkflowTriggerEvents,
   getWorkflowTriggerDescription,
   getWorkflowTriggerLabel,
+  MANUAL_TRIGGER_EVENTS,
 } from '~/lib/workflow-trigger-label'
 import type { Route } from './+types/workflow-patterns'
 
@@ -37,7 +38,6 @@ function formatDateTime(value: Date | string): string {
 }
 
 const PROD_ENVIRONMENTS = ['prod-fss', 'prod-gcp']
-const MANUAL_TRIGGER_EVENTS = ['workflow_dispatch', 'repository_dispatch']
 
 interface TriggerBreakdownRow {
   team_slug: string

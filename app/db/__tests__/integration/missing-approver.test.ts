@@ -118,6 +118,75 @@ describe('missing approver detection — checkAuditReadiness', () => {
     expect(result.is_ready).toBe(true)
     expect(result.missing_approver_count).toBe(0)
   })
+
+  it('blocks when a deployment was triggered via workflow_dispatch, even if approved', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'app-a',
+      environment: 'prod-gcp',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: {
+        reviewers: [{ username: 'reviewer1', state: 'APPROVED', submitted_at: '2026-06-15T09:00:00Z' }],
+      },
+      workflowTriggerConfig: { triggerEvent: 'workflow_dispatch' },
+    })
+
+    const result = await checkAuditReadiness(appId, PERIOD_START, PERIOD_END)
+    expect(result.is_ready).toBe(false)
+    expect(result.manual_trigger_count).toBe(1)
+    expect(result.manual_trigger_deployments).toHaveLength(1)
+    expect(result.manual_trigger_deployments[0].trigger_event).toBe('workflow_dispatch')
+  })
+
+  it('blocks when a deployment was triggered via repository_dispatch', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'app-a',
+      environment: 'prod-gcp',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: { reviewers: [] },
+      workflowTriggerConfig: { triggerEvent: 'repository_dispatch' },
+    })
+
+    const result = await checkAuditReadiness(appId, PERIOD_START, PERIOD_END)
+    expect(result.is_ready).toBe(false)
+    expect(result.manual_trigger_count).toBe(1)
+  })
+
+  it('passes when deployment was triggered via push', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'app-a',
+      environment: 'prod-gcp',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: {
+        reviewers: [{ username: 'reviewer1', state: 'APPROVED', submitted_at: '2026-06-15T09:00:00Z' }],
+      },
+      workflowTriggerConfig: { triggerEvent: 'push' },
+    })
+
+    const result = await checkAuditReadiness(appId, PERIOD_START, PERIOD_END)
+    expect(result.is_ready).toBe(true)
+    expect(result.manual_trigger_count).toBe(0)
+  })
 })
 
 describe('missing approver detection — getApprovedDeploymentsMissingApprover', () => {

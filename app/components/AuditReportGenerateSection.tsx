@@ -303,6 +303,12 @@ function ReadinessResult({
               <BodyShort weight="semibold">{readinessData.missing_approver_count}</BodyShort>
             </div>
           )}
+          {readinessData.manual_trigger_count > 0 && (
+            <div>
+              <Detail>Manuelt trigget</Detail>
+              <BodyShort weight="semibold">{readinessData.manual_trigger_count}</BodyShort>
+            </div>
+          )}
         </HStack>
 
         {readinessData.pending_count > 0 && (
@@ -318,6 +324,15 @@ function ReadinessResult({
           <DeploymentList
             label="Godkjente deployments som mangler godkjenner-data:"
             deployments={readinessData.missing_approver_deployments}
+            appUrl={appUrl}
+            userMappings={userMappings}
+          />
+        )}
+
+        {readinessData.manual_trigger_count > 0 && (
+          <DeploymentList
+            label="Manuelt triggede deployments (workflow_dispatch/repository_dispatch):"
+            deployments={readinessData.manual_trigger_deployments}
             appUrl={appUrl}
             userMappings={userMappings}
           />
