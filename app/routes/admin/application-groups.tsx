@@ -4,11 +4,13 @@ import { Form, Link, useActionData, useLoaderData } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import {
   addAppToGroup,
+  computeGroupingSuggestions,
   createApplicationGroup,
   deleteGroup,
   getAllGroups,
   getGroupWithApps,
   removeAppFromGroup,
+  selectAppsSharingRepository,
 } from '~/db/application-groups.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { requireAdmin } from '~/lib/auth.server'
@@ -27,13 +29,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const ungroupedApps = allApps.filter((app) => app.is_active && !app.application_group_id)
 
-  const appNameCounts = new Map<string, number>()
-  for (const app of ungroupedApps) {
-    appNameCounts.set(app.app_name, (appNameCounts.get(app.app_name) ?? 0) + 1)
-  }
-  const suggestions = [...appNameCounts.entries()]
-    .filter(([, count]) => count > 1)
-    .map(([name]) => name)
+  const suggestionEntries = await computeGroupingSuggestions(ungroupedApps)
+  const suggestions = suggestionEntries
+    .filter(({ count }) => count > 1)
+    .map(({ name }) => name)
     .sort()
 
   return { groups: groupDetails.filter(Boolean), ungroupedApps, suggestions }
@@ -65,7 +64,13 @@ export async function action({ request }: Route.ActionArgs) {
     const appId = parseInt(formData.get('app_id') as string, 10)
     if (!groupId || !appId) return { error: 'Ugyldig gruppe- eller applikasjons-ID' }
 
-    await addAppToGroup(groupId, appId)
+    const added = await addAppToGroup(groupId, appId)
+    if (!added) {
+      return {
+        error:
+          'Kunne ikke legge til: applikasjonen er allerede gruppert, mangler et git-repo som matcher de andre appene i gruppen, eller gruppen finnes ikke lenger',
+      }
+    }
     return { success: 'Applikasjon lagt til i gruppen' }
   }
 
@@ -82,13 +87,29 @@ export async function action({ request }: Route.ActionArgs) {
     if (!appName) return { error: 'Mangler applikasjonsnavn' }
 
     const allApps = await getAllMonitoredApplications()
-    const appsToGroup = allApps.filter((app) => app.is_active && app.app_name === appName && !app.application_group_id)
+    const candidates = allApps.filter((app) => app.is_active && app.app_name === appName && !app.application_group_id)
 
-    if (appsToGroup.length < 2) return { error: 'Fant ikke nok applikasjoner å gruppere' }
+    const { matched: appsToGroup, skipped } = await selectAppsSharingRepository(candidates)
+    if (appsToGroup.length < 2) {
+      return { error: `Fant ikke nok applikasjoner med samme git-repo for "${appName}"` }
+    }
 
     const group = await createApplicationGroup(appName)
-    await Promise.all(appsToGroup.map((app) => addAppToGroup(group.id, app.id)))
-    return { success: `Opprettet gruppe "${appName}" med ${appsToGroup.length} applikasjoner` }
+    const results: boolean[] = []
+    for (const app of appsToGroup) {
+      results.push(await addAppToGroup(group.id, app.id))
+    }
+    if (results.some((r) => !r)) {
+      await deleteGroup(group.id, user.navIdent)
+      return {
+        error: `Kunne ikke gruppere "${appName}": en eller flere applikasjoner ble endret underveis, eller gruppen ble slettet. Prøv igjen.`,
+      }
+    }
+    return {
+      success: `Opprettet gruppe "${appName}" med ${appsToGroup.length} applikasjon${appsToGroup.length !== 1 ? 'er' : ''}${
+        skipped > 0 ? ` (${skipped} hoppet over pga. manglende, flertydig eller avvikende git-repo)` : ''
+      }`,
+    }
   }
 
   return { error: 'Ukjent handling' }
@@ -107,7 +128,7 @@ export default function ApplicationGroupsAdmin() {
           </Heading>
           <BodyShort textColor="subtle">
             Grupper applikasjoner som er samme logiske app på tvers av NAIS-clustre. Verifikasjonsstatus propageres
-            automatisk innad i gruppen.
+            automatisk innad i gruppen. Apper må ha samme aktive git-repo for å kunne grupperes sammen.
           </BodyShort>
         </div>
         <Link to="/admin" style={{ textDecoration: 'none' }}>
