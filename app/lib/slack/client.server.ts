@@ -13,6 +13,7 @@ import {
   logSlackInteraction,
   updateSlackNotification,
 } from '~/db/slack-notifications.server'
+import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { isApprovedStatus, isLegacyStatus, isNotApprovedStatus, isPendingStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { callSlackApi } from './api-logging.server'
@@ -494,17 +495,31 @@ async function notifyNewDeploymentIfNeeded(
 
   const channelId = deployment.slack_deploy_channel_id
 
-  let deployMethod: NewDeploymentNotification['deployMethod'] = 'direct_push'
-  if (deployment.github_pr_number) {
-    deployMethod = 'pull_request'
-  } else if (isLegacyStatus(deployment.four_eyes_status ?? '')) {
-    deployMethod = 'legacy'
-  }
+  const isPullRequest = !!deployment.github_pr_number
+  const legacyOrDirectPushMethod: 'legacy' | 'direct_push' = isLegacyStatus(deployment.four_eyes_status ?? '')
+    ? 'legacy'
+    : 'direct_push'
 
   const prData = deployment.github_pr_data
-  const approvers = prData?.reviewers?.filter((r) => r.state === 'APPROVED').map((r) => r.username) ?? []
+  const prCreator = prData?.creator?.username
+  const prMerger = prData?.merged_by?.username || prData?.merger?.username
 
-  const notification: NewDeploymentNotification = {
+  const mentionUsernames = isPullRequest ? [...new Set([prCreator, prMerger].filter((u): u is string => !!u))] : []
+  const slackMentions: Record<string, string> = {}
+  if (mentionUsernames.length > 0) {
+    try {
+      const lookups = await getGithubUserLookups(mentionUsernames)
+      for (const [username, lookup] of lookups) {
+        if (lookup.slack_member_id) {
+          slackMentions[username.toLowerCase()] = lookup.slack_member_id
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to resolve Slack mentions for deployment ${deployment.id}:`, error)
+    }
+  }
+
+  const base = {
     deploymentId: deployment.id,
     appName: deployment.app_name,
     environmentName: deployment.environment_name,
@@ -513,16 +528,28 @@ async function notifyNewDeploymentIfNeeded(
     deployerUsername: deployment.deployer_username || 'ukjent',
     detailsUrl: `${baseUrl}/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}/deployments/${deployment.id}`,
     fourEyesStatus: deployment.four_eyes_status,
-    prTitle: prData?.title || deployment.title || undefined,
-    prNumber: deployment.github_pr_number || undefined,
-    prUrl: deployment.github_pr_url || undefined,
-    prCreator: prData?.creator?.username,
-    prApprovers: approvers.length > 0 ? approvers : undefined,
-    prMerger: prData?.merged_by?.username || prData?.merger?.username,
     branchName: prData?.head_branch || deployment.branch_name || undefined,
     commitsCount: prData?.commits_count,
-    deployMethod,
+    slackMentions: Object.keys(slackMentions).length > 0 ? slackMentions : undefined,
   }
+
+  const notification: NewDeploymentNotification =
+    isPullRequest && deployment.github_pr_number
+      ? {
+          ...base,
+          deployMethod: 'pull_request',
+          pr: {
+            number: deployment.github_pr_number,
+            url: deployment.github_pr_url || undefined,
+            title: prData?.title || deployment.title || 'Ukjent',
+            creator: prCreator,
+            merger: prMerger,
+          },
+        }
+      : {
+          ...base,
+          deployMethod: legacyOrDirectPushMethod,
+        }
 
   const blocks = buildNewDeploymentBlocks(notification)
   const text = `🚀 Ny deployment — ${notification.appName} (${notification.environmentName})`

@@ -1,7 +1,15 @@
 import type { KnownBlock } from '@slack/types'
 import { truncate } from './shared'
 
-export interface NewDeploymentNotification {
+interface PullRequestInfo {
+  number: number
+  url?: string
+  title: string
+  creator?: string
+  merger?: string
+}
+
+interface NewDeploymentNotificationBase {
   deploymentId: number
   appName: string
   environmentName: string
@@ -10,26 +18,30 @@ export interface NewDeploymentNotification {
   deployerUsername: string
   detailsUrl: string
   fourEyesStatus: string
-  prTitle?: string
-  prNumber?: number
-  prUrl?: string
-  prCreator?: string
-  prApprovers?: string[]
-  prMerger?: string
   branchName?: string
   commitsCount?: number
-  deployMethod: 'pull_request' | 'direct_push' | 'legacy'
+  slackMentions?: Record<string, string>
 }
 
-function mapDeployMethod(method: NewDeploymentNotification['deployMethod']): string {
-  switch (method) {
-    case 'pull_request':
-      return 'Pull Request'
-    case 'direct_push':
-      return 'Direct Push'
-    case 'legacy':
-      return 'Legacy'
-  }
+export type NewDeploymentNotification =
+  | (NewDeploymentNotificationBase & { deployMethod: 'pull_request'; pr: PullRequestInfo })
+  | (NewDeploymentNotificationBase & { deployMethod: 'direct_push' | 'legacy'; pr?: undefined })
+
+const SLACK_MEMBER_ID_PATTERN = /^[UW][A-Z0-9]+$/
+
+function formatSlackMention(username: string | undefined, slackMentions?: Record<string, string>): string {
+  if (!username) return 'Ukjent'
+  const slackId = slackMentions?.[username.toLowerCase()]
+  return slackId && SLACK_MEMBER_ID_PATTERN.test(slackId) ? `<@${slackId}>` : username
+}
+
+function escapeMrkdwn(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, ' ')
+    .replace(/[*_`~\\]/g, ' ')
 }
 
 function mapFourEyesStatus(status: string): { emoji: string; text: string } {
@@ -56,63 +68,38 @@ function mapFourEyesStatus(status: string): { emoji: string; text: string } {
 }
 
 export function buildNewDeploymentBlocks(notification: NewDeploymentNotification): KnownBlock[] {
-  const shortSha = notification.commitSha.substring(0, 7)
-  const { emoji: fourEyesEmoji, text: fourEyesText } = mapFourEyesStatus(notification.fourEyesStatus)
+  const { emoji, text } = mapFourEyesStatus(notification.fourEyesStatus)
+  const headerText = truncate(
+    `🚀 Ny deployment — ${notification.appName} (${notification.environmentName}) — ${emoji} ${text}`,
+    147,
+  )
 
   const blocks: KnownBlock[] = [
     {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: `🚀 Ny deployment — ${notification.appName}`,
+        text: headerText,
         emoji: true,
       },
     },
-    {
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: `*App:*\n${notification.appName}` },
-        { type: 'mrkdwn', text: `*Miljø:*\n${notification.environmentName}` },
-        { type: 'mrkdwn', text: `*Team:*\n${notification.teamSlug}` },
-        { type: 'mrkdwn', text: `*Metode:*\n${mapDeployMethod(notification.deployMethod)}` },
-      ],
-    },
   ]
 
-  if (notification.prTitle) {
+  if (notification.pr) {
+    const safeTitle = escapeMrkdwn(truncate(notification.pr.title, 200))
     blocks.push({
       type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: `*Tittel:*\n${truncate(notification.prTitle, 100)}` },
-        { type: 'mrkdwn', text: `*Opprettet av:*\n${notification.prCreator}` },
-        {
-          type: 'mrkdwn',
-          text: `*Godkjent av:*\n${notification.prApprovers && notification.prApprovers.length > 0 ? notification.prApprovers.join(', ') : 'Ingen'}`,
-        },
-        { type: 'mrkdwn', text: `*Merget av:*\n${notification.prMerger || 'Ukjent'}` },
-      ],
+      text: { type: 'mrkdwn', text: `*${safeTitle}*` },
+    })
+
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `Opprettet av ${formatSlackMention(notification.pr.creator, notification.slackMentions)}\nMerget av ${formatSlackMention(notification.pr.merger, notification.slackMentions)}`,
+      },
     })
   }
-
-  let commitText = `*Commit:*\n\`${shortSha}\``
-  if (notification.branchName) {
-    commitText += ` on \`${notification.branchName}\``
-  }
-  if (notification.commitsCount) {
-    commitText += `  •  ${notification.commitsCount} commits`
-  }
-  blocks.push({
-    type: 'section',
-    text: { type: 'mrkdwn', text: commitText },
-  })
-
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `*Fire øyne:*\n${fourEyesEmoji} ${fourEyesText}`,
-    },
-  })
 
   const actionElements: NonNullable<Extract<KnownBlock, { type: 'actions' }>['elements']> = [
     {
@@ -123,25 +110,19 @@ export function buildNewDeploymentBlocks(notification: NewDeploymentNotification
       url: notification.detailsUrl,
     },
   ]
-  if (notification.prUrl) {
+  if (notification.pr?.url) {
     actionElements.push({
       type: 'button',
-      text: { type: 'plain_text', text: 'Se PR', emoji: true },
+      text: {
+        type: 'plain_text',
+        text: `Se Pull Request #${notification.pr.number}`,
+        emoji: true,
+      },
       action_id: 'view_pr',
-      url: notification.prUrl,
+      url: notification.pr.url,
     })
   }
   blocks.push({ type: 'actions', elements: actionElements })
-
-  blocks.push({
-    type: 'context',
-    elements: [
-      {
-        type: 'mrkdwn',
-        text: `Team: ${notification.teamSlug} | Deployment #${notification.deploymentId}`,
-      },
-    ],
-  })
 
   return blocks
 }
