@@ -1,7 +1,6 @@
 import { SyncJobDetailView } from '~/components/SyncJobDetailView'
-import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getSyncJobById, getSyncJobLogs, SYNC_JOB_STATUS_LABELS, SYNC_JOB_TYPE_LABELS } from '~/db/sync-jobs.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireAppAdminAccess } from '~/lib/authorization.server'
 import type { Route } from './+types/$team.env.$env.app.$app.admin.sync-job.$jobId'
 
 export function meta({ loaderData: data }: Route.MetaArgs) {
@@ -9,18 +8,22 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
 }
 
 export async function loader({ params, request, url }: Route.LoaderArgs) {
-  await requireAdmin(request)
+  const { jobId: jobIdParam } = params
+  const jobId = Number.parseInt(jobIdParam, 10)
 
-  const { team, env, app: appName, jobId: jobIdParam } = params
-  const jobId = parseInt(jobIdParam, 10)
+  if (!Number.isFinite(jobId)) {
+    throw new Response('Invalid job ID', { status: 400 })
+  }
 
-  const [app, job] = await Promise.all([getMonitoredApplicationByIdentity(team, env, appName), getSyncJobById(jobId)])
+  const { app } = await requireAppAdminAccess(request, params)
 
-  if (!app || !job) {
+  const job = await getSyncJobById(jobId)
+  if (!job || job.monitored_app_id !== app.id) {
     throw new Response('Not found', { status: 404 })
   }
 
-  const afterId = parseInt(url.searchParams.get('afterId') || '0', 10)
+  const afterIdParam = Number.parseInt(url.searchParams.get('afterId') || '0', 10)
+  const afterId = Number.isFinite(afterIdParam) ? afterIdParam : 0
   const logs = await getSyncJobLogs(jobId, { afterId })
 
   return {

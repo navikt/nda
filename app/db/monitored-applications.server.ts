@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg'
 import { pool } from './connection.server'
 
-interface MonitoredApplication {
+export interface MonitoredApplication {
   id: number
   team_slug: string
   environment_name: string
