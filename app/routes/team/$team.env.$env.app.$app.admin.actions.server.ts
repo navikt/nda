@@ -5,6 +5,7 @@ import {
   hasActiveReportForPeriod,
   restoreAuditReport,
 } from '~/db/audit-reports.server'
+import { applyAuditStartYearChange } from '~/db/audit-start-year-baseline.server'
 import { withTransaction } from '~/db/connection.server'
 import {
   getMonitoredApplicationById,
@@ -216,7 +217,6 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'update_audit_start_year') {
-    const appIdForYear = parseInt(formData.get('app_id') as string, 10)
     const startYearValue = formData.get('audit_start_year') as string
 
     let auditStartYear: number | null = null
@@ -227,8 +227,20 @@ export async function action({ request }: { request: Request; params: Record<str
       }
     }
 
-    await updateMonitoredApplication(appIdForYear, { audit_start_year: auditStartYear })
-    return { success: 'Startår for revisjon oppdatert!' }
+    const result = await applyAuditStartYearChange(appId, auditStartYear, user.navIdent)
+    let success = 'Startår for revisjon oppdatert!'
+    if (result.updatedAppIds.length > 1) {
+      success += ` Endringen gjelder også ${result.updatedAppIds.length - 1} andre apper i samme applikasjonsgruppe.`
+    }
+    if (result.promotedDeploymentId) {
+      success += auditStartYear
+        ? ' Første deployment i det nye startåret er nå foreslått som ny baseline.'
+        : ' Første kvalifiserte deployment er nå foreslått som ny baseline.'
+    }
+    if (result.demotedDeploymentId) {
+      success += ' Den forrige baseline-markøren er ikke lenger gyldig og er derfor fjernet.'
+    }
+    return { success }
   }
 
   if (action === 'check_readiness') {

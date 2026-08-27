@@ -47,7 +47,7 @@ export async function seedDeployment(
     monitoredAppId: number
     teamSlug: string
     environment: string
-    commitSha?: string
+    commitSha?: string | null
     createdAt?: Date
     title?: string
     fourEyesStatus?: string
@@ -74,7 +74,7 @@ export async function seedDeployment(
       opts.teamSlug,
       opts.appName ?? 'test-app',
       opts.environment,
-      opts.commitSha ?? `abc${Date.now()}`,
+      opts.commitSha === undefined ? `abc${Date.now()}` : opts.commitSha,
       opts.createdAt ?? new Date(),
       opts.title ?? null,
       opts.fourEyesStatus ?? 'pending',
@@ -97,4 +97,21 @@ export async function seedApplicationGroup(pool: Pool, name: string): Promise<nu
 
 export async function assignAppToGroup(pool: Pool, appId: number, groupId: number): Promise<void> {
   await pool.query(`UPDATE monitored_applications SET application_group_id = $1 WHERE id = $2`, [groupId, appId])
+}
+
+export async function seedApplicationRepository(
+  pool: Pool,
+  opts: {
+    monitoredAppId: number
+    githubOwner: string
+    githubRepo: string
+    status?: 'active' | 'historical' | 'pending_approval'
+  },
+): Promise<number> {
+  const { rows } = await pool.query<{ id: number }>(
+    `INSERT INTO application_repositories (monitored_app_id, github_owner, github_repo_name, status)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [opts.monitoredAppId, opts.githubOwner, opts.githubRepo, opts.status ?? 'active'],
+  )
+  return rows[0].id
 }
