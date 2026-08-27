@@ -222,7 +222,7 @@ interface AppCapabilities {
 export async function resolveAppCapabilities(actor: UserIdentity, monitoredAppId: number): Promise<AppCapabilities> {
   if (isEntraAdmin(actor)) return { canDeactivate: true, canReactivate: true }
 
-  const managingTeamIds = await getManagingTeamIds(monitoredAppId)
+  const managingTeamIds = await getManagingTeamIds(monitoredAppId, { includeInactiveApp: true })
   if (managingTeamIds.length === 0) return { canDeactivate: false, canReactivate: false }
 
   const { rows: teamRows } = await pool.query<{ id: number; section_id: number }>(

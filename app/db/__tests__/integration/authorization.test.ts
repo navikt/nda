@@ -1049,6 +1049,22 @@ describe('resolveAppCapabilities', () => {
     expect(await resolveAppCapabilities(makeUser(), appId)).toEqual({ canDeactivate: false, canReactivate: false })
   })
 
+  it('allows produktleder to reactivate their own deactivated app', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-team', appName: 'myapp', environment: 'prod-gcp' })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+    await pool.query('UPDATE monitored_applications SET is_active = false WHERE id = $1', [appId])
+
+    const pl = makeUser('P998877')
+    await assignTeamRole(pl.navIdent, teamId, 'produktleder', 'admin')
+
+    expect(await resolveAppCapabilities(pl, appId)).toEqual({ canDeactivate: true, canReactivate: true })
+  })
+
   it('denies seksjonsleder in a different section', async () => {
     const section1 = await seedSection(pool, 'pensjon')
     const section2 = await seedSection(pool, 'arbeid')
