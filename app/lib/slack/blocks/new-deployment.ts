@@ -93,7 +93,7 @@ export function buildNewDeploymentBlocks(notification: NewDeploymentNotification
       type: 'button',
       text: {
         type: 'plain_text',
-        text: notification.prNumber ? `Se Pull Request #${notification.prNumber}` : 'Se PR',
+        text: notification.prNumber ? `Se Pull Request #${notification.prNumber}` : 'Se Pull Request',
         emoji: true,
       },
       action_id: 'view_pr',
