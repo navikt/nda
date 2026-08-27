@@ -312,6 +312,9 @@ export async function action({ request }: { request: Request; params: Record<str
       if (readiness.missing_approver_count > 0) {
         reasons.push(`${readiness.missing_approver_count} godkjente deployments mangler godkjenner-data`)
       }
+      if (readiness.manual_trigger_count > 0) {
+        reasons.push(`${readiness.manual_trigger_count} deployments ble manuelt trigget i GitHub Actions`)
+      }
       return {
         error: `Kan ikke generere rapport: ${reasons.join('; ')}.`,
         readiness,

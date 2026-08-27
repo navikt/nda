@@ -56,6 +56,7 @@ export async function seedDeployment(
     deployerUsername?: string | null
     githubPrData?: Record<string, unknown> | null
     appName?: string
+    workflowTriggerConfig?: Record<string, unknown> | null
   },
 ): Promise<number> {
   const naisId = `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -64,8 +65,8 @@ export async function seedDeployment(
       monitored_app_id, nais_deployment_id, team_slug, app_name, environment_name,
       commit_sha, created_at, title, four_eyes_status,
       detected_github_owner, detected_github_repo_name,
-      deployer_username, github_pr_data
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      deployer_username, github_pr_data, workflow_trigger_config
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     RETURNING id`,
     [
       opts.monitoredAppId,
@@ -81,6 +82,7 @@ export async function seedDeployment(
       opts.githubRepo ?? null,
       opts.deployerUsername ?? null,
       opts.githubPrData ? JSON.stringify(opts.githubPrData) : null,
+      opts.workflowTriggerConfig ? JSON.stringify(opts.workflowTriggerConfig) : null,
     ],
   )
   return rows[0].id

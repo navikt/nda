@@ -26,6 +26,7 @@ import {
   type ReportPeriodType,
 } from '~/lib/report-periods'
 import type { UserLookupMap } from '~/lib/user-display'
+import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 import { UserName } from './UserName'
 
 interface AuditReportGenerateSectionProps {
@@ -303,6 +304,12 @@ function ReadinessResult({
               <BodyShort weight="semibold">{readinessData.missing_approver_count}</BodyShort>
             </div>
           )}
+          {readinessData.manual_trigger_count > 0 && (
+            <div>
+              <Detail>Manuelt trigget</Detail>
+              <BodyShort weight="semibold">{readinessData.manual_trigger_count}</BodyShort>
+            </div>
+          )}
         </HStack>
 
         {readinessData.pending_count > 0 && (
@@ -322,6 +329,15 @@ function ReadinessResult({
             userMappings={userMappings}
           />
         )}
+
+        {readinessData.manual_trigger_count > 0 && (
+          <DeploymentList
+            label="Manuelt triggede deployments:"
+            deployments={readinessData.manual_trigger_deployments}
+            appUrl={appUrl}
+            userMappings={userMappings}
+          />
+        )}
       </VStack>
     </Box>
   )
@@ -334,7 +350,7 @@ function DeploymentList({
   userMappings,
 }: {
   label: string
-  deployments: AuditReadinessCheck['pending_deployments']
+  deployments: AuditReadinessCheck['pending_deployments'] | AuditReadinessCheck['manual_trigger_deployments']
   appUrl: string
   userMappings: UserLookupMap
 }) {
@@ -351,6 +367,7 @@ function DeploymentList({
               {new Date(d.created_at).toLocaleDateString('no-NO')} •{' '}
               <UserName username={d.deployer_username} userMappings={userMappings} link={false} /> •{' '}
               {getFourEyesStatusLabel(d.four_eyes_status)}
+              {'trigger_event' in d && ` • ${getWorkflowTriggerLabel(d.trigger_event)}`}
             </BodyShort>
           </HStack>
         ))}

@@ -15,6 +15,8 @@ export function getWorkflowTriggerLabel(triggerEvent: string): string {
   return TRIGGER_EVENT_LABELS[triggerEvent] ?? `Triggered via ${triggerEvent.replaceAll('_', ' ')}`
 }
 
+export const MANUAL_TRIGGER_EVENTS: readonly string[] = ['workflow_dispatch', 'repository_dispatch']
+
 export const GITHUB_TRIGGER_DOCS_URL =
   'https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows'
 
