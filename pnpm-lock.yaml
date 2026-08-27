@@ -61,8 +61,8 @@ importers:
         specifier: 3.0.0
         version: 3.0.0
       '@types/pg':
-        specifier: ^8.21.0
-        version: 8.21.0
+        specifier: ^8.23.1
+        version: 8.23.1
       chart.js:
         specifier: ^4.5.1
         version: 4.5.1
@@ -95,7 +95,7 @@ importers:
         version: 6.2.9
       node-pg-migrate:
         specifier: ^8.0.4
-        version: 8.0.4(@types/pg@8.21.0)(pg@8.23.0)
+        version: 8.0.4(@types/pg@8.23.1)(pg@8.23.0)
       pg:
         specifier: ^8.23.0
         version: 8.23.0
@@ -1874,8 +1874,8 @@ packages:
   '@types/node@24.13.3':
     resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
 
-  '@types/pg@8.21.0':
-    resolution: {integrity: sha512-AYdtudzabjLZgVgRZmAnU8bAnVUXzuJX2IYHeSIiIHm68olD+LgQYCGWdtcNYnP0uq9c4S4NibVG3Ni7VbKW7Q==}
+  '@types/pg@8.23.1':
+    resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
 
   '@types/qs@6.15.1':
     resolution: {integrity: sha512-GZHUBZR9hckSUhrxmp1nG6NwdpM9fCunJwyThLW1X3AyHgd9IlHb6VANpQQqDr2o/qQp6McZ3y/IA2rVzKzSbw==}
@@ -5887,7 +5887,7 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
-  '@types/pg@8.21.0':
+  '@types/pg@8.23.1':
     dependencies:
       '@types/node': 24.13.3
       pg-protocol: 1.16.0
@@ -7372,13 +7372,13 @@ snapshots:
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
 
-  node-pg-migrate@8.0.4(@types/pg@8.21.0)(pg@8.23.0):
+  node-pg-migrate@8.0.4(@types/pg@8.23.1)(pg@8.23.0):
     dependencies:
       glob: 11.1.0
       pg: 8.23.0
       yargs: 17.7.2
     optionalDependencies:
-      '@types/pg': 8.21.0
+      '@types/pg': 8.23.1
 
   node-releases@2.0.47: {}
 
