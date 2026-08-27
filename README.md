@@ -440,6 +440,7 @@ Under **OAuth & Permissions** → **Bot Token Scopes**, legg til:
 |-------|-----------|
 | `chat:write` | Sende deployment-varsler til kanaler |
 | `chat:write.public` | Sende til kanaler uten å være invitert |
+| `users:read.email` | Slå opp Slack-medlems-ID basert på e-post |
 
 #### 4. Aktiver Events
 

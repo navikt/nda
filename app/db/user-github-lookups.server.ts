@@ -411,17 +411,22 @@ interface PopulateResult {
   success: number
   skipped: number
   errors: number
+  slackIdsResolved: number
+  slackLookupErrors: number
 }
 
 export async function populateUsersFromDirectory(): Promise<PopulateResult> {
-  const { rows } = await pool.query<{ nav_ident: string }>(
-    `SELECT DISTINCT nav_ident FROM users WHERE deleted_at IS NULL`,
+  const { rows } = await pool.query<{ nav_ident: string; slack_member_id: string | null }>(
+    `SELECT nav_ident, slack_member_id FROM users WHERE deleted_at IS NULL`,
   )
 
   let success = 0
   let skipped = 0
   let errors = 0
+  let slackIdsResolved = 0
+  let slackLookupErrors = 0
 
+  const missingSlackIdByNavIdent = new Set<string>()
   const navIdents: string[] = []
   for (const row of rows) {
     const navIdent = normalizeNavIdent(row.nav_ident)
@@ -430,17 +435,31 @@ export async function populateUsersFromDirectory(): Promise<PopulateResult> {
       continue
     }
     navIdents.push(navIdent)
+    if (!row.slack_member_id) missingSlackIdByNavIdent.add(navIdent)
   }
+
+  const isSlackEnvConfigured = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_APP_TOKEN)
+
+  let slackClient: typeof import('~/lib/slack/client.server') | null = null
+  if (missingSlackIdByNavIdent.size > 0 && isSlackEnvConfigured) {
+    slackClient = await import('~/lib/slack/client.server')
+  }
+  const slackLookupEnabled = slackClient?.isSlackConfigured() ?? false
 
   const LOOKUP_BATCH_SIZE = 100
   for (const batch of chunk(navIdents, LOOKUP_BATCH_SIZE)) {
-    let displayNameByNavIdent: Map<string, string>
+    let usersByNavIdent: Map<string, { displayName: string; email: string | null }>
     try {
       const users = await getUsersByNavIdenter(batch)
-      displayNameByNavIdent = new Map(
+      usersByNavIdent = new Map(
         users.flatMap((user) =>
           user.navIdent && user.displayName
-            ? [[user.navIdent.toUpperCase(), formatDisplayNameNatural(user.displayName)]]
+            ? [
+                [
+                  user.navIdent.toUpperCase(),
+                  { displayName: formatDisplayNameNatural(user.displayName), email: user.email },
+                ],
+              ]
             : [],
         ),
       )
@@ -451,17 +470,41 @@ export async function populateUsersFromDirectory(): Promise<PopulateResult> {
     }
 
     for (const navIdent of batch) {
-      const displayName = displayNameByNavIdent.get(navIdent)
-      if (!displayName) {
+      const directoryUser = usersByNavIdent.get(navIdent)
+      if (!directoryUser) {
         logger.warn('populate-users: skipping nav_ident — no matching directory result with displayName', {
           nav_ident: navIdent,
         })
         skipped++
         continue
       }
+
+      let slackMemberId: string | null = null
+      if (slackLookupEnabled && missingSlackIdByNavIdent.has(navIdent)) {
+        if (directoryUser.email) {
+          try {
+            slackMemberId = (await slackClient?.lookupSlackUserIdByEmail(directoryUser.email)) ?? null
+          } catch (err) {
+            if (slackClient && err instanceof slackClient.SlackLookupFailedError) {
+              logger.error('populate-users: Slack ID lookup failed for nav_ident', {
+                nav_ident: navIdent,
+                error: err.cause instanceof Error ? err.cause.message : String(err.cause),
+                stack_trace: err.cause instanceof Error ? err.cause.stack : err.stack,
+              })
+              slackLookupErrors++
+            } else {
+              throw err
+            }
+          }
+        } else {
+          logger.warn('populate-users: no email from directory, skipping Slack ID lookup', { nav_ident: navIdent })
+        }
+      }
+
       try {
-        await upsertUser({ navIdent, displayName })
+        await upsertUser({ navIdent, displayName: directoryUser.displayName, slackMemberId })
         success++
+        if (slackMemberId) slackIdsResolved++
       } catch (err) {
         logger.error('populate-users: error upserting nav_ident', err)
         errors++
@@ -469,7 +512,7 @@ export async function populateUsersFromDirectory(): Promise<PopulateResult> {
     }
   }
 
-  return { success, skipped, errors }
+  return { success, skipped, errors, slackIdsResolved, slackLookupErrors }
 }
 
 export async function getUsersWithoutGithub(): Promise<{ nav_ident: string; display_name: string }[]> {
