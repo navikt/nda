@@ -507,7 +507,7 @@ async function notifyNewDeploymentIfNeeded(
   const prCreator = prData?.creator?.username
   const prMerger = prData?.merged_by?.username || prData?.merger?.username
 
-  const mentionUsernames = [...new Set([prCreator, prMerger, ...approvers].filter((u): u is string => !!u))]
+  const mentionUsernames = [...new Set([prCreator, prMerger].filter((u): u is string => !!u))]
   const slackMentions: Record<string, string> = {}
   if (mentionUsernames.length > 0) {
     try {

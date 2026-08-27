@@ -18,15 +18,9 @@ export interface NewDeploymentNotification {
   branchName?: string
   commitsCount?: number
   deployMethod: 'pull_request' | 'direct_push' | 'legacy'
-  /** GitHub username (lowercase) → Slack member ID, for rendering clickable @mentions where a mapping exists. */
   slackMentions?: Record<string, string>
 }
 
-/**
- * Renders a GitHub username as a clickable Slack mention (`<@SLACK_ID>`) when a slack_member_id
- * mapping exists for it, falling back to plain text otherwise. Real Slack mentions only work with
- * the `<@USER_ID>` syntax — Slack resolves the display name itself, custom text is not supported.
- */
 function formatSlackMention(username: string | undefined, slackMentions?: Record<string, string>): string {
   if (!username) return 'Ukjent'
   const slackId = slackMentions?.[username.toLowerCase()]
