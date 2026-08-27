@@ -5,6 +5,7 @@ import {
   hasActiveReportForPeriod,
   restoreAuditReport,
 } from '~/db/audit-reports.server'
+import { applyAuditStartYearChange } from '~/db/audit-start-year-baseline.server'
 import { withTransaction } from '~/db/connection.server'
 import {
   getMonitoredApplicationById,
@@ -27,7 +28,7 @@ import {
 } from '~/db/sync-jobs.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
-import { canAccessAppAdmin } from '~/lib/authorization.server'
+import { canAccessAppAdmin, canAccessAppAdminForGroupCascade } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { getFormString, isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
@@ -216,7 +217,6 @@ export async function action({ request }: { request: Request; params: Record<str
   }
 
   if (action === 'update_audit_start_year') {
-    const appIdForYear = parseInt(formData.get('app_id') as string, 10)
     const startYearValue = formData.get('audit_start_year') as string
 
     let auditStartYear: number | null = null
@@ -227,8 +227,35 @@ export async function action({ request }: { request: Request; params: Record<str
       }
     }
 
-    await updateMonitoredApplication(appIdForYear, { audit_start_year: auditStartYear })
-    return { success: 'Startår for revisjon oppdatert!' }
+    if (!(await canAccessAppAdminForGroupCascade(user, appId))) {
+      return { error: 'Du har ikke administratortilgang til alle appene i applikasjonsgruppen' }
+    }
+
+    const result = await applyAuditStartYearChange(appId, auditStartYear, user.navIdent)
+    let success = 'Startår for revisjon oppdatert!'
+    if (result.updatedAppIds.length > 1) {
+      success += ` Endringen gjelder også ${result.updatedAppIds.length - 1} andre apper i samme applikasjonsgruppe.`
+    }
+    if (result.recomputeLimitedToActingApp) {
+      success +=
+        ' Gruppen har ikke ett entydig felles repo registrert ennå, så baseline er kun vurdert på nytt for denne appen.'
+    }
+    if (result.recomputeSkippedDueToAmbiguousRepoScope) {
+      success +=
+        ' Baseline ble ikke automatisk vurdert på nytt fordi gruppen har flere ulike aktive repoer registrert samtidig — dette bør rettes opp manuelt.'
+    }
+    if (result.promotedDeploymentId) {
+      success += auditStartYear
+        ? ' Første deployment i det nye startåret er nå foreslått som ny baseline.'
+        : ' Første kvalifiserte deployment er nå foreslått som ny baseline.'
+    }
+    if (result.demotedDeploymentIds.length > 0) {
+      success +=
+        result.demotedDeploymentIds.length > 1
+          ? ' De forrige baseline-markørene er ikke lenger gyldige og er derfor fjernet.'
+          : ' Den forrige baseline-markøren er ikke lenger gyldig og er derfor fjernet.'
+    }
+    return { success }
   }
 
   if (action === 'check_readiness') {
