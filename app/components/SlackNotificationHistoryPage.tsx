@@ -204,6 +204,7 @@ export function SlackNotificationHistoryPage({
             <Table size="small">
               <Table.Header>
                 <Table.Row>
+                  <Table.HeaderCell />
                   <Table.HeaderCell>Tidspunkt</Table.HeaderCell>
                   <Table.HeaderCell>Type</Table.HeaderCell>
                   <Table.HeaderCell>Deployment</Table.HeaderCell>
