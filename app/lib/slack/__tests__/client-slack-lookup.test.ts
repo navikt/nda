@@ -19,7 +19,10 @@ vi.mock('~/db/slack-notifications.server', () => ({
   logSlackInteraction: vi.fn(),
   updateSlackNotification: vi.fn(),
 }))
-vi.mock('~/db/user-github-lookups.server', () => ({ getUserBySlackMemberId: vi.fn() }))
+vi.mock('~/db/user-github-lookups.server', () => ({
+  getUserBySlackMemberId: vi.fn(),
+  getGithubUserLookups: vi.fn().mockResolvedValue(new Map()),
+}))
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
   logOutgoingHttp: vi.fn(),
