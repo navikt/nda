@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@fontsource/source-sans-pro':
-        specifier: ^5.2.5
-        version: 5.2.5
+        specifier: ^5.3.0
+        version: 5.3.0
       astro:
         specifier: ^7.2.4
         version: 7.2.4(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(@types/node@24.13.2)(yaml@2.9.0)
@@ -394,8 +394,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fontsource/source-sans-pro@5.2.5':
-    resolution: {integrity: sha512-ypendqc4pYUc+EgF7qqPY9iVYEz1t/Qr03VojKxG/2g3dnpHa1B6DOlDxWQjQXDj5QrG6inEqGT0g+edjALZyg==}
+  '@fontsource/source-sans-pro@5.3.0':
+    resolution: {integrity: sha512-nd96qXI4stbyRPNEygS2cNhMkAc1kkW9+ORmIOK0oelPTyiitRPk/+9+HUuUYuEjwRRkK/+Gat2J9/NMJest/A==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -2049,7 +2049,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@fontsource/source-sans-pro@5.2.5': {}
+  '@fontsource/source-sans-pro@5.3.0': {}
 
   '@img/colour@1.1.0':
     optional: true

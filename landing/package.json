@@ -10,7 +10,7 @@
     "check": "astro check"
   },
   "dependencies": {
-    "@fontsource/source-sans-pro": "^5.2.5",
+    "@fontsource/source-sans-pro": "^5.3.0",
     "astro": "^7.2.4"
   },
   "devDependencies": {
