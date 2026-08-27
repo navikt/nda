@@ -188,6 +188,7 @@ export interface DeploymentWithApp extends Deployment {
   environment_name: string
   app_name: string
   default_branch: string | null
+  audit_start_year?: number | null
   has_goal_link?: boolean
 }
 

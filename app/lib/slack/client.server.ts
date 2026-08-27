@@ -6,6 +6,7 @@ import {
   type DeploymentWithApp,
   type GitHubPRData,
   getDeploymentsNeedingDeployNotify,
+  getPreviousDeploymentForDiff,
 } from '~/db/deployments.server'
 import {
   createSlackNotification,
@@ -15,6 +16,7 @@ import {
 } from '~/db/slack-notifications.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { isApprovedStatus, isLegacyStatus, isNotApprovedStatus, isPendingStatus } from '~/lib/four-eyes-status'
+import { isValidCommitSha } from '~/lib/git-constants'
 import { logger } from '~/lib/logger.server'
 import { callSlackApi } from './api-logging.server'
 import {
@@ -475,6 +477,9 @@ async function notifyNewDeploymentIfNeeded(
     team_slug: string
     environment_name: string
     app_name: string
+    detected_github_owner: string
+    detected_github_repo_name: string
+    audit_start_year?: number | null
     slack_deploy_channel_id?: string | null
     slack_deploy_notify_enabled?: boolean
   },
@@ -519,6 +524,25 @@ async function notifyNewDeploymentIfNeeded(
     }
   }
 
+  let githubUrl: string | undefined
+  if (!isPullRequest && deployment.commit_sha && isValidCommitSha(deployment.commit_sha)) {
+    const repoBase = `https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`
+    try {
+      const previousDeployment = await getPreviousDeploymentForDiff(
+        deployment.id,
+        deployment.monitored_app_id,
+        deployment.audit_start_year,
+      )
+      githubUrl =
+        previousDeployment && isValidCommitSha(previousDeployment.commit_sha)
+          ? `${repoBase}/compare/${previousDeployment.commit_sha}...${deployment.commit_sha}`
+          : `${repoBase}/commit/${deployment.commit_sha}`
+    } catch (error) {
+      logger.error(`Failed to resolve previous deployment for GitHub link ${deployment.id}:`, error)
+      githubUrl = `${repoBase}/commit/${deployment.commit_sha}`
+    }
+  }
+
   const base = {
     deploymentId: deployment.id,
     appName: deployment.app_name,
@@ -531,6 +555,7 @@ async function notifyNewDeploymentIfNeeded(
     branchName: prData?.head_branch || deployment.branch_name || undefined,
     commitsCount: prData?.commits_count,
     slackMentions: Object.keys(slackMentions).length > 0 ? slackMentions : undefined,
+    githubUrl,
   }
 
   const notification: NewDeploymentNotification =

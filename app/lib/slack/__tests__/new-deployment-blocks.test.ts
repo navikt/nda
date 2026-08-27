@@ -53,6 +53,22 @@ describe('buildNewDeploymentBlocks', () => {
     expect(text).not.toContain('Merget av')
   })
 
+  it('renders a "Se på GitHub" compare-link button for a direct_push deploy', () => {
+    const blocks = buildNewDeploymentBlocks(newDeploymentFixtures.directPush)
+    const text = JSON.stringify(blocks)
+
+    expect(text).toContain('Se på GitHub')
+    expect(text).toContain('github.com/navikt/pensjon-pen/compare/')
+  })
+
+  it('omits the GitHub button when neither pr.url nor githubUrl is present', () => {
+    const blocks = buildNewDeploymentBlocks({ ...newDeploymentFixtures.legacy, githubUrl: undefined })
+    const text = JSON.stringify(blocks)
+
+    expect(text).not.toContain('Se på GitHub')
+    expect(text).not.toContain('Se Pull Request')
+  })
+
   it('renders PR title/creator/merger but omits the PR button when pr.url is missing (backfill gap)', () => {
     const blocks = buildNewDeploymentBlocks({
       ...newDeploymentFixtures.withPr,

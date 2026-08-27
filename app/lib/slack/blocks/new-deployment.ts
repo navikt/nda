@@ -21,6 +21,7 @@ interface NewDeploymentNotificationBase {
   branchName?: string
   commitsCount?: number
   slackMentions?: Record<string, string>
+  githubUrl?: string
 }
 
 export type NewDeploymentNotification =
@@ -120,6 +121,13 @@ export function buildNewDeploymentBlocks(notification: NewDeploymentNotification
       },
       action_id: 'view_pr',
       url: notification.pr.url,
+    })
+  } else if (notification.githubUrl) {
+    actionElements.push({
+      type: 'button',
+      text: { type: 'plain_text', text: 'Se på GitHub', emoji: true },
+      action_id: 'view_github',
+      url: notification.githubUrl,
     })
   }
   blocks.push({ type: 'actions', elements: actionElements })
