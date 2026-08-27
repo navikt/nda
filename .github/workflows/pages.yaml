@@ -45,7 +45,7 @@ jobs:
       # --- Landingsside (Astro) ---
       - name: Install landing deps
         working-directory: landing
-        run: pnpm install --ignore-workspace --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Type-check landing
         working-directory: landing

@@ -2,3 +2,6 @@ minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
   - '@navikt/*'
   - '@nais/*'
+allowBuilds:
+  esbuild: true
+  sharp: true
