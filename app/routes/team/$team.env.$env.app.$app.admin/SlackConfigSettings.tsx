@@ -1,7 +1,8 @@
 import { ChatIcon } from '@navikt/aksel-icons'
 import { BodyShort, Box, Button, Heading, HStack, Switch, TextField, VStack } from '@navikt/ds-react'
-import { Form, Link } from 'react-router'
+import { Form } from 'react-router'
 import type { Route } from '../+types/$team.env.$env.app.$app.admin'
+import { SlackHistoryLink } from './SlackHistoryLink'
 
 type LoaderData = Route.ComponentProps['loaderData']
 
@@ -25,14 +26,7 @@ export function SlackConfigSettings({ app }: SlackConfigSettingsProps) {
               </BodyShort>
             </div>
           </HStack>
-          <Button
-            as={Link}
-            to={`/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}/slack`}
-            variant="tertiary"
-            size="small"
-          >
-            Se meldingshistorikk
-          </Button>
+          <SlackHistoryLink teamSlug={app.team_slug} environmentName={app.environment_name} appName={app.app_name} />
         </HStack>
 
         <Form method="post">
