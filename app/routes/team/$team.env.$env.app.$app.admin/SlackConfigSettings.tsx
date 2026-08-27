@@ -1,6 +1,7 @@
 import { ChatIcon } from '@navikt/aksel-icons'
 import { BodyShort, Box, Button, Heading, HStack, Switch, TextField, VStack } from '@navikt/ds-react'
 import { Form } from 'react-router'
+import { SLACK_CHANNEL_INVITE_HINT } from '~/lib/slack/config-setting-keys'
 import type { Route } from '../+types/$team.env.$env.app.$app.admin'
 import { SlackHistoryLink } from './SlackHistoryLink'
 
@@ -41,7 +42,7 @@ export function SlackConfigSettings({ app }: SlackConfigSettingsProps) {
               label="Slack-kanal"
               name="slack_channel_id"
               defaultValue={app.slack_channel_id || ''}
-              description="Kanal-ID (f.eks. C01234567) eller kanalnavn (f.eks. #min-kanal). NDA-appen i Slack må inviteres som medlem i kanalen for å kunne sende meldinger dit (/invite @nda)."
+              description={SLACK_CHANNEL_INVITE_HINT}
               size="small"
               style={{ maxWidth: '300px' }}
             />
