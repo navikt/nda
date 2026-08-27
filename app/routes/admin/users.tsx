@@ -189,7 +189,7 @@ export async function action({ request }: Route.ActionArgs) {
       const result = await populateUsersFromDirectory()
       return {
         success: true,
-        message: `Importerte ${result.success} brukere fra brukerkatalogen (${result.skipped} hoppet over, ${result.errors} feil)`,
+        message: `Importerte ${result.success} brukere fra brukerkatalogen (${result.skipped} hoppet over, ${result.errors} feil). Slack-ID løst for ${result.slackIdsResolved} brukere (${result.slackLookupErrors} Slack-oppslagsfeil)`,
       }
     } catch (error) {
       logger.error('populate-users action failed', error)
@@ -303,7 +303,7 @@ export default function AdminUsers() {
           <VStack gap="space-8">
             <p>
               Henter alle aktive NAV-identer fra <code>users</code>-tabellen, slår opp i brukerkatalogen og oppdaterer
-              brukerdata. Idempotent — trygt å kjøre flere ganger.
+              brukerdata — inkludert Slack-ID for brukere som mangler dette. Idempotent — trygt å kjøre flere ganger.
               {usersCount > 0 && ` (${usersCount} brukere i tabellen nå)`}
             </p>
             {actionData?.error && <Alert variant="error">{actionData.error}</Alert>}

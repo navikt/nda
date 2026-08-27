@@ -1,10 +1,22 @@
 import { Pool } from 'pg'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('~/lib/user-lookup.server', () => ({
   getUsersByNavIdenter: vi.fn(),
 }))
 
+vi.mock('~/lib/slack/client.server', () => ({
+  isSlackConfigured: vi.fn(() => false),
+  lookupSlackUserIdByEmail: vi.fn(),
+  SlackLookupFailedError: class SlackLookupFailedError extends Error {
+    constructor(cause: unknown) {
+      super('Slack member ID lookup failed')
+      this.cause = cause
+    }
+  },
+}))
+
+import { isSlackConfigured, lookupSlackUserIdByEmail, SlackLookupFailedError } from '~/lib/slack/client.server'
 import { getUsersByNavIdenter } from '~/lib/user-lookup.server'
 import {
   getActiveGithubAccountByNavIdent,
@@ -485,14 +497,33 @@ describe('getOrCreateUserFromDirectory', () => {
 })
 
 describe('populateUsersFromDirectory', () => {
+  const originalSlackBotToken = process.env.SLACK_BOT_TOKEN
+  const originalSlackAppToken = process.env.SLACK_APP_TOKEN
+
   beforeEach(async () => {
     await truncateAllTables(pool)
     vi.mocked(getUsersByNavIdenter).mockReset()
+    vi.mocked(isSlackConfigured).mockReset().mockReturnValue(false)
+    vi.mocked(lookupSlackUserIdByEmail).mockReset()
+    delete process.env.SLACK_BOT_TOKEN
+    delete process.env.SLACK_APP_TOKEN
   })
+
+  afterEach(() => {
+    if (originalSlackBotToken === undefined) delete process.env.SLACK_BOT_TOKEN
+    else process.env.SLACK_BOT_TOKEN = originalSlackBotToken
+    if (originalSlackAppToken === undefined) delete process.env.SLACK_APP_TOKEN
+    else process.env.SLACK_APP_TOKEN = originalSlackAppToken
+  })
+
+  function configureSlackEnv() {
+    process.env.SLACK_BOT_TOKEN = 'xoxb-test'
+    process.env.SLACK_APP_TOKEN = 'xapp-test'
+  }
 
   it('returns all-zero result when there are no users', async () => {
     const result = await populateUsersFromDirectory()
-    expect(result).toEqual({ success: 0, skipped: 0, errors: 0 })
+    expect(result).toEqual({ success: 0, skipped: 0, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
     expect(getUsersByNavIdenter).not.toHaveBeenCalled()
   })
 
@@ -507,7 +538,7 @@ describe('populateUsersFromDirectory', () => {
 
     const result = await populateUsersFromDirectory()
 
-    expect(result).toEqual({ success: 2, skipped: 0, errors: 0 })
+    expect(result).toEqual({ success: 2, skipped: 0, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
     expect(getUsersByNavIdenter).toHaveBeenCalledTimes(1)
     expect(getUsersByNavIdenter).toHaveBeenCalledWith(expect.arrayContaining(['Z990001', 'Z990002']))
 
@@ -527,7 +558,7 @@ describe('populateUsersFromDirectory', () => {
 
     const result = await populateUsersFromDirectory()
 
-    expect(result).toEqual({ success: 1, skipped: 0, errors: 0 })
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
     const { rows } = await pool.query(`SELECT display_name FROM users WHERE nav_ident = 'Z990001'`)
     expect(rows[0].display_name).toBe('Glad Fjord')
   })
@@ -539,7 +570,7 @@ describe('populateUsersFromDirectory', () => {
 
     const result = await populateUsersFromDirectory()
 
-    expect(result).toEqual({ success: 0, skipped: 1, errors: 0 })
+    expect(result).toEqual({ success: 0, skipped: 1, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
   })
 
   it('skips nav-idents whose NOM result has no displayName', async () => {
@@ -549,7 +580,7 @@ describe('populateUsersFromDirectory', () => {
 
     const result = await populateUsersFromDirectory()
 
-    expect(result).toEqual({ success: 0, skipped: 1, errors: 0 })
+    expect(result).toEqual({ success: 0, skipped: 1, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
   })
 
   it('counts every nav-ident in a batch as an error when the NOM call fails', async () => {
@@ -560,7 +591,7 @@ describe('populateUsersFromDirectory', () => {
 
     const result = await populateUsersFromDirectory()
 
-    expect(result).toEqual({ success: 0, skipped: 0, errors: 2 })
+    expect(result).toEqual({ success: 0, skipped: 0, errors: 2, slackIdsResolved: 0, slackLookupErrors: 0 })
   })
 
   it('splits large nav-ident lists into multiple batched NOM calls', async () => {
@@ -575,9 +606,92 @@ describe('populateUsersFromDirectory', () => {
 
     const result = await populateUsersFromDirectory()
 
-    expect(result).toEqual({ success: 150, skipped: 0, errors: 0 })
+    expect(result).toEqual({ success: 150, skipped: 0, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
     expect(getUsersByNavIdenter).toHaveBeenCalledTimes(2)
     expect((vi.mocked(getUsersByNavIdenter).mock.calls[0][0] as string[]).length).toBe(100)
     expect((vi.mocked(getUsersByNavIdenter).mock.calls[1][0] as string[]).length).toBe(50)
+  })
+
+  it('resolves and persists Slack member ID for users missing one when Slack is configured', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    configureSlackEnv()
+    vi.mocked(isSlackConfigured).mockReturnValue(true)
+    vi.mocked(getUsersByNavIdenter).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
+    ])
+    vi.mocked(lookupSlackUserIdByEmail).mockResolvedValue('U123456')
+
+    const result = await populateUsersFromDirectory()
+
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 0, slackIdsResolved: 1, slackLookupErrors: 0 })
+    expect(lookupSlackUserIdByEmail).toHaveBeenCalledWith('glad.fjord@nav.no')
+    const { rows } = await pool.query(`SELECT slack_member_id FROM users WHERE nav_ident = 'Z990001'`)
+    expect(rows[0].slack_member_id).toBe('U123456')
+  })
+
+  it('does not overwrite an existing Slack member ID or re-lookup for users who already have one', async () => {
+    await pool.query(
+      `INSERT INTO users (nav_ident, display_name, slack_member_id) VALUES ('Z990001', 'Old Name', 'U_EXISTING')`,
+    )
+
+    configureSlackEnv()
+    vi.mocked(isSlackConfigured).mockReturnValue(true)
+    vi.mocked(getUsersByNavIdenter).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
+    ])
+
+    const result = await populateUsersFromDirectory()
+
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
+    expect(lookupSlackUserIdByEmail).not.toHaveBeenCalled()
+    const { rows } = await pool.query(`SELECT slack_member_id FROM users WHERE nav_ident = 'Z990001'`)
+    expect(rows[0].slack_member_id).toBe('U_EXISTING')
+  })
+
+  it('skips Slack ID lookup when the directory returns no email for a user missing one', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    configureSlackEnv()
+    vi.mocked(isSlackConfigured).mockReturnValue(true)
+    vi.mocked(getUsersByNavIdenter).mockResolvedValue([{ navIdent: 'Z990001', displayName: 'Glad Fjord', email: null }])
+
+    const result = await populateUsersFromDirectory()
+
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
+    expect(lookupSlackUserIdByEmail).not.toHaveBeenCalled()
+    const { rows } = await pool.query(`SELECT slack_member_id FROM users WHERE nav_ident = 'Z990001'`)
+    expect(rows[0].slack_member_id).toBeNull()
+  })
+
+  it('counts a Slack lookup failure without failing the whole user upsert', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    configureSlackEnv()
+    vi.mocked(isSlackConfigured).mockReturnValue(true)
+    vi.mocked(getUsersByNavIdenter).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
+    ])
+    vi.mocked(lookupSlackUserIdByEmail).mockRejectedValue(new SlackLookupFailedError(new Error('Slack outage')))
+
+    const result = await populateUsersFromDirectory()
+
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 0, slackIdsResolved: 0, slackLookupErrors: 1 })
+    const { rows } = await pool.query(`SELECT slack_member_id FROM users WHERE nav_ident = 'Z990001'`)
+    expect(rows[0].slack_member_id).toBeNull()
+  })
+
+  it('does not perform Slack lookups when Slack is not configured', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990001', 'Old Name')`)
+
+    vi.mocked(isSlackConfigured).mockReturnValue(false)
+    vi.mocked(getUsersByNavIdenter).mockResolvedValue([
+      { navIdent: 'Z990001', displayName: 'Glad Fjord', email: 'glad.fjord@nav.no' },
+    ])
+
+    const result = await populateUsersFromDirectory()
+
+    expect(result).toEqual({ success: 1, skipped: 0, errors: 0, slackIdsResolved: 0, slackLookupErrors: 0 })
+    expect(lookupSlackUserIdByEmail).not.toHaveBeenCalled()
   })
 })
