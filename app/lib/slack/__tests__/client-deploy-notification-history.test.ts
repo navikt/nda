@@ -9,12 +9,14 @@ vi.mock('~/db/deployments/home.server', () => ({
 
 const claimDeploymentForDeployNotifyMock = vi.fn()
 const getDeploymentsNeedingDeployNotifyMock = vi.fn()
+const getPreviousDeploymentForDiffMock = vi.fn().mockResolvedValue(null)
 
 vi.mock('~/db/deployments.server', () => ({
   claimDeploymentForDeployNotify: claimDeploymentForDeployNotifyMock,
   claimDeploymentForSlackNotification: vi.fn(),
   getDeploymentsNeedingDeployNotify: getDeploymentsNeedingDeployNotifyMock,
   getPersonalDeploymentsMissingGoalLinks: vi.fn(),
+  getPreviousDeploymentForDiff: getPreviousDeploymentForDiffMock,
 }))
 
 vi.mock('~/db/role-assignments.server', () => ({ getUserDevTeamsByRole: vi.fn() }))
@@ -85,6 +87,8 @@ describe('sendPendingDeployNotifications', () => {
     chatDeleteMock.mockReset()
     claimDeploymentForDeployNotifyMock.mockReset()
     getDeploymentsNeedingDeployNotifyMock.mockReset()
+    getPreviousDeploymentForDiffMock.mockReset()
+    getPreviousDeploymentForDiffMock.mockResolvedValue(null)
     createSlackNotificationMock.mockReset()
     loggerErrorMock.mockReset()
     process.env.SLACK_BOT_TOKEN = 'xoxb-test'
@@ -149,5 +153,107 @@ describe('sendPendingDeployNotifications', () => {
     expect(sentCount).toBe(0)
     expect(createSlackNotificationMock).not.toHaveBeenCalled()
     expect(chatDeleteMock).toHaveBeenCalled()
+  })
+
+  it('links to a compare URL when a previous deployment is found for a direct_push deploy', async () => {
+    const deployment = buildDeployment({
+      monitored_app_id: 10,
+      detected_github_owner: 'navikt',
+      detected_github_repo_name: 'pensjon-pen',
+    })
+    getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
+    getPreviousDeploymentForDiffMock.mockResolvedValue({ commit_sha: 'prev1230def567890123456789012345678901234' })
+    postMessageMock.mockResolvedValue({ ts: '1234.5678' })
+    claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
+
+    const { sendPendingDeployNotifications } = await getClientModule()
+
+    await sendPendingDeployNotifications('https://nda.ansatt.nav.no')
+
+    const blocks = JSON.stringify(postMessageMock.mock.calls[0][0].blocks)
+    expect(blocks).toContain(
+      'https://github.com/navikt/pensjon-pen/compare/prev1230def567890123456789012345678901234...abc1234def5678901234567890abcdef1234567',
+    )
+  })
+
+  it('links to a commit URL when no previous deployment is found for a direct_push deploy', async () => {
+    const deployment = buildDeployment({
+      monitored_app_id: 10,
+      detected_github_owner: 'navikt',
+      detected_github_repo_name: 'pensjon-pen',
+    })
+    getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
+    getPreviousDeploymentForDiffMock.mockResolvedValue(null)
+    postMessageMock.mockResolvedValue({ ts: '1234.5678' })
+    claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
+
+    const { sendPendingDeployNotifications } = await getClientModule()
+
+    await sendPendingDeployNotifications('https://nda.ansatt.nav.no')
+
+    const blocks = JSON.stringify(postMessageMock.mock.calls[0][0].blocks)
+    expect(blocks).toContain('https://github.com/navikt/pensjon-pen/commit/abc1234def5678901234567890abcdef1234567')
+  })
+
+  it('falls back to a commit URL and logs when resolving the previous deployment throws', async () => {
+    const deployment = buildDeployment({
+      monitored_app_id: 10,
+      detected_github_owner: 'navikt',
+      detected_github_repo_name: 'pensjon-pen',
+    })
+    getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
+    getPreviousDeploymentForDiffMock.mockRejectedValue(new Error('db unavailable'))
+    postMessageMock.mockResolvedValue({ ts: '1234.5678' })
+    claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
+
+    const { sendPendingDeployNotifications } = await getClientModule()
+
+    await sendPendingDeployNotifications('https://nda.ansatt.nav.no')
+
+    const blocks = JSON.stringify(postMessageMock.mock.calls[0][0].blocks)
+    expect(blocks).toContain('https://github.com/navikt/pensjon-pen/commit/abc1234def5678901234567890abcdef1234567')
+    expect(loggerErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to resolve previous deployment for GitHub link'),
+      expect.any(Error),
+    )
+  })
+
+  it('omits the GitHub link when commit_sha is not a valid commit SHA (e.g. a ref)', async () => {
+    const deployment = buildDeployment({
+      commit_sha: 'refs/heads/main',
+      monitored_app_id: 10,
+      detected_github_owner: 'navikt',
+      detected_github_repo_name: 'pensjon-pen',
+    })
+    getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
+    postMessageMock.mockResolvedValue({ ts: '1234.5678' })
+    claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
+
+    const { sendPendingDeployNotifications } = await getClientModule()
+
+    await sendPendingDeployNotifications('https://nda.ansatt.nav.no')
+
+    expect(getPreviousDeploymentForDiffMock).not.toHaveBeenCalled()
+    const blocks = JSON.stringify(postMessageMock.mock.calls[0][0].blocks)
+    expect(blocks).not.toContain('github.com')
+  })
+
+  it('falls back to a commit URL when the previous deployment has an invalid commit SHA', async () => {
+    const deployment = buildDeployment({
+      monitored_app_id: 10,
+      detected_github_owner: 'navikt',
+      detected_github_repo_name: 'pensjon-pen',
+    })
+    getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
+    getPreviousDeploymentForDiffMock.mockResolvedValue({ commit_sha: 'refs/heads/main' })
+    postMessageMock.mockResolvedValue({ ts: '1234.5678' })
+    claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
+
+    const { sendPendingDeployNotifications } = await getClientModule()
+
+    await sendPendingDeployNotifications('https://nda.ansatt.nav.no')
+
+    const blocks = JSON.stringify(postMessageMock.mock.calls[0][0].blocks)
+    expect(blocks).toContain('https://github.com/navikt/pensjon-pen/commit/abc1234def5678901234567890abcdef1234567')
   })
 })

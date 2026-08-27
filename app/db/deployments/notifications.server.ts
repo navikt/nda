@@ -81,7 +81,8 @@ export async function getDeploymentsNeedingDeployNotify(limit = 50): Promise<Dep
     `SELECT d.*, 
             ma.team_slug, ma.environment_name, ma.app_name, ma.default_branch,
             ma.slack_deploy_channel_id,
-            ma.slack_deploy_notify_enabled
+            ma.slack_deploy_notify_enabled,
+            ma.audit_start_year
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.slack_deploy_message_ts IS NULL

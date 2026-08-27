@@ -381,6 +381,7 @@ export const newDeploymentFixtures = {
     ...deployNotifyBase,
     fourEyesStatus: 'direct_push',
     deployMethod: 'direct_push' as const,
+    githubUrl: 'https://github.com/navikt/pensjon-pen/compare/abc1230def567...abc1234def5678',
   },
 
   violation: {
