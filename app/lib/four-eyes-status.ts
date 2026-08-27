@@ -61,6 +61,10 @@ export const LEGACY_STATUSES: FourEyesStatus[] = ['legacy', 'legacy_pending']
 
 export const LEGACY_STATUSES_SQL = LEGACY_STATUSES.map((s) => `'${s}'`).join(', ')
 
+export const UNAUTHORIZED_STATUSES: FourEyesStatus[] = ['unauthorized_repository', 'unauthorized_branch']
+
+export const UNAUTHORIZED_STATUSES_SQL = UNAUTHORIZED_STATUSES.map((s) => `'${s}'`).join(', ')
+
 const PROTECTED_STATUSES: FourEyesStatus[] = ['manually_approved', 'baseline', 'legacy']
 
 export const PROTECTED_STATUSES_SQL = PROTECTED_STATUSES.map((s) => `'${s}'`).join(', ')
