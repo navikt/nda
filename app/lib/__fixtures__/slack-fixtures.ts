@@ -345,7 +345,7 @@ const deployNotifyBase = {
 export const newDeploymentFixtures = {
   withPr: {
     ...deployNotifyBase,
-    fourEyesStatus: 'verified',
+    fourEyesStatus: 'approved',
     deployMethod: 'pull_request' as const,
     prTitle: 'feat: legg til ny pensjonsberegning for AFP',
     prNumber: 123,
@@ -359,13 +359,13 @@ export const newDeploymentFixtures = {
 
   directPush: {
     ...deployNotifyBase,
-    fourEyesStatus: 'no_pr',
+    fourEyesStatus: 'direct_push',
     deployMethod: 'direct_push' as const,
   },
 
   violation: {
     ...deployNotifyBase,
-    fourEyesStatus: 'self_approved',
+    fourEyesStatus: 'approved_pr_with_unreviewed',
     deployMethod: 'pull_request' as const,
     prTitle: 'hotfix: fiks kritisk feil i beregning',
     prNumber: 456,
@@ -379,7 +379,7 @@ export const newDeploymentFixtures = {
 
   legacy: {
     ...deployNotifyBase,
-    fourEyesStatus: 'legacy_verified',
+    fourEyesStatus: 'legacy',
     deployMethod: 'legacy' as const,
     prTitle: 'chore: bump dependencies',
     prNumber: 789,
