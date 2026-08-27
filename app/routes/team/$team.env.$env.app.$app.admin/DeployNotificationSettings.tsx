@@ -1,5 +1,6 @@
 import { BodyShort, Box, Button, Heading, HStack, Switch, TextField, VStack } from '@navikt/ds-react'
 import { Form } from 'react-router'
+import { SLACK_CHANNEL_INVITE_HINT } from '~/lib/slack/config-setting-keys'
 import type { Route } from '../+types/$team.env.$env.app.$app.admin'
 import { SlackHistoryLink } from './SlackHistoryLink'
 
@@ -38,7 +39,7 @@ export function DeployNotificationSettings({ app }: DeployNotificationSettingsPr
               label="Slack-kanal for deployment-varsler"
               name="slack_deploy_channel_id"
               defaultValue={app.slack_deploy_channel_id || ''}
-              description="Kanal-ID (f.eks. C01234567) eller kanalnavn (f.eks. #min-kanal). Kan være en annen kanal enn for avviksvarsler."
+              description={SLACK_CHANNEL_INVITE_HINT}
               size="small"
               style={{ maxWidth: '300px' }}
             />
