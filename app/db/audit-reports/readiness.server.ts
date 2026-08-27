@@ -88,9 +88,21 @@ export async function checkAuditReadiness(
     approved_count: approved.length,
     legacy_count: legacy.length,
     pending_count: pending.length,
-    pending_deployments: pending.slice(0, 10),
+    pending_deployments: pending.slice(0, 10).map((d) => ({
+      id: d.id,
+      created_at: d.created_at,
+      commit_sha: d.commit_sha,
+      deployer_username: d.deployer_username,
+      four_eyes_status: d.four_eyes_status,
+    })),
     missing_approver_count: missingApprover.length,
-    missing_approver_deployments: missingApprover.slice(0, 10),
+    missing_approver_deployments: missingApprover.slice(0, 10).map((d) => ({
+      id: d.id,
+      created_at: d.created_at,
+      commit_sha: d.commit_sha,
+      deployer_username: d.deployer_username,
+      four_eyes_status: d.four_eyes_status,
+    })),
     manual_trigger_count: manualTrigger.length,
     manual_trigger_deployments: manualTrigger.slice(0, 10).map((d) => ({
       id: d.id,
