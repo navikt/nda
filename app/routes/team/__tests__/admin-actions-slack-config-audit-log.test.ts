@@ -1,18 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  mockRequireAdmin,
+  mockRequireUser,
+  mockCanAccessAppAdmin,
   mockGetMonitoredApplicationById,
   mockUpdateMonitoredApplication,
   mockRecordAppConfigAuditLog,
 } = vi.hoisted(() => ({
-  mockRequireAdmin: vi.fn(),
+  mockRequireUser: vi.fn(),
+  mockCanAccessAppAdmin: vi.fn(),
   mockGetMonitoredApplicationById: vi.fn(),
   mockUpdateMonitoredApplication: vi.fn(),
   mockRecordAppConfigAuditLog: vi.fn(),
 }))
 
-vi.mock('~/lib/auth.server', () => ({ requireAdmin: mockRequireAdmin }))
+vi.mock('~/lib/auth.server', () => ({ requireUser: mockRequireUser }))
+
+vi.mock('~/lib/authorization.server', () => ({ canAccessAppAdmin: mockCanAccessAppAdmin }))
 
 vi.mock('~/db/app-settings.server', () => ({
   recordAppConfigAuditLog: mockRecordAppConfigAuditLog,
@@ -83,11 +87,13 @@ function buildRequest(fields: Record<string, string>): Request {
 describe('admin actions - Slack config toggles', () => {
   beforeEach(() => {
     vi.resetModules()
-    mockRequireAdmin.mockReset()
+    mockRequireUser.mockReset()
+    mockCanAccessAppAdmin.mockReset()
     mockGetMonitoredApplicationById.mockReset()
     mockUpdateMonitoredApplication.mockReset()
     mockRecordAppConfigAuditLog.mockReset()
-    mockRequireAdmin.mockResolvedValue({ navIdent: 'Z990001', name: 'Glad Fjord', role: 'admin', isActualAdmin: true })
+    mockRequireUser.mockResolvedValue({ navIdent: 'Z990001', name: 'Glad Fjord', role: 'admin', isActualAdmin: true })
+    mockCanAccessAppAdmin.mockResolvedValue(true)
     mockUpdateMonitoredApplication.mockResolvedValue(undefined)
   })
 
