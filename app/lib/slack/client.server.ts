@@ -531,7 +531,7 @@ async function notifyNewDeploymentIfNeeded(
     deployerUsername: deployment.deployer_username || 'ukjent',
     detailsUrl: `${baseUrl}/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}/deployments/${deployment.id}`,
     fourEyesStatus: deployment.four_eyes_status,
-    prTitle: prData?.title || deployment.title || undefined,
+    prTitle: deployMethod === 'pull_request' ? prData?.title || deployment.title || undefined : undefined,
     prNumber: deployment.github_pr_number || undefined,
     prUrl: deployment.github_pr_url || undefined,
     prCreator,
