@@ -18,6 +18,13 @@ export const WithPr: Story = {
   },
 }
 
+export const WithPrSlackMentions: Story = {
+  name: '🚀 Med PR (godkjent) — med Slack-mentions',
+  args: {
+    blocks: buildNewDeploymentBlocks(newDeploymentFixtures.withPrSlackMentions),
+  },
+}
+
 export const DirectPush: Story = {
   name: '⚠️ Direkte push (ingen PR)',
   args: {

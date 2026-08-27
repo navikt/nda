@@ -1,5 +1,4 @@
 import type { KnownBlock } from '@slack/types'
-import { truncate } from './shared'
 
 export interface NewDeploymentNotification {
   deploymentId: number
@@ -19,17 +18,19 @@ export interface NewDeploymentNotification {
   branchName?: string
   commitsCount?: number
   deployMethod: 'pull_request' | 'direct_push' | 'legacy'
+  /** GitHub username (lowercase) → Slack member ID, for rendering clickable @mentions where a mapping exists. */
+  slackMentions?: Record<string, string>
 }
 
-function mapDeployMethod(method: NewDeploymentNotification['deployMethod']): string {
-  switch (method) {
-    case 'pull_request':
-      return 'Pull Request'
-    case 'direct_push':
-      return 'Direct Push'
-    case 'legacy':
-      return 'Legacy'
-  }
+/**
+ * Renders a GitHub username as a clickable Slack mention (`<@SLACK_ID>`) when a slack_member_id
+ * mapping exists for it, falling back to plain text otherwise. Real Slack mentions only work with
+ * the `<@USER_ID>` syntax — Slack resolves the display name itself, custom text is not supported.
+ */
+function formatSlackMention(username: string | undefined, slackMentions?: Record<string, string>): string {
+  if (!username) return 'Ukjent'
+  const slackId = slackMentions?.[username.toLowerCase()]
+  return slackId ? `<@${slackId}>` : username
 }
 
 function mapFourEyesStatus(status: string): { emoji: string; text: string } {
@@ -56,63 +57,33 @@ function mapFourEyesStatus(status: string): { emoji: string; text: string } {
 }
 
 export function buildNewDeploymentBlocks(notification: NewDeploymentNotification): KnownBlock[] {
-  const shortSha = notification.commitSha.substring(0, 7)
-  const { emoji: fourEyesEmoji, text: fourEyesText } = mapFourEyesStatus(notification.fourEyesStatus)
+  const { emoji, text } = mapFourEyesStatus(notification.fourEyesStatus)
 
   const blocks: KnownBlock[] = [
     {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: `🚀 Ny deployment — ${notification.appName}`,
+        text: `🚀 Ny deployment — ${notification.appName} (${notification.environmentName}) — ${emoji} ${text}`,
         emoji: true,
       },
-    },
-    {
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: `*App:*\n${notification.appName}` },
-        { type: 'mrkdwn', text: `*Miljø:*\n${notification.environmentName}` },
-        { type: 'mrkdwn', text: `*Team:*\n${notification.teamSlug}` },
-        { type: 'mrkdwn', text: `*Metode:*\n${mapDeployMethod(notification.deployMethod)}` },
-      ],
     },
   ]
 
   if (notification.prTitle) {
     blocks.push({
       type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: `*Tittel:*\n${truncate(notification.prTitle, 100)}` },
-        { type: 'mrkdwn', text: `*Opprettet av:*\n${notification.prCreator}` },
-        {
-          type: 'mrkdwn',
-          text: `*Godkjent av:*\n${notification.prApprovers && notification.prApprovers.length > 0 ? notification.prApprovers.join(', ') : 'Ingen'}`,
-        },
-        { type: 'mrkdwn', text: `*Merget av:*\n${notification.prMerger || 'Ukjent'}` },
-      ],
+      text: { type: 'mrkdwn', text: `*${notification.prTitle}*` },
+    })
+
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `Opprettet av ${formatSlackMention(notification.prCreator, notification.slackMentions)}\nMerget av ${formatSlackMention(notification.prMerger, notification.slackMentions)}`,
+      },
     })
   }
-
-  let commitText = `*Commit:*\n\`${shortSha}\``
-  if (notification.branchName) {
-    commitText += ` on \`${notification.branchName}\``
-  }
-  if (notification.commitsCount) {
-    commitText += `  •  ${notification.commitsCount} commits`
-  }
-  blocks.push({
-    type: 'section',
-    text: { type: 'mrkdwn', text: commitText },
-  })
-
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `*Fire øyne:*\n${fourEyesEmoji} ${fourEyesText}`,
-    },
-  })
 
   const actionElements: NonNullable<Extract<KnownBlock, { type: 'actions' }>['elements']> = [
     {
@@ -126,22 +97,16 @@ export function buildNewDeploymentBlocks(notification: NewDeploymentNotification
   if (notification.prUrl) {
     actionElements.push({
       type: 'button',
-      text: { type: 'plain_text', text: 'Se PR', emoji: true },
+      text: {
+        type: 'plain_text',
+        text: notification.prNumber ? `Se Pull Request #${notification.prNumber}` : 'Se PR',
+        emoji: true,
+      },
       action_id: 'view_pr',
       url: notification.prUrl,
     })
   }
   blocks.push({ type: 'actions', elements: actionElements })
-
-  blocks.push({
-    type: 'context',
-    elements: [
-      {
-        type: 'mrkdwn',
-        text: `Team: ${notification.teamSlug} | Deployment #${notification.deploymentId}`,
-      },
-    ],
-  })
 
   return blocks
 }

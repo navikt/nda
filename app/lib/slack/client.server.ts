@@ -13,6 +13,7 @@ import {
   logSlackInteraction,
   updateSlackNotification,
 } from '~/db/slack-notifications.server'
+import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { isApprovedStatus, isLegacyStatus, isNotApprovedStatus, isPendingStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { callSlackApi } from './api-logging.server'
@@ -503,6 +504,23 @@ async function notifyNewDeploymentIfNeeded(
 
   const prData = deployment.github_pr_data
   const approvers = prData?.reviewers?.filter((r) => r.state === 'APPROVED').map((r) => r.username) ?? []
+  const prCreator = prData?.creator?.username
+  const prMerger = prData?.merged_by?.username || prData?.merger?.username
+
+  const mentionUsernames = [...new Set([prCreator, prMerger, ...approvers].filter((u): u is string => !!u))]
+  const slackMentions: Record<string, string> = {}
+  if (mentionUsernames.length > 0) {
+    try {
+      const lookups = await getGithubUserLookups(mentionUsernames)
+      for (const [username, lookup] of lookups) {
+        if (lookup.slack_member_id) {
+          slackMentions[username.toLowerCase()] = lookup.slack_member_id
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to resolve Slack mentions for deployment ${deployment.id}:`, error)
+    }
+  }
 
   const notification: NewDeploymentNotification = {
     deploymentId: deployment.id,
@@ -516,12 +534,13 @@ async function notifyNewDeploymentIfNeeded(
     prTitle: prData?.title || deployment.title || undefined,
     prNumber: deployment.github_pr_number || undefined,
     prUrl: deployment.github_pr_url || undefined,
-    prCreator: prData?.creator?.username,
+    prCreator,
     prApprovers: approvers.length > 0 ? approvers : undefined,
-    prMerger: prData?.merged_by?.username || prData?.merger?.username,
+    prMerger,
     branchName: prData?.head_branch || deployment.branch_name || undefined,
     commitsCount: prData?.commits_count,
     deployMethod,
+    slackMentions: Object.keys(slackMentions).length > 0 ? slackMentions : undefined,
   }
 
   const blocks = buildNewDeploymentBlocks(notification)

@@ -357,6 +357,24 @@ export const newDeploymentFixtures = {
     commitsCount: 3,
   },
 
+  withPrSlackMentions: {
+    ...deployNotifyBase,
+    fourEyesStatus: 'approved',
+    deployMethod: 'pull_request' as const,
+    prTitle: 'feat: legg til ny pensjonsberegning for AFP',
+    prNumber: 123,
+    prUrl: 'https://github.com/navikt/pensjon-pen/pull/123',
+    prCreator: 'ola.nordmann',
+    prApprovers: ['kari.nordmann', 'per.hansen'],
+    prMerger: 'kari.nordmann',
+    branchName: 'feature/afp-beregning',
+    commitsCount: 3,
+    slackMentions: {
+      'ola.nordmann': 'U0100000001',
+      'kari.nordmann': 'U0100000002',
+    },
+  },
+
   directPush: {
     ...deployNotifyBase,
     fourEyesStatus: 'direct_push',
