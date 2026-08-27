@@ -1,4 +1,5 @@
 import { REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
+import { getActiveRepoKeysForApps } from './application-repositories.server'
 import { pool } from './connection.server'
 
 interface ApplicationGroup {
@@ -47,6 +48,59 @@ const PROPAGATABLE_STATUSES = new Set([
 
 const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
 
+function pickLargestRepoSharingSubset<T extends { id: number }>(
+  apps: T[],
+  repoKeysByApp: Map<number, Set<string>>,
+): { matched: T[]; skipped: number } {
+  if (apps.length < 2) return { matched: apps, skipped: 0 }
+
+  const singleRepoKeyByApp = new Map<number, string>()
+  for (const app of apps) {
+    const keys = repoKeysByApp.get(app.id)
+    if (keys?.size === 1) singleRepoKeyByApp.set(app.id, [...keys][0])
+  }
+
+  const repoKeyCounts = new Map<string, number>()
+  for (const key of singleRepoKeyByApp.values()) {
+    repoKeyCounts.set(key, (repoKeyCounts.get(key) ?? 0) + 1)
+  }
+
+  const bestRepoKey = [...repoKeyCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0]
+  if (!bestRepoKey) return { matched: [], skipped: apps.length }
+
+  const matched = apps.filter((app) => singleRepoKeyByApp.get(app.id) === bestRepoKey)
+  return { matched, skipped: apps.length - matched.length }
+}
+
+export async function selectAppsSharingRepository<T extends { id: number }>(
+  apps: T[],
+): Promise<{ matched: T[]; skipped: number }> {
+  if (apps.length < 2) return { matched: apps, skipped: 0 }
+
+  const repoKeysByApp = await getActiveRepoKeysForApps(apps.map((a) => a.id))
+  return pickLargestRepoSharingSubset(apps, repoKeysByApp)
+}
+
+export async function computeGroupingSuggestions<T extends { id: number; app_name: string }>(
+  apps: T[],
+): Promise<Array<{ name: string; count: number }>> {
+  const repoKeysByApp = await getActiveRepoKeysForApps(apps.map((a) => a.id))
+
+  const appsByName = new Map<string, T[]>()
+  for (const app of apps) {
+    const existing = appsByName.get(app.app_name)
+    if (existing) {
+      existing.push(app)
+    } else {
+      appsByName.set(app.app_name, [app])
+    }
+  }
+
+  return [...appsByName.entries()]
+    .filter(([, group]) => group.length > 1)
+    .map(([name, group]) => ({ name, count: pickLargestRepoSharingSubset(group, repoKeysByApp).matched.length }))
+}
+
 export async function createApplicationGroup(name: string): Promise<ApplicationGroup> {
   const { rows } = await pool.query<ApplicationGroup>('INSERT INTO application_groups (name) VALUES ($1) RETURNING *', [
     name,
@@ -54,11 +108,58 @@ export async function createApplicationGroup(name: string): Promise<ApplicationG
   return rows[0]
 }
 
-export async function addAppToGroup(groupId: number, monitoredAppId: number): Promise<void> {
-  await pool.query('UPDATE monitored_applications SET application_group_id = $1 WHERE id = $2', [
-    groupId,
-    monitoredAppId,
-  ])
+function invalidActiveRepoCountClause(appIdParam: string): string {
+  return `(SELECT COUNT(*) FROM application_repositories ar WHERE ar.monitored_app_id = ${appIdParam} AND ar.status = 'active') != 1`
+}
+
+function repoMismatchExistsClause(groupIdParam: string, appIdParam: string): string {
+  return `EXISTS (
+    SELECT 1 FROM monitored_applications existing
+    WHERE existing.application_group_id = ${groupIdParam}
+      AND existing.id != ${appIdParam}
+      AND (
+        ${invalidActiveRepoCountClause('existing.id')}
+        OR NOT EXISTS (
+          SELECT 1 FROM application_repositories ar1
+          JOIN application_repositories ar2
+            ON ar1.github_owner = ar2.github_owner
+           AND ar1.github_repo_name = ar2.github_repo_name
+          WHERE ar1.monitored_app_id = ${appIdParam} AND ar1.status = 'active'
+            AND ar2.monitored_app_id = existing.id AND ar2.status = 'active'
+        )
+      )
+  )`
+}
+
+export async function addAppToGroup(groupId: number, monitoredAppId: number): Promise<boolean> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rowCount: groupLocked } = await client.query(
+      'SELECT 1 FROM application_groups WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+      [groupId],
+    )
+    if (!groupLocked) {
+      await client.query('ROLLBACK')
+      return false
+    }
+    const result = await client.query(
+      `UPDATE monitored_applications
+       SET application_group_id = $1
+       WHERE id = $2
+         AND application_group_id IS NULL
+         AND NOT ${invalidActiveRepoCountClause('$2')}
+         AND NOT ${repoMismatchExistsClause('$1', '$2')}`,
+      [groupId, monitoredAppId],
+    )
+    await client.query('COMMIT')
+    return (result.rowCount ?? 0) > 0
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 export async function addTeamAppToGroupConditional(
@@ -66,23 +167,39 @@ export async function addTeamAppToGroupConditional(
   appId: number,
   devTeamId: number,
 ): Promise<boolean> {
-  const result = await pool.query(
-    `UPDATE monitored_applications
-     SET application_group_id = $1
-     WHERE id = $2
-       AND application_group_id IS NULL
-       AND is_active = true
-       AND EXISTS (
-         SELECT 1 FROM dev_team_applications
-         WHERE dev_team_id = $3 AND monitored_app_id = $2 AND deleted_at IS NULL
-       )
-       AND EXISTS (
-         SELECT 1 FROM application_groups
-         WHERE id = $1 AND deleted_at IS NULL
-       )`,
-    [groupId, appId, devTeamId],
-  )
-  return (result.rowCount ?? 0) > 0
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rowCount: groupLocked } = await client.query(
+      'SELECT 1 FROM application_groups WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+      [groupId],
+    )
+    if (!groupLocked) {
+      await client.query('ROLLBACK')
+      return false
+    }
+    const result = await client.query(
+      `UPDATE monitored_applications
+       SET application_group_id = $1
+       WHERE id = $2
+         AND application_group_id IS NULL
+         AND is_active = true
+         AND EXISTS (
+           SELECT 1 FROM dev_team_applications
+           WHERE dev_team_id = $3 AND monitored_app_id = $2 AND deleted_at IS NULL
+         )
+         AND NOT ${invalidActiveRepoCountClause('$2')}
+         AND NOT ${repoMismatchExistsClause('$1', '$2')}`,
+      [groupId, appId, devTeamId],
+    )
+    await client.query('COMMIT')
+    return (result.rowCount ?? 0) > 0
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  } finally {
+    client.release()
+  }
 }
 
 export async function removeAppFromGroup(monitoredAppId: number): Promise<void> {

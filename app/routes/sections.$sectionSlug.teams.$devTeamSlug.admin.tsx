@@ -11,6 +11,7 @@ import {
   isTeamApp,
   isTeamGroup,
   removeAppFromGroup,
+  selectAppsSharingRepository,
   type UngroupedTeamApp,
   verifyAllUngroupedTeamApps,
 } from '~/db/application-groups.server'
@@ -499,12 +500,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     try {
       const group = await createApplicationGroup(name)
       groupId = group.id
-      const results = await Promise.all(
-        appIds.map((appId) => addTeamAppToGroupConditional(group.id, appId, devTeam.id)),
-      )
+      const results: boolean[] = []
+      for (const appId of appIds) {
+        results.push(await addTeamAppToGroupConditional(group.id, appId, devTeam.id))
+      }
       if (results.some((r) => !r)) {
         await deleteGroup(group.id, user.navIdent)
-        return fail('En eller flere applikasjoner ble endret underveis. Prøv igjen.')
+        return fail(
+          'En eller flere applikasjoner ble endret underveis, mangler et git-repo som matcher de andre valgte appene, eller gruppen ble slettet. Prøv igjen.',
+        )
       }
       return ok(`Gruppe "${name}" ble opprettet med ${appIds.length} applikasjon${appIds.length === 1 ? '' : 'er'}.`)
     } catch (error) {
@@ -525,22 +529,32 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!appName) return fail('Mangler applikasjonsnavn.')
 
     const ungrouped = await getUngroupedTeamApps(devTeam.id)
-    const toGroup = ungrouped.filter((a) => a.app_name === appName)
+    const candidates = ungrouped.filter((a) => a.app_name === appName)
+    const { matched: toGroup, skipped } = await selectAppsSharingRepository(candidates)
     const distinctEnvs = new Set(toGroup.map((a) => a.environment_name))
-    if (distinctEnvs.size < 2) return fail('Fant ikke apper med samme navn i minst to distinkte miljøer.')
+    if (distinctEnvs.size < 2) {
+      return fail('Fant ikke apper med samme navn og samme git-repo i minst to distinkte miljøer.')
+    }
 
     let groupId: number | null = null
     try {
       const group = await createApplicationGroup(appName)
       groupId = group.id
-      const results = await Promise.all(
-        toGroup.map((app) => addTeamAppToGroupConditional(group.id, app.id, devTeam.id)),
-      )
+      const results: boolean[] = []
+      for (const app of toGroup) {
+        results.push(await addTeamAppToGroupConditional(group.id, app.id, devTeam.id))
+      }
       if (results.some((r) => !r)) {
         await deleteGroup(group.id, user.navIdent)
-        return fail('En eller flere applikasjoner ble endret underveis. Prøv igjen.')
+        return fail(
+          'En eller flere applikasjoner ble endret underveis, mangler et git-repo som matcher de andre valgte appene, eller gruppen ble slettet. Prøv igjen.',
+        )
       }
-      return ok(`Gruppe "${appName}" ble opprettet med ${toGroup.length} applikasjoner.`)
+      return ok(
+        `Gruppe "${appName}" ble opprettet med ${toGroup.length} applikasjoner${
+          skipped > 0 ? ` (${skipped} hoppet over pga. manglende, flertydig eller avvikende git-repo)` : ''
+        }.`,
+      )
     } catch (error) {
       logger.error('create_from_team_suggestion failed:', error)
       if (groupId !== null) {
@@ -567,7 +581,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     try {
       const updated = await addTeamAppToGroupConditional(groupId, appId, devTeam.id)
       if (!updated) {
-        return fail('Applikasjonen tilhører ikke dette teamet, er allerede gruppert, eller er inaktiv.')
+        return fail(
+          'Applikasjonen tilhører ikke dette teamet, er allerede gruppert, er inaktiv, mangler et git-repo som matcher de andre appene i gruppen, eller gruppen finnes ikke lenger.',
+        )
       }
       return ok('Applikasjon lagt til i gruppen.')
     } catch (error) {

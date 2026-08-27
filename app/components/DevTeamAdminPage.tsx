@@ -520,7 +520,7 @@ function ApplicationGroupsTeamSection({
           </Heading>
           <BodyShort size="small" textColor="subtle">
             Grupper apper som er samme logiske app på tvers av NAIS-clustre. Verifikasjonsstatus propageres automatisk
-            innad i gruppen.
+            innad i gruppen. Apper må ha samme aktive git-repo for å kunne grupperes sammen.
           </BodyShort>
         </div>
         {!showCreate && ungroupedTeamApps.length > 0 && (

@@ -38,6 +38,14 @@ async function setAppInactive(appId: number): Promise<void> {
   await pool.query('UPDATE monitored_applications SET is_active = false WHERE id = $1', [appId])
 }
 
+async function seedActiveRepo(appId: number, owner: string, repoName: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO application_repositories (monitored_app_id, github_owner, github_repo_name, status)
+     VALUES ($1, $2, $3, 'active')`,
+    [appId, owner, repoName],
+  )
+}
+
 describe('application_groups schema', () => {
   it('should create an application group', async () => {
     const groupId = await createGroup('my-service')
@@ -99,6 +107,7 @@ describe('application-groups CRUD', () => {
     const { createApplicationGroup, addAppToGroup, getGroupWithApps } = await import('~/db/application-groups.server')
     const group = await createApplicationGroup('my-service')
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appId, 'navikt', 'shared-repo')
 
     await addAppToGroup(group.id, appId)
 
@@ -114,6 +123,7 @@ describe('application-groups CRUD', () => {
     )
     const group = await createApplicationGroup('my-service')
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appId, 'navikt', 'shared-repo')
 
     await addAppToGroup(group.id, appId)
     await removeAppFromGroup(appId)
@@ -127,6 +137,7 @@ describe('application-groups CRUD', () => {
     const { createApplicationGroup, addAppToGroup, getGroupByAppId } = await import('~/db/application-groups.server')
     const group = await createApplicationGroup('my-service')
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appId, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, appId)
 
     const result = await getGroupByAppId(appId)
@@ -147,8 +158,11 @@ describe('application-groups CRUD', () => {
     const { createApplicationGroup, addAppToGroup, getSiblingApps } = await import('~/db/application-groups.server')
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     const app3 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'dev-gcp' })
+    await seedActiveRepo(app3, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
     await addAppToGroup(group.id, app3)
@@ -170,6 +184,7 @@ describe('application-groups CRUD', () => {
     const { createApplicationGroup, addAppToGroup, getSiblingApps } = await import('~/db/application-groups.server')
     const group = await createApplicationGroup('solo')
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appId, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, appId)
 
     const siblings = await getSiblingApps(appId)
@@ -182,7 +197,9 @@ describe('application-groups CRUD', () => {
     )
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
@@ -213,8 +230,11 @@ describe('application-groups CRUD', () => {
     const group1 = await createApplicationGroup('service-a')
     const group2 = await createApplicationGroup('service-b')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-a', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-a', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     const app3 = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc-b', environment: 'prod-gcp' })
+    await seedActiveRepo(app3, 'navikt', 'other-shared-repo')
     await addAppToGroup(group1.id, app1)
     await addAppToGroup(group1.id, app2)
     await addAppToGroup(group2.id, app3)
@@ -231,13 +251,154 @@ describe('application-groups CRUD', () => {
   })
 })
 
+describe('application groups require a shared git repository', () => {
+  it('addAppToGroup should reject an app whose active repo differs from an existing member', async () => {
+    const { createApplicationGroup, addAppToGroup } = await import('~/db/application-groups.server')
+    const group = await createApplicationGroup('my-service')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app1, 'navikt', 'repo-a')
+    await seedActiveRepo(app2, 'navikt', 'repo-b')
+
+    await addAppToGroup(group.id, app1)
+    const added = await addAppToGroup(group.id, app2)
+
+    expect(added).toBe(false)
+    const { rows } = await pool.query('SELECT application_group_id FROM monitored_applications WHERE id = $1', [app2])
+    expect(rows[0].application_group_id).toBeNull()
+  })
+
+  it('addAppToGroup should allow an app that shares an active repo with an existing member', async () => {
+    const { createApplicationGroup, addAppToGroup } = await import('~/db/application-groups.server')
+    const group = await createApplicationGroup('my-service')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app1, 'navikt', 'repo-a')
+    await seedActiveRepo(app2, 'navikt', 'repo-a')
+
+    await addAppToGroup(group.id, app1)
+    const added = await addAppToGroup(group.id, app2)
+
+    expect(added).toBe(true)
+    const { rows } = await pool.query('SELECT application_group_id FROM monitored_applications WHERE id = $1', [app2])
+    expect(rows[0].application_group_id).toBe(group.id)
+  })
+
+  it('addAppToGroup should reject an app with no registered active repo from joining a group that has one', async () => {
+    const { createApplicationGroup, addAppToGroup } = await import('~/db/application-groups.server')
+    const group = await createApplicationGroup('my-service')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app1, 'navikt', 'repo-a')
+
+    await addAppToGroup(group.id, app1)
+    const added = await addAppToGroup(group.id, app2)
+
+    expect(added).toBe(false)
+    const { rows } = await pool.query('SELECT application_group_id FROM monitored_applications WHERE id = $1', [app2])
+    expect(rows[0].application_group_id).toBeNull()
+  })
+
+  it('addAppToGroup should reject an app with no registered active repo even when founding an empty group', async () => {
+    const { createApplicationGroup, addAppToGroup } = await import('~/db/application-groups.server')
+    const group = await createApplicationGroup('my-service')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+
+    const added = await addAppToGroup(group.id, app1)
+
+    expect(added).toBe(false)
+    const { rows } = await pool.query('SELECT application_group_id FROM monitored_applications WHERE id = $1', [app1])
+    expect(rows[0].application_group_id).toBeNull()
+  })
+
+  it('addAppToGroup should reject when the group is soft-deleted', async () => {
+    const { createApplicationGroup, addAppToGroup, deleteGroup } = await import('~/db/application-groups.server')
+    const group = await createApplicationGroup('my-service')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'repo-a')
+    await deleteGroup(group.id, 'Z990001')
+
+    const added = await addAppToGroup(group.id, app1)
+
+    expect(added).toBe(false)
+  })
+
+  it('addAppToGroup should reject when the group does not exist', async () => {
+    const { addAppToGroup } = await import('~/db/application-groups.server')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'repo-a')
+
+    const added = await addAppToGroup(999999999, app1)
+
+    expect(added).toBe(false)
+  })
+
+  it('addTeamAppToGroupConditional should reject an app whose active repo differs from an existing member', async () => {
+    const { createApplicationGroup, addTeamAppToGroupConditional } = await import('~/db/application-groups.server')
+    const sectionId = await seedSection(pool, 'section-a')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const group = await createApplicationGroup('my-service')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await linkAppToTeam(teamId, app1)
+    await linkAppToTeam(teamId, app2)
+    await seedActiveRepo(app1, 'navikt', 'repo-a')
+    await seedActiveRepo(app2, 'navikt', 'repo-b')
+
+    expect(await addTeamAppToGroupConditional(group.id, app1, teamId)).toBe(true)
+    expect(await addTeamAppToGroupConditional(group.id, app2, teamId)).toBe(false)
+
+    const { rows } = await pool.query('SELECT application_group_id FROM monitored_applications WHERE id = $1', [app2])
+    expect(rows[0].application_group_id).toBeNull()
+  })
+
+  it('selectAppsSharingRepository should pick the largest subset sharing an active repo', async () => {
+    const { selectAppsSharingRepository } = await import('~/db/application-groups.server')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+    const app3 = await seedApp(pool, { teamSlug: 'team-c', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'repo-a')
+    await seedActiveRepo(app2, 'navikt', 'repo-a')
+    await seedActiveRepo(app3, 'navikt', 'repo-b')
+
+    const { matched, skipped } = await selectAppsSharingRepository([{ id: app1 }, { id: app2 }, { id: app3 }])
+
+    expect(matched.map((a) => a.id).sort()).toEqual([app1, app2].sort())
+    expect(skipped).toBe(1)
+  })
+
+  it('selectAppsSharingRepository should skip all candidates when none has a registered active repo', async () => {
+    const { selectAppsSharingRepository } = await import('~/db/application-groups.server')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+
+    const { matched, skipped } = await selectAppsSharingRepository([{ id: app1 }, { id: app2 }])
+
+    expect(matched).toEqual([])
+    expect(skipped).toBe(2)
+  })
+
+  it('selectAppsSharingRepository should return the input unchanged for fewer than two candidates', async () => {
+    const { selectAppsSharingRepository } = await import('~/db/application-groups.server')
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+
+    const { matched, skipped } = await selectAppsSharingRepository([{ id: app1 }])
+
+    expect(matched).toEqual([{ id: app1 }])
+    expect(skipped).toBe(0)
+  })
+})
+
 describe('getGroupContext', () => {
   it('should return group and siblings for a grouped app', async () => {
     const { createApplicationGroup, addAppToGroup, getGroupContext } = await import('~/db/application-groups.server')
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     const app3 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'dev-gcp' })
+    await seedActiveRepo(app3, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
     await addAppToGroup(group.id, app3)
@@ -263,6 +424,7 @@ describe('getGroupContext', () => {
     const { createApplicationGroup, addAppToGroup, getGroupContext } = await import('~/db/application-groups.server')
     const group = await createApplicationGroup('solo')
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appId, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, appId)
 
     const ctx = await getGroupContext(appId)
@@ -277,7 +439,9 @@ describe('getGroupContext', () => {
     )
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
@@ -292,8 +456,11 @@ describe('getGroupContext', () => {
     const { createApplicationGroup, addAppToGroup, getGroupContext } = await import('~/db/application-groups.server')
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     const app3 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'dev-gcp' })
+    await seedActiveRepo(app3, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
     await addAppToGroup(group.id, app3)
@@ -312,7 +479,9 @@ describe('getGroupsForDevTeam', () => {
     const sectionId = await seedSection(pool, 'sec')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const appTeam = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appTeam, 'navikt', 'shared-repo')
     const appOther = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(appOther, 'navikt', 'shared-repo')
     const group = await createApplicationGroup('svc')
     await addAppToGroup(group.id, appTeam)
     await addAppToGroup(group.id, appOther)
@@ -334,6 +503,7 @@ describe('getGroupsForDevTeam', () => {
     const sectionId = await seedSection(pool, 'sec')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const appOther = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appOther, 'navikt', 'shared-repo')
     const group = await createApplicationGroup('svc')
     await addAppToGroup(group.id, appOther)
 
@@ -348,6 +518,7 @@ describe('getGroupsForDevTeam', () => {
     const sectionId = await seedSection(pool, 'sec')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const app = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app, 'navikt', 'shared-repo')
     await linkAppToTeam(teamId, app)
     const group = await createApplicationGroup('svc')
     await addAppToGroup(group.id, app)
@@ -379,6 +550,7 @@ describe('getUngroupedTeamApps', () => {
     const sectionId = await seedSection(pool, 'sec')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
     await linkAppToTeam(teamId, app1)
     await linkAppToTeam(teamId, app2)
@@ -496,6 +668,7 @@ describe('isTeamGroup', () => {
     const sectionId = await seedSection(pool, 'sec')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appId, 'navikt', 'shared-repo')
     await linkAppToTeam(teamId, appId)
     const group = await createApplicationGroup('svc')
     await addAppToGroup(group.id, appId)
@@ -508,6 +681,7 @@ describe('isTeamGroup', () => {
     const sectionId = await seedSection(pool, 'sec')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
     const appOther = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(appOther, 'navikt', 'shared-repo')
     const group = await createApplicationGroup('svc')
     await addAppToGroup(group.id, appOther)
 
@@ -529,7 +703,9 @@ describe('verification propagation', () => {
 
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
@@ -563,7 +739,9 @@ describe('verification propagation', () => {
 
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
@@ -594,7 +772,9 @@ describe('verification propagation', () => {
 
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
@@ -627,7 +807,9 @@ describe('verification propagation', () => {
 
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
@@ -674,7 +856,9 @@ describe('verification propagation', () => {
 
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
@@ -708,8 +892,11 @@ describe('verification propagation', () => {
 
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     const app3 = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc', environment: 'dev-gcp' })
+    await seedActiveRepo(app3, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
     await addAppToGroup(group.id, app3)
@@ -757,7 +944,9 @@ describe('verification propagation', () => {
 
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
@@ -797,7 +986,9 @@ describe('verification propagation', () => {
 
     const group = await createApplicationGroup('my-service')
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedActiveRepo(app1, 'navikt', 'shared-repo')
     const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedActiveRepo(app2, 'navikt', 'shared-repo')
     await addAppToGroup(group.id, app1)
     await addAppToGroup(group.id, app2)
 
