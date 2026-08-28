@@ -61,6 +61,7 @@ const baseLoaderData: AppDetailLoaderData = {
       app_name: mockApp.app_name,
     },
   ],
+  monorepo: null,
   devTeams: [
     {
       id: 1,
@@ -221,6 +222,47 @@ export const WithBaselineWarning: Story = {
     loaderData: {
       ...baseLoaderData,
       deploymentStats: { ...baseLoaderData.deploymentStats, baseline_action_count: 1 },
+    },
+    canAccessAdmin: false,
+  },
+  render: (args) => renderAppDetailStory(args),
+}
+
+export const InMonorepo: Story = {
+  name: 'Del av monorepo',
+  args: {
+    loaderData: {
+      ...baseLoaderData,
+      monorepo: {
+        github_owner: 'navikt',
+        github_repo_name: 'pensjon-monorepo',
+        siblings: [
+          { id: 20, app_name: 'pensjon-utbetaling', team_slug: 'pensjonutbetaling', environment_name: 'prod-fss' },
+          { id: 21, app_name: 'pensjon-saksbehandling', team_slug: 'pensjonsak', environment_name: 'prod-gcp' },
+        ],
+        base_branch_mismatch: false,
+        audit_year_mismatch: false,
+      },
+    },
+    canAccessAdmin: false,
+  },
+  render: (args) => renderAppDetailStory(args),
+}
+
+export const InMonorepoWithMismatch: Story = {
+  name: 'Monorepo med avvik i base branch/revisjonsår',
+  args: {
+    loaderData: {
+      ...baseLoaderData,
+      monorepo: {
+        github_owner: 'navikt',
+        github_repo_name: 'pensjon-monorepo',
+        siblings: [
+          { id: 20, app_name: 'pensjon-utbetaling', team_slug: 'pensjonutbetaling', environment_name: 'prod-fss' },
+        ],
+        base_branch_mismatch: true,
+        audit_year_mismatch: true,
+      },
     },
     canAccessAdmin: false,
   },

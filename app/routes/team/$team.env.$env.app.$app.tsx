@@ -13,6 +13,7 @@ import { getAuditReportsForApp } from '~/db/audit-reports.server'
 import { getAppDeploymentStats, getPendingVerificationCount } from '~/db/deployments.server'
 import { getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
+import { getMonorepoSiblings } from '~/db/monorepo.server'
 import { getLatestSyncJob, getObservedSyncIntervalMs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { canAccessAppAdmin, resolveAppCapabilities } from '~/lib/authorization.server'
@@ -47,6 +48,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     alerts,
     auditReports,
     groupContext,
+    monorepo,
     devTeams,
     latestSyncJob,
     verificationProgress,
@@ -59,6 +61,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     getUnresolvedAlertsByApp(app.id),
     getAuditReportsForApp(app.id),
     getGroupContext(app.id),
+    getMonorepoSiblings(app.id),
     getDevTeamsForApp(app.id, team),
     getLatestSyncJob(app.id, 'nais_sync'),
     getPendingVerificationCount(app.id),
@@ -91,6 +94,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     auditReports,
     group,
     siblings,
+    monorepo,
     devTeams,
     latestSyncJob: latestSyncJob
       ? {

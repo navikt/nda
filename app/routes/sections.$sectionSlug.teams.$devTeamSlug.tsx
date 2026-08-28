@@ -153,6 +153,24 @@ export async function loader({ request, params, url }: Route.LoaderArgs) {
   ]
   const groupNames = await getGroupNamesByIds(teamGroupIds)
 
+  const monorepoSiblingCountByAppId = new Map<number, number>()
+  const activeAppCountByRepoKey = new Map<string, number>()
+  for (const app of allApps) {
+    if (!app.is_active) continue
+    const repoKey = activeRepos.get(app.id)
+    if (!repoKey) continue
+    activeAppCountByRepoKey.set(repoKey, (activeAppCountByRepoKey.get(repoKey) ?? 0) + 1)
+  }
+  for (const app of allApps) {
+    if (!app.is_active) continue
+    const repoKey = activeRepos.get(app.id)
+    if (!repoKey) continue
+    const count = activeAppCountByRepoKey.get(repoKey) ?? 0
+    if (count > 1) {
+      monorepoSiblingCountByAppId.set(app.id, count - 1)
+    }
+  }
+
   const appCards: AppCardData[] = groupAppCards(
     displayApps.map((app) => ({
       ...app,
@@ -169,6 +187,7 @@ export async function loader({ request, params, url }: Route.LoaderArgs) {
         four_eyes_percentage: 0,
       },
       alertCount: alertCounts.get(app.id) || 0,
+      monorepoSiblingCount: monorepoSiblingCountByAppId.get(app.id),
     })),
     groupNames,
   ).sort((a, b) => (a.groupName ?? a.app_name).localeCompare(b.groupName ?? b.app_name, 'nb'))

@@ -211,6 +211,30 @@ export function AdminPage({
           </Box>
         </Link>
 
+        <Link to="/admin/monorepos" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <LayersIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Monorepoer
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Se automatisk oppdagede monorepoer der flere apper deler samme git-repo.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
         <Link to="/admin/workflow-triggers" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
