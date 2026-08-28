@@ -106,6 +106,14 @@ export interface AppDetailSibling {
   app_name: string
 }
 
+export interface AppDetailMonorepoInfo {
+  github_owner: string
+  github_repo_name: string
+  siblings: AppDetailSibling[]
+  base_branch_mismatch: boolean
+  audit_year_mismatch: boolean
+}
+
 export interface AppDetailDevTeam {
   id: number
   name: string
@@ -138,6 +146,7 @@ export interface AppDetailLoaderData {
   auditReports: AppDetailAuditReport[]
   group: AppDetailGroup | null
   siblings: AppDetailSibling[]
+  monorepo: AppDetailMonorepoInfo | null
   devTeams: AppDetailDevTeam[]
   latestSyncJob: AppDetailLatestSyncJob | null
   verificationProgress: AppDetailVerificationProgress
@@ -165,6 +174,7 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
     auditReports,
     group,
     siblings,
+    monorepo,
     devTeams,
     latestSyncJob,
     verificationProgress,
@@ -291,6 +301,44 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
               </Link>
             ))}
           </HStack>
+        </Box>
+      )}
+
+      {monorepo && monorepo.siblings.length > 0 && (
+        <Box padding="space-16" borderRadius="8" background="neutral-soft">
+          <VStack gap="space-8">
+            <HStack gap="space-12" align="center" wrap>
+              <PackageIcon aria-hidden />
+              <BodyShort size="small" weight="semibold">
+                Monorepo: {monorepo.github_owner}/{monorepo.github_repo_name}
+              </BodyShort>
+              <Tag variant="neutral" size="xsmall">
+                {monorepo.siblings.length + 1} applikasjoner deler dette repoet
+              </Tag>
+            </HStack>
+            <HStack gap="space-8" align="center" wrap>
+              {monorepo.siblings.map((s) => (
+                <Link
+                  key={s.id}
+                  to={`/team/${s.team_slug}/env/${s.environment_name}/app/${s.app_name}`}
+                  style={{ textDecoration: 'none' }}
+                >
+                  <Tag variant="neutral" size="xsmall">
+                    {s.app_name} ({s.team_slug}/{s.environment_name})
+                  </Tag>
+                </Link>
+              ))}
+            </HStack>
+            {(monorepo.base_branch_mismatch || monorepo.audit_year_mismatch) && (
+              <Alert variant="warning" size="small">
+                {monorepo.base_branch_mismatch && monorepo.audit_year_mismatch
+                  ? 'Applikasjonene i monorepoet har ulik konfigurert base branch og ulikt revisjons-startår.'
+                  : monorepo.base_branch_mismatch
+                    ? 'Applikasjonene i monorepoet har ulik konfigurert base branch.'
+                    : 'Applikasjonene i monorepoet har ulikt revisjons-startår.'}
+              </Alert>
+            )}
+          </VStack>
         </Box>
       )}
 

@@ -275,3 +275,13 @@ export const WithBaselineAndOtherIssues: Story = {
     },
   },
 }
+
+export const InMonorepo: Story = {
+  name: 'Del av monorepo',
+  args: {
+    app: {
+      ...baseApp,
+      monorepoSiblingCount: 2,
+    },
+  },
+}
