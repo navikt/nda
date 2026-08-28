@@ -3,8 +3,6 @@ import { index, layout, type RouteConfig, route } from '@react-router/dev/routes
 export default [
   route('api/isalive', 'routes/api/isalive.ts'),
   route('api/isready', 'routes/api/isready.ts'),
-  route('api/reports/generate', 'routes/api/reports.generate.ts'),
-  route('api/reports/download', 'routes/api/reports.download.ts'),
   route('api/reports/status', 'routes/api/reports.status.ts'),
   route('api/search', 'routes/api/search.ts'),
   route('api/users/search', 'routes/api/users.search.ts'),
