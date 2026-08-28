@@ -80,4 +80,38 @@ describe('buildNewDeploymentBlocks', () => {
     expect(text).toContain('Merget av kari.nordmann')
     expect(text).not.toContain('Se Pull Request')
   })
+
+  it('renders PR description as a collapsible container block with the PR title, and no duplicate section title', () => {
+    const blocks = buildNewDeploymentBlocks(newDeploymentFixtures.withPr)
+
+    const containerBlock = blocks.find((b) => (b as { type: string }).type === 'container')
+
+    expect(containerBlock).toBeDefined()
+    const container = containerBlock as unknown as {
+      type: 'container'
+      title: { text: string }
+      is_collapsible: boolean
+      default_collapsed: boolean
+      child_blocks: { type: string }[]
+    }
+
+    expect(container.title.text).toBe('feat: legg til ny pensjonsberegning for AFP')
+    expect(container.is_collapsible).toBe(true)
+    expect(container.default_collapsed).toBe(true)
+    expect(container.child_blocks[0].type).toBe('rich_text')
+
+    const text = JSON.stringify(blocks)
+    expect(text.match(/feat: legg til ny pensjonsberegning for AFP/g)).toHaveLength(1)
+  })
+
+  it('falls back to a plain section title when the PR has no body', () => {
+    const blocks = buildNewDeploymentBlocks({
+      ...newDeploymentFixtures.withPr,
+      pr: { ...newDeploymentFixtures.withPr.pr, body: undefined },
+    })
+
+    expect(blocks.some((b) => (b as { type: string }).type === 'container')).toBe(false)
+    const text = JSON.stringify(blocks)
+    expect(text).toContain('feat: legg til ny pensjonsberegning for AFP')
+  })
 })

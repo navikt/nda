@@ -1,5 +1,7 @@
-import type { KnownBlock } from '@slack/types'
+import type { KnownBlock, PlainTextElement, RichTextBlock } from '@slack/types'
 import { truncate } from './shared'
+
+const MAX_PR_BODY_LENGTH = 2900
 
 interface PullRequestInfo {
   number: number
@@ -7,6 +9,16 @@ interface PullRequestInfo {
   title: string
   creator?: string
   merger?: string
+  body?: string | null
+}
+
+interface ContainerBlock {
+  type: 'container'
+  block_id?: string
+  title: PlainTextElement
+  is_collapsible?: boolean
+  default_collapsed?: boolean
+  child_blocks: RichTextBlock[]
 }
 
 interface NewDeploymentNotificationBase {
@@ -87,11 +99,34 @@ export function buildNewDeploymentBlocks(notification: NewDeploymentNotification
   ]
 
   if (notification.pr) {
-    const safeTitle = escapeMrkdwn(truncate(notification.pr.title, 200))
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: `*${safeTitle}*` },
-    })
+    const safeTitle = truncate(notification.pr.title.replace(/\r?\n/g, ' '), 150)
+    const prBody = notification.pr.body?.trim()
+
+    if (prBody) {
+      const container: ContainerBlock = {
+        type: 'container',
+        title: { type: 'plain_text', text: safeTitle, emoji: true },
+        is_collapsible: true,
+        default_collapsed: true,
+        child_blocks: [
+          {
+            type: 'rich_text',
+            elements: [
+              {
+                type: 'rich_text_section',
+                elements: [{ type: 'text', text: truncate(prBody, MAX_PR_BODY_LENGTH) }],
+              },
+            ],
+          },
+        ],
+      }
+      blocks.push(container as unknown as KnownBlock)
+    } else {
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*${escapeMrkdwn(safeTitle)}*` },
+      })
+    }
 
     blocks.push({
       type: 'section',

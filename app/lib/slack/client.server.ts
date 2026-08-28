@@ -569,6 +569,7 @@ async function notifyNewDeploymentIfNeeded(
             title: prData?.title || deployment.title || 'Ukjent',
             creator: prCreator,
             merger: prMerger,
+            body: prData?.body,
           },
         }
       : {
