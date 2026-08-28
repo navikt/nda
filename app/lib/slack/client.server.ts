@@ -234,7 +234,11 @@ export async function sendDeviationNotification(
   }
 }
 
-export async function sendReminder(notification: ReminderNotification, channelId: string): Promise<string | null> {
+export async function sendReminder(
+  notification: ReminderNotification,
+  channelId: string,
+  monitoredAppId?: number,
+): Promise<string | null> {
   const app = getSlackApp()
   if (!app) {
     logger.info('Slack not configured, skipping reminder')
@@ -258,7 +262,24 @@ export async function sendReminder(notification: ReminderNotification, channelId
         text,
       }),
     )
-    return result.ts || null
+
+    const messageTs = result.ts
+    if (messageTs && monitoredAppId !== undefined) {
+      try {
+        await createSlackNotification({
+          monitoredAppId,
+          channelId,
+          messageTs,
+          messageBlocks: blocks as unknown as Record<string, unknown>[],
+          messageText: text,
+          notificationType: 'reminder',
+        })
+      } catch (historyError) {
+        logger.error('Failed to record reminder Slack notification history:', historyError)
+      }
+    }
+
+    return messageTs || null
   } catch (error) {
     logger.error('Failed to send reminder Slack notification:', error)
     return null

@@ -45,14 +45,25 @@ class AppNotFoundError extends Error {}
 async function updateSlackSettingWithAudit(params: {
   appId: number
   settingKey: SlackConfigSettingKey
-  enabledField: 'slack_notifications_enabled' | 'slack_deploy_notify_enabled'
-  channelField: 'slack_channel_id' | 'slack_deploy_channel_id'
+  enabledField: 'slack_notifications_enabled' | 'slack_deploy_notify_enabled' | 'reminder_enabled'
+  channelField: 'slack_channel_id' | 'slack_deploy_channel_id' | 'reminder_channel_id'
   channelId: string | null
   enabled: boolean
   changedByNavIdent: string
   changedByName?: string
+  extraUpdates?: Parameters<typeof updateMonitoredApplication>[1]
 }): Promise<{ error?: string }> {
-  const { appId, settingKey, enabledField, channelField, channelId, enabled, changedByNavIdent, changedByName } = params
+  const {
+    appId,
+    settingKey,
+    enabledField,
+    channelField,
+    channelId,
+    enabled,
+    changedByNavIdent,
+    changedByName,
+    extraUpdates,
+  } = params
 
   try {
     await withTransaction(async (client) => {
@@ -61,7 +72,11 @@ async function updateSlackSettingWithAudit(params: {
         throw new AppNotFoundError()
       }
 
-      await updateMonitoredApplication(appId, { [channelField]: channelId, [enabledField]: enabled }, client)
+      await updateMonitoredApplication(
+        appId,
+        { ...extraUpdates, [channelField]: channelId, [enabledField]: enabled },
+        client,
+      )
 
       if (currentApp[enabledField] !== enabled || currentApp[channelField] !== channelId) {
         await recordAppConfigAuditLog(
@@ -525,16 +540,34 @@ export async function action({ request }: { request: Request; params: Record<str
     const reminderEnabled = formData.get('reminder_enabled') === 'true'
     const reminderTime = (formData.get('reminder_time') as string)?.trim() || '09:00'
     const reminderDays = formData.getAll('reminder_days') as string[]
+    const reminderChannelId = (formData.get('reminder_channel_id') as string)?.trim() || null
 
     if (!/^\d{2}:\d{2}$/.test(reminderTime)) {
       return { error: 'Ugyldig tidsformat. Bruk HH:mm (f.eks. 09:00)' }
     }
 
-    await updateMonitoredApplication(appId, {
-      reminder_enabled: reminderEnabled,
-      reminder_time: reminderTime,
-      reminder_days: reminderDays.length > 0 ? reminderDays : ['mon', 'tue', 'wed', 'thu', 'fri'],
+    if (reminderChannelId && !isValidSlackChannel(reminderChannelId)) {
+      return { error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)' }
+    }
+
+    const auditResult = await updateSlackSettingWithAudit({
+      appId,
+      settingKey: 'reminder_enabled',
+      enabledField: 'reminder_enabled',
+      channelField: 'reminder_channel_id',
+      channelId: reminderChannelId,
+      enabled: reminderEnabled,
+      changedByNavIdent: user.navIdent,
+      changedByName: user.name,
+      extraUpdates: {
+        reminder_time: reminderTime,
+        reminder_days: reminderDays.length > 0 ? reminderDays : ['mon', 'tue', 'wed', 'thu', 'fri'],
+      },
     })
+    if (auditResult.error) {
+      return { error: auditResult.error }
+    }
+
     return { success: 'Purre-innstillinger oppdatert!' }
   }
 
@@ -546,8 +579,8 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Mangler team_slug, environment_name eller app_name' }
     }
     const app = await getMonitoredApplicationByIdentity(teamSlug, environmentName, appName)
-    if (!app?.slack_channel_id) {
-      return { error: 'Slack-kanal er ikke konfigurert for denne appen' }
+    if (!app?.reminder_channel_id) {
+      return { error: 'Slack-kanal for purringer er ikke konfigurert for denne appen' }
     }
 
     const { sendReminderForApp } = await import('~/lib/reminder-scheduler.server')
@@ -556,7 +589,7 @@ export async function action({ request }: { request: Request; params: Record<str
       app.team_slug,
       app.environment_name,
       app.app_name,
-      app.slack_channel_id,
+      app.reminder_channel_id,
     )
     if (sent) {
       return { success: 'Purring sendt!' }

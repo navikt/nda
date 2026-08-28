@@ -29,6 +29,7 @@ function isNotificationTypeFilter(value: string | null): value is NotificationTy
 const CONFIG_SETTING_TO_NOTIFICATION_TYPE: Record<SlackConfigSettingKey, SlackNotificationType> = {
   slack_notifications_enabled: 'approval',
   slack_deploy_notify_enabled: 'deploy',
+  reminder_enabled: 'reminder',
 }
 
 export interface SlackNotificationHistoryApp {
@@ -39,6 +40,8 @@ export interface SlackNotificationHistoryApp {
   slack_channel_id: string | null
   slack_deploy_notify_enabled: boolean
   slack_deploy_channel_id: string | null
+  reminder_enabled: boolean
+  reminder_channel_id: string | null
 }
 
 export interface SlackNotificationHistoryEntry {
@@ -139,6 +142,19 @@ export function SlackNotificationHistoryPage({
               )}
               {app.slack_deploy_channel_id && <Detail textColor="subtle">Kanal: {app.slack_deploy_channel_id}</Detail>}
             </HStack>
+            <HStack gap="space-16" align="center">
+              <BodyShort weight="semibold">Purrings-varsler:</BodyShort>
+              {app.reminder_enabled ? (
+                <Tag data-color="success" variant="moderate" size="small">
+                  Aktivert
+                </Tag>
+              ) : (
+                <Tag data-color="neutral" variant="moderate" size="small">
+                  Deaktivert
+                </Tag>
+              )}
+              {app.reminder_channel_id && <Detail textColor="subtle">Kanal: {app.reminder_channel_id}</Detail>}
+            </HStack>
           </VStack>
         </Box>
 
@@ -161,9 +177,10 @@ export function SlackNotificationHistoryPage({
           size="small"
           label="Filtrer på varseltype"
         >
-          <ToggleGroup.Item value="all">Begge</ToggleGroup.Item>
+          <ToggleGroup.Item value="all">Alle</ToggleGroup.Item>
           <ToggleGroup.Item value="deploy">Deployment-varsel</ToggleGroup.Item>
           <ToggleGroup.Item value="approval">Godkjenningsvarsel</ToggleGroup.Item>
+          <ToggleGroup.Item value="reminder">Purrings-varsel</ToggleGroup.Item>
         </ToggleGroup>
 
         {filteredConfigChanges.length > 0 && (

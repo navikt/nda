@@ -14,12 +14,13 @@ const { Empty, NotificationsDisabled, WithConfigChanges, WithHistory } = compose
 afterEach(cleanup)
 
 describe('SlackNotificationHistoryPage story baseline characterization', () => {
-  it('WithHistory story shows both approval and deploy notifications with type tags', () => {
+  it('WithHistory story shows approval, deploy, and reminder notifications with type tags', () => {
     const html = renderToStaticMarkup(<WithHistory />)
 
-    expect(html).toContain('Meldingshistorikk (2)')
+    expect(html).toContain('Meldingshistorikk (3)')
     expect(html).toContain('Godkjenningsvarsel')
     expect(html).toContain('Deployment-varsel')
+    expect(html).toContain('Purrings-varsel')
     expect(html).toContain('approve_deployment')
     expect(html).toContain('Glad Fjord')
   })
@@ -77,7 +78,7 @@ describe('SlackNotificationHistoryPage notification type filter', () => {
     expect(screen.queryByText(/Konfigurasjonsendringer/)).not.toBeInTheDocument()
     expect(screen.queryAllByText('Deployment-varsel')).toHaveLength(1)
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Begge' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Alle' }))
 
     expect(screen.getByText('Meldingshistorikk (2)')).toBeInTheDocument()
     expect(screen.getByText('Konfigurasjonsendringer (3)')).toBeInTheDocument()

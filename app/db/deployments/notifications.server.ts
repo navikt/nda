@@ -9,7 +9,7 @@ export interface AppReminderConfig {
   team_slug: string
   environment_name: string
   app_name: string
-  slack_channel_id: string
+  reminder_channel_id: string
   reminder_time: string
   reminder_days: string[]
   reminder_last_sent_at: Date | null
@@ -101,12 +101,12 @@ export async function getDeploymentsNeedingDeployNotify(limit = 50): Promise<Dep
 
 export async function getAppsWithRemindersEnabled(): Promise<AppReminderConfig[]> {
   const result = await pool.query<AppReminderConfig>(
-    `SELECT id, team_slug, environment_name, app_name, slack_channel_id,
+    `SELECT id, team_slug, environment_name, app_name,
+            reminder_channel_id,
             reminder_time, reminder_days, reminder_last_sent_at
      FROM monitored_applications
      WHERE reminder_enabled = true
-       AND slack_notifications_enabled = true
-       AND slack_channel_id IS NOT NULL
+       AND reminder_channel_id IS NOT NULL
        AND is_active = true`,
   )
   return result.rows

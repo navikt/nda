@@ -11,7 +11,9 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { Form } from 'react-router'
+import { SLACK_CHANNEL_INVITE_HINT } from '~/lib/slack/config-setting-keys'
 import type { Route } from '../+types/$team.env.$env.app.$app.admin'
+import { SlackHistoryLink } from './SlackHistoryLink'
 
 type LoaderData = Route.ComponentProps['loaderData']
 
@@ -23,14 +25,17 @@ export function ReminderSettings({ app }: ReminderSettingsProps) {
   return (
     <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
       <VStack gap="space-16">
-        <div>
-          <Heading size="small" level="2">
-            Purring for ikke-godkjente deployments
-          </Heading>
-          <BodyShort textColor="subtle" size="small">
-            Send automatiske påminnelser i Slack for deployments som mangler godkjenning.
-          </BodyShort>
-        </div>
+        <HStack gap="space-8" align="center" justify="space-between">
+          <div>
+            <Heading size="small" level="2">
+              Purring for ikke-godkjente deployments
+            </Heading>
+            <BodyShort textColor="subtle" size="small">
+              Send automatiske påminnelser i Slack for deployments som mangler godkjenning.
+            </BodyShort>
+          </div>
+          <SlackHistoryLink teamSlug={app.team_slug} environmentName={app.environment_name} appName={app.app_name} />
+        </HStack>
 
         <Form method="post">
           <input type="hidden" name="action" value="update_reminder_config" />
@@ -39,6 +44,15 @@ export function ReminderSettings({ app }: ReminderSettingsProps) {
             <Switch name="reminder_enabled" value="true" defaultChecked={app.reminder_enabled}>
               Aktiver automatisk purring
             </Switch>
+
+            <TextField
+              label="Slack-kanal for purringer"
+              name="reminder_channel_id"
+              defaultValue={app.reminder_channel_id || ''}
+              description={SLACK_CHANNEL_INVITE_HINT}
+              size="small"
+              style={{ maxWidth: '300px' }}
+            />
 
             <TextField
               label="Tidspunkt"
