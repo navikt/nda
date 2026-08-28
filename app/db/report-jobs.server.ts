@@ -30,26 +30,17 @@ export async function createReportJob(
   }
 }
 
-export async function getReportJobStatus(
-  jobId: string,
-): Promise<{ status: string; error: string | null; created_at: Date; completed_at: Date | null } | null> {
+export async function getReportJobStatus(jobId: string): Promise<{
+  status: string
+  error: string | null
+  created_at: Date
+  completed_at: Date | null
+  monitored_app_id: number | null
+} | null> {
   const result = await pool.query(
-    `SELECT status, error, created_at, completed_at
+    `SELECT status, error, created_at, completed_at, monitored_app_id
      FROM report_jobs
      WHERE job_id = $1`,
-    [jobId],
-  )
-  return result.rows[0] || null
-}
-
-export async function getReportJobWithPdf(
-  jobId: string,
-): Promise<{ status: string; pdf_data: Buffer | null; app_name: string; year: number } | null> {
-  const result = await pool.query(
-    `SELECT rj.pdf_data, rj.status, ma.app_name, rj.year
-     FROM report_jobs rj
-     JOIN monitored_applications ma ON rj.monitored_app_id = ma.id
-     WHERE rj.job_id = $1`,
     [jobId],
   )
   return result.rows[0] || null

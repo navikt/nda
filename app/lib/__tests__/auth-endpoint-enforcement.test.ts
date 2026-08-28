@@ -39,8 +39,6 @@ const ALL_ROUTES: { path: string; description: string }[] = [
   { path: '/api/isalive', description: 'Health: isalive' },
   { path: '/api/isready', description: 'Health: isready' },
 
-  { path: '/api/reports/generate', description: 'API: reports generate' },
-  { path: '/api/reports/download', description: 'API: reports download' },
   { path: '/api/reports/status', description: 'API: reports status' },
   { path: '/api/search', description: 'API: search' },
   { path: '/api/checks/logs', description: 'API: check logs' },
