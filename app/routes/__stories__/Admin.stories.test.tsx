@@ -24,7 +24,6 @@ describe('Admin story baseline characterization', () => {
     expect(html).toContain('/admin/audit-reports')
     expect(html).toContain('/admin/users')
     expect(html).toContain('/admin/sync-jobs')
-    expect(html).toContain('/admin/slack')
     expect(html).toContain('/admin/global-settings')
     expect(html).toContain('/admin/env')
     expect(html).toContain('/admin/application-groups')

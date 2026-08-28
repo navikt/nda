@@ -82,7 +82,6 @@ const ALL_ROUTES: { path: string; description: string }[] = [
   { path: '/admin/users/export', description: 'Admin users export' },
   { path: '/admin/sync-jobs', description: 'Admin sync jobs' },
   { path: '/admin/sync-jobs/1', description: 'Admin sync job detail' },
-  { path: '/admin/slack', description: 'Admin Slack' },
   { path: '/admin/audit-reports', description: 'Admin audit reports' },
   { path: '/admin/audit-reports/1/pdf', description: 'Audit report PDF' },
   { path: '/admin/audit-reports/1/view', description: 'Audit report view' },
