@@ -14,6 +14,8 @@ const app: SlackNotificationHistoryApp = {
   slack_channel_id: 'C01234567',
   slack_deploy_notify_enabled: true,
   slack_deploy_channel_id: 'C07654321',
+  reminder_enabled: true,
+  reminder_channel_id: 'C0REMIND1',
 }
 
 const approvalNotification: SlackNotificationHistoryEntry = {
@@ -52,6 +54,20 @@ const deployNotification: SlackNotificationHistoryEntry = {
   update_count: 1,
   interaction_count: 0,
   updates: [{ id: 3, created_at: '2026-02-11T13:30:00Z', action: 'sent', triggered_by: null }],
+  interactions: [],
+}
+
+const reminderNotification: SlackNotificationHistoryEntry = {
+  id: 3,
+  notification_type: 'reminder',
+  deployment_id: null,
+  deployment_commit_sha: null,
+  sent_at: '2026-02-12T09:00:00Z',
+  sent_by: null,
+  message_text: '🔔 3 deployments mangler godkjenning — pensjon-pen (prod-fss)',
+  update_count: 1,
+  interaction_count: 0,
+  updates: [{ id: 4, created_at: '2026-02-12T09:00:00Z', action: 'sent', triggered_by: null }],
   interactions: [],
 }
 
@@ -96,7 +112,7 @@ export const WithHistory: Story = {
   name: 'Med meldingshistorikk',
   args: {
     app,
-    notifications: [deployNotification, approvalNotification],
+    notifications: [deployNotification, approvalNotification, reminderNotification],
   },
 }
 

@@ -245,4 +245,64 @@ describe('admin actions - Slack config toggles', () => {
     expect(mockUpdateMonitoredApplication).not.toHaveBeenCalled()
     expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
   })
+
+  it('records an audit log entry when the reminder Slack channel is changed', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({
+      reminder_enabled: true,
+      reminder_channel_id: 'C0OLDCHAN',
+    })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_reminder_config',
+        app_id: '42',
+        reminder_enabled: 'true',
+        reminder_channel_id: 'C0NEWCHAN',
+        reminder_time: '09:00',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ success: 'Purre-innstillinger oppdatert!' })
+    expect(mockRecordAppConfigAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        monitoredAppId: 42,
+        settingKey: 'reminder_enabled',
+        oldValue: { enabled: true, channel_id: 'C0OLDCHAN' },
+        newValue: { enabled: true, channel_id: 'C0NEWCHAN' },
+      }),
+      expect.anything(),
+    )
+    expect(mockUpdateMonitoredApplication).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ reminder_time: '09:00' }),
+      expect.anything(),
+    )
+  })
+
+  it('rejects an invalid reminder Slack channel format', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({
+      reminder_enabled: false,
+      reminder_channel_id: null,
+    })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_reminder_config',
+        app_id: '42',
+        reminder_enabled: 'true',
+        reminder_channel_id: 'not a channel!',
+        reminder_time: '09:00',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({
+      error: 'Ugyldig kanal-format. Bruk kanal-ID (C01234567) eller kanalnavn (#kanal-navn)',
+    })
+    expect(mockUpdateMonitoredApplication).not.toHaveBeenCalled()
+    expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
+  })
 })

@@ -4,6 +4,7 @@ import { pool } from './connection.server'
 interface SlackNotification {
   id: number
   deployment_id: number | null
+  monitored_app_id: number | null
   channel_id: string
   message_ts: string
   message_blocks: Record<string, unknown>[]
@@ -34,22 +35,28 @@ interface SlackInteraction {
   created_at: Date
 }
 
-export async function createSlackNotification(data: {
-  deploymentId: number
-  channelId: string
-  messageTs: string
-  messageBlocks: Record<string, unknown>[]
-  messageText?: string
-  sentBy?: string
-  notificationType?: SlackNotificationType
-}): Promise<SlackNotification> {
+type SlackNotificationTarget =
+  | { deploymentId: number; monitoredAppId?: number | null }
+  | { deploymentId?: number | null; monitoredAppId: number }
+
+export async function createSlackNotification(
+  data: SlackNotificationTarget & {
+    channelId: string
+    messageTs: string
+    messageBlocks: Record<string, unknown>[]
+    messageText?: string
+    sentBy?: string
+    notificationType?: SlackNotificationType
+  },
+): Promise<SlackNotification> {
   const result = await pool.query(
     `INSERT INTO slack_notifications 
-     (deployment_id, channel_id, message_ts, message_blocks, message_text, sent_by, notification_type)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     (deployment_id, monitored_app_id, channel_id, message_ts, message_blocks, message_text, sent_by, notification_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
     [
-      data.deploymentId,
+      data.deploymentId ?? null,
+      data.monitoredAppId ?? null,
       data.channelId,
       data.messageTs,
       JSON.stringify(data.messageBlocks),
@@ -196,8 +203,8 @@ export async function getSlackNotificationsByApp(
        (SELECT COUNT(*) FROM slack_notification_updates WHERE notification_id = sn.id) as update_count,
        (SELECT COUNT(*) FROM slack_interactions WHERE notification_id = sn.id) as interaction_count
      FROM slack_notifications sn
-     JOIN deployments d ON d.id = sn.deployment_id
-     WHERE d.monitored_app_id = $1
+     LEFT JOIN deployments d ON d.id = sn.deployment_id
+     WHERE d.monitored_app_id = $1 OR sn.monitored_app_id = $1
      ORDER BY sn.sent_at DESC
      LIMIT $2`,
     [appId, limit],

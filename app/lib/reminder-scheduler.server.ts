@@ -39,7 +39,7 @@ async function checkAndSendReminders(): Promise<void> {
       if (!app.reminder_days?.includes(currentDay)) continue
       if (!isTimeMatch(app.reminder_time, currentTime)) continue
 
-      await sendReminderForApp(app.id, app.team_slug, app.environment_name, app.app_name, app.slack_channel_id)
+      await sendReminderForApp(app.id, app.team_slug, app.environment_name, app.app_name, app.reminder_channel_id)
     }
   } catch (error) {
     logger.error('Reminder scheduler error:', error)
@@ -92,6 +92,7 @@ export async function sendReminderForApp(
       deploymentsListUrl,
     },
     channelId,
+    appId,
   )
 
   if (messageTs) {

@@ -17,6 +17,7 @@ export interface MonitoredApplication {
   reminder_time: string | null
   reminder_days: string[] | null
   reminder_last_sent_at: Date | null
+  reminder_channel_id: string | null
   slack_notifications_enabled_at: Date | null
   slack_deploy_channel_id: string | null
   slack_deploy_notify_enabled: boolean
@@ -129,6 +130,7 @@ export async function updateMonitoredApplication(
     reminder_enabled?: boolean
     reminder_time?: string
     reminder_days?: string[]
+    reminder_channel_id?: string | null
     not_found_in_nais_at?: Date | null
   },
   client?: PoolClient,
@@ -206,6 +208,11 @@ export async function updateMonitoredApplication(
   if (data.reminder_days !== undefined) {
     updates.push(`reminder_days = $${paramCount++}`)
     values.push(data.reminder_days)
+  }
+
+  if (data.reminder_channel_id !== undefined) {
+    updates.push(`reminder_channel_id = $${paramCount++}`)
+    values.push(data.reminder_channel_id)
   }
 
   if (data.not_found_in_nais_at !== undefined) {

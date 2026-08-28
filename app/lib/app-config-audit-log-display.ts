@@ -1,6 +1,7 @@
 const SETTING_LABELS: Record<string, string> = {
   slack_notifications_enabled: 'Godkjenningsvarsler',
   slack_deploy_notify_enabled: 'Deployment-varsler',
+  reminder_enabled: 'Purrings-varsler',
   implicit_approval: 'Implisitt godkjenning',
 }
 

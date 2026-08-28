@@ -12,6 +12,14 @@ export function NotificationTypeTag({ notificationType }: { notificationType: Sl
     )
   }
 
+  if (notificationType === 'reminder') {
+    return (
+      <Tag data-color="danger" variant="moderate" size="xsmall">
+        Purrings-varsel
+      </Tag>
+    )
+  }
+
   return (
     <Tag data-color="warning" variant="moderate" size="xsmall">
       Godkjenningsvarsel
