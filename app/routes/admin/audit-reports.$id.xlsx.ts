@@ -1,9 +1,10 @@
 import { getAuditReportById, getAuditReportFile } from '~/db/audit-reports.server'
-import { requireAdmin } from '~/lib/auth.server'
+import { requireUser } from '~/lib/auth.server'
+import { canAccessAppAdmin } from '~/lib/authorization.server'
 import type { Route } from './+types/audit-reports.$id.xlsx'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  await requireAdmin(request)
+  const user = await requireUser(request)
 
   const reportId = parseInt(params.id, 10)
 
@@ -15,6 +16,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   if (!report) {
     throw new Response('Rapport ikke funnet', { status: 404 })
+  }
+
+  if (!(await canAccessAppAdmin(user, report.monitored_app_id))) {
+    throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
   const excelData = await getAuditReportFile(reportId, 'xlsx')
