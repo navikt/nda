@@ -353,6 +353,7 @@ export const newDeploymentFixtures = {
       title: 'feat: legg til ny pensjonsberegning for AFP',
       creator: 'ola.nordmann',
       merger: 'kari.nordmann',
+      body: 'Denne PR-en legger til støtte for ny AFP-beregningsmodell i henhold til regelverksendringen fra 2026.\n\nEndringer:\n- Ny beregningsmotor for AFP\n- Oppdaterte enhetstester\n- Migrering av eksisterende data',
     },
     branchName: 'feature/afp-beregning',
     commitsCount: 3,
