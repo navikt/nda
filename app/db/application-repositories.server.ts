@@ -1,3 +1,4 @@
+import { getRepositoryId } from '~/lib/github/git.server'
 import { pool } from './connection.server'
 
 interface ApplicationRepository {
@@ -5,6 +6,7 @@ interface ApplicationRepository {
   monitored_app_id: number
   github_owner: string
   github_repo_name: string
+  github_repo_id: string | null
   status: 'active' | 'historical' | 'pending_approval'
   redirects_to_owner: string | null
   redirects_to_repo: string | null
@@ -87,14 +89,16 @@ export async function upsertApplicationRepository(data: {
   approvedBy?: string | null
 }): Promise<ApplicationRepository> {
   const approvedAt = data.status !== 'pending_approval' ? new Date() : null
+  const githubRepoId = await getRepositoryId(data.githubOwner, data.githubRepoName)
 
   const result = await pool.query(
     `INSERT INTO application_repositories (
-      monitored_app_id, github_owner, github_repo_name, status,
+      monitored_app_id, github_owner, github_repo_name, github_repo_id, status,
       redirects_to_owner, redirects_to_repo, notes, approved_at, approved_by
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     ON CONFLICT (monitored_app_id, github_owner, github_repo_name)
     DO UPDATE SET
+      github_repo_id = COALESCE(application_repositories.github_repo_id, EXCLUDED.github_repo_id),
       status = EXCLUDED.status,
       redirects_to_owner = EXCLUDED.redirects_to_owner,
       redirects_to_repo = EXCLUDED.redirects_to_repo,
@@ -106,6 +110,7 @@ export async function upsertApplicationRepository(data: {
       data.monitoredAppId,
       data.githubOwner,
       data.githubRepoName,
+      githubRepoId,
       data.status,
       data.redirectsToOwner || null,
       data.redirectsToRepo || null,

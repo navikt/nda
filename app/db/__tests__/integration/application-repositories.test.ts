@@ -1,6 +1,13 @@
 import { Pool } from 'pg'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { seedApp, truncateAllTables } from './helpers'
+
+vi.mock('~/lib/github/git.server', () => ({
+  getRepositoryId: vi.fn(),
+}))
+
+import { getRepositoryId } from '~/lib/github/git.server'
+import { upsertApplicationRepository } from '../../application-repositories.server'
 
 let pool: Pool
 
@@ -149,6 +156,70 @@ describe('application-repositories', () => {
 
     const { rows } = await pool.query('SELECT * FROM application_repositories WHERE id = $1', [created[0].id])
     expect(rows).toHaveLength(1)
+  })
+
+  it('github_repo_id defaults to null and can be backfilled', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+
+    const { rows: created } = await pool.query(
+      `INSERT INTO application_repositories (monitored_app_id, github_owner, github_repo_name, status)
+       VALUES ($1, 'navikt', 'repo', 'active') RETURNING *`,
+      [appId],
+    )
+    expect(created[0].github_repo_id).toBeNull()
+
+    const { rows: updated } = await pool.query(
+      'UPDATE application_repositories SET github_repo_id = $1 WHERE id = $2 RETURNING *',
+      [123456, created[0].id],
+    )
+    expect(Number(updated[0].github_repo_id)).toBe(123456)
+  })
+
+  it('upsertApplicationRepository populates github_repo_id from getRepositoryId', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    vi.mocked(getRepositoryId).mockResolvedValueOnce(987654)
+
+    await upsertApplicationRepository({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo',
+      status: 'active',
+    })
+
+    const { rows } = await pool.query(
+      "SELECT * FROM application_repositories WHERE monitored_app_id = $1 AND github_owner = 'navikt' AND github_repo_name = 'repo'",
+      [appId],
+    )
+    expect(Number(rows[0].github_repo_id)).toBe(987654)
+  })
+
+  it('upsertApplicationRepository does not overwrite an existing github_repo_id on conflict', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    vi.mocked(getRepositoryId).mockResolvedValueOnce(111)
+
+    await upsertApplicationRepository({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo',
+      status: 'pending_approval',
+    })
+
+    vi.mocked(getRepositoryId).mockResolvedValueOnce(222)
+
+    await upsertApplicationRepository({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo',
+      status: 'active',
+      approvedBy: 'alice',
+    })
+
+    const { rows } = await pool.query(
+      "SELECT * FROM application_repositories WHERE monitored_app_id = $1 AND github_owner = 'navikt' AND github_repo_name = 'repo'",
+      [appId],
+    )
+    expect(Number(rows[0].github_repo_id)).toBe(111)
+    expect(rows[0].status).toBe('active')
   })
 
   it('redirect configuration works', async () => {

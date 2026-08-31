@@ -260,6 +260,30 @@ export function AdminPage({
           </Box>
         </Link>
 
+        <Link to="/admin/github-repo-ids" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <DownloadIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  GitHub repo-ID
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Hent GitHub's stabile repo-ID for alle registrerte repoer, som grunnlag for monorepo-verifisering.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
         <Link to="/admin/workflow-patterns" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"

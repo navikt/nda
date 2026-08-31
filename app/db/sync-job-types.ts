@@ -8,6 +8,7 @@ export const SYNC_JOB_TYPES = [
   'refresh_missing_approver',
   'backfill_workflow_triggers',
   'checks_reverify',
+  'backfill_github_repo_ids',
 ] as const
 export type SyncJobType = (typeof SYNC_JOB_TYPES)[number]
 
@@ -21,6 +22,7 @@ export const SYNC_JOB_TYPE_LABELS: Record<SyncJobType, string> = {
   refresh_missing_approver: 'Oppdater manglende godkjenner',
   backfill_workflow_triggers: 'Hent workflow-trigger (alle apper)',
   checks_reverify: 'Reverifiser ventende checks',
+  backfill_github_repo_ids: 'Hent GitHub repo-ID (alle repoer)',
 }
 
 export const SYNC_JOB_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled'] as const
