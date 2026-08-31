@@ -1,3 +1,4 @@
+import { REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
 
 export interface MonorepoAppEntry {
@@ -132,4 +133,45 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
     base_branch_mismatch: hasMismatch(allApps.map((a) => a.default_branch)),
     audit_year_mismatch: hasMismatch(allApps.map((a) => a.audit_start_year)),
   }
+}
+
+const PROPAGATABLE_STATUSES = new Set([
+  'approved',
+  'approved_pr_with_unreviewed',
+  'implicitly_approved',
+  'no_changes',
+  'manually_approved',
+])
+
+const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
+
+export async function propagateVerificationToSiblings(
+  deploymentId: number,
+  status: string,
+  commitSha: string,
+  monitoredAppId: number,
+  hasFourEyes = true,
+): Promise<number> {
+  if (!hasFourEyes || !PROPAGATABLE_STATUSES.has(status)) return 0
+
+  const result = await pool.query(
+    `UPDATE deployments
+     SET four_eyes_status = $1
+     WHERE commit_sha = $2
+       AND four_eyes_status = ANY($3::text[])
+       AND id != $4
+       AND monitored_app_id IN (
+         SELECT ar.monitored_app_id FROM application_repositories ar
+         WHERE ar.status = 'active'
+           AND ar.github_repo_id IS NOT NULL
+           AND ar.github_repo_id IN (
+             SELECT ar2.github_repo_id FROM application_repositories ar2
+             WHERE ar2.monitored_app_id = $5 AND ar2.status = 'active' AND ar2.github_repo_id IS NOT NULL
+           )
+           AND ar.monitored_app_id != $5
+       )`,
+    [status, commitSha, PROPAGATION_TARGET_STATUSES, deploymentId, monitoredAppId],
+  )
+
+  return result.rowCount ?? 0
 }

@@ -44,9 +44,9 @@ export async function fetchVerificationData(
     deploymentId,
     owner,
     repo,
-    environmentName,
+    repoCheck.repository?.github_repo_id ?? null,
     appSettings.auditStartYear,
-    monitoredAppId,
+    commitSha,
   )
 
   const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, options)

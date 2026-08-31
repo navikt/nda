@@ -32,15 +32,36 @@ async function getTargetAppIds(client: PoolClient, appId: number): Promise<numbe
   if (!app) {
     throw new Error(`Monitored application ${appId} not found`)
   }
-  if (!app.application_group_id) {
-    return [appId]
+
+  const targetAppIds = new Set<number>([appId])
+
+  if (app.application_group_id) {
+    const { rows: groupSiblings } = await client.query<{ id: number }>(
+      `SELECT id FROM monitored_applications WHERE application_group_id = $1`,
+      [app.application_group_id],
+    )
+    for (const sibling of groupSiblings) {
+      targetAppIds.add(sibling.id)
+    }
   }
 
-  const { rows: siblings } = await client.query<{ id: number }>(
-    `SELECT id FROM monitored_applications WHERE application_group_id = $1`,
-    [app.application_group_id],
+  const { rows: repoSiblings } = await client.query<{ id: number }>(
+    `SELECT ma.id
+     FROM application_repositories ar
+     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+     WHERE ar.status = 'active'
+       AND ar.github_repo_id IS NOT NULL
+       AND ar.github_repo_id IN (
+         SELECT github_repo_id FROM application_repositories
+         WHERE monitored_app_id = $1 AND status = 'active' AND github_repo_id IS NOT NULL
+       )`,
+    [appId],
   )
-  return siblings.map((r) => r.id)
+  for (const sibling of repoSiblings) {
+    targetAppIds.add(sibling.id)
+  }
+
+  return [...targetAppIds]
 }
 
 async function resolveRepoScope(client: PoolClient, appIds: number[]): Promise<RepoScopeResolution> {

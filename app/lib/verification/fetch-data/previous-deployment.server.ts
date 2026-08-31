@@ -1,93 +1,105 @@
 import { pool } from '~/db/connection.server'
 import { LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { getCommitAncestryStatus } from '~/lib/github'
+import { logger } from '~/lib/logger.server'
+
+export interface PreviousDeploymentResult {
+  id: number
+  commitSha: string
+  createdAt: string
+}
+
+interface PreviousDeploymentCandidate {
+  id: number
+  commitSha: string
+  createdAt: Date
+}
+
+async function queryCandidates(
+  currentDeploymentId: number,
+  githubRepoId: string,
+  auditStartYear: number | null,
+): Promise<PreviousDeploymentCandidate[]> {
+  const params: (number | string)[] = [currentDeploymentId, githubRepoId]
+  let query = `
+    SELECT d.id, d.commit_sha, d.created_at
+    FROM deployments d
+    JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+    JOIN application_repositories ar ON ar.monitored_app_id = ma.id AND ar.status = 'active'
+    WHERE d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
+      AND ar.github_repo_id = $2
+      AND d.commit_sha IS NOT NULL
+      AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+      AND d.commit_sha !~ '^refs/'
+  `
+
+  if (auditStartYear) {
+    params.push(`${auditStartYear}-01-01`)
+    query += ` AND d.created_at >= $${params.length}`
+  }
+
+  query += ` ORDER BY d.created_at DESC LIMIT 20`
+
+  const result = await pool.query(query, params)
+  return result.rows.map((row) => ({
+    id: row.id,
+    commitSha: row.commit_sha,
+    createdAt: row.created_at,
+  }))
+}
+
+async function findAncestorCandidate(
+  candidates: PreviousDeploymentCandidate[],
+  owner: string,
+  repo: string,
+  currentCommitSha: string,
+): Promise<PreviousDeploymentResult | null> {
+  if (candidates.length === 0) return null
+
+  if (candidates.length === 1) {
+    const only = candidates[0]
+    return { id: only.id, commitSha: only.commitSha, createdAt: only.createdAt.toISOString() }
+  }
+
+  for (const candidate of candidates) {
+    const status = await getCommitAncestryStatus(owner, repo, candidate.commitSha, currentCommitSha)
+
+    if (status === null) {
+      logger.warn(
+        `⚠️ Could not verify ancestry of candidate previous deployment ${candidate.commitSha.substring(0, 7)} for ${owner}/${repo}, skipping`,
+      )
+      continue
+    }
+
+    if (status === 'identical' || status === 'ahead') {
+      return { id: candidate.id, commitSha: candidate.commitSha, createdAt: candidate.createdAt.toISOString() }
+    }
+
+    if (status === 'diverged') {
+      logger.warn(`⚠️ history_anomaly: candidate previous deployment is not an ancestor of the current commit`, {
+        log_type: 'history_anomaly',
+        owner,
+        repo,
+        candidate_commit_sha: candidate.commitSha,
+        current_commit_sha: currentCommitSha,
+        ancestry_status: status,
+      })
+    }
+  }
+
+  return null
+}
 
 export async function getPreviousDeployment(
   currentDeploymentId: number,
   owner: string,
   repo: string,
-  environmentName: string,
+  githubRepoId: string | null,
   auditStartYear: number | null,
-  monitoredAppId: number,
-): Promise<{ id: number; commitSha: string; createdAt: string } | null> {
-  let query = `
-    SELECT d.id, d.commit_sha, d.created_at
-    FROM deployments d
-    JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-    WHERE d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
-      AND d.monitored_app_id = $2
-      AND ma.environment_name = $3
-      AND d.detected_github_owner = $4
-      AND d.detected_github_repo_name = $5
-      AND d.commit_sha IS NOT NULL
-      AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
-      AND d.commit_sha !~ '^refs/'
-  `
-  const params: (number | string)[] = [currentDeploymentId, monitoredAppId, environmentName, owner, repo]
+  currentCommitSha: string,
+): Promise<PreviousDeploymentResult | null> {
+  if (!githubRepoId) return null
 
-  if (auditStartYear) {
-    query += ` AND d.created_at >= $6`
-    params.push(`${auditStartYear}-01-01`)
-  }
-
-  query += ` ORDER BY d.created_at DESC LIMIT 1`
-
-  const result = await pool.query(query, params)
-
-  if (result.rows.length > 0) {
-    return {
-      id: result.rows[0].id,
-      commitSha: result.rows[0].commit_sha,
-      createdAt: result.rows[0].created_at.toISOString(),
-    }
-  }
-
-  return getPreviousDeploymentFromGroupSibling(currentDeploymentId, owner, repo, auditStartYear, monitoredAppId)
-}
-
-async function getPreviousDeploymentFromGroupSibling(
-  currentDeploymentId: number,
-  owner: string,
-  repo: string,
-  auditStartYear: number | null,
-  monitoredAppId: number,
-): Promise<{ id: number; commitSha: string; createdAt: string } | null> {
-  const groupCheck = await pool.query<{ application_group_id: number | null }>(
-    `SELECT application_group_id FROM monitored_applications WHERE id = $1`,
-    [monitoredAppId],
-  )
-  const groupId = groupCheck.rows[0]?.application_group_id
-  if (!groupId) return null
-
-  let query = `
-    SELECT d.id, d.commit_sha, d.created_at
-    FROM deployments d
-    JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-    WHERE d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
-      AND d.detected_github_owner = $2
-      AND d.detected_github_repo_name = $3
-      AND d.commit_sha IS NOT NULL
-      AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
-      AND d.commit_sha !~ '^refs/'
-      AND ma.application_group_id = $4
-  `
-  const params: (number | string)[] = [currentDeploymentId, owner, repo, groupId]
-
-  if (auditStartYear) {
-    query += ` AND d.created_at >= $5`
-    params.push(`${auditStartYear}-01-01`)
-  }
-
-  query += ` ORDER BY d.created_at DESC LIMIT 1`
-
-  const result = await pool.query(query, params)
-
-  if (result.rows.length === 0) {
-    return null
-  }
-
-  return {
-    id: result.rows[0].id,
-    commitSha: result.rows[0].commit_sha,
-    createdAt: result.rows[0].created_at.toISOString(),
-  }
+  const candidates = await queryCandidates(currentDeploymentId, githubRepoId, auditStartYear)
+  return findAncestorCandidate(candidates, owner, repo, currentCommitSha)
 }

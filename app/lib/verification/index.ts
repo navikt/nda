@@ -1,7 +1,7 @@
 import { getImplicitApprovalSettings } from '~/db/app-settings.server'
-import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { pool } from '~/db/connection.server'
 import { TITLE_COALESCE_SQL } from '~/db/deployments.server'
+import { propagateVerificationToSiblings } from '~/db/monorepo.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { getMergedPullRequestsInWindow } from '~/lib/github'

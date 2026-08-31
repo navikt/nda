@@ -143,15 +143,41 @@ export async function canAccessAppAdminForGroupCascade(actor: UserIdentity, moni
     [monitoredAppId],
   )
   const applicationGroupId = rows[0]?.application_group_id
-  if (!applicationGroupId) {
+
+  const siblingIds = new Set<number>()
+
+  if (applicationGroupId) {
+    const { rows: groupSiblingRows } = await pool.query<{ id: number }>(
+      'SELECT id FROM monitored_applications WHERE application_group_id = $1',
+      [applicationGroupId],
+    )
+    for (const sibling of groupSiblingRows) {
+      siblingIds.add(sibling.id)
+    }
+  }
+
+  const { rows: repoSiblingRows } = await pool.query<{ id: number }>(
+    `SELECT ma.id
+     FROM application_repositories ar
+     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+     WHERE ar.status = 'active'
+       AND ar.github_repo_id IS NOT NULL
+       AND ar.github_repo_id IN (
+         SELECT github_repo_id FROM application_repositories
+         WHERE monitored_app_id = $1 AND status = 'active' AND github_repo_id IS NOT NULL
+       )`,
+    [monitoredAppId],
+  )
+  for (const sibling of repoSiblingRows) {
+    siblingIds.add(sibling.id)
+  }
+
+  if (siblingIds.size === 0) {
     return canAccessAppAdmin(actor, monitoredAppId)
   }
 
-  const { rows: siblingRows } = await pool.query<{ id: number }>(
-    'SELECT id FROM monitored_applications WHERE application_group_id = $1',
-    [applicationGroupId],
-  )
-  const accessChecks = await Promise.all(siblingRows.map((sibling) => canAccessAppAdmin(actor, sibling.id)))
+  siblingIds.add(monitoredAppId)
+  const accessChecks = await Promise.all([...siblingIds].map((id) => canAccessAppAdmin(actor, id)))
   return accessChecks.every(Boolean)
 }
 

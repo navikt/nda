@@ -4,7 +4,7 @@ vi.mock('~/db/app-settings.server', () => ({
   getImplicitApprovalSettings: vi.fn(),
 }))
 
-vi.mock('~/db/application-groups.server', () => ({
+vi.mock('~/db/monorepo.server', () => ({
   propagateVerificationToSiblings: vi.fn(),
 }))
 

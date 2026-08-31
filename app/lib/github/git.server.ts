@@ -114,6 +114,36 @@ export async function archiveCommitRawSnapshot(
   }
 }
 
+export type CommitAncestryStatus = 'identical' | 'ahead' | 'behind' | 'diverged'
+
+export async function getCommitAncestryStatus(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+): Promise<CommitAncestryStatus | null> {
+  try {
+    const client = getGitHubClient()
+
+    const response = await client.repos.compareCommits({
+      owner,
+      repo,
+      base: baseSha,
+      head: headSha,
+    })
+
+    await archiveCommitOnBranchRawSnapshot(owner, repo, baseSha, headSha, response.data, response.headers)
+
+    return response.data.status as CommitAncestryStatus
+  } catch (error) {
+    logger.warn(
+      `⚠️ Failed to compare commit ancestry ${baseSha.substring(0, 7)}...${headSha.substring(0, 7)} in ${owner}/${repo}:`,
+      error as Record<string, unknown>,
+    )
+    return null
+  }
+}
+
 export async function isCommitOnBranch(
   owner: string,
   repo: string,

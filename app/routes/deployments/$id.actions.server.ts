@@ -1,4 +1,3 @@
-import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { createComment, deleteComment } from '~/db/comments.server'
 import { addDeploymentGoalLink, removeDeploymentGoalLink } from '~/db/deployment-goal-links.server'
 import { resetVerificationStatus } from '~/db/deployments/status-history.server'
@@ -6,6 +5,7 @@ import { getDeploymentById, recordBaselineApproval, updateDeploymentFourEyes } f
 import { createDeviation } from '~/db/deviations.server'
 import { getDeviationSlackChannel } from '~/db/global-settings.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
+import { propagateVerificationToSiblings } from '~/db/monorepo.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'

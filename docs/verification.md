@@ -144,7 +144,19 @@ Hvis dette er **første gang** applikasjonen deployes (ingen tidligere deploymen
 >
 > Tilsvarende filtreres deployments som ligger før appens `audit_start_year` bort. Første deployment innenfor revisjonsperioden behandles som `pending_baseline` selv om det finnes eldre pre-revisjons-deployments. Dette gjelder både live verifisering og pre-beregningen av verifiseringsavvik (`compute-diffs`).
 
-**Gruppe-fallback:** Hvis appen tilhører en *applikasjonsgruppe* og det ikke finnes en forrige deployment i **samme miljø**, leter systemet etter en forrige deployment fra **samme Git-repo i et søskenmiljø** innenfor gruppen. Dette unngår unødvendige `pending_baseline` når en ny miljøvariant (f.eks. prod-gcp) legges til for en app som allerede har historikk i et annet miljø (f.eks. prod-fss).
+**Repo-basert forrige-leveranse (monorepo-støtte):** Forrige deployment finnes ved å søke på tvers av **alle** applikasjoner som deler samme GitHub-repo (identifisert med det stabile `github_repo_id`, ikke `(owner, repo)`-strengen), uavhengig av hvilket miljø de kjører i og uavhengig av `monitored_app_id`. Dette dekker både det vanlige tilfellet (ett repo → én app) og monorepo-tilfellet (flere apper produksjonssettes uavhengig fra samme repo) med samme spørring — en «vanlig» app er i denne modellen bare et monorepo med én applikasjon.
+
+Siden NDA kun følger opp applikasjoner i produksjon, gjøres **ikke** noe skille mellom miljøer (f.eks. `prod-fss` og `prod-gcp`) i dette søket.
+
+**Delt `audit_start_year` for hele repoet:** Siden `audit_start_year` filtrerer forrige-leveranse-søket (se over) og alle apper i samme (mono)repo deler samme spørring, må de også ha samme `audit_start_year` for at søket skal gi korrekt resultat. Dette håndheves ved kilden: når `audit_start_year` endres for én app (`applyAuditStartYearChange`), kaskaderer endringen automatisk til **alle andre aktive apper som deler samme `github_repo_id`** — ikke bare til søsken i samme applikasjonsgruppe (som tidligere). Baseline-markøren (`pending_baseline`/`baseline`) beregnes på nytt for hele det utvidede repo-scopet. Dette forhindrer at appene i et monorepo kan få ulik `audit_start_year`, og gjør Fase 0s `audit_year_mismatch`-varsel til en ren informasjons-/oppdagelsesmekanisme (siden det reelle avviket nå aktivt forhindres, ikke bare varsles om) i det vanlige tilfellet — avvik kan fortsatt oppstå midlertidig hvis en app kobles til/fra et repo etter at `audit_start_year` sist ble satt.
+
+> 📁 Se `getTargetAppIds` og `applyAuditStartYearChange` i [`audit-start-year-baseline.server.ts`](../app/db/audit-start-year-baseline.server.ts), og `canAccessAppAdminForGroupCascade` i [`authorization.server.ts`](../app/lib/authorization.server.ts) (autorisasjonssjekken kaskaderer på samme måte, slik at en admin må ha tilgang til *alle* apper i repoet — ikke bare gruppen — for å kunne endre `audit_start_year`).
+
+Kandidatene sorteres etter tidsstempel (nyeste først). Hvis søket returnerer **kun én** kandidat, brukes den direkte uten videre sjekk (like billig som før). Hvis søket returnerer **flere** kandidater (typisk i et monorepo hvor flere apper har deployert på ulike tidspunkt), bekreftes hver kandidat med en **ancestry-sjekk** mot GitHub (`compareCommits`) før den godtas som forrige leveranse — kandidaten må faktisk ligge bakover i commit-historien til den nåværende deploymentens commit (`status = 'identical'` eller `'ahead'`). Systemet går fra nyeste til eldste kandidat til en bekreftet forfar er funnet.
+
+Hvis en kandidat viser `status = 'diverged'` (commiten er **ikke** en forfar — typisk tegn på force-push, som ikke støttes i NDA, eller en direkte deploy fra en ikke-merget gren), ekskluderes kandidaten fra søket og hendelsen logges strukturert som `history_anomaly` for overvåking. Søket fortsetter til neste eldre kandidat i stedet for å stoppe helt. Hvis ingen kandidat kan bekreftes som forfar, får deploymentet status **`pending_baseline`** i stedet for å falle tilbake på nyeste-etter-tid.
+
+> 📁 Se `getPreviousDeployment` i [`previous-deployment.server.ts`](../app/lib/verification/fetch-data/previous-deployment.server.ts) og `getCommitAncestryStatus` i [`git.server.ts`](../app/lib/github/git.server.ts)
 
 #### Steg 2: Er det noen nye commits?
 
@@ -538,15 +550,17 @@ En **applikasjonsgruppe** (`application_groups`-tabellen) kobler `monitored_appl
 
 **Propagering skjer når:**
 1. En deployment verifiseres (automatisk eller manuelt)
-2. Appen tilhører en applikasjonsgruppe (`application_group_id IS NOT NULL`)
+2. Appen deler **aktivt** GitHub-repo (samme `github_repo_id` i `application_repositories`) med minst én annen app
 3. Statussen er positiv: `approved`, `approved_pr_with_unreviewed`, `implicitly_approved`, `no_changes`, eller `manually_approved`
-4. Søsken-deployments i gruppen har **samme `commit_sha`** og status `pending` eller `error`
+4. Søsken-deployments **i samme repo** (uansett miljø) har **samme `commit_sha`** og status `pending` eller `error`
 
 **Propagering skjer IKKE når:**
 - Statussen er negativ (`unverified_commits`, `unauthorized_repository`, `unauthorized_branch`)
 - Søsken-deployment har annen `commit_sha`
 - Søsken-deployment allerede er verifisert
-- Appen ikke tilhører en gruppe
+- Appen ikke har noe registrert aktivt repo, eller `github_repo_id` ikke er kjent ennå
+
+> **Merk:** Propagering er nå **repo-basert** (nøklet på `github_repo_id`), ikke lenger avhengig av `application_groups`. Dette dekker automatisk både «vanlig» apper (ett repo, én app) og monorepo-apper (flere apper i samme repo) uten manuell gruppe-oppretting. `application_groups`-mekanismen beskrevet ovenfor (felles-repo-krav, «opprett gruppe fra forslag») **består fortsatt** for sitt opprinnelige formål (organisatorisk kobling/team-autorisasjon på tvers av NAIS-clustre), men styrer ikke lenger verifiseringspropagering.
 
 ### Propageringspunkter
 
@@ -555,4 +569,4 @@ Propagering utløses fra:
 2. **Reverifikasjon** — `reverifyDeployment()` i [`index.ts`](../app/lib/verification/index.ts)
 3. **Manuell godkjenning** — action handlers i [`$id.actions.server.ts`](../app/routes/deployments/$id.actions.server.ts)
 
-> 📁 Se `propagateVerificationToSiblings` i [`application-groups.server.ts`](../app/db/application-groups.server.ts)
+> 📁 Se `propagateVerificationToSiblings` i [`monorepo.server.ts`](../app/db/monorepo.server.ts)
