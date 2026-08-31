@@ -7,7 +7,7 @@ vi.mock('~/lib/github', () => ({
 }))
 
 import { getCommitAncestryStatus } from '~/lib/github'
-import { getPreviousDeployment } from '../../../lib/verification/fetch-data/previous-deployment.server'
+import { getPreviousDeployment } from '~/lib/verification/fetch-data/previous-deployment.server'
 
 const mockedGetCommitAncestryStatus = vi.mocked(getCommitAncestryStatus)
 
@@ -570,7 +570,7 @@ describe('getPreviousDeployment', () => {
     expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
 
-  it('should not return a deployment whose detected repo does not match the application_repositories link', async () => {
+  it('should still return a candidate whose detected repo strings differ from the current application_repositories link (repo rename tolerance)', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
@@ -579,15 +579,15 @@ describe('getPreviousDeployment', () => {
       githubRepoId,
     })
 
-    await seedDeployment(pool, {
+    const renamedId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team',
       environment: 'prod',
-      commitSha: 'mismatched-sha',
+      commitSha: 'pre-rename-sha',
       fourEyesStatus: 'approved',
       createdAt: new Date('2025-01-01T10:00:00Z'),
-      githubOwner: 'other-owner',
-      githubRepo: 'other-repo',
+      githubOwner: 'old-owner',
+      githubRepo: 'old-repo-name',
     })
 
     const currentId = await seedDeployment(pool, {
@@ -602,7 +602,8 @@ describe('getPreviousDeployment', () => {
     })
 
     const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
-    expect(prev).toBeNull()
+    expect(prev).not.toBeNull()
+    expect(prev?.id).toBe(renamedId)
     expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
 })

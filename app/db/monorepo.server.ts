@@ -162,7 +162,9 @@ export async function propagateVerificationToSiblings(
        AND id != $4
        AND monitored_app_id IN (
          SELECT ar.monitored_app_id FROM application_repositories ar
+         JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
          WHERE ar.status = 'active'
+           AND ma.is_active = true
            AND ar.github_repo_id IS NOT NULL
            AND ar.github_repo_id IN (
              SELECT ar2.github_repo_id FROM application_repositories ar2

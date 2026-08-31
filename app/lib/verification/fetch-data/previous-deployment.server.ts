@@ -29,8 +29,6 @@ async function queryCandidates(
     WHERE d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
       AND ar.github_repo_id = $2
       AND ma.is_active = true
-      AND d.detected_github_owner = ar.github_owner
-      AND d.detected_github_repo_name = ar.github_repo_name
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
       AND d.commit_sha !~ '^refs/'

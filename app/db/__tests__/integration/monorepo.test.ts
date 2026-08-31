@@ -422,6 +422,50 @@ describe('propagateVerificationToSiblings', () => {
     expect(propagated).toBe(0)
   })
 
+  it('should NOT propagate to a sibling deployment belonging to an inactive app', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-active', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app1,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+    const app2 = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'svc-inactive',
+      environment: 'prod-fss',
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app2,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+
+    const commitSha = 'inactive-sibling-sha'
+    const dep1 = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha,
+      fourEyesStatus: 'approved',
+    })
+    const dep2 = await seedDeployment(pool, {
+      monitoredAppId: app2,
+      teamSlug: 'team-a',
+      environment: 'prod-fss',
+      commitSha,
+      fourEyesStatus: 'pending',
+    })
+
+    const propagated = await propagateVerificationToSiblings(dep1, 'approved', commitSha, app1)
+    expect(propagated).toBe(0)
+
+    const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [dep2])
+    expect(rows[0].four_eyes_status).toBe('pending')
+  })
+
   it('should propagate manually_approved status', async () => {
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
