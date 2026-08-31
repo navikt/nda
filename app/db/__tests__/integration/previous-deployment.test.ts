@@ -521,4 +521,88 @@ describe('getPreviousDeployment', () => {
     expect(prev).toBeNull()
     expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
+
+  it('should not return a deployment belonging to an inactive sibling app', async () => {
+    const activeApp = await seedApp(pool, { teamSlug: 'team', appName: 'active-app', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: activeApp,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId,
+    })
+    const inactiveApp = await seedApp(pool, {
+      teamSlug: 'team',
+      appName: 'inactive-app',
+      environment: 'prod-fss',
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: inactiveApp,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId,
+    })
+
+    await seedDeployment(pool, {
+      monitoredAppId: inactiveApp,
+      teamSlug: 'team',
+      environment: 'prod-fss',
+      commitSha: 'inactive-sha',
+      fourEyesStatus: 'approved',
+      createdAt: new Date('2025-01-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: activeApp,
+      teamSlug: 'team',
+      environment: 'prod-gcp',
+      commitSha: 'current-sha',
+      fourEyesStatus: 'pending',
+      createdAt: new Date('2025-02-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
+    expect(prev).toBeNull()
+    expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
+  })
+
+  it('should not return a deployment whose detected repo does not match the application_repositories link', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId,
+    })
+
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'mismatched-sha',
+      fourEyesStatus: 'approved',
+      createdAt: new Date('2025-01-01T10:00:00Z'),
+      githubOwner: 'other-owner',
+      githubRepo: 'other-repo',
+    })
+
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'current-sha',
+      fourEyesStatus: 'pending',
+      createdAt: new Date('2025-02-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
+    expect(prev).toBeNull()
+    expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
+  })
 })
