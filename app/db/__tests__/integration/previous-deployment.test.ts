@@ -22,7 +22,7 @@ afterAll(async () => {
 })
 
 afterEach(async () => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   await truncateAllTables(pool)
 })
 
@@ -251,6 +251,8 @@ describe('getPreviousDeployment', () => {
       githubRepo: repo,
     })
 
+    mockedGetCommitAncestryStatus.mockResolvedValue('ahead')
+
     const prevNoFilter = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'cur333')
     expect(prevNoFilter?.id).toBe(validId)
 
@@ -307,13 +309,11 @@ describe('getPreviousDeployment', () => {
       githubRepo: repo,
     })
 
-    mockedGetCommitAncestryStatus.mockResolvedValueOnce('ahead')
-
     const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
     expect(prev).not.toBeNull()
     expect(prev?.id).toBe(siblingId)
     expect(prev?.commitSha).toBe('sibling-sha')
-    expect(mockedGetCommitAncestryStatus).toHaveBeenCalledWith(owner, repo, 'sibling-sha', 'current-sha')
+    expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
 
   it('should find a previous deployment from a sibling app in a different environment (cross-environment, no env filter)', async () => {
@@ -354,12 +354,11 @@ describe('getPreviousDeployment', () => {
       githubRepo: repo,
     })
 
-    mockedGetCommitAncestryStatus.mockResolvedValueOnce('identical')
-
     const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'bbb222')
     expect(prev).not.toBeNull()
     expect(prev?.id).toBe(siblingId)
     expect(prev?.commitSha).toBe('aaa111')
+    expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
 
   it('should skip a candidate whose ancestry check returns diverged (history_anomaly) and use an older valid candidate', async () => {
