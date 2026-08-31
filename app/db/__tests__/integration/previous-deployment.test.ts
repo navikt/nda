@@ -578,7 +578,7 @@ describe('getPreviousDeployment', () => {
     expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
 
-  it('should not return a deployment belonging to an inactive sibling app', async () => {
+  it('should still use a deployment from an inactive sibling app as baseline (historical fact, independent of current monitoring status)', async () => {
     const activeApp = await seedApp(pool, { teamSlug: 'team', appName: 'active-app', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
       monitoredAppId: activeApp,
@@ -599,7 +599,7 @@ describe('getPreviousDeployment', () => {
       githubRepoId,
     })
 
-    await seedDeployment(pool, {
+    const inactiveDeploymentId = await seedDeployment(pool, {
       monitoredAppId: inactiveApp,
       teamSlug: 'team',
       environment: 'prod-fss',
@@ -622,7 +622,9 @@ describe('getPreviousDeployment', () => {
     })
 
     const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
-    expect(prev).toBeNull()
+    expect(prev).not.toBeNull()
+    expect(prev?.id).toBe(inactiveDeploymentId)
+    expect(prev?.commitSha).toBe('inactive-sha')
     expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
 

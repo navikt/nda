@@ -27,11 +27,9 @@ async function queryCandidates(
   let query = `
     SELECT d.id, d.commit_sha, d.created_at
     FROM deployments d
-    JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-    JOIN application_repositories ar ON ar.monitored_app_id = ma.id AND ar.status = 'active'
+    JOIN application_repositories ar ON ar.monitored_app_id = d.monitored_app_id AND ar.status = 'active'
     WHERE d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
       AND ar.github_repo_id = $2
-      AND ma.is_active = true
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
       AND d.commit_sha !~ '^refs/'
