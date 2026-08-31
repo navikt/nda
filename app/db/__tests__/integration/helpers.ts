@@ -22,13 +22,13 @@ export async function seedSection(pool: Pool, slug: string, name?: string): Prom
 
 export async function seedApp(
   pool: Pool,
-  opts: { teamSlug: string; appName: string; environment: string; auditStartYear?: number | null },
+  opts: { teamSlug: string; appName: string; environment: string; auditStartYear?: number | null; isActive?: boolean },
 ): Promise<number> {
   const year = opts.auditStartYear === undefined ? new Date().getFullYear() : opts.auditStartYear
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO monitored_applications (team_slug, app_name, environment_name, is_active, audit_start_year, default_branch)
-     VALUES ($1, $2, $3, true, $4, 'main') RETURNING id`,
-    [opts.teamSlug, opts.appName, opts.environment, year],
+     VALUES ($1, $2, $3, $4, $5, 'main') RETURNING id`,
+    [opts.teamSlug, opts.appName, opts.environment, opts.isActive ?? true, year],
   )
   return rows[0].id
 }
@@ -105,13 +105,14 @@ export async function seedApplicationRepository(
     monitoredAppId: number
     githubOwner: string
     githubRepo: string
+    githubRepoId?: string
     status?: 'active' | 'historical' | 'pending_approval'
   },
 ): Promise<number> {
   const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO application_repositories (monitored_app_id, github_owner, github_repo_name, status)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [opts.monitoredAppId, opts.githubOwner, opts.githubRepo, opts.status ?? 'active'],
+    `INSERT INTO application_repositories (monitored_app_id, github_owner, github_repo_name, github_repo_id, status)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [opts.monitoredAppId, opts.githubOwner, opts.githubRepo, opts.githubRepoId ?? null, opts.status ?? 'active'],
   )
   return rows[0].id
 }

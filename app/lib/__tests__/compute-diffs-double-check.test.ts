@@ -23,6 +23,10 @@ vi.mock('~/db/verification-diff.server', () => ({
   getPreviousDeploymentForDiff: vi.fn(),
 }))
 
+vi.mock('~/db/application-repositories.server', () => ({
+  findRepositoryForApp: vi.fn(),
+}))
+
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
@@ -38,6 +42,7 @@ vi.mock('~/lib/verification/verify', () => ({
 }))
 
 import { getImplicitApprovalSettings } from '~/db/app-settings.server'
+import { findRepositoryForApp } from '~/db/application-repositories.server'
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
@@ -55,6 +60,7 @@ import { verifyDeployment } from '~/lib/verification/verify'
 const mockGetDeployments = getDeploymentsForDiffComputation as Mock
 const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
+const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetPrDataForDiff = getPrDataForDiff as Mock
 const mockGetImplicitApproval = getImplicitApprovalSettings as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
@@ -126,6 +132,12 @@ describe('computeVerificationDiffs double-check logic', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetImplicitApproval.mockResolvedValue(null)
+    mockFindRepositoryForApp.mockResolvedValue({
+      repository: { github_repo_id: '123' },
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'test-repo',
+      isRedirected: false,
+    })
   })
 
   it('triggers forceRefresh when cache-only produces different status than stored', async () => {

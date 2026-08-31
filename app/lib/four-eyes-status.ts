@@ -33,6 +33,14 @@ export const APPROVED_STATUSES: FourEyesStatus[] = [
 
 export const APPROVED_STATUSES_SQL = APPROVED_STATUSES.map((s) => `'${s}'`).join(', ')
 
+export const PROPAGATABLE_STATUSES: FourEyesStatus[] = [
+  'approved',
+  'implicitly_approved',
+  'manually_approved',
+  'no_changes',
+  'approved_pr_with_unreviewed',
+]
+
 export const NOT_APPROVED_STATUSES: FourEyesStatus[] = [
   'direct_push',
   'unverified_commits',

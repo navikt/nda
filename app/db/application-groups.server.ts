@@ -1,4 +1,3 @@
-import { REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 import { getActiveRepoKeysForApps } from './application-repositories.server'
 import { pool } from './connection.server'
 
@@ -37,16 +36,6 @@ export interface UngroupedTeamApp {
 interface ApplicationGroupSummary extends ApplicationGroup {
   app_count: number
 }
-
-const PROPAGATABLE_STATUSES = new Set([
-  'approved',
-  'approved_pr_with_unreviewed',
-  'implicitly_approved',
-  'no_changes',
-  'manually_approved',
-])
-
-const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
 
 function pickLargestRepoSharingSubset<T extends { id: number }>(
   apps: T[],
@@ -469,35 +458,6 @@ export async function getGroupNamesByIds(groupIds: number[]): Promise<Map<number
     [groupIds],
   )
   return new Map(rows.map((r) => [r.id, r.name]))
-}
-
-export async function propagateVerificationToSiblings(
-  deploymentId: number,
-  status: string,
-  commitSha: string,
-  monitoredAppId: number,
-  hasFourEyes = true,
-): Promise<number> {
-  if (!hasFourEyes || !PROPAGATABLE_STATUSES.has(status)) return 0
-
-  const result = await pool.query(
-    `UPDATE deployments
-     SET four_eyes_status = $1
-     WHERE commit_sha = $2
-       AND four_eyes_status = ANY($3::text[])
-       AND id != $4
-       AND monitored_app_id IN (
-         SELECT ma.id FROM monitored_applications ma
-         WHERE ma.application_group_id = (
-           SELECT application_group_id FROM monitored_applications WHERE id = $5
-         )
-         AND ma.application_group_id IS NOT NULL
-         AND ma.id != $5
-       )`,
-    [status, commitSha, PROPAGATION_TARGET_STATUSES, deploymentId, monitoredAppId],
-  )
-
-  return result.rowCount ?? 0
 }
 
 export async function getAppIdsByGroupIds(groupIds: number[]): Promise<Map<number, number[]>> {

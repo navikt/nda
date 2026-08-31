@@ -545,6 +545,48 @@ describe('verifyDeployment - GitHub API and access failures', () => {
   })
 })
 
+describe('verifyDeployment - previousDeploymentLookupFailed (unknown github_repo_id)', () => {
+  it('should return error (not pending_baseline) when the previous-deployment lookup failed and no previous deployment was found', () => {
+    const input = makeBaseInput({
+      previousDeployment: null,
+      previousDeploymentLookupFailed: true,
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.method).not.toBe('pending_baseline')
+  })
+
+  it('should return error even if a previousDeployment happens to be present, when the lookup is flagged as failed', () => {
+    const input = makeBaseInput({
+      previousDeploymentLookupFailed: true,
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+  })
+
+  it('should return pending_baseline as before when previousDeploymentLookupFailed is not set (undefined)', () => {
+    const input = makeBaseInput({ previousDeployment: null })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('pending_baseline')
+  })
+
+  it('should return pending_baseline as before when previousDeploymentLookupFailed is explicitly false', () => {
+    const input = makeBaseInput({ previousDeployment: null, previousDeploymentLookupFailed: false })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('pending_baseline')
+  })
+})
+
 describe('verifyDeployment - Case 5: base branch merge approval', () => {
   it('should return approved when unverified commits are explained by base merge', () => {
     const input = makeBaseInput({
