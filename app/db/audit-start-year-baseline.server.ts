@@ -50,6 +50,7 @@ async function getTargetAppIds(client: PoolClient, appId: number): Promise<numbe
      FROM application_repositories ar
      JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
      WHERE ar.status = 'active'
+       AND ma.is_active = true
        AND ar.github_repo_id IS NOT NULL
        AND ar.github_repo_id IN (
          SELECT github_repo_id FROM application_repositories

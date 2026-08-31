@@ -659,6 +659,39 @@ describe('canAccessAppAdminForGroupCascade', () => {
 
     expect(await canAccessAppAdminForGroupCascade(tl, appA)).toBe(true)
   })
+
+  it('does not require admin access to an inactive monorepo sibling app', async () => {
+    const sectionId = await seedSection(pool, 'pensjon-d')
+    const teamId = await seedDevTeam(pool, 'team-mono-d', 'Team Mono D', sectionId)
+    const appA = await seedApp(pool, { teamSlug: 'nais-mono-d1', appName: 'mono-d1', environment: 'prod-gcp' })
+    const appB = await seedApp(pool, {
+      teamSlug: 'nais-mono-d2',
+      appName: 'mono-d2',
+      environment: 'prod-gcp',
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-with-inactive',
+      githubRepoId: '44',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-with-inactive',
+      githubRepoId: '44',
+    })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appA,
+    ])
+
+    const tl = makeUser('T999003')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAccessAppAdminForGroupCascade(tl, appA)).toBe(true)
+  })
 })
 
 describe('canAdministerTeam', () => {

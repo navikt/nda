@@ -598,6 +598,40 @@ describe('applyAuditStartYearChange', () => {
     expect(await getAuditStartYear(appB)).toBeNull()
   })
 
+  it('does not cascade to a monorepo sibling that is inactive', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-mono3',
+      appName: 'app-mono3-active',
+      environment: 'prod-gcp',
+      auditStartYear: null,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-mono3',
+      appName: 'app-mono3-inactive',
+      environment: 'prod-gcp',
+      auditStartYear: null,
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-with-inactive',
+      githubRepoId: '777',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-with-inactive',
+      githubRepoId: '777',
+    })
+
+    const result = await applyAuditStartYearChange(appA, 2026, 'Z990001')
+
+    expect(result.updatedAppIds).toEqual([appA])
+    expect(await getAuditStartYear(appA)).toBe(2026)
+    expect(await getAuditStartYear(appB)).toBeNull()
+  })
+
   it('still recomputes baseline for a sibling app when the acting app itself has no deployments yet', async () => {
     const groupId = await seedApplicationGroup(pool, 'group-3')
     const appA = await seedApp(pool, {
