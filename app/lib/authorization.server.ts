@@ -148,7 +148,7 @@ export async function canAccessAppAdminForGroupCascade(actor: UserIdentity, moni
 
   if (applicationGroupId) {
     const { rows: groupSiblingRows } = await pool.query<{ id: number }>(
-      'SELECT id FROM monitored_applications WHERE application_group_id = $1',
+      'SELECT id FROM monitored_applications WHERE application_group_id = $1 AND is_active = true',
       [applicationGroupId],
     )
     for (const sibling of groupSiblingRows) {

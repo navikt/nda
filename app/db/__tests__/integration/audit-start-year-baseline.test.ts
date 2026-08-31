@@ -632,6 +632,33 @@ describe('applyAuditStartYearChange', () => {
     expect(await getAuditStartYear(appB)).toBeNull()
   })
 
+  it('does not cascade to an application-group sibling that is inactive', async () => {
+    const groupId = await seedApplicationGroup(pool, 'group-inactive-sibling')
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-group-inactive',
+      appName: 'app-group-inactive-active',
+      environment: 'prod-gcp',
+      auditStartYear: null,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-group-inactive',
+      appName: 'app-group-inactive-b',
+      environment: 'prod-gcp',
+      auditStartYear: null,
+      isActive: false,
+    })
+    await assignAppToGroup(pool, appA, groupId)
+    await assignAppToGroup(pool, appB, groupId)
+    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'group-repo-a' })
+    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'group-repo-b' })
+
+    const result = await applyAuditStartYearChange(appA, 2026, 'Z990001')
+
+    expect(result.updatedAppIds).toEqual([appA])
+    expect(await getAuditStartYear(appA)).toBe(2026)
+    expect(await getAuditStartYear(appB)).toBeNull()
+  })
+
   it('still recomputes baseline for a sibling app when the acting app itself has no deployments yet', async () => {
     const groupId = await seedApplicationGroup(pool, 'group-3')
     const appA = await seedApp(pool, {

@@ -37,7 +37,7 @@ async function getTargetAppIds(client: PoolClient, appId: number): Promise<numbe
 
   if (app.application_group_id) {
     const { rows: groupSiblings } = await client.query<{ id: number }>(
-      `SELECT id FROM monitored_applications WHERE application_group_id = $1`,
+      `SELECT id FROM monitored_applications WHERE application_group_id = $1 AND is_active = true`,
       [app.application_group_id],
     )
     for (const sibling of groupSiblings) {

@@ -664,4 +664,53 @@ describe('getPreviousDeployment', () => {
     expect(prev?.id).toBe(renamedId)
     expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
+
+  it('should exclude candidates with four_eyes_status = unauthorized_repository and use an older authorized candidate', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId,
+    })
+
+    const validId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'authorized-sha',
+      fourEyesStatus: 'approved',
+      createdAt: new Date('2025-01-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'unauthorized-sha',
+      fourEyesStatus: 'unauthorized_repository',
+      createdAt: new Date('2025-01-15T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'current-sha',
+      fourEyesStatus: 'pending',
+      createdAt: new Date('2025-02-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
+    expect(prev).not.toBeNull()
+    expect(prev?.id).toBe(validId)
+    expect(prev?.commitSha).toBe('authorized-sha')
+    expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
+  })
 })

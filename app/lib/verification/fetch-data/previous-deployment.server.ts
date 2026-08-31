@@ -1,5 +1,5 @@
 import { pool } from '~/db/connection.server'
-import { LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { LEGACY_STATUSES_SQL, UNAUTHORIZED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getCommitAncestryStatus } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 
@@ -32,6 +32,7 @@ async function queryCandidates(
       AND ar.github_repo_id = $2
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+      AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
       AND d.commit_sha !~ '^refs/'
   `
 

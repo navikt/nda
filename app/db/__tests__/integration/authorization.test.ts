@@ -692,6 +692,36 @@ describe('canAccessAppAdminForGroupCascade', () => {
 
     expect(await canAccessAppAdminForGroupCascade(tl, appA)).toBe(true)
   })
+
+  it('does not require admin access to an inactive application-group sibling app', async () => {
+    const sectionId = await seedSection(pool, 'pensjon-e')
+    const teamId = await seedDevTeam(pool, 'team-group-e', 'Team Group E', sectionId)
+    const {
+      rows: [group],
+    } = await pool.query<{ id: number }>('INSERT INTO application_groups (name) VALUES ($1) RETURNING id', [
+      'group-with-inactive',
+    ])
+    const appA = await seedApp(pool, { teamSlug: 'nais-group-e1', appName: 'group-e1', environment: 'prod-gcp' })
+    const appB = await seedApp(pool, {
+      teamSlug: 'nais-group-e2',
+      appName: 'group-e2',
+      environment: 'prod-gcp',
+      isActive: false,
+    })
+    await pool.query('UPDATE monitored_applications SET application_group_id = $1 WHERE id = ANY($2)', [
+      defined(group).id,
+      [appA, appB],
+    ])
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appA,
+    ])
+
+    const tl = makeUser('T999004')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAccessAppAdminForGroupCascade(tl, appA)).toBe(true)
+  })
 })
 
 describe('canAdministerTeam', () => {
