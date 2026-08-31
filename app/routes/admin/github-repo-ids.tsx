@@ -94,11 +94,11 @@ export async function action({ request }: Route.ActionArgs) {
   if (actionType === 'cancel_job') {
     const jobId = parseInt(formData.get('job_id') as string, 10)
     if (!jobId) return { error: 'Mangler job_id' }
-    await pool.query(
+    const result = await pool.query(
       `UPDATE sync_jobs SET status = 'cancelled', completed_at = NOW() WHERE id = $1 AND status = 'running'`,
       [jobId],
     )
-    return { cancelled: true }
+    return { cancelled: (result.rowCount ?? 0) > 0 }
   }
 
   return null
@@ -148,6 +148,16 @@ export default function GithubRepoIdsAdminPage() {
       pollInterval.current = setInterval(() => {
         pollFetcherRef.current.submit({ action: 'check_job_status', job_id: String(activeJobId) }, { method: 'post' })
       }, 2000)
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          pollFetcherRef.current.submit({ action: 'check_job_status', job_id: String(activeJobId) }, { method: 'post' })
+        }
+      }
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      return () => {
+        if (pollInterval.current) clearInterval(pollInterval.current)
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
     }
     return () => {
       if (pollInterval.current) clearInterval(pollInterval.current)
@@ -163,6 +173,7 @@ export default function GithubRepoIdsAdminPage() {
     }
     return null
   })
+  const [wasCancelled, setWasCancelled] = useState(false)
 
   useEffect(() => {
     const data = pollFetcher.data as
@@ -173,7 +184,10 @@ export default function GithubRepoIdsAdminPage() {
       if (status === 'completed' || status === 'failed' || status === 'cancelled') {
         setActiveJobId(null)
         if (pollInterval.current) clearInterval(pollInterval.current)
-        if (jobResult) {
+        if (status === 'cancelled') {
+          setWasCancelled(true)
+          setProgress(null)
+        } else if (jobResult) {
           setProgress({
             processed: jobResult.processed ?? 0,
             total: jobResult.total ?? 0,
@@ -200,11 +214,24 @@ export default function GithubRepoIdsAdminPage() {
     if (data?.backfillStarted) {
       setActiveJobId(data.backfillStarted)
       setProgress(null)
+      setWasCancelled(false)
     } else if (data?.backfillEmpty) {
       setProgress(data.backfillResult ?? { processed: 0, total: 0, fetched: 0, errors: 0 })
+      setWasCancelled(false)
       revalidator.revalidate()
     }
   }, [triggerFetcher.data, revalidator])
+
+  useEffect(() => {
+    const data = cancelFetcher.data as { cancelled?: boolean } | undefined
+    if (data?.cancelled) {
+      setActiveJobId(null)
+      setProgress(null)
+      setWasCancelled(true)
+      if (pollInterval.current) clearInterval(pollInterval.current)
+      revalidatorRef.current.revalidate()
+    }
+  }, [cancelFetcher.data])
 
   const isRunning = !!activeJobId || triggerFetcher.state !== 'idle'
 
@@ -261,7 +288,13 @@ export default function GithubRepoIdsAdminPage() {
             </HStack>
           )}
 
-          {!activeJobId && progress && (
+          {!activeJobId && wasCancelled && (
+            <Alert variant="info" size="small">
+              Datahenting avbrutt.
+            </Alert>
+          )}
+
+          {!activeJobId && !wasCancelled && progress && (
             <Alert variant={progress.errors > 0 ? 'warning' : 'success'} size="small">
               Datahenting fullført: {progress.fetched} hentet
               {progress.errors > 0 && `, ${progress.errors} feil`}.
