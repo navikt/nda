@@ -479,6 +479,62 @@ describe('getPreviousDeployment', () => {
     expect(mockedGetCommitAncestryStatus).toHaveBeenCalledTimes(2)
   })
 
+  it('should keep searching older candidates beyond the first page when all page-1 candidates are diverged', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team', appName: 'svc-a', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app1,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId,
+    })
+
+    const validId = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team',
+      environment: 'prod-gcp',
+      commitSha: 'oldest-valid-sha',
+      fourEyesStatus: 'approved',
+      createdAt: new Date('2025-01-01T00:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    for (let i = 0; i < 25; i++) {
+      await seedDeployment(pool, {
+        monitoredAppId: app1,
+        teamSlug: 'team',
+        environment: 'prod-gcp',
+        commitSha: `diverged-sha-${i}`,
+        fourEyesStatus: 'approved',
+        createdAt: new Date(`2025-01-02T00:${String(i).padStart(2, '0')}:00Z`),
+        githubOwner: owner,
+        githubRepo: repo,
+      })
+    }
+
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team',
+      environment: 'prod-gcp',
+      commitSha: 'current-sha',
+      fourEyesStatus: 'pending',
+      createdAt: new Date('2025-02-01T00:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    mockedGetCommitAncestryStatus.mockImplementation(async (_owner, _repo, base) => {
+      if (base === 'oldest-valid-sha') return 'ahead'
+      return 'diverged'
+    })
+
+    const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
+    expect(prev).not.toBeNull()
+    expect(prev?.id).toBe(validId)
+    expect(prev?.commitSha).toBe('oldest-valid-sha')
+    expect(mockedGetCommitAncestryStatus).toHaveBeenCalledTimes(26)
+  })
+
   it('should not return a deployment from a different, unrelated repo (different github_repo_id)', async () => {
     const appA = await seedApp(pool, { teamSlug: 'team', appName: 'app-a', environment: 'prod' })
     await seedApplicationRepository(pool, {

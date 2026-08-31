@@ -1,6 +1,7 @@
 import {
   saveCommitOnBranchRawSnapshot,
   saveCommitRawSnapshot,
+  saveCompareRawSnapshot,
   saveWorkflowRunRawSnapshot,
 } from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
@@ -132,7 +133,7 @@ export async function getCommitAncestryStatus(
       head: headSha,
     })
 
-    await archiveCommitOnBranchRawSnapshot(owner, repo, baseSha, headSha, response.data, response.headers)
+    await archiveCompareRawSnapshot(owner, repo, baseSha, headSha, response.data, response.headers)
 
     return response.data.status as CommitAncestryStatus
   } catch (error) {
@@ -141,6 +142,30 @@ export async function getCommitAncestryStatus(
       error as Record<string, unknown>,
     )
     return null
+  }
+}
+
+async function archiveCompareRawSnapshot(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  data: unknown,
+  headers: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId === null) return
+    const apiVersion = captureApiVersionMetadata(headers, null)
+    await saveCompareRawSnapshot(owner, repo, githubRepoId, baseSha, headSha, data, apiVersion)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(
+      `⚠️ Failed to archive compare snapshot ${baseSha.substring(0, 7)}...${headSha.substring(0, 7)} for ${owner}/${repo}:`,
+      {
+        error: message,
+      },
+    )
   }
 }
 

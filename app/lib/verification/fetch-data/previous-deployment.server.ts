@@ -15,10 +15,13 @@ interface PreviousDeploymentCandidate {
   createdAt: Date
 }
 
+const CANDIDATE_PAGE_SIZE = 20
+
 async function queryCandidates(
   currentDeploymentId: number,
   githubRepoId: string,
   auditStartYear: number | null,
+  offset: number,
 ): Promise<PreviousDeploymentCandidate[]> {
   const params: (number | string)[] = [currentDeploymentId, githubRepoId]
   let query = `
@@ -39,7 +42,12 @@ async function queryCandidates(
     query += ` AND d.created_at >= $${params.length}`
   }
 
-  query += ` ORDER BY d.created_at DESC LIMIT 20`
+  params.push(CANDIDATE_PAGE_SIZE)
+  const limitParamIndex = params.length
+  params.push(offset)
+  const offsetParamIndex = params.length
+
+  query += ` ORDER BY d.created_at DESC LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`
 
   const result = await pool.query(query, params)
   return result.rows.map((row) => ({
@@ -55,13 +63,6 @@ async function findAncestorCandidate(
   repo: string,
   currentCommitSha: string,
 ): Promise<PreviousDeploymentResult | null> {
-  if (candidates.length === 0) return null
-
-  if (candidates.length === 1) {
-    const only = candidates[0]
-    return { id: only.id, commitSha: only.commitSha, createdAt: only.createdAt.toISOString() }
-  }
-
   for (const candidate of candidates) {
     const status = await getCommitAncestryStatus(owner, repo, candidate.commitSha, currentCommitSha)
 
@@ -101,6 +102,20 @@ export async function getPreviousDeployment(
 ): Promise<PreviousDeploymentResult | null> {
   if (!githubRepoId) return null
 
-  const candidates = await queryCandidates(currentDeploymentId, githubRepoId, auditStartYear)
-  return findAncestorCandidate(candidates, owner, repo, currentCommitSha)
+  let offset = 0
+  for (;;) {
+    const candidates = await queryCandidates(currentDeploymentId, githubRepoId, auditStartYear, offset)
+    if (candidates.length === 0) return null
+
+    if (offset === 0 && candidates.length === 1) {
+      const only = candidates[0]
+      return { id: only.id, commitSha: only.commitSha, createdAt: only.createdAt.toISOString() }
+    }
+
+    const found = await findAncestorCandidate(candidates, owner, repo, currentCommitSha)
+    if (found) return found
+
+    if (candidates.length < CANDIDATE_PAGE_SIZE) return null
+    offset += CANDIDATE_PAGE_SIZE
+  }
 }

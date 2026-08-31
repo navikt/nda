@@ -552,7 +552,7 @@ En **applikasjonsgruppe** (`application_groups`-tabellen) kobler `monitored_appl
 1. En deployment verifiseres (automatisk eller manuelt)
 2. Appen deler **aktivt** GitHub-repo (samme `github_repo_id` i `application_repositories`) med minst én annen app
 3. Statussen er positiv: `approved`, `approved_pr_with_unreviewed`, `implicitly_approved`, `no_changes`, eller `manually_approved`
-4. Søsken-deployments **i samme repo** (uansett miljø) har **samme `commit_sha`** og status `pending` eller `error`
+4. Søsken-deployments **i samme repo** (uansett miljø) har **samme `commit_sha`** og status `pending`, `pending_baseline`, `unknown` (samlet `REVERIFIABLE_STATUSES`) eller `error`
 
 **Propagering skjer IKKE når:**
 - Statussen er negativ (`unverified_commits`, `unauthorized_repository`, `unauthorized_branch`)
