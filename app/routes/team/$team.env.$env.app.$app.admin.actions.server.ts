@@ -243,13 +243,13 @@ export async function action({ request }: { request: Request; params: Record<str
     }
 
     if (!(await canAccessAppAdminForGroupCascade(user, appId))) {
-      return { error: 'Du har ikke administratortilgang til alle appene i applikasjonsgruppen' }
+      return { error: 'Du har ikke administratortilgang til alle appene i samme applikasjonsgruppe/repo' }
     }
 
     const result = await applyAuditStartYearChange(appId, auditStartYear, user.navIdent)
     let success = 'Startår for revisjon oppdatert!'
     if (result.updatedAppIds.length > 1) {
-      success += ` Endringen gjelder også ${result.updatedAppIds.length - 1} andre apper i samme applikasjonsgruppe.`
+      success += ` Endringen gjelder også ${result.updatedAppIds.length - 1} andre apper i samme applikasjonsgruppe/repo.`
     }
     if (result.recomputeLimitedToActingApp) {
       success +=

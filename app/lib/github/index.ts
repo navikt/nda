@@ -10,7 +10,9 @@ export {
   getGitHubRateLimitStatus,
 } from './client.server'
 export {
+  type CommitAncestryStatus,
   getBranchFromWorkflowRun,
+  getCommitAncestryStatus,
   getCommitsBetween,
   getRepositoryDefaultBranch,
   getRepositoryId,

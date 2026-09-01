@@ -1,6 +1,6 @@
 import { AUDIT_START_YEAR_FILTER } from '~/db/audit-start-year'
 import { pool } from '~/db/connection.server'
-import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL, UNAUTHORIZED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 
 interface VerificationDiffDeployment {
@@ -45,22 +45,33 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
 
 export async function getPreviousDeploymentForDiff(
   deploymentId: number,
-  environmentName: string,
+  githubRepoId: string,
 ): Promise<{ id: number; commit_sha: string; created_at: Date } | null> {
   const result = await pool.query(
-    `SELECT d.id, d.commit_sha, d.created_at
+    `WITH acting_deployment AS (
+       SELECT d.id, d.created_at, ma.audit_start_year
+       FROM deployments d
+       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+       WHERE d.id = $1
+     )
+     SELECT d.id, d.commit_sha, d.created_at
      FROM deployments d
-     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-     WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
-       AND d.environment_name = $2
-       AND d.created_at < (SELECT created_at FROM deployments WHERE id = $1)
+     JOIN application_repositories ar
+       ON ar.monitored_app_id = d.monitored_app_id
+       AND ar.github_owner = d.detected_github_owner
+       AND ar.github_repo_name = d.detected_github_repo_name
+       AND ar.status IN ('active', 'historical')
+     CROSS JOIN acting_deployment
+     WHERE ar.github_repo_id = $2
+       AND (d.created_at, d.id) < (acting_deployment.created_at, acting_deployment.id)
        AND d.commit_sha IS NOT NULL
        AND d.four_eyes_status NOT IN (${LEGACY_STATUSES_SQL})
+       AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
        AND d.commit_sha !~ '^refs/'
-       AND ${AUDIT_START_YEAR_FILTER}
-     ORDER BY d.created_at DESC
+       AND (acting_deployment.audit_start_year IS NULL OR d.created_at >= make_date(acting_deployment.audit_start_year, 1, 1))
+     ORDER BY d.created_at DESC, d.id DESC
      LIMIT 1`,
-    [deploymentId, environmentName],
+    [deploymentId, githubRepoId],
   )
   return result.rows[0] || null
 }

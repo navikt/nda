@@ -28,6 +28,13 @@ export function verifyDeployment(input: VerificationInput): VerificationResult {
     return handleUnauthorizedBranch(input)
   }
 
+  if (input.previousDeploymentLookupFailed) {
+    return handleCompareError(
+      input,
+      `Could not determine repository identity (github_repo_id) for ${input.repository} — previous-deployment lookup skipped. This usually resolves once the repository backfill completes.`,
+    )
+  }
+
   if (!input.previousDeployment) {
     return handlePendingBaseline(input)
   }

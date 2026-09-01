@@ -1,6 +1,7 @@
 import {
   saveCommitOnBranchRawSnapshot,
   saveCommitRawSnapshot,
+  saveCompareRawSnapshot,
   saveWorkflowRunRawSnapshot,
 } from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
@@ -111,6 +112,63 @@ export async function archiveCommitRawSnapshot(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.warn(`⚠️ Failed to archive commit ${sha.substring(0, 7)} for ${owner}/${repo}:`, { error: message })
+  }
+}
+
+export type CommitAncestryStatus = 'identical' | 'ahead' | 'behind' | 'diverged'
+
+export async function getCommitAncestryStatus(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  knownGithubRepoId?: number,
+): Promise<CommitAncestryStatus | null> {
+  try {
+    const client = getGitHubClient()
+
+    const response = await client.repos.compareCommits({
+      owner,
+      repo,
+      base: baseSha,
+      head: headSha,
+    })
+
+    await archiveCompareRawSnapshot(owner, repo, baseSha, headSha, response.data, response.headers, knownGithubRepoId)
+
+    return response.data.status as CommitAncestryStatus
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(
+      `⚠️ Failed to compare commit ancestry ${baseSha.substring(0, 7)}...${headSha.substring(0, 7)} in ${owner}/${repo}:`,
+      { error: message },
+    )
+    return null
+  }
+}
+
+async function archiveCompareRawSnapshot(
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  data: unknown,
+  headers: Record<string, unknown>,
+  knownGithubRepoId?: number,
+): Promise<void> {
+  try {
+    const githubRepoId = knownGithubRepoId ?? (await getRepositoryId(owner, repo))
+    if (githubRepoId === null) return
+    const apiVersion = captureApiVersionMetadata(headers, null)
+    await saveCompareRawSnapshot(owner, repo, githubRepoId, baseSha, headSha, data, apiVersion)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(
+      `⚠️ Failed to archive compare snapshot ${baseSha.substring(0, 7)}...${headSha.substring(0, 7)} for ${owner}/${repo}:`,
+      {
+        error: message,
+      },
+    )
   }
 }
 

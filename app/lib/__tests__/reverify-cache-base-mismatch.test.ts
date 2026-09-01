@@ -4,7 +4,7 @@ vi.mock('~/db/app-settings.server', () => ({
   getImplicitApprovalSettings: vi.fn(),
 }))
 
-vi.mock('~/db/application-groups.server', () => ({
+vi.mock('~/db/monorepo.server', () => ({
   propagateVerificationToSiblings: vi.fn(),
 }))
 
@@ -15,6 +15,10 @@ vi.mock('~/db/connection.server', () => ({
 vi.mock('~/db/verification-diff.server', () => ({
   getCompareSnapshotForCommit: vi.fn(),
   getPreviousDeploymentForDiff: vi.fn(),
+}))
+
+vi.mock('~/db/application-repositories.server', () => ({
+  findRepositoryForApp: vi.fn(),
 }))
 
 vi.mock('~/lib/four-eyes-status', () => ({
@@ -41,6 +45,7 @@ vi.mock('~/lib/verification/verify', () => ({
 }))
 
 import { getImplicitApprovalSettings } from '~/db/app-settings.server'
+import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { buildCommitsBetweenFromCache, fetchVerificationData } from '~/lib/verification/fetch-data.server'
@@ -51,6 +56,7 @@ import { verifyDeployment } from '~/lib/verification/verify'
 const mockPoolQuery = pool.query as Mock
 const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
+const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetImplicitApproval = getImplicitApprovalSettings as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
@@ -60,6 +66,12 @@ const mockUpdateDeploymentVerification = updateDeploymentVerification as Mock
 describe('reverifyDeployment cache base validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockFindRepositoryForApp.mockResolvedValue({
+      repository: { github_repo_id: '123' },
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'repo',
+      isRedirected: false,
+    })
   })
 
   it('falls back to full refetch when cached base_sha mismatches previous deployment', async () => {

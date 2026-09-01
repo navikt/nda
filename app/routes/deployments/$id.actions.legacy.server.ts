@@ -1,4 +1,3 @@
-import { propagateVerificationToSiblings } from '~/db/application-groups.server'
 import { createComment, deleteLegacyInfo, getLegacyInfo } from '~/db/comments.server'
 import {
   type DeploymentWithApp,
@@ -6,6 +5,7 @@ import {
   updateDeploymentFourEyes,
   updateDeploymentLegacyData,
 } from '~/db/deployments.server'
+import { propagateVerificationToSiblings } from '~/db/monorepo.server'
 import type { UserIdentity } from '~/lib/auth.server'
 import { type LegacyLookupResult, lookupLegacyByCommit, lookupLegacyByPR } from '~/lib/github'
 import { logger } from '~/lib/logger.server'

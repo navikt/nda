@@ -143,16 +143,92 @@ export async function canAccessAppAdminForGroupCascade(actor: UserIdentity, moni
     [monitoredAppId],
   )
   const applicationGroupId = rows[0]?.application_group_id
-  if (!applicationGroupId) {
+
+  const siblingIds = new Set<number>()
+
+  if (applicationGroupId) {
+    const { rows: groupSiblingRows } = await pool.query<{ id: number }>(
+      'SELECT id FROM monitored_applications WHERE application_group_id = $1 AND is_active = true',
+      [applicationGroupId],
+    )
+    for (const sibling of groupSiblingRows) {
+      if (sibling.id !== monitoredAppId) {
+        siblingIds.add(sibling.id)
+      }
+    }
+  }
+
+  const { rows: repoSiblingRows } = await pool.query<{ id: number }>(
+    `SELECT ma.id
+     FROM application_repositories ar
+     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+     WHERE ar.status = 'active'
+       AND ma.is_active = true
+       AND ar.github_repo_id IS NOT NULL
+       AND ar.github_repo_id IN (
+         SELECT github_repo_id FROM application_repositories
+         WHERE monitored_app_id = $1 AND status = 'active' AND github_repo_id IS NOT NULL
+       )`,
+    [monitoredAppId],
+  )
+  for (const sibling of repoSiblingRows) {
+    if (sibling.id !== monitoredAppId) {
+      siblingIds.add(sibling.id)
+    }
+  }
+
+  if (siblingIds.size === 0) {
     return canAccessAppAdmin(actor, monitoredAppId)
   }
 
-  const { rows: siblingRows } = await pool.query<{ id: number }>(
-    'SELECT id FROM monitored_applications WHERE application_group_id = $1',
-    [applicationGroupId],
+  siblingIds.add(monitoredAppId)
+  return canAccessAllAppsAdmin(actor, [...siblingIds])
+}
+
+async function canAccessAllAppsAdmin(actor: UserIdentity, monitoredAppIds: number[]): Promise<boolean> {
+  if (isEntraAdmin(actor)) return true
+
+  const { rows } = await pool.query<{ monitored_app_id: number; dev_team_id: number }>(
+    `SELECT dta.monitored_app_id, dta.dev_team_id
+     FROM dev_team_applications dta
+     JOIN dev_teams dt ON dt.id = dta.dev_team_id AND dt.is_active = true
+     JOIN monitored_applications ma ON ma.id = dta.monitored_app_id
+     WHERE dta.monitored_app_id = ANY($1) AND dta.deleted_at IS NULL
+
+     UNION
+
+     SELECT ma.id AS monitored_app_id, dnt.dev_team_id
+     FROM dev_team_nais_teams dnt
+     JOIN dev_teams dt ON dt.id = dnt.dev_team_id AND dt.is_active = true
+     JOIN monitored_applications ma ON ma.team_slug = dnt.nais_team_slug
+     WHERE ma.id = ANY($1) AND dnt.deleted_at IS NULL
+
+     UNION
+
+     SELECT ma.id AS monitored_app_id, dtag.dev_team_id
+     FROM dev_team_application_groups dtag
+     JOIN dev_teams dt ON dt.id = dtag.dev_team_id AND dt.is_active = true
+     JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
+     JOIN monitored_applications ma ON ma.application_group_id = ag.id
+     WHERE ma.id = ANY($1) AND dtag.deleted_at IS NULL`,
+    [monitoredAppIds],
   )
-  const accessChecks = await Promise.all(siblingRows.map((sibling) => canAccessAppAdmin(actor, sibling.id)))
-  return accessChecks.every(Boolean)
+
+  const managingTeamIdsByApp = new Map<number, Set<number>>()
+  for (const row of rows) {
+    if (!managingTeamIdsByApp.has(row.monitored_app_id)) {
+      managingTeamIdsByApp.set(row.monitored_app_id, new Set())
+    }
+    managingTeamIdsByApp.get(row.monitored_app_id)?.add(row.dev_team_id)
+  }
+
+  const { teamRoles } = await getUserRoles(actor.navIdent)
+
+  return monitoredAppIds.every((appId) => {
+    const managingTeamIds = managingTeamIdsByApp.get(appId)
+    if (!managingTeamIds || managingTeamIds.size === 0) return false
+    return teamRoles.some((r) => managingTeamIds.has(r.dev_team_id) && isTeamLeaderRole(r.role))
+  })
 }
 
 export interface AppAdminAccess {

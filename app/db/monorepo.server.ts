@@ -1,3 +1,4 @@
+import { PROPAGATABLE_STATUSES, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
 
 export interface MonorepoAppEntry {
@@ -132,4 +133,52 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
     base_branch_mismatch: hasMismatch(allApps.map((a) => a.default_branch)),
     audit_year_mismatch: hasMismatch(allApps.map((a) => a.audit_start_year)),
   }
+}
+
+const PROPAGATABLE_STATUSES_SET = new Set<string>(PROPAGATABLE_STATUSES)
+
+const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
+
+export async function propagateVerificationToSiblings(
+  deploymentId: number,
+  status: string,
+  commitSha: string,
+  monitoredAppId: number,
+  hasFourEyes = true,
+): Promise<number> {
+  if (!hasFourEyes || !PROPAGATABLE_STATUSES_SET.has(status)) return 0
+
+  const result = await pool.query(
+    `UPDATE deployments d
+     SET four_eyes_status = $1
+     WHERE d.commit_sha = $2
+       AND d.four_eyes_status = ANY($3::text[])
+       AND d.id != $4
+       AND d.monitored_app_id IN (
+         SELECT ar.monitored_app_id FROM application_repositories ar
+         JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+         WHERE ar.status = 'active'
+           AND ma.is_active = true
+           AND ar.github_repo_id IS NOT NULL
+           AND ar.github_repo_id IN (
+             SELECT ar2.github_repo_id FROM application_repositories ar2
+             WHERE ar2.monitored_app_id = $5 AND ar2.status = 'active' AND ar2.github_repo_id IS NOT NULL
+           )
+           AND ar.monitored_app_id != $5
+       )
+       AND EXISTS (
+         SELECT 1 FROM application_repositories ar3
+         WHERE ar3.monitored_app_id = d.monitored_app_id
+           AND ar3.github_owner = d.detected_github_owner
+           AND ar3.github_repo_name = d.detected_github_repo_name
+           AND ar3.status IN ('active', 'historical')
+           AND ar3.github_repo_id IN (
+             SELECT ar4.github_repo_id FROM application_repositories ar4
+             WHERE ar4.monitored_app_id = $5 AND ar4.status = 'active' AND ar4.github_repo_id IS NOT NULL
+           )
+       )`,
+    [status, commitSha, PROPAGATION_TARGET_STATUSES, deploymentId, monitoredAppId],
+  )
+
+  return result.rowCount ?? 0
 }

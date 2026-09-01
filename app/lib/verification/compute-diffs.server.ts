@@ -1,4 +1,5 @@
 import { getImplicitApprovalSettings } from '~/db/app-settings.server'
+import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import {
   getCompareSnapshotForCommit,
@@ -47,6 +48,23 @@ export async function computeVerificationDiffs(
     errors: 0,
   }
 
+  const repoIdCache = new Map<string, { githubRepoId: string | null; status: string | null }>()
+  async function resolveRepoInfo(
+    owner: string,
+    repo: string,
+  ): Promise<{ githubRepoId: string | null; status: string | null }> {
+    const cacheKey = `${owner}/${repo}`
+    const cached = repoIdCache.get(cacheKey)
+    if (cached) return cached
+    const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
+    const info = {
+      githubRepoId: repoCheck.repository?.github_repo_id ?? null,
+      status: repoCheck.repository?.status ?? null,
+    }
+    repoIdCache.set(cacheKey, info)
+    return info
+  }
+
   const diffs: Array<{
     deploymentId: number
     oldStatus: string | null
@@ -77,7 +95,9 @@ export async function computeVerificationDiffs(
 
       const compareSnapshot = await getCompareSnapshotForCommit(row.commit_sha)
       if (compareSnapshot) {
-        const prevRow = await getPreviousDeploymentForDiff(row.id, row.environment_name)
+        const { githubRepoId, status } = await resolveRepoInfo(owner, repo)
+        const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
+        const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
         const previousDeployment = prevRow
           ? { id: prevRow.id, commitSha: prevRow.commit_sha, createdAt: prevRow.created_at.toISOString() }
           : null
@@ -136,6 +156,7 @@ export async function computeVerificationDiffs(
             auditStartYear: row.audit_start_year,
             implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
             previousDeployment,
+            previousDeploymentLookupFailed,
             deployedPr,
             commitsBetween,
             compareSummary: hasCompareMetadata ? compareData.compare : null,

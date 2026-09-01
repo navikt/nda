@@ -424,6 +424,8 @@ export interface VerificationInput {
     createdAt: string
   } | null
 
+  previousDeploymentLookupFailed?: boolean
+
   deployedPr: {
     number: number
     url: string
