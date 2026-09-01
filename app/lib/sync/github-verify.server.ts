@@ -1,3 +1,4 @@
+import { getPendingBaselineAutoVerifyEligibleAppIds } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import {
   type DeploymentFilters,
@@ -121,19 +122,15 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
       statusesToVerify.includes(d.four_eyes_status ?? ''),
   )
 
-  let grouped: Set<number> | null = null
+  let pendingBaselineEligibleAppIds: Set<number> | null = null
   const pendingBaselines = needsVerification.filter((d) => d.four_eyes_status === 'pending_baseline')
   if (pendingBaselines.length > 0) {
     const appIds = [...new Set(pendingBaselines.map((d) => d.monitored_app_id))]
-    const { rows } = await pool.query<{ id: number }>(
-      `SELECT id FROM monitored_applications WHERE id = ANY($1) AND application_group_id IS NOT NULL`,
-      [appIds],
-    )
-    grouped = new Set(rows.map((r) => r.id))
+    pendingBaselineEligibleAppIds = await getPendingBaselineAutoVerifyEligibleAppIds(appIds)
   }
 
   const filtered = needsVerification.filter(
-    (d) => d.four_eyes_status !== 'pending_baseline' || grouped?.has(d.monitored_app_id),
+    (d) => d.four_eyes_status !== 'pending_baseline' || pendingBaselineEligibleAppIds?.has(d.monitored_app_id),
   )
 
   const prioritized = filtered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())

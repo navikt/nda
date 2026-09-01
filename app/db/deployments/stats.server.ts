@@ -1,4 +1,5 @@
 import { APPROVED_STATUSES, PENDING_STATUSES, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
+import { pendingBaselineAutoVerifyEligibleSql } from '../application-repositories.server'
 import { baselineActionSql } from '../baseline-action'
 import { pool } from '../connection.server'
 import { lowerUsernames, userDeploymentMatchAnySql } from '../user-deployment-match'
@@ -35,17 +36,13 @@ export async function getAppDeploymentStats(
 }
 
 export async function getPendingVerificationCount(monitoredAppId: number): Promise<{ pending: number; total: number }> {
-  // Mirrors the verification queue definition in verifyDeploymentsFourEyes:
-  // reverifiable statuses + 'error' are always in queue, but 'pending_baseline' only
-  // counts when the app belongs to an application group (otherwise it awaits manual
-  // baseline approval, not automated GitHub verification).
   const statusesToVerify = [...REVERIFIABLE_STATUSES.filter((s) => s !== 'pending_baseline'), 'error']
 
   const { rows } = await pool.query<{ pending: string; total: string }>(
     `SELECT
       COUNT(*) FILTER (
         WHERE COALESCE(d.four_eyes_status, 'unknown') = ANY($2::text[])
-           OR (d.four_eyes_status = 'pending_baseline' AND ma.application_group_id IS NOT NULL)
+           OR (d.four_eyes_status = 'pending_baseline' AND ${pendingBaselineAutoVerifyEligibleSql('ma')})
       ) as pending,
       COUNT(*) as total
     FROM deployments d

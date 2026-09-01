@@ -222,3 +222,36 @@ export async function getAllActiveRepositories(): Promise<Map<number, string>> {
   }
   return map
 }
+
+export function pendingBaselineAutoVerifyEligibleSql(maAlias = 'ma'): string {
+  return `(
+    ${maAlias}.application_group_id IS NOT NULL
+    OR EXISTS (
+      SELECT 1 FROM application_repositories ar
+      WHERE ar.monitored_app_id = ${maAlias}.id AND ar.status = 'active'
+        AND (
+          ar.github_repo_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM application_repositories ar2
+            JOIN monitored_applications ma2 ON ma2.id = ar2.monitored_app_id
+            WHERE ar2.github_repo_id = ar.github_repo_id AND ar2.status = 'active' AND ar2.monitored_app_id != ${maAlias}.id
+              AND ma2.is_active = true
+          )
+        )
+    )
+  )`
+}
+
+export async function getPendingBaselineAutoVerifyEligibleAppIds(appIds: number[]): Promise<Set<number>> {
+  if (appIds.length === 0) return new Set()
+
+  const result = await pool.query<{ id: number }>(
+    `SELECT ma.id
+     FROM monitored_applications ma
+     WHERE ma.id = ANY($1::int[])
+       AND ${pendingBaselineAutoVerifyEligibleSql('ma')}`,
+    [appIds],
+  )
+
+  return new Set(result.rows.map((r) => r.id))
+}
