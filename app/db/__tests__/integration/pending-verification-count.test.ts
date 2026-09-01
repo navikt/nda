@@ -1,7 +1,14 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getPendingVerificationCount } from '~/db/deployments/stats.server'
-import { assignAppToGroup, seedApp, seedApplicationGroup, seedDeployment, truncateAllTables } from './helpers'
+import {
+  assignAppToGroup,
+  seedApp,
+  seedApplicationGroup,
+  seedApplicationRepository,
+  seedDeployment,
+  truncateAllTables,
+} from './helpers'
 
 let pool: Pool
 
@@ -84,6 +91,106 @@ describe('getPendingVerificationCount', () => {
     const groupedResult = await getPendingVerificationCount(groupedAppId)
     expect(groupedResult.total).toBe(1)
     expect(groupedResult.pending).toBe(1)
+  })
+
+  it('counts pending_baseline as pending when the app shares an active repo with another app (monorepo)', async () => {
+    const soloAppId = await seedApp(pool, { teamSlug: 'team-1', appName: 'solo-repo-app', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: soloAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'solo-repo',
+      githubRepoId: '111',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: soloAppId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      fourEyesStatus: 'pending_baseline',
+    })
+
+    const soloResult = await getPendingVerificationCount(soloAppId)
+    expect(soloResult.total).toBe(1)
+    expect(soloResult.pending).toBe(0)
+
+    const monorepoAppId = await seedApp(pool, { teamSlug: 'team-1', appName: 'monorepo-app-a', environment: 'prod' })
+    const monorepoSiblingId = await seedApp(pool, {
+      teamSlug: 'team-1',
+      appName: 'monorepo-app-b',
+      environment: 'prod',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: monorepoAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '222',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: monorepoSiblingId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '222',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: monorepoAppId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      fourEyesStatus: 'pending_baseline',
+    })
+
+    const monorepoResult = await getPendingVerificationCount(monorepoAppId)
+    expect(monorepoResult.total).toBe(1)
+    expect(monorepoResult.pending).toBe(1)
+  })
+
+  it('does not count pending_baseline as pending when the only sharing sibling app is inactive', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'app-with-inactive-sibling', environment: 'prod' })
+    const inactiveSiblingId = await seedApp(pool, {
+      teamSlug: 'team-1',
+      appName: 'inactive-sibling',
+      environment: 'prod',
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo-inactive-sibling',
+      githubRepoId: '333',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: inactiveSiblingId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo-inactive-sibling',
+      githubRepoId: '333',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      fourEyesStatus: 'pending_baseline',
+    })
+
+    const result = await getPendingVerificationCount(appId)
+    expect(result.total).toBe(1)
+    expect(result.pending).toBe(0)
+  })
+
+  it('counts pending_baseline as pending when the app has an active repo row with github_repo_id not yet backfilled', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'app-pending-backfill', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'not-yet-backfilled',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod',
+      fourEyesStatus: 'pending_baseline',
+    })
+
+    const result = await getPendingVerificationCount(appId)
+    expect(result.total).toBe(1)
+    expect(result.pending).toBe(1)
   })
 
   it('returns zeros for an app with no deployments', async () => {
