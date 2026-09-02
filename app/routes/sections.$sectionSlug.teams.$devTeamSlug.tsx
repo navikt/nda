@@ -5,8 +5,7 @@ import { ActiveBoardSection } from '~/components/ActiveBoardSection'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { BoardSummaryCard } from '~/components/BoardSummaryCard'
 import { TeamCoverageCards } from '~/components/DevTeamCoverageCards'
-import { getAppIdsByGroupIds } from '~/db/application-groups.server'
-import { getAllActiveRepositories } from '~/db/application-repositories.server'
+import { getAllActiveRepositories, getAppIdsSharingRepo } from '~/db/application-repositories.server'
 import { getBoardsByDevTeam } from '~/db/boards.server'
 import { getBoardObjectiveProgress, getContributedBoards, getDevTeamStats } from '~/db/dashboard-stats.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
@@ -74,12 +73,9 @@ export async function loader({ request, params, url }: Route.LoaderArgs) {
       : new Set<number>()
 
   const effectiveExclusiveIds = new Set(exclusiveAppIds)
-  const groupIdsInView = [
-    ...new Set(appsForStats.map((a) => a.application_group_id).filter((id): id is number => id != null)),
-  ]
-  if (groupIdsInView.length > 0) {
-    const allSiblingsByGroup = await getAppIdsByGroupIds(groupIdsInView)
-    for (const [, siblingIds] of allSiblingsByGroup) {
+  if (appsForStats.length > 0) {
+    const allSiblingsByRepo = await getAppIdsSharingRepo(appsForStats.map((a) => a.id))
+    for (const [, siblingIds] of allSiblingsByRepo) {
       const allExclusive = siblingIds.every((id) => exclusiveAppIds.has(id))
       if (!allExclusive) {
         for (const id of siblingIds) {
