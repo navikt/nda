@@ -21,7 +21,12 @@ vi.mock('~/db/sync-jobs.server', () => ({
   logSyncJobMessage: vi.fn(),
   updateSyncJobProgress: vi.fn(),
 }))
-vi.mock('~/lib/four-eyes-status', () => ({ APPROVED_STATUSES_SQL: "'approved'", LEGACY_STATUSES_SQL: "'legacy'" }))
+vi.mock('~/lib/four-eyes-status', () => ({
+  APPROVED_STATUSES_SQL: "'approved'",
+  LEGACY_STATUSES_SQL: "'legacy'",
+  PROPAGATABLE_STATUSES: ['approved'],
+  REVERIFIABLE_STATUSES: ['pending', 'pending_baseline', 'unknown'],
+}))
 vi.mock('~/lib/git-constants', () => ({ VALID_COMMIT_SHA_SQL: 'true' }))
 vi.mock('~/lib/github', () => ({
   getCommitsBetween: vi.fn(),

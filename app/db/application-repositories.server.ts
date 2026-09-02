@@ -232,8 +232,7 @@ export async function getAppIdsSharingRepo(appIds: number[]): Promise<Map<string
 
 export function pendingBaselineAutoVerifyEligibleSql(maAlias = 'ma'): string {
   return `(
-    ${maAlias}.application_group_id IS NOT NULL
-    OR EXISTS (
+    EXISTS (
       SELECT 1 FROM application_repositories ar
       WHERE ar.monitored_app_id = ${maAlias}.id AND ar.status = 'active'
         AND (
