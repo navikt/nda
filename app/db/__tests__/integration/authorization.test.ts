@@ -240,6 +240,148 @@ describe('canApproveDeployment', () => {
     expect(await canApproveDeployment(dev, appId)).toBe(true)
   })
 
+  it('allows team member via monorepo repo-sharing with an application-group member', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const groupMemberAppId = await seedApp(pool, {
+      teamSlug: 'nais-team',
+      appName: 'group-member-app',
+      environment: 'prod-gcp',
+    })
+    const monorepoSiblingAppId = await seedApp(pool, {
+      teamSlug: 'nais-team',
+      appName: 'monorepo-sibling-app',
+      environment: 'prod-gcp',
+    })
+
+    const {
+      rows: [group],
+    } = await pool.query<{ id: number }>('INSERT INTO application_groups (name) VALUES ($1) RETURNING id', [
+      'monorepo-group',
+    ])
+    await pool.query('UPDATE monitored_applications SET application_group_id = $1 WHERE id = $2', [
+      group.id,
+      groupMemberAppId,
+    ])
+    await pool.query('INSERT INTO dev_team_application_groups (dev_team_id, application_group_id) VALUES ($1, $2)', [
+      teamId,
+      group.id,
+    ])
+
+    await seedApplicationRepository(pool, {
+      monitoredAppId: groupMemberAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '999',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: monorepoSiblingAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '999',
+    })
+
+    const dev = makeUser('Z990013')
+    await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
+
+    expect(await canApproveDeployment(dev, monorepoSiblingAppId)).toBe(true)
+  })
+
+  it('denies team member for an unrelated app in a different repo from the application-group member', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const groupMemberAppId = await seedApp(pool, {
+      teamSlug: 'nais-team',
+      appName: 'group-member-app-2',
+      environment: 'prod-gcp',
+    })
+    const unrelatedAppId = await seedApp(pool, {
+      teamSlug: 'nais-team',
+      appName: 'unrelated-app',
+      environment: 'prod-gcp',
+    })
+
+    const {
+      rows: [group],
+    } = await pool.query<{ id: number }>('INSERT INTO application_groups (name) VALUES ($1) RETURNING id', [
+      'monorepo-group-2',
+    ])
+    await pool.query('UPDATE monitored_applications SET application_group_id = $1 WHERE id = $2', [
+      group.id,
+      groupMemberAppId,
+    ])
+    await pool.query('INSERT INTO dev_team_application_groups (dev_team_id, application_group_id) VALUES ($1, $2)', [
+      teamId,
+      group.id,
+    ])
+
+    await seedApplicationRepository(pool, {
+      monitoredAppId: groupMemberAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'group-member-repo',
+      githubRepoId: '1001',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: unrelatedAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'a-completely-different-repo',
+      githubRepoId: '1002',
+    })
+
+    const dev = makeUser('Z990014')
+    await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
+
+    expect(await canApproveDeployment(dev, unrelatedAppId)).toBe(false)
+  })
+
+  it('denies repo-sibling access when the application-group member app is inactive', async () => {
+    const sectionId = await seedSection(pool, 'pensjon')
+    const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
+    const inactiveGroupMemberAppId = await seedApp(pool, {
+      teamSlug: 'nais-team',
+      appName: 'inactive-group-member-app',
+      environment: 'prod-gcp',
+      isActive: false,
+    })
+    const monorepoSiblingAppId = await seedApp(pool, {
+      teamSlug: 'nais-team',
+      appName: 'monorepo-sibling-app-2',
+      environment: 'prod-gcp',
+    })
+
+    const {
+      rows: [group],
+    } = await pool.query<{ id: number }>('INSERT INTO application_groups (name) VALUES ($1) RETURNING id', [
+      'monorepo-group-3',
+    ])
+    await pool.query('UPDATE monitored_applications SET application_group_id = $1 WHERE id = $2', [
+      group.id,
+      inactiveGroupMemberAppId,
+    ])
+    await pool.query('INSERT INTO dev_team_application_groups (dev_team_id, application_group_id) VALUES ($1, $2)', [
+      teamId,
+      group.id,
+    ])
+
+    await seedApplicationRepository(pool, {
+      monitoredAppId: inactiveGroupMemberAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo-2',
+      githubRepoId: '1003',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: monorepoSiblingAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo-2',
+      githubRepoId: '1003',
+    })
+
+    const dev = makeUser('Z990015')
+    await assignTeamRole(dev.navIdent, teamId, 'utvikler', 'admin')
+
+    expect(await canApproveDeployment(dev, monorepoSiblingAppId)).toBe(false)
+  })
+
   it('denies user with no team membership', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
