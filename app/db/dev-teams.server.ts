@@ -308,19 +308,6 @@ export async function getAvailableAppsForDevTeam(
   return result.rows
 }
 
-export async function getGroupAppIdsForDevTeams(devTeamIds: number[]): Promise<number[]> {
-  if (devTeamIds.length === 0) return []
-  const result = await pool.query<{ id: number }>(
-    `SELECT DISTINCT ma.id
-     FROM dev_team_application_groups dtag
-     JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
-     JOIN monitored_applications ma ON ma.application_group_id = ag.id AND ma.is_active = true
-     WHERE dtag.dev_team_id = ANY($1::int[]) AND dtag.deleted_at IS NULL`,
-    [devTeamIds],
-  )
-  return result.rows.map((r) => r.id)
-}
-
 export async function getExclusivelyOwnedAppIds(devTeamId: number, appIds: number[]): Promise<Set<number>> {
   if (appIds.length === 0) return new Set()
 
@@ -341,16 +328,6 @@ export async function getExclusivelyOwnedAppIds(devTeamId: number, appIds: numbe
        JOIN dev_team_nais_teams dnt ON dnt.nais_team_slug = ma.team_slug AND dnt.deleted_at IS NULL
        JOIN dev_teams dt ON dt.id = dnt.dev_team_id AND dt.is_active = true
        WHERE ma.id = ANY($1::int[]) AND ma.is_active = true
-
-       UNION
-
-       -- Path 3: via application groups
-       SELECT ma.id AS app_id, dtag.dev_team_id
-       FROM dev_team_application_groups dtag
-       JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
-       JOIN monitored_applications ma ON ma.application_group_id = ag.id AND ma.is_active = true
-       JOIN dev_teams dt ON dt.id = dtag.dev_team_id AND dt.is_active = true
-       WHERE ma.id = ANY($1::int[]) AND dtag.deleted_at IS NULL
      )
      SELECT app_id
      FROM app_owners

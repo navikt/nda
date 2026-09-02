@@ -12,12 +12,7 @@ export async function findDevTeamsForDeployment(
      UNION
      SELECT dt.id, dt.name FROM dev_teams dt
      JOIN dev_team_applications dta ON dta.dev_team_id = dt.id
-     WHERE dta.monitored_app_id = $2 AND dta.deleted_at IS NULL AND dt.is_active = true
-     UNION
-     SELECT dt.id, dt.name FROM dev_teams dt
-     JOIN dev_team_application_groups dtag ON dtag.dev_team_id = dt.id
-     JOIN monitored_applications ma ON ma.application_group_id = dtag.application_group_id
-     WHERE ma.id = $2 AND dtag.deleted_at IS NULL AND dt.is_active = true`,
+     WHERE dta.monitored_app_id = $2 AND dta.deleted_at IS NULL AND dt.is_active = true`,
     [teamSlug, monitoredAppId],
   )
   return result.rows as Array<{ id: number; name: string }>

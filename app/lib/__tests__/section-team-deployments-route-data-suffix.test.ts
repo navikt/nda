@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('~/db/dev-teams.server', () => ({
   getDevTeamBySlug: vi.fn().mockResolvedValue({ id: 1, nais_team_slugs: ['plattform'] }),
   getDevTeamApplications: vi.fn().mockResolvedValue([{ monitored_app_id: 1 }]),
-  getGroupAppIdsForDevTeams: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('~/db/monitored-applications.server', () => ({

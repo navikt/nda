@@ -4,7 +4,7 @@ import { DeploymentFilters, DeploymentRow, PaginationControls } from '~/componen
 import { pool } from '~/db/connection.server'
 import { getFallbackGoalOption, getLinkedGoalsForApps } from '~/db/deployment-goal-links.server'
 import { type DeploymentFilters as DeploymentFiltersType, getDeploymentsPaginated } from '~/db/deployments.server'
-import { getDevTeamApplications, getDevTeamBySlug, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
+import { getDevTeamApplications, getDevTeamBySlug } from '~/db/dev-teams.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
 import { getActiveGithubAccountByNavIdent, getGithubUserLookups } from '~/db/user-github-lookups.server'
@@ -38,14 +38,13 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
 
   const range = getDateRangeForPeriod(period)
 
-  const [directApps, groupAppIds, allApps, deployerUsernames] = await Promise.all([
+  const [directApps, allApps, deployerUsernames] = await Promise.all([
     getDevTeamApplications(devTeam.id),
-    getGroupAppIdsForDevTeams([devTeam.id]),
     getAllMonitoredApplications(),
     getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
   ])
 
-  const directAppIds = new Set([...directApps.map((a) => a.monitored_app_id), ...groupAppIds])
+  const directAppIds = new Set(directApps.map((a) => a.monitored_app_id))
   const naisTeamSlugs = devTeam.nais_team_slugs ?? []
   const teamApps = allApps.filter(
     (app) => app.is_active && (directAppIds.has(app.id) || naisTeamSlugs.includes(app.team_slug)),

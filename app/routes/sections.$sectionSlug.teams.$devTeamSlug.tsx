@@ -10,12 +10,7 @@ import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getBoardsByDevTeam } from '~/db/boards.server'
 import { getBoardObjectiveProgress, getContributedBoards, getDevTeamStats } from '~/db/dashboard-stats.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
-import {
-  getDevTeamApplications,
-  getDevTeamBySlug,
-  getExclusivelyOwnedAppIds,
-  getGroupAppIdsForDevTeams,
-} from '~/db/dev-teams.server'
+import { getDevTeamApplications, getDevTeamBySlug, getExclusivelyOwnedAppIds } from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import {
   type DevTeamMemberWithRole,
@@ -38,27 +33,17 @@ export async function loader({ request, params, url }: Route.LoaderArgs) {
   if (!devTeam) {
     throw new Response('Utviklingsteam ikke funnet', { status: 404 })
   }
-  const [
-    boards,
-    members,
-    directApps,
-    groupAppIds,
-    allApps,
-    alertCounts,
-    activeRepos,
-    deployerUsernames,
-    canAccessAdmin,
-  ] = await Promise.all([
-    getBoardsByDevTeam(devTeam.id),
-    getDevTeamMembersWithRoles(devTeam.id).catch(() => [] as DevTeamMemberWithRole[]),
-    getDevTeamApplications(devTeam.id),
-    getGroupAppIdsForDevTeams([devTeam.id]),
-    getAllMonitoredApplications(),
-    getAllAlertCounts(),
-    getAllActiveRepositories(),
-    getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
-    canAccessTeamAdmin(user, devTeam.id),
-  ])
+  const [boards, members, directApps, allApps, alertCounts, activeRepos, deployerUsernames, canAccessAdmin] =
+    await Promise.all([
+      getBoardsByDevTeam(devTeam.id),
+      getDevTeamMembersWithRoles(devTeam.id).catch(() => [] as DevTeamMemberWithRole[]),
+      getDevTeamApplications(devTeam.id),
+      getAllMonitoredApplications(),
+      getAllAlertCounts(),
+      getAllActiveRepositories(),
+      getMembersGithubUsernamesForDevTeamRoles([devTeam.id]).catch(() => [] as string[]),
+      canAccessTeamAdmin(user, devTeam.id),
+    ])
 
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
   const showAllApps = url.searchParams.get('allApps') === 'true'
@@ -71,7 +56,7 @@ export async function loader({ request, params, url }: Route.LoaderArgs) {
     getDevTeamStats(devTeam.id, ytdStart),
   ])
 
-  const directAppIds = new Set([...directApps.map((a) => a.monitored_app_id), ...groupAppIds])
+  const directAppIds = new Set(directApps.map((a) => a.monitored_app_id))
   const naisTeamSlugs = devTeam.nais_team_slugs ?? []
   const teamApps = allApps.filter(
     (app) => app.is_active && (directAppIds.has(app.id) || naisTeamSlugs.includes(app.team_slug)),

@@ -4,7 +4,7 @@ import { AppCard, type AppCardData } from '~/components/AppCard'
 import { getGroupNamesByIds } from '~/db/application-groups.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
-import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
+import { getDevTeamApplications } from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { requireUser } from '~/lib/auth.server'
@@ -30,12 +30,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const allNaisTeamSlugs = [...new Set(selectedDevTeams.flatMap((t) => t.nais_team_slugs))]
-  const devTeamIds = selectedDevTeams.map((t) => t.id)
-  const [directAppsResults, groupAppIds] = await Promise.all([
-    Promise.all(selectedDevTeams.map((t) => getDevTeamApplications(t.id))),
-    getGroupAppIdsForDevTeams(devTeamIds),
-  ])
-  const allDirectAppIds = [...new Set([...directAppsResults.flat().map((a) => a.monitored_app_id), ...groupAppIds])]
+  const directAppsResults = await Promise.all(selectedDevTeams.map((t) => getDevTeamApplications(t.id)))
+  const allDirectAppIds = [...new Set(directAppsResults.flat().map((a) => a.monitored_app_id))]
 
   const allApps = await getAllMonitoredApplications()
   const [alertCounts, activeReposByApp] = await Promise.all([getAllAlertCounts(), getAllActiveRepositories()])

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('~/db/dev-teams.server', () => ({
   getDevTeamApplications: vi.fn(),
-  getGroupAppIdsForDevTeams: vi.fn(),
 }))
 
 vi.mock('~/db/role-assignments.server', () => ({
@@ -14,18 +13,16 @@ vi.mock('~/db/connection.server', () => ({
 }))
 
 import { resolveDevTeamScope } from '~/db/deployments/home.server'
-import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '~/db/dev-teams.server'
+import { getDevTeamApplications } from '~/db/dev-teams.server'
 import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
 
 const mockGetDevTeamApplications = vi.mocked(getDevTeamApplications)
-const mockGetGroupAppIds = vi.mocked(getGroupAppIdsForDevTeams)
 const mockGetMembersUsernames = vi.mocked(getMembersGithubUsernamesForDevTeamRoles)
 
 describe('resolveDevTeamScope', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockGetDevTeamApplications.mockResolvedValue([])
-    mockGetGroupAppIds.mockResolvedValue([])
     mockGetMembersUsernames.mockResolvedValue(['user-a', 'user-b'])
   })
 
@@ -40,18 +37,17 @@ describe('resolveDevTeamScope', () => {
     expect(scope.naisTeamSlugs).toEqual(['team-a', 'team-b', 'team-c'])
   })
 
-  it('merges direct app IDs and group app IDs (deduped)', async () => {
+  it('merges direct app IDs across dev teams (deduped)', async () => {
     const devTeams = [{ id: 1, nais_team_slugs: ['t'] }]
 
     mockGetDevTeamApplications.mockResolvedValue([{ monitored_app_id: 10 }, { monitored_app_id: 20 }] as Awaited<
       ReturnType<typeof getDevTeamApplications>
     >)
-    mockGetGroupAppIds.mockResolvedValue([20, 30])
 
     const scope = await resolveDevTeamScope(devTeams)
 
-    expect(scope.directAppIds).toEqual(expect.arrayContaining([10, 20, 30]))
-    expect(scope.directAppIds).toHaveLength(3)
+    expect(scope.directAppIds).toEqual(expect.arrayContaining([10, 20]))
+    expect(scope.directAppIds).toHaveLength(2)
   })
 
   it('returns undefined directAppIds when no apps found', async () => {
@@ -92,7 +88,7 @@ describe('resolveDevTeamScope', () => {
     expect(scope.noMembersMapped).toBe(false)
   })
 
-  it('queries all dev team IDs for group apps and members', async () => {
+  it('queries all dev team IDs for apps and members', async () => {
     const devTeams = [
       { id: 5, nais_team_slugs: ['t1'] },
       { id: 9, nais_team_slugs: ['t2'] },
@@ -103,7 +99,6 @@ describe('resolveDevTeamScope', () => {
     expect(mockGetDevTeamApplications).toHaveBeenCalledTimes(2)
     expect(mockGetDevTeamApplications).toHaveBeenCalledWith(5)
     expect(mockGetDevTeamApplications).toHaveBeenCalledWith(9)
-    expect(mockGetGroupAppIds).toHaveBeenCalledWith([5, 9])
     expect(mockGetMembersUsernames).toHaveBeenCalledWith([5, 9])
   })
 })
