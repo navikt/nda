@@ -19,19 +19,19 @@ export function groupAppCardsByRepo(apps: AppCardData[]): AppCardData[] {
 
   const result: AppCardData[] = [...ungrouped]
 
-  for (const repoApps of byRepoKey.values()) {
+  for (const [repoKey, repoApps] of byRepoKey.entries()) {
     if (repoApps.length === 1) {
       result.push(repoApps[0])
       continue
     }
 
-    result.push(mergeAppsIntoCard(repoApps))
+    result.push(mergeAppsIntoCard(repoApps, repoKey))
   }
 
   return result
 }
 
-function mergeAppsIntoCard(groupApps: AppCardData[], groupName?: string): AppCardData {
+function mergeAppsIntoCard(groupApps: AppCardData[], groupName: string): AppCardData {
   const primary = groupApps[0]
   const siblingEnvs = groupApps.slice(1).map((a) => a.environment_name)
 
