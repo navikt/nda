@@ -1,4 +1,5 @@
 import { PROPAGATABLE_STATUSES, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
+import { repoSiblingAppIdsSql } from './application-repositories.server'
 import { pool } from './connection.server'
 
 export interface MonorepoAppEntry {
@@ -166,15 +167,7 @@ export async function propagateVerificationToSiblings(
        AND d.four_eyes_status = ANY($3::text[])
        AND d.id != $4
        AND d.monitored_app_id IN (
-         SELECT ar.monitored_app_id FROM application_repositories ar
-         JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
-         WHERE ar.status = 'active'
-           AND ma.is_active = true
-           AND ar.github_repo_id IS NOT NULL
-           AND ar.github_repo_id IN (
-             SELECT ar2.github_repo_id FROM application_repositories ar2
-             WHERE ar2.monitored_app_id = $5 AND ar2.status = 'active' AND ar2.github_repo_id IS NOT NULL
-           )
+         SELECT ar.monitored_app_id ${repoSiblingAppIdsSql('= $5')}
            AND ar.monitored_app_id != $5
        )
        AND EXISTS (

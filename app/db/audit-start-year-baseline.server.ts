@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg'
+import { repoSiblingAppIdsSql } from '~/db/application-repositories.server'
 import { computeBaselineRecomputePlan } from '~/lib/audit-start-year-baseline'
 import { type FourEyesStatus, LEGACY_STATUSES_SQL, UNAUTHORIZED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { withTransaction } from './connection.server'
@@ -32,19 +33,9 @@ async function getTargetAppIds(client: PoolClient, appId: number): Promise<numbe
 
   const targetAppIds = new Set<number>([appId])
 
-  const { rows: repoSiblings } = await client.query<{ id: number }>(
-    `SELECT ma.id
-     FROM application_repositories ar
-     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
-     WHERE ar.status = 'active'
-       AND ma.is_active = true
-       AND ar.github_repo_id IS NOT NULL
-       AND ar.github_repo_id IN (
-         SELECT github_repo_id FROM application_repositories
-         WHERE monitored_app_id = $1 AND status = 'active' AND github_repo_id IS NOT NULL
-       )`,
-    [appId],
-  )
+  const { rows: repoSiblings } = await client.query<{ id: number }>(`SELECT ma.id ${repoSiblingAppIdsSql('= $1')}`, [
+    appId,
+  ])
   for (const sibling of repoSiblings) {
     targetAppIds.add(sibling.id)
   }

@@ -203,20 +203,23 @@ export async function getAllActiveRepositories(): Promise<Map<number, string>> {
   return map
 }
 
+export function repoSiblingAppIdsSql(appIdCondition: string, arAlias = 'ar', maAlias = 'ma'): string {
+  return `FROM application_repositories ${arAlias}
+     JOIN monitored_applications ${maAlias} ON ${maAlias}.id = ${arAlias}.monitored_app_id
+     WHERE ${arAlias}.status = 'active'
+       AND ${maAlias}.is_active = true
+       AND ${arAlias}.github_repo_id IN (
+         SELECT github_repo_id FROM application_repositories
+         WHERE monitored_app_id ${appIdCondition} AND status = 'active' AND github_repo_id IS NOT NULL
+       )`
+}
+
 export async function getAppIdsSharingRepo(appIds: number[]): Promise<Map<string, number[]>> {
   if (appIds.length === 0) return new Map()
 
   const result = await pool.query<{ github_repo_id: string; monitored_app_id: number }>(
-    `SELECT DISTINCT ON (ar.monitored_app_id) ar.github_repo_id, ar.monitored_app_id
-     FROM application_repositories ar
-     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
-     WHERE ar.status = 'active'
-       AND ma.is_active = true
-       AND ar.github_repo_id IN (
-         SELECT DISTINCT ON (monitored_app_id) github_repo_id FROM application_repositories
-         WHERE monitored_app_id = ANY($1) AND status = 'active' AND github_repo_id IS NOT NULL
-         ORDER BY monitored_app_id, created_at DESC, id DESC
-       )
+    `SELECT DISTINCT ON (ar.monitored_app_id) ar.monitored_app_id, ar.github_repo_id
+     ${repoSiblingAppIdsSql('= ANY($1)')}
      ORDER BY ar.monitored_app_id, ar.created_at DESC, ar.id DESC`,
     [appIds],
   )
@@ -239,10 +242,8 @@ export function pendingBaselineAutoVerifyEligibleSql(maAlias = 'ma'): string {
         AND (
           ar.github_repo_id IS NULL
           OR EXISTS (
-            SELECT 1 FROM application_repositories ar2
-            JOIN monitored_applications ma2 ON ma2.id = ar2.monitored_app_id
-            WHERE ar2.github_repo_id = ar.github_repo_id AND ar2.status = 'active' AND ar2.monitored_app_id != ${maAlias}.id
-              AND ma2.is_active = true
+            SELECT 1 ${repoSiblingAppIdsSql(`= ${maAlias}.id`, 'ar2', 'ma2')}
+              AND ar2.monitored_app_id != ${maAlias}.id
           )
         )
     )
