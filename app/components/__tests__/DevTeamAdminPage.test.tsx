@@ -46,8 +46,6 @@ const baseProps = {
       is_active: true,
     },
   ],
-  teamGroups: [],
-  ungroupedTeamApps: [],
   teamBasePath: '/sections/pensjon/teams/starte-pensjon',
   isSubmitting: false,
   actionData: { success: 'Lagret' },
@@ -78,102 +76,5 @@ describe('DevTeamAdminPage', () => {
     expect(html).not.toContain('Teamnavn')
     expect(html).not.toContain('Nais-team (2)')
     expect(html).not.toContain('Applikasjoner (1)')
-  })
-})
-
-describe('ApplicationGroupsTeamSection', () => {
-  it('vises for canAdmin og er skjult ellers', () => {
-    const withAdmin = renderToStaticMarkup(<DevTeamAdminPage {...baseProps} canAdmin={true} />)
-    const withoutAdmin = renderToStaticMarkup(<DevTeamAdminPage {...baseProps} canAdmin={false} />)
-
-    expect(withAdmin).toContain('Applikasjonsgrupper (0)')
-    expect(withoutAdmin).not.toContain('Applikasjonsgrupper')
-  })
-
-  it('viser "ingen grupper"-melding når det ikke finnes grupper eller forslag', () => {
-    const html = renderToStaticMarkup(<DevTeamAdminPage {...baseProps} canAdmin={true} />)
-    expect(html).toContain('Ingen applikasjonsgrupper er opprettet')
-  })
-
-  it('viser eksisterende gruppe med applikasjoner', () => {
-    const html = renderToStaticMarkup(
-      <DevTeamAdminPage
-        {...baseProps}
-        canAdmin={true}
-        teamGroups={[
-          {
-            id: 1,
-            name: 'stille-app',
-            apps: [
-              {
-                id: 10,
-                team_slug: 'pensjon-a',
-                environment_name: 'dev-gcp',
-                app_name: 'stille-app',
-                is_team_app: true,
-              },
-              {
-                id: 11,
-                team_slug: 'pensjon-a',
-                environment_name: 'prod-gcp',
-                app_name: 'stille-app',
-                is_team_app: true,
-              },
-            ],
-          },
-        ]}
-      />,
-    )
-    expect(html).toContain('stille-app')
-    expect(html).toContain('Applikasjonsgrupper (1)')
-    expect(html).toContain('Slett gruppe')
-  })
-
-  it('viser "Annet team"-merket for apper som tilhører andre teams', () => {
-    const html = renderToStaticMarkup(
-      <DevTeamAdminPage
-        {...baseProps}
-        canAdmin={true}
-        teamGroups={[
-          {
-            id: 2,
-            name: 'modig-app',
-            apps: [
-              {
-                id: 20,
-                team_slug: 'pensjon-a',
-                environment_name: 'prod-gcp',
-                app_name: 'modig-app',
-                is_team_app: true,
-              },
-              {
-                id: 21,
-                team_slug: 'annet-team',
-                environment_name: 'prod-fss',
-                app_name: 'modig-app',
-                is_team_app: false,
-              },
-            ],
-          },
-        ]}
-      />,
-    )
-    expect(html).toContain('Annet team')
-  })
-
-  it('viser forslag når ugrupperte apper har samme navn i flere miljøer', () => {
-    const html = renderToStaticMarkup(
-      <DevTeamAdminPage
-        {...baseProps}
-        canAdmin={true}
-        ungroupedTeamApps={[
-          { id: 30, team_slug: 'pensjon-a', environment_name: 'dev-gcp', app_name: 'glad-api' },
-          { id: 31, team_slug: 'pensjon-a', environment_name: 'prod-gcp', app_name: 'glad-api' },
-        ]}
-      />,
-    )
-    expect(html).toContain('Foreslåtte grupper')
-    expect(html).toContain('glad-api')
-    expect(html).toContain('2 miljøer')
   })
 })

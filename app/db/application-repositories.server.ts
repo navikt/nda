@@ -188,26 +188,6 @@ export async function setRepositoryAsActive(repoId: number): Promise<Application
   return result.rows[0]
 }
 
-export async function getActiveRepoKeysForApps(appIds: number[]): Promise<Map<number, Set<string>>> {
-  if (appIds.length === 0) return new Map()
-
-  const result = await pool.query<{ monitored_app_id: number; github_owner: string; github_repo_name: string }>(
-    `SELECT monitored_app_id, github_owner, github_repo_name
-     FROM application_repositories
-     WHERE monitored_app_id = ANY($1::int[]) AND status = 'active'`,
-    [appIds],
-  )
-
-  const map = new Map<number, Set<string>>()
-  for (const row of result.rows) {
-    const key = `${row.github_owner}/${row.github_repo_name}`
-    const set = map.get(row.monitored_app_id) ?? new Set<string>()
-    set.add(key)
-    map.set(row.monitored_app_id, set)
-  }
-  return map
-}
-
 export async function getAllActiveRepositories(): Promise<Map<number, string>> {
   const result = await pool.query(
     `SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name
