@@ -112,23 +112,3 @@ export async function getGroupContext(monitoredAppId: number): Promise<GroupCont
 
   return { group, siblings }
 }
-
-export async function getAppIdsByGroupIds(groupIds: number[]): Promise<Map<number, number[]>> {
-  if (groupIds.length === 0) return new Map()
-
-  const result = await pool.query<{ application_group_id: number; id: number }>(
-    `SELECT ma.application_group_id, ma.id
-     FROM monitored_applications ma
-     JOIN application_groups ag ON ag.id = ma.application_group_id AND ag.deleted_at IS NULL
-     WHERE ma.application_group_id = ANY($1)`,
-    [groupIds],
-  )
-
-  const map = new Map<number, number[]>()
-  for (const row of result.rows) {
-    const ids = map.get(row.application_group_id) ?? []
-    ids.push(row.id)
-    map.set(row.application_group_id, ids)
-  }
-  return map
-}

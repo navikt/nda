@@ -203,6 +203,33 @@ export async function getAllActiveRepositories(): Promise<Map<number, string>> {
   return map
 }
 
+export async function getAppIdsSharingRepo(appIds: number[]): Promise<Map<string, number[]>> {
+  if (appIds.length === 0) return new Map()
+
+  const result = await pool.query<{ github_repo_id: string; monitored_app_id: number }>(
+    `SELECT DISTINCT ON (ar.monitored_app_id) ar.github_repo_id, ar.monitored_app_id
+     FROM application_repositories ar
+     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+     WHERE ar.status = 'active'
+       AND ma.is_active = true
+       AND ar.github_repo_id IN (
+         SELECT DISTINCT ON (monitored_app_id) github_repo_id FROM application_repositories
+         WHERE monitored_app_id = ANY($1) AND status = 'active' AND github_repo_id IS NOT NULL
+         ORDER BY monitored_app_id, created_at DESC, id DESC
+       )
+     ORDER BY ar.monitored_app_id, ar.created_at DESC, ar.id DESC`,
+    [appIds],
+  )
+
+  const map = new Map<string, number[]>()
+  for (const row of result.rows) {
+    const ids = map.get(row.github_repo_id) ?? []
+    ids.push(row.monitored_app_id)
+    map.set(row.github_repo_id, ids)
+  }
+  return map
+}
+
 export function pendingBaselineAutoVerifyEligibleSql(maAlias = 'ma'): string {
   return `(
     ${maAlias}.application_group_id IS NOT NULL

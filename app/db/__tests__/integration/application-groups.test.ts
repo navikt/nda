@@ -254,39 +254,3 @@ describe('getGroupContext', () => {
     expect(ctx.siblings[1].environment_name).toBe('prod-gcp')
   })
 })
-
-describe('getAppIdsByGroupIds', () => {
-  it('returns app ids grouped by group id', async () => {
-    const { getAppIdsByGroupIds } = await import('~/db/application-groups.server')
-    const group1 = await createGroup('svc-a')
-    const group2 = await createGroup('svc-b')
-    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-a', environment: 'prod-gcp' })
-    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-a', environment: 'prod-fss' })
-    const app3 = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc-b', environment: 'prod-gcp' })
-    await setAppGroup(app1, group1)
-    await setAppGroup(app2, group1)
-    await setAppGroup(app3, group2)
-
-    const result = await getAppIdsByGroupIds([group1, group2])
-    expect(result.get(group1)?.sort()).toEqual([app1, app2].sort())
-    expect(result.get(group2)).toEqual([app3])
-  })
-
-  it('returns an empty map for an empty list of group ids', async () => {
-    const { getAppIdsByGroupIds } = await import('~/db/application-groups.server')
-    const result = await getAppIdsByGroupIds([])
-    expect(result.size).toBe(0)
-  })
-
-  it('excludes apps belonging to a soft-deleted group', async () => {
-    const { getAppIdsByGroupIds } = await import('~/db/application-groups.server')
-    const groupId = await createGroup('svc-a')
-    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-a', environment: 'prod-gcp' })
-    await setAppGroup(appId, groupId)
-
-    await softDeleteGroup(groupId, 'A123456')
-
-    const result = await getAppIdsByGroupIds([groupId])
-    expect(result.has(groupId)).toBe(false)
-  })
-})

@@ -1,13 +1,13 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { seedApp, truncateAllTables } from './helpers'
+import { seedApp, seedApplicationRepository, truncateAllTables } from './helpers'
 
 vi.mock('~/lib/github/git.server', () => ({
   getRepositoryId: vi.fn(),
 }))
 
 import { getRepositoryId } from '~/lib/github/git.server'
-import { upsertApplicationRepository } from '../../application-repositories.server'
+import { getAppIdsSharingRepo, upsertApplicationRepository } from '../../application-repositories.server'
 
 let pool: Pool
 
@@ -237,5 +237,65 @@ describe('application-repositories', () => {
     )
     expect(rows[0].redirects_to_owner).toBe('navikt')
     expect(rows[0].redirects_to_repo).toBe('new-repo')
+  })
+})
+
+describe('getAppIdsSharingRepo', () => {
+  it('returns app ids grouped by shared active github_repo_id', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-a', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-a', environment: 'prod-fss' })
+    const app3 = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc-b', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app1,
+      githubOwner: 'navikt',
+      githubRepo: 'mono',
+      githubRepoId: '901',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app2,
+      githubOwner: 'navikt',
+      githubRepo: 'mono',
+      githubRepoId: '901',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app3,
+      githubOwner: 'navikt',
+      githubRepo: 'svc-b',
+      githubRepoId: '902',
+    })
+
+    const result = await getAppIdsSharingRepo([app1, app2, app3])
+    expect(result.get('901')?.sort()).toEqual([app1, app2].sort())
+    expect(result.get('902')).toEqual([app3])
+  })
+
+  it('returns an empty map for an empty list of app ids', async () => {
+    const result = await getAppIdsSharingRepo([])
+    expect(result.size).toBe(0)
+  })
+
+  it('excludes siblings belonging to an inactive app', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-a', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'svc-a',
+      environment: 'prod-fss',
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app1,
+      githubOwner: 'navikt',
+      githubRepo: 'mono',
+      githubRepoId: '903',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app2,
+      githubOwner: 'navikt',
+      githubRepo: 'mono',
+      githubRepoId: '903',
+    })
+
+    const result = await getAppIdsSharingRepo([app1])
+    expect(result.get('903')).toEqual([app1])
   })
 })
