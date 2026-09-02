@@ -28,7 +28,7 @@ import {
 } from '~/db/sync-jobs.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
-import { canAccessAppAdmin, canAccessAppAdminForGroupCascade } from '~/lib/authorization.server'
+import { canAccessAppAdmin, canAccessAppAdminForRepoCascade } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { getFormString, isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
@@ -242,22 +242,22 @@ export async function action({ request }: { request: Request; params: Record<str
       }
     }
 
-    if (!(await canAccessAppAdminForGroupCascade(user, appId))) {
-      return { error: 'Du har ikke administratortilgang til alle appene i samme applikasjonsgruppe/repo' }
+    if (!(await canAccessAppAdminForRepoCascade(user, appId))) {
+      return { error: 'Du har ikke administratortilgang til alle appene i samme repo' }
     }
 
     const result = await applyAuditStartYearChange(appId, auditStartYear, user.navIdent)
     let success = 'Startår for revisjon oppdatert!'
     if (result.updatedAppIds.length > 1) {
-      success += ` Endringen gjelder også ${result.updatedAppIds.length - 1} andre apper i samme applikasjonsgruppe/repo.`
+      success += ` Endringen gjelder også ${result.updatedAppIds.length - 1} andre apper i samme repo.`
     }
     if (result.recomputeLimitedToActingApp) {
       success +=
-        ' Gruppen har ikke ett entydig felles repo registrert ennå, så baseline er kun vurdert på nytt for denne appen.'
+        ' Appene har ikke ett entydig felles repo-scope registrert ennå, så baseline er kun vurdert på nytt for denne appen.'
     }
     if (result.recomputeSkippedDueToAmbiguousRepoScope) {
       success +=
-        ' Baseline ble ikke automatisk vurdert på nytt fordi gruppen har flere ulike aktive repoer registrert samtidig — dette bør rettes opp manuelt.'
+        ' Baseline ble ikke automatisk vurdert på nytt fordi appene har flere ulike aktive repoer registrert samtidig — dette bør rettes opp manuelt.'
     }
     if (result.promotedDeploymentId) {
       success += auditStartYear

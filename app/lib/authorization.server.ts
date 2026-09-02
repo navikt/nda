@@ -123,28 +123,10 @@ export async function canAccessAppAdmin(actor: UserIdentity, monitoredAppId: num
   return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId, { includeInactiveApp: true })
 }
 
-export async function canAccessAppAdminForGroupCascade(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+export async function canAccessAppAdminForRepoCascade(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
   if (isEntraAdmin(actor)) return true
 
-  const { rows } = await pool.query<{ application_group_id: number | null }>(
-    'SELECT application_group_id FROM monitored_applications WHERE id = $1',
-    [monitoredAppId],
-  )
-  const applicationGroupId = rows[0]?.application_group_id
-
   const siblingIds = new Set<number>()
-
-  if (applicationGroupId) {
-    const { rows: groupSiblingRows } = await pool.query<{ id: number }>(
-      'SELECT id FROM monitored_applications WHERE application_group_id = $1 AND is_active = true',
-      [applicationGroupId],
-    )
-    for (const sibling of groupSiblingRows) {
-      if (sibling.id !== monitoredAppId) {
-        siblingIds.add(sibling.id)
-      }
-    }
-  }
 
   const { rows: repoSiblingRows } = await pool.query<{ id: number }>(
     `SELECT ma.id
