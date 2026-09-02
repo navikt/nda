@@ -5,7 +5,7 @@ import { ActiveBoardSection } from '~/components/ActiveBoardSection'
 import { AppCard, type AppCardData } from '~/components/AppCard'
 import { BoardSummaryCard } from '~/components/BoardSummaryCard'
 import { TeamCoverageCards } from '~/components/DevTeamCoverageCards'
-import { getAppIdsByGroupIds, getGroupNamesByIds } from '~/db/application-groups.server'
+import { getAppIdsByGroupIds } from '~/db/application-groups.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getBoardsByDevTeam } from '~/db/boards.server'
 import { getBoardObjectiveProgress, getContributedBoards, getDevTeamStats } from '~/db/dashboard-stats.server'
@@ -20,7 +20,7 @@ import {
 import { getSectionBySlug } from '~/db/sections.server'
 import { requireUser } from '~/lib/auth.server'
 import { canAccessTeamAdmin } from '~/lib/authorization.server'
-import { groupAppCards } from '~/lib/group-app-cards'
+import { groupAppCardsByRepo } from '~/lib/group-app-cards'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug'
 
 export function meta({ loaderData: data }: Route.MetaArgs) {
@@ -133,30 +133,7 @@ export async function loader({ request, params, url }: Route.LoaderArgs) {
         return stats && stats.total > 0
       })
     : teamApps
-  const teamGroupIds = [
-    ...new Set(displayApps.map((a) => a.application_group_id).filter((id): id is number => id != null)),
-  ]
-  const groupNames = await getGroupNamesByIds(teamGroupIds)
-
-  const monorepoSiblingCountByAppId = new Map<number, number>()
-  const activeAppCountByRepoKey = new Map<string, number>()
-  for (const app of allApps) {
-    if (!app.is_active) continue
-    const repoKey = activeRepos.get(app.id)
-    if (!repoKey) continue
-    activeAppCountByRepoKey.set(repoKey, (activeAppCountByRepoKey.get(repoKey) ?? 0) + 1)
-  }
-  for (const app of allApps) {
-    if (!app.is_active) continue
-    const repoKey = activeRepos.get(app.id)
-    if (!repoKey) continue
-    const count = activeAppCountByRepoKey.get(repoKey) ?? 0
-    if (count > 1) {
-      monorepoSiblingCountByAppId.set(app.id, count - 1)
-    }
-  }
-
-  const appCards: AppCardData[] = groupAppCards(
+  const appCards: AppCardData[] = groupAppCardsByRepo(
     displayApps.map((app) => ({
       ...app,
       active_repo: activeRepos.get(app.id) || null,
@@ -172,9 +149,7 @@ export async function loader({ request, params, url }: Route.LoaderArgs) {
         four_eyes_percentage: 0,
       },
       alertCount: alertCounts.get(app.id) || 0,
-      monorepoSiblingCount: monorepoSiblingCountByAppId.get(app.id),
     })),
-    groupNames,
   ).sort((a, b) => (a.groupName ?? a.app_name).localeCompare(b.groupName ?? b.app_name, 'nb'))
 
   const unfilteredCardIds = new Set(

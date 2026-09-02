@@ -2,7 +2,6 @@ import { useActionData, useLoaderData } from 'react-router'
 import { AppDetailPage } from '~/components/AppDetailPage'
 import { getUnresolvedAlertsByApp, resolveRepositoryAlert } from '~/db/alerts.server'
 import { updateImplicitApprovalSettings } from '~/db/app-settings.server'
-import { getGroupContext } from '~/db/application-groups.server'
 import {
   approveRepository,
   getRepositoriesByAppId,
@@ -47,7 +46,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     deploymentStats,
     alerts,
     auditReports,
-    groupContext,
     monorepo,
     devTeams,
     latestSyncJob,
@@ -60,7 +58,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     getAppDeploymentStats(app.id, startDate, endDate, app.audit_start_year),
     getUnresolvedAlertsByApp(app.id),
     getAuditReportsForApp(app.id),
-    getGroupContext(app.id),
     getMonorepoSiblings(app.id),
     getDevTeamsForApp(app.id, team),
     getLatestSyncJob(app.id, 'nais_sync'),
@@ -70,8 +67,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
 
   const canDeactivate = app.not_found_in_nais_at ? (capabilities?.canDeactivate ?? false) : false
   const canReactivate = !app.is_active ? (capabilities?.canReactivate ?? false) : false
-
-  const { group, siblings } = groupContext
 
   const activeRepo = repositories.find((r) => r.status === 'active')
   const pendingRepos = repositories.filter((r) => r.status === 'pending_approval')
@@ -92,8 +87,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     deploymentStats,
     alerts,
     auditReports,
-    group,
-    siblings,
     monorepo,
     devTeams,
     latestSyncJob: latestSyncJob

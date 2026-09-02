@@ -10,8 +10,8 @@ vi.mock('~/db/monitored-applications.server', () => ({
   }),
 }))
 
-vi.mock('~/db/application-groups.server', () => ({
-  getGroupContext: vi.fn().mockResolvedValue({ group: null, siblings: [] }),
+vi.mock('~/db/monorepo.server', () => ({
+  getMonorepoSiblings: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('~/lib/auth.server', () => ({

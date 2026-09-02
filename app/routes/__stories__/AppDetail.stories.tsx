@@ -46,21 +46,6 @@ const baseLoaderData: AppDetailLoaderData = {
   },
   alerts: [],
   auditReports: [mockAuditReport],
-  group: { id: 1, name: 'Pensjon-appen' },
-  siblings: [
-    {
-      id: 2,
-      team_slug: mockApp.team_slug,
-      environment_name: 'dev-gcp',
-      app_name: mockApp.app_name,
-    },
-    {
-      id: 3,
-      team_slug: mockApp.team_slug,
-      environment_name: 'prod-gcp',
-      app_name: mockApp.app_name,
-    },
-  ],
   monorepo: null,
   devTeams: [
     {
@@ -194,8 +179,6 @@ export const NoRepository: Story = {
       historicalRepos: [],
       deploymentStats: { ...baseLoaderData.deploymentStats, total: 0, last_deployment: null, last_deployment_id: null },
       auditReports: [],
-      group: null,
-      siblings: [],
       devTeams: [],
     },
     canAccessAdmin: true,

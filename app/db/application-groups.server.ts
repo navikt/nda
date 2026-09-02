@@ -451,15 +451,6 @@ export async function isTeamGroup(devTeamId: number, groupId: number): Promise<b
   return rows[0]?.exists ?? false
 }
 
-export async function getGroupNamesByIds(groupIds: number[]): Promise<Map<number, string>> {
-  if (groupIds.length === 0) return new Map()
-  const { rows } = await pool.query<{ id: number; name: string }>(
-    'SELECT id, name FROM application_groups WHERE id = ANY($1::int[]) AND deleted_at IS NULL',
-    [groupIds],
-  )
-  return new Map(rows.map((r) => [r.id, r.name]))
-}
-
 export async function getAppIdsByGroupIds(groupIds: number[]): Promise<Map<number, number[]>> {
   if (groupIds.length === 0) return new Map()
 

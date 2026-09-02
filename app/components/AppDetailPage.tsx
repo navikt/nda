@@ -6,7 +6,6 @@ import {
   ExclamationmarkTriangleIcon,
   EyeIcon,
   FileTextIcon,
-  LayersIcon,
   PackageIcon,
   PersonGroupIcon,
   XMarkIcon,
@@ -94,11 +93,6 @@ export interface AppDetailDeploymentStats {
   baseline_action_count?: number | null
 }
 
-export interface AppDetailGroup {
-  id: number
-  name: string
-}
-
 export interface AppDetailSibling {
   id: number
   team_slug: string
@@ -144,8 +138,6 @@ export interface AppDetailLoaderData {
   deploymentStats: AppDetailDeploymentStats
   alerts: AppDetailAlert[]
   auditReports: AppDetailAuditReport[]
-  group: AppDetailGroup | null
-  siblings: AppDetailSibling[]
   monorepo: AppDetailMonorepoInfo | null
   devTeams: AppDetailDevTeam[]
   latestSyncJob: AppDetailLatestSyncJob | null
@@ -172,8 +164,6 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
     deploymentStats,
     alerts,
     auditReports,
-    group,
-    siblings,
     monorepo,
     devTeams,
     latestSyncJob,
@@ -277,31 +267,6 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
             <BaselineInfo />
           </VStack>
         </Alert>
-      )}
-
-      {group && siblings.length > 0 && (
-        <Box padding="space-16" borderRadius="8" background="neutral-soft">
-          <HStack gap="space-12" align="center" wrap>
-            <LayersIcon aria-hidden />
-            <BodyShort size="small" weight="semibold">
-              {group.name}
-            </BodyShort>
-            <Tag variant="neutral" size="xsmall">
-              {app.environment_name}
-            </Tag>
-            {siblings.map((s) => (
-              <Link
-                key={s.id}
-                to={`/team/${s.team_slug}/env/${s.environment_name}/app/${s.app_name}`}
-                style={{ textDecoration: 'none' }}
-              >
-                <Tag variant="neutral" size="xsmall">
-                  {s.environment_name}
-                </Tag>
-              </Link>
-            ))}
-          </HStack>
-        </Box>
       )}
 
       {monorepo && monorepo.siblings.length > 0 && (

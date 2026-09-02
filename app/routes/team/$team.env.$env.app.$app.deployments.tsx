@@ -1,11 +1,11 @@
 import { redirect, useLoaderData } from 'react-router'
 import { AppDeploymentsPage } from '~/components/AppDeploymentsPage'
-import { getGroupContext } from '~/db/application-groups.server'
 import { pool } from '~/db/connection.server'
 import { getLinkedObjectivesForApps } from '~/db/deployment-goal-links.server'
 import { type DeploymentFilters as DeploymentFiltersType, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getDevTeamBySlug, getDevTeamsForApp, getDevTeamsForApps } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
+import { getMonorepoSiblings } from '~/db/monorepo.server'
 import {
   getDevTeamsForGithubUsernamesByRole,
   getMembersGithubUsernamesForDevTeamRoles,
@@ -49,7 +49,11 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
 
   const range = getDateRangeForPeriod(period)
 
-  const { group: appGroup, siblings: allSiblings } = await getGroupContext(app.id)
+  const monorepo = await getMonorepoSiblings(app.id)
+  const allSiblings = monorepo?.siblings ?? []
+  const appGroup = monorepo
+    ? { github_owner: monorepo.github_owner, github_repo_name: monorepo.github_repo_name }
+    : null
   const hasGroup = allSiblings.length > 0
   const siblings = showGroup ? allSiblings : []
 

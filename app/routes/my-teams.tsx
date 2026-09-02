@@ -1,7 +1,6 @@
 import type { ActiveBoardData } from '~/components/ActiveBoardSection'
 import type { AppCardData } from '~/components/AppCard'
 import { MyTeamsPage } from '~/components/MyTeamsPage'
-import { getGroupNamesByIds } from '~/db/application-groups.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getBoardsByDevTeam } from '~/db/boards.server'
 import {
@@ -18,7 +17,7 @@ import {
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { getActiveGithubAccountByNavIdent } from '~/db/user-github-lookups.server'
 import { endOfDay } from '~/lib/date-utils'
-import { groupAppCards } from '~/lib/group-app-cards'
+import { groupAppCardsByRepo } from '~/lib/group-app-cards'
 import { logger } from '~/lib/logger.server'
 import { getAppDeploymentStatsBatch } from '../db/deployments.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '../db/monitored-applications.server'
@@ -107,12 +106,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     baselineActionByKey.set(key, a.baseline_action_count)
   }
 
-  const groupIds = [
-    ...new Set(matchingApps.map((a) => a.application_group_id).filter((id): id is number => id != null)),
-  ]
-  const groupNames = await getGroupNamesByIds(groupIds)
-
-  const issueAppCards = groupAppCards(
+  const issueAppCards = groupAppCardsByRepo(
     matchingApps.map((app) => {
       const baseStats = statsByApp.get(app.id) || {
         total: 0,
@@ -139,7 +133,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         alertCount: alertCounts.get(app.id) || 0,
       }
     }),
-    groupNames,
   )
 
   issueAppCards.sort((a, b) => {
