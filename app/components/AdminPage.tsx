@@ -17,23 +17,7 @@ import {
 import { BodyShort, Box, Heading, HGrid, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 
-export interface AdminPageProps {
-  pendingCount: number
-  diffCount: number
-  softDeletedCount: number
-  titleMismatchCount: number
-  baselineNoApproverCount: number
-}
-
-export function AdminPage({
-  pendingCount,
-  diffCount,
-  softDeletedCount,
-  titleMismatchCount,
-  baselineNoApproverCount,
-}: AdminPageProps) {
-  const dataQualityCount = titleMismatchCount + baselineNoApproverCount
-
+export function AdminPage() {
   return (
     <VStack gap="space-24">
       <div>
@@ -49,9 +33,8 @@ export function AdminPage({
             padding="space-24"
             borderRadius="8"
             background="raised"
-            borderColor={pendingCount > 0 ? 'warning-subtle' : 'neutral-subtle'}
+            borderColor="neutral-subtle"
             borderWidth="1"
-            data-color={pendingCount > 0 ? 'warning' : undefined}
             className="admin-card"
             style={{ height: '100%' }}
           >
@@ -61,11 +44,7 @@ export function AdminPage({
                 <Heading level="2" size="small" spacing>
                   GitHub-verifisering
                 </Heading>
-                <BodyShort textColor="subtle">
-                  {pendingCount > 0
-                    ? `${pendingCount} deployments venter på verifisering.`
-                    : 'Verifiser deployments mot GitHub.'}
-                </BodyShort>
+                <BodyShort textColor="subtle">Verifiser deployments mot GitHub.</BodyShort>
               </div>
             </VStack>
           </Box>
@@ -313,9 +292,8 @@ export function AdminPage({
             padding="space-24"
             borderRadius="8"
             background="raised"
-            borderColor={diffCount > 0 ? 'warning-subtle' : 'neutral-subtle'}
+            borderColor="neutral-subtle"
             borderWidth="1"
-            data-color={diffCount > 0 ? 'warning' : undefined}
             className="admin-card"
             style={{ height: '100%' }}
           >
@@ -325,11 +303,7 @@ export function AdminPage({
                 <Heading level="2" size="small" spacing>
                   Verifiseringsavvik
                 </Heading>
-                <BodyShort textColor="subtle">
-                  {diffCount > 0
-                    ? `${diffCount} avvik funnet på tvers av applikasjoner.`
-                    : 'Sjekk verifiseringsavvik på tvers av alle applikasjoner.'}
-                </BodyShort>
+                <BodyShort textColor="subtle">Sjekk verifiseringsavvik på tvers av alle applikasjoner.</BodyShort>
               </div>
             </VStack>
           </Box>
@@ -340,9 +314,8 @@ export function AdminPage({
             padding="space-24"
             borderRadius="8"
             background="raised"
-            borderColor={dataQualityCount > 0 ? 'danger-subtle' : 'neutral-subtle'}
+            borderColor="neutral-subtle"
             borderWidth="1"
-            data-color={dataQualityCount > 0 ? 'danger' : undefined}
             className="admin-card"
             style={{ height: '100%' }}
           >
@@ -353,9 +326,7 @@ export function AdminPage({
                   Datakvalitet
                 </Heading>
                 <BodyShort textColor="subtle">
-                  {dataQualityCount > 0
-                    ? `${dataQualityCount} datakvalitetsproblemer funnet. Sjekk siden.`
-                    : 'Tittel-avvik, baseline uten godkjenner og andre datakvalitetsproblemer.'}
+                  Tittel-avvik, baseline uten godkjenner og andre datakvalitetsproblemer.
                 </BodyShort>
               </div>
             </VStack>
@@ -367,9 +338,8 @@ export function AdminPage({
             padding="space-24"
             borderRadius="8"
             background="raised"
-            borderColor={softDeletedCount > 0 ? 'warning-subtle' : 'neutral-subtle'}
+            borderColor="neutral-subtle"
             borderWidth="1"
-            data-color={softDeletedCount > 0 ? 'warning' : undefined}
             className="admin-card"
             style={{ height: '100%' }}
           >
@@ -379,11 +349,7 @@ export function AdminPage({
                 <Heading level="2" size="small" spacing>
                   Slettede rader
                 </Heading>
-                <BodyShort textColor="subtle">
-                  {softDeletedCount > 0
-                    ? `${softDeletedCount} logisk slettede rader. Se hvem som slettet og gjenopprett ved behov.`
-                    : 'Se og gjenopprett logisk slettede rader.'}
-                </BodyShort>
+                <BodyShort textColor="subtle">Se og gjenopprett logisk slettede rader.</BodyShort>
               </div>
             </VStack>
           </Box>
