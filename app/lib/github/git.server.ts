@@ -257,6 +257,11 @@ async function resolveWorkflowRun(
     return response.data
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    const status = (error as { status?: unknown }).status
+    if (typeof status === 'number' && status === 404) {
+      logger.info(`ℹ️ Workflow run ${runId} not found for ${owner}/${repo} (likely expired or deleted upstream)`)
+      return null
+    }
     const stack = error instanceof Error ? error.stack : undefined
     logger.warn(`⚠️ Failed to get workflow run ${runId} for ${owner}/${repo}:`, { error: message, stack_trace: stack })
     return null
