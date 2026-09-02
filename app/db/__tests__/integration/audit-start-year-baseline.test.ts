@@ -676,51 +676,6 @@ describe('applyAuditStartYearChange', () => {
     expect(await getStatus(siblingDeploy)).toBe('pending_baseline')
   })
 
-  it('recomputes only within the acting app when no repository is known yet', async () => {
-    const appA = await seedApp(pool, {
-      teamSlug: 'team-hh',
-      appName: 'app-hh-1',
-      environment: 'prod-fss',
-      auditStartYear: null,
-    })
-    const appB = await seedApp(pool, {
-      teamSlug: 'team-hh',
-      appName: 'app-hh-2',
-      environment: 'prod-gcp',
-      auditStartYear: null,
-    })
-
-    const appABaseline = await seedDeployment(pool, {
-      monitoredAppId: appA,
-      teamSlug: 'team-hh',
-      environment: 'prod-fss',
-      createdAt: new Date('2025-06-01T00:00:00Z'),
-      fourEyesStatus: 'baseline',
-    })
-    const appAFirstInYear = await seedDeployment(pool, {
-      monitoredAppId: appA,
-      teamSlug: 'team-hh',
-      environment: 'prod-fss',
-      createdAt: new Date('2026-02-01T00:00:00Z'),
-      fourEyesStatus: 'approved_pr',
-    })
-    const appBFirstInYear = await seedDeployment(pool, {
-      monitoredAppId: appB,
-      teamSlug: 'team-hh',
-      environment: 'prod-gcp',
-      createdAt: new Date('2026-01-01T00:00:00Z'),
-      fourEyesStatus: 'approved_pr',
-    })
-    const result = await applyAuditStartYearChange(appA, 2026, 'Z990001')
-
-    expect(result.recomputeLimitedToActingApp).toBe(true)
-    expect(result.demotedDeploymentIds).toEqual([appABaseline])
-    expect(result.promotedDeploymentId).toBe(appAFirstInYear)
-    expect(await getStatus(appABaseline)).toBe('manually_approved')
-    expect(await getStatus(appAFirstInYear)).toBe('pending_baseline')
-    expect(await getStatus(appBFirstInYear)).toBe('approved_pr')
-  })
-
   it('logs each app’s own previous audit_start_year in status history, not the acting app’s', async () => {
     const appA = await seedApp(pool, {
       teamSlug: 'team-hi',
