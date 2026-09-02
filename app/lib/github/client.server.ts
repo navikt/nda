@@ -142,6 +142,7 @@ export function getGitHubClient(): Octokit {
       if (options.commit_sha) path = path.replace('{commit_sha}', (options.commit_sha as string).substring(0, 7))
       if (options.ref) path = path.replace('{ref}', (options.ref as string).substring(0, 7))
       if (options.issue_number) path = path.replace('{issue_number}', String(options.issue_number))
+      if (options.run_id) path = path.replace('{run_id}', String(options.run_id))
       if (options.base && options.head) {
         path = path.replace('{base}', (options.base as string).substring(0, 7))
         path = path.replace('{head}', (options.head as string).substring(0, 7))
