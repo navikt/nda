@@ -100,8 +100,7 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
   const ownRepo = await pool.query<{ github_owner: string; github_repo_name: string }>(
     `SELECT ar.github_owner, ar.github_repo_name
      FROM application_repositories ar
-     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
-     WHERE ar.monitored_app_id = $1 AND ar.status = 'active' AND ma.is_active = true
+     WHERE ar.monitored_app_id = $1 AND ar.status = 'active'
      ORDER BY ar.created_at DESC, ar.id DESC
      LIMIT 1`,
     [monitoredAppId],
@@ -123,6 +122,18 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
 
   const siblings = [...appsById.values()].filter((a) => a.id !== monitoredAppId)
   if (siblings.length === 0) return null
+
+  if (!appsById.has(monitoredAppId)) {
+    const ownApp = await pool.query<MonorepoAppEntry>(
+      `SELECT id, app_name, team_slug, environment_name, default_branch, audit_start_year
+       FROM monitored_applications
+       WHERE id = $1`,
+      [monitoredAppId],
+    )
+    if (ownApp.rows.length > 0) {
+      appsById.set(monitoredAppId, ownApp.rows[0])
+    }
+  }
 
   const allApps = [...appsById.values()]
 
