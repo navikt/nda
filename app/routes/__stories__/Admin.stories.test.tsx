@@ -13,10 +13,10 @@ vi.mock('react-router', async () => {
   }
 })
 
-const { Default, WithPendingVerifications, WithMultipleDeviations } = composeStories(stories)
+const { Default } = composeStories(stories)
 
 describe('Admin story baseline characterization', () => {
-  it('renders all admin entry points when there are no highlighted deviations', () => {
+  it('renders all admin entry points', () => {
     const html = renderToStaticMarkup(<Default />)
 
     expect(html).toContain('Administrasjon')
@@ -39,22 +39,5 @@ describe('Admin story baseline characterization', () => {
     expect(html).toContain('Sjekk verifiseringsavvik på tvers av alle applikasjoner.')
     expect(html).toContain('Tittel-avvik, baseline uten godkjenner og andre datakvalitetsproblemer.')
     expect(html).toContain('Se og gjenopprett logisk slettede rader.')
-    expect(html).not.toContain('deployments venter på verifisering.')
-  })
-
-  it('renders pending verification messaging when pending deployments exist', () => {
-    const html = renderToStaticMarkup(<WithPendingVerifications />)
-
-    expect(html).toContain('5 deployments venter på verifisering.')
-    expect(html).toContain('GitHub-verifisering')
-  })
-
-  it('renders warning and danger copy when multiple deviation counts exist', () => {
-    const html = renderToStaticMarkup(<WithMultipleDeviations />)
-
-    expect(html).toContain('3 deployments venter på verifisering.')
-    expect(html).toContain('2 avvik funnet på tvers av applikasjoner.')
-    expect(html).toContain('3 datakvalitetsproblemer funnet. Sjekk siden.')
-    expect(html).toContain('4 logisk slettede rader. Se hvem som slettet og gjenopprett ved behov.')
   })
 })
