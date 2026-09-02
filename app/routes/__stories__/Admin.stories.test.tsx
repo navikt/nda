@@ -26,7 +26,7 @@ describe('Admin story baseline characterization', () => {
     expect(html).toContain('/admin/sync-jobs')
     expect(html).toContain('/admin/global-settings')
     expect(html).toContain('/admin/env')
-    expect(html).toContain('/admin/application-groups')
+    expect(html).toContain('/admin/monorepos')
     expect(html).toContain('/admin/workflow-triggers')
     expect(html).toContain('/admin/workflow-patterns')
     expect(html).toContain('/admin/verification-diffs')
