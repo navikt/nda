@@ -86,7 +86,6 @@ export default [
     route('admin/global-settings', 'routes/admin/global-settings.tsx'),
     route('admin/section-roles', 'routes/admin/section-roles.tsx'),
     route('admin/application-groups', 'routes/admin/application-groups.tsx'),
-    route('admin/debug-dev-team-application-groups', 'routes/admin/debug-dev-team-application-groups.tsx'),
     route('admin/monorepos', 'routes/admin/monorepos.tsx'),
     route('admin/soft-deleted', 'routes/admin/soft-deleted.tsx'),
     route('admin/verification-diffs', 'routes/admin/verification-diffs.tsx'),
