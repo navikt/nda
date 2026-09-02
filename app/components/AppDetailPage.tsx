@@ -282,6 +282,9 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
               </Tag>
             </HStack>
             <HStack gap="space-8" align="center" wrap>
+              <Tag variant="info" size="xsmall">
+                {app.app_name} ({app.team_slug}/{app.environment_name})
+              </Tag>
               {monorepo.siblings.map((s) => (
                 <Link
                   key={s.id}

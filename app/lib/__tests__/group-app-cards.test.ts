@@ -115,11 +115,17 @@ describe('groupAppCardsByRepo', () => {
     expect(result[0].groupApps).toBeUndefined()
   })
 
-  it('does not set groupName since no group naming input exists for repo-based grouping', () => {
+  it('sets groupName to the active repo when apps share a repo', () => {
     const apps = [
-      makeRepoApp({ id: 1, environment_name: 'prod-gcp', active_repo: 'navikt/monorepo' }),
-      makeRepoApp({ id: 2, environment_name: 'prod-fss', active_repo: 'navikt/monorepo' }),
+      makeRepoApp({ id: 1, environment_name: 'prod-gcp', active_repo: 'navikt/pensjon-alde' }),
+      makeRepoApp({ id: 2, environment_name: 'prod-fss', active_repo: 'navikt/pensjon-alde' }),
     ]
+    const result = groupAppCardsByRepo(apps)
+    expect(result[0].groupName).toBe('navikt/pensjon-alde')
+  })
+
+  it('does not set groupName on standalone apps', () => {
+    const apps = [makeRepoApp({ id: 1, environment_name: 'prod-gcp', active_repo: 'navikt/solo-repo' })]
     const result = groupAppCardsByRepo(apps)
     expect(result[0].groupName).toBeUndefined()
   })
