@@ -1,4 +1,4 @@
-import { getAllMonorepoGroups } from '~/db/monorepo.server'
+import { searchMonorepoGroups } from '~/db/monorepo.server'
 import { pool } from '../connection.server'
 
 export interface SearchResult {
@@ -122,7 +122,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
        LIMIT $2`,
       [`%${trimmedQuery}%`, limit],
     ),
-    getAllMonorepoGroups(),
+    searchMonorepoGroups(trimmedQuery, limit),
     pool.query(
       `SELECT dt.id, dt.name, dt.slug, s.slug AS section_slug,
               COUNT(DISTINCT dta.monitored_app_id)::int AS app_count
@@ -137,16 +137,15 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     ),
   ])
 
-  const matchingGroups = monorepoGroups
-    .filter((g) => `${g.github_owner}/${g.github_repo_name}`.toLowerCase().includes(trimmedQuery.toLowerCase()))
-    .slice(0, limit)
-
-  for (const group of matchingGroups) {
-    const appNames = group.apps.map((a) => a.app_name).sort()
+  for (const group of monorepoGroups) {
+    const appNames = [...new Set(group.apps.map((a) => a.app_name))].sort()
     const maxShown = 3
     const displayNames =
       appNames.length > maxShown ? [...appNames.slice(0, maxShown), `+${appNames.length - maxShown}`] : appNames
-    const firstApp = [...group.apps].sort((a, b) => a.app_name.localeCompare(b.app_name))[0]
+    const firstApp = group.apps.reduce<(typeof group.apps)[number] | undefined>(
+      (min, a) => (!min || a.app_name < min.app_name ? a : min),
+      undefined,
+    )
     results.push({
       type: 'group',
       url: firstApp

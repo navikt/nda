@@ -14,13 +14,21 @@ export async function buildAppMetadata(app: MonitoredApp): Promise<AuditReportAp
 
   const monorepo = await getMonorepoSiblings(app.id)
   if (monorepo) {
-    applicationGroup = {
-      name: `${monorepo.github_owner}/${monorepo.github_repo_name}`,
-      apps: monorepo.siblings.map((a) => ({
+    const allApps = [
+      { team: app.team_slug, environment: app.environment_name, name: app.app_name },
+      ...monorepo.siblings.map((a) => ({
         team: a.team_slug,
         environment: a.environment_name,
         name: a.app_name,
       })),
+    ].sort(
+      (a, b) =>
+        a.name.localeCompare(b.name) || a.environment.localeCompare(b.environment) || a.team.localeCompare(b.team),
+    )
+
+    applicationGroup = {
+      name: `${monorepo.github_owner}/${monorepo.github_repo_name}`,
+      apps: allApps,
     }
   }
 

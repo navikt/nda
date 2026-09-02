@@ -69,8 +69,38 @@ export async function getAllMonorepoGroups(): Promise<MonorepoGroup[]> {
      ORDER BY ar.github_owner, ar.github_repo_name, ma.environment_name, ma.team_slug, ma.app_name`,
   )
 
+  return groupMonorepoRows(result.rows)
+}
+
+export async function searchMonorepoGroups(query: string, limit: number): Promise<MonorepoGroup[]> {
+  const matchingRepos = await pool.query<{ github_owner: string; github_repo_name: string }>(
+    `SELECT ar.github_owner, ar.github_repo_name
+     FROM (${ACTIVE_REPO_PER_APP}) ar
+     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+     WHERE ma.is_active = true AND concat(ar.github_owner, '/', ar.github_repo_name) ILIKE $1
+     GROUP BY ar.github_owner, ar.github_repo_name
+     HAVING COUNT(DISTINCT ar.monitored_app_id) > 1
+     ORDER BY ar.github_owner, ar.github_repo_name
+     LIMIT $2`,
+    [`%${query}%`, limit],
+  )
+  if (matchingRepos.rows.length === 0) return []
+
+  const result = await pool.query<MonorepoRow>(
+    `${MONOREPO_ROWS_SELECT}
+       AND (ar.github_owner, ar.github_repo_name) IN (
+         SELECT owner, repo_name FROM UNNEST($1::text[], $2::text[]) AS repos(owner, repo_name)
+       )
+     ORDER BY ar.github_owner, ar.github_repo_name, ma.environment_name, ma.team_slug, ma.app_name`,
+    [matchingRepos.rows.map((r) => r.github_owner), matchingRepos.rows.map((r) => r.github_repo_name)],
+  )
+
+  return groupMonorepoRows(result.rows)
+}
+
+function groupMonorepoRows(rows: MonorepoRow[]): MonorepoGroup[] {
   const groups = new Map<string, MonorepoRow[]>()
-  for (const row of result.rows) {
+  for (const row of rows) {
     const key = `${row.github_owner}/${row.github_repo_name}`
     const existing = groups.get(key)
     if (existing) {
@@ -80,15 +110,15 @@ export async function getAllMonorepoGroups(): Promise<MonorepoGroup[]> {
     }
   }
 
-  return [...groups.values()].map((rows) => {
+  return [...groups.values()].map((groupRows) => {
     const appsById = new Map<number, MonorepoAppEntry>()
-    for (const row of rows) {
+    for (const row of groupRows) {
       appsById.set(row.id, toAppEntry(row))
     }
     const apps = [...appsById.values()]
     return {
-      github_owner: rows[0].github_owner,
-      github_repo_name: rows[0].github_repo_name,
+      github_owner: groupRows[0].github_owner,
+      github_repo_name: groupRows[0].github_repo_name,
       apps,
       base_branch_mismatch: hasMismatch(apps.map((a) => a.default_branch)),
       audit_year_mismatch: hasMismatch(apps.map((a) => a.audit_start_year)),
