@@ -1,14 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { applyAuditStartYearChange } from '../../audit-start-year-baseline.server'
-import {
-  assignAppToGroup,
-  seedApp,
-  seedApplicationGroup,
-  seedApplicationRepository,
-  seedDeployment,
-  truncateAllTables,
-} from './helpers'
+import { seedApp, seedApplicationRepository, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -265,8 +258,7 @@ describe('applyAuditStartYearChange', () => {
     expect(await getStatus(oldPendingBaseline)).toBe('pending')
   })
 
-  it('cascades the new year to application group siblings and recomputes baseline across the group', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-1')
+  it('cascades the new year to repo siblings and recomputes baseline across the repo', async () => {
     const appA = await seedApp(pool, {
       teamSlug: 'team-f',
       appName: 'app-f-1',
@@ -279,10 +271,18 @@ describe('applyAuditStartYearChange', () => {
       environment: 'prod-gcp',
       auditStartYear: null,
     })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
-    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'shared-app' })
-    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'shared-app' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-app',
+      githubRepoId: '901',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-app',
+      githubRepoId: '901',
+    })
 
     const beforeYear = await seedDeployment(pool, {
       monitoredAppId: appA,
@@ -313,8 +313,7 @@ describe('applyAuditStartYearChange', () => {
     expect(await getStatus(beforeYear)).toBe('approved_pr')
   })
 
-  it('recomputes baseline for the whole group using the group repo scope', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-2')
+  it('recomputes baseline for the whole repo scope', async () => {
     const appA = await seedApp(pool, {
       teamSlug: 'team-g',
       appName: 'app-g-1',
@@ -327,10 +326,18 @@ describe('applyAuditStartYearChange', () => {
       environment: 'prod-gcp',
       auditStartYear: null,
     })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
-    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'shared-app' })
-    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'shared-app' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-app',
+      githubRepoId: '902',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-app',
+      githubRepoId: '902',
+    })
 
     const appAFirstInYear = await seedDeployment(pool, {
       monitoredAppId: appA,
@@ -358,8 +365,7 @@ describe('applyAuditStartYearChange', () => {
     expect(await getStatus(appAFirstInYear)).toBe('approved_pr')
   })
 
-  it('demotes an old baseline marker with unknown (NULL) detected repo even when a group repo scope is known', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-2b')
+  it('demotes an old baseline marker with unknown (NULL) detected repo even when a repo scope is known', async () => {
     const appA = await seedApp(pool, {
       teamSlug: 'team-g2',
       appName: 'app-g2-1',
@@ -372,10 +378,18 @@ describe('applyAuditStartYearChange', () => {
       environment: 'prod-gcp',
       auditStartYear: null,
     })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
-    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'shared-app-2' })
-    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'shared-app-2' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-app-2',
+      githubRepoId: '903',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-app-2',
+      githubRepoId: '903',
+    })
 
     const oldBaselineWithUnknownRepo = await seedDeployment(pool, {
       monitoredAppId: appA,
@@ -403,7 +417,6 @@ describe('applyAuditStartYearChange', () => {
   })
 
   it('does not treat a marker with only a partially unknown detected repo as in-scope for demotion', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-2d')
     const appA = await seedApp(pool, {
       teamSlug: 'team-g2b',
       appName: 'app-g2b-1',
@@ -416,10 +429,18 @@ describe('applyAuditStartYearChange', () => {
       environment: 'prod-gcp',
       auditStartYear: null,
     })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
-    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'shared-app-3' })
-    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'shared-app-3' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-app-3',
+      githubRepoId: '904',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-app-3',
+      githubRepoId: '904',
+    })
 
     const partiallyUnknownBaseline = await seedDeployment(pool, {
       monitoredAppId: appA,
@@ -452,24 +473,15 @@ describe('applyAuditStartYearChange', () => {
     expect(await getStatus(newFirstInYear)).toBe('pending_baseline')
   })
 
-  it('skips baseline recompute entirely when the group has more than one distinct active repo (ambiguous scope)', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-2c')
+  it('skips baseline recompute entirely when the acting app has more than one distinct active repo (ambiguous scope)', async () => {
     const appA = await seedApp(pool, {
       teamSlug: 'team-g3',
       appName: 'app-g3-1',
       environment: 'prod-fss',
       auditStartYear: null,
     })
-    const appB = await seedApp(pool, {
-      teamSlug: 'team-g3',
-      appName: 'app-g3-2',
-      environment: 'prod-gcp',
-      auditStartYear: null,
-    })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
     await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'repo-one' })
-    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'repo-two' })
+    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'repo-two' })
 
     const appABaseline = await seedDeployment(pool, {
       monitoredAppId: appA,
@@ -489,15 +501,6 @@ describe('applyAuditStartYearChange', () => {
       githubOwner: 'navikt',
       githubRepo: 'repo-one',
     })
-    const appBFirstInYear = await seedDeployment(pool, {
-      monitoredAppId: appB,
-      teamSlug: 'team-g3',
-      environment: 'prod-gcp',
-      createdAt: new Date('2026-01-01T00:00:00Z'),
-      fourEyesStatus: 'approved_pr',
-      githubOwner: 'navikt',
-      githubRepo: 'repo-two',
-    })
 
     const result = await applyAuditStartYearChange(appA, 2026, 'Z990001')
 
@@ -506,7 +509,6 @@ describe('applyAuditStartYearChange', () => {
     expect(result.promotedDeploymentId).toBeNull()
     expect(await getStatus(appABaseline)).toBe('baseline')
     expect(await getStatus(appAFirstInYear)).toBe('approved_pr')
-    expect(await getStatus(appBFirstInYear)).toBe('approved_pr')
     expect(await getAuditStartYear(appA)).toBe(2026)
   })
 
@@ -632,35 +634,7 @@ describe('applyAuditStartYearChange', () => {
     expect(await getAuditStartYear(appB)).toBeNull()
   })
 
-  it('does not cascade to an application-group sibling that is inactive', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-inactive-sibling')
-    const appA = await seedApp(pool, {
-      teamSlug: 'team-group-inactive',
-      appName: 'app-group-inactive-active',
-      environment: 'prod-gcp',
-      auditStartYear: null,
-    })
-    const appB = await seedApp(pool, {
-      teamSlug: 'team-group-inactive',
-      appName: 'app-group-inactive-b',
-      environment: 'prod-gcp',
-      auditStartYear: null,
-      isActive: false,
-    })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
-    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'group-repo-a' })
-    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'group-repo-b' })
-
-    const result = await applyAuditStartYearChange(appA, 2026, 'Z990001')
-
-    expect(result.updatedAppIds).toEqual([appA])
-    expect(await getAuditStartYear(appA)).toBe(2026)
-    expect(await getAuditStartYear(appB)).toBeNull()
-  })
-
   it('still recomputes baseline for a sibling app when the acting app itself has no deployments yet', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-3')
     const appA = await seedApp(pool, {
       teamSlug: 'team-h',
       appName: 'app-h-1',
@@ -673,9 +647,18 @@ describe('applyAuditStartYearChange', () => {
       environment: 'prod-gcp',
       auditStartYear: null,
     })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
-    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'repo-b' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-b',
+      githubRepoId: '905',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-b',
+      githubRepoId: '905',
+    })
 
     const siblingDeploy = await seedDeployment(pool, {
       monitoredAppId: appB,
@@ -693,56 +676,7 @@ describe('applyAuditStartYearChange', () => {
     expect(await getStatus(siblingDeploy)).toBe('pending_baseline')
   })
 
-  it('recomputes only within the acting app when no group member has a known active repository yet', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-3c')
-    const appA = await seedApp(pool, {
-      teamSlug: 'team-hh',
-      appName: 'app-hh-1',
-      environment: 'prod-fss',
-      auditStartYear: null,
-    })
-    const appB = await seedApp(pool, {
-      teamSlug: 'team-hh',
-      appName: 'app-hh-2',
-      environment: 'prod-gcp',
-      auditStartYear: null,
-    })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
-
-    const appABaseline = await seedDeployment(pool, {
-      monitoredAppId: appA,
-      teamSlug: 'team-hh',
-      environment: 'prod-fss',
-      createdAt: new Date('2025-06-01T00:00:00Z'),
-      fourEyesStatus: 'baseline',
-    })
-    const appAFirstInYear = await seedDeployment(pool, {
-      monitoredAppId: appA,
-      teamSlug: 'team-hh',
-      environment: 'prod-fss',
-      createdAt: new Date('2026-02-01T00:00:00Z'),
-      fourEyesStatus: 'approved_pr',
-    })
-    const appBFirstInYear = await seedDeployment(pool, {
-      monitoredAppId: appB,
-      teamSlug: 'team-hh',
-      environment: 'prod-gcp',
-      createdAt: new Date('2026-01-01T00:00:00Z'),
-      fourEyesStatus: 'approved_pr',
-    })
-    const result = await applyAuditStartYearChange(appA, 2026, 'Z990001')
-
-    expect(result.recomputeLimitedToActingApp).toBe(true)
-    expect(result.demotedDeploymentIds).toEqual([appABaseline])
-    expect(result.promotedDeploymentId).toBe(appAFirstInYear)
-    expect(await getStatus(appABaseline)).toBe('manually_approved')
-    expect(await getStatus(appAFirstInYear)).toBe('pending_baseline')
-    expect(await getStatus(appBFirstInYear)).toBe('approved_pr')
-  })
-
   it('logs each app’s own previous audit_start_year in status history, not the acting app’s', async () => {
-    const groupId = await seedApplicationGroup(pool, 'group-3d')
     const appA = await seedApp(pool, {
       teamSlug: 'team-hi',
       appName: 'app-hi-1',
@@ -755,10 +689,18 @@ describe('applyAuditStartYearChange', () => {
       environment: 'prod-gcp',
       auditStartYear: 2023,
     })
-    await assignAppToGroup(pool, appA, groupId)
-    await assignAppToGroup(pool, appB, groupId)
-    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: 'navikt', githubRepo: 'shared-hi' })
-    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: 'navikt', githubRepo: 'shared-hi' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-hi',
+      githubRepoId: '906',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-hi',
+      githubRepoId: '906',
+    })
 
     const groupOldBaseline = await seedDeployment(pool, {
       monitoredAppId: appB,
