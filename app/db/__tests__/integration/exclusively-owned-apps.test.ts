@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { getExclusivelyOwnedAppIds } from '../../dev-teams.server'
-import { assignAppToGroup, seedApp, seedApplicationGroup, seedDevTeam, seedSection, truncateAllTables } from './helpers'
+import { seedApp, seedDevTeam, seedSection, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -44,22 +44,6 @@ describe('getExclusivelyOwnedAppIds', () => {
     await pool.query(`INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug) VALUES ($1, $2)`, [
       teamId,
       'my-nais-team',
-    ])
-
-    const result = await getExclusivelyOwnedAppIds(teamId, [appId])
-    expect(result.has(appId)).toBe(true)
-  })
-
-  it('identifies app owned via application group by one team as exclusive', async () => {
-    const sectionId = await seedSection(pool, 'sec', 'Sec')
-    const teamId = await seedDevTeam(pool, 'team-c', 'Team C', sectionId)
-    const appId = await seedApp(pool, { teamSlug: 'nais-y', appName: 'app3', environment: 'prod' })
-    const groupId = await seedApplicationGroup(pool, 'my-group')
-
-    await assignAppToGroup(pool, appId, groupId)
-    await pool.query(`INSERT INTO dev_team_application_groups (dev_team_id, application_group_id) VALUES ($1, $2)`, [
-      teamId,
-      groupId,
     ])
 
     const result = await getExclusivelyOwnedAppIds(teamId, [appId])
@@ -177,28 +161,6 @@ describe('getExclusivelyOwnedAppIds', () => {
     await pool.query(
       `INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug, deleted_at) VALUES ($1, $2, NOW())`,
       [teamB, 'my-slug'],
-    )
-
-    const result = await getExclusivelyOwnedAppIds(teamA, [appId])
-    expect(result.has(appId)).toBe(true)
-  })
-
-  it('ignores soft-deleted application group links', async () => {
-    const sectionId = await seedSection(pool, 'sec', 'Sec')
-    const teamA = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
-    const teamB = await seedDevTeam(pool, 'team-b', 'Team B', sectionId)
-    const appId = await seedApp(pool, { teamSlug: 'nais-x', appName: 'app1', environment: 'prod' })
-    const groupId = await seedApplicationGroup(pool, 'group-1')
-
-    await assignAppToGroup(pool, appId, groupId)
-
-    await pool.query(`INSERT INTO dev_team_application_groups (dev_team_id, application_group_id) VALUES ($1, $2)`, [
-      teamA,
-      groupId,
-    ])
-    await pool.query(
-      `INSERT INTO dev_team_application_groups (dev_team_id, application_group_id, deleted_at) VALUES ($1, $2, NOW())`,
-      [teamB, groupId],
     )
 
     const result = await getExclusivelyOwnedAppIds(teamA, [appId])

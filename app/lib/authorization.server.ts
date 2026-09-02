@@ -76,29 +76,7 @@ async function getManagingTeamIds(
      FROM dev_team_nais_teams dnt
      JOIN dev_teams dt ON dt.id = dnt.dev_team_id AND dt.is_active = true
      JOIN monitored_applications ma ON ma.team_slug = dnt.nais_team_slug
-     WHERE ma.id = $1 AND dnt.deleted_at IS NULL ${appActiveFilter}
-
-     UNION
-
-     SELECT dtag.dev_team_id
-     FROM dev_team_application_groups dtag
-     JOIN dev_teams dt ON dt.id = dtag.dev_team_id AND dt.is_active = true
-     JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
-     JOIN monitored_applications ma ON ma.application_group_id = ag.id
-     WHERE ma.id = $1 AND dtag.deleted_at IS NULL ${appActiveFilter}
-
-     UNION
-
-     SELECT dtag.dev_team_id
-     FROM dev_team_application_groups dtag
-     JOIN dev_teams dt ON dt.id = dtag.dev_team_id AND dt.is_active = true
-     JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
-     JOIN monitored_applications group_member ON group_member.application_group_id = ag.id AND group_member.is_active = true
-     JOIN application_repositories ar1
-       ON ar1.monitored_app_id = group_member.id AND ar1.status = 'active' AND ar1.github_repo_id IS NOT NULL
-     JOIN application_repositories ar2 ON ar2.github_repo_id = ar1.github_repo_id AND ar2.status = 'active'
-     JOIN monitored_applications ma ON ma.id = ar2.monitored_app_id ${appActiveFilter}
-     WHERE ma.id = $1 AND dtag.deleted_at IS NULL`,
+     WHERE ma.id = $1 AND dnt.deleted_at IS NULL ${appActiveFilter}`,
     [monitoredAppId],
   )
   return rows.map((r) => r.dev_team_id)
@@ -211,16 +189,7 @@ async function canAccessAllAppsAdmin(actor: UserIdentity, monitoredAppIds: numbe
      FROM dev_team_nais_teams dnt
      JOIN dev_teams dt ON dt.id = dnt.dev_team_id AND dt.is_active = true
      JOIN monitored_applications ma ON ma.team_slug = dnt.nais_team_slug
-     WHERE ma.id = ANY($1) AND dnt.deleted_at IS NULL
-
-     UNION
-
-     SELECT ma.id AS monitored_app_id, dtag.dev_team_id
-     FROM dev_team_application_groups dtag
-     JOIN dev_teams dt ON dt.id = dtag.dev_team_id AND dt.is_active = true
-     JOIN application_groups ag ON ag.id = dtag.application_group_id AND ag.deleted_at IS NULL
-     JOIN monitored_applications ma ON ma.application_group_id = ag.id
-     WHERE ma.id = ANY($1) AND dtag.deleted_at IS NULL`,
+     WHERE ma.id = ANY($1) AND dnt.deleted_at IS NULL`,
     [monitoredAppIds],
   )
 

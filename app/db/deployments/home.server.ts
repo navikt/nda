@@ -3,7 +3,7 @@ import { isGitHubBot, NON_BRACKET_BOT_USERNAMES } from '~/lib/github-bots'
 import { baselineActionSql } from '../baseline-action'
 import { pool } from '../connection.server'
 import type { DeploymentWithApp } from '../deployments.server'
-import { getDevTeamApplications, getGroupAppIdsForDevTeams } from '../dev-teams.server'
+import { getDevTeamApplications } from '../dev-teams.server'
 import { getMembersGithubUsernamesForDevTeamRoles } from '../role-assignments.server'
 import { lowerUsernames, userDeploymentMatchAnySql, userDeploymentMatchSql } from '../user-deployment-match'
 
@@ -32,11 +32,8 @@ export async function resolveDevTeamScope(
   const naisTeamSlugs = [...new Set(devTeams.flatMap((t) => t.nais_team_slugs))]
   const devTeamIds = devTeams.map((t) => t.id)
 
-  const [directAppsResults, groupAppIds] = await Promise.all([
-    Promise.all(devTeams.map((t) => getDevTeamApplications(t.id))),
-    getGroupAppIdsForDevTeams(devTeamIds),
-  ])
-  const allDirectAppIds = [...new Set([...directAppsResults.flat().map((a) => a.monitored_app_id), ...groupAppIds])]
+  const directAppsResults = await Promise.all(devTeams.map((t) => getDevTeamApplications(t.id)))
+  const allDirectAppIds = [...new Set(directAppsResults.flat().map((a) => a.monitored_app_id))]
   const directAppIds = allDirectAppIds.length > 0 ? allDirectAppIds : undefined
 
   let deployerUsernames: string[] | undefined
