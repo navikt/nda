@@ -24,26 +24,13 @@ interface RepoScope {
 type RepoScopeResolution = { kind: 'none' } | { kind: 'ambiguous' } | { kind: 'scoped'; scope: RepoScope }
 
 async function getTargetAppIds(client: PoolClient, appId: number): Promise<number[]> {
-  const { rows } = await client.query<{ id: number; application_group_id: number | null }>(
-    `SELECT id, application_group_id FROM monitored_applications WHERE id = $1`,
-    [appId],
-  )
+  const { rows } = await client.query<{ id: number }>(`SELECT id FROM monitored_applications WHERE id = $1`, [appId])
   const app = rows[0]
   if (!app) {
     throw new Error(`Monitored application ${appId} not found`)
   }
 
   const targetAppIds = new Set<number>([appId])
-
-  if (app.application_group_id) {
-    const { rows: groupSiblings } = await client.query<{ id: number }>(
-      `SELECT id FROM monitored_applications WHERE application_group_id = $1 AND is_active = true`,
-      [app.application_group_id],
-    )
-    for (const sibling of groupSiblings) {
-      targetAppIds.add(sibling.id)
-    }
-  }
 
   const { rows: repoSiblings } = await client.query<{ id: number }>(
     `SELECT ma.id
