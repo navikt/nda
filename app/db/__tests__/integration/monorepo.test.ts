@@ -217,7 +217,7 @@ describe('getMonorepoSiblings', () => {
     expect(info).toBeNull()
   })
 
-  it('should return null when the app itself is inactive, even if active apps share its repo', async () => {
+  it('should still return siblings when the app itself is inactive, as long as active apps share its repo', async () => {
     const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
     const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
     await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: owner, githubRepo: repo })
@@ -225,7 +225,20 @@ describe('getMonorepoSiblings', () => {
     await setAppInactive(appA)
 
     const info = await getMonorepoSiblings(appA)
-    expect(info).toBeNull()
+    expect(info?.siblings.map((s) => s.id)).toEqual([appB])
+  })
+
+  it('should include the inactive app itself when computing mismatch flags', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: owner, githubRepo: repo })
+    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: owner, githubRepo: repo })
+    await setDefaultBranch(appA, 'main')
+    await setDefaultBranch(appB, 'master')
+    await setAppInactive(appA)
+
+    const info = await getMonorepoSiblings(appA)
+    expect(info?.base_branch_mismatch).toBe(true)
   })
 })
 
