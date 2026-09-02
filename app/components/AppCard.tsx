@@ -106,10 +106,11 @@ interface AppCardProps {
 export function AppCard({ app, showEnvironment = true, appendSearchParams }: AppCardProps) {
   const appUrl = getAppUrl(app)
   const environments = app.siblingEnvironments
-    ? [app.environment_name, ...app.siblingEnvironments]
+    ? [...new Set([app.environment_name, ...app.siblingEnvironments])]
     : [app.environment_name]
   const extraParams = appendSearchParams ? `&${appendSearchParams}` : ''
-  const groupParam = app.groupName ? '&group=true' : ''
+  const isGrouped = (app.siblingEnvironments?.length ?? 0) > 0
+  const groupParam = isGrouped ? '&group=true' : ''
 
   const uniqueAppNames = app.groupApps ? [...new Set(app.groupApps.map((a) => a.app_name))] : []
   const hasDistinctNames = uniqueAppNames.length > 1
@@ -122,7 +123,7 @@ export function AppCard({ app, showEnvironment = true, appendSearchParams }: App
         <HStack gap="space-8" align="center" justify="space-between" wrap>
           <HStack gap="space-12" align="center" style={{ flex: 1 }}>
             <HStack gap="space-8" align="center">
-              {app.groupName && (
+              {isGrouped && (
                 <LayersIcon aria-hidden fontSize="1.2em" style={{ color: 'var(--ax-text-neutral-subtle)' }} />
               )}
               <Link to={appUrl}>

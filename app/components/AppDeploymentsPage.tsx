@@ -35,9 +35,8 @@ interface MonitoredApplication {
 }
 
 interface ApplicationGroup {
-  id: number
-  name: string
-  created_at: string | Date
+  github_owner: string
+  github_repo_name: string
 }
 
 interface GroupSibling {
@@ -126,7 +125,10 @@ export function AppDeploymentsPage({
         <Box padding="space-16" borderRadius="8" background="neutral-soft">
           <HStack gap="space-8" align="center" justify="space-between" wrap>
             <BodyShort size="small">
-              Denne appen er del av gruppen <strong>{appGroup.name}</strong>
+              Denne appen er del av monorepoet{' '}
+              <strong>
+                {appGroup.github_owner}/{appGroup.github_repo_name}
+              </strong>
               {groupSiblings.length > 0 && (
                 <>
                   {' — '}

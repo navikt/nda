@@ -1,14 +1,13 @@
 import { Alert, BodyShort, Box, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { AppCard, type AppCardData } from '~/components/AppCard'
-import { getGroupNamesByIds } from '~/db/application-groups.server'
 import { getAllActiveRepositories } from '~/db/application-repositories.server'
 import { getAppDeploymentStatsBatch } from '~/db/deployments.server'
 import { getDevTeamApplications } from '~/db/dev-teams.server'
 import { getAllAlertCounts, getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { requireUser } from '~/lib/auth.server'
-import { groupAppCards } from '~/lib/group-app-cards'
+import { groupAppCardsByRepo } from '~/lib/group-app-cards'
 import type { Route } from './+types/my-apps'
 
 export function meta(_args: Route.MetaArgs) {
@@ -46,10 +45,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       ? await getAppDeploymentStatsBatch(userApps.map((a) => ({ id: a.id, audit_start_year: a.audit_start_year })))
       : new Map()
 
-  const groupIds = [...new Set(userApps.map((a) => a.application_group_id).filter((id): id is number => id != null))]
-  const groupNames = await getGroupNamesByIds(groupIds)
-
-  const appCards = groupAppCards(
+  const appCards = groupAppCardsByRepo(
     userApps.map((app) => ({
       ...app,
       active_repo: activeReposByApp.get(app.id) || null,
@@ -64,7 +60,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       alertCount: alertCounts.get(app.id) || 0,
     })),
-    groupNames,
   )
 
   const appsByTeamAndEnv: Record<string, Record<string, AppCardData[]>> = {}
