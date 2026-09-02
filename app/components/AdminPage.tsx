@@ -7,7 +7,6 @@ import {
   DownloadIcon,
   ExclamationmarkTriangleIcon,
   FileTextIcon,
-  LaptopIcon,
   LayersIcon,
   LineGraphIcon,
   MagnifyingGlassIcon,
@@ -139,28 +138,6 @@ export function AdminPage() {
                 <BodyShort textColor="subtle">
                   Generer leveranserapport for revisjon som dokumenterer four-eyes-prinsippet.
                 </BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/admin/env" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <LaptopIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Miljøvariabler
-                </Heading>
-                <BodyShort textColor="subtle">Se alle miljøvariabler tilgjengelig for appen.</BodyShort>
               </div>
             </VStack>
           </Box>

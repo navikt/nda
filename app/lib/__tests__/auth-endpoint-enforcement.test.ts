@@ -89,7 +89,6 @@ const ALL_ROUTES: { path: string; description: string }[] = [
   { path: '/admin/global-settings', description: 'Global settings' },
   { path: '/admin/monorepos', description: 'Monorepos' },
   { path: '/admin/verification-diffs', description: 'Verification diffs' },
-  { path: '/admin/env', description: 'Admin environment' },
   { path: '/sections', description: 'Sections' },
   { path: '/sections/my-section/edit', description: 'Section edit' },
   { path: '/sections/my-section/teams/my-team', description: 'Section team' },
