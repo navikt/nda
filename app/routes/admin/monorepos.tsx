@@ -1,7 +1,11 @@
 import { LayersIcon } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Box, Button, Heading, HStack, Tag, VStack } from '@navikt/ds-react'
-import { Link, useLoaderData } from 'react-router'
+import { Form, Link, useLoaderData } from 'react-router'
+import { ActionAlert } from '~/components/ActionAlert'
+import { applyAuditStartYearChange } from '~/db/audit-start-year-baseline.server'
 import { getAllMonorepoGroups } from '~/db/monorepo.server'
+import { fail, ok } from '~/lib/action-result'
+import { resolveConsistentAuditStartYear } from '~/lib/audit-start-year-baseline'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/monorepos'
 
@@ -17,7 +21,63 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { groups }
 }
 
-export default function MonoreposAdmin() {
+export async function action({ request }: Route.ActionArgs) {
+  const admin = await requireAdmin(request)
+  const formData = await request.formData()
+  const actionType = formData.get('action')
+
+  if (actionType === 'sync_audit_start_year') {
+    const rawAppId = formData.get('app_id')
+    if (typeof rawAppId !== 'string' || !/^\d+$/.test(rawAppId)) {
+      return fail('Fant ingen applikasjon å synkronisere')
+    }
+    const appId = parseInt(rawAppId, 10)
+    if (!Number.isInteger(appId)) {
+      return fail('Fant ingen applikasjon å synkronisere')
+    }
+
+    const groups = await getAllMonorepoGroups()
+    const group = groups.find((g) => g.apps.some((app) => app.id === appId))
+    if (!group) {
+      return fail('Fant ingen monorepo-gruppe for denne applikasjonen')
+    }
+
+    const resolvedYear = resolveConsistentAuditStartYear(group.apps.map((app) => app.audit_start_year))
+    const groupAppIds = new Set(group.apps.map((app) => app.id))
+    const updatedGroupAppIds = new Set<number>()
+
+    const trackUpdated = (ids: number[]) => {
+      for (const id of ids) {
+        if (groupAppIds.has(id)) updatedGroupAppIds.add(id)
+      }
+    }
+
+    const preferredActingAppId = group.apps.find((app) => app.github_repo_id !== null)?.id ?? appId
+    const initialResult = await applyAuditStartYearChange(preferredActingAppId, resolvedYear, admin.navIdent)
+    trackUpdated(initialResult.updatedAppIds)
+
+    for (const app of group.apps) {
+      if (updatedGroupAppIds.size >= group.apps.length) break
+      if (updatedGroupAppIds.has(app.id)) continue
+      if (app.github_repo_id !== null) continue
+      const retryResult = await applyAuditStartYearChange(app.id, resolvedYear, admin.navIdent)
+      trackUpdated(retryResult.updatedAppIds)
+    }
+
+    const yearLabel = resolvedYear ? `startår ${resolvedYear}` : 'startår fjernet (ingen nedre grense)'
+    if (updatedGroupAppIds.size < group.apps.length) {
+      return ok(
+        `Synkroniserte ${yearLabel} for ${updatedGroupAppIds.size} av ${group.apps.length} apper i repoet. Noen apper kunne ikke oppdateres automatisk (mangler github_repo_id, eller har et annet github_repo_id enn resten av gruppen) og må håndteres manuelt.`,
+      )
+    }
+
+    return ok(`Synkroniserte ${yearLabel} for alle ${updatedGroupAppIds.size} apper i repoet`)
+  }
+
+  return fail('Ukjent handling')
+}
+
+export default function MonoreposAdmin({ actionData }: Route.ComponentProps) {
   const { groups } = useLoaderData<typeof loader>()
 
   return (
@@ -37,6 +97,8 @@ export default function MonoreposAdmin() {
           ← Tilbake
         </Button>
       </HStack>
+
+      <ActionAlert data={actionData} />
 
       {groups.length === 0 ? (
         <Alert variant="info">Ingen monorepoer er oppdaget enda.</Alert>
@@ -64,11 +126,26 @@ export default function MonoreposAdmin() {
 
                 {(group.base_branch_mismatch || group.audit_year_mismatch) && (
                   <Alert variant="warning" size="small">
-                    {group.base_branch_mismatch && group.audit_year_mismatch
-                      ? 'Applikasjonene har ulik konfigurert base branch og ulikt revisjons-startår.'
-                      : group.base_branch_mismatch
-                        ? 'Applikasjonene har ulik konfigurert base branch.'
-                        : 'Applikasjonene har ulikt revisjons-startår.'}
+                    <VStack gap="space-8">
+                      <span>
+                        {group.base_branch_mismatch && group.audit_year_mismatch
+                          ? 'Applikasjonene har ulik konfigurert base branch og ulikt revisjons-startår.'
+                          : group.base_branch_mismatch
+                            ? 'Applikasjonene har ulik konfigurert base branch.'
+                            : 'Applikasjonene har ulikt revisjons-startår.'}
+                      </span>
+                      {group.audit_year_mismatch && (
+                        <Form method="post">
+                          <input type="hidden" name="action" value="sync_audit_start_year" />
+                          <input type="hidden" name="app_id" value={group.apps[0].id} />
+                          <Button type="submit" size="small" variant="secondary">
+                            Synkroniser til{' '}
+                            {resolveConsistentAuditStartYear(group.apps.map((a) => a.audit_start_year)) ??
+                              'ingen nedre grense'}
+                          </Button>
+                        </Form>
+                      )}
+                    </VStack>
                   </Alert>
                 )}
 

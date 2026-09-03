@@ -7,7 +7,12 @@ vi.mock('~/lib/github/git.server', () => ({
 }))
 
 import { getRepositoryId } from '~/lib/github/git.server'
-import { getAppIdsSharingRepo, upsertApplicationRepository } from '../../application-repositories.server'
+import {
+  approveRepository,
+  getAppIdsSharingRepo,
+  setRepositoryAsActive,
+  upsertApplicationRepository,
+} from '../../application-repositories.server'
 
 let pool: Pool
 
@@ -297,5 +302,253 @@ describe('getAppIdsSharingRepo', () => {
 
     const result = await getAppIdsSharingRepo([app1])
     expect(result.get('903')).toEqual([app1])
+  })
+})
+
+async function getAuditStartYear(appId: number): Promise<number | null> {
+  const { rows } = await pool.query<{ audit_start_year: number | null }>(
+    `SELECT audit_start_year FROM monitored_applications WHERE id = $1`,
+    [appId],
+  )
+  return rows[0].audit_start_year
+}
+
+describe('audit_start_year guardrail on repo activation', () => {
+  it('upsertApplicationRepository aligns a first-time monorepo join to the sibling value', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-1',
+      environment: 'prod-fss',
+      auditStartYear: null,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-2',
+      environment: 'prod-fss',
+      auditStartYear: 2022,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-g',
+      githubRepoId: '910',
+    })
+    vi.mocked(getRepositoryId).mockResolvedValueOnce(910)
+
+    await upsertApplicationRepository({
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepoName: 'mono-g',
+      status: 'active',
+    })
+
+    expect(await getAuditStartYear(appA)).toBe(2022)
+    expect(await getAuditStartYear(appB)).toBe(2022)
+  })
+
+  it('upsertApplicationRepository re-aligns to the sibling value even when the joining app already has an explicit value', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-1b',
+      environment: 'prod-fss',
+      auditStartYear: 2020,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-2b',
+      environment: 'prod-fss',
+      auditStartYear: 2022,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-gb',
+      githubRepoId: '920',
+    })
+    vi.mocked(getRepositoryId).mockResolvedValueOnce(920)
+
+    await upsertApplicationRepository({
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepoName: 'mono-gb',
+      status: 'active',
+    })
+
+    expect(await getAuditStartYear(appA)).toBe(2022)
+    expect(await getAuditStartYear(appB)).toBe(2022)
+  })
+
+  it('upsertApplicationRepository leaves an explicit value untouched when the app already had this active repo', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-3',
+      environment: 'prod-fss',
+      auditStartYear: 2024,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-g',
+      status: 'pending_approval',
+    })
+    vi.mocked(getRepositoryId).mockResolvedValueOnce(911)
+
+    await upsertApplicationRepository({
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-g',
+      status: 'active',
+      approvedBy: 'alice',
+    })
+
+    expect(await getAuditStartYear(appA)).toBe(2024)
+  })
+
+  it('approveRepository re-aligns audit_start_year when the app switches to a different active repo in a monorepo', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-4',
+      environment: 'prod-fss',
+      auditStartYear: 2024,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-5',
+      environment: 'prod-fss',
+      auditStartYear: 2021,
+    })
+    const oldRepoId = await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'old-repo-g',
+      status: 'active',
+    })
+    const newRepoId = await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-h',
+      githubRepoId: '912',
+      status: 'pending_approval',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-h',
+      githubRepoId: '912',
+    })
+
+    await approveRepository(newRepoId, 'alice', true)
+
+    const { rows } = await pool.query('SELECT status FROM application_repositories WHERE id = $1', [oldRepoId])
+    expect(rows[0].status).toBe('historical')
+    expect(await getAuditStartYear(appA)).toBe(2021)
+    expect(await getAuditStartYear(appB)).toBe(2021)
+  })
+
+  it("approveRepository re-aligns audit_start_year on the app's first-ever active repo, even with an explicit value", async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-4b',
+      environment: 'prod-fss',
+      auditStartYear: 2020,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-5b',
+      environment: 'prod-fss',
+      auditStartYear: 2021,
+    })
+    const newRepoId = await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-hb',
+      githubRepoId: '922',
+      status: 'pending_approval',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-hb',
+      githubRepoId: '922',
+    })
+
+    await approveRepository(newRepoId, 'alice', true)
+
+    expect(await getAuditStartYear(appA)).toBe(2021)
+    expect(await getAuditStartYear(appB)).toBe(2021)
+  })
+
+  it('setRepositoryAsActive re-aligns audit_start_year when promoting a historical monorepo sibling to active', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-6',
+      environment: 'prod-fss',
+      auditStartYear: 2024,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-7',
+      environment: 'prod-fss',
+      auditStartYear: null,
+    })
+    const oldRepoId = await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'old-repo-h',
+      status: 'active',
+    })
+    const newRepoId = await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-i',
+      githubRepoId: '913',
+      status: 'historical',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-i',
+      githubRepoId: '913',
+    })
+
+    await setRepositoryAsActive(newRepoId)
+
+    const { rows } = await pool.query('SELECT status FROM application_repositories WHERE id = $1', [oldRepoId])
+    expect(rows[0].status).toBe('historical')
+    expect(await getAuditStartYear(appA)).toBeNull()
+    expect(await getAuditStartYear(appB)).toBeNull()
+  })
+
+  it("setRepositoryAsActive re-aligns audit_start_year on the app's first-ever active repo, even with an explicit value", async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-8',
+      environment: 'prod-fss',
+      auditStartYear: 2020,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-g',
+      appName: 'app-g-9',
+      environment: 'prod-fss',
+      auditStartYear: 2021,
+    })
+    const newRepoId = await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-ib',
+      githubRepoId: '923',
+      status: 'historical',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-ib',
+      githubRepoId: '923',
+    })
+
+    await setRepositoryAsActive(newRepoId)
+
+    expect(await getAuditStartYear(appA)).toBe(2021)
+    expect(await getAuditStartYear(appB)).toBe(2021)
   })
 })

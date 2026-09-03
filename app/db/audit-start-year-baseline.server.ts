@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg'
-import { computeBaselineRecomputePlan } from '~/lib/audit-start-year-baseline'
+import { computeBaselineRecomputePlan, resolveConsistentAuditStartYear } from '~/lib/audit-start-year-baseline'
 import { type FourEyesStatus, LEGACY_STATUSES_SQL, UNAUTHORIZED_STATUSES_SQL } from '~/lib/four-eyes-status'
-import { withTransaction } from './connection.server'
+import { pool, withTransaction } from './connection.server'
 
 const ELIGIBLE_DEPLOYMENT_SQL = `
   d.commit_sha IS NOT NULL
@@ -264,4 +264,44 @@ export async function applyAuditStartYearChange(
       recomputeSkippedDueToAmbiguousRepoScope: false,
     }
   })
+}
+
+const MONOREPO_GUARDRAIL_ACTOR = 'system:monorepo-guardrail'
+
+export async function reconcileAuditStartYearOnRepoActivation(
+  appId: number,
+  hadDifferentActiveRepoBefore: boolean,
+): Promise<void> {
+  if (!hadDifferentActiveRepoBefore) return
+
+  const { rows } = await pool.query<{ audit_start_year: number | null }>(
+    `SELECT audit_start_year FROM monitored_applications WHERE id = $1`,
+    [appId],
+  )
+  const currentYear = rows[0]?.audit_start_year ?? null
+
+  const { rows: siblingRows } = await pool.query<{ audit_start_year: number | null }>(
+    `SELECT ma.audit_start_year
+     FROM application_repositories ar
+     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+     WHERE ar.status = 'active'
+       AND ma.is_active = true
+       AND ma.id != $1
+       AND ar.github_repo_id IS NOT NULL
+       AND ar.github_repo_id IN (
+         SELECT github_repo_id FROM application_repositories
+         WHERE monitored_app_id = $1 AND status = 'active' AND github_repo_id IS NOT NULL
+       )`,
+    [appId],
+  )
+
+  if (siblingRows.length === 0) return
+
+  const resolvedYear = resolveConsistentAuditStartYear(siblingRows.map((row) => row.audit_start_year))
+
+  const alreadyConsistent =
+    currentYear === resolvedYear && siblingRows.every((row) => row.audit_start_year === resolvedYear)
+  if (alreadyConsistent) return
+
+  await applyAuditStartYearChange(appId, resolvedYear, MONOREPO_GUARDRAIL_ACTOR)
 }

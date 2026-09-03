@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { type BaselineMarker, computeBaselineRecomputePlan } from '../audit-start-year-baseline'
+import {
+  type BaselineMarker,
+  computeBaselineRecomputePlan,
+  resolveConsistentAuditStartYear,
+} from '../audit-start-year-baseline'
 
 describe('computeBaselineRecomputePlan', () => {
   it('is a no-op when the new first deployment is already the current baseline marker', () => {
@@ -115,5 +119,27 @@ describe('computeBaselineRecomputePlan', () => {
 
     expect(plan.promote).toBeNull()
     expect(plan.demotes).toEqual([{ id: 1, fromStatus: 'baseline', toStatus: 'manually_approved' }])
+  })
+})
+
+describe('resolveConsistentAuditStartYear', () => {
+  it('returns the earliest year when all apps have a non-null audit_start_year', () => {
+    expect(resolveConsistentAuditStartYear([2024, 2022, 2023])).toBe(2022)
+  })
+
+  it('returns the single year unchanged when all apps already agree', () => {
+    expect(resolveConsistentAuditStartYear([2024, 2024, 2024])).toBe(2024)
+  })
+
+  it('returns null (no cutoff) when any app has no audit_start_year set, since that is the most inclusive value', () => {
+    expect(resolveConsistentAuditStartYear([2024, null, 2022])).toBeNull()
+  })
+
+  it('returns null when all apps have no audit_start_year set', () => {
+    expect(resolveConsistentAuditStartYear([null, null])).toBeNull()
+  })
+
+  it('returns null for an empty list', () => {
+    expect(resolveConsistentAuditStartYear([])).toBeNull()
   })
 })

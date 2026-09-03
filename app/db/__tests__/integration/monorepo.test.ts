@@ -59,6 +59,24 @@ describe('getAllMonorepoGroups', () => {
     expect(groups[0].apps.map((a) => a.app_name).sort()).toEqual(['service-a', 'service-b'])
   })
 
+  it('should expose github_repo_id per app, including null when unresolved', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '555',
+    })
+    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: owner, githubRepo: repo })
+
+    const groups = await getAllMonorepoGroups()
+    const appAEntry = groups[0].apps.find((a) => a.id === appA)
+    const appBEntry = groups[0].apps.find((a) => a.id === appB)
+    expect(appAEntry?.github_repo_id).toBe('555')
+    expect(appBEntry?.github_repo_id).toBeNull()
+  })
+
   it('should not count historical or pending_approval repository links', async () => {
     const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
     const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })

@@ -178,22 +178,6 @@ export async function action({ params, request }: Route.ActionArgs) {
       return { success: 'Implisitt godkjenning-innstillinger oppdatert!' }
     }
 
-    if (action === 'update_audit_start_year') {
-      const appId = parseInt(formData.get('app_id') as string, 10)
-      const startYearValue = formData.get('audit_start_year') as string
-
-      const auditStartYear = startYearValue?.trim() ? parseInt(startYearValue, 10) : null
-
-      if (auditStartYear !== null && (Number.isNaN(auditStartYear) || auditStartYear < 2000 || auditStartYear > 2100)) {
-        return { error: 'Ugyldig årstall (må være mellom 2000 og 2100)' }
-      }
-
-      await updateMonitoredApplication(appId, { audit_start_year: auditStartYear })
-      return {
-        success: auditStartYear ? `Startår oppdatert til ${auditStartYear}` : 'Startår fjernet',
-      }
-    }
-
     if (action === 'deactivate_app') {
       if (!identity) {
         return { error: 'Du må være innlogget for å deaktivere applikasjonen' }
