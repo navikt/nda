@@ -1,3 +1,4 @@
+import { searchMonorepoGroups } from '~/db/monorepo.server'
 import { pool } from '../connection.server'
 
 export interface SearchResult {
@@ -87,7 +88,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     }
   }
 
-  const [userResult, teamResult, appResult, groupResult, devTeamResult] = await Promise.all([
+  const [userResult, teamResult, appResult, monorepoGroups, devTeamResult] = await Promise.all([
     pool.query(
       `SELECT DISTINCT d.deployer_username, 
               u.display_name, uga.nav_ident, u.slack_member_id,
@@ -121,21 +122,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
        LIMIT $2`,
       [`%${trimmedQuery}%`, limit],
     ),
-    pool.query(
-      `SELECT ag.id, ag.name, COUNT(ma.id)::int AS app_count,
-              array_agg(DISTINCT ma.app_name ORDER BY ma.app_name) FILTER (WHERE ma.id IS NOT NULL) AS app_names,
-              (SELECT concat('/team/', m2.team_slug, '/env/', m2.environment_name, '/app/', m2.app_name, '/deployments')
-               FROM monitored_applications m2
-               WHERE m2.application_group_id = ag.id AND m2.is_active = true
-               ORDER BY m2.app_name LIMIT 1) AS first_app_url
-       FROM application_groups ag
-       LEFT JOIN monitored_applications ma ON ma.application_group_id = ag.id AND ma.is_active = true
-       WHERE ag.deleted_at IS NULL AND ag.name ILIKE $1
-       GROUP BY ag.id, ag.name
-       ORDER BY ag.name
-       LIMIT $2`,
-      [`%${trimmedQuery}%`, limit],
-    ),
+    searchMonorepoGroups(trimmedQuery, limit),
     pool.query(
       `SELECT dt.id, dt.name, dt.slug, s.slug AS section_slug,
               COUNT(DISTINCT dta.monitored_app_id)::int AS app_count
@@ -150,17 +137,22 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     ),
   ])
 
-  for (const row of groupResult.rows) {
-    const appNames: string[] = row.app_names ?? []
+  for (const group of monorepoGroups) {
+    const appNames = [...new Set(group.apps.map((a) => a.app_name))].sort()
     const maxShown = 3
     const displayNames =
       appNames.length > maxShown ? [...appNames.slice(0, maxShown), `+${appNames.length - maxShown}`] : appNames
+    const firstApp = group.apps.reduce<(typeof group.apps)[number] | undefined>(
+      (min, a) => (!min || a.app_name < min.app_name ? a : min),
+      undefined,
+    )
     results.push({
       type: 'group',
-      id: row.id,
-      url: row.first_app_url ?? '/search',
-      title: row.name,
-      subtitle: displayNames.length > 0 ? `Gruppe: ${displayNames.join(', ')}` : 'Gruppe (tom)',
+      url: firstApp
+        ? `/team/${firstApp.team_slug}/env/${firstApp.environment_name}/app/${firstApp.app_name}/deployments`
+        : '/search',
+      title: `${group.github_owner}/${group.github_repo_name}`,
+      subtitle: displayNames.length > 0 ? `Monorepo: ${displayNames.join(', ')}` : 'Monorepo (tom)',
     })
   }
 

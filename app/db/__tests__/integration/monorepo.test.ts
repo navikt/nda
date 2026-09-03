@@ -1,6 +1,11 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { getAllMonorepoGroups, getMonorepoSiblings, propagateVerificationToSiblings } from '../../monorepo.server'
+import {
+  getAllMonorepoGroups,
+  getMonorepoSiblings,
+  propagateVerificationToSiblings,
+  searchMonorepoGroups,
+} from '../../monorepo.server'
 import { seedApp, seedApplicationRepository, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -155,6 +160,62 @@ describe('getAllMonorepoGroups', () => {
     await seedApplicationRepository(pool, { monitoredAppId: appD, githubOwner: owner, githubRepo: 'other-repo' })
 
     const groups = await getAllMonorepoGroups()
+    expect(groups).toHaveLength(2)
+  })
+})
+
+describe('searchMonorepoGroups', () => {
+  const owner = 'navikt'
+  const repo = 'monorepo-example'
+
+  it('should return an empty list when the query matches no monorepo', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: owner, githubRepo: repo })
+    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: owner, githubRepo: repo })
+
+    const groups = await searchMonorepoGroups('no-such-repo', 10)
+    expect(groups).toHaveLength(0)
+  })
+
+  it('should match on owner/repo name (case-insensitive substring)', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: owner, githubRepo: repo })
+    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: owner, githubRepo: repo })
+
+    const groups = await searchMonorepoGroups('MONOREPO-EX', 10)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].github_owner).toBe(owner)
+    expect(groups[0].github_repo_name).toBe(repo)
+    expect(groups[0].apps.map((a) => a.app_name).sort()).toEqual(['service-a', 'service-b'])
+  })
+
+  it('should not return solo (non-monorepo) repos even if the query matches', async () => {
+    const soloAppId = await seedApp(pool, { teamSlug: 'team', appName: 'solo-app', environment: 'prod' })
+    await seedApplicationRepository(pool, { monitoredAppId: soloAppId, githubOwner: owner, githubRepo: repo })
+
+    const groups = await searchMonorepoGroups(repo, 10)
+    expect(groups).toHaveLength(0)
+  })
+
+  it('should respect the limit parameter', async () => {
+    for (const suffix of ['one', 'two', 'three']) {
+      const appA = await seedApp(pool, { teamSlug: 'team-a', appName: `service-a-${suffix}`, environment: 'prod' })
+      const appB = await seedApp(pool, { teamSlug: 'team-b', appName: `service-b-${suffix}`, environment: 'prod' })
+      await seedApplicationRepository(pool, {
+        monitoredAppId: appA,
+        githubOwner: owner,
+        githubRepo: `${repo}-${suffix}`,
+      })
+      await seedApplicationRepository(pool, {
+        monitoredAppId: appB,
+        githubOwner: owner,
+        githubRepo: `${repo}-${suffix}`,
+      })
+    }
+
+    const groups = await searchMonorepoGroups(repo, 2)
     expect(groups).toHaveLength(2)
   })
 })

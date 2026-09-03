@@ -1,4 +1,4 @@
-import { getGroupByAppId, getGroupWithApps } from '~/db/application-groups.server'
+import { getMonorepoSiblings } from '~/db/monorepo.server'
 import type { AuditReportAppMetadata } from '~/lib/api/types'
 
 interface MonitoredApp {
@@ -12,18 +12,23 @@ interface MonitoredApp {
 export async function buildAppMetadata(app: MonitoredApp): Promise<AuditReportAppMetadata> {
   let applicationGroup: AuditReportAppMetadata['applicationGroup'] = null
 
-  const group = await getGroupByAppId(app.id)
-  if (group) {
-    const groupWithApps = await getGroupWithApps(group.id)
-    if (groupWithApps) {
-      applicationGroup = {
-        name: groupWithApps.name,
-        apps: groupWithApps.apps.map((a) => ({
-          team: a.team_slug,
-          environment: a.environment_name,
-          name: a.app_name,
-        })),
-      }
+  const monorepo = await getMonorepoSiblings(app.id)
+  if (monorepo) {
+    const allApps = [
+      { team: app.team_slug, environment: app.environment_name, name: app.app_name },
+      ...monorepo.siblings.map((a) => ({
+        team: a.team_slug,
+        environment: a.environment_name,
+        name: a.app_name,
+      })),
+    ].sort(
+      (a, b) =>
+        a.name.localeCompare(b.name) || a.environment.localeCompare(b.environment) || a.team.localeCompare(b.team),
+    )
+
+    applicationGroup = {
+      name: `${monorepo.github_owner}/${monorepo.github_repo_name}`,
+      apps: allApps,
     }
   }
 

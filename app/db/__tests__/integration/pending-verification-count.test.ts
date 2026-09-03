@@ -1,14 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getPendingVerificationCount } from '~/db/deployments/stats.server'
-import {
-  assignAppToGroup,
-  seedApp,
-  seedApplicationGroup,
-  seedApplicationRepository,
-  seedDeployment,
-  truncateAllTables,
-} from './helpers'
+import { seedApp, seedApplicationRepository, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -63,34 +56,6 @@ describe('getPendingVerificationCount', () => {
 
     expect(result.total).toBe(5)
     expect(result.pending).toBe(3)
-  })
-
-  it('only counts pending_baseline as pending when the app belongs to an application group', async () => {
-    const standaloneAppId = await seedApp(pool, { teamSlug: 'team-1', appName: 'standalone-app', environment: 'prod' })
-    await seedDeployment(pool, {
-      monitoredAppId: standaloneAppId,
-      teamSlug: 'team-1',
-      environment: 'prod',
-      fourEyesStatus: 'pending_baseline',
-    })
-
-    const standaloneResult = await getPendingVerificationCount(standaloneAppId)
-    expect(standaloneResult.total).toBe(1)
-    expect(standaloneResult.pending).toBe(0)
-
-    const groupedAppId = await seedApp(pool, { teamSlug: 'team-1', appName: 'grouped-app', environment: 'prod' })
-    const groupId = await seedApplicationGroup(pool, 'test-group')
-    await assignAppToGroup(pool, groupedAppId, groupId)
-    await seedDeployment(pool, {
-      monitoredAppId: groupedAppId,
-      teamSlug: 'team-1',
-      environment: 'prod',
-      fourEyesStatus: 'pending_baseline',
-    })
-
-    const groupedResult = await getPendingVerificationCount(groupedAppId)
-    expect(groupedResult.total).toBe(1)
-    expect(groupedResult.pending).toBe(1)
   })
 
   it('counts pending_baseline as pending when the app shares an active repo with another app (monorepo)', async () => {
