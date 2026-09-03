@@ -28,7 +28,6 @@ interface MonitoredApplication {
   slack_deploy_channel_id: string | null
   slack_deploy_notify_enabled: boolean
   slack_deploy_notify_enabled_at: string | Date | null
-  application_group_id: number | null
   not_found_in_nais_at: string | Date | null
   created_at: string | Date
   updated_at: string | Date

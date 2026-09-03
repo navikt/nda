@@ -43,7 +43,6 @@ const app: AppDeploymentsPageProps['app'] = {
   slack_deploy_channel_id: null,
   slack_deploy_notify_enabled: false,
   slack_deploy_notify_enabled_at: null,
-  application_group_id: null,
   not_found_in_nais_at: null,
   created_at: new Date('2025-01-01T00:00:00Z'),
   updated_at: new Date('2026-02-01T09:00:00Z'),
