@@ -46,7 +46,7 @@
     "@react-router/node": "8.3.0",
     "@react-router/serve": "8.3.0",
     "@slack/bolt": "5.0.0",
-    "@slack/types": "3.0.0",
+    "@slack/types": "3.1.0",
     "@types/pg": "^8.23.1",
     "chart.js": "^4.5.1",
     "compression": "^1.8.1",
