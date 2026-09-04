@@ -1,4 +1,5 @@
 import { pool } from '~/db/connection.server'
+import { effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { logger } from '~/lib/logger.server'
@@ -43,7 +44,7 @@ export async function fetchVerificationDataForAllDeployments(
       SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
              d.environment_name, d.trigger_url, d.workflow_trigger_config, d.commit_checks_data,
              d.commit_checks_checked_at, d.github_pr_number,
-             ma.default_branch, d.created_at,
+             ${effectiveDefaultBranchSql('ma')} AS default_branch, d.created_at,
              LAG(d.commit_sha) OVER (
                PARTITION BY d.environment_name, d.detected_github_owner, d.detected_github_repo_name
                ORDER BY d.created_at ASC

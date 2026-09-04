@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
-vi.mock('~/db/app-settings.server', () => ({
-  getImplicitApprovalSettings: vi.fn(),
+vi.mock('~/db/repositories.server', () => ({
+  getEffectiveSettingsForApp: vi.fn(),
 }))
 
 vi.mock('~/db/monorepo.server', () => ({
@@ -44,9 +44,9 @@ vi.mock('~/lib/verification/verify', () => ({
   verifyDeployment: vi.fn(),
 }))
 
-import { getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
+import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { buildCommitsBetweenFromCache, fetchVerificationData } from '~/lib/verification/fetch-data.server'
 import { reverifyDeployment } from '~/lib/verification/index'
@@ -57,7 +57,7 @@ const mockPoolQuery = pool.query as Mock
 const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
 const mockFindRepositoryForApp = findRepositoryForApp as Mock
-const mockGetImplicitApproval = getImplicitApprovalSettings as Mock
+const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockVerifyDeployment = verifyDeployment as Mock
@@ -91,7 +91,12 @@ describe('reverifyDeployment cache base validation', () => {
         },
       ],
     })
-    mockGetImplicitApproval.mockResolvedValue({ mode: 'off' })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'main',
+    })
     mockGetCompareSnapshot.mockResolvedValue({
       base_sha: 'cached-wrong-base',
       data: { commits: [] },

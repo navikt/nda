@@ -16,7 +16,7 @@ import {
 import type { UserIdentity } from '~/lib/auth.server'
 import {
   canAccessAppAdmin,
-  canAccessAppAdminForRepoCascade,
+  canAccessRepositorySettingsAdmin,
   canAccessTeamAdmin,
   canAdministerTeam,
   canApproveDeployment,
@@ -482,7 +482,7 @@ describe('canAccessAppAdmin', () => {
   })
 })
 
-describe('canAccessAppAdminForRepoCascade', () => {
+describe('canAccessRepositorySettingsAdmin', () => {
   it('falls back to canAccessAppAdmin for an app with no shared repo', async () => {
     const sectionId = await seedSection(pool, 'pensjon')
     const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
@@ -495,7 +495,7 @@ describe('canAccessAppAdminForRepoCascade', () => {
     const tl = makeUser('T666666')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
-    expect(await canAccessAppAdminForRepoCascade(tl, appId)).toBe(true)
+    expect(await canAccessRepositorySettingsAdmin(tl, appId)).toBe(true)
   })
 
   it('allows admin regardless of repo sibling membership', async () => {
@@ -514,7 +514,7 @@ describe('canAccessAppAdminForRepoCascade', () => {
       githubRepoId: '901',
     })
 
-    expect(await canAccessAppAdminForRepoCascade(makeAdmin(), appA)).toBe(true)
+    expect(await canAccessRepositorySettingsAdmin(makeAdmin(), appA)).toBe(true)
   })
 
   it('denies a team leader who only manages the acting app, not a sibling app in a cross-team repo', async () => {
@@ -548,7 +548,7 @@ describe('canAccessAppAdminForRepoCascade', () => {
     await assignTeamRole(tl.navIdent, teamAId, 'tech_lead', 'admin')
 
     expect(await canAccessAppAdmin(tl, appA)).toBe(true)
-    expect(await canAccessAppAdminForRepoCascade(tl, appA)).toBe(false)
+    expect(await canAccessRepositorySettingsAdmin(tl, appA)).toBe(false)
   })
 
   it('allows a team leader who manages every app sharing the repo', async () => {
@@ -580,7 +580,7 @@ describe('canAccessAppAdminForRepoCascade', () => {
     const tl = makeUser('T888888')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
-    expect(await canAccessAppAdminForRepoCascade(tl, appA)).toBe(true)
+    expect(await canAccessRepositorySettingsAdmin(tl, appA)).toBe(true)
   })
 
   it('denies a team leader who manages the acting app but not a monorepo sibling app', async () => {
@@ -614,7 +614,7 @@ describe('canAccessAppAdminForRepoCascade', () => {
     await assignTeamRole(tl.navIdent, teamAId, 'tech_lead', 'admin')
 
     expect(await canAccessAppAdmin(tl, appA)).toBe(true)
-    expect(await canAccessAppAdminForRepoCascade(tl, appA)).toBe(false)
+    expect(await canAccessRepositorySettingsAdmin(tl, appA)).toBe(false)
   })
 
   it('allows a team leader who manages every app in a monorepo', async () => {
@@ -646,7 +646,7 @@ describe('canAccessAppAdminForRepoCascade', () => {
     const tl = makeUser('T999002')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
-    expect(await canAccessAppAdminForRepoCascade(tl, appA)).toBe(true)
+    expect(await canAccessRepositorySettingsAdmin(tl, appA)).toBe(true)
   })
 
   it('does not require admin access to an inactive monorepo sibling app', async () => {
@@ -679,7 +679,7 @@ describe('canAccessAppAdminForRepoCascade', () => {
     const tl = makeUser('T999003')
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
-    expect(await canAccessAppAdminForRepoCascade(tl, appA)).toBe(true)
+    expect(await canAccessRepositorySettingsAdmin(tl, appA)).toBe(true)
   })
 })
 

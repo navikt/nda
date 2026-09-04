@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockRequireAppAdminAccess,
-  mockGetImplicitApprovalSettings,
+  mockCanAccessRepositorySettingsAdmin,
+  mockGetEffectiveSettingsForApp,
+  mockGetAffectedAppsForRepo,
   mockGetAppConfigAuditLog,
   mockGetAuditReportsForAppAdmin,
   mockGetLatestSyncJob,
@@ -10,7 +12,9 @@ const {
   mockGetUsersByIdentifiers,
 } = vi.hoisted(() => ({
   mockRequireAppAdminAccess: vi.fn(),
-  mockGetImplicitApprovalSettings: vi.fn(),
+  mockCanAccessRepositorySettingsAdmin: vi.fn(),
+  mockGetEffectiveSettingsForApp: vi.fn(),
+  mockGetAffectedAppsForRepo: vi.fn(),
   mockGetAppConfigAuditLog: vi.fn(),
   mockGetAuditReportsForAppAdmin: vi.fn(),
   mockGetLatestSyncJob: vi.fn(),
@@ -20,11 +24,16 @@ const {
 
 vi.mock('~/lib/authorization.server', () => ({
   requireAppAdminAccess: mockRequireAppAdminAccess,
+  canAccessRepositorySettingsAdmin: mockCanAccessRepositorySettingsAdmin,
 }))
 
 vi.mock('~/db/app-settings.server', () => ({
   getAppConfigAuditLog: mockGetAppConfigAuditLog,
-  getImplicitApprovalSettings: mockGetImplicitApprovalSettings,
+}))
+
+vi.mock('~/db/repositories.server', () => ({
+  getAffectedAppsForRepo: mockGetAffectedAppsForRepo,
+  getEffectiveSettingsForApp: mockGetEffectiveSettingsForApp,
 }))
 
 vi.mock('~/db/audit-reports.server', () => ({
@@ -63,7 +72,14 @@ describe('admin loader - scoped user lookups (no org-wide directory leak)', () =
       user: { navIdent: 'Z990010', name: 'Rask Elv' },
       app: { id: 1, environment_name: 'prod-fss', audit_start_year: 2024 },
     })
-    mockGetImplicitApprovalSettings.mockResolvedValue(null)
+    mockGetEffectiveSettingsForApp.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: 2024,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'main',
+    })
+    mockGetAffectedAppsForRepo.mockResolvedValue([])
+    mockCanAccessRepositorySettingsAdmin.mockResolvedValue(false)
     mockGetAppConfigAuditLog.mockResolvedValue([])
     mockGetLatestSyncJob.mockResolvedValue(null)
     mockGetGitHubDataStatsForApp.mockResolvedValue(null)

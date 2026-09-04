@@ -1,5 +1,6 @@
 import { AUDIT_START_YEAR_FILTER } from '~/db/audit-start-year'
 import { pool } from '~/db/connection.server'
+import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { APPROVED_STATUSES_SQL, LEGACY_STATUSES_SQL, UNAUTHORIZED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 
@@ -27,8 +28,8 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
         d.created_at,
         d.detected_github_owner,
         d.detected_github_repo_name,
-        ma.default_branch,
-        ma.audit_start_year
+        ${effectiveDefaultBranchSql('ma')} AS default_branch,
+        ${effectiveAuditStartYearSql('ma')} AS audit_start_year
       FROM deployments d
       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
       WHERE d.monitored_app_id = $1
@@ -49,7 +50,7 @@ export async function getPreviousDeploymentForDiff(
 ): Promise<{ id: number; commit_sha: string; created_at: Date } | null> {
   const result = await pool.query(
     `WITH acting_deployment AS (
-       SELECT d.id, d.created_at, ma.audit_start_year
+       SELECT d.id, d.created_at, ${effectiveAuditStartYearSql('ma')} AS audit_start_year
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE d.id = $1
@@ -133,7 +134,7 @@ export async function getApprovedDeploymentsMissingApprover(
     `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
             d.created_at, d.deployer_username,
             d.detected_github_owner, d.detected_github_repo_name,
-            d.monitored_app_id, ma.default_branch
+            d.monitored_app_id, ${effectiveDefaultBranchSql('ma')} AS default_branch
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE d.monitored_app_id = $1
@@ -156,7 +157,7 @@ export async function getAllApprovedDeploymentsMissingApprover(): Promise<Global
     `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
             d.created_at, d.deployer_username,
             d.detected_github_owner, d.detected_github_repo_name,
-            d.monitored_app_id, ma.default_branch,
+            d.monitored_app_id, ${effectiveDefaultBranchSql('ma')} AS default_branch,
             d.team_slug, d.app_name
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id

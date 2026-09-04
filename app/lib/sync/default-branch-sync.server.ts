@@ -1,4 +1,5 @@
 import { updateMonitoredApplication } from '~/db/monitored-applications.server'
+import { syncRepositoryDefaultBranch } from '~/db/repositories.server'
 import { getRepositoryDefaultBranch } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 
@@ -24,29 +25,36 @@ export async function syncDefaultBranchForApp(input: SyncDefaultBranchInput): Pr
   }
 
   const detectedDefaultBranch = await getRepositoryDefaultBranch(owner, repo)
+  const syncedAt = new Date()
 
   if (!detectedDefaultBranch) {
     logger.info(
       `🌿 default_branch sync skipped for ${appName} (${owner}/${repo}) — GitHub fetch failed; cooldown enforced, will retry in 24h`,
     )
     await updateMonitoredApplication(monitoredAppId, {
-      default_branch_synced_at: new Date(),
+      default_branch_synced_at: syncedAt,
     })
     return
   }
 
+  const storedAtRepoLevel = await syncRepositoryDefaultBranch({
+    monitoredAppId,
+    defaultBranch: detectedDefaultBranch,
+    syncedAt,
+  })
+
   if (detectedDefaultBranch === currentDefaultBranch) {
     await updateMonitoredApplication(monitoredAppId, {
-      default_branch_synced_at: new Date(),
+      default_branch_synced_at: syncedAt,
     })
     return
   }
 
   logger.info(
-    `🌿 default_branch updated for ${appName} (${owner}/${repo}): "${currentDefaultBranch}" → "${detectedDefaultBranch}" (auto-detected from GitHub)`,
+    `🌿 default_branch updated for ${appName} (${owner}/${repo}): "${currentDefaultBranch}" → "${detectedDefaultBranch}" (auto-detected from GitHub, repo-level: ${storedAtRepoLevel})`,
   )
   await updateMonitoredApplication(monitoredAppId, {
     default_branch: detectedDefaultBranch,
-    default_branch_synced_at: new Date(),
+    default_branch_synced_at: syncedAt,
   })
 }

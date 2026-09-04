@@ -6,13 +6,14 @@ import { AuditReportGenerateSection } from '~/components/AuditReportGenerateSect
 import { AuditReportList } from '~/components/AuditReportList'
 import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
 import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
-import { getAppConfigAuditLog, getImplicitApprovalSettings } from '~/db/app-settings.server'
+import { getAppConfigAuditLog } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getGitHubDataStatsForApp } from '~/db/github-data.server'
+import { getAffectedAppsForRepo, getEffectiveSettingsForApp } from '~/db/repositories.server'
 import type { SyncJob } from '~/db/sync-job-types'
 import { getLatestSyncJob } from '~/db/sync-jobs.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
-import { requireAppAdminAccess } from '~/lib/authorization.server'
+import { canAccessRepositorySettingsAdmin, requireAppAdminAccess } from '~/lib/authorization.server'
 import type { UserLookupMap } from '~/lib/user-display'
 import { AuditStartYearSettings } from '~/routes/team/$team.env.$env.app.$app.admin/AuditStartYearSettings'
 import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
@@ -34,23 +35,35 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const { app } = await requireAppAdminAccess(request, params)
+  const { app, user } = await requireAppAdminAccess(request, params)
 
   const isProdApp = app.environment_name.startsWith('prod-')
 
-  const [implicitApprovalSettings, recentConfigChanges, auditReports, latestFetchJob, githubDataStats] =
+  const [effectiveSettings, canAccessRepoSettings, recentConfigChanges, auditReports, latestFetchJob] =
     await Promise.all([
-      getImplicitApprovalSettings(app.id),
+      getEffectiveSettingsForApp(app.id),
+      canAccessRepositorySettingsAdmin(user, app.id),
       getAppConfigAuditLog(app.id, { limit: 10 }),
       getAuditReportsForAppAdmin(app.id),
       getLatestSyncJob(app.id, 'fetch_verification_data'),
-      getGitHubDataStatsForApp(app.id, app.audit_start_year),
     ])
+  const affectedApps = canAccessRepoSettings ? await getAffectedAppsForRepo(app.id) : []
+  const implicitApprovalSettings = effectiveSettings.implicitApprovalSettings
+  const auditStartYear = effectiveSettings.auditStartYear
+  const defaultBranch = effectiveSettings.defaultBranch
 
-  const referencedNavIdents = Array.from(
-    new Set(auditReports.flatMap((report) => [report.archived_by, report.superseded_by]).filter((id) => id != null)),
-  )
-  const userMappings = await getUsersByIdentifiers(referencedNavIdents)
+  const [githubDataStats, userMappings] = await Promise.all([
+    getGitHubDataStatsForApp(app.id, auditStartYear),
+    (async () => {
+      const referencedNavIdents = Array.from(
+        new Set(
+          auditReports.flatMap((report) => [report.archived_by, report.superseded_by]).filter((id) => id != null),
+        ),
+      )
+      return getUsersByIdentifiers(referencedNavIdents)
+    })(),
+  ])
+
   const displayNameMap: Record<string, string> = Object.fromEntries(
     Array.from(userMappings.entries())
       .filter(([, u]) => u.display_name != null)
@@ -60,6 +73,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   return {
     app,
     implicitApprovalSettings,
+    auditStartYear,
+    defaultBranch,
+    affectedApps,
     recentConfigChanges,
     auditReports,
     isProdApp,
@@ -73,6 +89,9 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
   const {
     app,
     implicitApprovalSettings,
+    auditStartYear,
+    defaultBranch,
+    affectedApps,
     recentConfigChanges,
     auditReports,
     isProdApp,
@@ -234,7 +253,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
               appId={app.id}
               appUrl={appUrl}
               auditReports={auditReports}
-              auditStartYear={app.audit_start_year ?? undefined}
+              auditStartYear={auditStartYear ?? undefined}
               readinessData={readinessData}
               readinessPeriodKey={readinessPeriodKey}
               readinessUserMappings={readinessUserMappings}
@@ -253,11 +272,15 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
 
       {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="panel" canDeactivate appId={app.id} />}
 
-      <DefaultBranchSettings app={app} />
+      <DefaultBranchSettings app={app} defaultBranch={defaultBranch} affectedApps={affectedApps} />
 
-      <AuditStartYearSettings app={app} />
+      <AuditStartYearSettings app={app} auditStartYear={auditStartYear} affectedApps={affectedApps} />
 
-      <ImplicitApprovalSettings app={app} implicitApprovalSettings={implicitApprovalSettings} />
+      <ImplicitApprovalSettings
+        app={app}
+        implicitApprovalSettings={implicitApprovalSettings}
+        affectedApps={affectedApps}
+      />
 
       <TestRequirementSettings app={app} />
 

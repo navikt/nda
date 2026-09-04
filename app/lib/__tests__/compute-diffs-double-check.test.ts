@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
-vi.mock('~/db/app-settings.server', () => ({
-  getImplicitApprovalSettings: vi.fn(),
+vi.mock('~/db/repositories.server', () => ({
+  getEffectiveSettingsForApp: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => {
@@ -41,8 +41,8 @@ vi.mock('~/lib/verification/verify', () => ({
   verifyDeployment: vi.fn(),
 }))
 
-import { getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { findRepositoryForApp } from '~/db/application-repositories.server'
+import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
@@ -62,7 +62,7 @@ const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
 const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetPrDataForDiff = getPrDataForDiff as Mock
-const mockGetImplicitApproval = getImplicitApprovalSettings as Mock
+const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
 const mockVerifyDeployment = verifyDeployment as Mock
@@ -131,7 +131,12 @@ function makeVerificationInput(): Record<string, unknown> {
 describe('computeVerificationDiffs double-check logic', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetImplicitApproval.mockResolvedValue(null)
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'main',
+    })
     mockFindRepositoryForApp.mockResolvedValue({
       repository: { github_repo_id: '123' },
       effectiveOwner: 'navikt',

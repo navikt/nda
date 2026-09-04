@@ -1,5 +1,6 @@
 import { PROPAGATABLE_STATUSES, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
+import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from './repository-settings-sql'
 
 export interface MonorepoAppEntry {
   id: number
@@ -16,6 +17,7 @@ export interface MonorepoGroup {
   apps: MonorepoAppEntry[]
   base_branch_mismatch: boolean
   audit_year_mismatch: boolean
+  repository_linked: boolean
 }
 
 export interface MonorepoSiblingInfo {
@@ -24,15 +26,17 @@ export interface MonorepoSiblingInfo {
   siblings: MonorepoAppEntry[]
   base_branch_mismatch: boolean
   audit_year_mismatch: boolean
+  repository_linked: boolean
 }
 
 interface MonorepoRow extends MonorepoAppEntry {
   github_owner: string
   github_repo_name: string
+  repository_linked: boolean
 }
 
 const ACTIVE_REPO_PER_APP = `
-  SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name
+  SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name, github_repo_id
   FROM application_repositories
   WHERE status = 'active'
   ORDER BY monitored_app_id, created_at DESC, id DESC
@@ -41,9 +45,12 @@ const ACTIVE_REPO_PER_APP = `
 const MONOREPO_ROWS_SELECT = `
   SELECT ar.github_owner, ar.github_repo_name,
          ma.id, ma.app_name, ma.team_slug, ma.environment_name,
-         ma.default_branch, ma.audit_start_year
+         ${effectiveDefaultBranchSql('ma')} AS default_branch,
+         ${effectiveAuditStartYearSql('ma')} AS audit_start_year,
+         (r.id IS NOT NULL) AS repository_linked
   FROM (${ACTIVE_REPO_PER_APP}) ar
   JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+  LEFT JOIN repositories r ON r.github_repo_id = ar.github_repo_id
   WHERE ma.is_active = true
 `
 
@@ -51,7 +58,12 @@ function hasMismatch(values: (string | number | null)[]): boolean {
   return new Set(values).size > 1
 }
 
-function toAppEntry({ github_owner: _owner, github_repo_name: _repo, ...app }: MonorepoRow): MonorepoAppEntry {
+function toAppEntry({
+  github_owner: _owner,
+  github_repo_name: _repo,
+  repository_linked: _linked,
+  ...app
+}: MonorepoRow): MonorepoAppEntry {
   return app
 }
 
@@ -122,6 +134,7 @@ function groupMonorepoRows(rows: MonorepoRow[]): MonorepoGroup[] {
       apps,
       base_branch_mismatch: hasMismatch(apps.map((a) => a.default_branch)),
       audit_year_mismatch: hasMismatch(apps.map((a) => a.audit_start_year)),
+      repository_linked: groupRows.every((row) => row.repository_linked),
     }
   })
 }
@@ -155,9 +168,11 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
 
   if (!appsById.has(monitoredAppId)) {
     const ownApp = await pool.query<MonorepoAppEntry>(
-      `SELECT id, app_name, team_slug, environment_name, default_branch, audit_start_year
-       FROM monitored_applications
-       WHERE id = $1`,
+      `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name,
+              ${effectiveDefaultBranchSql('ma')} AS default_branch,
+              ${effectiveAuditStartYearSql('ma')} AS audit_start_year
+       FROM monitored_applications ma
+       WHERE ma.id = $1`,
       [monitoredAppId],
     )
     if (ownApp.rows.length > 0) {
@@ -173,6 +188,7 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
     siblings,
     base_branch_mismatch: hasMismatch(allApps.map((a) => a.default_branch)),
     audit_year_mismatch: hasMismatch(allApps.map((a) => a.audit_start_year)),
+    repository_linked: result.rows.every((row) => row.repository_linked),
   }
 }
 
