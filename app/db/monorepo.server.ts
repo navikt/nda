@@ -8,6 +8,7 @@ export interface MonorepoAppEntry {
   environment_name: string
   default_branch: string | null
   audit_start_year: number | null
+  github_repo_id: string | null
 }
 
 export interface MonorepoGroup {
@@ -32,14 +33,14 @@ interface MonorepoRow extends MonorepoAppEntry {
 }
 
 const ACTIVE_REPO_PER_APP = `
-  SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name
+  SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name, github_repo_id
   FROM application_repositories
   WHERE status = 'active'
   ORDER BY monitored_app_id, created_at DESC, id DESC
 `
 
 const MONOREPO_ROWS_SELECT = `
-  SELECT ar.github_owner, ar.github_repo_name,
+  SELECT ar.github_owner, ar.github_repo_name, ar.github_repo_id,
          ma.id, ma.app_name, ma.team_slug, ma.environment_name,
          ma.default_branch, ma.audit_start_year
   FROM (${ACTIVE_REPO_PER_APP}) ar
@@ -155,7 +156,7 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
 
   if (!appsById.has(monitoredAppId)) {
     const ownApp = await pool.query<MonorepoAppEntry>(
-      `SELECT id, app_name, team_slug, environment_name, default_branch, audit_start_year
+      `SELECT id, app_name, team_slug, environment_name, default_branch, audit_start_year, NULL AS github_repo_id
        FROM monitored_applications
        WHERE id = $1`,
       [monitoredAppId],

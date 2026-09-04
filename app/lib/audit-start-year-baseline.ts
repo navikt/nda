@@ -45,3 +45,9 @@ function demotePlan(
   }
   return null
 }
+
+export function resolveConsistentAuditStartYear(auditStartYears: (number | null)[]): number | null {
+  if (auditStartYears.some((year) => year === null)) return null
+  const years = auditStartYears.filter((year): year is number => year !== null)
+  return years.length > 0 ? years.reduce((min, year) => (year < min ? year : min)) : null
+}

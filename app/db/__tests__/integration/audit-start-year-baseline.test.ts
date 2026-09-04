@@ -1,6 +1,9 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { applyAuditStartYearChange } from '../../audit-start-year-baseline.server'
+import {
+  applyAuditStartYearChange,
+  reconcileAuditStartYearOnRepoActivation,
+} from '../../audit-start-year-baseline.server'
 import { seedApp, seedApplicationRepository, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -774,5 +777,226 @@ describe('applyAuditStartYearChange', () => {
     expect(await getStatus(oldBaselineNoCommit)).toBe('manually_approved')
     expect(result.promotedDeploymentId).toBe(firstInYear)
     expect(await getStatus(firstInYear)).toBe('pending_baseline')
+  })
+})
+
+describe('reconcileAuditStartYearOnRepoActivation', () => {
+  it('does nothing when the app has no active-repo siblings', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-1',
+      environment: 'prod-fss',
+      auditStartYear: 2024,
+    })
+    await seedApplicationRepository(pool, { monitoredAppId: appId, githubOwner: 'navikt', githubRepo: 'repo-j' })
+
+    await reconcileAuditStartYearOnRepoActivation(appId, true)
+
+    expect(await getAuditStartYear(appId)).toBe(2024)
+  })
+
+  it('does nothing when the active repo is unchanged, even if the app has no explicit value and siblings differ', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-1b',
+      environment: 'prod-fss',
+      auditStartYear: null,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-1c',
+      environment: 'prod-fss',
+      auditStartYear: 2023,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-j2',
+      githubRepoId: '905',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-j2',
+      githubRepoId: '905',
+    })
+
+    await reconcileAuditStartYearOnRepoActivation(appA, false)
+
+    expect(await getAuditStartYear(appA)).toBeNull()
+    expect(await getAuditStartYear(appB)).toBe(2023)
+  })
+
+  it('respects an existing explicit value when the app already had this active repo before', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-2',
+      environment: 'prod-fss',
+      auditStartYear: 2024,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-3',
+      environment: 'prod-fss',
+      auditStartYear: 2022,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-j',
+      githubRepoId: '900',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-j',
+      githubRepoId: '900',
+    })
+
+    await reconcileAuditStartYearOnRepoActivation(appA, false)
+
+    expect(await getAuditStartYear(appA)).toBe(2024)
+    expect(await getAuditStartYear(appB)).toBe(2022)
+  })
+
+  it('adopts the resolved sibling value when the app joins a monorepo for the first time', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-4',
+      environment: 'prod-fss',
+      auditStartYear: null,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-5',
+      environment: 'prod-fss',
+      auditStartYear: 2023,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-k',
+      githubRepoId: '901',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-k',
+      githubRepoId: '901',
+    })
+
+    await reconcileAuditStartYearOnRepoActivation(appA, true)
+
+    expect(await getAuditStartYear(appA)).toBe(2023)
+    expect(await getAuditStartYear(appB)).toBe(2023)
+  })
+
+  it('re-aligns to the resolved sibling value when the app switches to a different active repo', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-6',
+      environment: 'prod-fss',
+      auditStartYear: 2024,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-7',
+      environment: 'prod-fss',
+      auditStartYear: 2021,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-l',
+      githubRepoId: '902',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-l',
+      githubRepoId: '902',
+    })
+
+    await reconcileAuditStartYearOnRepoActivation(appA, true)
+
+    expect(await getAuditStartYear(appA)).toBe(2021)
+    expect(await getAuditStartYear(appB)).toBe(2021)
+  })
+
+  it('resolves to null when any sibling has no explicit audit_start_year', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-8',
+      environment: 'prod-fss',
+      auditStartYear: 2024,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-9',
+      environment: 'prod-fss',
+      auditStartYear: null,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-m',
+      githubRepoId: '903',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-m',
+      githubRepoId: '903',
+    })
+
+    await reconcileAuditStartYearOnRepoActivation(appA, true)
+
+    expect(await getAuditStartYear(appA)).toBeNull()
+    expect(await getAuditStartYear(appB)).toBeNull()
+  })
+
+  it('still fixes a mismatched sibling even when the acting app already has the resolved value', async () => {
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-10',
+      environment: 'prod-fss',
+      auditStartYear: 2021,
+    })
+    const appB = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-11',
+      environment: 'prod-fss',
+      auditStartYear: 2021,
+    })
+    const appC = await seedApp(pool, {
+      teamSlug: 'team-j',
+      appName: 'app-j-12',
+      environment: 'prod-fss',
+      auditStartYear: 2023,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-n',
+      githubRepoId: '904',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-n',
+      githubRepoId: '904',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appC,
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo-n',
+      githubRepoId: '904',
+    })
+
+    await reconcileAuditStartYearOnRepoActivation(appA, true)
+
+    expect(await getAuditStartYear(appA)).toBe(2021)
+    expect(await getAuditStartYear(appB)).toBe(2021)
+    expect(await getAuditStartYear(appC)).toBe(2021)
   })
 })

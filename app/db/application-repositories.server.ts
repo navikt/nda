@@ -1,5 +1,18 @@
+import { reconcileAuditStartYearOnRepoActivation } from '~/db/audit-start-year-baseline.server'
 import { getRepositoryId } from '~/lib/github/git.server'
+import { logger } from '~/lib/logger.server'
 import { pool } from './connection.server'
+
+async function reconcileAuditStartYearBestEffort(appId: number, hadDifferentActiveRepoBefore: boolean): Promise<void> {
+  try {
+    await reconcileAuditStartYearOnRepoActivation(appId, hadDifferentActiveRepoBefore)
+  } catch (error) {
+    logger.error(
+      'Failed to reconcile audit_start_year after repo activation',
+      error instanceof Error ? error : new Error(String(error)),
+    )
+  }
+}
 
 interface ApplicationRepository {
   id: number
@@ -91,6 +104,27 @@ export async function upsertApplicationRepository(data: {
   const approvedAt = data.status !== 'pending_approval' ? new Date() : null
   const githubRepoId = await getRepositoryId(data.githubOwner, data.githubRepoName)
 
+  let hadDifferentActiveRepoBefore = false
+  if (data.status === 'active') {
+    const { rows: previousActiveRows } = await pool.query<{
+      github_owner: string
+      github_repo_name: string
+      github_repo_id: string | null
+    }>(
+      `SELECT github_owner, github_repo_name, github_repo_id FROM application_repositories
+       WHERE monitored_app_id = $1 AND status = 'active'`,
+      [data.monitoredAppId],
+    )
+    hadDifferentActiveRepoBefore =
+      previousActiveRows.length === 0 ||
+      previousActiveRows.some((row) => {
+        if (row.github_repo_id !== null && githubRepoId !== null) {
+          return row.github_repo_id !== String(githubRepoId)
+        }
+        return row.github_owner !== data.githubOwner || row.github_repo_name !== data.githubRepoName
+      })
+  }
+
   const result = await pool.query(
     `INSERT INTO application_repositories (
       monitored_app_id, github_owner, github_repo_name, github_repo_id, status,
@@ -119,6 +153,11 @@ export async function upsertApplicationRepository(data: {
       data.approvedBy || null,
     ],
   )
+
+  if (data.status === 'active') {
+    await reconcileAuditStartYearBestEffort(data.monitoredAppId, hadDifferentActiveRepoBefore)
+  }
+
   return result.rows[0]
 }
 
@@ -129,18 +168,34 @@ export async function approveRepository(
 ): Promise<ApplicationRepository> {
   const status = setAsActive ? 'active' : 'historical'
 
+  let hadDifferentActiveRepoBefore = false
+  let monitoredAppId: number | null = null
+
   if (setAsActive) {
-    const repo = await pool.query('SELECT monitored_app_id FROM application_repositories WHERE id = $1', [repoId])
+    const repo = await pool.query<{ monitored_app_id: number; github_repo_id: string | null; status: string }>(
+      'SELECT monitored_app_id, github_repo_id, status FROM application_repositories WHERE id = $1',
+      [repoId],
+    )
 
     if (repo.rows.length > 0) {
-      await pool.query(
+      monitoredAppId = repo.rows[0].monitored_app_id
+      const targetRepoId = repo.rows[0].github_repo_id
+      const wasAlreadyActive = repo.rows[0].status === 'active'
+      const { rows: demotedRows } = await pool.query<{ github_repo_id: string | null }>(
         `UPDATE application_repositories 
          SET status = 'historical' 
          WHERE monitored_app_id = $1 
            AND status = 'active' 
-           AND id != $2`,
-        [repo.rows[0].monitored_app_id, repoId],
+           AND id != $2
+         RETURNING github_repo_id`,
+        [monitoredAppId, repoId],
       )
+      hadDifferentActiveRepoBefore =
+        !wasAlreadyActive &&
+        (demotedRows.length === 0 ||
+          demotedRows.some(
+            (row) => row.github_repo_id === null || targetRepoId === null || row.github_repo_id !== targetRepoId,
+          ))
     }
   }
 
@@ -156,6 +211,10 @@ export async function approveRepository(
     throw new Error(`Repository with id ${repoId} not found`)
   }
 
+  if (setAsActive && monitoredAppId !== null) {
+    await reconcileAuditStartYearBestEffort(monitoredAppId, hadDifferentActiveRepoBefore)
+  }
+
   return result.rows[0]
 }
 
@@ -164,17 +223,25 @@ export async function rejectRepository(repoId: number): Promise<void> {
 }
 
 export async function setRepositoryAsActive(repoId: number): Promise<ApplicationRepository> {
-  const repo = await pool.query('SELECT monitored_app_id FROM application_repositories WHERE id = $1', [repoId])
+  const repo = await pool.query<{ monitored_app_id: number; github_repo_id: string | null; status: string }>(
+    'SELECT monitored_app_id, github_repo_id, status FROM application_repositories WHERE id = $1',
+    [repoId],
+  )
 
   if (repo.rows.length === 0) {
     throw new Error(`Repository with id ${repoId} not found`)
   }
 
-  await pool.query(
+  const monitoredAppId = repo.rows[0].monitored_app_id
+  const targetRepoId = repo.rows[0].github_repo_id
+  const wasAlreadyActive = repo.rows[0].status === 'active'
+
+  const { rows: demotedRows } = await pool.query<{ github_repo_id: string | null }>(
     `UPDATE application_repositories 
      SET status = 'historical' 
-     WHERE monitored_app_id = $1 AND id != $2 AND status = 'active'`,
-    [repo.rows[0].monitored_app_id, repoId],
+     WHERE monitored_app_id = $1 AND id != $2 AND status = 'active'
+     RETURNING github_repo_id`,
+    [monitoredAppId, repoId],
   )
 
   const result = await pool.query(
@@ -184,6 +251,14 @@ export async function setRepositoryAsActive(repoId: number): Promise<Application
      RETURNING *`,
     [repoId],
   )
+
+  const hadDifferentActiveRepoBefore =
+    !wasAlreadyActive &&
+    (demotedRows.length === 0 ||
+      demotedRows.some(
+        (row) => row.github_repo_id === null || targetRepoId === null || row.github_repo_id !== targetRepoId,
+      ))
+  await reconcileAuditStartYearBestEffort(monitoredAppId, hadDifferentActiveRepoBefore)
 
   return result.rows[0]
 }
