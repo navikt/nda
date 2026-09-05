@@ -1,6 +1,7 @@
 import type { BoardPeriodType } from '~/lib/board-periods'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { pool } from '../connection.server'
+import { effectiveAuditStartYearSql } from '../repository-settings-sql'
 import { lowerUsernames, userDeploymentMatchAnySql } from '../user-deployment-match'
 
 export interface DevTeamBatchStats {
@@ -52,15 +53,14 @@ export async function getDevTeamStatsBatch(
        GROUP BY dev_team_id
      ),
      team_apps AS (
-       SELECT dt.id AS dev_team_id, dt.name AS dev_team_name, dt.slug AS dev_team_slug,
-              ma.id AS app_id, ma.audit_start_year
+       SELECT DISTINCT dt.id AS dev_team_id, dt.name AS dev_team_name, dt.slug AS dev_team_slug,
+              ma.id AS app_id, ${effectiveAuditStartYearSql('ma')} AS audit_start_year
        FROM dev_teams dt
        LEFT JOIN dev_team_nais_teams dtn ON dtn.dev_team_id = dt.id AND dtn.deleted_at IS NULL
        LEFT JOIN dev_team_applications dta ON dta.dev_team_id = dt.id AND dta.deleted_at IS NULL
        JOIN monitored_applications ma ON ma.is_active = true
          AND (ma.team_slug = dtn.nais_team_slug OR ma.id = dta.monitored_app_id)
        WHERE dt.id = ANY($1::int[]) AND dt.is_active = true
-       GROUP BY dt.id, dt.name, dt.slug, ma.id, ma.audit_start_year
      ),
      -- Pre-compute all deployment IDs linked to any active board (objective or KR path).
      -- Scoped to the $2/$3 date window since unlinked_member only considers deployments

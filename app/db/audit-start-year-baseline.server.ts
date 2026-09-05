@@ -210,6 +210,60 @@ async function recomputeBaseline(
   }
 }
 
+export async function applyAuditStartYearChangeForApps(
+  client: PoolClient,
+  appId: number,
+  targetAppIds: number[],
+  newAuditStartYear: number | null,
+  adminNavIdent: string,
+): Promise<AuditStartYearChangeResult> {
+  const { rows: currentYearRows } = await client.query<{ id: number; audit_start_year: number | null }>(
+    `SELECT id, audit_start_year FROM monitored_applications WHERE id = ANY($1)`,
+    [targetAppIds],
+  )
+  const previousAuditStartYearByAppId = new Map<number, number | null>(
+    currentYearRows.map((row) => [row.id, row.audit_start_year]),
+  )
+
+  await client.query(`UPDATE monitored_applications SET audit_start_year = $1, updated_at = now() WHERE id = ANY($2)`, [
+    newAuditStartYear,
+    targetAppIds,
+  ])
+
+  const repoScopeResolution = await resolveRepoScope(client, targetAppIds)
+
+  if (repoScopeResolution.kind === 'ambiguous') {
+    return {
+      updatedAppIds: targetAppIds,
+      promotedDeploymentId: null,
+      demotedDeploymentIds: [],
+      recomputeLimitedToActingApp: false,
+      recomputeSkippedDueToAmbiguousRepoScope: true,
+    }
+  }
+
+  const repoScope = repoScopeResolution.kind === 'scoped' ? repoScopeResolution.scope : null
+  const recomputeLimitedToActingApp = !repoScope && targetAppIds.length > 1
+  const recomputeScopeAppIds = recomputeLimitedToActingApp ? [appId] : targetAppIds
+
+  const { promotedDeploymentId, demotedDeploymentIds } = await recomputeBaseline(
+    client,
+    recomputeScopeAppIds,
+    repoScope,
+    newAuditStartYear,
+    adminNavIdent,
+    previousAuditStartYearByAppId,
+  )
+
+  return {
+    updatedAppIds: targetAppIds,
+    promotedDeploymentId,
+    demotedDeploymentIds,
+    recomputeLimitedToActingApp,
+    recomputeSkippedDueToAmbiguousRepoScope: false,
+  }
+}
+
 export async function applyAuditStartYearChange(
   appId: number,
   newAuditStartYear: number | null,
@@ -217,51 +271,6 @@ export async function applyAuditStartYearChange(
 ): Promise<AuditStartYearChangeResult> {
   return withTransaction(async (client) => {
     const targetAppIds = await getTargetAppIds(client, appId)
-
-    const { rows: currentYearRows } = await client.query<{ id: number; audit_start_year: number | null }>(
-      `SELECT id, audit_start_year FROM monitored_applications WHERE id = ANY($1)`,
-      [targetAppIds],
-    )
-    const previousAuditStartYearByAppId = new Map<number, number | null>(
-      currentYearRows.map((row) => [row.id, row.audit_start_year]),
-    )
-
-    await client.query(
-      `UPDATE monitored_applications SET audit_start_year = $1, updated_at = now() WHERE id = ANY($2)`,
-      [newAuditStartYear, targetAppIds],
-    )
-
-    const repoScopeResolution = await resolveRepoScope(client, targetAppIds)
-
-    if (repoScopeResolution.kind === 'ambiguous') {
-      return {
-        updatedAppIds: targetAppIds,
-        promotedDeploymentId: null,
-        demotedDeploymentIds: [],
-        recomputeLimitedToActingApp: false,
-        recomputeSkippedDueToAmbiguousRepoScope: true,
-      }
-    }
-
-    const repoScope = repoScopeResolution.kind === 'scoped' ? repoScopeResolution.scope : null
-    const recomputeLimitedToActingApp = !repoScope && targetAppIds.length > 1
-    const recomputeScopeAppIds = recomputeLimitedToActingApp ? [appId] : targetAppIds
-
-    const { promotedDeploymentId, demotedDeploymentIds } = await recomputeBaseline(
-      client,
-      recomputeScopeAppIds,
-      repoScope,
-      newAuditStartYear,
-      adminNavIdent,
-      previousAuditStartYearByAppId,
-    )
-
-    return {
-      updatedAppIds: targetAppIds,
-      promotedDeploymentId,
-      demotedDeploymentIds,
-      recomputeLimitedToActingApp,
-      recomputeSkippedDueToAmbiguousRepoScope: false,
-    }
+    return applyAuditStartYearChangeForApps(client, appId, targetAppIds, newAuditStartYear, adminNavIdent)
   })
 }

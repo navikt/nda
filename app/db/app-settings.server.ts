@@ -38,27 +38,6 @@ const SETTING_KEYS = {
 
 export type { ImplicitApprovalMode }
 
-async function getAppSetting<T extends Record<string, unknown>>(
-  monitoredAppId: number,
-  settingKey: string,
-  defaultValue: T,
-): Promise<T> {
-  const result = await pool.query<AppSetting>(
-    'SELECT * FROM app_settings WHERE monitored_app_id = $1 AND setting_key = $2',
-    [monitoredAppId, settingKey],
-  )
-
-  if (result.rows.length === 0) {
-    return defaultValue
-  }
-
-  return { ...defaultValue, ...result.rows[0].setting_value } as T
-}
-
-export async function getImplicitApprovalSettings(monitoredAppId: number): Promise<ImplicitApprovalSettings> {
-  return getAppSetting(monitoredAppId, SETTING_KEYS.IMPLICIT_APPROVAL, DEFAULT_IMPLICIT_APPROVAL_SETTINGS)
-}
-
 async function updateAppSetting<T extends Record<string, unknown>>(params: {
   monitoredAppId: number
   settingKey: string

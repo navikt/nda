@@ -1,5 +1,6 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
+import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
 import { buildBranchMismatch } from './branch-mismatch'
@@ -239,34 +240,11 @@ export async function getAppSettings(monitoredAppId: number): Promise<{
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
 }> {
-  const appResult = await pool.query(`SELECT audit_start_year FROM monitored_applications WHERE id = $1`, [
-    monitoredAppId,
-  ])
-
-  if (appResult.rows.length === 0) {
-    return {
-      auditStartYear: null,
-      implicitApprovalSettings: { mode: 'off' },
-    }
-  }
-
-  const settingsResult = await pool.query(
-    `SELECT setting_value FROM app_settings 
-     WHERE monitored_app_id = $1 AND setting_key = 'implicit_approval'`,
-    [monitoredAppId],
-  )
-
-  let implicitApprovalSettings: ImplicitApprovalSettings = { mode: 'off' }
-  if (settingsResult.rows.length > 0 && settingsResult.rows[0].setting_value) {
-    const settingValue = settingsResult.rows[0].setting_value
-    if (settingValue.mode === 'dependabot_only' || settingValue.mode === 'all') {
-      implicitApprovalSettings = { mode: settingValue.mode }
-    }
-  }
+  const effective = await getEffectiveSettingsForApp(monitoredAppId)
 
   return {
-    auditStartYear: appResult.rows[0].audit_start_year,
-    implicitApprovalSettings,
+    auditStartYear: effective.auditStartYear,
+    implicitApprovalSettings: effective.implicitApprovalSettings,
   }
 }
 

@@ -2,6 +2,7 @@ import { notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-st
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
 import { pool } from './connection.server'
+import { effectiveDefaultBranchSql } from './repository-settings-sql'
 import { lowerUsernames, userDeploymentMatchAnySql } from './user-deployment-match'
 
 export const TITLE_COALESCE_SQL = `COALESCE(d.title, d.github_pr_data->>'title', c.original_pr_title, c.message, d.unverified_commits->0->>'message')`
@@ -436,7 +437,7 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
       ma.team_slug,
       ma.environment_name,
       ma.app_name,
-      ma.default_branch,
+      ${effectiveDefaultBranchSql('ma')} AS default_branch,
       EXISTS (SELECT 1 FROM deployment_goal_links WHERE deployment_id = d.id AND is_active = true AND (objective_id IS NOT NULL OR key_result_id IS NOT NULL)) AS has_goal_link
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
@@ -481,7 +482,7 @@ export async function getDeploymentById(id: number): Promise<DeploymentWithApp |
       ma.team_slug,
       ma.environment_name,
       ma.app_name,
-      ma.default_branch
+      ${effectiveDefaultBranchSql('ma')} AS default_branch
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
     LEFT JOIN commits c ON c.sha = d.commit_sha

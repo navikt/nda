@@ -1,6 +1,6 @@
-import { getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
+import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
@@ -39,7 +39,7 @@ export async function computeVerificationDiffs(
   options: ComputeDiffsOptions = {},
 ): Promise<ComputeDiffsResult> {
   const deployments = await getDeploymentsForDiffComputation(monitoredAppId)
-  const implicitApprovalSettings = await getImplicitApprovalSettings(monitoredAppId)
+  const { implicitApprovalSettings } = await getEffectiveSettingsForApp(monitoredAppId)
 
   const result: ComputeDiffsResult = {
     deploymentsChecked: 0,

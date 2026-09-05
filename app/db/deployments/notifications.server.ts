@@ -3,6 +3,7 @@ import { AUDIT_START_YEAR_FILTER } from '../audit-start-year'
 import { pool } from '../connection.server'
 import type { DeploymentWithApp } from '../deployments.server'
 import { getDeploymentById } from '../deployments.server'
+import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '../repository-settings-sql'
 
 export interface AppReminderConfig {
   id: number
@@ -38,7 +39,7 @@ export async function claimDeploymentForSlackNotification(
 async function _getDeploymentsNeedingSlackNotification(limit = 50): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*, 
-            ma.team_slug, ma.environment_name, ma.app_name, ma.default_branch,
+            ma.team_slug, ma.environment_name, ma.app_name, ${effectiveDefaultBranchSql('ma')} AS default_branch,
             ma.slack_channel_id as app_slack_channel_id,
             ma.slack_notifications_enabled
      FROM deployments d
@@ -79,10 +80,10 @@ export async function claimDeploymentForDeployNotify(
 export async function getDeploymentsNeedingDeployNotify(limit = 50): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*, 
-            ma.team_slug, ma.environment_name, ma.app_name, ma.default_branch,
+            ma.team_slug, ma.environment_name, ma.app_name, ${effectiveDefaultBranchSql('ma')} AS default_branch,
             ma.slack_deploy_channel_id,
             ma.slack_deploy_notify_enabled,
-            ma.audit_start_year
+            ${effectiveAuditStartYearSql('ma')} AS audit_start_year
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.slack_deploy_message_ts IS NULL
@@ -115,7 +116,7 @@ export async function getAppsWithRemindersEnabled(): Promise<AppReminderConfig[]
 export async function getUnapprovedDeployments(monitoredAppId: number): Promise<DeploymentWithApp[]> {
   const result = await pool.query(
     `SELECT d.*,
-            ma.team_slug, ma.environment_name, ma.app_name, ma.default_branch
+            ma.team_slug, ma.environment_name, ma.app_name, ${effectiveDefaultBranchSql('ma')} AS default_branch
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.monitored_app_id = $1

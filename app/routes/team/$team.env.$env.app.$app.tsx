@@ -9,14 +9,17 @@ import {
   setRepositoryAsActive,
 } from '~/db/application-repositories.server'
 import { getAuditReportsForApp } from '~/db/audit-reports.server'
+import { applyAuditStartYearChange } from '~/db/audit-start-year-baseline.server'
 import { getAppDeploymentStats, getPendingVerificationCount } from '~/db/deployments.server'
 import { getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
 import { getMonorepoSiblings } from '~/db/monorepo.server'
+import { type RepositorySettingsPatch, updateRepositorySettings } from '~/db/repositories.server'
 import { getLatestSyncJob, getObservedSyncIntervalMs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { getUserIdentity } from '~/lib/auth.server'
-import { canAccessAppAdmin, resolveAppCapabilities } from '~/lib/authorization.server'
+import { canAccessAppAdmin, canAccessRepositorySettingsAdmin, resolveAppCapabilities } from '~/lib/authorization.server'
 import { logger } from '~/lib/logger.server'
+import { affectedAppsMessage, REPO_NOT_LINKED_SUFFIX } from '~/lib/repo-scope-messages'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import { VERIFY_LIMIT_PER_APP } from '~/lib/sync'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
@@ -144,53 +147,84 @@ export async function action({ params, request }: Route.ActionArgs) {
       return { success: 'Varsel markert som løst!' }
     }
 
-    if (action === 'update_default_branch') {
+    if (
+      action === 'update_default_branch' ||
+      action === 'update_implicit_approval' ||
+      action === 'update_audit_start_year'
+    ) {
       const appId = parseInt(formData.get('app_id') as string, 10)
-      const defaultBranch = formData.get('default_branch') as string
-
-      if (!defaultBranch?.trim()) {
-        return { error: 'Default branch kan ikke være tom' }
+      if (!Number.isFinite(appId)) {
+        throw new Response('Invalid app_id', { status: 400 })
       }
-
-      await updateMonitoredApplication(appId, { default_branch: defaultBranch.trim() })
-      return { success: `Default branch oppdatert til "${defaultBranch.trim()}"` }
-    }
-
-    if (action === 'update_implicit_approval') {
-      const appId = parseInt(formData.get('app_id') as string, 10)
-      const modeValue = formData.get('mode')
-
       if (!identity) {
         return { error: 'Du må være innlogget for å endre innstillinger' }
       }
-
-      if (typeof modeValue !== 'string' || !isImplicitApprovalMode(modeValue)) {
-        return { error: 'Ugyldig modus valgt' }
+      if (!(await canAccessRepositorySettingsAdmin(identity, appId))) {
+        return { error: 'Du har ikke administratortilgang til alle appene i samme repo' }
       }
 
-      await updateImplicitApprovalSettings({
+      const patch: RepositorySettingsPatch = {}
+
+      if (action === 'update_default_branch') {
+        const defaultBranch = formData.get('default_branch') as string
+        if (!defaultBranch?.trim()) {
+          return { error: 'Default branch kan ikke være tom' }
+        }
+        patch.defaultBranch = defaultBranch.trim()
+      }
+
+      if (action === 'update_implicit_approval') {
+        const modeValue = formData.get('mode')
+        if (typeof modeValue !== 'string' || !isImplicitApprovalMode(modeValue)) {
+          return { error: 'Ugyldig modus valgt' }
+        }
+        patch.implicitApprovalMode = modeValue
+      }
+
+      if (action === 'update_audit_start_year') {
+        const startYearValue = formData.get('audit_start_year') as string
+        const auditStartYear = startYearValue?.trim() ? parseInt(startYearValue, 10) : null
+        if (
+          auditStartYear !== null &&
+          (Number.isNaN(auditStartYear) || auditStartYear < 2000 || auditStartYear > 2100)
+        ) {
+          return { error: 'Ugyldig årstall (må være mellom 2000 og 2100)' }
+        }
+        patch.auditStartYear = auditStartYear
+      }
+
+      const result = await updateRepositorySettings({
         monitoredAppId: appId,
-        settings: { mode: modeValue },
+        patch,
         changedByNavIdent: identity.navIdent,
         changedByName: identity.name || undefined,
       })
 
-      return { success: 'Implisitt godkjenning-innstillinger oppdatert!' }
-    }
+      if (!result.ok) {
+        if (result.reason === 'app_not_found') {
+          return { error: 'Applikasjonen finnes ikke' }
+        }
 
-    if (action === 'update_audit_start_year') {
-      const appId = parseInt(formData.get('app_id') as string, 10)
-      const startYearValue = formData.get('audit_start_year') as string
+        if (action === 'update_default_branch' && patch.defaultBranch) {
+          await updateMonitoredApplication(appId, { default_branch: patch.defaultBranch })
+        }
+        if (action === 'update_implicit_approval' && patch.implicitApprovalMode) {
+          await updateImplicitApprovalSettings({
+            monitoredAppId: appId,
+            settings: { mode: patch.implicitApprovalMode },
+            changedByNavIdent: identity.navIdent,
+            changedByName: identity.name || undefined,
+          })
+        }
+        if (action === 'update_audit_start_year') {
+          await applyAuditStartYearChange(appId, patch.auditStartYear ?? null, identity.navIdent)
+        }
 
-      const auditStartYear = startYearValue?.trim() ? parseInt(startYearValue, 10) : null
-
-      if (auditStartYear !== null && (Number.isNaN(auditStartYear) || auditStartYear < 2000 || auditStartYear > 2100)) {
-        return { error: 'Ugyldig årstall (må være mellom 2000 og 2100)' }
+        return { success: `Innstillingen er oppdatert!${REPO_NOT_LINKED_SUFFIX}` }
       }
 
-      await updateMonitoredApplication(appId, { audit_start_year: auditStartYear })
       return {
-        success: auditStartYear ? `Startår oppdatert til ${auditStartYear}` : 'Startår fjernet',
+        success: `Innstillingen er oppdatert for hele repoet!${affectedAppsMessage(result.affectedApps, appId, result.changedKeys)}`,
       }
     }
 

@@ -13,6 +13,7 @@ import {
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
+import { updateRepositorySettings } from '~/db/repositories.server'
 import type { SyncJob } from '~/db/sync-job-types'
 import {
   acquireSyncLock,
@@ -28,10 +29,11 @@ import {
 } from '~/db/sync-jobs.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
-import { canAccessAppAdmin, canAccessAppAdminForRepoCascade } from '~/lib/authorization.server'
+import { canAccessAppAdmin, canAccessRepositorySettingsAdmin } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { getFormString, isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
+import { affectedAppsMessage, REPO_NOT_LINKED_SUFFIX } from '~/lib/repo-scope-messages'
 import { processReportJobAsync } from '~/lib/report-job-processor.server'
 import { isValidReportPeriodType } from '~/lib/report-periods'
 import type { SlackConfigSettingKey } from '~/lib/slack/config-setting-keys'
@@ -202,8 +204,33 @@ export async function action({ request }: { request: Request; params: Record<str
     if (!defaultBranch || defaultBranch.trim() === '') {
       return { error: 'Default branch kan ikke være tom' }
     }
-    await updateMonitoredApplication(appId, { default_branch: defaultBranch.trim() })
-    return { success: 'Default branch oppdatert!' }
+
+    if (!(await canAccessRepositorySettingsAdmin(user, appId))) {
+      return { error: 'Du har ikke administratortilgang til alle appene i samme repo' }
+    }
+
+    const result = await updateRepositorySettings({
+      monitoredAppId: appId,
+      patch: { defaultBranch: defaultBranch.trim() },
+      changedByNavIdent: user.navIdent,
+      changedByName: user.name || undefined,
+    })
+
+    if (!result.ok) {
+      if (result.reason === 'app_not_found') {
+        return { error: 'Fant ikke applikasjonen' }
+      }
+      await updateMonitoredApplication(appId, { default_branch: defaultBranch.trim() })
+      return { success: `Default branch oppdatert!${REPO_NOT_LINKED_SUFFIX}` }
+    }
+
+    if (result.changedKeys.length === 0) {
+      return { success: 'Ingen endring — default branch var allerede satt til denne verdien.' }
+    }
+
+    return {
+      success: `Default branch oppdatert!${affectedAppsMessage(result.affectedApps, appId, result.changedKeys)}`,
+    }
   }
 
   if (action === 'update_implicit_approval') {
@@ -212,13 +239,37 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Ugyldig modus' }
     }
 
-    await updateImplicitApprovalSettings({
+    if (!(await canAccessRepositorySettingsAdmin(user, appId))) {
+      return { error: 'Du har ikke administratortilgang til alle appene i samme repo' }
+    }
+
+    const result = await updateRepositorySettings({
       monitoredAppId: appId,
-      settings: { mode: modeValue },
+      patch: { implicitApprovalMode: modeValue },
       changedByNavIdent: user.navIdent,
       changedByName: user.name || undefined,
     })
-    return { success: 'Implisitt godkjenning-innstillinger oppdatert!' }
+
+    if (!result.ok) {
+      if (result.reason === 'app_not_found') {
+        return { error: 'Fant ikke applikasjonen' }
+      }
+      await updateImplicitApprovalSettings({
+        monitoredAppId: appId,
+        settings: { mode: modeValue },
+        changedByNavIdent: user.navIdent,
+        changedByName: user.name || undefined,
+      })
+      return { success: `Implisitt godkjenning-innstillinger oppdatert!${REPO_NOT_LINKED_SUFFIX}` }
+    }
+
+    if (result.changedKeys.length === 0) {
+      return { success: 'Ingen endring — modus var allerede satt til denne verdien.' }
+    }
+
+    return {
+      success: `Implisitt godkjenning-innstillinger oppdatert!${affectedAppsMessage(result.affectedApps, appId, result.changedKeys)}`,
+    }
   }
 
   if (action === 'update_test_requirement') {
@@ -242,13 +293,42 @@ export async function action({ request }: { request: Request; params: Record<str
       }
     }
 
-    if (!(await canAccessAppAdminForRepoCascade(user, appId))) {
+    if (!(await canAccessRepositorySettingsAdmin(user, appId))) {
       return { error: 'Du har ikke administratortilgang til alle appene i samme repo' }
     }
 
-    const result = await applyAuditStartYearChange(appId, auditStartYear, user.navIdent)
+    const repoResult = await updateRepositorySettings({
+      monitoredAppId: appId,
+      patch: { auditStartYear },
+      changedByNavIdent: user.navIdent,
+      changedByName: user.name || undefined,
+    })
+
+    if (!repoResult.ok && repoResult.reason === 'app_not_found') {
+      return { error: 'Fant ikke applikasjonen' }
+    }
+
+    const result = repoResult.ok
+      ? (repoResult.auditStartYearChange ?? {
+          updatedAppIds: repoResult.affectedApps.map((app) => app.id),
+          promotedDeploymentId: null,
+          demotedDeploymentIds: [],
+          recomputeLimitedToActingApp: false,
+          recomputeSkippedDueToAmbiguousRepoScope: false,
+        })
+      : await applyAuditStartYearChange(appId, auditStartYear, user.navIdent)
+
+    if (repoResult.ok && repoResult.changedKeys.length === 0) {
+      return { success: 'Ingen endring — startår var allerede satt til denne verdien.' }
+    }
+
     let success = 'Startår for revisjon oppdatert!'
-    if (result.updatedAppIds.length > 1) {
+    if (!repoResult.ok) {
+      success += REPO_NOT_LINKED_SUFFIX
+    }
+    if (repoResult.ok) {
+      success += affectedAppsMessage(repoResult.affectedApps, appId, repoResult.changedKeys)
+    } else if (result.updatedAppIds.length > 1) {
       success += ` Endringen gjelder også ${result.updatedAppIds.length - 1} andre apper i samme repo.`
     }
     if (result.recomputeLimitedToActingApp) {

@@ -1,6 +1,7 @@
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
+import { effectiveAuditStartYearSql } from './repository-settings-sql'
 import { lowerUsernames, userDeploymentMatchAnySql } from './user-deployment-match'
 
 interface SectionOverallStats {
@@ -163,7 +164,7 @@ export async function getDevTeamSummaryStats(
 
     const result = await pool.query(
       `WITH team_apps AS (
-         SELECT ma.id, ma.audit_start_year
+         SELECT ma.id, ${effectiveAuditStartYearSql('ma')} AS audit_start_year
          FROM monitored_applications ma
          WHERE ma.is_active = true
            AND (ma.team_slug = ANY($1::text[]) OR ma.id = ANY($2::int[]))
@@ -263,7 +264,7 @@ export async function getDevTeamSummaryStats(
 
   const result = await pool.query(
     `WITH team_apps AS (
-       SELECT ma.id, ma.audit_start_year
+       SELECT ma.id, ${effectiveAuditStartYearSql('ma')} AS audit_start_year
        FROM monitored_applications ma
        WHERE ma.is_active = true
          AND (ma.team_slug = ANY($1::text[]) OR ma.id = ANY($2::int[]))

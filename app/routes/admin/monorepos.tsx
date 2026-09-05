@@ -60,15 +60,21 @@ export default function MonoreposAdmin() {
                   <Tag size="xsmall" variant="neutral">
                     {group.apps.length} applikasjoner
                   </Tag>
+                  <Tag size="xsmall" variant={group.repository_linked ? 'success' : 'warning'}>
+                    {group.repository_linked ? 'repo-innstillinger' : 'per-app-innstillinger'}
+                  </Tag>
                 </HStack>
 
                 {(group.base_branch_mismatch || group.audit_year_mismatch) && (
                   <Alert variant="warning" size="small">
                     {group.base_branch_mismatch && group.audit_year_mismatch
-                      ? 'Applikasjonene har ulik konfigurert base branch og ulikt revisjons-startår.'
+                      ? 'Applikasjonene har ulik effektiv base branch og ulikt effektivt revisjons-startår.'
                       : group.base_branch_mismatch
-                        ? 'Applikasjonene har ulik konfigurert base branch.'
-                        : 'Applikasjonene har ulikt revisjons-startår.'}
+                        ? 'Applikasjonene har ulik effektiv base branch.'
+                        : 'Applikasjonene har ulikt effektivt revisjons-startår.'}{' '}
+                    {group.repository_linked
+                      ? 'Repoet er koblet, så dette skyldes at repo-innstillingen mangler og appene faller tilbake til sine egne verdier.'
+                      : 'Repoet mangler foreløpig en repo-innstillingsrad (github_repo_id er kanskje ikke satt ennå, eller raden er ikke opprettet enda), så innstillingene styres fortsatt per app.'}
                   </Alert>
                 )}
 

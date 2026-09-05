@@ -1,8 +1,9 @@
-import { getImplicitApprovalSettings } from '~/db/app-settings.server'
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { TITLE_COALESCE_SQL } from '~/db/deployments.server'
 import { propagateVerificationToSiblings } from '~/db/monorepo.server'
+import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { getMergedPullRequestsInWindow } from '~/lib/github'
@@ -506,7 +507,8 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
        d.id, d.commit_sha, d.four_eyes_status,
        d.github_pr_number, d.environment_name, d.monitored_app_id,
        d.detected_github_owner, d.detected_github_repo_name,
-       ma.default_branch, ma.audit_start_year
+       ${effectiveDefaultBranchSql('ma')} AS default_branch,
+       ${effectiveAuditStartYearSql('ma')} AS audit_start_year
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.id = $1`,
@@ -523,7 +525,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     return null
   }
 
-  const implicitApprovalSettings = await getImplicitApprovalSettings(dep.monitored_app_id)
+  const { implicitApprovalSettings } = await getEffectiveSettingsForApp(dep.monitored_app_id)
 
   const compareSnapshot = await getCompareSnapshotForCommit(dep.commit_sha)
   if (!compareSnapshot) return null

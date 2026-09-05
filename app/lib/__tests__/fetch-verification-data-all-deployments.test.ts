@@ -79,6 +79,19 @@ vi.mock('~/lib/verification/store-data.server', () => ({
 
 import { fetchVerificationDataForAllDeployments } from '~/lib/verification/fetch-data/bulk-fetch.server'
 
+function effectiveSettingsRow() {
+  return {
+    monitored_app_id: 1,
+    app_audit_start_year: null,
+    app_default_branch: 'main',
+    app_implicit_approval_mode: null,
+    repository_id: null,
+    repo_audit_start_year: null,
+    repo_implicit_approval_mode: null,
+    repo_default_branch: null,
+  }
+}
+
 function baseDeploymentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
@@ -114,8 +127,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
 
   it('skips deployments that already have PR/compare data and commit_checks_data', async () => {
     mockPoolQuery
-      .mockResolvedValueOnce({ rows: [{ audit_start_year: null }] }) // monitored_applications lookup
-      .mockResolvedValueOnce({ rows: [] }) // app_settings lookup
+      .mockResolvedValueOnce({ rows: [effectiveSettingsRow()] }) // effective repository settings lookup
       .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: true })] }) // deployments query
 
     const result = await fetchVerificationDataForAllDeployments(1)
@@ -128,8 +140,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
 
   it('backfills only commit_checks_data for deployments with PR/compare data but no checks yet', async () => {
     mockPoolQuery
-      .mockResolvedValueOnce({ rows: [{ audit_start_year: null }] })
-      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [effectiveSettingsRow()] })
       .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
 
     mockGetChecksForCommit.mockResolvedValueOnce({
@@ -166,8 +177,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
 
   it('marks the checks-fetch attempt as completed even when GitHub confirms zero check runs, so the backfill converges', async () => {
     mockPoolQuery
-      .mockResolvedValueOnce({ rows: [{ audit_start_year: null }] })
-      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [effectiveSettingsRow()] })
       .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
 
     mockGetChecksForCommit.mockResolvedValueOnce({
@@ -189,8 +199,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
 
   it('does not mark the attempt as completed when the checks fetch throws, so the next run retries', async () => {
     mockPoolQuery
-      .mockResolvedValueOnce({ rows: [{ audit_start_year: null }] })
-      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [effectiveSettingsRow()] })
       .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
 
     mockGetChecksForCommit.mockRejectedValueOnce(new Error('GitHub API unavailable'))
@@ -202,12 +211,9 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
   })
 
   it('refreshes only PR display data (not reviews/commits) when refreshDisplayData is set for a fully cached deployment', async () => {
-    mockPoolQuery
-      .mockResolvedValueOnce({ rows: [{ audit_start_year: null }] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({
-        rows: [baseDeploymentRow({ has_checks_data: true, github_pr_number: 42 })],
-      })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [effectiveSettingsRow()] }).mockResolvedValueOnce({
+      rows: [baseDeploymentRow({ has_checks_data: true, github_pr_number: 42 })],
+    })
 
     const rawPr = {
       base: { ref: 'main', sha: 'base123', repo: { id: 42 } },
@@ -274,12 +280,9 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
   })
 
   it('counts as skipped, not fetched, when the display data refresh fails to find a raw snapshot', async () => {
-    mockPoolQuery
-      .mockResolvedValueOnce({ rows: [{ audit_start_year: null }] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({
-        rows: [baseDeploymentRow({ has_checks_data: true, github_pr_number: 42 })],
-      })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [effectiveSettingsRow()] }).mockResolvedValueOnce({
+      rows: [baseDeploymentRow({ has_checks_data: true, github_pr_number: 42 })],
+    })
 
     mockGetAllLatestPrRawSnapshots.mockResolvedValue(new Map())
 

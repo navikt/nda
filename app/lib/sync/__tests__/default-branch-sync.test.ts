@@ -4,6 +4,10 @@ vi.mock('~/db/monitored-applications.server', () => ({
   updateMonitoredApplication: vi.fn(),
 }))
 
+vi.mock('~/db/repositories.server', () => ({
+  syncRepositoryDefaultBranch: vi.fn(),
+}))
+
 vi.mock('~/lib/github/git.server', () => ({
   getRepositoryDefaultBranch: vi.fn(),
 }))
@@ -13,12 +17,14 @@ vi.mock('~/lib/logger.server', () => ({
 }))
 
 import { updateMonitoredApplication } from '~/db/monitored-applications.server'
+import { syncRepositoryDefaultBranch } from '~/db/repositories.server'
 import { getRepositoryDefaultBranch } from '~/lib/github/git.server'
 import { syncDefaultBranchForApp } from '../default-branch-sync.server'
 
 describe('syncDefaultBranchForApp', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(syncRepositoryDefaultBranch).mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -39,6 +45,7 @@ describe('syncDefaultBranchForApp', () => {
 
     expect(getRepositoryDefaultBranch).not.toHaveBeenCalled()
     expect(updateMonitoredApplication).not.toHaveBeenCalled()
+    expect(syncRepositoryDefaultBranch).not.toHaveBeenCalled()
   })
 
   test('runs when last sync was over 24h ago', async () => {
@@ -95,6 +102,11 @@ describe('syncDefaultBranchForApp', () => {
       default_branch: 'master',
       default_branch_synced_at: expect.any(Date),
     })
+    expect(syncRepositoryDefaultBranch).toHaveBeenCalledWith({
+      monitoredAppId: 42,
+      defaultBranch: 'master',
+      syncedAt: expect.any(Date),
+    })
   })
 
   test('only updates synced_at when default_branch already correct', async () => {
@@ -111,6 +123,11 @@ describe('syncDefaultBranchForApp', () => {
 
     expect(updateMonitoredApplication).toHaveBeenCalledWith(1, {
       default_branch_synced_at: expect.any(Date),
+    })
+    expect(syncRepositoryDefaultBranch).toHaveBeenCalledWith({
+      monitoredAppId: 1,
+      defaultBranch: 'main',
+      syncedAt: expect.any(Date),
     })
   })
 
@@ -129,5 +146,6 @@ describe('syncDefaultBranchForApp', () => {
     expect(updateMonitoredApplication).toHaveBeenCalledWith(1, {
       default_branch_synced_at: expect.any(Date),
     })
+    expect(syncRepositoryDefaultBranch).not.toHaveBeenCalled()
   })
 })

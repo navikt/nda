@@ -123,7 +123,7 @@ export async function canAccessAppAdmin(actor: UserIdentity, monitoredAppId: num
   return isAdminOrTeamLeaderOfManagingTeam(actor, monitoredAppId, { includeInactiveApp: true })
 }
 
-export async function canAccessAppAdminForRepoCascade(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
+export async function canAccessRepositorySettingsAdmin(actor: UserIdentity, monitoredAppId: number): Promise<boolean> {
   if (isEntraAdmin(actor)) return true
 
   const siblingIds = new Set<number>()
