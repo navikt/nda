@@ -95,6 +95,7 @@ export default [
     route('admin/data-mismatches', 'routes/admin/data-mismatches.tsx'),
     route('sections', 'routes/admin/sections.tsx'),
     route('sections/:slug/edit', 'routes/admin/sections.$slug.dev-teams.tsx'),
+    route('sections/:slug/members.xlsx', 'routes/admin/sections.$slug.members.xlsx.ts'),
     route('sections/:sectionSlug/teams/:devTeamSlug', 'routes/sections.$sectionSlug.teams.$devTeamSlug.tsx'),
     route(
       'sections/:sectionSlug/teams/:devTeamSlug/admin',

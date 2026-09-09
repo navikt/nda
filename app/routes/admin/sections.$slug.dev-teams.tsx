@@ -1,4 +1,4 @@
-import { BarChartIcon, PencilIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
+import { BarChartIcon, FileExcelIcon, PencilIcon, PlusIcon, TrashIcon } from '@navikt/aksel-icons'
 import {
   Alert,
   BodyShort,
@@ -190,6 +190,15 @@ export default function AdminSectionEdit() {
             icon={<BarChartIcon aria-hidden />}
           >
             Seksjonsoversikt
+          </Button>
+          <Button
+            as="a"
+            href={`/sections/${section.slug}/members.xlsx`}
+            variant="tertiary"
+            size="small"
+            icon={<FileExcelIcon aria-hidden />}
+          >
+            Eksporter teammedlemmer
           </Button>
         </HStack>
       </div>
