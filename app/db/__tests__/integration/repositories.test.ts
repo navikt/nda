@@ -362,4 +362,37 @@ describe('syncRepositoryDefaultBranch', () => {
       await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'trunk', syncedAt: new Date() }),
     ).toBe(false)
   })
+
+  it('records the previous owner/name in repository_name_history when the repo is renamed', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-rename', appName: 'app-rename', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'old-name',
+      githubRepoId: '5050',
+    })
+
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+
+    await pool.query(
+      `UPDATE application_repositories SET github_owner = $1, github_repo_name = $2 WHERE monitored_app_id = $3`,
+      ['navikt', 'new-name', appId],
+    )
+
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+
+    const { rows } = await pool.query<{ github_owner: string; github_repo_name: string }>(
+      `SELECT github_owner, github_repo_name FROM repository_name_history rnh
+       JOIN repositories r ON r.id = rnh.repository_id
+       WHERE r.github_repo_id = $1`,
+      ['5050'],
+    )
+    expect(rows).toEqual([{ github_owner: 'navikt', github_repo_name: 'old-name' }])
+
+    const { rows: repoRows } = await pool.query<{ github_repo_name: string }>(
+      `SELECT github_repo_name FROM repositories WHERE github_repo_id = $1`,
+      ['5050'],
+    )
+    expect(repoRows[0].github_repo_name).toBe('new-name')
+  })
 })

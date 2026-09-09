@@ -211,6 +211,12 @@ async function upsertRepositoryRow(
     if (existing.github_owner === link.githubOwner && existing.github_repo_name === link.githubRepoName) {
       return existing
     }
+    await client.query(
+      `INSERT INTO repository_name_history (repository_id, github_owner, github_repo_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (repository_id, github_owner, github_repo_name) DO NOTHING`,
+      [existing.id, existing.github_owner, existing.github_repo_name],
+    )
     const { rows } = await client.query<Repository>(
       `UPDATE repositories SET github_owner = $1, github_repo_name = $2, updated_at = now() WHERE id = $3 RETURNING *`,
       [link.githubOwner, link.githubRepoName, existing.id],
