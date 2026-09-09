@@ -5,7 +5,7 @@ import { type ImplicitApprovalMode, isImplicitApprovalMode } from '~/lib/verific
 import type { AuditStartYearChangeResult } from './audit-start-year-baseline.server'
 import { pool, withTransaction } from './connection.server'
 
-interface Repository {
+export interface Repository {
   id: number
   github_repo_id: string
   github_owner: string
@@ -21,6 +21,54 @@ export interface AffectedApp {
   app_name: string
   team_slug: string
   environment_name: string
+}
+
+export type RepositoryLookupResult =
+  | { status: 'found'; repository: Repository }
+  | { status: 'redirect'; githubOwner: string; githubRepoName: string }
+  | { status: 'not_found' }
+
+export async function getRepositoryByOwnerRepo(
+  githubOwner: string,
+  githubRepoName: string,
+): Promise<RepositoryLookupResult> {
+  const { rows } = await pool.query<Repository>(
+    `SELECT * FROM repositories WHERE github_owner = $1 AND github_repo_name = $2`,
+    [githubOwner, githubRepoName],
+  )
+  const repository = rows[0]
+  if (repository) {
+    return { status: 'found', repository }
+  }
+
+  const { rows: historyRows } = await pool.query<{ github_owner: string; github_repo_name: string }>(
+    `SELECT r.github_owner, r.github_repo_name
+     FROM repository_name_history rnh
+     JOIN repositories r ON r.id = rnh.repository_id
+     WHERE rnh.github_owner = $1 AND rnh.github_repo_name = $2
+     ORDER BY rnh.replaced_at DESC
+     LIMIT 1`,
+    [githubOwner, githubRepoName],
+  )
+  const historyMatch = historyRows[0]
+  if (historyMatch) {
+    return { status: 'redirect', githubOwner: historyMatch.github_owner, githubRepoName: historyMatch.github_repo_name }
+  }
+
+  return { status: 'not_found' }
+}
+
+export async function getAffectedAppsForRepositoryId(repositoryId: number): Promise<AffectedApp[]> {
+  const { rows } = await pool.query<AffectedApp>(
+    `SELECT DISTINCT ma.id, ma.app_name, ma.team_slug, ma.environment_name
+     FROM application_repositories ar
+     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+     JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+     WHERE ar.status = 'active' AND ma.is_active = true AND r.id = $1
+     ORDER BY ma.environment_name, ma.team_slug, ma.app_name`,
+    [repositoryId],
+  )
+  return rows
 }
 
 export const REPOSITORY_SETTING_KEYS = {
