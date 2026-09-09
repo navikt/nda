@@ -8,13 +8,15 @@ export function meta({ loaderData: data }: Route.MetaArgs) {
   return [{ title: data ? `${data.repository.github_owner}/${data.repository.github_repo_name}` : 'Repository' }]
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
   const { owner, repo } = requireParams(params, ['owner', 'repo'])
 
   const lookup = await getRepositoryByOwnerRepo(owner, repo)
 
   if (lookup.status === 'redirect') {
-    throw redirect(`/repository/${lookup.githubOwner}/${lookup.githubRepoName}`, { status: 301 })
+    const url = new URL(request.url)
+    const redirectPath = `/repository/${encodeURIComponent(lookup.githubOwner)}/${encodeURIComponent(lookup.githubRepoName)}${url.search}`
+    throw redirect(redirectPath, { status: 301 })
   }
 
   if (lookup.status === 'not_found') {

@@ -2,11 +2,13 @@ import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   getAffectedAppsForRepo,
+  getAffectedAppsForRepositoryId,
   getEffectiveAuditStartYear,
   getEffectiveDefaultBranch,
   getEffectiveImplicitApprovalSettings,
   getEffectiveSettingsForApp,
   getEffectiveSettingsForApps,
+  getRepositoryByOwnerRepo,
   getRepositoryIdForApp,
   REPOSITORY_SETTING_KEYS,
   recordRepoConfigAuditLog,
@@ -382,7 +384,7 @@ describe('syncRepositoryDefaultBranch', () => {
     await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
 
     const { rows } = await pool.query<{ github_owner: string; github_repo_name: string }>(
-      `SELECT github_owner, github_repo_name FROM repository_name_history rnh
+      `SELECT rnh.github_owner, rnh.github_repo_name FROM repository_name_history rnh
        JOIN repositories r ON r.id = rnh.repository_id
        WHERE r.github_repo_id = $1`,
       ['5050'],
@@ -394,5 +396,102 @@ describe('syncRepositoryDefaultBranch', () => {
       ['5050'],
     )
     expect(repoRows[0].github_repo_name).toBe('new-name')
+  })
+})
+
+describe('getRepositoryByOwnerRepo', () => {
+  it('returns found with the repository row when the owner/repo matches the current name', async () => {
+    await seedRepository(pool, { githubRepoId: '6060', githubOwner: 'navikt', githubRepoName: 'current-name' })
+
+    const result = await getRepositoryByOwnerRepo('navikt', 'current-name')
+    expect(result.status).toBe('found')
+    if (result.status === 'found') {
+      expect(result.repository.github_repo_id).toBe('6060')
+    }
+  })
+
+  it('returns redirect with the current owner/repo when looked up by a historical name', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-hist', appName: 'app-hist', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'old-repo-name',
+      githubRepoId: '6070',
+    })
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+
+    await pool.query(
+      `UPDATE application_repositories SET github_owner = $1, github_repo_name = $2 WHERE monitored_app_id = $3`,
+      ['navikt', 'renamed-repo', appId],
+    )
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+
+    const result = await getRepositoryByOwnerRepo('navikt', 'old-repo-name')
+    expect(result).toEqual({ status: 'redirect', githubOwner: 'navikt', githubRepoName: 'renamed-repo' })
+  })
+
+  it('returns not_found when no repository or history entry matches', async () => {
+    const result = await getRepositoryByOwnerRepo('navikt', 'does-not-exist')
+    expect(result).toEqual({ status: 'not_found' })
+  })
+})
+
+describe('getAffectedAppsForRepositoryId', () => {
+  it('returns only active apps with active repository links for the given repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '7070',
+      githubOwner: 'navikt',
+      githubRepoName: 'shared-repo',
+    })
+    const activeAppId = await seedApp(pool, { teamSlug: 'team-active', appName: 'app-active', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: activeAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '7070',
+      status: 'active',
+    })
+
+    const inactiveAppId = await seedApp(pool, {
+      teamSlug: 'team-inactive',
+      appName: 'app-inactive',
+      environment: 'prod-gcp',
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: inactiveAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '7070',
+      status: 'active',
+    })
+
+    const historicalAppId = await seedApp(pool, {
+      teamSlug: 'team-historical',
+      appName: 'app-historical',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: historicalAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '7070',
+      status: 'historical',
+    })
+
+    const affectedApps = await getAffectedAppsForRepositoryId(repositoryId)
+    expect(affectedApps).toEqual([
+      { id: activeAppId, app_name: 'app-active', team_slug: 'team-active', environment_name: 'prod-gcp' },
+    ])
+  })
+
+  it('returns an empty array when no apps are linked to the repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '7080',
+      githubOwner: 'navikt',
+      githubRepoName: 'unlinked-repo',
+    })
+
+    expect(await getAffectedAppsForRepositoryId(repositoryId)).toEqual([])
   })
 })

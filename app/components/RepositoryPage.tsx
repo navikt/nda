@@ -1,11 +1,22 @@
 import { Link as AkselLink, Box, Heading, List, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
-import type { AffectedApp, Repository } from '~/db/repositories.server'
+
+export interface RepositoryPageRepository {
+  github_owner: string
+  github_repo_name: string
+}
+
+export interface RepositoryPageAffectedApp {
+  id: number
+  app_name: string
+  team_slug: string
+  environment_name: string
+}
 
 export interface RepositoryPageProps {
-  repository: Repository
-  affectedApps: AffectedApp[]
+  repository: RepositoryPageRepository
+  affectedApps: RepositoryPageAffectedApp[]
 }
 
 export function RepositoryPage({ repository, affectedApps }: RepositoryPageProps) {

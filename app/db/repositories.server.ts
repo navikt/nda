@@ -33,7 +33,9 @@ export async function getRepositoryByOwnerRepo(
   githubRepoName: string,
 ): Promise<RepositoryLookupResult> {
   const { rows } = await pool.query<Repository>(
-    `SELECT * FROM repositories WHERE github_owner = $1 AND github_repo_name = $2`,
+    `SELECT * FROM repositories WHERE github_owner = $1 AND github_repo_name = $2
+     ORDER BY updated_at DESC
+     LIMIT 1`,
     [githubOwner, githubRepoName],
   )
   const repository = rows[0]
@@ -262,7 +264,7 @@ async function upsertRepositoryRow(
     await client.query(
       `INSERT INTO repository_name_history (repository_id, github_owner, github_repo_name)
        VALUES ($1, $2, $3)
-       ON CONFLICT (repository_id, github_owner, github_repo_name) DO NOTHING`,
+       ON CONFLICT (repository_id, github_owner, github_repo_name) DO UPDATE SET replaced_at = now()`,
       [existing.id, existing.github_owner, existing.github_repo_name],
     )
     const { rows } = await client.query<Repository>(
