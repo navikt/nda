@@ -93,6 +93,17 @@ const syncClientStore = new AsyncLocalStorage<PoolClient>()
 
 export const SYNC_ADVISORY_LOCK_KEY = 839_201_471
 
+const APP_LOCK_NAMESPACE = 1_772_500_003
+const REPO_LOCK_NAMESPACE = 1_772_500_007
+
+export async function lockRepositoryForWrite(client: PoolClient, githubRepoId: bigint | number): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [REPO_LOCK_NAMESPACE, githubRepoId.toString()])
+}
+
+export async function lockAppForWrite(client: PoolClient, monitoredAppId: number): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock($1, $2)', [APP_LOCK_NAMESPACE, monitoredAppId])
+}
+
 export function getSyncClient(): PoolClient | undefined {
   return syncClientStore.getStore()
 }

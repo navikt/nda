@@ -1,21 +1,32 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { UserIdentity } from '~/lib/auth.server'
 import {
-  getAffectedAppsForRepo,
   getAffectedAppsForRepositoryId,
   getEffectiveAuditStartYear,
   getEffectiveDefaultBranch,
   getEffectiveImplicitApprovalSettings,
   getEffectiveSettingsForApp,
   getEffectiveSettingsForApps,
+  getRepoConfigAuditLog,
   getRepositoryByOwnerRepo,
   getRepositoryIdForApp,
   REPOSITORY_SETTING_KEYS,
   recordRepoConfigAuditLog,
   syncRepositoryDefaultBranch,
   updateRepositorySettings,
+  updateRepositorySettingsByRepositoryId,
 } from '../../repositories.server'
 import { seedApp, seedApplicationRepository, seedRepository, truncateAllTables } from './helpers'
+
+const adminActor: UserIdentity = {
+  navIdent: 'Z990001',
+  name: 'Admin Actor',
+  role: 'admin',
+  isActualAdmin: true,
+  adminSuppressed: false,
+  entraGroups: [],
+}
 
 let pool: Pool
 
@@ -164,35 +175,6 @@ describe('effective repository settings resolution', () => {
   })
 })
 
-describe('getAffectedAppsForRepo', () => {
-  it('returns every active app sharing the same github_repo_id', async () => {
-    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
-    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'app-b', environment: 'prod-gcp' })
-    const other = await seedApp(pool, { teamSlug: 'team-c', appName: 'app-c', environment: 'prod-gcp' })
-    for (const [appId, repoId] of [
-      [appA, '4010'],
-      [appB, '4010'],
-      [other, '4011'],
-    ] as const) {
-      await seedApplicationRepository(pool, {
-        monitoredAppId: appId,
-        githubOwner: 'navikt',
-        githubRepo: repoId === '4010' ? 'mono' : 'solo',
-        githubRepoId: repoId,
-      })
-    }
-
-    const affected = await getAffectedAppsForRepo(appA)
-    expect(affected.map((app) => app.id).sort()).toEqual([appA, appB].sort())
-  })
-
-  it('returns an empty list when the repo is not linked', async () => {
-    const appId = await seedApp(pool, { teamSlug: 'team-x', appName: 'app-x', environment: 'prod-gcp' })
-    await seedApplicationRepository(pool, { monitoredAppId: appId, githubOwner: 'navikt', githubRepo: 'x' })
-    expect(await getAffectedAppsForRepo(appId)).toEqual([])
-  })
-})
-
 describe('updateRepositorySettings', () => {
   it('rejects an unknown application', async () => {
     const result = await updateRepositorySettings({
@@ -302,6 +284,139 @@ describe('updateRepositorySettings', () => {
     if (!result.ok) return
     expect(result.changedKeys).toEqual([])
     expect(result.auditStartYearChange).toBeNull()
+  })
+})
+
+describe('updateRepositorySettingsByRepositoryId', () => {
+  it('rejects an unknown repository id', async () => {
+    const result = await updateRepositorySettingsByRepositoryId({
+      repositoryId: 999999,
+      patch: { auditStartYear: 2025 },
+      changedByNavIdent: 'Z990001',
+      actor: adminActor,
+    })
+    expect(result).toEqual({ ok: false, reason: 'repo_not_found' })
+  })
+
+  it('reports repo_not_linked when no active app is linked to the repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '4040',
+      githubOwner: 'navikt',
+      githubRepoName: 'orphan-repo',
+    })
+
+    const result = await updateRepositorySettingsByRepositoryId({
+      repositoryId,
+      patch: { auditStartYear: 2025 },
+      changedByNavIdent: 'Z990001',
+      actor: adminActor,
+    })
+    expect(result).toEqual({ ok: false, reason: 'repo_not_linked' })
+  })
+
+  it('updates settings for every app linked to the repository', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-mono-r', appName: 'app-r-a', environment: 'prod-gcp' })
+    const appB = await seedApp(pool, { teamSlug: 'team-mono-r', appName: 'app-r-b', environment: 'prod-gcp' })
+    for (const appId of [appA, appB]) {
+      await seedApplicationRepository(pool, {
+        monitoredAppId: appId,
+        githubOwner: 'navikt',
+        githubRepo: 'mono-by-repo-id',
+        githubRepoId: '4041',
+      })
+    }
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '4041',
+      githubOwner: 'navikt',
+      githubRepoName: 'mono-by-repo-id',
+    })
+
+    const result = await updateRepositorySettingsByRepositoryId({
+      repositoryId,
+      patch: { auditStartYear: 2023, implicitApprovalMode: 'all', defaultBranch: 'develop' },
+      changedByNavIdent: 'Z990099',
+      actor: adminActor,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.repositoryId).toBe(repositoryId)
+    expect(result.affectedApps.map((app) => app.id).sort()).toEqual([appA, appB].sort())
+    expect(await getEffectiveAuditStartYear(appA)).toBe(2023)
+    expect(await getEffectiveImplicitApprovalSettings(appB)).toEqual({ mode: 'all' })
+    expect(await getEffectiveDefaultBranch(appB)).toBe('develop')
+  })
+
+  it('rejects the update when the actor has no admin access to any linked app', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-unauth-r', appName: 'app-unauth-r', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'unauth-repo',
+      githubRepoId: '4042',
+    })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '4042',
+      githubOwner: 'navikt',
+      githubRepoName: 'unauth-repo',
+    })
+
+    const unauthorizedActor: UserIdentity = {
+      navIdent: 'Z999999',
+      name: 'Unauthorized Actor',
+      role: 'user',
+      isActualAdmin: false,
+      adminSuppressed: false,
+      entraGroups: [],
+    }
+
+    const result = await updateRepositorySettingsByRepositoryId({
+      repositoryId,
+      patch: { auditStartYear: 2025 },
+      changedByNavIdent: unauthorizedActor.navIdent,
+      actor: unauthorizedActor,
+    })
+    expect(result).toEqual({ ok: false, reason: 'unauthorized' })
+  })
+})
+
+describe('getRepoConfigAuditLog', () => {
+  it('returns entries for a repository ordered newest first', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '4050',
+      githubOwner: 'navikt',
+      githubRepoName: 'audit-log-repo',
+    })
+
+    await recordRepoConfigAuditLog({
+      repositoryId,
+      settingKey: REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH,
+      oldValue: null,
+      newValue: { default_branch: 'main' },
+      changedByNavIdent: 'Z990010',
+    })
+    await recordRepoConfigAuditLog({
+      repositoryId,
+      settingKey: REPOSITORY_SETTING_KEYS.AUDIT_START_YEAR,
+      oldValue: null,
+      newValue: { audit_start_year: 2024 },
+      changedByNavIdent: 'Z990011',
+    })
+
+    const entries = await getRepoConfigAuditLog(repositoryId)
+    expect(entries.map((e) => e.setting_key)).toEqual([
+      REPOSITORY_SETTING_KEYS.AUDIT_START_YEAR,
+      REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH,
+    ])
+  })
+
+  it('returns an empty array for a repository with no logged changes', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '4051',
+      githubOwner: 'navikt',
+      githubRepoName: 'no-audit-log-repo',
+    })
+    expect(await getRepoConfigAuditLog(repositoryId)).toEqual([])
   })
 })
 
@@ -491,6 +606,36 @@ describe('getAffectedAppsForRepositoryId', () => {
       githubOwner: 'navikt',
       githubRepoName: 'unlinked-repo',
     })
+
+    expect(await getAffectedAppsForRepositoryId(repositoryId)).toEqual([])
+  })
+
+  it('excludes an app whose latest active link (by created_at) points to a different repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '7090',
+      githubOwner: 'navikt',
+      githubRepoName: 'target-repo',
+    })
+    const appId = await seedApp(pool, { teamSlug: 'team-moved', appName: 'app-moved', environment: 'prod-gcp' })
+
+    const olderLinkId = await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'target-repo',
+      githubRepoId: '7090',
+      status: 'active',
+    })
+    const newerLinkId = await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'other-repo',
+      githubRepoId: '7091',
+      status: 'active',
+    })
+    await pool.query(`UPDATE application_repositories SET created_at = now() - interval '1 day' WHERE id = $1`, [
+      olderLinkId,
+    ])
+    await pool.query(`UPDATE application_repositories SET created_at = now() WHERE id = $1`, [newerLinkId])
 
     expect(await getAffectedAppsForRepositoryId(repositoryId)).toEqual([])
   })

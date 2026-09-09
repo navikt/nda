@@ -15,25 +15,53 @@ interface MarkerRow {
   monitored_app_id: number
 }
 
-interface RepoScope {
+export interface RepoScope {
   owner: string
   repo: string
+  repositoryId?: number
 }
 
-type RepoScopeResolution = { kind: 'none' } | { kind: 'ambiguous' } | { kind: 'scoped'; scope: RepoScope }
+type RepoScopeResolution = { kind: 'none' } | { kind: 'ambiguous' } | { kind: 'scoped'; scope: RepoScope[] }
 
 async function resolveRepoScope(client: PoolClient, appIds: number[]): Promise<RepoScopeResolution> {
-  const { rows } = await client.query<{ github_owner: string; github_repo_name: string }>(
-    `SELECT DISTINCT github_owner, github_repo_name
-     FROM application_repositories
-     WHERE monitored_app_id = ANY($1) AND status = 'active'`,
+  const { rows } = await client.query<{ github_owner: string; github_repo_name: string; repository_id: number | null }>(
+    `SELECT DISTINCT ar.github_owner, ar.github_repo_name, r.id AS repository_id
+     FROM application_repositories ar
+     LEFT JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+     WHERE ar.monitored_app_id = ANY($1) AND ar.status = 'active'`,
     [appIds],
   )
   if (rows.length === 0) return { kind: 'none' }
   if (rows.length > 1) return { kind: 'ambiguous' }
   const row = rows[0]
   if (!row) return { kind: 'none' }
-  return { kind: 'scoped', scope: { owner: row.github_owner, repo: row.github_repo_name } }
+  return {
+    kind: 'scoped',
+    scope: [{ owner: row.github_owner, repo: row.github_repo_name, repositoryId: row.repository_id ?? undefined }],
+  }
+}
+
+async function withHistoricalNames(client: PoolClient, scopes: RepoScope[]): Promise<RepoScope[]> {
+  const expanded: RepoScope[] = [...scopes]
+  for (const scope of scopes) {
+    if (scope.repositoryId === undefined) continue
+    const { rows } = await client.query<{ github_owner: string; github_repo_name: string }>(
+      `SELECT rnh.github_owner, rnh.github_repo_name
+       FROM repository_name_history rnh
+       WHERE rnh.repository_id = $1`,
+      [scope.repositoryId],
+    )
+    for (const row of rows) {
+      const { rows: claimedByOther } = await client.query<{ id: number }>(
+        `SELECT id FROM repositories
+         WHERE github_owner = $1 AND github_repo_name = $2 AND id != $3`,
+        [row.github_owner, row.github_repo_name, scope.repositoryId],
+      )
+      if (claimedByOther.length > 0) continue
+      expanded.push({ owner: row.github_owner, repo: row.github_repo_name, repositoryId: scope.repositoryId })
+    }
+  }
+  return expanded
 }
 
 async function insertStatusHistory(
@@ -70,21 +98,27 @@ export interface AuditStartYearChangeResult {
   recomputeSkippedDueToAmbiguousRepoScope: boolean
 }
 
-function appendRepoScope(params: unknown[], repoScope: RepoScope | null): string {
-  if (!repoScope) return ''
-  const ownerIdx = params.length + 1
-  const repoIdx = params.length + 2
-  params.push(repoScope.owner, repoScope.repo)
-  return ` AND d.detected_github_owner = $${ownerIdx} AND d.detected_github_repo_name = $${repoIdx}`
+function appendRepoScope(params: unknown[], repoScopes: RepoScope[] | null): string {
+  if (!repoScopes || repoScopes.length === 0) return ''
+  const pairs = repoScopes.map((scope) => {
+    const ownerIdx = params.length + 1
+    const repoIdx = params.length + 2
+    params.push(scope.owner, scope.repo)
+    return `(d.detected_github_owner = $${ownerIdx} AND d.detected_github_repo_name = $${repoIdx})`
+  })
+  return ` AND (${pairs.join(' OR ')})`
 }
 
-function appendMarkerRepoScope(params: unknown[], repoScope: RepoScope | null): string {
-  if (!repoScope) return ''
-  const ownerIdx = params.length + 1
-  const repoIdx = params.length + 2
-  params.push(repoScope.owner, repoScope.repo)
+function appendMarkerRepoScope(params: unknown[], repoScopes: RepoScope[] | null): string {
+  if (!repoScopes || repoScopes.length === 0) return ''
+  const pairs = repoScopes.map((scope) => {
+    const ownerIdx = params.length + 1
+    const repoIdx = params.length + 2
+    params.push(scope.owner, scope.repo)
+    return `(d.detected_github_owner = $${ownerIdx} AND d.detected_github_repo_name = $${repoIdx})`
+  })
   return ` AND (
-    (d.detected_github_owner = $${ownerIdx} AND d.detected_github_repo_name = $${repoIdx})
+    ${pairs.join(' OR ')}
     OR (d.detected_github_owner IS NULL AND d.detected_github_repo_name IS NULL)
   )`
 }
@@ -92,7 +126,7 @@ function appendMarkerRepoScope(params: unknown[], repoScope: RepoScope | null): 
 async function recomputeBaseline(
   client: PoolClient,
   appIds: number[],
-  repoScope: RepoScope | null,
+  repoScope: RepoScope[] | null,
   newAuditStartYear: number | null,
   adminNavIdent: string,
   previousAuditStartYearByAppId: Map<number, number | null>,
@@ -187,12 +221,15 @@ export async function applyAuditStartYearChangeForApps(
   previousAuditStartYear: number | null,
   newAuditStartYear: number | null,
   adminNavIdent: string,
+  explicitRepoScope?: RepoScope,
 ): Promise<AuditStartYearChangeResult> {
   const previousAuditStartYearByAppId = new Map<number, number | null>(
     targetAppIds.map((id) => [id, previousAuditStartYear]),
   )
 
-  const repoScopeResolution = await resolveRepoScope(client, targetAppIds)
+  const repoScopeResolution: RepoScopeResolution = explicitRepoScope
+    ? { kind: 'scoped', scope: [explicitRepoScope] }
+    : await resolveRepoScope(client, targetAppIds)
 
   if (repoScopeResolution.kind === 'ambiguous') {
     return {
@@ -204,7 +241,8 @@ export async function applyAuditStartYearChangeForApps(
     }
   }
 
-  const repoScope = repoScopeResolution.kind === 'scoped' ? repoScopeResolution.scope : null
+  const resolvedScope = repoScopeResolution.kind === 'scoped' ? repoScopeResolution.scope : null
+  const repoScope = resolvedScope ? await withHistoricalNames(client, resolvedScope) : null
   const recomputeLimitedToActingApp = !repoScope && targetAppIds.length > 1
   const recomputeScopeAppIds = recomputeLimitedToActingApp ? [appId] : targetAppIds
 

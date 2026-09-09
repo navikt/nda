@@ -1,4 +1,5 @@
-import { pool } from '~/db/connection.server'
+import type { PoolClient } from 'pg'
+import { pool, withTransaction } from '~/db/connection.server'
 import type { MonitoredApplication } from '~/db/monitored-applications.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getUserRoles } from '~/db/role-assignments.server'
@@ -6,6 +7,8 @@ import type { UserIdentity } from './auth.server'
 import { requireUser } from './auth.server'
 import type { TeamRole } from './authorization-types'
 import { isTeamLeaderRole } from './authorization-types'
+
+type Queryable = Pick<PoolClient, 'query'>
 
 function isEntraAdmin(actor: UserIdentity): boolean {
   return actor.role === 'admin'
@@ -155,10 +158,14 @@ export async function canAccessRepositorySettingsAdmin(actor: UserIdentity, moni
   return canAccessAllAppsAdmin(actor, [...siblingIds])
 }
 
-async function canAccessAllAppsAdmin(actor: UserIdentity, monitoredAppIds: number[]): Promise<boolean> {
+async function canAccessAllAppsAdmin(
+  actor: UserIdentity,
+  monitoredAppIds: number[],
+  queryable: Queryable = pool,
+): Promise<boolean> {
   if (isEntraAdmin(actor)) return true
 
-  const { rows } = await pool.query<{ monitored_app_id: number; dev_team_id: number }>(
+  const { rows } = await queryable.query<{ monitored_app_id: number; dev_team_id: number }>(
     `SELECT dta.monitored_app_id, dta.dev_team_id
      FROM dev_team_applications dta
      JOIN dev_teams dt ON dt.id = dta.dev_team_id AND dt.is_active = true
@@ -183,13 +190,65 @@ async function canAccessAllAppsAdmin(actor: UserIdentity, monitoredAppIds: numbe
     managingTeamIdsByApp.get(row.monitored_app_id)?.add(row.dev_team_id)
   }
 
-  const { teamRoles } = await getUserRoles(actor.navIdent)
+  const { teamRoles } = await getUserRoles(actor.navIdent, queryable)
 
   return monitoredAppIds.every((appId) => {
     const managingTeamIds = managingTeamIdsByApp.get(appId)
     if (!managingTeamIds || managingTeamIds.size === 0) return false
     return teamRoles.some((r) => managingTeamIds.has(r.dev_team_id) && isTeamLeaderRole(r.role))
   })
+}
+
+export interface RepositoryAdminAccess {
+  authorized: boolean
+  affectedApps: { id: number; app_name: string; team_slug: string; environment_name: string }[]
+}
+
+export async function resolveRepositoryAdminAccess(
+  actor: UserIdentity,
+  repositoryId: number,
+): Promise<RepositoryAdminAccess> {
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+    const { rows } = await client.query<{ id: number; app_name: string; team_slug: string; environment_name: string }>(
+      `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name
+       FROM (
+         SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
+         FROM application_repositories
+         WHERE status = 'active'
+         ORDER BY monitored_app_id, created_at DESC, id DESC
+       ) latest
+       JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
+       JOIN repositories r ON r.github_repo_id = latest.github_repo_id
+       WHERE ma.is_active = true AND r.id = $1
+       ORDER BY ma.environment_name, ma.team_slug, ma.app_name`,
+      [repositoryId],
+    )
+
+    if (isEntraAdmin(actor)) return { authorized: true, affectedApps: rows }
+    if (rows.length === 0) return { authorized: false, affectedApps: rows }
+
+    const authorized = await canAccessAllAppsAdmin(
+      actor,
+      rows.map((row) => row.id),
+      client,
+    )
+    return { authorized, affectedApps: rows }
+  })
+}
+
+export async function canAccessRepositoryAdmin(actor: UserIdentity, repositoryId: number): Promise<boolean> {
+  const { authorized } = await resolveRepositoryAdminAccess(actor, repositoryId)
+  return authorized
+}
+
+export async function canAccessAppsAdmin(
+  actor: UserIdentity,
+  monitoredAppIds: number[],
+  queryable: Queryable,
+): Promise<boolean> {
+  if (monitoredAppIds.length === 0) return false
+  return canAccessAllAppsAdmin(actor, monitoredAppIds, queryable)
 }
 
 export interface AppAdminAccess {

@@ -1,9 +1,12 @@
 import type { PoolClient } from 'pg'
+import type { UserIdentity } from '~/lib/auth.server'
+import { canAccessAppsAdmin } from '~/lib/authorization.server'
 import { logger } from '~/lib/logger.server'
+import { REPOSITORY_SETTING_KEYS } from '~/lib/repository-setting-keys'
 import { type EffectiveRepositorySettings, resolveEffectiveSettings } from '~/lib/repository-settings'
 import { type ImplicitApprovalMode, isImplicitApprovalMode } from '~/lib/verification/types'
-import type { AuditStartYearChangeResult } from './audit-start-year-baseline.server'
-import { pool, withTransaction } from './connection.server'
+import type { AuditStartYearChangeResult, RepoScope } from './audit-start-year-baseline.server'
+import { lockAppForWrite, lockRepositoryForWrite, pool, withTransaction } from './connection.server'
 
 export interface Repository {
   id: number
@@ -62,22 +65,47 @@ export async function getRepositoryByOwnerRepo(
 
 export async function getAffectedAppsForRepositoryId(repositoryId: number): Promise<AffectedApp[]> {
   const { rows } = await pool.query<AffectedApp>(
-    `SELECT DISTINCT ma.id, ma.app_name, ma.team_slug, ma.environment_name
-     FROM application_repositories ar
-     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
-     JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-     WHERE ar.status = 'active' AND ma.is_active = true AND r.id = $1
+    `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name
+     FROM (
+       SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
+       FROM application_repositories
+       WHERE status = 'active'
+       ORDER BY monitored_app_id, created_at DESC, id DESC
+     ) latest
+     JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
+     JOIN repositories r ON r.github_repo_id = latest.github_repo_id
+     WHERE ma.is_active = true AND r.id = $1
      ORDER BY ma.environment_name, ma.team_slug, ma.app_name`,
     [repositoryId],
   )
   return rows
 }
 
-export const REPOSITORY_SETTING_KEYS = {
-  AUDIT_START_YEAR: 'audit_start_year',
-  IMPLICIT_APPROVAL: 'implicit_approval',
-  DEFAULT_BRANCH: 'default_branch',
-} as const
+export async function getRepositoryById(repositoryId: number): Promise<Repository | null> {
+  const { rows } = await pool.query<Repository>(`SELECT * FROM repositories WHERE id = $1`, [repositoryId])
+  return rows[0] ?? null
+}
+
+export async function isCurrentOrHistoricalNameForRepositoryId(
+  repositoryId: number,
+  githubOwner: string,
+  githubRepoName: string,
+): Promise<boolean> {
+  const { rows: currentRows } = await pool.query<{ id: number }>(
+    `SELECT id FROM repositories WHERE id = $1 AND github_owner = $2 AND github_repo_name = $3`,
+    [repositoryId, githubOwner, githubRepoName],
+  )
+  if (currentRows.length > 0) return true
+
+  const { rows: historyRows } = await pool.query<{ id: number }>(
+    `SELECT repository_id AS id FROM repository_name_history
+     WHERE repository_id = $1 AND github_owner = $2 AND github_repo_name = $3`,
+    [repositoryId, githubOwner, githubRepoName],
+  )
+  return historyRows.length > 0
+}
+
+export { REPOSITORY_SETTING_KEYS }
 
 type Queryable = Pick<PoolClient, 'query'>
 
@@ -88,6 +116,7 @@ async function applyAuditStartYearChangeForAppsLazy(
   previousAuditStartYear: number | null,
   newAuditStartYear: number | null,
   adminNavIdent: string,
+  explicitRepoScope?: RepoScope,
 ): Promise<AuditStartYearChangeResult> {
   const { applyAuditStartYearChangeForApps } = await import('./audit-start-year-baseline.server')
   return applyAuditStartYearChangeForApps(
@@ -97,6 +126,7 @@ async function applyAuditStartYearChangeForAppsLazy(
     previousAuditStartYear,
     newAuditStartYear,
     adminNavIdent,
+    explicitRepoScope,
   )
 }
 
@@ -120,7 +150,7 @@ const EFFECTIVE_SETTINGS_SELECT = `
   LEFT JOIN LATERAL (
     SELECT ar.github_repo_id
     FROM application_repositories ar
-    WHERE ar.monitored_app_id = ma.id AND ar.status = 'active' AND ar.github_repo_id IS NOT NULL
+    WHERE ar.monitored_app_id = ma.id AND ar.status = 'active'
     ORDER BY ar.created_at DESC, ar.id DESC
     LIMIT 1
   ) active_repo ON true
@@ -195,19 +225,19 @@ async function getActiveRepoLink(
   monitoredAppId: number,
 ): Promise<{ githubRepoId: string; githubOwner: string; githubRepoName: string } | null> {
   const { rows } = await queryable.query<{
-    github_repo_id: string
+    github_repo_id: string | null
     github_owner: string
     github_repo_name: string
   }>(
     `SELECT github_repo_id, github_owner, github_repo_name
      FROM application_repositories
-     WHERE monitored_app_id = $1 AND status = 'active' AND github_repo_id IS NOT NULL
+     WHERE monitored_app_id = $1 AND status = 'active'
      ORDER BY created_at DESC, id DESC
      LIMIT 1`,
     [monitoredAppId],
   )
   const row = rows[0]
-  if (!row) return null
+  if (!row || row.github_repo_id === null) return null
   return { githubRepoId: row.github_repo_id, githubOwner: row.github_owner, githubRepoName: row.github_repo_name }
 }
 
@@ -224,28 +254,49 @@ export async function getRepositoryIdForApp(monitoredAppId: number, client?: Poo
 
 async function getAppIdsForGithubRepoId(queryable: Queryable, githubRepoId: string): Promise<number[]> {
   const { rows } = await queryable.query<{ id: number }>(
-    `SELECT DISTINCT ma.id
-     FROM application_repositories ar
-     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
-     WHERE ar.status = 'active' AND ma.is_active = true AND ar.github_repo_id = $1`,
+    `SELECT ma.id
+     FROM (
+       SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
+       FROM application_repositories
+       WHERE status = 'active'
+       ORDER BY monitored_app_id, created_at DESC, id DESC
+     ) latest
+     JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
+     WHERE ma.is_active = true AND latest.github_repo_id = $1`,
     [githubRepoId],
   )
   return rows.map((row) => row.id)
 }
 
-export async function getAffectedAppsForRepo(monitoredAppId: number): Promise<AffectedApp[]> {
-  const link = await getActiveRepoLink(pool, monitoredAppId)
-  if (!link) return []
+async function lockAppsAndRepoForGithubRepoId(
+  client: PoolClient,
+  githubRepoId: string,
+  additionalAppId?: number,
+): Promise<number[]> {
+  let appIds = await getAppIdsForGithubRepoId(client, githubRepoId)
 
-  const { rows } = await pool.query<AffectedApp>(
-    `SELECT DISTINCT ma.id, ma.app_name, ma.team_slug, ma.environment_name
-     FROM application_repositories ar
-     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
-     WHERE ar.status = 'active' AND ar.github_repo_id = $1 AND (ma.is_active = true OR ma.id = $2)
-     ORDER BY ma.environment_name, ma.team_slug, ma.app_name`,
-    [link.githubRepoId, monitoredAppId],
-  )
-  return rows
+  for (let i = 0; i < 10; i++) {
+    const probeAppIds = await getAppIdsForGithubRepoId(client, githubRepoId)
+    const stableBeforeLocking = probeAppIds.length === appIds.length && probeAppIds.every((id) => appIds.includes(id))
+    if (stableBeforeLocking) {
+      const lockSet = Array.from(new Set(additionalAppId ? [...appIds, additionalAppId] : appIds)).sort((a, b) => a - b)
+      for (const appId of lockSet) {
+        await lockAppForWrite(client, appId)
+      }
+      await lockRepositoryForWrite(client, BigInt(githubRepoId))
+
+      const freshAppIds = await getAppIdsForGithubRepoId(client, githubRepoId)
+      const stableAfterLocking = freshAppIds.length === appIds.length && freshAppIds.every((id) => appIds.includes(id))
+      if (stableAfterLocking) return freshAppIds
+
+      throw new Error(
+        `App set for github repo ${githubRepoId} changed after acquiring the repository lock; retry in a new transaction`,
+      )
+    }
+    appIds = probeAppIds
+  }
+
+  throw new Error(`Could not reach a stable app set for github repo ${githubRepoId} after multiple attempts`)
 }
 
 async function upsertRepositoryRow(
@@ -253,7 +304,7 @@ async function upsertRepositoryRow(
   link: { githubRepoId: string; githubOwner: string; githubRepoName: string },
 ): Promise<Repository> {
   const { rows: existingRows } = await client.query<Repository>(
-    `SELECT * FROM repositories WHERE github_repo_id = $1`,
+    `SELECT * FROM repositories WHERE github_repo_id = $1 FOR UPDATE`,
     [link.githubRepoId],
   )
   const existing = existingRows[0]
@@ -322,6 +373,29 @@ export async function recordRepoConfigAuditLog(
   )
 }
 
+export interface RepoConfigAuditLogEntry {
+  id: number
+  repository_id: number
+  changed_by_nav_ident: string
+  changed_by_name: string | null
+  setting_key: string
+  old_value: Record<string, unknown> | null
+  new_value: Record<string, unknown>
+  change_reason: string | null
+  created_at: Date
+}
+
+export async function getRepoConfigAuditLog(
+  repositoryId: number,
+  options?: { limit?: number },
+): Promise<RepoConfigAuditLogEntry[]> {
+  const { rows } = await pool.query<RepoConfigAuditLogEntry>(
+    `SELECT * FROM repo_config_audit_log WHERE repository_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
+    [repositoryId, options?.limit ?? 20],
+  )
+  return rows
+}
+
 export interface RepositorySettingsPatch {
   auditStartYear?: number | null
   implicitApprovalMode?: ImplicitApprovalMode
@@ -329,7 +403,7 @@ export interface RepositorySettingsPatch {
 }
 
 export type UpdateRepositorySettingsResult =
-  | { ok: false; reason: 'app_not_found' | 'repo_not_linked' }
+  | { ok: false; reason: 'app_not_found' | 'repo_not_found' | 'repo_not_linked' | 'unauthorized' }
   | {
       ok: true
       repositoryId: number
@@ -348,6 +422,7 @@ export async function updateRepositorySettings(params: {
   const { monitoredAppId, patch, changedByNavIdent, changedByName, changeReason } = params
 
   return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
     const { rows: appRows } = await client.query<{ id: number }>(
       `SELECT id FROM monitored_applications WHERE id = $1`,
       [monitoredAppId],
@@ -356,106 +431,182 @@ export async function updateRepositorySettings(params: {
       return { ok: false, reason: 'app_not_found' }
     }
 
+    await lockAppForWrite(client, monitoredAppId)
+
     const link = await getActiveRepoLink(client, monitoredAppId)
     if (!link) {
       return { ok: false, reason: 'repo_not_linked' }
     }
 
+    const targetAppIds = await lockAppsAndRepoForGithubRepoId(client, link.githubRepoId, monitoredAppId)
     const repository = await upsertRepositoryRow(client, link)
-    const appIds = await getAppIdsForGithubRepoId(client, link.githubRepoId)
-    const targetAppIds = appIds.includes(monitoredAppId) ? appIds : [...appIds, monitoredAppId]
 
-    const changedKeys: string[] = []
-    let auditStartYearChange: AuditStartYearChangeResult | null = null
-
-    if (patch.auditStartYear !== undefined && patch.auditStartYear !== repository.audit_start_year) {
-      await client.query(`UPDATE repositories SET audit_start_year = $1, updated_at = now() WHERE id = $2`, [
-        patch.auditStartYear,
-        repository.id,
-      ])
-      await recordRepoConfigAuditLog(
-        {
-          repositoryId: repository.id,
-          settingKey: REPOSITORY_SETTING_KEYS.AUDIT_START_YEAR,
-          oldValue: { audit_start_year: repository.audit_start_year },
-          newValue: { audit_start_year: patch.auditStartYear },
-          changedByNavIdent,
-          changedByName,
-          changeReason,
-        },
-        client,
-      )
-      auditStartYearChange = await applyAuditStartYearChangeForAppsLazy(
-        client,
-        monitoredAppId,
-        targetAppIds,
-        repository.audit_start_year,
-        patch.auditStartYear,
-        changedByNavIdent,
-      )
-      changedKeys.push(REPOSITORY_SETTING_KEYS.AUDIT_START_YEAR)
-    }
-
-    if (patch.implicitApprovalMode !== undefined && patch.implicitApprovalMode !== repository.implicit_approval_mode) {
-      await client.query(`UPDATE repositories SET implicit_approval_mode = $1, updated_at = now() WHERE id = $2`, [
-        patch.implicitApprovalMode,
-        repository.id,
-      ])
-      await recordRepoConfigAuditLog(
-        {
-          repositoryId: repository.id,
-          settingKey: REPOSITORY_SETTING_KEYS.IMPLICIT_APPROVAL,
-          oldValue: { mode: repository.implicit_approval_mode },
-          newValue: { mode: patch.implicitApprovalMode },
-          changedByNavIdent,
-          changedByName,
-          changeReason,
-        },
-        client,
-      )
-      changedKeys.push(REPOSITORY_SETTING_KEYS.IMPLICIT_APPROVAL)
-    }
-
-    if (patch.defaultBranch !== undefined && patch.defaultBranch !== repository.default_branch) {
-      await client.query(`UPDATE repositories SET default_branch = $1, updated_at = now() WHERE id = $2`, [
-        patch.defaultBranch,
-        repository.id,
-      ])
-      await recordRepoConfigAuditLog(
-        {
-          repositoryId: repository.id,
-          settingKey: REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH,
-          oldValue: { default_branch: repository.default_branch },
-          newValue: { default_branch: patch.defaultBranch },
-          changedByNavIdent,
-          changedByName,
-          changeReason,
-        },
-        client,
-      )
-      await client.query(
-        `UPDATE monitored_applications SET default_branch = $1, updated_at = now() WHERE id = ANY($2::int[])`,
-        [patch.defaultBranch, targetAppIds],
-      )
-      changedKeys.push(REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH)
-    }
-
-    const { rows: affectedApps } = await client.query<AffectedApp>(
-      `SELECT id, app_name, team_slug, environment_name
-       FROM monitored_applications
-       WHERE id = ANY($1::int[])
-       ORDER BY environment_name, team_slug, app_name`,
-      [targetAppIds],
-    )
-
-    return {
-      ok: true,
-      repositoryId: repository.id,
-      changedKeys,
-      affectedApps,
-      auditStartYearChange,
-    }
+    return applyRepositorySettingsPatch(client, {
+      repository,
+      targetAppIds,
+      actingAppId: monitoredAppId,
+      patch,
+      changedByNavIdent,
+      changedByName,
+      changeReason,
+    })
   })
+}
+
+export async function updateRepositorySettingsByRepositoryId(params: {
+  repositoryId: number
+  patch: RepositorySettingsPatch
+  changedByNavIdent: string
+  changedByName?: string
+  changeReason?: string
+  actor: UserIdentity
+}): Promise<UpdateRepositorySettingsResult> {
+  const { repositoryId, patch, changedByNavIdent, changedByName, changeReason, actor } = params
+
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+    const { rows: repoRows } = await client.query<Repository>(`SELECT * FROM repositories WHERE id = $1`, [
+      repositoryId,
+    ])
+    const initialRepository = repoRows[0]
+    if (!initialRepository) {
+      return { ok: false, reason: 'repo_not_found' }
+    }
+
+    const targetAppIds = await lockAppsAndRepoForGithubRepoId(client, initialRepository.github_repo_id)
+    if (targetAppIds.length === 0) {
+      return { ok: false, reason: 'repo_not_linked' }
+    }
+
+    if (!(await canAccessAppsAdmin(actor, targetAppIds, client))) {
+      return { ok: false, reason: 'unauthorized' }
+    }
+
+    const { rows: freshRepoRows } = await client.query<Repository>(`SELECT * FROM repositories WHERE id = $1`, [
+      repositoryId,
+    ])
+    const repository = freshRepoRows[0]
+    if (!repository) {
+      return { ok: false, reason: 'repo_not_found' }
+    }
+
+    return applyRepositorySettingsPatch(client, {
+      repository,
+      targetAppIds,
+      actingAppId: targetAppIds[0],
+      patch,
+      changedByNavIdent,
+      changedByName,
+      changeReason,
+    })
+  })
+}
+
+async function applyRepositorySettingsPatch(
+  client: PoolClient,
+  params: {
+    repository: Repository
+    targetAppIds: number[]
+    actingAppId: number
+    patch: RepositorySettingsPatch
+    changedByNavIdent: string
+    changedByName?: string
+    changeReason?: string
+  },
+): Promise<UpdateRepositorySettingsResult> {
+  const { repository, targetAppIds, actingAppId, patch, changedByNavIdent, changedByName, changeReason } = params
+
+  const changedKeys: string[] = []
+  let auditStartYearChange: AuditStartYearChangeResult | null = null
+
+  if (patch.auditStartYear !== undefined && patch.auditStartYear !== repository.audit_start_year) {
+    await client.query(`UPDATE repositories SET audit_start_year = $1, updated_at = now() WHERE id = $2`, [
+      patch.auditStartYear,
+      repository.id,
+    ])
+    await recordRepoConfigAuditLog(
+      {
+        repositoryId: repository.id,
+        settingKey: REPOSITORY_SETTING_KEYS.AUDIT_START_YEAR,
+        oldValue: { audit_start_year: repository.audit_start_year },
+        newValue: { audit_start_year: patch.auditStartYear },
+        changedByNavIdent,
+        changedByName,
+        changeReason,
+      },
+      client,
+    )
+    auditStartYearChange = await applyAuditStartYearChangeForAppsLazy(
+      client,
+      actingAppId,
+      targetAppIds,
+      repository.audit_start_year,
+      patch.auditStartYear,
+      changedByNavIdent,
+      { owner: repository.github_owner, repo: repository.github_repo_name, repositoryId: repository.id },
+    )
+    changedKeys.push(REPOSITORY_SETTING_KEYS.AUDIT_START_YEAR)
+  }
+
+  if (patch.implicitApprovalMode !== undefined && patch.implicitApprovalMode !== repository.implicit_approval_mode) {
+    await client.query(`UPDATE repositories SET implicit_approval_mode = $1, updated_at = now() WHERE id = $2`, [
+      patch.implicitApprovalMode,
+      repository.id,
+    ])
+    await recordRepoConfigAuditLog(
+      {
+        repositoryId: repository.id,
+        settingKey: REPOSITORY_SETTING_KEYS.IMPLICIT_APPROVAL,
+        oldValue: { mode: repository.implicit_approval_mode },
+        newValue: { mode: patch.implicitApprovalMode },
+        changedByNavIdent,
+        changedByName,
+        changeReason,
+      },
+      client,
+    )
+    changedKeys.push(REPOSITORY_SETTING_KEYS.IMPLICIT_APPROVAL)
+  }
+
+  if (patch.defaultBranch !== undefined && patch.defaultBranch !== repository.default_branch) {
+    await client.query(`UPDATE repositories SET default_branch = $1, updated_at = now() WHERE id = $2`, [
+      patch.defaultBranch,
+      repository.id,
+    ])
+    await recordRepoConfigAuditLog(
+      {
+        repositoryId: repository.id,
+        settingKey: REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH,
+        oldValue: { default_branch: repository.default_branch },
+        newValue: { default_branch: patch.defaultBranch },
+        changedByNavIdent,
+        changedByName,
+        changeReason,
+      },
+      client,
+    )
+    await client.query(
+      `UPDATE monitored_applications SET default_branch = $1, updated_at = now() WHERE id = ANY($2::int[])`,
+      [patch.defaultBranch, targetAppIds],
+    )
+    changedKeys.push(REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH)
+  }
+
+  const { rows: affectedApps } = await client.query<AffectedApp>(
+    `SELECT id, app_name, team_slug, environment_name
+     FROM monitored_applications
+     WHERE id = ANY($1::int[])
+     ORDER BY environment_name, team_slug, app_name`,
+    [targetAppIds],
+  )
+
+  return {
+    ok: true,
+    repositoryId: repository.id,
+    changedKeys,
+    affectedApps,
+    auditStartYearChange,
+  }
 }
 
 export async function syncRepositoryDefaultBranch(params: {
@@ -466,6 +617,8 @@ export async function syncRepositoryDefaultBranch(params: {
   const { monitoredAppId, defaultBranch, syncedAt } = params
 
   return withTransaction(async (client) => {
+    await lockAppForWrite(client, monitoredAppId)
+
     const link = await getActiveRepoLink(client, monitoredAppId)
     if (!link) return false
 

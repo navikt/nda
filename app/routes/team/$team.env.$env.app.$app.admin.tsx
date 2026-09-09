@@ -1,7 +1,7 @@
 import { CogIcon } from '@navikt/aksel-icons'
-import { Alert, BodyShort, Box, Heading, HStack, Loader, VStack } from '@navikt/ds-react'
+import { Link as AkselLink, Alert, BodyShort, Box, Heading, HStack, Loader, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
-import { useFetcher, useNavigation, useRevalidator } from 'react-router'
+import { Link, useFetcher, useNavigation, useRevalidator } from 'react-router'
 import { AuditReportGenerateSection } from '~/components/AuditReportGenerateSection'
 import { AuditReportList } from '~/components/AuditReportList'
 import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
@@ -9,18 +9,15 @@ import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { getAppConfigAuditLog } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getGitHubDataStatsForApp } from '~/db/github-data.server'
-import { getAffectedAppsForRepo, getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { getEffectiveSettingsForApp, getRepositoryById } from '~/db/repositories.server'
 import type { SyncJob } from '~/db/sync-job-types'
 import { getLatestSyncJob } from '~/db/sync-jobs.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
-import { canAccessRepositorySettingsAdmin, requireAppAdminAccess } from '~/lib/authorization.server'
+import { requireAppAdminAccess, resolveRepositoryAdminAccess } from '~/lib/authorization.server'
 import type { UserLookupMap } from '~/lib/user-display'
-import { AuditStartYearSettings } from '~/routes/team/$team.env.$env.app.$app.admin/AuditStartYearSettings'
 import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
-import { DefaultBranchSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DefaultBranchSettings'
 import { DeployNotificationSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DeployNotificationSettings'
 import { FetchVerificationDataSection } from '~/routes/team/$team.env.$env.app.$app.admin/FetchVerificationDataSection'
-import { ImplicitApprovalSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ImplicitApprovalSettings'
 import { RecentConfigChanges } from '~/routes/team/$team.env.$env.app.$app.admin/RecentConfigChanges'
 import { ReminderSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ReminderSettings'
 import { Reverifisering } from '~/routes/team/$team.env.$env.app.$app.admin/Reverifisering'
@@ -39,19 +36,27 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const isProdApp = app.environment_name.startsWith('prod-')
 
-  const [effectiveSettings, canAccessRepoSettings, recentConfigChanges, auditReports, latestFetchJob] =
-    await Promise.all([
-      getEffectiveSettingsForApp(app.id),
-      canAccessRepositorySettingsAdmin(user, app.id),
-      getAppConfigAuditLog(app.id, { limit: 10 }),
-      getAuditReportsForAppAdmin(app.id),
-      getLatestSyncJob(app.id, 'fetch_verification_data'),
-    ])
-  const affectedApps = canAccessRepoSettings ? await getAffectedAppsForRepo(app.id) : []
-  const implicitApprovalSettings = effectiveSettings.implicitApprovalSettings
+  const [effectiveSettings, recentConfigChanges, auditReports, latestFetchJob] = await Promise.all([
+    getEffectiveSettingsForApp(app.id),
+    getAppConfigAuditLog(app.id, { limit: 10 }),
+    getAuditReportsForAppAdmin(app.id),
+    getLatestSyncJob(app.id, 'fetch_verification_data'),
+  ])
   const auditStartYear = effectiveSettings.auditStartYear
-  const defaultBranch = effectiveSettings.defaultBranch
   const repositoryId = effectiveSettings.repositoryId
+  const repositoryRow = repositoryId !== null ? await getRepositoryById(repositoryId) : null
+  const repoAdminAccess = repositoryRow !== null ? await resolveRepositoryAdminAccess(user, repositoryRow.id) : null
+  const canAccessRepoAdminPage = repoAdminAccess?.authorized ?? false
+  const affectedAppCount = canAccessRepoAdminPage ? (repoAdminAccess?.affectedApps.length ?? 0) : 0
+  const repository =
+    repositoryRow !== null && canAccessRepoAdminPage
+      ? {
+          id: repositoryRow.id,
+          github_owner: repositoryRow.github_owner,
+          github_repo_name: repositoryRow.github_repo_name,
+        }
+      : null
+  const hasRepository = repositoryRow !== null
 
   const [githubDataStats, userMappings] = await Promise.all([
     getGitHubDataStatsForApp(app.id, auditStartYear),
@@ -73,11 +78,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   return {
     app,
-    implicitApprovalSettings,
     auditStartYear,
-    defaultBranch,
-    repositoryId,
-    affectedApps,
+    repository,
+    hasRepository,
+    affectedAppCount,
+    canAccessRepoAdminPage,
     recentConfigChanges,
     auditReports,
     isProdApp,
@@ -90,11 +95,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 export default function AppAdmin({ loaderData, actionData }: Route.ComponentProps) {
   const {
     app,
-    implicitApprovalSettings,
     auditStartYear,
-    defaultBranch,
-    repositoryId,
-    affectedApps,
+    repository,
+    hasRepository,
+    affectedAppCount,
+    canAccessRepoAdminPage,
     recentConfigChanges,
     auditReports,
     isProdApp,
@@ -275,21 +280,35 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
 
       {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="panel" canDeactivate appId={app.id} />}
 
-      <DefaultBranchSettings app={app} defaultBranch={defaultBranch} affectedApps={affectedApps} />
-
-      <AuditStartYearSettings
-        app={app}
-        auditStartYear={auditStartYear}
-        affectedApps={affectedApps}
-        repositoryId={repositoryId}
-      />
-
-      <ImplicitApprovalSettings
-        app={app}
-        implicitApprovalSettings={implicitApprovalSettings}
-        affectedApps={affectedApps}
-        repositoryId={repositoryId}
-      />
+      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
+        <VStack gap="space-16">
+          <Heading size="small" level="2">
+            Repository-innstillinger
+          </Heading>
+          {repository && canAccessRepoAdminPage ? (
+            <BodyShort textColor="subtle" size="small">
+              Default branch, startår for revisjon og implisitt godkjenning administreres nå på repo-siden, siden de
+              gjelder hele GitHub-repoet
+              {affectedAppCount > 1 ? ` og alle ${affectedAppCount} appene som deployes fra det` : ''}.{' '}
+              <AkselLink
+                as={Link}
+                to={`/repository/${repository.github_owner}/${repository.github_repo_name}/admin?repositoryId=${repository.id}`}
+              >
+                Gå til repository-administrasjon
+              </AkselLink>
+            </BodyShort>
+          ) : hasRepository ? (
+            <Alert variant="info" size="small">
+              Du har ikke tilgang til å administrere repository-innstillinger for dette repoet.
+            </Alert>
+          ) : (
+            <Alert variant="info" size="small">
+              Denne appen har ikke et kjent GitHub-repository koblet til seg, så repository-innstillinger kan ikke
+              konfigureres.
+            </Alert>
+          )}
+        </VStack>
+      </Box>
 
       <TestRequirementSettings app={app} />
 
