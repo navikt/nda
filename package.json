@@ -57,7 +57,7 @@
     "graphql-request": "^7.4.0",
     "helmet": "^8.3.0",
     "isbot": "^5.2.2",
-    "jose": "^6.2.10",
+    "jose": "^6.2.11",
     "node-pg-migrate": "^9.0.0",
     "pg": "^8.23.0",
     "react": "^19.2.8",
