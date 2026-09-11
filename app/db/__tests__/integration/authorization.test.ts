@@ -16,6 +16,7 @@ import {
 import type { UserIdentity } from '~/lib/auth.server'
 import {
   canAccessAppAdmin,
+  canAccessRepositoryAdmin,
   canAccessRepositorySettingsAdmin,
   canAccessTeamAdmin,
   canAdministerTeam,
@@ -30,7 +31,14 @@ import {
   resolveSectionCapabilities,
   resolveTeamAdminCapabilities,
 } from '~/lib/authorization.server'
-import { seedApp, seedApplicationRepository, seedDevTeam, seedSection, truncateAllTables } from './helpers'
+import {
+  seedApp,
+  seedApplicationRepository,
+  seedDevTeam,
+  seedRepository,
+  seedSection,
+  truncateAllTables,
+} from './helpers'
 
 let pool: Pool
 
@@ -680,6 +688,145 @@ describe('canAccessRepositorySettingsAdmin', () => {
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
     expect(await canAccessRepositorySettingsAdmin(tl, appA)).toBe(true)
+  })
+})
+
+describe('canAccessRepositoryAdmin', () => {
+  it('allows entra admin regardless of repo membership', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '5001',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-admin-a',
+    })
+    expect(await canAccessRepositoryAdmin(makeAdmin(), repositoryId)).toBe(true)
+  })
+
+  it('denies access when the repository has no active linked apps', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '5002',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-admin-b',
+    })
+    const sectionId = await seedSection(pool, 'pensjon-repo-admin')
+    const teamId = await seedDevTeam(pool, 'team-repo-admin-b', 'Team Repo Admin B', sectionId)
+    const tl = makeUser('T990001')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAccessRepositoryAdmin(tl, repositoryId)).toBe(false)
+  })
+
+  it('allows a team leader who manages every app linked to the repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '5003',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-admin-c',
+    })
+    const sectionId = await seedSection(pool, 'pensjon-repo-admin')
+    const teamId = await seedDevTeam(pool, 'team-repo-admin-c', 'Team Repo Admin C', sectionId)
+    const appA = await seedApp(pool, { teamSlug: 'nais-repo-c1', appName: 'repo-c1', environment: 'prod-gcp' })
+    const appB = await seedApp(pool, { teamSlug: 'nais-repo-c2', appName: 'repo-c2', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-admin-c',
+      githubRepoId: '5003',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-admin-c',
+      githubRepoId: '5003',
+    })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appA,
+    ])
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appB,
+    ])
+
+    const tl = makeUser('T990002')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAccessRepositoryAdmin(tl, repositoryId)).toBe(true)
+  })
+
+  it('denies a team leader who does not manage every app linked to the repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '5004',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-admin-d',
+    })
+    const sectionId = await seedSection(pool, 'pensjon-repo-admin')
+    const teamAId = await seedDevTeam(pool, 'team-repo-admin-d1', 'Team Repo Admin D1', sectionId)
+    const teamBId = await seedDevTeam(pool, 'team-repo-admin-d2', 'Team Repo Admin D2', sectionId)
+    const appA = await seedApp(pool, { teamSlug: 'nais-repo-d1', appName: 'repo-d1', environment: 'prod-gcp' })
+    const appB = await seedApp(pool, { teamSlug: 'nais-repo-d2', appName: 'repo-d2', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-admin-d',
+      githubRepoId: '5004',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-admin-d',
+      githubRepoId: '5004',
+    })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamAId,
+      appA,
+    ])
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamBId,
+      appB,
+    ])
+
+    const tl = makeUser('T990003')
+    await assignTeamRole(tl.navIdent, teamAId, 'tech_lead', 'admin')
+
+    expect(await canAccessRepositoryAdmin(tl, repositoryId)).toBe(false)
+  })
+
+  it('ignores a stale older active link to this repository when the app has since moved to another repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '5005',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-admin-e',
+    })
+    await seedRepository(pool, {
+      githubRepoId: '5006',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-admin-e-new',
+    })
+    const sectionId = await seedSection(pool, 'pensjon-repo-admin')
+    const teamId = await seedDevTeam(pool, 'team-repo-admin-e', 'Team Repo Admin E', sectionId)
+    const app = await seedApp(pool, { teamSlug: 'nais-repo-e', appName: 'repo-e', environment: 'prod-gcp' })
+
+    const oldLinkId = await seedApplicationRepository(pool, {
+      monitoredAppId: app,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-admin-e',
+      githubRepoId: '5005',
+    })
+    await pool.query(`UPDATE application_repositories SET created_at = now() - interval '1 day' WHERE id = $1`, [
+      oldLinkId,
+    ])
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-admin-e-new',
+      githubRepoId: '5006',
+    })
+
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [teamId, app])
+
+    const tl = makeUser('T990004')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAccessRepositoryAdmin(tl, repositoryId)).toBe(false)
   })
 })
 

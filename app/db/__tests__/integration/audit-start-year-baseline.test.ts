@@ -1,12 +1,26 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { UserIdentity } from '~/lib/auth.server'
 import {
   type AuditStartYearChangeResult,
   applyAuditStartYearChangeForApps,
 } from '../../audit-start-year-baseline.server'
 import { withTransaction } from '../../connection.server'
-import { getEffectiveAuditStartYear } from '../../repositories.server'
+import {
+  getEffectiveAuditStartYear,
+  syncRepositoryDefaultBranch,
+  updateRepositorySettingsByRepositoryId,
+} from '../../repositories.server'
 import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
+
+const adminActor: UserIdentity = {
+  navIdent: 'Z990001',
+  name: 'Admin Actor',
+  role: 'admin',
+  isActualAdmin: true,
+  adminSuppressed: false,
+  entraGroups: [],
+}
 
 let pool: Pool
 
@@ -918,5 +932,70 @@ describe('applyAuditStartYearChange', () => {
     expect(await getStatus(oldBaselineNoCommit)).toBe('manually_approved')
     expect(result.promotedDeploymentId).toBe(firstInYear)
     expect(await getStatus(firstInYear)).toBe('pending_baseline')
+  })
+
+  it('considers deployments recorded under the old owner/repo name after a rename when recomputing baseline', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-rename-baseline',
+      appName: 'app-rename-baseline',
+      environment: 'prod-fss',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'old-owner-repo',
+      githubRepoId: '910101',
+    })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '910101',
+      githubOwner: 'navikt',
+      githubRepoName: 'old-owner-repo',
+    })
+
+    const preRenameBaseline = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-rename-baseline',
+      environment: 'prod-fss',
+      createdAt: new Date('2025-06-01T00:00:00Z'),
+      fourEyesStatus: 'baseline',
+      githubOwner: 'navikt',
+      githubRepo: 'old-owner-repo',
+    })
+    const firstInYearUnderOldName = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-rename-baseline',
+      environment: 'prod-fss',
+      createdAt: new Date('2026-02-01T00:00:00Z'),
+      fourEyesStatus: 'approved_pr',
+      githubOwner: 'navikt',
+      githubRepo: 'old-owner-repo',
+    })
+
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+    await pool.query(
+      `UPDATE application_repositories SET github_owner = $1, github_repo_name = $2 WHERE monitored_app_id = $3`,
+      ['navikt', 'renamed-repo', appId],
+    )
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+
+    const { rows: historyRows } = await pool.query(
+      `SELECT 1 FROM repository_name_history WHERE repository_id = $1 AND github_owner = 'navikt' AND github_repo_name = 'old-owner-repo'`,
+      [repositoryId],
+    )
+    expect(historyRows).toHaveLength(1)
+
+    const result = await updateRepositorySettingsByRepositoryId({
+      repositoryId,
+      patch: { auditStartYear: 2026 },
+      changedByNavIdent: 'Z990001',
+      actor: adminActor,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.auditStartYearChange?.demotedDeploymentIds).toEqual([preRenameBaseline])
+    expect(await getStatus(preRenameBaseline)).toBe('manually_approved')
+    expect(result.auditStartYearChange?.promotedDeploymentId).toBe(firstInYearUnderOldName)
+    expect(await getStatus(firstInYearUnderOldName)).toBe('pending_baseline')
   })
 })

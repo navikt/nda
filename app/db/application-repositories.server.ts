@@ -1,5 +1,5 @@
 import { getRepositoryId } from '~/lib/github/git.server'
-import { pool } from './connection.server'
+import { lockAppForWrite, lockRepositoryForWrite, pool, withTransaction } from './connection.server'
 
 interface ApplicationRepository {
   id: number
@@ -91,35 +91,42 @@ export async function upsertApplicationRepository(data: {
   const approvedAt = data.status !== 'pending_approval' ? new Date() : null
   const githubRepoId = await getRepositoryId(data.githubOwner, data.githubRepoName)
 
-  const result = await pool.query(
-    `INSERT INTO application_repositories (
-      monitored_app_id, github_owner, github_repo_name, github_repo_id, status,
-      redirects_to_owner, redirects_to_repo, notes, approved_at, approved_by
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    ON CONFLICT (monitored_app_id, github_owner, github_repo_name)
-    DO UPDATE SET
-      github_repo_id = COALESCE(application_repositories.github_repo_id, EXCLUDED.github_repo_id),
-      status = EXCLUDED.status,
-      redirects_to_owner = EXCLUDED.redirects_to_owner,
-      redirects_to_repo = EXCLUDED.redirects_to_repo,
-      notes = EXCLUDED.notes,
-      approved_at = EXCLUDED.approved_at,
-      approved_by = EXCLUDED.approved_by
-    RETURNING *`,
-    [
-      data.monitoredAppId,
-      data.githubOwner,
-      data.githubRepoName,
-      githubRepoId,
-      data.status,
-      data.redirectsToOwner || null,
-      data.redirectsToRepo || null,
-      data.notes || null,
-      approvedAt,
-      data.approvedBy || null,
-    ],
-  )
-  return result.rows[0]
+  return withTransaction(async (client) => {
+    await lockAppForWrite(client, data.monitoredAppId)
+    if (githubRepoId !== null) {
+      await lockRepositoryForWrite(client, BigInt(githubRepoId))
+    }
+
+    const result = await client.query(
+      `INSERT INTO application_repositories (
+        monitored_app_id, github_owner, github_repo_name, github_repo_id, status,
+        redirects_to_owner, redirects_to_repo, notes, approved_at, approved_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (monitored_app_id, github_owner, github_repo_name)
+      DO UPDATE SET
+        github_repo_id = COALESCE(application_repositories.github_repo_id, EXCLUDED.github_repo_id),
+        status = EXCLUDED.status,
+        redirects_to_owner = EXCLUDED.redirects_to_owner,
+        redirects_to_repo = EXCLUDED.redirects_to_repo,
+        notes = EXCLUDED.notes,
+        approved_at = EXCLUDED.approved_at,
+        approved_by = EXCLUDED.approved_by
+      RETURNING *`,
+      [
+        data.monitoredAppId,
+        data.githubOwner,
+        data.githubRepoName,
+        githubRepoId,
+        data.status,
+        data.redirectsToOwner || null,
+        data.redirectsToRepo || null,
+        data.notes || null,
+        approvedAt,
+        data.approvedBy || null,
+      ],
+    )
+    return result.rows[0]
+  })
 }
 
 export async function approveRepository(
@@ -129,11 +136,29 @@ export async function approveRepository(
 ): Promise<ApplicationRepository> {
   const status = setAsActive ? 'active' : 'historical'
 
-  if (setAsActive) {
-    const repo = await pool.query('SELECT monitored_app_id FROM application_repositories WHERE id = $1', [repoId])
+  return withTransaction(async (client) => {
+    const initial = await client.query<{ monitored_app_id: number }>(
+      'SELECT monitored_app_id FROM application_repositories WHERE id = $1',
+      [repoId],
+    )
+    if (initial.rows.length === 0) {
+      throw new Error(`Repository with id ${repoId} not found`)
+    }
+    await lockAppForWrite(client, initial.rows[0].monitored_app_id)
 
-    if (repo.rows.length > 0) {
-      await pool.query(
+    const repo = await client.query<{ monitored_app_id: number; github_repo_id: string | null }>(
+      'SELECT monitored_app_id, github_repo_id FROM application_repositories WHERE id = $1',
+      [repoId],
+    )
+    if (repo.rows.length === 0) {
+      throw new Error(`Repository with id ${repoId} not found`)
+    }
+    if (repo.rows[0].github_repo_id !== null) {
+      await lockRepositoryForWrite(client, BigInt(repo.rows[0].github_repo_id))
+    }
+
+    if (setAsActive) {
+      await client.query(
         `UPDATE application_repositories 
          SET status = 'historical' 
          WHERE monitored_app_id = $1 
@@ -142,21 +167,21 @@ export async function approveRepository(
         [repo.rows[0].monitored_app_id, repoId],
       )
     }
-  }
 
-  const result = await pool.query(
-    `UPDATE application_repositories 
-     SET status = $1, approved_at = NOW(), approved_by = $2
-     WHERE id = $3
-     RETURNING *`,
-    [status, approvedBy, repoId],
-  )
+    const result = await client.query(
+      `UPDATE application_repositories 
+       SET status = $1, approved_at = NOW(), approved_by = $2
+       WHERE id = $3
+       RETURNING *`,
+      [status, approvedBy, repoId],
+    )
 
-  if (result.rows.length === 0) {
-    throw new Error(`Repository with id ${repoId} not found`)
-  }
+    if (result.rows.length === 0) {
+      throw new Error(`Repository with id ${repoId} not found`)
+    }
 
-  return result.rows[0]
+    return result.rows[0]
+  })
 }
 
 export async function rejectRepository(repoId: number): Promise<void> {
@@ -164,28 +189,44 @@ export async function rejectRepository(repoId: number): Promise<void> {
 }
 
 export async function setRepositoryAsActive(repoId: number): Promise<ApplicationRepository> {
-  const repo = await pool.query('SELECT monitored_app_id FROM application_repositories WHERE id = $1', [repoId])
+  return withTransaction(async (client) => {
+    const initial = await client.query<{ monitored_app_id: number }>(
+      'SELECT monitored_app_id FROM application_repositories WHERE id = $1',
+      [repoId],
+    )
+    if (initial.rows.length === 0) {
+      throw new Error(`Repository with id ${repoId} not found`)
+    }
+    await lockAppForWrite(client, initial.rows[0].monitored_app_id)
 
-  if (repo.rows.length === 0) {
-    throw new Error(`Repository with id ${repoId} not found`)
-  }
+    const repo = await client.query<{ monitored_app_id: number; github_repo_id: string | null }>(
+      'SELECT monitored_app_id, github_repo_id FROM application_repositories WHERE id = $1',
+      [repoId],
+    )
+    if (repo.rows.length === 0) {
+      throw new Error(`Repository with id ${repoId} not found`)
+    }
+    if (repo.rows[0].github_repo_id !== null) {
+      await lockRepositoryForWrite(client, BigInt(repo.rows[0].github_repo_id))
+    }
 
-  await pool.query(
-    `UPDATE application_repositories 
-     SET status = 'historical' 
-     WHERE monitored_app_id = $1 AND id != $2 AND status = 'active'`,
-    [repo.rows[0].monitored_app_id, repoId],
-  )
+    await client.query(
+      `UPDATE application_repositories 
+       SET status = 'historical' 
+       WHERE monitored_app_id = $1 AND id != $2 AND status = 'active'`,
+      [repo.rows[0].monitored_app_id, repoId],
+    )
 
-  const result = await pool.query(
-    `UPDATE application_repositories 
-     SET status = 'active' 
-     WHERE id = $1 
-     RETURNING *`,
-    [repoId],
-  )
+    const result = await client.query(
+      `UPDATE application_repositories 
+       SET status = 'active' 
+       WHERE id = $1 
+       RETURNING *`,
+      [repoId],
+    )
 
-  return result.rows[0]
+    return result.rows[0]
+  })
 }
 
 export async function getAllActiveRepositories(): Promise<Map<number, string>> {
