@@ -13,7 +13,6 @@ export const Default: Story = {
   args: {
     repositoryId: 5,
     auditStartYear: 2022,
-    affectedApps: [{ id: 1, app_name: 'pensjon-pen', team_slug: 'pensjondeployer', environment_name: 'prod-fss' }],
   },
 }
 
@@ -22,6 +21,5 @@ export const IkkeSatt: Story = {
   args: {
     repositoryId: 5,
     auditStartYear: null,
-    affectedApps: [],
   },
 }

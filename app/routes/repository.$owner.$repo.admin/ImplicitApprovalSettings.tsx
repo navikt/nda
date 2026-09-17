@@ -1,24 +1,17 @@
 import { BodyShort, Box, Button, Heading, Select, VStack } from '@navikt/ds-react'
 import { Form } from 'react-router'
-import type { AffectedApp } from '~/db/repositories.server'
 import {
   IMPLICIT_APPROVAL_MODE_DESCRIPTIONS,
   IMPLICIT_APPROVAL_MODE_LABELS,
   IMPLICIT_APPROVAL_MODES,
 } from '~/lib/verification/types'
-import { AffectedAppsList } from './AffectedAppsList'
 
 type ImplicitApprovalSettingsProps = {
   repositoryId: number
   implicitApprovalSettings: { mode: string }
-  affectedApps: AffectedApp[]
 }
 
-export function ImplicitApprovalSettings({
-  repositoryId,
-  implicitApprovalSettings,
-  affectedApps,
-}: ImplicitApprovalSettingsProps) {
+export function ImplicitApprovalSettings({ repositoryId, implicitApprovalSettings }: ImplicitApprovalSettingsProps) {
   return (
     <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
       <VStack gap="space-16">
@@ -63,8 +56,6 @@ export function ImplicitApprovalSettings({
             </div>
           </VStack>
         </Form>
-
-        <AffectedAppsList affectedApps={affectedApps} />
       </VStack>
     </Box>
   )

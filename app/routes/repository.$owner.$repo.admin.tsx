@@ -1,6 +1,6 @@
 import { CogIcon } from '@navikt/aksel-icons'
-import { Link as AkselLink, BodyShort, Heading, HStack, VStack } from '@navikt/ds-react'
-import { Link, redirect, useLoaderData } from 'react-router'
+import { BodyShort, Heading, HStack, VStack } from '@navikt/ds-react'
+import { redirect, useLoaderData } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import {
   getRepoConfigAuditLog,
@@ -95,8 +95,6 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
     recentConfigChanges,
   } = useLoaderData<typeof loader>()
 
-  const repoUrl = `/repository/${repository.github_owner}/${repository.github_repo_name}?repositoryId=${repository.id}`
-
   return (
     <VStack gap="space-32">
       <div>
@@ -107,10 +105,10 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
           </Heading>
         </HStack>
         <BodyShort textColor="subtle">
-          Disse innstillingene gjelder hele GitHub-repoet og alle apper som deployes fra det.{' '}
-          <AkselLink as={Link} to={repoUrl}>
-            Tilbake til repo-siden
-          </AkselLink>
+          Disse innstillingene gjelder hele GitHub-repoet og{' '}
+          {isLinked
+            ? `alle ${affectedApps.length} ${affectedApps.length === 1 ? 'app' : 'apper'} som deployes fra det.`
+            : 'alle apper som deployes fra det.'}
         </BodyShort>
       </div>
 
@@ -118,23 +116,11 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
 
       {isLinked ? (
         <>
-          <DefaultBranchSettings
-            repositoryId={repository.id}
-            defaultBranch={defaultBranch}
-            affectedApps={affectedApps}
-          />
+          <DefaultBranchSettings repositoryId={repository.id} defaultBranch={defaultBranch} />
 
-          <AuditStartYearSettings
-            repositoryId={repository.id}
-            auditStartYear={auditStartYear}
-            affectedApps={affectedApps}
-          />
+          <AuditStartYearSettings repositoryId={repository.id} auditStartYear={auditStartYear} />
 
-          <ImplicitApprovalSettings
-            repositoryId={repository.id}
-            implicitApprovalSettings={implicitApprovalSettings}
-            affectedApps={affectedApps}
-          />
+          <ImplicitApprovalSettings repositoryId={repository.id} implicitApprovalSettings={implicitApprovalSettings} />
         </>
       ) : (
         <BodyShort textColor="subtle">

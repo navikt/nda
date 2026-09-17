@@ -1,15 +1,12 @@
 import { Box, Button, Heading, HStack, TextField, VStack } from '@navikt/ds-react'
 import { Form } from 'react-router'
-import type { AffectedApp } from '~/db/repositories.server'
-import { AffectedAppsList } from './AffectedAppsList'
 
 type AuditStartYearSettingsProps = {
   repositoryId: number
   auditStartYear: number | null
-  affectedApps: AffectedApp[]
 }
 
-export function AuditStartYearSettings({ repositoryId, auditStartYear, affectedApps }: AuditStartYearSettingsProps) {
+export function AuditStartYearSettings({ repositoryId, auditStartYear }: AuditStartYearSettingsProps) {
   return (
     <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
       <VStack gap="space-16">
@@ -34,7 +31,6 @@ export function AuditStartYearSettings({ repositoryId, auditStartYear, affectedA
             </Button>
           </HStack>
         </Form>
-        <AffectedAppsList affectedApps={affectedApps} />
       </VStack>
     </Box>
   )

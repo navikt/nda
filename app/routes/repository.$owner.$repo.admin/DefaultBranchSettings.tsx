@@ -1,15 +1,12 @@
 import { Box, Button, Heading, HStack, TextField, VStack } from '@navikt/ds-react'
 import { Form } from 'react-router'
-import type { AffectedApp } from '~/db/repositories.server'
-import { AffectedAppsList } from './AffectedAppsList'
 
 type DefaultBranchSettingsProps = {
   repositoryId: number
   defaultBranch: string | null
-  affectedApps: AffectedApp[]
 }
 
-export function DefaultBranchSettings({ repositoryId, defaultBranch, affectedApps }: DefaultBranchSettingsProps) {
+export function DefaultBranchSettings({ repositoryId, defaultBranch }: DefaultBranchSettingsProps) {
   return (
     <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
       <VStack gap="space-16">
@@ -33,7 +30,6 @@ export function DefaultBranchSettings({ repositoryId, defaultBranch, affectedApp
             </Button>
           </HStack>
         </Form>
-        <AffectedAppsList affectedApps={affectedApps} />
       </VStack>
     </Box>
   )
