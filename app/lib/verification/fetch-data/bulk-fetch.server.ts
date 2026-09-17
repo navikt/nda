@@ -39,7 +39,9 @@ export async function fetchVerificationDataForAllDeployments(
     durationMs: Math.round(performance.now() - settingsStart),
   })
 
-  let query = `
+  const params: (number | string)[] = [monitoredAppId]
+
+  const query = `
     WITH ordered_deployments AS (
       SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
              d.environment_name, d.trigger_url, d.workflow_trigger_config, d.commit_checks_data,
@@ -55,16 +57,7 @@ export async function fetchVerificationDataForAllDeployments(
         AND d.commit_sha IS NOT NULL
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
-        AND ${VALID_COMMIT_SHA_SQL}`
-
-  const params: (number | string)[] = [monitoredAppId]
-
-  if (appSettings.auditStartYear) {
-    query += ` AND d.created_at >= $2`
-    params.push(`${appSettings.auditStartYear}-01-01`)
-  }
-
-  query += `
+        AND ${VALID_COMMIT_SHA_SQL}
     )
     SELECT od.*,
            (pr_snap.id IS NOT NULL) AS has_pr_snapshot,
