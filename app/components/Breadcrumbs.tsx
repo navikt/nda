@@ -138,6 +138,11 @@ const dynamicBreadcrumbs: Array<{
     parent: '/repository/:owner/:repo',
   },
   {
+    pattern: /^\/repository\/([^/]+)\/([^/]+)\/deployments$/,
+    getLabel: () => 'Deployments',
+    parent: '/repository/:owner/:repo',
+  },
+  {
     pattern: /^\/users\/([^/]+)$/,
     getLabel: (_matches, pathname) => {
       const username = pathname.split('/')[2]
@@ -300,7 +305,7 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
           crumbs.push({ path: `${appPath}/admin/verification-diff`, label: 'Verifiseringsavvik' })
         }
       }
-      // Handle: /repository/:owner/:repo/admin
+      // Handle: /repository/:owner/:repo/admin and /repository/:owner/:repo/deployments
       else if (dynamic.parent === '/repository/:owner/:repo') {
         const repoMatch = pathname.match(/^\/repository\/([^/]+)\/([^/]+)/)
         if (repoMatch) {
