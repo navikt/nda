@@ -148,9 +148,12 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     )
     results.push({
       type: 'monorepo',
-      url: firstApp
-        ? `/team/${firstApp.team_slug}/env/${firstApp.environment_name}/app/${firstApp.app_name}/deployments?monorepo=true`
-        : '/search',
+      url:
+        group.repository_id !== null
+          ? `/repository/${encodeURIComponent(group.github_owner)}/${encodeURIComponent(group.github_repo_name)}?repositoryId=${group.repository_id}`
+          : firstApp
+            ? `/team/${firstApp.team_slug}/env/${firstApp.environment_name}/app/${firstApp.app_name}/deployments?monorepo=true`
+            : '/search',
       title: `${group.github_owner}/${group.github_repo_name}`,
       subtitle: displayNames.length > 0 ? `Monorepo: ${displayNames.join(', ')}` : 'Monorepo (tom)',
     })
