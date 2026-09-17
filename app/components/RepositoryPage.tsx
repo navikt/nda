@@ -25,6 +25,7 @@ export interface RepositoryPageProps {
 export function RepositoryPage({ repository, affectedApps, canAccessAdmin }: RepositoryPageProps) {
   const repoFullName = `${repository.github_owner}/${repository.github_repo_name}`
   const adminUrl = `/repository/${repository.github_owner}/${repository.github_repo_name}/admin?repositoryId=${repository.id}`
+  const deploymentsUrl = `/repository/${repository.github_owner}/${repository.github_repo_name}/deployments?repositoryId=${repository.id}`
 
   return (
     <VStack gap="space-24">
@@ -33,7 +34,12 @@ export function RepositoryPage({ repository, affectedApps, canAccessAdmin }: Rep
           <Heading size="large" level="1">
             {repoFullName}
           </Heading>
-          <ExternalLink href={`https://github.com/${repoFullName}`}>Se på GitHub</ExternalLink>
+          <HStack gap="space-16">
+            <ExternalLink href={`https://github.com/${repoFullName}`}>Se på GitHub</ExternalLink>
+            <AkselLink as={Link} to={deploymentsUrl}>
+              Se alle deployments for repoet
+            </AkselLink>
+          </HStack>
         </div>
         {canAccessAdmin && (
           <Button as={Link} to={adminUrl} variant="tertiary" size="small" icon={<CogIcon aria-hidden />}>

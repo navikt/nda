@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { UserIdentity } from '~/lib/auth.server'
 import {
   getAffectedAppsForRepositoryId,
+  getAllAppsLinkedToRepositoryId,
   getEffectiveAuditStartYear,
   getEffectiveDefaultBranch,
   getEffectiveImplicitApprovalSettings,
@@ -705,5 +706,108 @@ describe('getAffectedAppsForRepositoryId', () => {
     await pool.query(`UPDATE application_repositories SET created_at = now() WHERE id = $1`, [newerLinkId])
 
     expect(await getAffectedAppsForRepositoryId(repositoryId)).toEqual([])
+  })
+})
+
+describe('getAllAppsLinkedToRepositoryId', () => {
+  it('includes both active and inactive apps whose latest active link points to the repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '7100',
+      githubOwner: 'navikt',
+      githubRepoName: 'shared-repo',
+    })
+    const activeAppId = await seedApp(pool, { teamSlug: 'team-active', appName: 'app-active', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: activeAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '7100',
+      status: 'active',
+    })
+
+    const inactiveAppId = await seedApp(pool, {
+      teamSlug: 'team-inactive',
+      appName: 'app-inactive',
+      environment: 'prod-gcp',
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: inactiveAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '7100',
+      status: 'active',
+    })
+
+    const historicalAppId = await seedApp(pool, {
+      teamSlug: 'team-historical',
+      appName: 'app-historical',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: historicalAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'shared-repo',
+      githubRepoId: '7100',
+      status: 'historical',
+    })
+
+    const linkedApps = await getAllAppsLinkedToRepositoryId(repositoryId)
+    expect(linkedApps).toEqual([
+      {
+        id: activeAppId,
+        app_name: 'app-active',
+        team_slug: 'team-active',
+        environment_name: 'prod-gcp',
+        is_active: true,
+      },
+      {
+        id: inactiveAppId,
+        app_name: 'app-inactive',
+        team_slug: 'team-inactive',
+        environment_name: 'prod-gcp',
+        is_active: false,
+      },
+    ])
+  })
+
+  it('returns an empty array when no apps are linked to the repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '7110',
+      githubOwner: 'navikt',
+      githubRepoName: 'unlinked-repo',
+    })
+
+    expect(await getAllAppsLinkedToRepositoryId(repositoryId)).toEqual([])
+  })
+
+  it('excludes an app whose latest active link (by created_at) points to a different repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '7120',
+      githubOwner: 'navikt',
+      githubRepoName: 'target-repo',
+    })
+    const appId = await seedApp(pool, { teamSlug: 'team-moved', appName: 'app-moved', environment: 'prod-gcp' })
+
+    const olderLinkId = await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'target-repo',
+      githubRepoId: '7120',
+      status: 'active',
+    })
+    const newerLinkId = await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'other-repo',
+      githubRepoId: '7121',
+      status: 'active',
+    })
+    await pool.query(`UPDATE application_repositories SET created_at = now() - interval '1 day' WHERE id = $1`, [
+      olderLinkId,
+    ])
+    await pool.query(`UPDATE application_repositories SET created_at = now() WHERE id = $1`, [newerLinkId])
+
+    expect(await getAllAppsLinkedToRepositoryId(repositoryId)).toEqual([])
   })
 })
