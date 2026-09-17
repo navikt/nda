@@ -1,4 +1,6 @@
 import { pool } from '~/db/connection.server'
+import { saveRawSnapshotWithLock } from '~/db/github-data/raw-snapshot-lock.server'
+import { COMPARE_RAW_SNAPSHOT_LOCK_NAMESPACE } from '~/db/github-data/raw-snapshot-lock-namespaces.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { mapCompareResponse, type RawCompareResponse } from '~/lib/github/compare-snapshot'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
@@ -89,15 +91,14 @@ export async function saveCompareRawSnapshot(
   rawData: unknown,
   apiVersion: ApiVersionMetadata,
 ): Promise<number> {
-  const result = await pool.query(
-    `WITH lock AS MATERIALIZED (
-       SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $4 || ':' || $5, 0))
-     ),
-     last_snapshot AS (
-       SELECT c.id, c.data
-       FROM github_compare_raw_snapshots c, lock
-       WHERE c.github_repo_id = $1 AND c.base_sha = $4 AND c.head_sha = $5
-       ORDER BY c.fetched_at DESC
+  return saveRawSnapshotWithLock(
+    COMPARE_RAW_SNAPSHOT_LOCK_NAMESPACE,
+    `${githubRepoId}:${baseSha}:${headSha}`,
+    `WITH last_snapshot AS (
+       SELECT id, data
+       FROM github_compare_raw_snapshots
+       WHERE github_repo_id = $1 AND base_sha = $4 AND head_sha = $5
+       ORDER BY fetched_at DESC
        LIMIT 1
      ),
      inserted AS (
@@ -122,7 +123,6 @@ export async function saveCompareRawSnapshot(
       JSON.stringify(rawData),
     ],
   )
-  return result.rows[0].id
 }
 
 export async function getLatestCompareRawSnapshot(

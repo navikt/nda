@@ -1,17 +1,23 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockClientQuery, mockClient, mockPoolQuery } = vi.hoisted(() => {
+  const mockClientQuery = vi.fn()
+  return {
+    mockClientQuery,
+    mockClient: { query: mockClientQuery, release: vi.fn() },
+    mockPoolQuery: vi.fn(),
+  }
+})
 
 vi.mock('~/db/connection.server', () => ({
-  pool: { query: vi.fn() },
+  pool: { connect: vi.fn(async () => mockClient), query: mockPoolQuery },
 }))
 
-import { pool } from '~/db/connection.server'
 import {
   getDerivedCompareDataFromRawSnapshot,
   getLatestCompareRawSnapshot,
   saveCompareRawSnapshot,
 } from '~/db/github-data.server'
-
-const mockPoolQuery = pool.query as Mock
 
 describe('saveCompareRawSnapshot', () => {
   beforeEach(() => {
@@ -19,14 +25,15 @@ describe('saveCompareRawSnapshot', () => {
   })
 
   it('inserts the raw compare response into github_compare_raw_snapshots', async () => {
-    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7 }] })
+    mockClientQuery.mockResolvedValue({ rows: [{ id: 7 }] })
 
     const rawData = { status: 'ahead', total_commits: 2, commits: [], files: [] }
     const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
     const id = await saveCompareRawSnapshot('navikt', 'nda', 999, 'base-sha', 'head-sha', rawData, apiVersion)
 
     expect(id).toBe(7)
-    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_compare_raw_snapshots'), [
+    const insertCall = mockClientQuery.mock.calls.find(([sql]) => String(sql).includes('github_compare_raw_snapshots'))
+    expect(insertCall?.[1]).toEqual([
       999,
       'navikt',
       'nda',
@@ -39,17 +46,21 @@ describe('saveCompareRawSnapshot', () => {
     ])
   })
 
-  it('guards the insert with a dedup check against the latest snapshot for the base/head sha pair', async () => {
-    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7 }] })
+  it('acquires an advisory lock before the dedup check against the latest snapshot for the base/head sha pair', async () => {
+    mockClientQuery.mockResolvedValue({ rows: [{ id: 7 }] })
 
     const rawData = { status: 'ahead', total_commits: 2, commits: [], files: [] }
     const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
     await saveCompareRawSnapshot('navikt', 'nda', 999, 'base-sha', 'head-sha', rawData, apiVersion)
 
-    const [query] = mockPoolQuery.mock.calls[0]
+    const calls = mockClientQuery.mock.calls
+    expect(calls[0]).toEqual(['BEGIN'])
+    expect(calls[1][0]).toContain('pg_advisory_xact_lock')
+    expect(calls[1][1]).toEqual([expect.any(Number), '999:base-sha:head-sha'])
+    const [query] = calls[2]
     expect(query).toContain('last_snapshot')
     expect(query).toContain('NOT EXISTS')
-    expect(query).toContain('pg_advisory_xact_lock')
+    expect(calls[3]).toEqual(['COMMIT'])
   })
 })
 

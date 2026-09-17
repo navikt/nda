@@ -1,4 +1,6 @@
 import { pool } from '~/db/connection.server'
+import { saveRawSnapshotWithLock } from '~/db/github-data/raw-snapshot-lock.server'
+import { COMMIT_RAW_SNAPSHOT_LOCK_NAMESPACE } from '~/db/github-data/raw-snapshot-lock-namespaces.server'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
 import type { CommitRawSnapshot } from '~/lib/verification/types'
 
@@ -10,15 +12,14 @@ export async function saveCommitRawSnapshot(
   rawData: unknown,
   apiVersion: ApiVersionMetadata,
 ): Promise<number> {
-  const result = await pool.query(
-    `WITH lock AS MATERIALIZED (
-       SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $4, 0))
-     ),
-     last_snapshot AS (
-       SELECT c.id, c.data
-       FROM github_commit_raw_snapshots c, lock
-       WHERE c.github_repo_id = $1 AND c.sha = $4
-       ORDER BY c.fetched_at DESC
+  return saveRawSnapshotWithLock(
+    COMMIT_RAW_SNAPSHOT_LOCK_NAMESPACE,
+    `${githubRepoId}:${sha}`,
+    `WITH last_snapshot AS (
+       SELECT id, data
+       FROM github_commit_raw_snapshots
+       WHERE github_repo_id = $1 AND sha = $4
+       ORDER BY fetched_at DESC
        LIMIT 1
      ),
      inserted AS (
@@ -42,7 +43,6 @@ export async function saveCommitRawSnapshot(
       JSON.stringify(rawData),
     ],
   )
-  return result.rows[0].id
 }
 
 export async function getLatestCommitRawSnapshot(

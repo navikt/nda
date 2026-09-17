@@ -1,4 +1,6 @@
 import { pool } from '~/db/connection.server'
+import { saveRawSnapshotWithLock } from '~/db/github-data/raw-snapshot-lock.server'
+import { CHECKS_RAW_SNAPSHOT_LOCK_NAMESPACE } from '~/db/github-data/raw-snapshot-lock-namespaces.server'
 import { computeChecksPassed, mapRawCheckRunToCheckRun, type RawCheckRun } from '~/lib/github/checks-snapshot'
 import type { CheckRun } from '~/lib/github/pr/checks.server'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
@@ -15,15 +17,14 @@ export async function saveChecksRawSnapshot(
   apiVersion: ApiVersionMetadata,
   observedAt: Date,
 ): Promise<number> {
-  const result = await pool.query(
-    `WITH lock AS MATERIALIZED (
-       SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $4 || ':' || coalesce($5::text, 'null'), 0))
-     ),
-     last_snapshot AS (
-       SELECT c.id, c.data, c.is_definitive
-       FROM github_checks_raw_snapshots c, lock
-       WHERE c.github_repo_id = $1 AND c.sha = $4 AND c.check_suite_id IS NOT DISTINCT FROM $5
-       ORDER BY c.fetched_at DESC
+  return saveRawSnapshotWithLock(
+    CHECKS_RAW_SNAPSHOT_LOCK_NAMESPACE,
+    `${githubRepoId}:${sha}:${checkSuiteId ?? 'null'}`,
+    `WITH last_snapshot AS (
+       SELECT id, data, is_definitive
+       FROM github_checks_raw_snapshots
+       WHERE github_repo_id = $1 AND sha = $4 AND check_suite_id IS NOT DISTINCT FROM $5
+       ORDER BY fetched_at DESC
        LIMIT 1
      ),
      inserted AS (
@@ -52,7 +53,6 @@ export async function saveChecksRawSnapshot(
       JSON.stringify(rawCheckRuns),
     ],
   )
-  return result.rows[0].id
 }
 
 export async function getLatestDefinitiveChecksRawSnapshot(

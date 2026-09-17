@@ -1,18 +1,24 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockClientQuery, mockClient, mockPoolQuery } = vi.hoisted(() => {
+  const mockClientQuery = vi.fn()
+  return {
+    mockClientQuery,
+    mockClient: { query: mockClientQuery, release: vi.fn() },
+    mockPoolQuery: vi.fn(),
+  }
+})
 
 vi.mock('~/db/connection.server', () => ({
-  pool: { query: vi.fn() },
+  pool: { connect: vi.fn(async () => mockClient), query: mockPoolQuery },
 }))
 
-import { pool } from '~/db/connection.server'
 import {
   getDerivedChecksDataFromRawSnapshot,
   getLatestDefinitiveChecksRawSnapshot,
   saveChecksRawSnapshot,
 } from '~/db/github-data.server'
 import type { RawCheckRun } from '~/lib/github/checks-snapshot'
-
-const mockPoolQuery = pool.query as Mock
 
 const rawCheckRun = {
   id: 1,
@@ -40,7 +46,7 @@ describe('saveChecksRawSnapshot', () => {
   })
 
   it('inserts the raw check runs into github_checks_raw_snapshots', async () => {
-    mockPoolQuery.mockResolvedValue({ rows: [{ id: 9 }] })
+    mockClientQuery.mockResolvedValue({ rows: [{ id: 9 }] })
 
     const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
     const observedAt = new Date('2026-01-01T00:00:00Z')
@@ -57,7 +63,8 @@ describe('saveChecksRawSnapshot', () => {
     )
 
     expect(id).toBe(9)
-    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_checks_raw_snapshots'), [
+    const insertCall = mockClientQuery.mock.calls.find(([sql]) => String(sql).includes('github_checks_raw_snapshots'))
+    expect(insertCall?.[1]).toEqual([
       999,
       'navikt',
       'nda',
@@ -72,19 +79,23 @@ describe('saveChecksRawSnapshot', () => {
     ])
   })
 
-  it('guards the insert with a dedup check against the latest snapshot for the sha/check-suite', async () => {
-    mockPoolQuery.mockResolvedValue({ rows: [{ id: 9 }] })
+  it('acquires an advisory lock scoped to the repo/sha/check-suite before the dedup check', async () => {
+    mockClientQuery.mockResolvedValue({ rows: [{ id: 9 }] })
 
     const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
     const observedAt = new Date('2026-01-01T00:00:00Z')
     await saveChecksRawSnapshot('navikt', 'nda', 999, 'a'.repeat(40), 42, true, [rawCheckRun], apiVersion, observedAt)
 
-    const [query] = mockPoolQuery.mock.calls[0]
+    const calls = mockClientQuery.mock.calls
+    expect(calls[0]).toEqual(['BEGIN'])
+    expect(calls[1][0]).toContain('pg_advisory_xact_lock')
+    expect(calls[1][1]).toEqual([expect.any(Number), `999:${'a'.repeat(40)}:42`])
+    const [query] = calls[2]
     expect(query).toContain('last_snapshot')
     expect(query).toContain('NOT EXISTS')
-    expect(query).toContain('pg_advisory_xact_lock')
     expect(query).toContain('IS NOT DISTINCT FROM')
     expect(query).toContain('is_definitive = $6')
+    expect(calls[3]).toEqual(['COMMIT'])
   })
 })
 

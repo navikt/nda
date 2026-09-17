@@ -1,16 +1,22 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockClientQuery, mockClient, mockPoolQuery } = vi.hoisted(() => {
+  const mockClientQuery = vi.fn()
+  return {
+    mockClientQuery,
+    mockClient: { query: mockClientQuery, release: vi.fn() },
+    mockPoolQuery: vi.fn(),
+  }
+})
 
 vi.mock('~/db/connection.server', () => ({
-  pool: { query: vi.fn() },
+  pool: { connect: vi.fn(async () => mockClient), query: mockPoolQuery },
 }))
 
-import { pool } from '~/db/connection.server'
 import {
   getLatestCheckAnnotationsRawSnapshot,
   saveCheckAnnotationsRawSnapshot,
 } from '~/db/github-data/check-annotations-raw-snapshots.server'
-
-const mockPoolQuery = pool.query as Mock
 
 const rawAnnotations = [{ path: 'src/foo.ts', message: 'some issue', annotation_level: 'warning' }]
 
@@ -20,13 +26,16 @@ describe('saveCheckAnnotationsRawSnapshot', () => {
   })
 
   it('inserts the raw annotations response into github_check_annotations_raw_snapshots', async () => {
-    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7 }] })
+    mockClientQuery.mockResolvedValue({ rows: [{ id: 7 }] })
 
     const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
     const id = await saveCheckAnnotationsRawSnapshot('navikt', 'nda', 999, 555, rawAnnotations, apiVersion)
 
     expect(id).toBe(7)
-    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_check_annotations_raw_snapshots'), [
+    const insertCall = mockClientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('github_check_annotations_raw_snapshots'),
+    )
+    expect(insertCall?.[1]).toEqual([
       999,
       'navikt',
       'nda',
@@ -38,16 +47,20 @@ describe('saveCheckAnnotationsRawSnapshot', () => {
     ])
   })
 
-  it('guards the insert with a dedup check against the latest snapshot for the check run', async () => {
-    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7 }] })
+  it('acquires an advisory lock before the dedup check against the latest snapshot for the check run', async () => {
+    mockClientQuery.mockResolvedValue({ rows: [{ id: 7 }] })
 
     const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
     await saveCheckAnnotationsRawSnapshot('navikt', 'nda', 999, 555, rawAnnotations, apiVersion)
 
-    const [query] = mockPoolQuery.mock.calls[0]
+    const calls = mockClientQuery.mock.calls
+    expect(calls[0]).toEqual(['BEGIN'])
+    expect(calls[1][0]).toContain('pg_advisory_xact_lock')
+    expect(calls[1][1]).toEqual([expect.any(Number), '999:555'])
+    const [query] = calls[2]
     expect(query).toContain('last_snapshot')
     expect(query).toContain('NOT EXISTS')
-    expect(query).toContain('pg_advisory_xact_lock')
+    expect(calls[3]).toEqual(['COMMIT'])
   })
 })
 
