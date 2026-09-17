@@ -1,6 +1,6 @@
-import { Link as AkselLink, BodyShort, Box, Heading, HStack, VStack } from '@navikt/ds-react'
+import { BodyShort, Box, Heading, HStack, VStack } from '@navikt/ds-react'
 import type { ComponentProps } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { useSearchParams } from 'react-router'
 import { DeploymentFilters, DeploymentRow, PaginationControls } from './deployments'
 
 type DeploymentData = ComponentProps<typeof DeploymentRow>['deployment']
@@ -62,8 +62,6 @@ export function RepositoryDeploymentsPage({
   const teamParam = searchParams.get('team') || ''
   const currentTeam = teamParam === 'mine' && !teamOptions.some((o) => o.value === 'mine') ? '' : teamParam
 
-  const repoUrl = `/repository/${repository.github_owner}/${repository.github_repo_name}?repositoryId=${repository.id}`
-
   const updateFilter = (key: string, value: string) => {
     const newParams = new URLSearchParams(searchParams)
     if (value) {
@@ -88,10 +86,7 @@ export function RepositoryDeploymentsPage({
           Deployments for {repository.github_owner}/{repository.github_repo_name}
         </Heading>
         <BodyShort textColor="subtle">
-          Viser deployments for alle apper (aktive og inaktive) koblet til dette repoet.{' '}
-          <AkselLink as={Link} to={repoUrl}>
-            Tilbake til repo-siden
-          </AkselLink>
+          Viser deployments for alle apper (aktive og inaktive) koblet til dette repoet.
         </BodyShort>
       </div>
 
