@@ -6,12 +6,14 @@ const {
   mockGetRepositoryByOwnerRepo,
   mockGetRepositoryById,
   mockGetRepoConfigAuditLog,
+  mockIsCurrentOrHistoricalNameForRepositoryId,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockResolveRepositoryAdminAccess: vi.fn(),
   mockGetRepositoryByOwnerRepo: vi.fn(),
   mockGetRepositoryById: vi.fn(),
   mockGetRepoConfigAuditLog: vi.fn(),
+  mockIsCurrentOrHistoricalNameForRepositoryId: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -26,6 +28,7 @@ vi.mock('~/db/repositories.server', () => ({
   getRepositoryByOwnerRepo: mockGetRepositoryByOwnerRepo,
   getRepositoryById: mockGetRepositoryById,
   getRepoConfigAuditLog: mockGetRepoConfigAuditLog,
+  isCurrentOrHistoricalNameForRepositoryId: mockIsCurrentOrHistoricalNameForRepositoryId,
 }))
 
 import { loader } from './repository.$owner.$repo.admin'
@@ -52,6 +55,7 @@ describe('repository admin loader', () => {
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [] })
     mockGetRepositoryById.mockResolvedValue(null)
     mockGetRepoConfigAuditLog.mockResolvedValue([])
+    mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
   })
 
   it('throws 403 when the user lacks repository-admin access', async () => {
@@ -182,6 +186,27 @@ describe('repository admin loader', () => {
     } as never)
 
     expect(mockGetRepositoryById).toHaveBeenCalledWith(999999)
+    expect(mockGetRepositoryByOwnerRepo).toHaveBeenCalledWith('navikt', 'some-repo')
+    expect(result.repository.id).toBe(repository.id)
+  })
+
+  it('falls back to name-based lookup when the requested id belongs to an unrelated repository (no valid name match)', async () => {
+    mockGetRepositoryById.mockResolvedValue({
+      ...repository,
+      id: 999,
+      github_owner: 'other-owner',
+      github_repo_name: 'other-repo',
+    })
+    mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(false)
+    mockGetRepositoryByOwnerRepo.mockResolvedValue({ status: 'found', repository })
+
+    const result = await loader({
+      params: { owner: 'navikt', repo: 'some-repo' },
+      request: makeRequest('?repositoryId=999'),
+    } as never)
+
+    expect(mockGetRepositoryById).toHaveBeenCalledWith(999)
+    expect(mockIsCurrentOrHistoricalNameForRepositoryId).toHaveBeenCalledWith(999, 'navikt', 'some-repo')
     expect(mockGetRepositoryByOwnerRepo).toHaveBeenCalledWith('navikt', 'some-repo')
     expect(result.repository.id).toBe(repository.id)
   })

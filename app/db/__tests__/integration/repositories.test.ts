@@ -11,6 +11,7 @@ import {
   getRepoConfigAuditLog,
   getRepositoryByOwnerRepo,
   getRepositoryIdForApp,
+  isCurrentOrHistoricalNameForRepositoryId,
   REPOSITORY_SETTING_KEYS,
   recordRepoConfigAuditLog,
   syncRepositoryDefaultBranch,
@@ -548,6 +549,72 @@ describe('getRepositoryByOwnerRepo', () => {
   it('returns not_found when no repository or history entry matches', async () => {
     const result = await getRepositoryByOwnerRepo('navikt', 'does-not-exist')
     expect(result).toEqual({ status: 'not_found' })
+  })
+})
+
+describe('isCurrentOrHistoricalNameForRepositoryId', () => {
+  it('returns true when the owner/repo matches the current name for that repository id', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '8080',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-id-name',
+    })
+
+    expect(await isCurrentOrHistoricalNameForRepositoryId(repositoryId, 'navikt', 'current-id-name')).toBe(true)
+  })
+
+  it('returns true when the owner/repo matches a historical name for that repository id', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-id-hist', appName: 'app-id-hist', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'old-id-name',
+      githubRepoId: '8081',
+    })
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+
+    await pool.query(
+      `UPDATE application_repositories SET github_owner = $1, github_repo_name = $2 WHERE monitored_app_id = $3`,
+      ['navikt', 'renamed-id-name', appId],
+    )
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+
+    const { rows } = await pool.query<{ id: number }>(`SELECT id FROM repositories WHERE github_repo_id = $1`, ['8081'])
+    const repositoryId = rows[0].id
+
+    expect(await isCurrentOrHistoricalNameForRepositoryId(repositoryId, 'navikt', 'old-id-name')).toBe(true)
+  })
+
+  it('returns false when the owner/repo is a current or historical name of a different repository', async () => {
+    const targetRepositoryId = await seedRepository(pool, {
+      githubRepoId: '8082',
+      githubOwner: 'navikt',
+      githubRepoName: 'target-repo',
+    })
+    await seedRepository(pool, {
+      githubRepoId: '8083',
+      githubOwner: 'navikt',
+      githubRepoName: 'other-repo',
+    })
+
+    const appId = await seedApp(pool, { teamSlug: 'team-id-other', appName: 'app-id-other', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'other-repo-old-name',
+      githubRepoId: '8083',
+    })
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+    await pool.query(
+      `UPDATE application_repositories SET github_owner = $1, github_repo_name = $2 WHERE monitored_app_id = $3`,
+      ['navikt', 'other-repo', appId],
+    )
+    await syncRepositoryDefaultBranch({ monitoredAppId: appId, defaultBranch: 'main', syncedAt: new Date() })
+
+    expect(await isCurrentOrHistoricalNameForRepositoryId(targetRepositoryId, 'navikt', 'other-repo')).toBe(false)
+    expect(await isCurrentOrHistoricalNameForRepositoryId(targetRepositoryId, 'navikt', 'other-repo-old-name')).toBe(
+      false,
+    )
   })
 })
 

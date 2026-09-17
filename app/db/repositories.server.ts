@@ -6,7 +6,7 @@ import { REPOSITORY_SETTING_KEYS } from '~/lib/repository-setting-keys'
 import { type EffectiveRepositorySettings, resolveEffectiveSettings } from '~/lib/repository-settings'
 import { type ImplicitApprovalMode, isImplicitApprovalMode } from '~/lib/verification/types'
 import type { AuditStartYearChangeResult, RepoScope } from './audit-start-year-baseline.server'
-import { lockAppForWrite, lockRepositoryForWrite, pool, withTransaction } from './connection.server'
+import { lockRepositoryAdminForWrite, pool, withTransaction } from './connection.server'
 
 export interface Repository {
   id: number
@@ -268,37 +268,6 @@ async function getAppIdsForGithubRepoId(queryable: Queryable, githubRepoId: stri
   return rows.map((row) => row.id)
 }
 
-async function lockAppsAndRepoForGithubRepoId(
-  client: PoolClient,
-  githubRepoId: string,
-  additionalAppId?: number,
-): Promise<number[]> {
-  let appIds = await getAppIdsForGithubRepoId(client, githubRepoId)
-
-  for (let i = 0; i < 10; i++) {
-    const probeAppIds = await getAppIdsForGithubRepoId(client, githubRepoId)
-    const stableBeforeLocking = probeAppIds.length === appIds.length && probeAppIds.every((id) => appIds.includes(id))
-    if (stableBeforeLocking) {
-      const lockSet = Array.from(new Set(additionalAppId ? [...appIds, additionalAppId] : appIds)).sort((a, b) => a - b)
-      for (const appId of lockSet) {
-        await lockAppForWrite(client, appId)
-      }
-      await lockRepositoryForWrite(client, BigInt(githubRepoId))
-
-      const freshAppIds = await getAppIdsForGithubRepoId(client, githubRepoId)
-      const stableAfterLocking = freshAppIds.length === appIds.length && freshAppIds.every((id) => appIds.includes(id))
-      if (stableAfterLocking) return freshAppIds
-
-      throw new Error(
-        `App set for github repo ${githubRepoId} changed after acquiring the repository lock; retry in a new transaction`,
-      )
-    }
-    appIds = probeAppIds
-  }
-
-  throw new Error(`Could not reach a stable app set for github repo ${githubRepoId} after multiple attempts`)
-}
-
 async function upsertRepositoryRow(
   client: PoolClient,
   link: { githubRepoId: string; githubOwner: string; githubRepoName: string },
@@ -422,7 +391,8 @@ export async function updateRepositorySettings(params: {
   const { monitoredAppId, patch, changedByNavIdent, changedByName, changeReason } = params
 
   return withTransaction(async (client) => {
-    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+    await lockRepositoryAdminForWrite(client)
+
     const { rows: appRows } = await client.query<{ id: number }>(
       `SELECT id FROM monitored_applications WHERE id = $1`,
       [monitoredAppId],
@@ -431,14 +401,12 @@ export async function updateRepositorySettings(params: {
       return { ok: false, reason: 'app_not_found' }
     }
 
-    await lockAppForWrite(client, monitoredAppId)
-
     const link = await getActiveRepoLink(client, monitoredAppId)
     if (!link) {
       return { ok: false, reason: 'repo_not_linked' }
     }
 
-    const targetAppIds = await lockAppsAndRepoForGithubRepoId(client, link.githubRepoId, monitoredAppId)
+    const targetAppIds = await getAppIdsForGithubRepoId(client, link.githubRepoId)
     const repository = await upsertRepositoryRow(client, link)
 
     return applyRepositorySettingsPatch(client, {
@@ -464,30 +432,23 @@ export async function updateRepositorySettingsByRepositoryId(params: {
   const { repositoryId, patch, changedByNavIdent, changedByName, changeReason, actor } = params
 
   return withTransaction(async (client) => {
-    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+    await lockRepositoryAdminForWrite(client)
+
     const { rows: repoRows } = await client.query<Repository>(`SELECT * FROM repositories WHERE id = $1`, [
       repositoryId,
     ])
-    const initialRepository = repoRows[0]
-    if (!initialRepository) {
+    const repository = repoRows[0]
+    if (!repository) {
       return { ok: false, reason: 'repo_not_found' }
     }
 
-    const targetAppIds = await lockAppsAndRepoForGithubRepoId(client, initialRepository.github_repo_id)
+    const targetAppIds = await getAppIdsForGithubRepoId(client, repository.github_repo_id)
     if (targetAppIds.length === 0) {
       return { ok: false, reason: 'repo_not_linked' }
     }
 
     if (!(await canAccessAppsAdmin(actor, targetAppIds, client))) {
       return { ok: false, reason: 'unauthorized' }
-    }
-
-    const { rows: freshRepoRows } = await client.query<Repository>(`SELECT * FROM repositories WHERE id = $1`, [
-      repositoryId,
-    ])
-    const repository = freshRepoRows[0]
-    if (!repository) {
-      return { ok: false, reason: 'repo_not_found' }
     }
 
     return applyRepositorySettingsPatch(client, {
@@ -617,7 +578,7 @@ export async function syncRepositoryDefaultBranch(params: {
   const { monitoredAppId, defaultBranch, syncedAt } = params
 
   return withTransaction(async (client) => {
-    await lockAppForWrite(client, monitoredAppId)
+    await lockRepositoryAdminForWrite(client)
 
     const link = await getActiveRepoLink(client, monitoredAppId)
     if (!link) return false

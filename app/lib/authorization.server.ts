@@ -209,7 +209,6 @@ export async function resolveRepositoryAdminAccess(
   repositoryId: number,
 ): Promise<RepositoryAdminAccess> {
   return withTransaction(async (client) => {
-    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
     const { rows } = await client.query<{ id: number; app_name: string; team_slug: string; environment_name: string }>(
       `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name
        FROM (

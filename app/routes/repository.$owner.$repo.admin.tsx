@@ -2,7 +2,12 @@ import { CogIcon } from '@navikt/aksel-icons'
 import { Link as AkselLink, BodyShort, Heading, HStack, VStack } from '@navikt/ds-react'
 import { Link, redirect, useLoaderData } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
-import { getRepoConfigAuditLog, getRepositoryById, getRepositoryByOwnerRepo } from '~/db/repositories.server'
+import {
+  getRepoConfigAuditLog,
+  getRepositoryById,
+  getRepositoryByOwnerRepo,
+  isCurrentOrHistoricalNameForRepositoryId,
+} from '~/db/repositories.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
 import { requireParams } from '~/lib/route-params.server'
@@ -33,7 +38,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       requestedRepositoryId <= 2_147_483_647
     ) {
       const byId = await getRepositoryById(requestedRepositoryId)
-      if (byId) {
+      if (byId && (await isCurrentOrHistoricalNameForRepositoryId(byId.id, owner, repo))) {
         if (byId.github_owner !== owner || byId.github_repo_name !== repo) {
           const redirectPath = `/repository/${encodeURIComponent(byId.github_owner)}/${encodeURIComponent(byId.github_repo_name)}/admin?repositoryId=${byId.id}`
           throw redirect(redirectPath, { status: 301 })

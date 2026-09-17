@@ -175,41 +175,20 @@ describe('repository admin actions - authorization', () => {
     expect(mockUpdateRepositorySettingsByRepositoryId).not.toHaveBeenCalled()
   })
 
-  it('rejects when repository_id is missing or non-numeric', async () => {
+  it.each([
+    ['missing', undefined],
+    ['not-a-number', 'not-a-number'],
+    ['5abc', '5abc'],
+    ['5.9', '5.9'],
+  ])('rejects an invalid repository_id (%s)', async (_label, value) => {
     const formData = new FormData()
     formData.set('action', 'update_default_branch')
+    if (value !== undefined) formData.set('repository_id', value)
     formData.set('default_branch', 'main')
 
     const result = await callAction(formData)
 
     expect(result).toEqual({ error: 'Ugyldig eller manglende repository-ID' })
-    expect(mockCanAccessRepositoryAdmin).not.toHaveBeenCalled()
-  })
-
-  it('rejects a spoofed non-numeric repository_id even when action data looks valid', async () => {
-    const formData = new FormData()
-    formData.set('action', 'update_default_branch')
-    formData.set('repository_id', 'not-a-number')
-    formData.set('default_branch', 'main')
-
-    const result = await callAction(formData)
-
-    expect(result).toEqual({ error: 'Ugyldig eller manglende repository-ID' })
-    expect(mockCanAccessRepositoryAdmin).not.toHaveBeenCalled()
-    expect(mockUpdateRepositorySettingsByRepositoryId).not.toHaveBeenCalled()
-  })
-
-  it('rejects a partially-numeric repository_id such as "5abc" or "5.9"', async () => {
-    for (const value of ['5abc', '5.9']) {
-      const formData = new FormData()
-      formData.set('action', 'update_default_branch')
-      formData.set('repository_id', value)
-      formData.set('default_branch', 'main')
-
-      const result = await callAction(formData)
-
-      expect(result).toEqual({ error: 'Ugyldig eller manglende repository-ID' })
-    }
     expect(mockCanAccessRepositoryAdmin).not.toHaveBeenCalled()
     expect(mockUpdateRepositorySettingsByRepositoryId).not.toHaveBeenCalled()
   })

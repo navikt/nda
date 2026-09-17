@@ -58,6 +58,14 @@ async function withHistoricalNames(client: PoolClient, scopes: RepoScope[]): Pro
         [row.github_owner, row.github_repo_name, scope.repositoryId],
       )
       if (claimedByOther.length > 0) continue
+
+      const { rows: historicallyClaimedByOther } = await client.query<{ repository_id: number }>(
+        `SELECT repository_id FROM repository_name_history
+         WHERE github_owner = $1 AND github_repo_name = $2 AND repository_id != $3`,
+        [row.github_owner, row.github_repo_name, scope.repositoryId],
+      )
+      if (historicallyClaimedByOther.length > 0) continue
+
       expanded.push({ owner: row.github_owner, repo: row.github_repo_name, repositoryId: scope.repositoryId })
     }
   }

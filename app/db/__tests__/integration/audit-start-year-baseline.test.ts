@@ -998,4 +998,63 @@ describe('applyAuditStartYearChange', () => {
     expect(result.auditStartYearChange?.promotedDeploymentId).toBe(firstInYearUnderOldName)
     expect(await getStatus(firstInYearUnderOldName)).toBe('pending_baseline')
   })
+
+  it('treats a shared historical owner/repo name between two renamed repositories as ambiguous, not scoped to either', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-double-rename',
+      appName: 'app-double-rename',
+      environment: 'prod-fss',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'current-name-a',
+      githubRepoId: '910202',
+    })
+    const repositoryIdA = await seedRepository(pool, {
+      githubRepoId: '910202',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-name-a',
+    })
+    // Repository B previously used the exact same owner/name as A's history entry below, but has since
+    // been renamed away too — so neither A nor B currently claims 'navikt/shared-old-name'.
+    const repositoryIdB = await seedRepository(pool, {
+      githubRepoId: '910203',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-name-b',
+    })
+    await pool.query(
+      `INSERT INTO repository_name_history (repository_id, github_owner, github_repo_name) VALUES ($1, $2, $3)`,
+      [repositoryIdA, 'navikt', 'shared-old-name'],
+    )
+    await pool.query(
+      `INSERT INTO repository_name_history (repository_id, github_owner, github_repo_name) VALUES ($1, $2, $3)`,
+      [repositoryIdB, 'navikt', 'shared-old-name'],
+    )
+
+    const deploymentUnderSharedOldName = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-double-rename',
+      environment: 'prod-fss',
+      createdAt: new Date('2025-06-01T00:00:00Z'),
+      fourEyesStatus: 'baseline',
+      githubOwner: 'navikt',
+      githubRepo: 'shared-old-name',
+    })
+
+    const result = await updateRepositorySettingsByRepositoryId({
+      repositoryId: repositoryIdA,
+      patch: { auditStartYear: 2026 },
+      changedByNavIdent: 'Z990001',
+      actor: adminActor,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // The shared historical name must not be treated as part of repository A's scope, since
+    // repository B also historically claimed it — otherwise A's baseline recompute would
+    // incorrectly sweep up this deployment as if it were unambiguously part of A's own history.
+    expect(result.auditStartYearChange?.recomputeSkippedDueToAmbiguousRepoScope).toBe(false)
+    expect(await getStatus(deploymentUnderSharedOldName)).toBe('baseline')
+  })
 })

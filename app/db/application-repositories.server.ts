@@ -1,5 +1,5 @@
 import { getRepositoryId } from '~/lib/github/git.server'
-import { lockAppForWrite, lockRepositoryForWrite, pool, withTransaction } from './connection.server'
+import { lockRepositoryAdminForWrite, pool, withTransaction } from './connection.server'
 
 interface ApplicationRepository {
   id: number
@@ -92,10 +92,7 @@ export async function upsertApplicationRepository(data: {
   const githubRepoId = await getRepositoryId(data.githubOwner, data.githubRepoName)
 
   return withTransaction(async (client) => {
-    await lockAppForWrite(client, data.monitoredAppId)
-    if (githubRepoId !== null) {
-      await lockRepositoryForWrite(client, BigInt(githubRepoId))
-    }
+    await lockRepositoryAdminForWrite(client)
 
     const result = await client.query(
       `INSERT INTO application_repositories (
@@ -137,14 +134,7 @@ export async function approveRepository(
   const status = setAsActive ? 'active' : 'historical'
 
   return withTransaction(async (client) => {
-    const initial = await client.query<{ monitored_app_id: number }>(
-      'SELECT monitored_app_id FROM application_repositories WHERE id = $1',
-      [repoId],
-    )
-    if (initial.rows.length === 0) {
-      throw new Error(`Repository with id ${repoId} not found`)
-    }
-    await lockAppForWrite(client, initial.rows[0].monitored_app_id)
+    await lockRepositoryAdminForWrite(client)
 
     const repo = await client.query<{ monitored_app_id: number; github_repo_id: string | null }>(
       'SELECT monitored_app_id, github_repo_id FROM application_repositories WHERE id = $1',
@@ -152,9 +142,6 @@ export async function approveRepository(
     )
     if (repo.rows.length === 0) {
       throw new Error(`Repository with id ${repoId} not found`)
-    }
-    if (repo.rows[0].github_repo_id !== null) {
-      await lockRepositoryForWrite(client, BigInt(repo.rows[0].github_repo_id))
     }
 
     if (setAsActive) {
@@ -185,19 +172,15 @@ export async function approveRepository(
 }
 
 export async function rejectRepository(repoId: number): Promise<void> {
-  await pool.query(`DELETE FROM application_repositories WHERE id = $1 AND status = 'pending_approval'`, [repoId])
+  await withTransaction(async (client) => {
+    await lockRepositoryAdminForWrite(client)
+    await client.query(`DELETE FROM application_repositories WHERE id = $1 AND status = 'pending_approval'`, [repoId])
+  })
 }
 
 export async function setRepositoryAsActive(repoId: number): Promise<ApplicationRepository> {
   return withTransaction(async (client) => {
-    const initial = await client.query<{ monitored_app_id: number }>(
-      'SELECT monitored_app_id FROM application_repositories WHERE id = $1',
-      [repoId],
-    )
-    if (initial.rows.length === 0) {
-      throw new Error(`Repository with id ${repoId} not found`)
-    }
-    await lockAppForWrite(client, initial.rows[0].monitored_app_id)
+    await lockRepositoryAdminForWrite(client)
 
     const repo = await client.query<{ monitored_app_id: number; github_repo_id: string | null }>(
       'SELECT monitored_app_id, github_repo_id FROM application_repositories WHERE id = $1',
@@ -205,9 +188,6 @@ export async function setRepositoryAsActive(repoId: number): Promise<Application
     )
     if (repo.rows.length === 0) {
       throw new Error(`Repository with id ${repoId} not found`)
-    }
-    if (repo.rows[0].github_repo_id !== null) {
-      await lockRepositoryForWrite(client, BigInt(repo.rows[0].github_repo_id))
     }
 
     await client.query(
