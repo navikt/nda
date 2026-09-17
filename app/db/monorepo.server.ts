@@ -132,10 +132,13 @@ function groupMonorepoRows(rows: MonorepoRow[]): MonorepoGroup[] {
       appsById.set(row.id, toAppEntry(row))
     }
     const apps = [...appsById.values()]
+    const repositoryIds = new Set(groupRows.map((row) => row.repository_id))
+    const sharedRepositoryId =
+      repositoryIds.size === 1 && groupRows[0].repository_id !== null ? groupRows[0].repository_id : null
     return {
       github_owner: groupRows[0].github_owner,
       github_repo_name: groupRows[0].github_repo_name,
-      repository_id: groupRows.find((row) => row.repository_id !== null)?.repository_id ?? null,
+      repository_id: sharedRepositoryId,
       apps,
       base_branch_mismatch: hasMismatch(apps.map((a) => a.default_branch)),
       audit_year_mismatch: hasMismatch(apps.map((a) => a.audit_start_year)),
