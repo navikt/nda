@@ -18,7 +18,11 @@ interface PreviousDeploymentCandidate {
 const CANDIDATE_PAGE_SIZE = 20
 const MAX_CANDIDATE_PAGES = 10
 
-async function logZeroCandidateDiagnostics(currentDeploymentId: number, githubRepoId: string): Promise<void> {
+async function logZeroCandidateDiagnostics(
+  currentDeploymentId: number,
+  githubRepoId: string,
+  auditStartYear: number | null,
+): Promise<void> {
   try {
     const currentResult = await pool.query(
       `SELECT monitored_app_id, detected_github_owner, detected_github_repo_name, created_at, commit_sha, four_eyes_status
@@ -55,9 +59,40 @@ async function logZeroCandidateDiagnostics(currentDeploymentId: number, githubRe
       currentCreatedAt: current.created_at,
       currentCommitSha: current.commit_sha,
       resolvedGithubRepoId: githubRepoId,
+      auditStartYear,
       applicationRepositoryRows: repoRowsResult.rows,
       olderSameAppDeployments: olderSameAppResult.rows,
     })
+
+    if (olderSameAppResult.rows.length > 0) {
+      const nearest = olderSameAppResult.rows[0]
+      const auditStartDate = auditStartYear ? `${auditStartYear}-01-01` : null
+      const nearestCheckResult = await pool.query(
+        `SELECT
+           d.id,
+           d.commit_sha IS NOT NULL AS has_commit_sha,
+           d.commit_sha !~ '^refs/' AS commit_sha_not_ref,
+           d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL}) AS not_non_diffable,
+           d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL}) AS not_unauthorized,
+           EXISTS (
+             SELECT 1 FROM application_repositories ar
+             WHERE ar.monitored_app_id = d.monitored_app_id
+               AND ar.github_owner = d.detected_github_owner
+               AND ar.github_repo_name = d.detected_github_repo_name
+               AND ar.status IN ('active', 'historical')
+               AND ar.github_repo_id = $2
+           ) AS matches_application_repository_join,
+           ($3::date IS NULL OR d.created_at >= $3::date) AS passes_audit_start_year
+         FROM deployments d WHERE d.id = $1`,
+        [nearest.id, githubRepoId, auditStartDate],
+      )
+      logger.warn('getPreviousDeployment: predicate-by-predicate check on nearest older same-app deployment', {
+        log_type: 'previous_deployment_zero_candidates_predicate_check',
+        currentDeploymentId,
+        nearestOlderDeploymentId: nearest.id,
+        predicateResults: nearestCheckResult.rows[0],
+      })
+    }
   } catch (error) {
     logger.warn('getPreviousDeployment: diagnostic dump failed', {
       log_type: 'previous_deployment_zero_candidates_diagnostic_error',
@@ -173,7 +208,7 @@ export async function getPreviousDeployment(
   for (let page = 0; page < MAX_CANDIDATE_PAGES; page++) {
     const candidates = await queryCandidates(currentDeploymentId, githubRepoId, auditStartYear, offset)
     if (candidates.length === 0) {
-      if (page === 0) await logZeroCandidateDiagnostics(currentDeploymentId, githubRepoId)
+      if (page === 0) await logZeroCandidateDiagnostics(currentDeploymentId, githubRepoId, auditStartYear)
       return null
     }
 
