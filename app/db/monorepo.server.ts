@@ -62,6 +62,11 @@ function hasMismatch(values: (string | number | null)[]): boolean {
   return new Set(values).size > 1
 }
 
+function sharedRepositoryId(rows: { repository_id: number | null }[]): number | null {
+  const repositoryIds = new Set(rows.map((row) => row.repository_id))
+  return repositoryIds.size === 1 && rows[0]?.repository_id !== null ? rows[0].repository_id : null
+}
+
 function toAppEntry({
   github_owner: _owner,
   github_repo_name: _repo,
@@ -133,13 +138,11 @@ function groupMonorepoRows(rows: MonorepoRow[]): MonorepoGroup[] {
       appsById.set(row.id, toAppEntry(row))
     }
     const apps = [...appsById.values()]
-    const repositoryIds = new Set(groupRows.map((row) => row.repository_id))
-    const sharedRepositoryId =
-      repositoryIds.size === 1 && groupRows[0].repository_id !== null ? groupRows[0].repository_id : null
+    const sharedId = sharedRepositoryId(groupRows)
     return {
       github_owner: groupRows[0].github_owner,
       github_repo_name: groupRows[0].github_repo_name,
-      repository_id: sharedRepositoryId,
+      repository_id: sharedId,
       apps,
       base_branch_mismatch: hasMismatch(apps.map((a) => a.default_branch)),
       audit_year_mismatch: hasMismatch(apps.map((a) => a.audit_start_year)),
@@ -194,7 +197,7 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
   return {
     github_owner: ownerName,
     github_repo_name: repoName,
-    repository_id: result.rows[0]?.repository_id ?? null,
+    repository_id: sharedRepositoryId(result.rows),
     siblings,
     base_branch_mismatch: hasMismatch(allApps.map((a) => a.default_branch)),
     audit_year_mismatch: hasMismatch(allApps.map((a) => a.audit_start_year)),
