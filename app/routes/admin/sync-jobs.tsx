@@ -46,12 +46,22 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   const status = url.searchParams.get('status') as SyncJobStatus | null
   const jobType = url.searchParams.get('type') as SyncJobType | null
   const appName = url.searchParams.get('app') || null
+  const repositoryIdParam = url.searchParams.get('repositoryId')
+  const parsedRepositoryId = repositoryIdParam !== null ? Number(repositoryIdParam) : null
+  const repositoryId =
+    parsedRepositoryId !== null &&
+    Number.isInteger(parsedRepositoryId) &&
+    parsedRepositoryId > 0 &&
+    parsedRepositoryId <= 2_147_483_647
+      ? parsedRepositoryId
+      : null
 
   const [jobs, stats, appNames, failedGrouped] = await Promise.all([
     getAllSyncJobs({
       status: status || undefined,
       jobType: jobType || undefined,
       appName: appName || undefined,
+      repositoryId: repositoryId || undefined,
       limit: 100,
     }),
     getSyncJobStats(),
@@ -59,7 +69,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
     getFailedSyncJobsGrouped(),
   ])
 
-  return { jobs, stats, appNames, failedGrouped, filters: { status, jobType, appName } }
+  return { jobs, stats, appNames, failedGrouped, filters: { status, jobType, appName, repositoryId } }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -297,23 +307,29 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
         <Box padding="space-20" borderRadius="8" background="raised" borderColor="danger-subtle" borderWidth="1">
           <VStack gap="space-12">
             <Heading level="2" size="small">
-              Feilede jobber gruppert per app ({failedGrouped.length})
+              Feilede jobber gruppert per app/repository ({failedGrouped.length})
             </Heading>
             <BodyShort size="small" textColor="subtle">
-              Viser hver unike kombinasjon av app, jobbtype og feilmelding, med antall forekomster og første/siste
-              tidspunkt. Nyttig for å finne appen som blokkerte den periodiske synk-loopen.
+              Viser hver unike kombinasjon av app eller repository, jobbtype og feilmelding, med antall forekomster og
+              første/siste tidspunkt. Nyttig for å finne appen eller repositoryet som blokkerte den periodiske
+              synk-loopen.
             </BodyShort>
             <div>
               {failedGrouped.map((group) => (
                 <Box
-                  key={`${group.monitored_app_id}-${group.job_type}-${group.error}`}
+                  key={`${group.monitored_app_id}-${group.repository_id}-${group.job_type}-${group.error}`}
                   padding="space-12"
                   className={styles.stackedListItem}
                 >
                   <VStack gap="space-4">
                     <HStack gap="space-8" align="center" justify="space-between" wrap>
                       <HStack gap="space-12" align="center">
-                        <BodyShort weight="semibold">{group.app_name ?? 'Ukjent app'}</BodyShort>
+                        <BodyShort weight="semibold">
+                          {group.app_name ??
+                            (group.github_owner && group.github_repo_name
+                              ? `${group.github_owner}/${group.github_repo_name}`
+                              : 'Ukjent app')}
+                        </BodyShort>
                         {group.team_slug && (
                           <Detail textColor="subtle">
                             {group.team_slug} / {group.environment_name}
@@ -325,7 +341,7 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
                         <Tag data-color="danger" variant="moderate" size="small">
                           {group.failure_count}x
                         </Tag>
-                        {group.app_name && (
+                        {group.app_name ? (
                           <Link
                             to={`/admin/sync-jobs?${new URLSearchParams({
                               status: 'failed',
@@ -336,6 +352,19 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
                           >
                             Se alle
                           </Link>
+                        ) : (
+                          group.repository_id && (
+                            <Link
+                              to={`/admin/sync-jobs?${new URLSearchParams({
+                                status: 'failed',
+                                type: group.job_type,
+                                repositoryId: String(group.repository_id),
+                              }).toString()}`}
+                              style={{ fontSize: '0.75rem' }}
+                            >
+                              Se alle
+                            </Link>
+                          )
                         )}
                       </HStack>
                     </HStack>
@@ -358,6 +387,7 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
       <HStack gap="space-16" justify="space-between" wrap>
         <Form method="get">
           <HStack gap="space-12">
+            {filters.repositoryId && <input type="hidden" name="repositoryId" value={filters.repositoryId} />}
             <Select label="Status" name="status" defaultValue={filters.status || ''} size="small">
               <option value="">Alle</option>
               <option value="running">Kjører</option>
@@ -424,7 +454,12 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
                 <HStack gap="space-8" align="center" justify="space-between" wrap>
                   <HStack gap="space-12" align="center" style={{ flex: 1 }}>
                     <Detail textColor="subtle">#{job.id}</Detail>
-                    <BodyShort weight="semibold">{job.app_name ?? 'Global'}</BodyShort>
+                    <BodyShort weight="semibold">
+                      {job.app_name ??
+                        (job.github_owner && job.github_repo_name
+                          ? `${job.github_owner}/${job.github_repo_name}`
+                          : 'Global')}
+                    </BodyShort>
                     <Show above="md">
                       {job.team_slug && (
                         <Detail textColor="subtle">

@@ -41,6 +41,7 @@ export interface SyncJob {
   id: number
   job_type: SyncJobType
   monitored_app_id: number | null
+  repository_id: number | null
   status: SyncJobStatus
   started_at: string | null
   completed_at: string | null
@@ -56,6 +57,8 @@ export interface SyncJobWithApp extends SyncJob {
   app_name: string | null
   team_slug: string | null
   environment_name: string | null
+  github_owner: string | null
+  github_repo_name: string | null
 }
 
 export interface SyncJobLog {
