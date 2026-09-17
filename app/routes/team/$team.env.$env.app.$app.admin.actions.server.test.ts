@@ -7,6 +7,16 @@ const { mockRequireUser, mockCanAccessAppAdmin, mockGetSyncJobById, mockCancelSy
   mockCancelSyncJob: vi.fn(),
 }))
 
+const { mockRunWithJobContext, mockFetchVerificationDataForAllDeployments, mockReleaseSyncLock } = vi.hoisted(() => ({
+  mockRunWithJobContext: vi.fn(
+    async (_jobId: number, _jobType: string, _appId: number, _debug: boolean, fn: () => Promise<void>) => {
+      await fn()
+    },
+  ),
+  mockFetchVerificationDataForAllDeployments: vi.fn(),
+  mockReleaseSyncLock: vi.fn(),
+}))
+
 vi.mock('~/lib/auth.server', () => ({
   requireUser: mockRequireUser,
 }))
@@ -43,9 +53,9 @@ vi.mock('~/db/sync-jobs.server', () => ({
   forceReleaseSyncJob: vi.fn(),
   getLatestSyncJob: vi.fn(),
   getSyncJobById: mockGetSyncJobById,
-  getSyncJobOptions: vi.fn(),
+  getSyncJobOptions: vi.fn().mockResolvedValue({}),
   heartbeatSyncJob: vi.fn(),
-  releaseSyncLock: vi.fn(),
+  releaseSyncLock: mockReleaseSyncLock,
   SYNC_INTERVAL_MS: 60000,
   updateSyncJobProgress: vi.fn(),
 }))
@@ -69,7 +79,7 @@ vi.mock('~/lib/form-validators', () => ({
 
 vi.mock('~/lib/logger.server', () => ({
   logger: { error: vi.fn(), info: vi.fn() },
-  runWithJobContext: vi.fn(),
+  runWithJobContext: mockRunWithJobContext,
 }))
 
 vi.mock('~/lib/report-job-processor.server', () => ({
@@ -85,7 +95,7 @@ vi.mock('~/lib/user-display', () => ({
 }))
 
 vi.mock('~/lib/verification', () => ({
-  fetchVerificationDataForAllDeployments: vi.fn(),
+  fetchVerificationDataForAllDeployments: mockFetchVerificationDataForAllDeployments,
 }))
 
 vi.mock('~/lib/verification/compute-diffs.server', () => ({
@@ -96,7 +106,7 @@ vi.mock('~/lib/verification/types', () => ({
   isImplicitApprovalMode: vi.fn(),
 }))
 
-import { action } from './$team.env.$env.app.$app.admin.actions.server'
+import { action, processFetchDataJobAsync } from './$team.env.$env.app.$app.admin.actions.server'
 
 function makeRequest(formData: FormData): Request {
   return new Request('http://localhost/team/pensjondeployer/env/prod-fss/app/pensjon-pen/admin', {
@@ -193,5 +203,52 @@ describe('admin actions - JOB_ID_ACTIONS IDOR protection', () => {
 
     expect(mockGetSyncJobById).toHaveBeenCalledTimes(1)
     expect(result).toEqual({ computeDiffsJobStatus: { id: 5, monitored_app_id: 1, status: 'completed' } })
+  })
+})
+
+describe('processFetchDataJobAsync', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRunWithJobContext.mockImplementation(
+      async (_jobId: number, _jobType: string, _appId: number, _debug: boolean, fn: () => Promise<void>) => {
+        await fn()
+      },
+    )
+    mockGetSyncJobById.mockResolvedValue({ id: 5, monitored_app_id: 1, status: 'running' })
+  })
+
+  it('releases the sync lock as "partial" (not "completed") when the bulk fetch reports rateLimited', async () => {
+    mockFetchVerificationDataForAllDeployments.mockResolvedValue({
+      total: 10,
+      processed: 3,
+      skipped: 0,
+      fetched: 3,
+      derivedFromRaw: 0,
+      workflowTriggersFetched: 0,
+      errors: 0,
+      errorDetails: [],
+      rateLimited: true,
+    })
+
+    await processFetchDataJobAsync(5, 1)
+
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'partial', expect.objectContaining({ rateLimited: true }))
+  })
+
+  it('releases the sync lock as "completed" when the bulk fetch finishes without hitting the rate limit', async () => {
+    mockFetchVerificationDataForAllDeployments.mockResolvedValue({
+      total: 10,
+      processed: 10,
+      skipped: 0,
+      fetched: 10,
+      derivedFromRaw: 0,
+      workflowTriggersFetched: 0,
+      errors: 0,
+      errorDetails: [],
+    })
+
+    await processFetchDataJobAsync(5, 1)
+
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'completed', expect.anything())
   })
 })

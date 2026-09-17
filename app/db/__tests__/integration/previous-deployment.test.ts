@@ -4,12 +4,25 @@ import { seedApp, seedApplicationRepository, seedDeployment, truncateAllTables }
 
 vi.mock('~/lib/github', () => ({
   getCommitAncestryStatus: vi.fn(),
+  getGitHubRateLimitRemaining: vi.fn(() => null),
 }))
 
-import { getCommitAncestryStatus } from '~/lib/github'
-import { getPreviousDeployment } from '~/lib/verification/fetch-data/previous-deployment.server'
+import { getCommitAncestryStatus, getGitHubRateLimitRemaining } from '~/lib/github'
+import {
+  getPreviousDeployment as getPreviousDeploymentRaw,
+  type PreviousDeploymentResult,
+} from '~/lib/verification/fetch-data/previous-deployment.server'
+
+async function getPreviousDeployment(
+  ...args: Parameters<typeof getPreviousDeploymentRaw>
+): Promise<PreviousDeploymentResult | null> {
+  const result = await getPreviousDeploymentRaw(...args)
+  if (result === 'rate_limited') throw new Error('unexpected rate_limited result in test')
+  return result
+}
 
 const mockedGetCommitAncestryStatus = vi.mocked(getCommitAncestryStatus)
+const mockedGetGitHubRateLimitRemaining = vi.mocked(getGitHubRateLimitRemaining)
 
 let pool: Pool
 
@@ -206,7 +219,7 @@ describe('getPreviousDeployment', () => {
     expect(prev).toBeNull()
   })
 
-  it('should respect auditStartYear and exclude older deployments', async () => {
+  it('should find previous deployment regardless of auditStartYear (ancestry lookup is unaffected by audit scope)', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'team',
       appName: 'app',
@@ -261,7 +274,7 @@ describe('getPreviousDeployment', () => {
     expect(prevWithYear?.id).toBe(validId)
 
     const prevStrictYear = await getPreviousDeployment(currentId, owner, repo, githubRepoId, 2026, 'cur333')
-    expect(prevStrictYear).toBeNull()
+    expect(prevStrictYear?.id).toBe(validId)
   })
 
   it('should find a previous deployment from a sibling app in the same monorepo, same environment', async () => {
@@ -549,7 +562,11 @@ describe('getPreviousDeployment', () => {
       githubRepoId,
     })
 
-    for (let i = 0; i < 205; i++) {
+    for (let i = 0; i < 1005; i++) {
+      const totalSeconds = i
+      const hours = Math.floor(totalSeconds / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      const seconds = totalSeconds % 60
       await seedDeployment(pool, {
         monitoredAppId: app1,
         teamSlug: 'team',
@@ -557,7 +574,7 @@ describe('getPreviousDeployment', () => {
         commitSha: `diverged-sha-${i}`,
         fourEyesStatus: 'approved',
         createdAt: new Date(
-          `2025-01-01T00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`,
+          `2025-01-01T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}Z`,
         ),
         githubOwner: owner,
         githubRepo: repo,
@@ -570,7 +587,7 @@ describe('getPreviousDeployment', () => {
       environment: 'prod-gcp',
       commitSha: 'current-sha',
       fourEyesStatus: 'pending',
-      createdAt: new Date('2025-02-01T00:00:00Z'),
+      createdAt: new Date('2025-01-02T01:00:00Z'),
       githubOwner: owner,
       githubRepo: repo,
     })
@@ -579,8 +596,46 @@ describe('getPreviousDeployment', () => {
 
     const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
     expect(prev).toBeNull()
-    // MAX_CANDIDATE_PAGES (10) * CANDIDATE_PAGE_SIZE (20) = 200 candidates checked, then it gives up.
-    expect(mockedGetCommitAncestryStatus).toHaveBeenCalledTimes(200)
+    // MAX_CANDIDATE_PAGES (50) * CANDIDATE_PAGE_SIZE (20) = 1000 candidates checked, then it gives up.
+    expect(mockedGetCommitAncestryStatus).toHaveBeenCalledTimes(1000)
+  })
+
+  it('should stop ancestry search and return "rate_limited" when GitHub quota is nearly exhausted', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team', appName: 'svc-c', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app1,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId,
+    })
+
+    await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team',
+      environment: 'prod-gcp',
+      commitSha: 'older-sha',
+      fourEyesStatus: 'approved',
+      createdAt: new Date('2025-01-01T00:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team',
+      environment: 'prod-gcp',
+      commitSha: 'current-sha',
+      fourEyesStatus: 'pending',
+      createdAt: new Date('2025-01-02T01:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    mockedGetGitHubRateLimitRemaining.mockReturnValue(50)
+
+    const prev = await getPreviousDeploymentRaw(currentId, owner, repo, githubRepoId, null, 'current-sha')
+    expect(prev).toBe('rate_limited')
+    expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
 
   it('should not return a deployment from a different, unrelated repo (different github_repo_id)', async () => {

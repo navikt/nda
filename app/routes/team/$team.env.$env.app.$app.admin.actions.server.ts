@@ -100,7 +100,7 @@ async function updateSlackSettingWithAudit(params: {
   return {}
 }
 
-async function processFetchDataJobAsync(jobId: number, appId: number) {
+export async function processFetchDataJobAsync(jobId: number, appId: number) {
   const options = await getSyncJobOptions(jobId)
   const debug = options?.debug === true
   const refreshDisplayData = options?.refreshDisplayData === true
@@ -112,7 +112,8 @@ async function processFetchDataJobAsync(jobId: number, appId: number) {
       if (job?.status === 'cancelled') {
         return
       }
-      await releaseSyncLock(jobId, 'completed', result as unknown as Record<string, unknown>)
+      const finalStatus = result.rateLimited ? 'partial' : 'completed'
+      await releaseSyncLock(jobId, finalStatus, result as unknown as Record<string, unknown>)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       const job = await getSyncJobById(jobId)

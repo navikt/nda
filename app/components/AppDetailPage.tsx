@@ -189,6 +189,7 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
     failed: 'error',
     cancelled: 'warning',
     pending: 'neutral',
+    partial: 'warning',
   }
   const lastSyncTimestamp = latestSyncJob
     ? new Date(latestSyncJob.completed_at || latestSyncJob.started_at || latestSyncJob.created_at).toLocaleString(

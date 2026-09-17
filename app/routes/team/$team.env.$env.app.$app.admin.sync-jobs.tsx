@@ -27,6 +27,8 @@ function statusColor(status: SyncJobStatus): 'success' | 'warning' | 'danger' | 
       return 'danger'
     case 'cancelled':
       return 'warning'
+    case 'partial':
+      return 'warning'
     default:
       return 'neutral'
   }

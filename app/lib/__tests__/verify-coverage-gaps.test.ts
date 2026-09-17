@@ -585,6 +585,21 @@ describe('verifyDeployment - previousDeploymentLookupFailed (unknown github_repo
 
     expect(result.status).toBe('pending_baseline')
   })
+
+  it('should return error (not pending_baseline) and mention rate limit when previousDeploymentRateLimited is set', () => {
+    const input = makeBaseInput({
+      previousDeployment: null,
+      previousDeploymentLookupFailed: true,
+      previousDeploymentRateLimited: true,
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.method).not.toBe('pending_baseline')
+    expect(result.approvalDetails.reason).toContain('rate limit')
+  })
 })
 
 describe('verifyDeployment - Case 5: base branch merge approval', () => {

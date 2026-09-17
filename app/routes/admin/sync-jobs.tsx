@@ -152,6 +152,15 @@ function StatusTag({ status }: { status: SyncJobStatus }) {
           </HStack>
         </Tag>
       )
+    case 'partial':
+      return (
+        <Tag data-color="warning" variant="moderate" size="small">
+          <HStack gap="space-4" align="center">
+            <ExclamationmarkTriangleIcon aria-hidden />
+            Delvis fullført
+          </HStack>
+        </Tag>
+      )
   }
 }
 
@@ -244,7 +253,7 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
         </Alert>
       )}
 
-      <HGrid gap="space-16" columns={{ xs: 2, md: 6 }}>
+      <HGrid gap="space-16" columns={{ xs: 2, md: 7 }}>
         <StatCard label="Totalt" value={stats.total} active={!activeStatus} onClick={() => setStatusFilter(null)} />
         <StatCard
           label="Kjører nå"
@@ -259,6 +268,13 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
           color="success"
           active={activeStatus === 'completed'}
           onClick={() => setStatusFilter('completed')}
+        />
+        <StatCard
+          label="Delvis fullført"
+          value={stats.partial}
+          color="warning"
+          active={activeStatus === 'partial'}
+          onClick={() => setStatusFilter('partial')}
         />
         <StatCard
           label="Feilet"
@@ -346,6 +362,7 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
               <option value="">Alle</option>
               <option value="running">Kjører</option>
               <option value="completed">Fullført</option>
+              <option value="partial">Delvis fullført</option>
               <option value="failed">Feilet</option>
               <option value="cancelled">Avbrutt</option>
               <option value="pending">Venter</option>

@@ -25,13 +25,14 @@ export const SYNC_JOB_TYPE_LABELS: Record<SyncJobType, string> = {
   backfill_github_repo_ids: 'Hent GitHub repo-ID (alle repoer)',
 }
 
-const SYNC_JOB_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled'] as const
+const SYNC_JOB_STATUSES = ['pending', 'running', 'completed', 'partial', 'failed', 'cancelled'] as const
 export type SyncJobStatus = (typeof SYNC_JOB_STATUSES)[number]
 
 export const SYNC_JOB_STATUS_LABELS: Record<SyncJobStatus, string> = {
   pending: 'Venter',
   running: 'Kjører',
   completed: 'Fullført',
+  partial: 'Delvis fullført',
   failed: 'Feilet',
   cancelled: 'Avbrutt',
 }

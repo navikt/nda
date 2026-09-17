@@ -16,6 +16,9 @@ let lastKnownRateLimitRemaining: number | null = null
 let lastKnownRateLimitStatus: GitHubRateLimitStatus | null = null
 
 export function getGitHubRateLimitRemaining(): number | null {
+  if (lastKnownRateLimitStatus?.resetAt && lastKnownRateLimitStatus.resetAt.getTime() <= Date.now()) {
+    return null
+  }
   return lastKnownRateLimitRemaining
 }
 
