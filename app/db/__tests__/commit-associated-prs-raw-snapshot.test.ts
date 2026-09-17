@@ -37,6 +37,18 @@ describe('saveCommitAssociatedPrsRawSnapshot', () => {
       JSON.stringify(rawAssociatedPrs),
     ])
   })
+
+  it('guards the insert with a dedup check against the latest snapshot for the sha', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 11 }] })
+
+    const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
+    await saveCommitAssociatedPrsRawSnapshot('navikt', 'nda', 999, 'abc123', rawAssociatedPrs, apiVersion)
+
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('last_snapshot')
+    expect(query).toContain('NOT EXISTS')
+    expect(query).toContain('pg_advisory_xact_lock')
+  })
 })
 
 describe('getLatestCommitAssociatedPrsRawSnapshot', () => {

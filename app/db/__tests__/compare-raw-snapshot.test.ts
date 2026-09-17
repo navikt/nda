@@ -38,6 +38,19 @@ describe('saveCompareRawSnapshot', () => {
       JSON.stringify(rawData),
     ])
   })
+
+  it('guards the insert with a dedup check against the latest snapshot for the base/head sha pair', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7 }] })
+
+    const rawData = { status: 'ahead', total_commits: 2, commits: [], files: [] }
+    const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
+    await saveCompareRawSnapshot('navikt', 'nda', 999, 'base-sha', 'head-sha', rawData, apiVersion)
+
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('last_snapshot')
+    expect(query).toContain('NOT EXISTS')
+    expect(query).toContain('pg_advisory_xact_lock')
+  })
 })
 
 describe('getLatestCompareRawSnapshot', () => {

@@ -34,6 +34,18 @@ describe('savePrWindowRawSnapshot', () => {
       JSON.stringify(rawPr),
     ])
   })
+
+  it('guards the insert with a dedup check against the latest snapshot for the pr number', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 13 }] })
+
+    const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
+    await savePrWindowRawSnapshot('navikt', 'nda', 999, 42, rawPr, apiVersion)
+
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('last_snapshot')
+    expect(query).toContain('NOT EXISTS')
+    expect(query).toContain('pg_advisory_xact_lock')
+  })
 })
 
 describe('getLatestPrWindowRawSnapshot', () => {

@@ -71,6 +71,21 @@ describe('saveChecksRawSnapshot', () => {
       JSON.stringify([rawCheckRun]),
     ])
   })
+
+  it('guards the insert with a dedup check against the latest snapshot for the sha/check-suite', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 9 }] })
+
+    const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
+    const observedAt = new Date('2026-01-01T00:00:00Z')
+    await saveChecksRawSnapshot('navikt', 'nda', 999, 'a'.repeat(40), 42, true, [rawCheckRun], apiVersion, observedAt)
+
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('last_snapshot')
+    expect(query).toContain('NOT EXISTS')
+    expect(query).toContain('pg_advisory_xact_lock')
+    expect(query).toContain('IS NOT DISTINCT FROM')
+    expect(query).toContain('is_definitive = $6')
+  })
 })
 
 describe('getLatestDefinitiveChecksRawSnapshot', () => {

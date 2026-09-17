@@ -16,10 +16,28 @@ export async function saveChecksRawSnapshot(
   observedAt: Date,
 ): Promise<number> {
   const result = await pool.query(
-    `INSERT INTO github_checks_raw_snapshots
-       (github_repo_id, owner, repo, sha, check_suite_id, is_definitive, api_version, api_deprecated_at, api_sunset_at, fetched_at, data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     RETURNING id`,
+    `WITH lock AS MATERIALIZED (
+       SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $4 || ':' || coalesce($5::text, 'null'), 0))
+     ),
+     last_snapshot AS (
+       SELECT c.id, c.data, c.is_definitive
+       FROM github_checks_raw_snapshots c, lock
+       WHERE c.github_repo_id = $1 AND c.sha = $4 AND c.check_suite_id IS NOT DISTINCT FROM $5
+       ORDER BY c.fetched_at DESC
+       LIMIT 1
+     ),
+     inserted AS (
+       INSERT INTO github_checks_raw_snapshots
+         (github_repo_id, owner, repo, sha, check_suite_id, is_definitive, api_version, api_deprecated_at, api_sunset_at, fetched_at, data)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM last_snapshot WHERE data = $11::jsonb AND is_definitive = $6
+       )
+       RETURNING id
+     )
+     SELECT id FROM inserted
+     UNION ALL
+     SELECT id FROM last_snapshot WHERE NOT EXISTS (SELECT 1 FROM inserted)`,
     [
       githubRepoId,
       owner,

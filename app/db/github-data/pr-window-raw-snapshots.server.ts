@@ -11,10 +11,26 @@ export async function savePrWindowRawSnapshot(
   apiVersion: ApiVersionMetadata,
 ): Promise<number> {
   const result = await pool.query(
-    `INSERT INTO github_pr_window_raw_snapshots
-       (github_repo_id, owner, repo, pr_number, api_version, api_deprecated_at, api_sunset_at, data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id`,
+    `WITH lock AS MATERIALIZED (
+       SELECT pg_advisory_xact_lock(hashtextextended($1::text || ':' || $4::text, 0))
+     ),
+     last_snapshot AS (
+       SELECT c.id, c.data
+       FROM github_pr_window_raw_snapshots c, lock
+       WHERE c.github_repo_id = $1 AND c.pr_number = $4
+       ORDER BY c.fetched_at DESC
+       LIMIT 1
+     ),
+     inserted AS (
+       INSERT INTO github_pr_window_raw_snapshots
+         (github_repo_id, owner, repo, pr_number, api_version, api_deprecated_at, api_sunset_at, data)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8::jsonb
+       WHERE NOT EXISTS (SELECT 1 FROM last_snapshot WHERE data = $8::jsonb)
+       RETURNING id
+     )
+     SELECT id FROM inserted
+     UNION ALL
+     SELECT id FROM last_snapshot WHERE NOT EXISTS (SELECT 1 FROM inserted)`,
     [
       githubRepoId,
       owner,
