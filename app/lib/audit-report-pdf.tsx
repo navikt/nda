@@ -290,9 +290,10 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
             <View style={styles.methodologyBox}>
               <Text style={styles.methodologyTitle}>D. Baseline deployment ({baselineCount} stk)</Text>
               <Text style={styles.methodologyText}>
-                En baseline er det første registrerte deploymentet for en applikasjon som ble lagt til i NDA. Det
-                markerer startpunktet for revisjonsperioden — kildekoden som applikasjonen allerede kjørte på da
-                NDA-overvåking ble aktivert.
+                En baseline er det første sporbare deploymentet i et repositorium som ble lagt til i NDA — det finnes
+                ingen tidligere deployment i samme kodehistorikk (på tvers av applikasjoner som deler repositoriet) å
+                sammenligne mot. Det markerer startpunktet for revisjonsperioden — kildekoden som allerede kjørte i
+                produksjon da NDA-overvåking ble aktivert.
               </Text>
               <Text style={styles.methodologyText}>
                 Siden et baseline-deployment ikke er et nytt produksjonssett, finnes det ingen tilhørende pull request
