@@ -13,7 +13,6 @@ export const Default: Story = {
   args: {
     repositoryId: 5,
     implicitApprovalSettings: { mode: 'off' },
-    affectedApps: [{ id: 1, app_name: 'pensjon-pen', team_slug: 'pensjondeployer', environment_name: 'prod-fss' }],
   },
 }
 
@@ -22,6 +21,5 @@ export const KunDependabot: Story = {
   args: {
     repositoryId: 5,
     implicitApprovalSettings: { mode: 'dependabot_only' },
-    affectedApps: [],
   },
 }
