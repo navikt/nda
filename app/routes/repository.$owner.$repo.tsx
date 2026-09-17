@@ -7,7 +7,7 @@ import {
   isCurrentOrHistoricalNameForRepositoryId,
 } from '~/db/repositories.server'
 import { getUserIdentity } from '~/lib/auth.server'
-import { canAccessRepositoryAdmin } from '~/lib/authorization.server'
+import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
 import { requireParams } from '~/lib/route-params.server'
 import type { Route } from './+types/repository.$owner.$repo'
 
@@ -54,10 +54,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const identity = await getUserIdentity(request)
 
-  const [affectedApps, canAccessAdmin] = await Promise.all([
-    getAffectedAppsForRepositoryId(repository.id),
-    identity ? canAccessRepositoryAdmin(identity, repository.id) : Promise.resolve(false),
-  ])
+  const { affectedApps, canAccessAdmin } = identity
+    ? await resolveRepositoryAdminAccess(identity, repository.id).then(({ affectedApps, authorized }) => ({
+        affectedApps,
+        canAccessAdmin: authorized,
+      }))
+    : { affectedApps: await getAffectedAppsForRepositoryId(repository.id), canAccessAdmin: false }
 
   return {
     repository,

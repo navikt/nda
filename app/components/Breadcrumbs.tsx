@@ -305,7 +305,12 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
         const repoMatch = pathname.match(/^\/repository\/([^/]+)\/([^/]+)/)
         if (repoMatch) {
           const [, owner, repo] = repoMatch
-          crumbs.push({ path: `/repository/${owner}/${repo}`, label: `${owner}/${repo}` })
+          const repoData = matches.find((m) => (m.loaderData as Record<string, unknown>)?.repository)
+          const repositoryId = (repoData?.loaderData as Record<string, { id?: number }>)?.repository?.id
+          const repoPath = repositoryId
+            ? `/repository/${owner}/${repo}?repositoryId=${repositoryId}`
+            : `/repository/${owner}/${repo}`
+          crumbs.push({ path: repoPath, label: `${owner}/${repo}` })
         }
       }
       // Handle: /team/:team/env/:env/app/:app/admin
