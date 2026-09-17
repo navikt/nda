@@ -219,6 +219,7 @@ export const InMonorepo: Story = {
       monorepo: {
         github_owner: 'navikt',
         github_repo_name: 'pensjon-monorepo',
+        repository_id: 42,
         siblings: [
           { id: 20, app_name: 'pensjon-utbetaling', team_slug: 'pensjonutbetaling', environment_name: 'prod-fss' },
           { id: 21, app_name: 'pensjon-saksbehandling', team_slug: 'pensjonsak', environment_name: 'prod-gcp' },
@@ -240,6 +241,7 @@ export const InMonorepoWithMismatch: Story = {
       monorepo: {
         github_owner: 'navikt',
         github_repo_name: 'pensjon-monorepo',
+        repository_id: 42,
         siblings: [
           { id: 20, app_name: 'pensjon-utbetaling', team_slug: 'pensjonutbetaling', environment_name: 'prod-fss' },
         ],
