@@ -415,6 +415,50 @@ describe('getMonorepoSiblings', () => {
     const info = await getMonorepoSiblings(appA)
     expect(info?.base_branch_mismatch).toBe(true)
   })
+
+  it('should expose repository_id when every active app links to the same repository', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9010',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9010',
+    })
+    const repositoryId = await seedRepository(pool, { githubRepoId: '9010', githubOwner: owner, githubRepoName: repo })
+
+    const info = await getMonorepoSiblings(appA)
+    expect(info?.repository_id).toBe(repositoryId)
+  })
+
+  it('should expose repository_id as null when the inactive app itself points at a different repository than its active siblings', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9020',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9021',
+    })
+    await seedRepository(pool, { githubRepoId: '9020', githubOwner: owner, githubRepoName: repo })
+    await seedRepository(pool, { githubRepoId: '9021', githubOwner: owner, githubRepoName: repo })
+    await setAppInactive(appA)
+
+    const info = await getMonorepoSiblings(appA)
+    expect(info?.repository_id).toBeNull()
+  })
 })
 
 describe('propagateVerificationToSiblings', () => {

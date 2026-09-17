@@ -178,17 +178,24 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
   const siblings = [...appsById.values()].filter((a) => a.id !== monitoredAppId)
   if (siblings.length === 0) return null
 
+  const repositoryIdRows: { repository_id: number | null }[] = [...result.rows]
+
   if (!appsById.has(monitoredAppId)) {
-    const ownApp = await pool.query<MonorepoAppEntry>(
+    const ownApp = await pool.query<MonorepoAppEntry & { repository_id: number | null }>(
       `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name,
               ${effectiveDefaultBranchSql('ma')} AS default_branch,
-              ${effectiveAuditStartYearSql('ma')} AS audit_start_year
+              ${effectiveAuditStartYearSql('ma')} AS audit_start_year,
+              r.id AS repository_id
        FROM monitored_applications ma
+       LEFT JOIN (${ACTIVE_REPO_PER_APP}) ar ON ar.monitored_app_id = ma.id
+       LEFT JOIN repositories r ON r.github_repo_id = ar.github_repo_id
        WHERE ma.id = $1`,
       [monitoredAppId],
     )
     if (ownApp.rows.length > 0) {
-      appsById.set(monitoredAppId, ownApp.rows[0])
+      const { repository_id: ownRepositoryId, ...ownAppEntry } = ownApp.rows[0]
+      appsById.set(monitoredAppId, ownAppEntry)
+      repositoryIdRows.push({ repository_id: ownRepositoryId })
     }
   }
 
@@ -197,7 +204,7 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
   return {
     github_owner: ownerName,
     github_repo_name: repoName,
-    repository_id: sharedRepositoryId(result.rows),
+    repository_id: sharedRepositoryId(repositoryIdRows),
     siblings,
     base_branch_mismatch: hasMismatch(allApps.map((a) => a.default_branch)),
     audit_year_mismatch: hasMismatch(allApps.map((a) => a.audit_start_year)),
