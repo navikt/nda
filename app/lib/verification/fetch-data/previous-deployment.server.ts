@@ -31,7 +31,7 @@ async function logZeroCandidateDiagnostics(currentDeploymentId: number, githubRe
     const repoRowsResult = await pool.query(
       `SELECT id, github_owner, github_repo_name, github_repo_id, status
        FROM application_repositories WHERE monitored_app_id = $1
-       ORDER BY CASE status WHEN 'active' THEN 1 WHEN 'historical' THEN 2 ELSE 3 END, id
+       ORDER BY CASE status WHEN 'active' THEN 1 WHEN 'historical' THEN 2 ELSE 3 END, created_at DESC, id DESC
        LIMIT 20`,
       [current.monitored_app_id],
     )
