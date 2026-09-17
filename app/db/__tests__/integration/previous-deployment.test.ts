@@ -206,7 +206,7 @@ describe('getPreviousDeployment', () => {
     expect(prev).toBeNull()
   })
 
-  it('should respect auditStartYear and exclude older deployments', async () => {
+  it('should find previous deployment regardless of auditStartYear (ancestry lookup is unaffected by audit scope)', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'team',
       appName: 'app',
@@ -261,7 +261,7 @@ describe('getPreviousDeployment', () => {
     expect(prevWithYear?.id).toBe(validId)
 
     const prevStrictYear = await getPreviousDeployment(currentId, owner, repo, githubRepoId, 2026, 'cur333')
-    expect(prevStrictYear).toBeNull()
+    expect(prevStrictYear?.id).toBe(validId)
   })
 
   it('should find a previous deployment from a sibling app in the same monorepo, same environment', async () => {

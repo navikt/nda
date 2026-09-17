@@ -105,11 +105,15 @@ async function logZeroCandidateDiagnostics(
 async function queryCandidates(
   currentDeploymentId: number,
   githubRepoId: string,
-  auditStartYear: number | null,
   offset: number,
 ): Promise<PreviousDeploymentCandidate[]> {
   const params: (number | string)[] = [currentDeploymentId, githubRepoId]
-  let query = `
+  params.push(CANDIDATE_PAGE_SIZE)
+  const limitParamIndex = params.length
+  params.push(offset)
+  const offsetParamIndex = params.length
+
+  const query = `
     SELECT d.id, d.commit_sha, d.created_at
     FROM deployments d
     JOIN application_repositories ar
@@ -123,19 +127,8 @@ async function queryCandidates(
       AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
       AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
       AND d.commit_sha !~ '^refs/'
+    ORDER BY d.created_at DESC, d.id DESC LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
   `
-
-  if (auditStartYear) {
-    params.push(`${auditStartYear}-01-01`)
-    query += ` AND d.created_at >= $${params.length}`
-  }
-
-  params.push(CANDIDATE_PAGE_SIZE)
-  const limitParamIndex = params.length
-  params.push(offset)
-  const offsetParamIndex = params.length
-
-  query += ` ORDER BY d.created_at DESC, d.id DESC LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`
 
   const result = await pool.query(query, params)
   return result.rows.map((row) => ({
@@ -206,7 +199,7 @@ export async function getPreviousDeployment(
 
   let offset = 0
   for (let page = 0; page < MAX_CANDIDATE_PAGES; page++) {
-    const candidates = await queryCandidates(currentDeploymentId, githubRepoId, auditStartYear, offset)
+    const candidates = await queryCandidates(currentDeploymentId, githubRepoId, offset)
     if (candidates.length === 0) {
       if (page === 0) await logZeroCandidateDiagnostics(currentDeploymentId, githubRepoId, auditStartYear)
       return null
