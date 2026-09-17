@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import type {
   SectionRole,
   SectionRoleAssignment,
@@ -6,6 +7,8 @@ import type {
   UserRoles,
 } from '~/lib/authorization-types'
 import { pool } from './connection.server'
+
+type Queryable = Pick<PoolClient, 'query'>
 
 export async function assignSectionRole(
   navIdent: string,
@@ -121,9 +124,9 @@ export async function getTeamRoleAssignments(devTeamId: number): Promise<TeamRol
   return rows
 }
 
-export async function getUserRoles(navIdent: string): Promise<UserRoles> {
+export async function getUserRoles(navIdent: string, queryable: Queryable = pool): Promise<UserRoles> {
   const [sectionResult, teamResult] = await Promise.all([
-    pool.query<SectionRoleAssignment>(
+    queryable.query<SectionRoleAssignment>(
       `SELECT r.id, r.nav_ident, r.section_id, r.role, r.assigned_by, r.assigned_at
        FROM section_role_assignments r
        JOIN sections s ON s.id = r.section_id AND s.is_active = true
@@ -131,7 +134,7 @@ export async function getUserRoles(navIdent: string): Promise<UserRoles> {
        ORDER BY r.section_id, r.role`,
       [navIdent],
     ),
-    pool.query<TeamRoleAssignment>(
+    queryable.query<TeamRoleAssignment>(
       `SELECT r.id, r.nav_ident, r.dev_team_id, r.role, r.assigned_by, r.assigned_at
        FROM dev_team_role_assignments r
        JOIN dev_teams dt ON dt.id = r.dev_team_id AND dt.is_active = true

@@ -12,7 +12,6 @@ import {
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
-import { updateRepositorySettings } from '~/db/repositories.server'
 import type { SyncJob } from '~/db/sync-job-types'
 import {
   acquireSyncLock,
@@ -28,18 +27,16 @@ import {
 } from '~/db/sync-jobs.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
-import { canAccessAppAdmin, canAccessRepositorySettingsAdmin } from '~/lib/authorization.server'
+import { canAccessAppAdmin } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { getFormString, isValidSlackChannel } from '~/lib/form-validators'
 import { logger, runWithJobContext } from '~/lib/logger.server'
-import { affectedAppsMessage, REPO_NOT_LINKED_SUFFIX } from '~/lib/repo-scope-messages'
 import { processReportJobAsync } from '~/lib/report-job-processor.server'
 import { isValidReportPeriodType } from '~/lib/report-periods'
 import type { SlackConfigSettingKey } from '~/lib/slack/config-setting-keys'
 import { serializeUserLookups } from '~/lib/user-display'
 import { fetchVerificationDataForAllDeployments } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
-import { isImplicitApprovalMode } from '~/lib/verification/types'
 
 class AppNotFoundError extends Error {}
 
@@ -198,76 +195,6 @@ export async function action({ request }: { request: Request; params: Record<str
     return { error: 'Ugyldig eller manglende app-ID' }
   }
 
-  if (action === 'update_default_branch') {
-    const defaultBranch = formData.get('default_branch') as string
-    if (!defaultBranch || defaultBranch.trim() === '') {
-      return { error: 'Default branch kan ikke være tom' }
-    }
-
-    if (!(await canAccessRepositorySettingsAdmin(user, appId))) {
-      return { error: 'Du har ikke administratortilgang til alle appene i samme repo' }
-    }
-
-    const result = await updateRepositorySettings({
-      monitoredAppId: appId,
-      patch: { defaultBranch: defaultBranch.trim() },
-      changedByNavIdent: user.navIdent,
-      changedByName: user.name || undefined,
-    })
-
-    if (!result.ok) {
-      if (result.reason === 'app_not_found') {
-        return { error: 'Fant ikke applikasjonen' }
-      }
-      await updateMonitoredApplication(appId, { default_branch: defaultBranch.trim() })
-      return { success: `Default branch oppdatert!${REPO_NOT_LINKED_SUFFIX}` }
-    }
-
-    if (result.changedKeys.length === 0) {
-      return { success: 'Ingen endring — default branch var allerede satt til denne verdien.' }
-    }
-
-    return {
-      success: `Default branch oppdatert!${affectedAppsMessage(result.affectedApps, appId, result.changedKeys)}`,
-    }
-  }
-
-  if (action === 'update_implicit_approval') {
-    const modeValue = formData.get('mode')
-    if (typeof modeValue !== 'string' || !isImplicitApprovalMode(modeValue)) {
-      return { error: 'Ugyldig modus' }
-    }
-
-    if (!(await canAccessRepositorySettingsAdmin(user, appId))) {
-      return { error: 'Du har ikke administratortilgang til alle appene i samme repo' }
-    }
-
-    const result = await updateRepositorySettings({
-      monitoredAppId: appId,
-      patch: { implicitApprovalMode: modeValue },
-      changedByNavIdent: user.navIdent,
-      changedByName: user.name || undefined,
-    })
-
-    if (!result.ok) {
-      if (result.reason === 'app_not_found') {
-        return { error: 'Fant ikke applikasjonen' }
-      }
-      return {
-        error:
-          'Denne appen har ikke et kjent GitHub-repository koblet til seg. Uten et kjent repository er det ikke noe kode å godkjenne, så implisitt godkjenning kan ikke konfigureres.',
-      }
-    }
-
-    if (result.changedKeys.length === 0) {
-      return { success: 'Ingen endring — modus var allerede satt til denne verdien.' }
-    }
-
-    return {
-      success: `Implisitt godkjenning-innstillinger oppdatert!${affectedAppsMessage(result.affectedApps, appId, result.changedKeys)}`,
-    }
-  }
-
   if (action === 'update_test_requirement') {
     const testRequirement = formData.get('test_requirement') as 'none' | 'unit_tests' | 'integration_tests'
     if (!['none', 'unit_tests', 'integration_tests'].includes(testRequirement)) {
@@ -276,74 +203,6 @@ export async function action({ request }: { request: Request; params: Record<str
 
     await updateMonitoredApplication(appId, { test_requirement: testRequirement })
     return { success: 'Testkrav oppdatert!' }
-  }
-
-  if (action === 'update_audit_start_year') {
-    const startYearValue = formData.get('audit_start_year') as string
-
-    let auditStartYear: number | null = null
-    if (startYearValue && startYearValue.trim() !== '') {
-      auditStartYear = parseInt(startYearValue, 10)
-      if (Number.isNaN(auditStartYear) || auditStartYear < 2000 || auditStartYear > 2100) {
-        return { error: 'Ugyldig startår. Må være mellom 2000 og 2100.' }
-      }
-    }
-
-    if (!(await canAccessRepositorySettingsAdmin(user, appId))) {
-      return { error: 'Du har ikke administratortilgang til alle appene i samme repo' }
-    }
-
-    const repoResult = await updateRepositorySettings({
-      monitoredAppId: appId,
-      patch: { auditStartYear },
-      changedByNavIdent: user.navIdent,
-      changedByName: user.name || undefined,
-    })
-
-    if (!repoResult.ok) {
-      if (repoResult.reason === 'app_not_found') {
-        return { error: 'Fant ikke applikasjonen' }
-      }
-      return {
-        error:
-          'Denne appen har ikke et kjent GitHub-repository koblet til seg. Uten et kjent repository er det ikke noe kode å revidere, så startår for revisjon kan ikke settes.',
-      }
-    }
-
-    const result = repoResult.auditStartYearChange ?? {
-      updatedAppIds: repoResult.affectedApps.map((app) => app.id),
-      promotedDeploymentId: null,
-      demotedDeploymentIds: [],
-      recomputeLimitedToActingApp: false,
-      recomputeSkippedDueToAmbiguousRepoScope: false,
-    }
-
-    if (repoResult.changedKeys.length === 0) {
-      return { success: 'Ingen endring — startår var allerede satt til denne verdien.' }
-    }
-
-    let success = 'Startår for revisjon oppdatert!'
-    success += affectedAppsMessage(repoResult.affectedApps, appId, repoResult.changedKeys)
-    if (result.recomputeLimitedToActingApp) {
-      success +=
-        ' Appene har ikke ett entydig felles repo-scope registrert ennå, så baseline er kun vurdert på nytt for denne appen.'
-    }
-    if (result.recomputeSkippedDueToAmbiguousRepoScope) {
-      success +=
-        ' Baseline ble ikke automatisk vurdert på nytt fordi appene har flere ulike aktive repoer registrert samtidig — dette bør rettes opp manuelt.'
-    }
-    if (result.promotedDeploymentId) {
-      success += auditStartYear
-        ? ' Første deployment i det nye startåret er nå foreslått som ny baseline.'
-        : ' Første kvalifiserte deployment er nå foreslått som ny baseline.'
-    }
-    if (result.demotedDeploymentIds.length > 0) {
-      success +=
-        result.demotedDeploymentIds.length > 1
-          ? ' De forrige baseline-markørene er ikke lenger gyldige og er derfor fjernet.'
-          : ' Den forrige baseline-markøren er ikke lenger gyldig og er derfor fjernet.'
-    }
-    return { success }
   }
 
   if (action === 'check_readiness') {

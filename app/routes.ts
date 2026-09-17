@@ -120,5 +120,6 @@ export default [
     route('sections/:slug', 'routes/sections.$slug.tsx'),
     route('team/:team/env/:env/app/:app/admin/deviations', 'routes/team/$team.env.$env.app.$app.admin.deviations.tsx'),
     route('repository/:owner/:repo', 'routes/repository.$owner.$repo.tsx'),
+    route('repository/:owner/:repo/admin', 'routes/repository.$owner.$repo.admin.tsx'),
   ]),
 ] satisfies RouteConfig
