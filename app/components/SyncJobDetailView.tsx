@@ -67,6 +67,11 @@ function statusColor(status: string): 'success' | 'error' | 'warning' | 'info' |
   }
 }
 
+function formatLogDetailValue(value: unknown): string {
+  if (value === null || value === undefined) return String(value)
+  return typeof value === 'object' ? (JSON.stringify(value) ?? String(value)) : String(value)
+}
+
 export function SyncJobDetailView({ job, logs, jobTypeLabel, jobStatusLabel, hasDebugLogs }: SyncJobDetailViewProps) {
   const revalidator = useRevalidator()
   const [showDebug, setShowDebug] = useState(true)
@@ -86,7 +91,7 @@ export function SyncJobDetailView({ job, logs, jobTypeLabel, jobStatusLabel, has
           })
           const details = l.details
             ? ` ${Object.entries(l.details)
-                .map(([k, v]) => `${k}=${v}`)
+                .map(([k, v]) => `${k}=${formatLogDetailValue(v)}`)
                 .join(' ')}`
             : ''
           return `${time} [${l.level.toUpperCase()}] ${l.message}${details}`
@@ -239,9 +244,12 @@ export function SyncJobDetailView({ job, logs, jobTypeLabel, jobStatusLabel, has
                       {log.message}
                     </BodyShort>
                     {log.details && (
-                      <Detail textColor="subtle" style={{ whiteSpace: 'nowrap' }}>
+                      <Detail
+                        textColor="subtle"
+                        style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', minWidth: 0 }}
+                      >
                         {Object.entries(log.details)
-                          .map(([k, v]) => `${k}=${v}`)
+                          .map(([k, v]) => `${k}=${formatLogDetailValue(v)}`)
                           .join(' ')}
                       </Detail>
                     )}
