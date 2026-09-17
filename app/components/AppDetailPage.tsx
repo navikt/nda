@@ -11,6 +11,7 @@ import {
   XMarkIcon,
 } from '@navikt/aksel-icons'
 import {
+  Link as AkselLink,
   Alert,
   BodyShort,
   Box,
@@ -103,6 +104,7 @@ interface AppDetailSibling {
 interface AppDetailMonorepoInfo {
   github_owner: string
   github_repo_name: string
+  repository_id: number | null
   siblings: AppDetailSibling[]
   base_branch_mismatch: boolean
   audit_year_mismatch: boolean
@@ -275,28 +277,21 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
           <VStack gap="space-8">
             <HStack gap="space-12" align="center" wrap>
               <PackageIcon aria-hidden />
-              <BodyShort size="small" weight="semibold">
-                Monorepo: {monorepo.github_owner}/{monorepo.github_repo_name}
-              </BodyShort>
-              <Tag variant="neutral" size="xsmall">
-                {monorepo.siblings.length + 1} applikasjoner deler dette repoet
-              </Tag>
-            </HStack>
-            <HStack gap="space-8" align="center" wrap>
-              <Tag variant="info" size="xsmall">
-                {app.app_name} ({app.team_slug}/{app.environment_name})
-              </Tag>
-              {monorepo.siblings.map((s) => (
-                <Link
-                  key={s.id}
-                  to={`/team/${s.team_slug}/env/${s.environment_name}/app/${s.app_name}`}
-                  style={{ textDecoration: 'none' }}
-                >
-                  <Tag variant="neutral" size="xsmall">
-                    {s.app_name} ({s.team_slug}/{s.environment_name})
-                  </Tag>
-                </Link>
-              ))}
+              {monorepo.repository_id !== null ? (
+                <BodyShort size="small" weight="semibold">
+                  Monorepo:{' '}
+                  <AkselLink
+                    as={Link}
+                    to={`/repository/${monorepo.github_owner}/${monorepo.github_repo_name}?repositoryId=${monorepo.repository_id}`}
+                  >
+                    {monorepo.github_owner}/{monorepo.github_repo_name}
+                  </AkselLink>
+                </BodyShort>
+              ) : (
+                <BodyShort size="small" weight="semibold">
+                  Monorepo: {monorepo.github_owner}/{monorepo.github_repo_name}
+                </BodyShort>
+              )}
             </HStack>
             {(monorepo.base_branch_mismatch || monorepo.audit_year_mismatch) && (
               <Alert variant="warning" size="small">

@@ -24,6 +24,7 @@ export interface MonorepoGroup {
 export interface MonorepoSiblingInfo {
   github_owner: string
   github_repo_name: string
+  repository_id: number | null
   siblings: MonorepoAppEntry[]
   base_branch_mismatch: boolean
   audit_year_mismatch: boolean
@@ -193,6 +194,7 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
   return {
     github_owner: ownerName,
     github_repo_name: repoName,
+    repository_id: result.rows[0]?.repository_id ?? null,
     siblings,
     base_branch_mismatch: hasMismatch(allApps.map((a) => a.default_branch)),
     audit_year_mismatch: hasMismatch(allApps.map((a) => a.audit_start_year)),
