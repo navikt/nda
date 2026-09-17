@@ -1,15 +1,11 @@
 import { CogIcon } from '@navikt/aksel-icons'
 import { BodyShort, Heading, HStack, VStack } from '@navikt/ds-react'
-import { redirect, useLoaderData } from 'react-router'
+import { useLoaderData } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
-import {
-  getRepoConfigAuditLog,
-  getRepositoryById,
-  getRepositoryByOwnerRepo,
-  isCurrentOrHistoricalNameForRepositoryId,
-} from '~/db/repositories.server'
+import { getRepoConfigAuditLog } from '~/db/repositories.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
+import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
 import { requireParams } from '~/lib/route-params.server'
 import type { Route } from './+types/repository.$owner.$repo.admin'
 import { AuditStartYearSettings } from './repository.$owner.$repo.admin/AuditStartYearSettings'
@@ -27,39 +23,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const { owner, repo } = requireParams(params, ['owner', 'repo'])
   const user = await requireUser(request)
   const url = new URL(request.url)
-  const repositoryIdParam = url.searchParams.get('repositoryId')
-  const requestedRepositoryId = repositoryIdParam !== null ? Number(repositoryIdParam) : null
-
-  const repository = await (async () => {
-    if (
-      requestedRepositoryId !== null &&
-      Number.isInteger(requestedRepositoryId) &&
-      requestedRepositoryId > 0 &&
-      requestedRepositoryId <= 2_147_483_647
-    ) {
-      const byId = await getRepositoryById(requestedRepositoryId)
-      if (byId && (await isCurrentOrHistoricalNameForRepositoryId(byId.id, owner, repo))) {
-        if (byId.github_owner !== owner || byId.github_repo_name !== repo) {
-          const redirectPath = `/repository/${encodeURIComponent(byId.github_owner)}/${encodeURIComponent(byId.github_repo_name)}/admin?repositoryId=${byId.id}`
-          throw redirect(redirectPath, { status: 301 })
-        }
-        return byId
-      }
-    }
-
-    const lookup = await getRepositoryByOwnerRepo(owner, repo)
-
-    if (lookup.status === 'redirect') {
-      const redirectPath = `/repository/${encodeURIComponent(lookup.githubOwner)}/${encodeURIComponent(lookup.githubRepoName)}/admin${url.search}`
-      throw redirect(redirectPath, { status: 301 })
-    }
-
-    if (lookup.status === 'not_found') {
-      throw new Response('Repository not found', { status: 404 })
-    }
-
-    return lookup.repository
-  })()
+  const repository = await resolveRepositoryFromParams(owner, repo, url, '/admin')
 
   const { authorized, affectedApps } = await resolveRepositoryAdminAccess(user, repository.id)
   if (!authorized) {

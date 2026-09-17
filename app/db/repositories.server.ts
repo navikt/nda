@@ -26,6 +26,10 @@ export interface AffectedApp {
   environment_name: string
 }
 
+export interface LinkedRepositoryApp extends AffectedApp {
+  is_active: boolean
+}
+
 export type RepositoryLookupResult =
   | { status: 'found'; repository: Repository }
   | { status: 'redirect'; githubOwner: string; githubRepoName: string }
@@ -76,6 +80,24 @@ export async function getAffectedAppsForRepositoryId(repositoryId: number): Prom
      JOIN repositories r ON r.github_repo_id = latest.github_repo_id
      WHERE ma.is_active = true AND r.id = $1
      ORDER BY ma.environment_name, ma.team_slug, ma.app_name`,
+    [repositoryId],
+  )
+  return rows
+}
+
+export async function getAllAppsLinkedToRepositoryId(repositoryId: number): Promise<LinkedRepositoryApp[]> {
+  const { rows } = await pool.query<LinkedRepositoryApp>(
+    `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name, ma.is_active
+     FROM (
+       SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
+       FROM application_repositories
+       WHERE status = 'active'
+       ORDER BY monitored_app_id, created_at DESC, id DESC
+     ) latest
+     JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
+     JOIN repositories r ON r.github_repo_id = latest.github_repo_id
+     WHERE r.id = $1
+     ORDER BY ma.is_active DESC, ma.environment_name, ma.team_slug, ma.app_name`,
     [repositoryId],
   )
   return rows

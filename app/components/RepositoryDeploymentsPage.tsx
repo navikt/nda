@@ -1,4 +1,4 @@
-import { BodyShort, Box, Button, HStack, VStack } from '@navikt/ds-react'
+import { Link as AkselLink, BodyShort, Box, Heading, HStack, VStack } from '@navikt/ds-react'
 import type { ComponentProps } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { DeploymentFilters, DeploymentRow, PaginationControls } from './deployments'
@@ -8,38 +8,14 @@ type FilterOption = ComponentProps<typeof DeploymentFilters>['deployerOptions'][
 type GoalOption = ComponentProps<typeof DeploymentFilters>['goalOptions'][number]
 type UserMappings = ComponentProps<typeof DeploymentRow>['userMappings']
 
-interface MonitoredApplication {
-  id: number
-  team_slug: string
-  environment_name: string
-  app_name: string
-  is_active: boolean
-  default_branch: string | null
-  default_branch_synced_at: string | Date | null
-  test_requirement: 'none' | 'unit_tests' | 'integration_tests'
-  slack_channel_id: string | null
-  slack_notifications_enabled: boolean
-  reminder_enabled: boolean
-  reminder_time: string | null
-  reminder_days: string[] | null
-  reminder_last_sent_at: string | Date | null
-  slack_notifications_enabled_at: string | Date | null
-  slack_deploy_channel_id: string | null
-  slack_deploy_notify_enabled: boolean
-  slack_deploy_notify_enabled_at: string | Date | null
-  not_found_in_nais_at: string | Date | null
-  created_at: string | Date
-  updated_at: string | Date
-}
-
-interface MonorepoInfo {
+interface RepositoryDeploymentsRepository {
   github_owner: string
   github_repo_name: string
-  repository_id: number | null
+  id: number
 }
 
-export interface AppDeploymentsPageProps {
-  app: MonitoredApplication
+export interface RepositoryDeploymentsPageProps {
+  repository: RepositoryDeploymentsRepository
   deployments: DeploymentData[]
   total: number
   page: number
@@ -47,9 +23,6 @@ export interface AppDeploymentsPageProps {
   userMappings: UserMappings
   deployerOptions: FilterOption[]
   currentUserGithub: string | null
-  hasMonorepoSiblings: boolean
-  showAllEnvironments: boolean
-  monorepo: MonorepoInfo | null
   errorReasons: Record<number, string>
   teamOptions: FilterOption[]
   teamFilterEmptyReason: 'no-user-teams' | 'no-team-members' | null
@@ -59,8 +32,8 @@ export interface AppDeploymentsPageProps {
   workflowFileOptions: FilterOption[]
 }
 
-export function AppDeploymentsPage({
-  app,
+export function RepositoryDeploymentsPage({
+  repository,
   deployments,
   total,
   page,
@@ -68,9 +41,6 @@ export function AppDeploymentsPage({
   userMappings,
   deployerOptions,
   currentUserGithub,
-  hasMonorepoSiblings,
-  showAllEnvironments,
-  monorepo,
   errorReasons,
   teamOptions,
   teamFilterEmptyReason,
@@ -78,7 +48,7 @@ export function AppDeploymentsPage({
   goalOptions,
   triggerEventOptions,
   workflowFileOptions,
-}: AppDeploymentsPageProps) {
+}: RepositoryDeploymentsPageProps) {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const currentStatus = searchParams.get('status') || ''
@@ -91,6 +61,8 @@ export function AppDeploymentsPage({
   const currentPeriod = searchParams.get('period') || 'last-week'
   const teamParam = searchParams.get('team') || ''
   const currentTeam = teamParam === 'mine' && !teamOptions.some((o) => o.value === 'mine') ? '' : teamParam
+
+  const repoUrl = `/repository/${repository.github_owner}/${repository.github_repo_name}?repositoryId=${repository.id}`
 
   const updateFilter = (key: string, value: string) => {
     const newParams = new URLSearchParams(searchParams)
@@ -111,34 +83,17 @@ export function AppDeploymentsPage({
 
   return (
     <VStack gap="space-32">
-      {monorepo && !showAllEnvironments && (
-        <Box padding="space-16" borderRadius="8" background="neutral-soft">
-          <HStack gap="space-8" align="center" justify="space-between" wrap>
-            <BodyShort size="small">
-              Denne appen er del av monorepoet{' '}
-              <strong>
-                {monorepo.github_owner}/{monorepo.github_repo_name}
-              </strong>
-            </BodyShort>
-            {monorepo.repository_id !== null ? (
-              <Button
-                as={Link}
-                to={`/repository/${monorepo.github_owner}/${monorepo.github_repo_name}/deployments?repositoryId=${monorepo.repository_id}`}
-                variant="tertiary"
-                size="xsmall"
-              >
-                Se alle deployments for repoet
-              </Button>
-            ) : (
-              hasMonorepoSiblings && (
-                <Button variant="tertiary" size="xsmall" onClick={() => updateFilter('monorepo', 'true')}>
-                  Vis alle miljøer
-                </Button>
-              )
-            )}
-          </HStack>
-        </Box>
-      )}
+      <div>
+        <Heading size="large" level="1">
+          Deployments for {repository.github_owner}/{repository.github_repo_name}
+        </Heading>
+        <BodyShort textColor="subtle">
+          Viser deployments for alle apper (aktive og inaktive) koblet til dette repoet.{' '}
+          <AkselLink as={Link} to={repoUrl}>
+            Tilbake til repo-siden
+          </AkselLink>
+        </BodyShort>
+      </div>
 
       <DeploymentFilters
         currentPeriod={currentPeriod}
@@ -162,18 +117,8 @@ export function AppDeploymentsPage({
 
       <HStack justify="space-between" align="center" wrap>
         <BodyShort textColor="subtle">
-          {total} deployment{total !== 1 ? 's' : ''} funnet
-          {showAllEnvironments && ' (alle miljøer)'}
+          {total} deployment{total !== 1 ? 's' : ''} funnet (alle apper og miljøer)
         </BodyShort>
-        {hasMonorepoSiblings && (monorepo?.repository_id == null || showAllEnvironments) && (
-          <Button
-            variant={showAllEnvironments ? 'secondary' : 'tertiary'}
-            size="small"
-            onClick={() => updateFilter('monorepo', showAllEnvironments ? '' : 'true')}
-          >
-            {showAllEnvironments ? 'Vis kun dette miljøet' : 'Vis alle miljøer'}
-          </Button>
-        )}
       </HStack>
 
       <div>
@@ -194,8 +139,8 @@ export function AppDeploymentsPage({
               deployment={deployment}
               userMappings={userMappings}
               errorReason={errorReasons[deployment.id]}
-              showEnv={showAllEnvironments}
-              currentEnv={app.environment_name}
+              showEnv
+              showApp
               searchParams={searchParams}
             />
           ))

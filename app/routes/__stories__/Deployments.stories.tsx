@@ -235,7 +235,6 @@ const baseArgs: AppDeploymentsPageProps = {
   hasMonorepoSiblings: false,
   showAllEnvironments: false,
   monorepo: null,
-  monorepoSiblings: [],
   errorReasons: {},
   teamOptions: getTeamOptions(),
   teamFilterEmptyReason: null,
