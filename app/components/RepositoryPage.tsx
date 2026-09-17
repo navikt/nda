@@ -1,8 +1,10 @@
-import { Link as AkselLink, Box, Heading, List, VStack } from '@navikt/ds-react'
+import { CogIcon } from '@navikt/aksel-icons'
+import { Link as AkselLink, Box, Button, Heading, HStack, List, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import { ExternalLink } from '~/components/ExternalLink'
 
 export interface RepositoryPageRepository {
+  id: number
   github_owner: string
   github_repo_name: string
 }
@@ -17,19 +19,28 @@ export interface RepositoryPageAffectedApp {
 export interface RepositoryPageProps {
   repository: RepositoryPageRepository
   affectedApps: RepositoryPageAffectedApp[]
+  canAccessAdmin: boolean
 }
 
-export function RepositoryPage({ repository, affectedApps }: RepositoryPageProps) {
+export function RepositoryPage({ repository, affectedApps, canAccessAdmin }: RepositoryPageProps) {
   const repoFullName = `${repository.github_owner}/${repository.github_repo_name}`
+  const adminUrl = `/repository/${repository.github_owner}/${repository.github_repo_name}/admin?repositoryId=${repository.id}`
 
   return (
     <VStack gap="space-24">
-      <div>
-        <Heading size="large" level="1">
-          {repoFullName}
-        </Heading>
-        <ExternalLink href={`https://github.com/${repoFullName}`}>Se på GitHub</ExternalLink>
-      </div>
+      <HStack justify="space-between" align="start" wrap>
+        <div>
+          <Heading size="large" level="1">
+            {repoFullName}
+          </Heading>
+          <ExternalLink href={`https://github.com/${repoFullName}`}>Se på GitHub</ExternalLink>
+        </div>
+        {canAccessAdmin && (
+          <Button as={Link} to={adminUrl} variant="tertiary" size="small" icon={<CogIcon aria-hidden />}>
+            Administrer
+          </Button>
+        )}
+      </HStack>
 
       <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
         <VStack gap="space-16">

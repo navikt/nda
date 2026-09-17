@@ -125,6 +125,19 @@ const dynamicBreadcrumbs: Array<{
     parent: '/team/:team/env/:env/app/:app/deployments/:id',
   },
   {
+    pattern: /^\/repository\/([^/]+)\/([^/]+)$/,
+    getLabel: (_matches, pathname) => {
+      const segments = pathname.split('/')
+      return `${segments[2]}/${segments[3]}` || 'Repository'
+    },
+    parent: '/',
+  },
+  {
+    pattern: /^\/repository\/([^/]+)\/([^/]+)\/admin$/,
+    getLabel: () => 'Administrer',
+    parent: '/repository/:owner/:repo',
+  },
+  {
     pattern: /^\/users\/([^/]+)$/,
     getLabel: (_matches, pathname) => {
       const username = pathname.split('/')[2]
@@ -285,6 +298,14 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
           crumbs.push({ path: appPath, label: app })
           crumbs.push({ path: `${appPath}/admin`, label: 'Administrasjon' })
           crumbs.push({ path: `${appPath}/admin/verification-diff`, label: 'Verifiseringsavvik' })
+        }
+      }
+      // Handle: /repository/:owner/:repo/admin
+      else if (dynamic.parent === '/repository/:owner/:repo') {
+        const repoMatch = pathname.match(/^\/repository\/([^/]+)\/([^/]+)/)
+        if (repoMatch) {
+          const [, owner, repo] = repoMatch
+          crumbs.push({ path: `/repository/${owner}/${repo}`, label: `${owner}/${repo}` })
         }
       }
       // Handle: /team/:team/env/:env/app/:app/admin
