@@ -162,6 +162,58 @@ describe('getAllMonorepoGroups', () => {
     const groups = await getAllMonorepoGroups()
     expect(groups).toHaveLength(2)
   })
+
+  it('should expose repository_id when every app links to the same repository', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '8010',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '8010',
+    })
+    const repositoryId = await seedRepository(pool, { githubRepoId: '8010', githubOwner: owner, githubRepoName: repo })
+
+    const groups = await getAllMonorepoGroups()
+    expect(groups[0].repository_id).toBe(repositoryId)
+  })
+
+  it('should expose repository_id as null when apps are unlinked or point at different repositories', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '8011',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '8012',
+    })
+    await seedRepository(pool, { githubRepoId: '8011', githubOwner: owner, githubRepoName: repo })
+
+    const groups = await getAllMonorepoGroups()
+    expect(groups[0].repository_id).toBeNull()
+  })
+
+  it('should expose repository_id as null when no app has a github_repo_id at all', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: owner, githubRepo: repo })
+    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: owner, githubRepo: repo })
+
+    const groups = await getAllMonorepoGroups()
+    expect(groups[0].repository_id).toBeNull()
+  })
 })
 
 describe('searchMonorepoGroups', () => {
@@ -217,6 +269,58 @@ describe('searchMonorepoGroups', () => {
 
     const groups = await searchMonorepoGroups(repo, 2)
     expect(groups).toHaveLength(2)
+  })
+
+  it('should expose repository_id when every app links to the same repository', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '8020',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '8020',
+    })
+    const repositoryId = await seedRepository(pool, { githubRepoId: '8020', githubOwner: owner, githubRepoName: repo })
+
+    const groups = await searchMonorepoGroups(repo, 10)
+    expect(groups[0].repository_id).toBe(repositoryId)
+  })
+
+  it('should expose repository_id as null when apps are unlinked or point at different repositories', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '8021',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '8022',
+    })
+    await seedRepository(pool, { githubRepoId: '8021', githubOwner: owner, githubRepoName: repo })
+
+    const groups = await searchMonorepoGroups(repo, 10)
+    expect(groups[0].repository_id).toBeNull()
+  })
+
+  it('should expose repository_id as null when no app has a github_repo_id at all', async () => {
+    const appA = await seedApp(pool, { teamSlug: 'team-a', appName: 'service-a', environment: 'prod' })
+    const appB = await seedApp(pool, { teamSlug: 'team-b', appName: 'service-b', environment: 'prod' })
+    await seedApplicationRepository(pool, { monitoredAppId: appA, githubOwner: owner, githubRepo: repo })
+    await seedApplicationRepository(pool, { monitoredAppId: appB, githubOwner: owner, githubRepo: repo })
+
+    const groups = await searchMonorepoGroups(repo, 10)
+    expect(groups[0].repository_id).toBeNull()
   })
 })
 
