@@ -87,6 +87,7 @@ export default [
     route('admin/section-roles', 'routes/admin/section-roles.tsx'),
     route('admin/monorepos', 'routes/admin/monorepos.tsx'),
     route('admin/soft-deleted', 'routes/admin/soft-deleted.tsx'),
+    route('admin/database-usage', 'routes/admin/database-usage.tsx'),
     route('admin/verification-diffs', 'routes/admin/verification-diffs.tsx'),
     route('admin/workflow-triggers', 'routes/admin/workflow-triggers.tsx'),
     route('admin/workflow-patterns', 'routes/admin/workflow-patterns.tsx'),
