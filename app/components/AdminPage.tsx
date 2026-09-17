@@ -13,6 +13,7 @@ import {
   MagnifyingGlassIcon,
   PersonGroupIcon,
   PersonIcon,
+  TrashIcon,
 } from '@navikt/aksel-icons'
 import { BodyShort, Box, Heading, HGrid, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
@@ -93,6 +94,30 @@ export function AdminPage() {
                   GitHub-verifisering
                 </Heading>
                 <BodyShort textColor="subtle">Verifiser deployments mot GitHub.</BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
+        <Link to="/admin/snapshot-cleanup" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <TrashIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  GitHub-snapshot opprydning
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Rydd opp i historiske GitHub-snapshots for å frigjøre diskplass i databasen.
+                </BodyShort>
               </div>
             </VStack>
           </Box>
