@@ -9,6 +9,7 @@ const {
   mockSavePrRawSnapshotsBatch,
   mockGetDisplayDataFromGitHub,
   mockGetRepositoryId,
+  mockGetGitHubRateLimitRemaining,
 } = vi.hoisted(() => ({
   mockPoolQuery: vi.fn(),
   mockGetChecksForCommit: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockSavePrRawSnapshotsBatch: vi.fn(),
   mockGetDisplayDataFromGitHub: vi.fn(),
   mockGetRepositoryId: vi.fn(),
+  mockGetGitHubRateLimitRemaining: vi.fn<() => number | null>(() => null),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -34,6 +36,7 @@ vi.mock('~/lib/github', () => ({
   getCommitsBetween: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
   getDisplayDataFromGitHub: mockGetDisplayDataFromGitHub,
+  getGitHubRateLimitRemaining: mockGetGitHubRateLimitRemaining,
   getMutablePrDataFromGitHub: vi.fn(),
   getPullRequestForCommit: vi.fn(),
   getRepositoryId: mockGetRepositoryId,
@@ -79,17 +82,6 @@ vi.mock('~/lib/verification/store-data.server', () => ({
 
 import { fetchVerificationDataForAllDeployments } from '~/lib/verification/fetch-data/bulk-fetch.server'
 
-function effectiveSettingsRow() {
-  return {
-    monitored_app_id: 1,
-    app_default_branch: 'main',
-    repository_id: null,
-    repo_audit_start_year: null,
-    repo_implicit_approval_mode: null,
-    repo_default_branch: null,
-  }
-}
-
 function baseDeploymentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
@@ -121,12 +113,12 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
     mockGetDisplayDataFromGitHub.mockReset()
     mockGetRepositoryId.mockReset()
     mockGetRepositoryId.mockResolvedValue(123)
+    mockGetGitHubRateLimitRemaining.mockReset()
+    mockGetGitHubRateLimitRemaining.mockReturnValue(null)
   })
 
   it('skips deployments that already have PR/compare data and commit_checks_data', async () => {
-    mockPoolQuery
-      .mockResolvedValueOnce({ rows: [effectiveSettingsRow()] }) // effective repository settings lookup
-      .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: true })] }) // deployments query
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: true })] }) // deployments query
 
     const result = await fetchVerificationDataForAllDeployments(1)
 
@@ -137,9 +129,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
   })
 
   it('backfills only commit_checks_data for deployments with PR/compare data but no checks yet', async () => {
-    mockPoolQuery
-      .mockResolvedValueOnce({ rows: [effectiveSettingsRow()] })
-      .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
 
     mockGetChecksForCommit.mockResolvedValueOnce({
       checks_passed: true,
@@ -174,9 +164,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
   })
 
   it('marks the checks-fetch attempt as completed even when GitHub confirms zero check runs, so the backfill converges', async () => {
-    mockPoolQuery
-      .mockResolvedValueOnce({ rows: [effectiveSettingsRow()] })
-      .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
 
     mockGetChecksForCommit.mockResolvedValueOnce({
       checks_passed: null,
@@ -196,9 +184,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
   })
 
   it('does not mark the attempt as completed when the checks fetch throws, so the next run retries', async () => {
-    mockPoolQuery
-      .mockResolvedValueOnce({ rows: [effectiveSettingsRow()] })
-      .mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseDeploymentRow({ has_checks_data: false })] })
 
     mockGetChecksForCommit.mockRejectedValueOnce(new Error('GitHub API unavailable'))
 
@@ -209,7 +195,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
   })
 
   it('refreshes only PR display data (not reviews/commits) when refreshDisplayData is set for a fully cached deployment', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [effectiveSettingsRow()] }).mockResolvedValueOnce({
+    mockPoolQuery.mockResolvedValueOnce({
       rows: [baseDeploymentRow({ has_checks_data: true, github_pr_number: 42 })],
     })
 
@@ -278,7 +264,7 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
   })
 
   it('counts as skipped, not fetched, when the display data refresh fails to find a raw snapshot', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [effectiveSettingsRow()] }).mockResolvedValueOnce({
+    mockPoolQuery.mockResolvedValueOnce({
       rows: [baseDeploymentRow({ has_checks_data: true, github_pr_number: 42 })],
     })
 
@@ -290,5 +276,20 @@ describe('fetchVerificationDataForAllDeployments checks backfill', () => {
     expect(result.skipped).toBe(1)
     expect(mockGetDisplayDataFromGitHub).not.toHaveBeenCalled()
     expect(mockSavePrRawSnapshotsBatch).not.toHaveBeenCalled()
+  })
+
+  it('stops early and marks the result as rate limited when GitHub quota is nearly exhausted', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [baseDeploymentRow({ id: 1, has_checks_data: true }), baseDeploymentRow({ id: 2, has_checks_data: true })],
+    })
+    mockGetGitHubRateLimitRemaining.mockReturnValue(50)
+
+    const result = await fetchVerificationDataForAllDeployments(1)
+
+    expect(result.rateLimited).toBe(true)
+    expect(result.processed).toBe(0)
+    expect(result.fetched).toBe(0)
+    expect(result.skipped).toBe(0)
+    expect(mockGetChecksForCommit).not.toHaveBeenCalled()
   })
 })

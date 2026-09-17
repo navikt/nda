@@ -2,13 +2,16 @@ import { pool } from '~/db/connection.server'
 import { effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
+import { getGitHubRateLimitRemaining } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
-import { fetchVerificationData, getAppSettings } from '../fetch-data.server'
+import { fetchVerificationData } from '../fetch-data.server'
 import { updateDeploymentCommitChecks } from '../store-data.server'
 import { CURRENT_SCHEMA_VERSION } from '../types'
 import { refreshCommitChecksOnly } from './commit-checks.server'
 import { refreshDisplayData as refreshPrDisplayData } from './pr-data.server'
 import { backfillWorkflowTriggerConfig } from './workflow-triggers.server'
+
+const RATE_LIMIT_SAFETY_BUFFER = 200
 
 export interface BulkFetchProgress {
   total: number
@@ -22,6 +25,7 @@ export interface BulkFetchProgress {
 
 export interface BulkFetchResult extends BulkFetchProgress {
   errorDetails: Array<{ deploymentId: number; error: string }>
+  rateLimited?: boolean
 }
 
 export async function fetchVerificationDataForAllDeployments(
@@ -31,13 +35,6 @@ export async function fetchVerificationDataForAllDeployments(
 ): Promise<BulkFetchResult> {
   const jobId = options?.jobId
   const refreshDisplayData = options?.refreshDisplayData
-
-  const settingsStart = performance.now()
-  const appSettings = await getAppSettings(monitoredAppId)
-  logger.debug('Hentet app-innstillinger', {
-    auditStartYear: appSettings.auditStartYear,
-    durationMs: Math.round(performance.now() - settingsStart),
-  })
 
   const params: (number | string)[] = [monitoredAppId]
 
@@ -110,6 +107,20 @@ export async function fetchVerificationDataForAllDeployments(
   for (const deployment of deployments) {
     if (jobId && (await isSyncJobCancelled(jobId))) {
       await logSyncJobMessage(jobId, 'info', `Jobb avbrutt etter ${result.processed} av ${result.total} deployments`)
+      break
+    }
+
+    const rateLimitRemaining = getGitHubRateLimitRemaining()
+    if (rateLimitRemaining !== null && rateLimitRemaining < RATE_LIMIT_SAFETY_BUFFER) {
+      logger.warn(`⚠️  GitHub rate limit near exhaustion (${rateLimitRemaining} remaining), stopping bulk fetch`)
+      if (jobId) {
+        await logSyncJobMessage(
+          jobId,
+          'warn',
+          `Stoppet etter ${result.processed} av ${result.total} deployments — GitHub rate limit nesten oppbrukt (${rateLimitRemaining} igjen)`,
+        )
+      }
+      result.rateLimited = true
       break
     }
 
@@ -254,11 +265,19 @@ export async function fetchVerificationDataForAllDeployments(
   }
 
   if (jobId) {
-    await logSyncJobMessage(
-      jobId,
-      'info',
-      `Datahenting fullført: ${result.fetched} hentet (${result.derivedFromRaw} derivert fra rådata), ${result.skipped} hoppet over, ${result.workflowTriggersFetched} workflow-triggere hentet, ${result.errors} feil`,
-    )
+    if (result.rateLimited) {
+      await logSyncJobMessage(
+        jobId,
+        'warn',
+        `Datahenting delvis fullført (stoppet pga. rate limit): ${result.processed} av ${result.total} deployments behandlet, ${result.fetched} hentet (${result.derivedFromRaw} derivert fra rådata), ${result.skipped} hoppet over, ${result.workflowTriggersFetched} workflow-triggere hentet, ${result.errors} feil`,
+      )
+    } else {
+      await logSyncJobMessage(
+        jobId,
+        'info',
+        `Datahenting fullført: ${result.fetched} hentet (${result.derivedFromRaw} derivert fra rådata), ${result.skipped} hoppet over, ${result.workflowTriggersFetched} workflow-triggere hentet, ${result.errors} feil`,
+      )
+    }
   }
 
   return result

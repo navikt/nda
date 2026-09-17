@@ -29,6 +29,12 @@ export function verifyDeployment(input: VerificationInput): VerificationResult {
   }
 
   if (input.previousDeploymentLookupFailed) {
+    if (input.previousDeploymentRateLimited) {
+      return handleCompareError(
+        input,
+        `GitHub rate limit was near exhaustion during previous-deployment lookup for ${input.repository} — verification postponed until quota resets, to avoid incorrectly marking this deployment as a baseline.`,
+      )
+    }
     return handleCompareError(
       input,
       `Could not determine repository identity (github_repo_id) for ${input.repository} — previous-deployment lookup skipped. This usually resolves once the repository backfill completes.`,

@@ -138,7 +138,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     getDevTeamsForApp(deployment.monitored_app_id, app.team_slug),
     getPreviousDeploymentForNav(deploymentId, deployment.monitored_app_id, navFilters),
     getNextDeployment(deploymentId, deployment.monitored_app_id, navFilters),
-    getPreviousDeploymentForDiff(deploymentId, deployment.monitored_app_id, auditStartYear),
+    getPreviousDeploymentForDiff(deploymentId, deployment.monitored_app_id),
     getLatestVerificationRun(deploymentId),
     nearbyDeploymentsPromise,
     deployment.four_eyes_status === 'unauthorized_repository'

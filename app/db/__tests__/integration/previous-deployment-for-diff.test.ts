@@ -21,7 +21,7 @@ describe('getPreviousDeploymentForDiff', () => {
   const owner = 'navikt'
   const repo = 'pensjon-selvbetjening-soknad-alder-frontend'
 
-  it('respects audit_start_year — first deployment in audit window has no previous', async () => {
+  it('finds previous deployment regardless of audit_start_year (ancestry lookup is unaffected by audit scope)', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'pensjonselvbetjening',
       appName: 'pensjon-app',
@@ -34,7 +34,7 @@ describe('getPreviousDeploymentForDiff', () => {
       githubRepoId: '9001',
     })
     await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
-    await seedDeployment(pool, {
+    const olderId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'pensjonselvbetjening',
       environment: 'prod-gcp',
@@ -54,7 +54,7 @@ describe('getPreviousDeploymentForDiff', () => {
     })
 
     const prev = await getPreviousDeploymentForDiff(firstId, '9001')
-    expect(prev).toBeNull()
+    expect(prev?.id).toBe(olderId)
   })
 
   it('returns previous deployment within audit window', async () => {

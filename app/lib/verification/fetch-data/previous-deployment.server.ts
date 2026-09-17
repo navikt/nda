@@ -1,6 +1,6 @@
 import { pool } from '~/db/connection.server'
 import { NON_DIFFABLE_STATUSES_SQL, UNAUTHORIZED_STATUSES_SQL } from '~/lib/four-eyes-status'
-import { getCommitAncestryStatus } from '~/lib/github'
+import { getCommitAncestryStatus, getGitHubRateLimitRemaining } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 
 export interface PreviousDeploymentResult {
@@ -16,7 +16,8 @@ interface PreviousDeploymentCandidate {
 }
 
 const CANDIDATE_PAGE_SIZE = 20
-const MAX_CANDIDATE_PAGES = 10
+const MAX_CANDIDATE_PAGES = 50
+const RATE_LIMIT_SAFETY_BUFFER = 200
 
 async function logZeroCandidateDiagnostics(
   currentDeploymentId: number,
@@ -156,9 +157,17 @@ async function findAncestorCandidate(
   repo: string,
   currentCommitSha: string,
   githubRepoId: string,
-): Promise<PreviousDeploymentResult | null> {
+): Promise<PreviousDeploymentResult | 'rate_limited' | null> {
   const knownGithubRepoId = toSafeGithubRepoId(githubRepoId)
   for (const candidate of candidates) {
+    const rateLimitRemaining = getGitHubRateLimitRemaining()
+    if (rateLimitRemaining !== null && rateLimitRemaining < RATE_LIMIT_SAFETY_BUFFER) {
+      logger.warn(
+        `⚠️  GitHub rate limit near exhaustion (${rateLimitRemaining} remaining), stopping ancestry search for ${owner}/${repo}`,
+      )
+      return 'rate_limited'
+    }
+
     const status = await getCommitAncestryStatus(owner, repo, candidate.commitSha, currentCommitSha, knownGithubRepoId)
 
     if (status === null) {
@@ -194,7 +203,7 @@ export async function getPreviousDeployment(
   githubRepoId: string | null,
   auditStartYear: number | null,
   currentCommitSha: string,
-): Promise<PreviousDeploymentResult | null> {
+): Promise<PreviousDeploymentResult | null | 'rate_limited'> {
   if (!githubRepoId) return null
 
   let offset = 0
@@ -206,6 +215,17 @@ export async function getPreviousDeployment(
     }
 
     const found = await findAncestorCandidate(candidates, owner, repo, currentCommitSha, githubRepoId)
+    if (found === 'rate_limited') {
+      logger.warn('getPreviousDeployment: stopping ancestry search early due to GitHub rate limit', {
+        log_type: 'previous_deployment_rate_limited',
+        owner,
+        repo,
+        githubRepoId,
+        currentDeploymentId,
+        page,
+      })
+      return 'rate_limited'
+    }
     if (found) return found
 
     if (candidates.length < CANDIDATE_PAGE_SIZE) return null

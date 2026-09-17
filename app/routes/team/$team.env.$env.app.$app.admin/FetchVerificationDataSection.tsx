@@ -156,9 +156,11 @@ export function FetchVerificationDataSection({
                   ? 'danger-soft'
                   : fetchJobStatus.status === 'cancelled'
                     ? 'warning-soft'
-                    : fetchJobStatus.status === 'running'
-                      ? 'info-soft'
-                      : 'neutral-soft'
+                    : fetchJobStatus.status === 'partial'
+                      ? 'warning-soft'
+                      : fetchJobStatus.status === 'running'
+                        ? 'info-soft'
+                        : 'neutral-soft'
             }
           >
             <VStack gap="space-8">
@@ -167,12 +169,14 @@ export function FetchVerificationDataSection({
                 {fetchJobStatus.status === 'completed' && <CheckmarkCircleIcon aria-hidden />}
                 {fetchJobStatus.status === 'failed' && <ExclamationmarkTriangleIcon aria-hidden />}
                 {fetchJobStatus.status === 'cancelled' && <ExclamationmarkTriangleIcon aria-hidden />}
+                {fetchJobStatus.status === 'partial' && <ExclamationmarkTriangleIcon aria-hidden />}
                 <BodyShort size="small" weight="semibold">
                   {fetchJobStatus.status === 'pending' && 'Venter...'}
                   {fetchJobStatus.status === 'running' && 'Henter data fra GitHub...'}
                   {fetchJobStatus.status === 'completed' && 'Datahenting fullført'}
                   {fetchJobStatus.status === 'failed' && 'Datahenting feilet'}
                   {fetchJobStatus.status === 'cancelled' && 'Datahenting avbrutt'}
+                  {fetchJobStatus.status === 'partial' && 'Datahenting delvis fullført (rate limit)'}
                 </BodyShort>
               </HStack>
 

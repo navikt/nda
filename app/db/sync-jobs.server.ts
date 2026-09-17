@@ -69,7 +69,7 @@ export async function acquireSyncLock(
 
 export async function releaseSyncLock(
   jobId: number,
-  status: 'completed' | 'failed',
+  status: 'completed' | 'partial' | 'failed',
   result?: Record<string, unknown>,
   error?: string,
 ): Promise<void> {
@@ -162,6 +162,7 @@ export async function getSyncJobStats(): Promise<{
   total: number
   running: number
   completed: number
+  partial: number
   failed: number
   cancelled: number
   lastHour: number
@@ -171,6 +172,7 @@ export async function getSyncJobStats(): Promise<{
       COUNT(*) as total,
       COUNT(CASE WHEN status = 'running' THEN 1 END) as running,
       COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+      COUNT(CASE WHEN status = 'partial' THEN 1 END) as partial,
       COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
       COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled,
       COUNT(CASE WHEN created_at > NOW() - INTERVAL '1 hour' THEN 1 END) as last_hour
@@ -180,6 +182,7 @@ export async function getSyncJobStats(): Promise<{
     total: parseInt(result.rows[0].total, 10),
     running: parseInt(result.rows[0].running, 10),
     completed: parseInt(result.rows[0].completed, 10),
+    partial: parseInt(result.rows[0].partial, 10),
     failed: parseInt(result.rows[0].failed, 10),
     cancelled: parseInt(result.rows[0].cancelled, 10),
     lastHour: parseInt(result.rows[0].last_hour, 10),

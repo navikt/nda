@@ -425,6 +425,7 @@ export interface VerificationInput {
   } | null
 
   previousDeploymentLookupFailed?: boolean
+  previousDeploymentRateLimited?: boolean
 
   deployedPr: {
     number: number

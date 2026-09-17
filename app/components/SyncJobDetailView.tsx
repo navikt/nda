@@ -60,6 +60,8 @@ function statusColor(status: string): 'success' | 'error' | 'warning' | 'info' |
       return 'error'
     case 'cancelled':
       return 'warning'
+    case 'partial':
+      return 'warning'
     case 'running':
       return 'info'
     default:

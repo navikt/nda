@@ -39,11 +39,10 @@ export async function fetchVerificationData(
     ? (repoCheck.repository.status as RepositoryStatus)
     : 'unknown'
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
-  const previousDeploymentLookupFailed = repositoryStatus === 'active' && !githubRepoId
 
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
-  const previousDeployment = await getPreviousDeployment(
+  const previousDeploymentResult = await getPreviousDeployment(
     deploymentId,
     owner,
     repo,
@@ -51,6 +50,10 @@ export async function fetchVerificationData(
     appSettings.auditStartYear,
     commitSha,
   )
+  const previousDeploymentRateLimited = previousDeploymentResult === 'rate_limited'
+  const previousDeployment = previousDeploymentRateLimited ? null : previousDeploymentResult
+  const previousDeploymentLookupFailed =
+    (repositoryStatus === 'active' && !githubRepoId) || previousDeploymentRateLimited
 
   const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, options)
   const deployedPr = deployedPrResult.deployedPr
@@ -204,6 +207,7 @@ export async function fetchVerificationData(
     implicitApprovalSettings: appSettings.implicitApprovalSettings,
     previousDeployment,
     previousDeploymentLookupFailed,
+    previousDeploymentRateLimited,
     deployedPr,
     commitsBetween,
     compareFailed,

@@ -565,11 +565,7 @@ async function notifyNewDeploymentIfNeeded(
   ) {
     const repoBase = `https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`
     try {
-      const previousDeployment = await getPreviousDeploymentForDiff(
-        deployment.id,
-        deployment.monitored_app_id,
-        deployment.audit_start_year,
-      )
+      const previousDeployment = await getPreviousDeploymentForDiff(deployment.id, deployment.monitored_app_id)
       githubUrl =
         previousDeployment && isValidCommitSha(previousDeployment.commit_sha)
           ? `${repoBase}/compare/${previousDeployment.commit_sha}...${deployment.commit_sha}`

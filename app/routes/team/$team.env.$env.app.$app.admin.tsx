@@ -140,6 +140,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     if (!fetchJobId) return
     if (
       fetchJobStatus?.status === 'completed' ||
+      fetchJobStatus?.status === 'partial' ||
       fetchJobStatus?.status === 'failed' ||
       fetchJobStatus?.status === 'cancelled'
     )
