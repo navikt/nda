@@ -47,6 +47,7 @@ function accessLogMiddleware(req: express.Request, res: express.Response, next: 
 
 const app = express()
 app.disable('x-powered-by')
+app.set('trust proxy', 1)
 app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
   delete req.headers['x-csp-nonce']
   next()
