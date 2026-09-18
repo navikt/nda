@@ -149,21 +149,18 @@ async function runPeriodicSync(): Promise<void> {
       }
 
       const cleanedSnapshots = await cleanupOldSnapshots()
-      if (
-        cleanedSnapshots.prSnapshotsDeleted > 0 ||
-        cleanedSnapshots.commitSnapshotsDeleted > 0 ||
-        cleanedSnapshots.prRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.compareRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.checksRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.workflowRunsRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.commitRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.commitOnBranchRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.commitAssociatedPrsRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.prWindowRawSnapshotsDeleted > 0 ||
-        cleanedSnapshots.checkAnnotationsRawSnapshotsDeleted > 0
-      ) {
+      const totalSnapshotsDeleted = Object.values(cleanedSnapshots.counts).reduce((sum, n) => sum + n, 0)
+      if (totalSnapshotsDeleted > 0 || cleanedSnapshots.truncated) {
+        const perTable = Object.entries(cleanedSnapshots.counts)
+          .filter(([, count]) => count > 0)
+          .map(([key, count]) => `${count} ${key}`)
+          .join(', ')
         logger.info(
-          `🧹 Cleaned up ${cleanedSnapshots.prSnapshotsDeleted} PR snapshots, ${cleanedSnapshots.commitSnapshotsDeleted} commit snapshots, ${cleanedSnapshots.prRawSnapshotsDeleted} raw PR snapshots, ${cleanedSnapshots.compareRawSnapshotsDeleted} raw compare snapshots, ${cleanedSnapshots.checksRawSnapshotsDeleted} raw checks snapshots, ${cleanedSnapshots.workflowRunsRawSnapshotsDeleted} raw workflow run snapshots, ${cleanedSnapshots.commitRawSnapshotsDeleted} raw commit snapshots, ${cleanedSnapshots.commitOnBranchRawSnapshotsDeleted} raw commit-on-branch snapshots, ${cleanedSnapshots.commitAssociatedPrsRawSnapshotsDeleted} raw commit-associated-PR snapshots, ${cleanedSnapshots.prWindowRawSnapshotsDeleted} raw PR-window snapshots, ${cleanedSnapshots.checkAnnotationsRawSnapshotsDeleted} raw check-annotations snapshots`,
+          `🧹 Cleaned up ${totalSnapshotsDeleted} old GitHub snapshot rows${perTable ? ` (${perTable})` : ''}${
+            cleanedSnapshots.truncated
+              ? ' — avbrutt (batch-/tidsgrense eller tilkoblingsproblem), fortsetter neste kjøring'
+              : ''
+          }`,
         )
       }
 

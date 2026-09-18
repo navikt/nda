@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { pool } from '~/db/connection.server'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
 import {
@@ -310,211 +311,289 @@ export async function getAllLatestPrRawSnapshots(
   return snapshots
 }
 
-export async function cleanupOldSnapshots(options?: { keepCount?: number; olderThanDays?: number }): Promise<{
-  prSnapshotsDeleted: number
-  commitSnapshotsDeleted: number
-  prRawSnapshotsDeleted: number
-  compareRawSnapshotsDeleted: number
-  checksRawSnapshotsDeleted: number
-  workflowRunsRawSnapshotsDeleted: number
-  commitRawSnapshotsDeleted: number
-  commitOnBranchRawSnapshotsDeleted: number
-  commitAssociatedPrsRawSnapshotsDeleted: number
-  prWindowRawSnapshotsDeleted: number
-  checkAnnotationsRawSnapshotsDeleted: number
-}> {
+const DEFAULT_CLEANUP_BATCH_SIZE = 5000
+const DEFAULT_MAX_ROWS_PER_TABLE = 50000
+const DEFAULT_CLEANUP_MAX_DURATION_MS = 20000
+
+interface SnapshotCleanupOptions {
+  keepCount?: number
+  olderThanDays?: number
+  batchSize?: number
+  maxRowsPerTable?: number
+  maxDurationMs?: number
+}
+
+interface SnapshotTableSpec {
+  tableName: string
+  partitionColumns: string
+  resultKey: string
+}
+
+const SNAPSHOT_TABLE_SPECS: SnapshotTableSpec[] = [
+  {
+    tableName: 'github_pr_raw_snapshots',
+    partitionColumns: 'github_repo_id, pr_number, data_type',
+    resultKey: 'prRawSnapshotsDeleted',
+  },
+  {
+    tableName: 'github_compare_raw_snapshots',
+    partitionColumns: 'github_repo_id, base_sha, head_sha',
+    resultKey: 'compareRawSnapshotsDeleted',
+  },
+  {
+    tableName: 'github_checks_raw_snapshots',
+    partitionColumns: 'github_repo_id, sha, check_suite_id',
+    resultKey: 'checksRawSnapshotsDeleted',
+  },
+  {
+    tableName: 'github_workflow_runs_raw_snapshots',
+    partitionColumns: 'github_repo_id, run_id',
+    resultKey: 'workflowRunsRawSnapshotsDeleted',
+  },
+  {
+    tableName: 'github_commit_raw_snapshots',
+    partitionColumns: 'github_repo_id, sha',
+    resultKey: 'commitRawSnapshotsDeleted',
+  },
+  {
+    tableName: 'github_commit_on_branch_raw_snapshots',
+    partitionColumns: 'github_repo_id, commit_sha, branch',
+    resultKey: 'commitOnBranchRawSnapshotsDeleted',
+  },
+  {
+    tableName: 'github_commit_associated_prs_raw_snapshots',
+    partitionColumns: 'github_repo_id, sha',
+    resultKey: 'commitAssociatedPrsRawSnapshotsDeleted',
+  },
+  {
+    tableName: 'github_pr_window_raw_snapshots',
+    partitionColumns: 'github_repo_id, pr_number',
+    resultKey: 'prWindowRawSnapshotsDeleted',
+  },
+  {
+    tableName: 'github_check_annotations_raw_snapshots',
+    partitionColumns: 'github_repo_id, check_run_id',
+    resultKey: 'checkAnnotationsRawSnapshotsDeleted',
+  },
+]
+
+async function connectWithDeadline(deadline: number) {
+  const remainingMs = deadline - Date.now()
+  if (remainingMs <= 0) return null
+  let timedOut = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      timedOut = true
+      resolve(null)
+    }, remainingMs)
+  })
+  const connectPromise = pool.connect()
+  connectPromise.catch(() => {})
+  let client: PoolClient | null
+  try {
+    client = await Promise.race([connectPromise, timeoutPromise])
+  } catch {
+    clearTimeout(timer)
+    return null
+  }
+  if (timedOut || client === null) {
+    connectPromise
+      .then((lateClient) => {
+        lateClient.release()
+      })
+      .catch(() => {})
+    return null
+  }
+  clearTimeout(timer)
+  return client
+}
+
+const TRANSIENT_DB_ERROR_PATTERN = /statement timeout|terminating connection|connection terminated|econnreset/i
+
+function isTransientDbError(error: unknown): boolean {
+  return error instanceof Error && TRANSIENT_DB_ERROR_PATTERN.test(error.message)
+}
+
+async function deleteOldSnapshotsBatched(
+  tableName: string,
+  partitionColumns: string,
+  keepCount: number,
+  olderThanDays: number,
+  batchSize: number,
+  maxRowsPerTable: number,
+  deadline: number,
+): Promise<{ deleted: number; truncated: boolean }> {
+  let deleted = 0
+  let truncated = false
+
+  const client = await connectWithDeadline(deadline)
+  if (!client) {
+    return { deleted: 0, truncated: true }
+  }
+  try {
+    const remainingMsForMaterialize = deadline - Date.now()
+    if (remainingMsForMaterialize <= 0) {
+      return { deleted: 0, truncated: true }
+    }
+
+    let materializedCount = 0
+    try {
+      await client.query(`SET statement_timeout = ${Math.max(1, Math.floor(remainingMsForMaterialize))}`)
+      const materialized = await client.query(
+        `CREATE TEMP TABLE snapshot_cleanup_candidates AS
+         SELECT id FROM (
+           SELECT id, ROW_NUMBER() OVER (
+             PARTITION BY ${partitionColumns}
+             ORDER BY fetched_at DESC, id DESC
+           ) as rn
+           FROM ${tableName}
+           WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
+         ) ranked
+         WHERE rn > $1
+         LIMIT $2`,
+        [keepCount, maxRowsPerTable + 1],
+      )
+      materializedCount = materialized.rowCount ?? 0
+      if (materializedCount > maxRowsPerTable) {
+        truncated = true
+        materializedCount = maxRowsPerTable
+      }
+    } catch (error) {
+      if (isTransientDbError(error)) {
+        return { deleted: 0, truncated: true }
+      }
+      throw error
+    } finally {
+      await client.query('SET statement_timeout = 0').catch(() => {})
+    }
+
+    let consumed = 0
+    while (consumed < materializedCount) {
+      const remainingMs = deadline - Date.now()
+      if (remainingMs <= 0) {
+        truncated = true
+        break
+      }
+
+      const remainingBudget = Math.min(batchSize, materializedCount - consumed)
+      let batchConsumed = 0
+      let rowsDeleted = 0
+      try {
+        await client.query(`SET statement_timeout = ${Math.max(1, Math.floor(remainingMs))}`)
+        const batchResult = await client.query<{ id: number }>(
+          `DELETE FROM snapshot_cleanup_candidates
+           WHERE id IN (SELECT id FROM snapshot_cleanup_candidates LIMIT $1)
+           RETURNING id`,
+          [remainingBudget],
+        )
+        const candidateIds = batchResult.rows.map((row) => row.id)
+        batchConsumed = candidateIds.length
+        if (candidateIds.length > 0) {
+          const remainingMsForDelete = deadline - Date.now()
+          if (remainingMsForDelete <= 0) {
+            truncated = true
+            break
+          }
+          await client.query(`SET statement_timeout = ${Math.max(1, Math.floor(remainingMsForDelete))}`)
+          const deleteResult = await client.query(`DELETE FROM ${tableName} WHERE id = ANY($1)`, [candidateIds])
+          rowsDeleted = deleteResult.rowCount ?? 0
+        }
+      } catch (error) {
+        if (isTransientDbError(error)) {
+          truncated = true
+          break
+        }
+        throw error
+      } finally {
+        await client.query('SET statement_timeout = 0').catch(() => {})
+      }
+
+      deleted += rowsDeleted
+      consumed += batchConsumed
+
+      if (batchConsumed < remainingBudget) {
+        break
+      }
+    }
+  } finally {
+    await client.query('DROP TABLE IF EXISTS snapshot_cleanup_candidates').catch(() => {})
+    client.release()
+  }
+
+  return { deleted, truncated }
+}
+
+export type SnapshotCleanupResult = { counts: Record<string, number>; truncated: boolean }
+
+let cleanupStartTableIndex = 0
+let cleanupInFlight: { key: string; promise: Promise<SnapshotCleanupResult> } | null = null
+let cleanupQueue: Promise<unknown> = Promise.resolve()
+
+function normalizeCleanupOptions(options?: SnapshotCleanupOptions): string {
+  return JSON.stringify({
+    keepCount: options?.keepCount ?? 5,
+    olderThanDays: options?.olderThanDays ?? 90,
+    batchSize: options?.batchSize ?? DEFAULT_CLEANUP_BATCH_SIZE,
+    maxRowsPerTable: options?.maxRowsPerTable ?? DEFAULT_MAX_ROWS_PER_TABLE,
+    maxDurationMs: options?.maxDurationMs ?? DEFAULT_CLEANUP_MAX_DURATION_MS,
+  })
+}
+
+export async function cleanupOldSnapshots(options?: SnapshotCleanupOptions): Promise<SnapshotCleanupResult> {
+  const key = normalizeCleanupOptions(options)
+  if (cleanupInFlight?.key === key) {
+    return cleanupInFlight.promise
+  }
+
+  const previousQueue = cleanupQueue
+  const run = previousQueue.then(() => cleanupOldSnapshotsInternal(options))
+  cleanupQueue = run.catch(() => {})
+  cleanupInFlight = { key, promise: run }
+  run.finally(() => {
+    if (cleanupInFlight?.promise === run) {
+      cleanupInFlight = null
+    }
+  })
+  return run
+}
+
+async function cleanupOldSnapshotsInternal(options?: SnapshotCleanupOptions): Promise<SnapshotCleanupResult> {
   const keepCount = options?.keepCount ?? 5
   const olderThanDays = options?.olderThanDays ?? 90
+  const batchSize = options?.batchSize ?? DEFAULT_CLEANUP_BATCH_SIZE
+  const maxRowsPerTable = options?.maxRowsPerTable ?? DEFAULT_MAX_ROWS_PER_TABLE
+  const maxDurationMs = options?.maxDurationMs ?? DEFAULT_CLEANUP_MAX_DURATION_MS
+  const deadline = Date.now() + maxDurationMs
 
-  const prResult = await pool.query(
-    `DELETE FROM github_pr_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY owner, repo, pr_number, data_type 
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_pr_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
+  const counts: Record<string, number> = {}
+  let truncated = false
 
-  const commitResult = await pool.query(
-    `DELETE FROM github_commit_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY owner, repo, sha, data_type 
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_commit_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
+  const tableCount = SNAPSHOT_TABLE_SPECS.length
+  const startIndex = cleanupStartTableIndex % tableCount
+  cleanupStartTableIndex = (startIndex + 1) % tableCount
 
-  const prRawResult = await pool.query(
-    `DELETE FROM github_pr_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, pr_number, data_type 
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_pr_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  const compareRawResult = await pool.query(
-    `DELETE FROM github_compare_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, base_sha, head_sha
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_compare_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  const checksRawResult = await pool.query(
-    `DELETE FROM github_checks_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, sha, check_suite_id
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_checks_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  const workflowRunsRawResult = await pool.query(
-    `DELETE FROM github_workflow_runs_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, run_id
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_workflow_runs_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  const commitRawResult = await pool.query(
-    `DELETE FROM github_commit_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, sha
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_commit_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  const commitOnBranchRawResult = await pool.query(
-    `DELETE FROM github_commit_on_branch_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, commit_sha, branch
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_commit_on_branch_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  const commitAssociatedPrsRawResult = await pool.query(
-    `DELETE FROM github_commit_associated_prs_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, sha
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_commit_associated_prs_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  const prWindowRawResult = await pool.query(
-    `DELETE FROM github_pr_window_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, pr_number
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_pr_window_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  const checkAnnotationsRawResult = await pool.query(
-    `DELETE FROM github_check_annotations_raw_snapshots
-     WHERE id IN (
-       SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (
-           PARTITION BY github_repo_id, check_run_id
-           ORDER BY fetched_at DESC
-         ) as rn
-         FROM github_check_annotations_raw_snapshots
-         WHERE fetched_at < NOW() - INTERVAL '${olderThanDays} days'
-       ) ranked
-       WHERE rn > $1
-     )`,
-    [keepCount],
-  )
-
-  return {
-    prSnapshotsDeleted: prResult.rowCount ?? 0,
-    commitSnapshotsDeleted: commitResult.rowCount ?? 0,
-    prRawSnapshotsDeleted: prRawResult.rowCount ?? 0,
-    compareRawSnapshotsDeleted: compareRawResult.rowCount ?? 0,
-    checksRawSnapshotsDeleted: checksRawResult.rowCount ?? 0,
-    workflowRunsRawSnapshotsDeleted: workflowRunsRawResult.rowCount ?? 0,
-    commitRawSnapshotsDeleted: commitRawResult.rowCount ?? 0,
-    commitOnBranchRawSnapshotsDeleted: commitOnBranchRawResult.rowCount ?? 0,
-    commitAssociatedPrsRawSnapshotsDeleted: commitAssociatedPrsRawResult.rowCount ?? 0,
-    prWindowRawSnapshotsDeleted: prWindowRawResult.rowCount ?? 0,
-    checkAnnotationsRawSnapshotsDeleted: checkAnnotationsRawResult.rowCount ?? 0,
+  for (let offset = 0; offset < tableCount; offset++) {
+    const spec = SNAPSHOT_TABLE_SPECS[(startIndex + offset) % tableCount]
+    if (Date.now() >= deadline) {
+      counts[spec.resultKey] = 0
+      truncated = true
+      continue
+    }
+    const deletedForTable = await deleteOldSnapshotsBatched(
+      spec.tableName,
+      spec.partitionColumns,
+      keepCount,
+      olderThanDays,
+      batchSize,
+      maxRowsPerTable,
+      deadline,
+    )
+    counts[spec.resultKey] = deletedForTable.deleted
+    if (deletedForTable.truncated) truncated = true
   }
+
+  return { counts, truncated }
 }
 
 export {
