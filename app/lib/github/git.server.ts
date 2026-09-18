@@ -1,4 +1,5 @@
 import {
+  getDerivedCommitOnBranchStatusFromRawSnapshot,
   saveCommitOnBranchRawSnapshot,
   saveCommitRawSnapshot,
   saveCompareRawSnapshot,
@@ -179,6 +180,20 @@ export async function isCommitOnBranch(
   branch: string,
 ): Promise<boolean | null> {
   try {
+    const githubRepoId = await getRepositoryId(owner, repo)
+    if (githubRepoId !== null) {
+      const cachedStatus = await getDerivedCommitOnBranchStatusFromRawSnapshot(
+        owner,
+        repo,
+        githubRepoId,
+        commitSha,
+        branch,
+      ).catch(() => null)
+      if (cachedStatus === true) {
+        return true
+      }
+    }
+
     const client = getGitHubClient()
 
     const response = await client.repos.compareCommits({
@@ -188,10 +203,21 @@ export async function isCommitOnBranch(
       head: branch,
     })
 
-    await archiveCommitOnBranchRawSnapshot(owner, repo, commitSha, branch, response.data, response.headers)
-
     const status = response.data.status
-    return status === 'identical' || status === 'ahead'
+    const isOnBranch = status === 'identical' || status === 'ahead'
+
+    await archiveCommitOnBranchRawSnapshot(
+      owner,
+      repo,
+      githubRepoId,
+      commitSha,
+      branch,
+      response.data,
+      response.headers,
+      isOnBranch,
+    )
+
+    return isOnBranch
   } catch (error) {
     logger.warn(
       `⚠️ Failed to check if ${commitSha.substring(0, 7)} is on ${branch} in ${owner}/${repo}:`,
@@ -204,16 +230,18 @@ export async function isCommitOnBranch(
 async function archiveCommitOnBranchRawSnapshot(
   owner: string,
   repo: string,
+  githubRepoId: number | null,
   commitSha: string,
   branch: string,
   data: unknown,
   headers: Record<string, unknown>,
+  isOnBranch: boolean,
 ): Promise<void> {
   try {
-    const githubRepoId = await getRepositoryId(owner, repo)
     if (githubRepoId === null) return
     const apiVersion = captureApiVersionMetadata(headers, null)
-    await saveCommitOnBranchRawSnapshot(owner, repo, githubRepoId, commitSha, branch, data, apiVersion)
+    const archivedData = isOnBranch ? data : { status: (data as { status?: unknown })?.status ?? null }
+    await saveCommitOnBranchRawSnapshot(owner, repo, githubRepoId, commitSha, branch, archivedData, apiVersion)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.warn(

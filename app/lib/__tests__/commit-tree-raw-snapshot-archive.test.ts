@@ -98,8 +98,31 @@ describe('isCommitOnBranch', () => {
     mockPoolQuery.mockResolvedValue({ rows: [{ id: 1 }] })
   })
 
+  it('returns true from cache without calling compareCommits when a definitive snapshot already exists for the current repo id', async () => {
+    mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 1, github_repo_id: 999, data: { status: 'ahead' } }] })
+
+    const result = await isCommitOnBranch('navikt', 'cached-branch-repo', 'abc123', 'main')
+
+    expect(result).toBe(true)
+    expect(mockCompareCommits).not.toHaveBeenCalled()
+  })
+
+  it('calls GitHub when the cached snapshot belongs to a different (deleted/recreated) repository id', async () => {
+    mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 1, github_repo_id: 111, data: { status: 'ahead' } }] })
+    mockCompareCommits.mockResolvedValueOnce({ data: { status: 'ahead' }, headers: {} })
+
+    const result = await isCommitOnBranch('navikt', 'stale-repo-id-branch-repo', 'abc123', 'main')
+
+    expect(result).toBe(true)
+    expect(mockCompareCommits).toHaveBeenCalled()
+  })
+
   it('archives the raw compareCommits response after checking branch membership', async () => {
     mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 1 }] })
     mockCompareCommits.mockResolvedValueOnce({
       data: { status: 'ahead' },
       headers: { 'x-github-api-version-selected': '2022-11-28' },
@@ -122,8 +145,35 @@ describe('isCommitOnBranch', () => {
     ])
   })
 
+  it('archives only the status, not the full diff payload, when the commit is not on the branch', async () => {
+    mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 1 }] })
+    mockCompareCommits.mockResolvedValueOnce({
+      data: { status: 'behind', ahead_by: 0, behind_by: 3, commits: [{ sha: 'x' }], files: [{ filename: 'a.ts' }] },
+      headers: { 'x-github-api-version-selected': '2022-11-28' },
+    })
+
+    const result = await isCommitOnBranch('navikt', 'behind-branch-repo', 'abc123', 'main')
+
+    expect(result).toBe(false)
+
+    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_commit_on_branch_raw_snapshots'), [
+      999,
+      'navikt',
+      'behind-branch-repo',
+      'abc123',
+      'main',
+      '2022-11-28',
+      null,
+      null,
+      JSON.stringify({ status: 'behind' }),
+    ])
+  })
+
   it('still returns the branch membership result even if archiving fails', async () => {
     mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] })
     mockCompareCommits.mockResolvedValueOnce({ data: { status: 'identical' }, headers: {} })
     mockPoolQuery.mockRejectedValue(new Error('db down'))
 

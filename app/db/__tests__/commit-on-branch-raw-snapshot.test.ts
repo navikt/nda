@@ -6,6 +6,7 @@ vi.mock('~/db/connection.server', () => ({
 
 import { pool } from '~/db/connection.server'
 import {
+  getDerivedCommitOnBranchStatusFromRawSnapshot,
   getLatestCommitOnBranchRawSnapshot,
   saveCommitOnBranchRawSnapshot,
 } from '~/db/github-data/commit-on-branch-raw-snapshots.server'
@@ -88,5 +89,51 @@ describe('getLatestCommitOnBranchRawSnapshot', () => {
       fetchedAt,
       data: rawCompare,
     })
+  })
+})
+
+describe('getDerivedCommitOnBranchStatusFromRawSnapshot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns null when no raw snapshot exists', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [] })
+
+    const result = await getDerivedCommitOnBranchStatusFromRawSnapshot('navikt', 'nda', 999, 'abc123', 'main')
+
+    expect(result).toBeNull()
+  })
+
+  it('returns true when the latest snapshot status is identical and the repo id matches', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7, github_repo_id: 999, data: { status: 'identical' } }] })
+
+    const result = await getDerivedCommitOnBranchStatusFromRawSnapshot('navikt', 'nda', 999, 'abc123', 'main')
+
+    expect(result).toBe(true)
+  })
+
+  it('returns true when the latest snapshot status is ahead and the repo id matches', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7, github_repo_id: 999, data: { status: 'ahead' } }] })
+
+    const result = await getDerivedCommitOnBranchStatusFromRawSnapshot('navikt', 'nda', 999, 'abc123', 'main')
+
+    expect(result).toBe(true)
+  })
+
+  it('returns null when the latest snapshot status is behind (not cached as definitive)', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7, github_repo_id: 999, data: { status: 'behind' } }] })
+
+    const result = await getDerivedCommitOnBranchStatusFromRawSnapshot('navikt', 'nda', 999, 'abc123', 'main')
+
+    expect(result).toBeNull()
+  })
+
+  it('returns null when the cached snapshot belongs to a different (e.g. deleted/recreated) repository id', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ id: 7, github_repo_id: 111, data: { status: 'identical' } }] })
+
+    const result = await getDerivedCommitOnBranchStatusFromRawSnapshot('navikt', 'nda', 999, 'abc123', 'main')
+
+    expect(result).toBeNull()
   })
 })

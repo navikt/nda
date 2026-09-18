@@ -610,6 +610,7 @@ export {
   saveCommitAssociatedPrsRawSnapshot,
 } from './github-data/commit-associated-prs-raw-snapshots.server'
 export {
+  getDerivedCommitOnBranchStatusFromRawSnapshot,
   getLatestCommitOnBranchRawSnapshot,
   saveCommitOnBranchRawSnapshot,
 } from './github-data/commit-on-branch-raw-snapshots.server'
