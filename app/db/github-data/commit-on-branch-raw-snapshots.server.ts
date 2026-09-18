@@ -31,6 +31,21 @@ export async function saveCommitOnBranchRawSnapshot(
   return result.rows[0].id
 }
 
+export async function getDerivedCommitOnBranchStatusFromRawSnapshot(
+  owner: string,
+  repo: string,
+  githubRepoId: number,
+  commitSha: string,
+  branch: string,
+): Promise<boolean | null> {
+  const rawSnapshot = await getLatestCommitOnBranchRawSnapshot(owner, repo, commitSha, branch)
+  if (!rawSnapshot) return null
+  if (rawSnapshot.githubRepoId !== githubRepoId) return null
+  const status = (rawSnapshot.data as { status?: unknown } | null)?.status
+  if (status !== 'identical' && status !== 'ahead') return null
+  return true
+}
+
 export async function getLatestCommitOnBranchRawSnapshot(
   owner: string,
   repo: string,
