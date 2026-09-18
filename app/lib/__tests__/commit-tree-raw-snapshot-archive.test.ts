@@ -98,38 +98,35 @@ describe('isCommitOnBranch', () => {
     mockPoolQuery.mockResolvedValue({ rows: [{ id: 1 }] })
   })
 
-  it('archives the raw compareCommits response after checking branch membership', async () => {
-    mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+  it('returns the branch membership result without writing to github_commit_on_branch_raw_snapshots', async () => {
     mockCompareCommits.mockResolvedValueOnce({
       data: { status: 'ahead' },
       headers: { 'x-github-api-version-selected': '2022-11-28' },
     })
 
-    const result = await isCommitOnBranch('navikt', 'branch-archive-repo', 'abc123', 'main')
+    const result = await isCommitOnBranch('navikt', 'no-archive-repo', 'abc123', 'main')
 
     expect(result).toBe(true)
-
-    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_commit_on_branch_raw_snapshots'), [
-      999,
-      'navikt',
-      'branch-archive-repo',
-      'abc123',
-      'main',
-      '2022-11-28',
-      null,
-      null,
-      JSON.stringify({ status: 'ahead' }),
-    ])
+    expect(mockReposGet).not.toHaveBeenCalled()
+    expect(mockPoolQuery).not.toHaveBeenCalled()
   })
 
-  it('still returns the branch membership result even if archiving fails', async () => {
-    mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
-    mockCompareCommits.mockResolvedValueOnce({ data: { status: 'identical' }, headers: {} })
-    mockPoolQuery.mockRejectedValue(new Error('db down'))
+  it('returns false when the commit is not on the branch, still without archiving', async () => {
+    mockCompareCommits.mockResolvedValueOnce({ data: { status: 'behind' }, headers: {} })
 
-    const result = await isCommitOnBranch('navikt', 'db-failure-branch-repo', 'abc123', 'main')
+    const result = await isCommitOnBranch('navikt', 'no-archive-behind-repo', 'abc123', 'main')
 
-    expect(result).toBe(true)
+    expect(result).toBe(false)
+    expect(mockPoolQuery).not.toHaveBeenCalled()
+  })
+
+  it('returns null if the GitHub compareCommits call fails', async () => {
+    mockCompareCommits.mockRejectedValueOnce(new Error('GitHub down'))
+
+    const result = await isCommitOnBranch('navikt', 'github-failure-branch-repo', 'abc123', 'main')
+
+    expect(result).toBeNull()
+    expect(mockPoolQuery).not.toHaveBeenCalled()
   })
 })
 
