@@ -24,7 +24,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const jobResult = await pool.query(
     `SELECT id, status, result, started_at, completed_at
      FROM sync_jobs
-     WHERE job_type = 'backfill_workflow_triggers' AND monitored_app_id IS NULL
+     WHERE job_type = 'backfill_workflow_triggers' AND monitored_app_id IS NULL AND repository_id IS NULL
      ORDER BY created_at DESC
      LIMIT 1`,
   )
@@ -43,7 +43,7 @@ export async function action({ request }: Route.ActionArgs) {
     await releaseExpiredLocks()
 
     const existingJob = await pool.query(
-      `SELECT id FROM sync_jobs WHERE job_type = 'backfill_workflow_triggers' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
+      `SELECT id FROM sync_jobs WHERE job_type = 'backfill_workflow_triggers' AND monitored_app_id IS NULL AND repository_id IS NULL AND status = 'running' LIMIT 1`,
     )
     if (existingJob.rows.length > 0) {
       return { backfillStarted: existingJob.rows[0].id }
@@ -70,7 +70,7 @@ export async function action({ request }: Route.ActionArgs) {
     } catch (err: unknown) {
       if (err instanceof Error && 'code' in err && (err as { code: string }).code === '23505') {
         const fallback = await pool.query(
-          `SELECT id FROM sync_jobs WHERE job_type = 'backfill_workflow_triggers' AND monitored_app_id IS NULL AND status = 'running' LIMIT 1`,
+          `SELECT id FROM sync_jobs WHERE job_type = 'backfill_workflow_triggers' AND monitored_app_id IS NULL AND repository_id IS NULL AND status = 'running' LIMIT 1`,
         )
         if (fallback.rows.length > 0) return { backfillStarted: fallback.rows[0].id }
       }

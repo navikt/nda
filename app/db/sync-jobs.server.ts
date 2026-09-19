@@ -90,7 +90,7 @@ export async function cleanupOldSyncJobs(keepPerApp: number = 50): Promise<numbe
     `DELETE FROM sync_jobs 
      WHERE id NOT IN (
        SELECT id FROM (
-         SELECT id, ROW_NUMBER() OVER (PARTITION BY monitored_app_id ORDER BY created_at DESC) as rn
+         SELECT id, ROW_NUMBER() OVER (PARTITION BY monitored_app_id, repository_id ORDER BY created_at DESC) as rn
          FROM sync_jobs
        ) ranked
        WHERE rn <= $1
@@ -105,6 +105,7 @@ export async function getAllSyncJobs(filters?: {
   status?: SyncJobStatus
   jobType?: SyncJobType
   appName?: string
+  repositoryId?: number
   limit?: number
 }): Promise<SyncJobWithApp[]> {
   const whereClauses: string[] = []
@@ -129,6 +130,12 @@ export async function getAllSyncJobs(filters?: {
     paramIndex++
   }
 
+  if (filters?.repositoryId) {
+    whereClauses.push(`sj.repository_id = $${paramIndex}`)
+    params.push(filters.repositoryId)
+    paramIndex++
+  }
+
   const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''
   const limit = filters?.limit || 100
 
@@ -137,9 +144,12 @@ export async function getAllSyncJobs(filters?: {
        sj.*,
        ma.app_name,
        ma.team_slug,
-       ma.environment_name
+       ma.environment_name,
+       r.github_owner,
+       r.github_repo_name
      FROM sync_jobs sj
      LEFT JOIN monitored_applications ma ON sj.monitored_app_id = ma.id
+     LEFT JOIN repositories r ON sj.repository_id = r.id
      ${whereClause}
      ORDER BY sj.created_at DESC
      LIMIT $${paramIndex}`,
@@ -194,6 +204,9 @@ export interface FailedSyncJobGroup {
   app_name: string | null
   team_slug: string | null
   environment_name: string | null
+  repository_id: number | null
+  github_owner: string | null
+  github_repo_name: string | null
   job_type: SyncJobType
   error: string | null
   failure_count: number
@@ -215,6 +228,9 @@ export async function getFailedSyncJobsGrouped(jobType?: SyncJobType): Promise<F
        ma.app_name,
        ma.team_slug,
        ma.environment_name,
+       sj.repository_id,
+       r.github_owner,
+       r.github_repo_name,
        sj.job_type,
        sj.error,
        COUNT(*)::integer as failure_count,
@@ -222,8 +238,10 @@ export async function getFailedSyncJobsGrouped(jobType?: SyncJobType): Promise<F
        MAX(COALESCE(sj.completed_at, sj.created_at)) as last_failed_at
      FROM sync_jobs sj
      LEFT JOIN monitored_applications ma ON sj.monitored_app_id = ma.id
+     LEFT JOIN repositories r ON sj.repository_id = r.id
      WHERE sj.status = 'failed' ${jobTypeClause}
-     GROUP BY sj.monitored_app_id, ma.app_name, ma.team_slug, ma.environment_name, sj.job_type, sj.error
+     GROUP BY sj.monitored_app_id, ma.app_name, ma.team_slug, ma.environment_name,
+              sj.repository_id, r.github_owner, r.github_repo_name, sj.job_type, sj.error
      ORDER BY last_failed_at DESC
      LIMIT 100`,
     params,
@@ -249,7 +267,7 @@ export async function getSyncJobsForApp(
   params.push(limit)
 
   const result = await pool.query(
-    `SELECT id, job_type, monitored_app_id, status, started_at, completed_at,
+    `SELECT id, job_type, monitored_app_id, repository_id, status, started_at, completed_at,
             locked_by, lock_expires_at, result, error, options, created_at
      FROM sync_jobs
      WHERE ${conditions.join(' AND ')}
@@ -290,7 +308,7 @@ export async function getObservedSyncIntervalMs(
 
 export async function getLatestSyncJob(appId: number, jobType: SyncJobType): Promise<SyncJob | null> {
   const result = await pool.query(
-    `SELECT id, job_type, monitored_app_id, status, started_at, completed_at,
+    `SELECT id, job_type, monitored_app_id, repository_id, status, started_at, completed_at,
             locked_by, lock_expires_at, result, error, created_at
      FROM sync_jobs
      WHERE monitored_app_id = $1 AND job_type = $2
@@ -303,7 +321,7 @@ export async function getLatestSyncJob(appId: number, jobType: SyncJobType): Pro
 
 export async function getSyncJobById(jobId: number): Promise<SyncJob | null> {
   const result = await pool.query(
-    `SELECT id, job_type, monitored_app_id, status, started_at, completed_at,
+    `SELECT id, job_type, monitored_app_id, repository_id, status, started_at, completed_at,
             locked_by, lock_expires_at, result, error, created_at
      FROM sync_jobs
      WHERE id = $1`,
