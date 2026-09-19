@@ -356,11 +356,6 @@ const SNAPSHOT_TABLE_SPECS: SnapshotTableSpec[] = [
     resultKey: 'commitRawSnapshotsDeleted',
   },
   {
-    tableName: 'github_commit_on_branch_raw_snapshots',
-    partitionColumns: 'github_repo_id, commit_sha, branch',
-    resultKey: 'commitOnBranchRawSnapshotsDeleted',
-  },
-  {
     tableName: 'github_commit_associated_prs_raw_snapshots',
     partitionColumns: 'github_repo_id, sha',
     resultKey: 'commitAssociatedPrsRawSnapshotsDeleted',
@@ -609,10 +604,6 @@ export {
   getLatestCommitAssociatedPrsRawSnapshot,
   saveCommitAssociatedPrsRawSnapshot,
 } from './github-data/commit-associated-prs-raw-snapshots.server'
-export {
-  getLatestCommitOnBranchRawSnapshot,
-  saveCommitOnBranchRawSnapshot,
-} from './github-data/commit-on-branch-raw-snapshots.server'
 export { getLatestCommitRawSnapshot, saveCommitRawSnapshot } from './github-data/commit-raw-snapshots.server'
 export {
   getDerivedCompareDataFromRawSnapshot,
