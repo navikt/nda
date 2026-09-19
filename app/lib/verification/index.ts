@@ -14,7 +14,10 @@ import { storeVerificationResult, updateDeploymentVerification } from './store-d
 import type { CompareData, VerificationInput, VerificationResult } from './types'
 import { verifyDeployment } from './verify'
 
-export { fetchVerificationDataForAllDeployments } from './fetch-data/bulk-fetch.server'
+export {
+  fetchVerificationDataForAllDeployments,
+  fetchVerificationDataForRepository,
+} from './fetch-data/bulk-fetch.server'
 export {
   backfillWorkflowTriggerConfigForAllApps,
   countDeploymentsMissingWorkflowTriggerConfig,

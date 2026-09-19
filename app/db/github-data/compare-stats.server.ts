@@ -166,7 +166,7 @@ export async function getDerivedCompareDataFromRawSnapshot(
   }
 }
 
-interface GitHubDataStats {
+export interface GitHubDataStats {
   total: number
   withCurrentData: number
   withOutdatedData: number
