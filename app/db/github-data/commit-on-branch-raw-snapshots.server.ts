@@ -1,4 +1,6 @@
 import { pool } from '~/db/connection.server'
+import { saveRawSnapshotWithLock } from '~/db/github-data/raw-snapshot-lock.server'
+import { COMMIT_ON_BRANCH_RAW_SNAPSHOT_LOCK_NAMESPACE } from '~/db/github-data/raw-snapshot-lock-namespaces.server'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
 import type { CommitOnBranchRawSnapshot } from '~/lib/verification/types'
 
@@ -11,11 +13,26 @@ export async function saveCommitOnBranchRawSnapshot(
   rawData: unknown,
   apiVersion: ApiVersionMetadata,
 ): Promise<number> {
-  const result = await pool.query(
-    `INSERT INTO github_commit_on_branch_raw_snapshots
-       (github_repo_id, owner, repo, commit_sha, branch, api_version, api_deprecated_at, api_sunset_at, data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING id`,
+  return saveRawSnapshotWithLock(
+    COMMIT_ON_BRANCH_RAW_SNAPSHOT_LOCK_NAMESPACE,
+    `${githubRepoId}:${commitSha}:${branch}`,
+    `WITH last_snapshot AS (
+       SELECT id, data
+       FROM github_commit_on_branch_raw_snapshots
+       WHERE github_repo_id = $1 AND commit_sha = $4 AND branch = $5
+       ORDER BY fetched_at DESC
+       LIMIT 1
+     ),
+     inserted AS (
+       INSERT INTO github_commit_on_branch_raw_snapshots
+         (github_repo_id, owner, repo, commit_sha, branch, api_version, api_deprecated_at, api_sunset_at, data)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb
+       WHERE NOT EXISTS (SELECT 1 FROM last_snapshot WHERE data = $9::jsonb)
+       RETURNING id
+     )
+     SELECT id FROM inserted
+     UNION ALL
+     SELECT id FROM last_snapshot WHERE NOT EXISTS (SELECT 1 FROM inserted)`,
     [
       githubRepoId,
       owner,
@@ -28,7 +45,6 @@ export async function saveCommitOnBranchRawSnapshot(
       JSON.stringify(rawData),
     ],
   )
-  return result.rows[0].id
 }
 
 export async function getLatestCommitOnBranchRawSnapshot(

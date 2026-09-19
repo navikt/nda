@@ -1,13 +1,19 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockClientQuery, mockClient, mockPoolQuery } = vi.hoisted(() => {
+  const mockClientQuery = vi.fn()
+  return {
+    mockClientQuery,
+    mockClient: { query: mockClientQuery, release: vi.fn() },
+    mockPoolQuery: vi.fn(),
+  }
+})
 
 vi.mock('~/db/connection.server', () => ({
-  pool: { query: vi.fn() },
+  pool: { connect: vi.fn(async () => mockClient), query: mockPoolQuery },
 }))
 
-import { pool } from '~/db/connection.server'
 import { getLatestPrWindowRawSnapshot, savePrWindowRawSnapshot } from '~/db/github-data/pr-window-raw-snapshots.server'
-
-const mockPoolQuery = pool.query as Mock
 
 const rawPr = { number: 42, title: 'Some PR', merged_at: '2026-01-01T00:00:00Z' }
 
@@ -17,13 +23,16 @@ describe('savePrWindowRawSnapshot', () => {
   })
 
   it('inserts the raw PR response into github_pr_window_raw_snapshots', async () => {
-    mockPoolQuery.mockResolvedValue({ rows: [{ id: 13 }] })
+    mockClientQuery.mockResolvedValue({ rows: [{ id: 13 }] })
 
     const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
     const id = await savePrWindowRawSnapshot('navikt', 'nda', 999, 42, rawPr, apiVersion)
 
     expect(id).toBe(13)
-    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_pr_window_raw_snapshots'), [
+    const insertCall = mockClientQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('github_pr_window_raw_snapshots'),
+    )
+    expect(insertCall?.[1]).toEqual([
       999,
       'navikt',
       'nda',
@@ -33,6 +42,22 @@ describe('savePrWindowRawSnapshot', () => {
       apiVersion.apiSunsetAt,
       JSON.stringify(rawPr),
     ])
+  })
+
+  it('acquires an advisory lock before the dedup check against the latest snapshot for the pr number', async () => {
+    mockClientQuery.mockResolvedValue({ rows: [{ id: 13 }] })
+
+    const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
+    await savePrWindowRawSnapshot('navikt', 'nda', 999, 42, rawPr, apiVersion)
+
+    const calls = mockClientQuery.mock.calls
+    expect(calls[0]).toEqual(['BEGIN'])
+    expect(calls[1][0]).toContain('pg_advisory_xact_lock')
+    expect(calls[1][1]).toEqual([expect.any(Number), '999:42'])
+    const [query] = calls[2]
+    expect(query).toContain('last_snapshot')
+    expect(query).toContain('NOT EXISTS')
+    expect(calls[3]).toEqual(['COMMIT'])
   })
 })
 

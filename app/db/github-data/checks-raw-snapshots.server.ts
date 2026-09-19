@@ -1,4 +1,6 @@
 import { pool } from '~/db/connection.server'
+import { saveRawSnapshotWithLock } from '~/db/github-data/raw-snapshot-lock.server'
+import { CHECKS_RAW_SNAPSHOT_LOCK_NAMESPACE } from '~/db/github-data/raw-snapshot-lock-namespaces.server'
 import { computeChecksPassed, mapRawCheckRunToCheckRun, type RawCheckRun } from '~/lib/github/checks-snapshot'
 import type { CheckRun } from '~/lib/github/pr/checks.server'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
@@ -15,11 +17,28 @@ export async function saveChecksRawSnapshot(
   apiVersion: ApiVersionMetadata,
   observedAt: Date,
 ): Promise<number> {
-  const result = await pool.query(
-    `INSERT INTO github_checks_raw_snapshots
-       (github_repo_id, owner, repo, sha, check_suite_id, is_definitive, api_version, api_deprecated_at, api_sunset_at, fetched_at, data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     RETURNING id`,
+  return saveRawSnapshotWithLock(
+    CHECKS_RAW_SNAPSHOT_LOCK_NAMESPACE,
+    `${githubRepoId}:${sha}:${checkSuiteId ?? 'null'}`,
+    `WITH last_snapshot AS (
+       SELECT id, data, is_definitive
+       FROM github_checks_raw_snapshots
+       WHERE github_repo_id = $1 AND sha = $4 AND check_suite_id IS NOT DISTINCT FROM $5
+       ORDER BY fetched_at DESC
+       LIMIT 1
+     ),
+     inserted AS (
+       INSERT INTO github_checks_raw_snapshots
+         (github_repo_id, owner, repo, sha, check_suite_id, is_definitive, api_version, api_deprecated_at, api_sunset_at, fetched_at, data)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM last_snapshot WHERE data = $11::jsonb AND is_definitive = $6
+       )
+       RETURNING id
+     )
+     SELECT id FROM inserted
+     UNION ALL
+     SELECT id FROM last_snapshot WHERE NOT EXISTS (SELECT 1 FROM inserted)`,
     [
       githubRepoId,
       owner,
@@ -34,7 +53,6 @@ export async function saveChecksRawSnapshot(
       JSON.stringify(rawCheckRuns),
     ],
   )
-  return result.rows[0].id
 }
 
 export async function getLatestDefinitiveChecksRawSnapshot(

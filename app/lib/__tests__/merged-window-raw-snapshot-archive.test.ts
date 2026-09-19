@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockReposGet = vi.fn()
 const mockPullsGet = vi.fn()
@@ -26,14 +26,16 @@ vi.mock('~/lib/logger.server', () => ({
   },
 }))
 
+const mockPoolQuery = vi.hoisted(() => vi.fn())
+
 vi.mock('~/db/connection.server', () => ({
-  pool: { query: vi.fn() },
+  pool: {
+    query: mockPoolQuery,
+    connect: vi.fn(async () => ({ query: mockPoolQuery, release: vi.fn() })),
+  },
 }))
 
-import { pool } from '~/db/connection.server'
 import { getMergedPullRequestsInWindow } from '~/lib/github/pr/merged-window.server'
-
-const mockPoolQuery = pool.query as Mock
 
 describe('getMergedPullRequestsInWindow', () => {
   beforeEach(() => {
