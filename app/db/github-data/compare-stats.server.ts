@@ -218,3 +218,57 @@ export async function getGitHubDataStatsForApp(
     withoutData: row.without_data,
   }
 }
+
+export async function getGitHubDataStatsForRepository(
+  repositoryId: number,
+  auditStartYear?: number | null,
+): Promise<GitHubDataStats> {
+  const params: (number | string)[] = [repositoryId]
+  let dateFilter = ''
+  if (auditStartYear) {
+    dateFilter = ` AND d.created_at >= $2`
+    params.push(`${auditStartYear}-01-01`)
+  }
+
+  const result = await pool.query(
+    `SELECT
+       COUNT(*)::int AS total,
+       COUNT(gcs.id) FILTER (WHERE gcs.schema_version >= ${CURRENT_SCHEMA_VERSION})::int AS with_current,
+       COUNT(gcs.id) FILTER (WHERE gcs.schema_version < ${CURRENT_SCHEMA_VERSION})::int AS with_outdated,
+       (COUNT(*) - COUNT(gcs.id))::int AS without_data
+     FROM deployments d
+     LEFT JOIN LATERAL (
+       SELECT gcs2.id, gcs2.schema_version
+       FROM github_commit_snapshots gcs2
+       WHERE gcs2.owner = d.detected_github_owner
+         AND gcs2.repo = d.detected_github_repo_name
+         AND gcs2.sha = d.commit_sha
+         AND gcs2.data_type = 'prs'
+       ORDER BY gcs2.fetched_at DESC
+       LIMIT 1
+     ) gcs ON true
+     WHERE d.commit_sha IS NOT NULL
+       AND d.detected_github_owner IS NOT NULL
+       AND d.detected_github_repo_name IS NOT NULL
+       AND ${VALID_COMMIT_SHA_SQL}
+       AND EXISTS (
+         SELECT 1 FROM application_repositories ar
+         JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+         WHERE ar.monitored_app_id = d.monitored_app_id
+           AND ar.github_owner = d.detected_github_owner
+           AND ar.github_repo_name = d.detected_github_repo_name
+           AND ar.status IN ('active', 'historical')
+           AND r.id = $1
+       )
+       ${dateFilter}`,
+    params,
+  )
+
+  const row = result.rows[0]
+  return {
+    total: row.total,
+    withCurrentData: row.with_current,
+    withOutdatedData: row.with_outdated,
+    withoutData: row.without_data,
+  }
+}

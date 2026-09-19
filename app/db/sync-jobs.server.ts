@@ -319,6 +319,22 @@ export async function getLatestSyncJob(appId: number, jobType: SyncJobType): Pro
   return result.rows[0] || null
 }
 
+export async function getLatestSyncJobForRepository(
+  repositoryId: number,
+  jobType: SyncJobType,
+): Promise<SyncJob | null> {
+  const result = await pool.query(
+    `SELECT id, job_type, monitored_app_id, repository_id, status, started_at, completed_at,
+            locked_by, lock_expires_at, result, error, created_at
+     FROM sync_jobs
+     WHERE repository_id = $1 AND job_type = $2
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [repositoryId, jobType],
+  )
+  return result.rows[0] || null
+}
+
 export async function getSyncJobById(jobId: number): Promise<SyncJob | null> {
   const result = await pool.query(
     `SELECT id, job_type, monitored_app_id, repository_id, status, started_at, completed_at,
