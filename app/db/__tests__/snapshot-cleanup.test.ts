@@ -157,6 +157,6 @@ describe('cleanupOldSnapshots', () => {
     ])
 
     expect(firstRun).toBe(secondRun)
-    expect(mockPoolConnect).toHaveBeenCalledTimes(9)
+    expect(mockPoolConnect).toHaveBeenCalledTimes(8)
   })
 })

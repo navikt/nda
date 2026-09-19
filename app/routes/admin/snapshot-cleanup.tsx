@@ -20,7 +20,6 @@ const SNAPSHOT_TABLE_NAMES = [
   'github_checks_raw_snapshots',
   'github_workflow_runs_raw_snapshots',
   'github_commit_raw_snapshots',
-  'github_commit_on_branch_raw_snapshots',
   'github_commit_associated_prs_raw_snapshots',
   'github_pr_window_raw_snapshots',
   'github_check_annotations_raw_snapshots',
@@ -123,7 +122,6 @@ const RESULT_KEY_LABELS: Record<string, string> = {
   checksRawSnapshotsDeleted: 'github_checks_raw_snapshots',
   workflowRunsRawSnapshotsDeleted: 'github_workflow_runs_raw_snapshots',
   commitRawSnapshotsDeleted: 'github_commit_raw_snapshots',
-  commitOnBranchRawSnapshotsDeleted: 'github_commit_on_branch_raw_snapshots',
   commitAssociatedPrsRawSnapshotsDeleted: 'github_commit_associated_prs_raw_snapshots',
   prWindowRawSnapshotsDeleted: 'github_pr_window_raw_snapshots',
   checkAnnotationsRawSnapshotsDeleted: 'github_check_annotations_raw_snapshots',
@@ -141,8 +139,8 @@ export default function SnapshotCleanupAdminPage() {
             GitHub-snapshot opprydning
           </Heading>
           <BodyShort textColor="subtle">
-            Rydder opp i historiske GitHub-snapshots (PR-data, compare, checks, commit-on-branch m.m.) som brukes til å
-            re-utlede firøyeverifisering uten å måtte hente på nytt fra GitHub.
+            Rydder opp i historiske GitHub-snapshots (PR-data, compare, checks m.m.) som brukes til å re-utlede
+            firøyeverifisering uten å måtte hente på nytt fra GitHub.
           </BodyShort>
         </div>
         <Button as={Link} to="/admin" variant="tertiary" size="small">
@@ -157,9 +155,9 @@ export default function SnapshotCleanupAdminPage() {
             <strong>eldre rader for samme nøkkel</strong> blant rader eldre enn valgt antall dager, blir slettet.
             Innholdet (<code>data</code>) sammenlignes ikke — en eldre rad kan avvike fra den nyeste selv om nøkkelen er
             lik. Verifiseringskoden for de fleste snapshot-typene henter alltid nyeste rad per nøkkel, så data den kan
-            trenge for å revalidere en leveranse rører vi ikke. Noen få typer (blant annet <code>commit_on_branch</code>
-            -rådata) er derimot et revisjonsspor av historiske GitHub-svar, ikke en gjenbrukbar cache — vurder terskelen
-            for antall dager med det i mente.
+            trenge for å revalidere en leveranse rører vi ikke. Noen få typer (blant annet{' '}
+            <code>commit_associated_prs</code>-rådata) er derimot et revisjonsspor av historiske GitHub-svar, ikke en
+            gjenbrukbar cache — vurder terskelen for antall dager med det i mente.
           </BodyShort>
           <BodyShort textColor="subtle">
             Sletting skjer i batcher på 5 000 rader om gangen, med en øvre grense på 50 000 rader per tabell og et

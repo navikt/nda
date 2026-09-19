@@ -200,20 +200,6 @@ export interface CommitRawSnapshot {
   data: unknown
 }
 
-export interface CommitOnBranchRawSnapshot {
-  id: number
-  owner: string
-  repo: string
-  githubRepoId: number
-  commitSha: string
-  branch: string
-  apiVersion: string
-  apiDeprecatedAt: string | null
-  apiSunsetAt: string | null
-  fetchedAt: Date
-  data: unknown
-}
-
 export interface CommitAssociatedPrsRawSnapshot {
   id: number
   owner: string
