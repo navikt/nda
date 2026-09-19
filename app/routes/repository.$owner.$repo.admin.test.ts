@@ -7,6 +7,8 @@ const {
   mockGetRepositoryById,
   mockGetRepoConfigAuditLog,
   mockIsCurrentOrHistoricalNameForRepositoryId,
+  mockGetGitHubDataStatsForRepository,
+  mockGetLatestSyncJobForRepository,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockResolveRepositoryAdminAccess: vi.fn(),
@@ -14,6 +16,8 @@ const {
   mockGetRepositoryById: vi.fn(),
   mockGetRepoConfigAuditLog: vi.fn(),
   mockIsCurrentOrHistoricalNameForRepositoryId: vi.fn(),
+  mockGetGitHubDataStatsForRepository: vi.fn(),
+  mockGetLatestSyncJobForRepository: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -29,6 +33,14 @@ vi.mock('~/db/repositories.server', () => ({
   getRepositoryById: mockGetRepositoryById,
   getRepoConfigAuditLog: mockGetRepoConfigAuditLog,
   isCurrentOrHistoricalNameForRepositoryId: mockIsCurrentOrHistoricalNameForRepositoryId,
+}))
+
+vi.mock('~/db/github-data.server', () => ({
+  getGitHubDataStatsForRepository: mockGetGitHubDataStatsForRepository,
+}))
+
+vi.mock('~/db/sync-jobs.server', () => ({
+  getLatestSyncJobForRepository: mockGetLatestSyncJobForRepository,
 }))
 
 import { loader } from './repository.$owner.$repo.admin'
@@ -56,6 +68,13 @@ describe('repository admin loader', () => {
     mockGetRepositoryById.mockResolvedValue(null)
     mockGetRepoConfigAuditLog.mockResolvedValue([])
     mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
+    mockGetGitHubDataStatsForRepository.mockResolvedValue({
+      total: 0,
+      withCurrentData: 0,
+      withOutdatedData: 0,
+      withoutData: 0,
+    })
+    mockGetLatestSyncJobForRepository.mockResolvedValue(null)
   })
 
   it('throws 403 when the user lacks repository-admin access', async () => {

@@ -1,5 +1,5 @@
 import { logger } from '~/lib/logger.server'
-import { pool } from './connection.server'
+import { lockRepositoryAdminForWrite, pool } from './connection.server'
 
 export {
   SYNC_JOB_STATUS_LABELS,
@@ -15,8 +15,8 @@ export const SYNC_INTERVAL_MS = 5 * 60 * 1000
 const POD_ID = process.env.HOSTNAME || `local-${process.pid}`
 const APP_VERSION = typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : 'unknown'
 
-export async function releaseExpiredLocks(): Promise<number> {
-  const result = await pool.query(
+export async function releaseExpiredLocks(executor: { query: typeof pool.query } = pool): Promise<number> {
+  const result = await executor.query(
     `UPDATE sync_jobs 
      SET status = 'failed', 
          error = 'Lock timeout - automatically released',
@@ -33,37 +33,142 @@ export async function acquireSyncLock(
   timeoutMinutes: number = 10,
   options?: Record<string, unknown>,
 ): Promise<number | null> {
-  const cooldown = await pool.query(
-    `SELECT 1 FROM sync_jobs
-     WHERE job_type = $1 AND monitored_app_id = $2
-       AND started_at > NOW() - INTERVAL '1 millisecond' * $3
-     LIMIT 1`,
-    [jobType, appId, SYNC_INTERVAL_MS],
-  )
-  if (cooldown.rowCount && cooldown.rowCount > 0) {
-    return null
-  }
-
-  const released = await releaseExpiredLocks()
-  if (released > 0) {
-    logger.info(`🔓 Released ${released} expired lock(s)`)
-  }
-
+  const client = await pool.connect()
   try {
-    const result = await pool.query(
+    await client.query('BEGIN')
+
+    // Same global lock repository/link writers take before mutating application_repositories
+    // (see lockRepositoryAdminForWrite), so no repository link can be created, changed, or
+    // removed while we decide whether a conflicting repository-scoped job exists, and vice versa
+    // for acquireSyncLockForRepository. Coarser than a per-repository lock, but this admin action
+    // is rare enough that the extra serialization is a non-issue in practice.
+    await lockRepositoryAdminForWrite(client)
+
+    const released = await releaseExpiredLocks(client)
+    if (released > 0) {
+      logger.info(`🔓 Released ${released} expired lock(s)`)
+    }
+
+    const cooldown = await client.query(
+      `SELECT 1 FROM sync_jobs
+       WHERE job_type = $1 AND monitored_app_id = $2
+         AND started_at > NOW() - INTERVAL '1 millisecond' * $3
+       LIMIT 1`,
+      [jobType, appId, SYNC_INTERVAL_MS],
+    )
+    if (cooldown.rowCount && cooldown.rowCount > 0) {
+      await client.query('COMMIT')
+      return null
+    }
+
+    const linkedRepos = await client.query<{ id: number }>(
+      `SELECT r.id FROM application_repositories ar
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+       WHERE ar.monitored_app_id = $1 AND ar.status IN ('active', 'historical')`,
+      [appId],
+    )
+    const repoIds = linkedRepos.rows.map((row) => row.id)
+    if (repoIds.length > 0) {
+      const conflictingRepoJob = await client.query(
+        `SELECT 1 FROM sync_jobs
+         WHERE job_type = $1 AND status = 'running' AND repository_id = ANY($2::int[])
+         LIMIT 1`,
+        [jobType, repoIds],
+      )
+      if (conflictingRepoJob.rowCount && conflictingRepoJob.rowCount > 0) {
+        logger.info(`⏳ ${jobType} lock for app ${appId} blocked by a running repository-scoped job`)
+        await client.query('COMMIT')
+        return null
+      }
+    }
+
+    const result = await client.query(
       `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, locked_by, lock_expires_at, options)
        VALUES ($1, $2, 'running', NOW(), $3, NOW() + INTERVAL '1 minute' * $4, $5)
        RETURNING id`,
       [jobType, appId, POD_ID, timeoutMinutes, JSON.stringify({ ...options, version: APP_VERSION })],
     )
+    await client.query('COMMIT')
     logger.info(`🔒 Acquired ${jobType} lock for app ${appId} (job ${result.rows[0].id})`)
     return result.rows[0].id
   } catch (e: unknown) {
+    await client.query('ROLLBACK')
     if (e instanceof Error && 'code' in e && e.code === '23505') {
       logger.info(`⏳ ${jobType} lock for app ${appId} already held by another process`)
       return null
     }
     throw e
+  } finally {
+    client.release()
+  }
+}
+
+export async function acquireSyncLockForRepository(
+  jobType: SyncJobType,
+  repositoryId: number,
+  timeoutMinutes: number = 10,
+  options?: Record<string, unknown>,
+): Promise<number | null> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    // Same global lock as acquireSyncLock and every application_repositories writer, so this
+    // conflict check can't be invalidated by a concurrent link change or app-scoped acquisition.
+    await lockRepositoryAdminForWrite(client)
+
+    const released = await releaseExpiredLocks(client)
+    if (released > 0) {
+      logger.info(`🔓 Released ${released} expired lock(s)`)
+    }
+
+    const cooldown = await client.query(
+      `SELECT 1 FROM sync_jobs
+       WHERE job_type = $1 AND repository_id = $2
+         AND started_at > NOW() - INTERVAL '1 millisecond' * $3
+       LIMIT 1`,
+      [jobType, repositoryId, SYNC_INTERVAL_MS],
+    )
+    if (cooldown.rowCount && cooldown.rowCount > 0) {
+      await client.query('COMMIT')
+      return null
+    }
+
+    const conflictingAppJob = await client.query(
+      `SELECT 1 FROM sync_jobs sj
+       WHERE sj.job_type = $1 AND sj.status = 'running'
+         AND sj.monitored_app_id IN (
+           SELECT ar.monitored_app_id FROM application_repositories ar
+           JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+           WHERE ar.status IN ('active', 'historical') AND r.id = $2
+         )
+       LIMIT 1`,
+      [jobType, repositoryId],
+    )
+    if (conflictingAppJob.rowCount && conflictingAppJob.rowCount > 0) {
+      logger.info(`⏳ ${jobType} lock for repository ${repositoryId} blocked by a running app-scoped job`)
+      await client.query('COMMIT')
+      return null
+    }
+
+    const result = await client.query(
+      `INSERT INTO sync_jobs (job_type, repository_id, status, started_at, locked_by, lock_expires_at, options)
+       VALUES ($1, $2, 'running', NOW(), $3, NOW() + INTERVAL '1 minute' * $4, $5)
+       RETURNING id`,
+      [jobType, repositoryId, POD_ID, timeoutMinutes, JSON.stringify({ ...options, version: APP_VERSION })],
+    )
+    await client.query('COMMIT')
+    logger.info(`🔒 Acquired ${jobType} lock for repository ${repositoryId} (job ${result.rows[0].id})`)
+    return result.rows[0].id
+  } catch (e: unknown) {
+    await client.query('ROLLBACK')
+    if (e instanceof Error && 'code' in e && e.code === '23505') {
+      logger.info(`⏳ ${jobType} lock for repository ${repositoryId} already held by another process`)
+      return null
+    }
+    throw e
+  } finally {
+    client.release()
   }
 }
 
@@ -72,17 +177,23 @@ export async function releaseSyncLock(
   status: 'completed' | 'partial' | 'failed',
   result?: Record<string, unknown>,
   error?: string,
-): Promise<void> {
-  await pool.query(
+): Promise<boolean> {
+  const updateResult = await pool.query(
     `UPDATE sync_jobs 
      SET status = $2, 
          completed_at = NOW(),
          result = $3,
          error = $4
-     WHERE id = $1`,
+     WHERE id = $1 AND status = 'running'`,
     [jobId, status, result ? JSON.stringify(result) : null, error || null],
   )
-  logger.info(`🔓 Released lock for job ${jobId} with status ${status}`)
+  const released = (updateResult.rowCount || 0) > 0
+  if (released) {
+    logger.info(`🔓 Released lock for job ${jobId} with status ${status}`)
+  } else {
+    logger.info(`🔒 Skipped releasing lock for job ${jobId} — job is no longer running (already in a terminal state)`)
+  }
+  return released
 }
 
 export async function cleanupOldSyncJobs(keepPerApp: number = 50): Promise<number> {
@@ -388,7 +499,7 @@ export async function forceReleaseSyncJob(jobId: number): Promise<boolean> {
      SET status = 'failed', 
          completed_at = NOW(),
          error = 'Tvangsfrigjort av administrator'
-     WHERE id = $1 AND status = 'running'
+     WHERE id = $1 AND status = 'running' AND lock_expires_at < NOW()
      RETURNING id`,
     [jobId],
   )

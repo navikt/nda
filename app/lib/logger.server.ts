@@ -7,7 +7,8 @@ import { getTraceId } from '~/lib/tracing.server'
 interface JobContext {
   jobId: number
   jobType: SyncJobType
-  appId: number
+  appId?: number
+  repositoryId?: number
   debug: boolean
 }
 
@@ -16,11 +17,15 @@ const jobContextStorage = new AsyncLocalStorage<JobContext>()
 export function runWithJobContext<T>(
   jobId: number,
   jobType: SyncJobType,
-  appId: number,
+  target: number | { repositoryId: number },
   debug: boolean,
   fn: () => Promise<T>,
 ): Promise<T> {
-  return jobContextStorage.run({ jobId, jobType, appId, debug }, fn)
+  const context: JobContext =
+    typeof target === 'number'
+      ? { jobId, jobType, appId: target, debug }
+      : { jobId, jobType, repositoryId: target.repositoryId, debug }
+  return jobContextStorage.run(context, fn)
 }
 
 function getJobContext(): JobContext | undefined {
@@ -29,7 +34,13 @@ function getJobContext(): JobContext | undefined {
 
 function getJobMeta(): Record<string, unknown> {
   const ctx = getJobContext()
-  return ctx ? { job_id: ctx.jobId, job_type: ctx.jobType, app_id: ctx.appId } : {}
+  if (!ctx) return {}
+  return {
+    job_id: ctx.jobId,
+    job_type: ctx.jobType,
+    ...(ctx.appId != null ? { app_id: ctx.appId } : {}),
+    ...(ctx.repositoryId != null ? { repository_id: ctx.repositoryId } : {}),
+  }
 }
 
 const isProd = process.env.NODE_ENV === 'production'

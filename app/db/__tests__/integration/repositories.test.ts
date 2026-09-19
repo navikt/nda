@@ -9,6 +9,7 @@ import {
   getEffectiveImplicitApprovalSettings,
   getEffectiveSettingsForApp,
   getEffectiveSettingsForApps,
+  getEffectiveSettingsForRepository,
   getRepoConfigAuditLog,
   getRepositoryByOwnerRepo,
   getRepositoryIdForApp,
@@ -174,6 +175,50 @@ describe('effective repository settings resolution', () => {
 
   it('returns an empty map for an empty id list', async () => {
     expect(await getEffectiveSettingsForApps([])).toEqual(new Map())
+  })
+
+  it('resolves settings from a historical repository link, not the app current active link', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-historisk',
+      appName: 'app-historisk',
+      environment: 'prod-gcp',
+    })
+    const historicalRepoId = await seedRepository(pool, {
+      githubRepoId: '4005',
+      githubOwner: 'navikt',
+      githubRepoName: 'gammelt-repo',
+      auditStartYear: 2019,
+      implicitApprovalMode: 'dependabot_only',
+      defaultBranch: 'legacy-main',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'gammelt-repo',
+      githubRepoId: '4005',
+      status: 'historical',
+    })
+    await seedRepository(pool, {
+      githubRepoId: '4006',
+      githubOwner: 'navikt',
+      githubRepoName: 'nytt-repo',
+      auditStartYear: 2024,
+      implicitApprovalMode: 'off',
+      defaultBranch: 'main',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'nytt-repo',
+      githubRepoId: '4006',
+      status: 'active',
+    })
+
+    const effective = await getEffectiveSettingsForRepository(historicalRepoId, appId)
+    expect(effective.repositoryId).toBe(historicalRepoId)
+    expect(effective.auditStartYear).toBe(2019)
+    expect(effective.implicitApprovalSettings).toEqual({ mode: 'dependabot_only' })
+    expect(effective.defaultBranch).toBe('legacy-main')
   })
 })
 

@@ -214,6 +214,30 @@ export async function getEffectiveSettingsForApp(monitoredAppId: number): Promis
   return row ? toEffectiveSettings(row) : FALLBACK_SETTINGS
 }
 
+const REPOSITORY_SETTINGS_FOR_ID_SELECT = `
+  SELECT ma.id AS monitored_app_id,
+         ma.default_branch AS app_default_branch,
+         r.id AS repository_id,
+         r.audit_start_year AS repo_audit_start_year,
+         r.implicit_approval_mode AS repo_implicit_approval_mode,
+         r.default_branch AS repo_default_branch
+  FROM monitored_applications ma
+  LEFT JOIN repositories r ON r.id = $2
+  WHERE ma.id = $1
+`
+
+export async function getEffectiveSettingsForRepository(
+  repositoryId: number,
+  monitoredAppId: number,
+): Promise<EffectiveRepositorySettings> {
+  const { rows } = await pool.query<EffectiveSettingsRow>(REPOSITORY_SETTINGS_FOR_ID_SELECT, [
+    monitoredAppId,
+    repositoryId,
+  ])
+  const row = rows[0]
+  return row ? toEffectiveSettings(row) : FALLBACK_SETTINGS
+}
+
 export async function getEffectiveSettingsForApps(
   monitoredAppIds: number[],
 ): Promise<Map<number, EffectiveRepositorySettings>> {

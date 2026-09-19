@@ -1,6 +1,6 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
 import { buildBranchMismatch } from './branch-mismatch'
@@ -26,13 +26,17 @@ export async function fetchVerificationData(
   monitoredAppId: number,
   options?: FetchOptions,
   triggerUrl?: string | null,
+  repositoryId?: number,
 ): Promise<VerificationInput> {
   const [owner, repo] = repository.split('/')
   if (!owner || !repo) {
     throw new Error(`Invalid repository format: ${repository}`)
   }
 
-  const appSettings = await getAppSettings(monitoredAppId)
+  const appSettings =
+    repositoryId != null
+      ? await getEffectiveSettingsForRepository(repositoryId, monitoredAppId)
+      : await getAppSettings(monitoredAppId)
 
   const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
   const repositoryStatus: RepositoryStatus = repoCheck.repository
