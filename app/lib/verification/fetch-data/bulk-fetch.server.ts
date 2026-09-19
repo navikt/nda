@@ -3,6 +3,7 @@ import { effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
+import type { WorkflowTriggerConfig } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { fetchVerificationData } from '../fetch-data.server'
 import { updateDeploymentCommitChecks } from '../store-data.server'
@@ -28,34 +29,19 @@ export interface BulkFetchResult extends BulkFetchProgress {
   rateLimited?: boolean
 }
 
-export async function fetchVerificationDataForAllDeployments(
-  monitoredAppId: number,
-  options?: { jobId?: number; refreshDisplayData?: boolean },
-  onProgress?: (progress: BulkFetchProgress) => void,
-): Promise<BulkFetchResult> {
-  const jobId = options?.jobId
-  const refreshDisplayData = options?.refreshDisplayData
-
-  const params: (number | string)[] = [monitoredAppId]
-
-  const query = `
-    WITH ordered_deployments AS (
+const ORDERED_DEPLOYMENTS_SELECT = (defaultBranchSql: string, repositoryIdSql = 'NULL::int') => `
       SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
              d.environment_name, d.trigger_url, d.workflow_trigger_config, d.commit_checks_data,
-             d.commit_checks_checked_at, d.github_pr_number,
-             ${effectiveDefaultBranchSql('ma')} AS default_branch, d.created_at,
+             d.commit_checks_checked_at, d.github_pr_number, d.monitored_app_id,
+             ${defaultBranchSql} AS default_branch, ${repositoryIdSql} AS matched_repository_id, d.created_at,
              LAG(d.commit_sha) OVER (
-               PARTITION BY d.environment_name, d.detected_github_owner, d.detected_github_repo_name
+               PARTITION BY d.monitored_app_id, d.environment_name, d.detected_github_owner, d.detected_github_repo_name
                ORDER BY d.created_at ASC
              ) AS prev_commit_sha
       FROM deployments d
-      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-      WHERE d.monitored_app_id = $1
-        AND d.commit_sha IS NOT NULL
-        AND d.detected_github_owner IS NOT NULL
-        AND d.detected_github_repo_name IS NOT NULL
-        AND ${VALID_COMMIT_SHA_SQL}
-    )
+      JOIN monitored_applications ma ON d.monitored_app_id = ma.id`
+
+const SNAPSHOT_JOIN_AND_ORDER = `
     SELECT od.*,
            (pr_snap.id IS NOT NULL) AS has_pr_snapshot,
            (od.prev_commit_sha IS NULL OR cmp_snap.id IS NOT NULL) AS has_compare_snapshot,
@@ -81,13 +67,33 @@ export async function fetchVerificationDataForAllDeployments(
     ) cmp_snap ON od.prev_commit_sha IS NOT NULL
     ORDER BY od.created_at DESC`
 
-  const queryStart = performance.now()
-  const deploymentsResult = await pool.query(query, params)
+interface DeploymentRow {
+  id: number
+  commit_sha: string
+  detected_github_owner: string
+  detected_github_repo_name: string
+  environment_name: string
+  trigger_url: string | null
+  workflow_trigger_config: WorkflowTriggerConfig | null
+  commit_checks_data: unknown
+  commit_checks_checked_at: string | null
+  github_pr_number: number | null
+  monitored_app_id: number
+  default_branch: string | null
+  matched_repository_id: number | null
+  created_at: string
+  prev_commit_sha: string | null
+  has_pr_snapshot: boolean
+  has_compare_snapshot: boolean
+  has_checks_data: boolean
+}
 
-  const deployments = deploymentsResult.rows
-  logger.debug(`Fant ${deployments.length} deployments å sjekke`, {
-    durationMs: Math.round(performance.now() - queryStart),
-  })
+async function processDeployments(
+  deployments: DeploymentRow[],
+  jobId: number | undefined,
+  refreshDisplayData: boolean | undefined,
+  onProgress?: (progress: BulkFetchProgress) => void,
+): Promise<BulkFetchResult> {
   const result: BulkFetchResult = {
     total: deployments.length,
     processed: 0,
@@ -211,8 +217,10 @@ export async function fetchVerificationDataForAllDeployments(
           `${owner}/${repo}`,
           deployment.environment_name,
           baseBranch,
-          monitoredAppId,
-          { forceRefresh: false }, // Only fetch what's missing
+          deployment.monitored_app_id,
+          { forceRefresh: false },
+          undefined,
+          deployment.matched_repository_id ?? undefined,
         )
         await updateDeploymentCommitChecks(deployment.id, input.commitChecks, input.commitChecksAttempted ?? true)
         const fetchDuration = Math.round(performance.now() - fetchStart)
@@ -281,4 +289,75 @@ export async function fetchVerificationDataForAllDeployments(
   }
 
   return result
+}
+
+export async function fetchVerificationDataForAllDeployments(
+  monitoredAppId: number,
+  options?: { jobId?: number; refreshDisplayData?: boolean },
+  onProgress?: (progress: BulkFetchProgress) => void,
+): Promise<BulkFetchResult> {
+  const jobId = options?.jobId
+  const refreshDisplayData = options?.refreshDisplayData
+
+  const query = `
+    WITH ordered_deployments AS (
+      ${ORDERED_DEPLOYMENTS_SELECT(effectiveDefaultBranchSql('ma'))}
+      WHERE d.monitored_app_id = $1
+        AND d.commit_sha IS NOT NULL
+        AND d.detected_github_owner IS NOT NULL
+        AND d.detected_github_repo_name IS NOT NULL
+        AND ${VALID_COMMIT_SHA_SQL}
+    )
+    ${SNAPSHOT_JOIN_AND_ORDER}`
+
+  const queryStart = performance.now()
+  const deploymentsResult = await pool.query(query, [monitoredAppId])
+
+  const deployments = deploymentsResult.rows
+  logger.debug(`Fant ${deployments.length} deployments å sjekke`, {
+    durationMs: Math.round(performance.now() - queryStart),
+  })
+
+  return processDeployments(deployments, jobId, refreshDisplayData, onProgress)
+}
+
+export async function fetchVerificationDataForRepository(
+  repositoryId: number,
+  options?: { jobId?: number; refreshDisplayData?: boolean },
+  onProgress?: (progress: BulkFetchProgress) => void,
+): Promise<BulkFetchResult> {
+  const jobId = options?.jobId
+  const refreshDisplayData = options?.refreshDisplayData
+
+  const query = `
+    WITH ordered_deployments AS (
+      ${ORDERED_DEPLOYMENTS_SELECT(
+        `COALESCE((SELECT r_settings.default_branch FROM repositories r_settings WHERE r_settings.id = $1), ma.default_branch)`,
+        '$1::int',
+      )}
+      WHERE d.commit_sha IS NOT NULL
+        AND d.detected_github_owner IS NOT NULL
+        AND d.detected_github_repo_name IS NOT NULL
+        AND ${VALID_COMMIT_SHA_SQL}
+        AND EXISTS (
+          SELECT 1 FROM application_repositories ar
+          JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+          WHERE ar.monitored_app_id = d.monitored_app_id
+            AND ar.github_owner = d.detected_github_owner
+            AND ar.github_repo_name = d.detected_github_repo_name
+            AND ar.status IN ('active', 'historical')
+            AND r.id = $1
+        )
+    )
+    ${SNAPSHOT_JOIN_AND_ORDER}`
+
+  const queryStart = performance.now()
+  const deploymentsResult = await pool.query(query, [repositoryId])
+
+  const deployments = deploymentsResult.rows
+  logger.debug(`Fant ${deployments.length} deployments å sjekke for repository ${repositoryId}`, {
+    durationMs: Math.round(performance.now() - queryStart),
+  })
+
+  return processDeployments(deployments, jobId, refreshDisplayData, onProgress)
 }

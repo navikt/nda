@@ -7,6 +7,8 @@ const {
   mockGetRepositoryById,
   mockGetRepoConfigAuditLog,
   mockIsCurrentOrHistoricalNameForRepositoryId,
+  mockGetGitHubDataStatsForRepository,
+  mockGetLatestSyncJobForRepository,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockResolveRepositoryAdminAccess: vi.fn(),
@@ -14,6 +16,8 @@ const {
   mockGetRepositoryById: vi.fn(),
   mockGetRepoConfigAuditLog: vi.fn(),
   mockIsCurrentOrHistoricalNameForRepositoryId: vi.fn(),
+  mockGetGitHubDataStatsForRepository: vi.fn(),
+  mockGetLatestSyncJobForRepository: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -29,6 +33,14 @@ vi.mock('~/db/repositories.server', () => ({
   getRepositoryById: mockGetRepositoryById,
   getRepoConfigAuditLog: mockGetRepoConfigAuditLog,
   isCurrentOrHistoricalNameForRepositoryId: mockIsCurrentOrHistoricalNameForRepositoryId,
+}))
+
+vi.mock('~/db/github-data.server', () => ({
+  getGitHubDataStatsForRepository: mockGetGitHubDataStatsForRepository,
+}))
+
+vi.mock('~/db/sync-jobs.server', () => ({
+  getLatestSyncJobForRepository: mockGetLatestSyncJobForRepository,
 }))
 
 import { loader } from './repository.$owner.$repo.admin'
@@ -56,6 +68,13 @@ describe('repository admin loader', () => {
     mockGetRepositoryById.mockResolvedValue(null)
     mockGetRepoConfigAuditLog.mockResolvedValue([])
     mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
+    mockGetGitHubDataStatsForRepository.mockResolvedValue({
+      total: 0,
+      withCurrentData: 0,
+      withOutdatedData: 0,
+      withoutData: 0,
+    })
+    mockGetLatestSyncJobForRepository.mockResolvedValue(null)
   })
 
   it('throws 403 when the user lacks repository-admin access', async () => {
@@ -84,6 +103,25 @@ describe('repository admin loader', () => {
       github_repo_name: repository.github_repo_name,
     })
     expect(mockResolveRepositoryAdminAccess).toHaveBeenCalledWith(expect.anything(), repository.id)
+  })
+
+  it('fetches and returns GitHub data stats and the latest fetch job scoped to the repository', async () => {
+    mockGetRepositoryByOwnerRepo.mockResolvedValue({ status: 'found', repository })
+    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [] })
+    const githubDataStats = { total: 10, withCurrentData: 7, withOutdatedData: 2, withoutData: 1 }
+    const latestFetchJob = { id: 42, status: 'running' }
+    mockGetGitHubDataStatsForRepository.mockResolvedValue(githubDataStats)
+    mockGetLatestSyncJobForRepository.mockResolvedValue(latestFetchJob)
+
+    const result = await loader({
+      params: { owner: 'navikt', repo: 'some-repo' },
+      request: makeRequest(),
+    } as never)
+
+    expect(mockGetGitHubDataStatsForRepository).toHaveBeenCalledWith(repository.id, repository.audit_start_year)
+    expect(mockGetLatestSyncJobForRepository).toHaveBeenCalledWith(repository.id, 'fetch_verification_data')
+    expect(result.githubDataStats).toBe(githubDataStats)
+    expect(result.latestFetchJob).toBe(latestFetchJob)
   })
 
   it('marks the repository as not linked when it has no affected apps (e.g. an orphaned repo an entra admin can reach)', async () => {

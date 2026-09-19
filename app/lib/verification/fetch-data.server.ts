@@ -1,6 +1,6 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
 import { buildBranchMismatch } from './branch-mismatch'
@@ -26,13 +26,17 @@ export async function fetchVerificationData(
   monitoredAppId: number,
   options?: FetchOptions,
   triggerUrl?: string | null,
+  repositoryId?: number,
 ): Promise<VerificationInput> {
   const [owner, repo] = repository.split('/')
   if (!owner || !repo) {
     throw new Error(`Invalid repository format: ${repository}`)
   }
 
-  const appSettings = await getAppSettings(monitoredAppId)
+  const appSettings =
+    repositoryId != null
+      ? await getEffectiveSettingsForRepository(repositoryId, monitoredAppId)
+      : await getAppSettings(monitoredAppId)
 
   const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
   const repositoryStatus: RepositoryStatus = repoCheck.repository
@@ -102,6 +106,8 @@ export async function fetchVerificationData(
       `SELECT d.id, d.four_eyes_status
        FROM deployments d
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
+         AND d.detected_github_owner = $3
+         AND d.detected_github_repo_name = $4
          AND d.id != $1
          AND d.commit_sha = $2
          AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})
@@ -112,7 +118,7 @@ export async function fetchVerificationData(
          )
        ORDER BY d.created_at DESC
        LIMIT 1`,
-      [deploymentId, commitSha],
+      [deploymentId, commitSha, owner, repo],
     )
     if (nearbyResult.rows.length > 0) {
       nearbyApprovedDeployWithSameCommit = {
@@ -135,6 +141,8 @@ export async function fetchVerificationData(
       `SELECT d.id, d.commit_sha, d.four_eyes_status
        FROM deployments d
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
+         AND d.detected_github_owner = $2
+         AND d.detected_github_repo_name = $3
          AND d.id != $1
          AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})
          AND d.created_at BETWEEN (
@@ -144,7 +152,7 @@ export async function fetchVerificationData(
          )
        ORDER BY d.created_at DESC
        LIMIT 1`,
-      [deploymentId],
+      [deploymentId, owner, repo],
     )
     if (nearbyAnyResult.rows.length > 0) {
       nearbyApprovedDeploy = {

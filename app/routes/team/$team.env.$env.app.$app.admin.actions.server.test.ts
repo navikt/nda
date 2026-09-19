@@ -106,7 +106,10 @@ vi.mock('~/lib/verification/types', () => ({
   isImplicitApprovalMode: vi.fn(),
 }))
 
+import { acquireSyncLock } from '~/db/sync-jobs.server'
 import { action, processFetchDataJobAsync } from './$team.env.$env.app.$app.admin.actions.server'
+
+const mockAcquireSyncLock = vi.mocked(acquireSyncLock)
 
 function makeRequest(formData: FormData): Request {
   return new Request('http://localhost/team/pensjondeployer/env/prod-fss/app/pensjon-pen/admin', {
@@ -250,5 +253,37 @@ describe('processFetchDataJobAsync', () => {
     await processFetchDataJobAsync(5, 1)
 
     expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'completed', expect.anything())
+  })
+})
+
+describe('fetch_verification_data action', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
+    mockCanAccessAppAdmin.mockResolvedValue(true)
+  })
+
+  it('reports a distinct error when blocked by a running repository-scoped job', async () => {
+    mockAcquireSyncLock.mockResolvedValue('repository_conflict')
+
+    const formData = new FormData()
+    formData.set('action', 'fetch_verification_data')
+    formData.set('app_id', '1')
+
+    const result = await action({ request: makeRequest(formData), params: {} } as never)
+
+    expect(result).toEqual({ error: 'En datahenting kjører allerede for repositoryet denne appen tilhører' })
+  })
+
+  it("reports the app-scoped error when blocked by the app's own lock or cooldown", async () => {
+    mockAcquireSyncLock.mockResolvedValue(null)
+
+    const formData = new FormData()
+    formData.set('action', 'fetch_verification_data')
+    formData.set('app_id', '1')
+
+    const result = await action({ request: makeRequest(formData), params: {} } as never)
+
+    expect(result).toEqual({ error: 'En datahenting kjører allerede for denne appen' })
   })
 })

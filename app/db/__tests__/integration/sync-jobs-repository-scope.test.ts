@@ -1,7 +1,14 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { cleanupOldSyncJobs, getAllSyncJobs, getFailedSyncJobsGrouped } from '~/db/sync-jobs.server'
-import { seedRepository, truncateAllTables } from './helpers'
+import {
+  acquireSyncLock,
+  acquireSyncLockForRepository,
+  cleanupOldSyncJobs,
+  forceReleaseSyncJob,
+  getAllSyncJobs,
+  getFailedSyncJobsGrouped,
+} from '~/db/sync-jobs.server'
+import { seedApp, seedApplicationRepository, seedRepository, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -17,12 +24,16 @@ afterEach(async () => {
   await truncateAllTables(pool)
 })
 
-async function insertRunningJob(opts: { jobType: string; repositoryId?: number | null }): Promise<number> {
+async function insertRunningJob(opts: {
+  jobType: string
+  repositoryId?: number | null
+  lockExpiresInMinutes?: number
+}): Promise<number> {
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO sync_jobs (job_type, monitored_app_id, repository_id, status, started_at, locked_by, lock_expires_at)
-     VALUES ($1, NULL, $2, 'running', NOW(), 'test', NOW() + INTERVAL '10 minutes')
+     VALUES ($1, NULL, $2, 'running', NOW(), 'test', NOW() + INTERVAL '1 minute' * $3)
      RETURNING id`,
-    [opts.jobType, opts.repositoryId ?? null],
+    [opts.jobType, opts.repositoryId ?? null, opts.lockExpiresInMinutes ?? 10],
   )
   return rows[0].id
 }
@@ -96,6 +107,134 @@ describe('sync_jobs repository-scoped lock indexes', () => {
     await expect(insertRunningJob({ jobType: 'fetch_verification_data', repositoryId: null })).resolves.toEqual(
       expect.any(Number),
     )
+  })
+})
+
+describe('acquireSyncLockForRepository / acquireSyncLock cross-scope conflict handling', () => {
+  it('rejects a second repository-scoped lock for the same repository', async () => {
+    const repoA = await seedRepo(pool, 'lock-a')
+
+    const first = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    expect(first).toEqual(expect.any(Number))
+
+    const second = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    expect(second).toBeNull()
+  })
+
+  it('allows repository-scoped locks for different repositories to run in parallel', async () => {
+    const repoA = await seedRepo(pool, 'lock-b')
+    const repoB = await seedRepo(pool, 'lock-c')
+
+    const first = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    const second = await acquireSyncLockForRepository('fetch_verification_data', repoB)
+
+    expect(first).toEqual(expect.any(Number))
+    expect(second).toEqual(expect.any(Number))
+  })
+
+  it('blocks a repository-scoped lock when an app-scoped job is running for a linked (active) app', async () => {
+    const repoA = await seedRepo(pool, 'lock-d')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-d', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-d',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const appJobId = await acquireSyncLock('fetch_verification_data', appId)
+    expect(appJobId).toEqual(expect.any(Number))
+
+    const repoJobId = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    expect(repoJobId).toBe('app_conflict')
+  })
+
+  it('blocks an app-scoped lock when a repository-scoped job is running for a linked (active) repository', async () => {
+    const repoA = await seedRepo(pool, 'lock-e')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-e', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-e',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const repoJobId = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    expect(repoJobId).toEqual(expect.any(Number))
+
+    const appJobId = await acquireSyncLock('fetch_verification_data', appId)
+    expect(appJobId).toBe('repository_conflict')
+  })
+
+  it('blocks a repository-scoped lock when an app-scoped job is running for a historically linked app', async () => {
+    const repoA = await seedRepo(pool, 'lock-f')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-f', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-f',
+      githubRepoId: String(repoIdCounter),
+      status: 'historical',
+    })
+
+    const appJobId = await acquireSyncLock('fetch_verification_data', appId)
+    expect(appJobId).toEqual(expect.any(Number))
+
+    const repoJobId = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    expect(repoJobId).toBe('app_conflict')
+  })
+
+  it('does not block across unrelated apps and repositories', async () => {
+    const repoA = await seedRepo(pool, 'lock-g')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-g', environment: 'prod-gcp' })
+
+    const appJobId = await acquireSyncLock('fetch_verification_data', appId)
+    expect(appJobId).toEqual(expect.any(Number))
+
+    const repoJobId = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    expect(repoJobId).toEqual(expect.any(Number))
+  })
+
+  it('does not apply cross-scope conflict checks to job types without a repository-scoped counterpart', async () => {
+    const repoA = await seedRepo(pool, 'lock-h')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-h', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-h',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const repoJobId = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    expect(repoJobId).toEqual(expect.any(Number))
+
+    const naisSyncJobId = await acquireSyncLock('nais_sync', appId)
+    expect(naisSyncJobId).toEqual(expect.any(Number))
+  })
+})
+
+describe('forceReleaseSyncJob', () => {
+  it('force-releases a running job whose lock has expired', async () => {
+    const jobId = await insertRunningJob({ jobType: 'fetch_verification_data', lockExpiresInMinutes: -5 })
+
+    const released = await forceReleaseSyncJob(jobId)
+    expect(released).toBe(true)
+
+    const { rows } = await pool.query<{ status: string }>(`SELECT status FROM sync_jobs WHERE id = $1`, [jobId])
+    expect(rows[0].status).toBe('failed')
+  })
+
+  it('does not release a running job whose lock has not yet expired', async () => {
+    const jobId = await insertRunningJob({ jobType: 'fetch_verification_data', lockExpiresInMinutes: 10 })
+
+    const released = await forceReleaseSyncJob(jobId)
+    expect(released).toBe(false)
+
+    const { rows } = await pool.query<{ status: string }>(`SELECT status FROM sync_jobs WHERE id = $1`, [jobId])
+    expect(rows[0].status).toBe('running')
   })
 })
 

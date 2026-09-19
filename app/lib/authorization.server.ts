@@ -204,40 +204,55 @@ export interface RepositoryAdminAccess {
   affectedApps: { id: number; app_name: string; team_slug: string; environment_name: string }[]
 }
 
+async function resolveRepositoryAdminAccessQuery(
+  actor: UserIdentity,
+  repositoryId: number,
+  queryable: Queryable,
+): Promise<RepositoryAdminAccess> {
+  const { rows } = await queryable.query<{ id: number; app_name: string; team_slug: string; environment_name: string }>(
+    `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name
+     FROM (
+       SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
+       FROM application_repositories
+       WHERE status = 'active'
+       ORDER BY monitored_app_id, created_at DESC, id DESC
+     ) latest
+     JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
+     JOIN repositories r ON r.github_repo_id = latest.github_repo_id
+     WHERE ma.is_active = true AND r.id = $1
+     ORDER BY ma.environment_name, ma.team_slug, ma.app_name`,
+    [repositoryId],
+  )
+
+  if (isEntraAdmin(actor)) return { authorized: true, affectedApps: rows }
+  if (rows.length === 0) return { authorized: false, affectedApps: rows }
+
+  const authorized = await canAccessAllAppsAdmin(
+    actor,
+    rows.map((row) => row.id),
+    queryable,
+  )
+  return { authorized, affectedApps: rows }
+}
+
 export async function resolveRepositoryAdminAccess(
   actor: UserIdentity,
   repositoryId: number,
 ): Promise<RepositoryAdminAccess> {
-  return withTransaction(async (client) => {
-    const { rows } = await client.query<{ id: number; app_name: string; team_slug: string; environment_name: string }>(
-      `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name
-       FROM (
-         SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
-         FROM application_repositories
-         WHERE status = 'active'
-         ORDER BY monitored_app_id, created_at DESC, id DESC
-       ) latest
-       JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
-       JOIN repositories r ON r.github_repo_id = latest.github_repo_id
-       WHERE ma.is_active = true AND r.id = $1
-       ORDER BY ma.environment_name, ma.team_slug, ma.app_name`,
-      [repositoryId],
-    )
-
-    if (isEntraAdmin(actor)) return { authorized: true, affectedApps: rows }
-    if (rows.length === 0) return { authorized: false, affectedApps: rows }
-
-    const authorized = await canAccessAllAppsAdmin(
-      actor,
-      rows.map((row) => row.id),
-      client,
-    )
-    return { authorized, affectedApps: rows }
-  })
+  return withTransaction((client) => resolveRepositoryAdminAccessQuery(actor, repositoryId, client))
 }
 
 export async function canAccessRepositoryAdmin(actor: UserIdentity, repositoryId: number): Promise<boolean> {
   const { authorized } = await resolveRepositoryAdminAccess(actor, repositoryId)
+  return authorized
+}
+
+export async function canAccessRepositoryAdminWithClient(
+  actor: UserIdentity,
+  repositoryId: number,
+  queryable: Queryable,
+): Promise<boolean> {
+  const { authorized } = await resolveRepositoryAdminAccessQuery(actor, repositoryId, queryable)
   return authorized
 }
 

@@ -15,7 +15,7 @@ export async function withSyncLock<T>(
   fn: () => Promise<T>,
 ): Promise<{ success: boolean; result?: T; locked?: boolean }> {
   const lockId = await acquireSyncLock(jobType, monitoredAppId, options.timeoutMinutes)
-  if (!lockId) {
+  if (typeof lockId !== 'number') {
     return { success: false, locked: true }
   }
 
