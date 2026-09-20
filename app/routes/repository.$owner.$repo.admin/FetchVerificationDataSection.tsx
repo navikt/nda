@@ -52,6 +52,10 @@ export function FetchVerificationDataSection({
             Henter og lagrer data fra GitHub for alle deployments knyttet til dette repositoryet. Kjører kun for
             deployments som mangler data eller har utdatert schema-versjon.
           </BodyShort>
+          <BodyShort textColor="subtle" size="small">
+            Henter for hele deployment-historikken, uavhengig av revisjonsstartår, ikke bare det som vises i «GitHub
+            data-dekning» under. Dermed er all data allerede tilgjengelig hvis revisjonsstartåret endres senere.
+          </BodyShort>
         </div>
 
         <Box padding="space-16" borderRadius="4" background="neutral-soft">
