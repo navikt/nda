@@ -1,13 +1,17 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { seedApp, seedApplicationRepository, truncateAllTables } from './helpers'
+import { seedApp, seedApplicationRepository, seedRepository, truncateAllTables } from './helpers'
 
 vi.mock('~/lib/github/git.server', () => ({
   getRepositoryId: vi.fn(),
 }))
 
 import { getRepositoryId } from '~/lib/github/git.server'
-import { getAppIdsSharingRepo, upsertApplicationRepository } from '../../application-repositories.server'
+import {
+  getAppIdsSharingRepo,
+  getMonitoredAppIdsForRepository,
+  upsertApplicationRepository,
+} from '../../application-repositories.server'
 
 let pool: Pool
 
@@ -297,5 +301,101 @@ describe('getAppIdsSharingRepo', () => {
 
     const result = await getAppIdsSharingRepo([app1])
     expect(result.get('903')).toEqual([app1])
+  })
+})
+
+describe('getMonitoredAppIdsForRepository', () => {
+  it('returns app ids with an active or historical link to the repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '910',
+      githubOwner: 'navikt',
+      githubRepoName: 'mono-repo',
+    })
+    const activeApp = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-active', environment: 'prod-gcp' })
+    const historicalApp = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'svc-historical',
+      environment: 'prod-gcp',
+    })
+    const unrelatedApp = await seedApp(pool, { teamSlug: 'team-b', appName: 'svc-other', environment: 'prod-gcp' })
+
+    await seedApplicationRepository(pool, {
+      monitoredAppId: activeApp,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-repo',
+      githubRepoId: '910',
+      status: 'active',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: historicalApp,
+      githubOwner: 'navikt',
+      githubRepo: 'mono-repo',
+      githubRepoId: '910',
+      status: 'historical',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: unrelatedApp,
+      githubOwner: 'navikt',
+      githubRepo: 'other-repo',
+      githubRepoId: '911',
+      status: 'active',
+    })
+
+    const result = await getMonitoredAppIdsForRepository(repositoryId)
+    expect(result.sort()).toEqual([activeApp, historicalApp].sort())
+  })
+
+  it('excludes apps with only a pending_approval link', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '912',
+      githubOwner: 'navikt',
+      githubRepoName: 'pending-repo',
+    })
+    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc-pending', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'pending-repo',
+      githubRepoId: '912',
+      status: 'pending_approval',
+    })
+
+    const result = await getMonitoredAppIdsForRepository(repositoryId)
+    expect(result).toEqual([])
+  })
+
+  it('excludes inactive apps even with an active link', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '913',
+      githubOwner: 'navikt',
+      githubRepoName: 'inactive-app-repo',
+    })
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'svc-inactive',
+      environment: 'prod-gcp',
+      isActive: false,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'inactive-app-repo',
+      githubRepoId: '913',
+      status: 'active',
+    })
+
+    const result = await getMonitoredAppIdsForRepository(repositoryId)
+    expect(result).toEqual([])
+  })
+
+  it('returns an empty list for a repository with no linked apps', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '914',
+      githubOwner: 'navikt',
+      githubRepoName: 'orphan-repo',
+    })
+
+    const result = await getMonitoredAppIdsForRepository(repositoryId)
+    expect(result).toEqual([])
   })
 })

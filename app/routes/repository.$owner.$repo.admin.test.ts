@@ -105,13 +105,16 @@ describe('repository admin loader', () => {
     expect(mockResolveRepositoryAdminAccess).toHaveBeenCalledWith(expect.anything(), repository.id)
   })
 
-  it('fetches and returns GitHub data stats and the latest fetch job scoped to the repository', async () => {
+  it('fetches and returns GitHub data stats and the latest fetch/compute-diffs jobs scoped to the repository', async () => {
     mockGetRepositoryByOwnerRepo.mockResolvedValue({ status: 'found', repository })
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [] })
     const githubDataStats = { total: 10, withCurrentData: 7, withOutdatedData: 2, withoutData: 1 }
     const latestFetchJob = { id: 42, status: 'running' }
+    const latestComputeDiffsJob = { id: 43, status: 'completed' }
     mockGetGitHubDataStatsForRepository.mockResolvedValue(githubDataStats)
-    mockGetLatestSyncJobForRepository.mockResolvedValue(latestFetchJob)
+    mockGetLatestSyncJobForRepository.mockImplementation((_repositoryId: number, jobType: string) =>
+      Promise.resolve(jobType === 'fetch_verification_data' ? latestFetchJob : latestComputeDiffsJob),
+    )
 
     const result = await loader({
       params: { owner: 'navikt', repo: 'some-repo' },
@@ -120,8 +123,10 @@ describe('repository admin loader', () => {
 
     expect(mockGetGitHubDataStatsForRepository).toHaveBeenCalledWith(repository.id, repository.audit_start_year)
     expect(mockGetLatestSyncJobForRepository).toHaveBeenCalledWith(repository.id, 'fetch_verification_data')
+    expect(mockGetLatestSyncJobForRepository).toHaveBeenCalledWith(repository.id, 'reverify_app')
     expect(result.githubDataStats).toBe(githubDataStats)
     expect(result.latestFetchJob).toBe(latestFetchJob)
+    expect(result.latestComputeDiffsJob).toBe(latestComputeDiffsJob)
   })
 
   it('marks the repository as not linked when it has no affected apps (e.g. an orphaned repo an entra admin can reach)', async () => {

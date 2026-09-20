@@ -217,6 +217,62 @@ describe('acquireSyncLockForRepository / acquireSyncLock cross-scope conflict ha
   })
 })
 
+describe('acquireSyncLockForRepository / acquireSyncLock cross-scope conflict handling for reverify_app', () => {
+  it('blocks a repository-scoped reverify lock when an app-scoped reverify job is running for a linked (active) app', async () => {
+    const repoA = await seedRepo(pool, 'reverify-lock-a')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-reverify-a', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-reverify-lock-a',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const appJobId = await acquireSyncLock('reverify_app', appId)
+    expect(appJobId).toEqual(expect.any(Number))
+
+    const repoJobId = await acquireSyncLockForRepository('reverify_app', repoA)
+    expect(repoJobId).toBe('app_conflict')
+  })
+
+  it('blocks an app-scoped reverify lock when a repository-scoped reverify job is running for a linked (active) repository', async () => {
+    const repoA = await seedRepo(pool, 'reverify-lock-b')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-reverify-b', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-reverify-lock-b',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const repoJobId = await acquireSyncLockForRepository('reverify_app', repoA)
+    expect(repoJobId).toEqual(expect.any(Number))
+
+    const appJobId = await acquireSyncLock('reverify_app', appId)
+    expect(appJobId).toBe('repository_conflict')
+  })
+
+  it('does not block a repository-scoped fetch job and an app-scoped reverify job for the same app (different job types)', async () => {
+    const repoA = await seedRepo(pool, 'reverify-lock-c')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-reverify-c', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-reverify-lock-c',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const appJobId = await acquireSyncLock('reverify_app', appId)
+    expect(appJobId).toEqual(expect.any(Number))
+
+    const repoJobId = await acquireSyncLockForRepository('fetch_verification_data', repoA)
+    expect(repoJobId).toEqual(expect.any(Number))
+  })
+})
+
 describe('isAppBlockedByRunningFetchJob', () => {
   it('returns true when a repository-scoped fetch job is running for a linked (active) app', async () => {
     const repoA = await seedRepo(pool, 'lock-i')

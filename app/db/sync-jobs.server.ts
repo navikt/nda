@@ -13,7 +13,7 @@ import type { SyncJob, SyncJobLog, SyncJobStatus, SyncJobType, SyncJobWithApp } 
 
 export const SYNC_INTERVAL_MS = 5 * 60 * 1000
 
-const REPOSITORY_LINKED_JOB_TYPES: ReadonlySet<SyncJobType> = new Set(['fetch_verification_data'])
+const REPOSITORY_LINKED_JOB_TYPES: ReadonlySet<SyncJobType> = new Set(['fetch_verification_data', 'reverify_app'])
 
 const POD_ID = process.env.HOSTNAME || `local-${process.pid}`
 const APP_VERSION = typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : 'unknown'

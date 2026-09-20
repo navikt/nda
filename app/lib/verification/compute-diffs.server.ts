@@ -1,4 +1,4 @@
-import { findRepositoryForApp } from '~/db/application-repositories.server'
+import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import {
@@ -260,6 +260,56 @@ export async function computeVerificationDiffs(
   result.diffsFound = diffs.length
   logger.info(
     `Verification diffs computed: ${result.deploymentsChecked} checked, ${result.diffsFound} diffs, ${result.skipped} skipped, ${result.errors} errors`,
+  )
+
+  return result
+}
+
+interface ComputeDiffsForRepositoryOptions {
+  jobId?: number
+  onProgress?: (processedApps: number, totalApps: number, diffsFound: number) => void | Promise<void>
+}
+
+export interface ComputeDiffsForRepositoryResult extends ComputeDiffsResult {
+  appsProcessed: number
+  appsTotal: number
+}
+
+export async function computeVerificationDiffsForRepository(
+  repositoryId: number,
+  options: ComputeDiffsForRepositoryOptions = {},
+): Promise<ComputeDiffsForRepositoryResult> {
+  const appIds = await getMonitoredAppIdsForRepository(repositoryId)
+
+  const result: ComputeDiffsForRepositoryResult = {
+    deploymentsChecked: 0,
+    diffsFound: 0,
+    skipped: 0,
+    errors: 0,
+    appsProcessed: 0,
+    appsTotal: appIds.length,
+  }
+
+  for (const appId of appIds) {
+    try {
+      const appResult = await computeVerificationDiffs(appId)
+      result.deploymentsChecked += appResult.deploymentsChecked
+      result.diffsFound += appResult.diffsFound
+      result.skipped += appResult.skipped
+      result.errors += appResult.errors
+    } catch (err) {
+      logger.error(
+        `Error computing diffs for app ${appId} in repository ${repositoryId}`,
+        err instanceof Error ? err : new Error(String(err)),
+      )
+      result.errors++
+    }
+    result.appsProcessed++
+    await options.onProgress?.(result.appsProcessed, result.appsTotal, result.diffsFound)
+  }
+
+  logger.info(
+    `Verification diffs computed for repository ${repositoryId}: ${appIds.length} apps, ${result.deploymentsChecked} deployments checked, ${result.diffsFound} diffs, ${result.skipped} skipped, ${result.errors} errors`,
   )
 
   return result

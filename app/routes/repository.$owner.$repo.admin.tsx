@@ -17,6 +17,7 @@ import { DefaultBranchSettings } from './repository.$owner.$repo.admin/DefaultBr
 import { FetchVerificationDataSection } from './repository.$owner.$repo.admin/FetchVerificationDataSection'
 import { ImplicitApprovalSettings } from './repository.$owner.$repo.admin/ImplicitApprovalSettings'
 import { RecentConfigChanges } from './repository.$owner.$repo.admin/RecentConfigChanges'
+import { ReverifySection } from './repository.$owner.$repo.admin/ReverifySection'
 
 export { action } from './repository.$owner.$repo.admin.actions.server'
 
@@ -35,10 +36,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
-  const [recentConfigChanges, githubDataStats, latestFetchJob] = await Promise.all([
+  const [recentConfigChanges, githubDataStats, latestFetchJob, latestComputeDiffsJob] = await Promise.all([
     getRepoConfigAuditLog(repository.id, { limit: 10 }),
     getGitHubDataStatsForRepository(repository.id, repository.audit_start_year),
     getLatestSyncJobForRepository(repository.id, 'fetch_verification_data'),
+    getLatestSyncJobForRepository(repository.id, 'reverify_app'),
   ])
   const isLinked = affectedApps.length > 0
 
@@ -56,6 +58,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     recentConfigChanges,
     githubDataStats,
     latestFetchJob,
+    latestComputeDiffsJob,
   }
 }
 
@@ -70,6 +73,7 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
     recentConfigChanges,
     githubDataStats,
     latestFetchJob,
+    latestComputeDiffsJob,
   } = useLoaderData<typeof loader>()
 
   const revalidator = useRevalidator()
@@ -78,7 +82,13 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
   )
   const [fetchJobStatus, setFetchJobStatus] = useState<SyncJob | null>(latestFetchJob)
 
+  const [computeDiffsJobId, setComputeDiffsJobId] = useState<number | null>(
+    latestComputeDiffsJob?.status === 'running' ? latestComputeDiffsJob.id : null,
+  )
+  const [computeDiffsJobStatus, setComputeDiffsJobStatus] = useState<SyncJob | null>(latestComputeDiffsJob)
+
   const fetchJobStarted = (actionData as { fetchJobStarted?: number } | undefined)?.fetchJobStarted
+  const computeDiffsJobStarted = (actionData as { computeDiffsJobStarted?: number } | undefined)?.computeDiffsJobStarted
 
   useEffect(() => {
     if (fetchJobStarted) {
@@ -87,26 +97,43 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
   }, [fetchJobStarted])
 
   useEffect(() => {
+    if (computeDiffsJobStarted) {
+      setComputeDiffsJobId(computeDiffsJobStarted)
+    }
+  }, [computeDiffsJobStarted])
+
+  useEffect(() => {
     setFetchJobStatus(latestFetchJob)
     setFetchJobId(latestFetchJob?.status === 'running' ? latestFetchJob.id : null)
   }, [latestFetchJob])
 
   useEffect(() => {
-    if (!fetchJobId) return
-    if (
-      fetchJobStatus?.status === 'completed' ||
-      fetchJobStatus?.status === 'partial' ||
-      fetchJobStatus?.status === 'failed' ||
-      fetchJobStatus?.status === 'cancelled'
-    )
-      return
+    setComputeDiffsJobStatus(latestComputeDiffsJob)
+    setComputeDiffsJobId(latestComputeDiffsJob?.status === 'running' ? latestComputeDiffsJob.id : null)
+  }, [latestComputeDiffsJob])
+
+  useEffect(() => {
+    const fetchJobActive =
+      fetchJobId != null &&
+      fetchJobStatus?.status !== 'completed' &&
+      fetchJobStatus?.status !== 'partial' &&
+      fetchJobStatus?.status !== 'failed' &&
+      fetchJobStatus?.status !== 'cancelled'
+    const computeDiffsJobActive =
+      computeDiffsJobId != null &&
+      computeDiffsJobStatus?.status !== 'completed' &&
+      computeDiffsJobStatus?.status !== 'partial' &&
+      computeDiffsJobStatus?.status !== 'failed' &&
+      computeDiffsJobStatus?.status !== 'cancelled'
+
+    if (!fetchJobActive && !computeDiffsJobActive) return
 
     const interval = setInterval(() => {
       revalidator.revalidate()
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [fetchJobId, fetchJobStatus?.status, revalidator])
+  }, [fetchJobId, fetchJobStatus?.status, computeDiffsJobId, computeDiffsJobStatus?.status, revalidator])
 
   return (
     <VStack gap="space-32">
@@ -142,6 +169,13 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
             auditStartYear={auditStartYear}
             githubDataStats={githubDataStats}
             fetchJobStatus={fetchJobStatus}
+          />
+
+          <ReverifySection
+            repositoryId={repository.id}
+            githubOwner={repository.github_owner}
+            githubRepoName={repository.github_repo_name}
+            computeDiffsJobStatus={computeDiffsJobStatus}
           />
         </>
       ) : (
