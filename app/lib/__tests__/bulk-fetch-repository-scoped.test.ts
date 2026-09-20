@@ -96,6 +96,17 @@ describe('fetchVerificationDataForRepository', () => {
     expect(params).toEqual([42])
   })
 
+  it('partitions the prev-commit-sha window by repository only, with a deterministic id tie-breaker', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] })
+
+    await fetchVerificationDataForRepository(42)
+
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('PARTITION BY d.detected_github_owner, d.detected_github_repo_name')
+    expect(query).not.toContain('PARTITION BY d.monitored_app_id')
+    expect(query).toContain('ORDER BY d.created_at ASC, d.id ASC')
+  })
+
   it('processes deployments from multiple monitored apps linked to the same repository, using each row own app id', async () => {
     mockPoolQuery.mockResolvedValueOnce({
       rows: [deploymentRow({ id: 1, monitored_app_id: 10 }), deploymentRow({ id: 2, monitored_app_id: 20 })],
