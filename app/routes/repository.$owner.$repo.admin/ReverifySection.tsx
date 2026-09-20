@@ -85,7 +85,9 @@ export function ReverifySection({
             borderRadius="4"
             background={
               computeDiffsJobStatus.status === 'completed'
-                ? 'success-soft'
+                ? (jobResult?.appsSkippedLocked ?? 0) > 0
+                  ? 'warning-soft'
+                  : 'success-soft'
                 : computeDiffsJobStatus.status === 'failed'
                   ? 'danger-soft'
                   : computeDiffsJobStatus.status === 'cancelled'
@@ -104,13 +106,21 @@ export function ReverifySection({
                 {computeDiffsJobStatus.status === 'running' && (
                   <Loader size="xsmall" title="Reverifiserer deployments..." />
                 )}
-                {computeDiffsJobStatus.status === 'completed' && <CheckmarkCircleIcon aria-hidden />}
+                {computeDiffsJobStatus.status === 'completed' &&
+                  ((jobResult?.appsSkippedLocked ?? 0) > 0 ? (
+                    <ExclamationmarkTriangleIcon aria-hidden />
+                  ) : (
+                    <CheckmarkCircleIcon aria-hidden />
+                  ))}
                 {computeDiffsJobStatus.status === 'failed' && <ExclamationmarkTriangleIcon aria-hidden />}
                 {computeDiffsJobStatus.status === 'cancelled' && <ExclamationmarkTriangleIcon aria-hidden />}
                 <BodyShort size="small" weight="semibold">
                   {computeDiffsJobStatus.status === 'pending' && 'Venter...'}
                   {computeDiffsJobStatus.status === 'running' && 'Reverifiserer...'}
-                  {computeDiffsJobStatus.status === 'completed' && 'Reverifisering fullført'}
+                  {computeDiffsJobStatus.status === 'completed' &&
+                    ((jobResult?.appsSkippedLocked ?? 0) > 0
+                      ? 'Reverifisering fullført (med forbehold)'
+                      : 'Reverifisering fullført')}
                   {computeDiffsJobStatus.status === 'failed' && 'Reverifisering feilet'}
                   {computeDiffsJobStatus.status === 'cancelled' && 'Reverifisering avbrutt'}
                 </BodyShort>
@@ -126,6 +136,14 @@ export function ReverifySection({
                   {(jobResult.errors ?? 0) > 0 && (
                     <Detail>
                       <span style={{ color: 'var(--ax-text-danger)' }}>Feil: {jobResult.errors}</span>
+                    </Detail>
+                  )}
+                  {(jobResult.appsSkippedLocked ?? 0) > 0 && (
+                    <Detail>
+                      <span style={{ color: 'var(--ax-text-warning)' }}>
+                        Hoppet over pga. annen kjørende jobb: {jobResult.appsSkippedLocked} (ikke reverifisert — prøv
+                        igjen senere)
+                      </span>
                     </Detail>
                   )}
                 </HStack>

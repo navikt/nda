@@ -183,9 +183,12 @@ describe('computeVerificationDiffsForRepository', () => {
     const otherJobId = await acquireSyncLockForRepository('reverify_app', repoB)
     expect(otherJobId).toEqual(expect.any(Number))
 
-    // Our own (hypothetical) repoA job doesn't need a real row for this check — only used as an
-    // "exclude this job id" sentinel so we don't self-conflict.
-    const result = await computeVerificationDiffsForRepository(repoA, { jobId: -1 })
+    // Acquire a real running job for repoA itself, since `computeVerificationDiffsForRepository`
+    // now checks the job's own status (not just cancellation) before each app.
+    const ownJobId = await acquireSyncLockForRepository('reverify_app', repoA)
+    expect(ownJobId).toEqual(expect.any(Number))
+
+    const result = await computeVerificationDiffsForRepository(repoA, { jobId: ownJobId as number })
 
     expect(result.appsTotal).toBe(2)
     expect(result.appsSkippedLocked).toBe(1)
