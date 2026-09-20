@@ -16,6 +16,18 @@ interface ApplicationRepository {
   created_at: Date
 }
 
+export async function getMonitoredAppIdsForRepository(repositoryId: number): Promise<number[]> {
+  const result = await pool.query<{ monitored_app_id: number }>(
+    `SELECT DISTINCT ar.monitored_app_id
+     FROM application_repositories ar
+     JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+     JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
+     WHERE r.id = $1 AND ar.status IN ('active', 'historical') AND ma.is_active = true`,
+    [repositoryId],
+  )
+  return result.rows.map((row) => row.monitored_app_id)
+}
+
 export async function getRepositoriesByAppId(appId: number): Promise<ApplicationRepository[]> {
   const result = await pool.query(
     `SELECT * FROM application_repositories 

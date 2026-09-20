@@ -8,7 +8,9 @@ import {
   cancelSyncJob,
   forceReleaseSyncJob,
   getSyncJobById,
+  heartbeatSyncJob,
   releaseSyncLock,
+  updateSyncJobProgress,
 } from '~/db/sync-jobs.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
@@ -18,6 +20,7 @@ import { logger, runWithJobContext } from '~/lib/logger.server'
 import { repoAffectedAppsMessage } from '~/lib/repo-scope-messages'
 import { requireParams } from '~/lib/route-params.server'
 import { fetchVerificationDataForRepository } from '~/lib/verification'
+import { computeVerificationDiffsForRepository } from '~/lib/verification/compute-diffs.server'
 import { isImplicitApprovalMode } from '~/lib/verification/types'
 import type { Route } from './+types/repository.$owner.$repo.admin'
 
@@ -35,6 +38,32 @@ export async function processFetchDataJobForRepositoryAsync(jobId: number, repos
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       const job = await getSyncJobById(jobId)
       if (job?.status !== 'cancelled') {
+        await releaseSyncLock(jobId, 'failed', undefined, errorMessage)
+      }
+      throw err
+    }
+  })
+}
+
+export async function processComputeDiffsJobForRepositoryAsync(jobId: number, repositoryId: number) {
+  await runWithJobContext(jobId, 'reverify_app', { repositoryId }, false, async () => {
+    try {
+      const result = await computeVerificationDiffsForRepository(repositoryId, {
+        jobId,
+        onProgress: async (appsProcessed, appsTotal, diffsFound) => {
+          await updateSyncJobProgress(jobId, { appsProcessed, appsTotal, diffsFound })
+          if (appsProcessed % 5 === 0) {
+            await heartbeatSyncJob(jobId)
+          }
+        },
+      })
+      const job = await getSyncJobById(jobId)
+      if (job?.status !== 'running') return
+      await releaseSyncLock(jobId, 'completed', result as unknown as Record<string, unknown>)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      const job = await getSyncJobById(jobId)
+      if (job?.status === 'running') {
         await releaseSyncLock(jobId, 'failed', undefined, errorMessage)
       }
       throw err
@@ -209,19 +238,48 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { fetchJobStarted: jobId }
   }
 
-  if (action === 'cancel_fetch_job' || action === 'force_release_job') {
+  if (action === 'compute_diffs') {
+    const jobId = await acquireSyncLockForRepository('reverify_app', repositoryId, 10, undefined, (client) =>
+      canAccessRepositoryAdminWithClient(user, repositoryId, client),
+    )
+    if (jobId === 'unauthorized') {
+      return { error: 'Du har ikke administratortilgang til alle appene i dette repoet' }
+    }
+    if (jobId === 'app_conflict') {
+      return { error: 'En reverifisering kjører allerede for en app i dette repositoryet' }
+    }
+    if (!jobId) {
+      return { error: 'En reverifisering kjører allerede for dette repositoryet' }
+    }
+
+    processComputeDiffsJobForRepositoryAsync(jobId, repositoryId).catch((err) => {
+      logger.error(`Compute diffs job ${jobId} failed`, err instanceof Error ? err : new Error(String(err)))
+    })
+
+    return { computeDiffsJobStarted: jobId }
+  }
+
+  if (
+    action === 'cancel_fetch_job' ||
+    action === 'force_release_job' ||
+    action === 'cancel_compute_diffs_job' ||
+    action === 'force_release_compute_diffs_job'
+  ) {
     const jobIdRaw = formData.get('job_id')
     const jobId = typeof jobIdRaw === 'string' ? Number(jobIdRaw) : Number.NaN
     if (!Number.isInteger(jobId)) {
       return { error: 'Mangler eller ugyldig job_id' }
     }
 
+    const expectedJobType =
+      action === 'cancel_fetch_job' || action === 'force_release_job' ? 'fetch_verification_data' : 'reverify_app'
+
     const job = await getSyncJobById(jobId)
-    if (!job || job.repository_id !== repositoryId) {
+    if (!job || job.repository_id !== repositoryId || job.job_type !== expectedJobType) {
       return { error: 'Du har ikke tilgang til denne jobben' }
     }
 
-    if (action === 'cancel_fetch_job') {
+    if (action === 'cancel_fetch_job' || action === 'cancel_compute_diffs_job') {
       const cancelled = await cancelSyncJob(job.id, (client) =>
         canAccessRepositoryAdminWithClient(user, repositoryId, client),
       )

@@ -21,7 +21,7 @@ import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import {
   getSyncJobById,
   heartbeatSyncJob,
-  isAppBlockedByRunningFetchJob,
+  isAppBlockedByRunningJob,
   isSyncJobCancelled,
   releaseExpiredLocks,
   updateSyncJobProgress,
@@ -246,9 +246,9 @@ async function processComputeAllAsync(jobId: number, apps: Array<{ id: number; t
   try {
     for (const app of apps) {
       try {
-        if (await isAppBlockedByRunningFetchJob(app.id)) {
+        if (await isAppBlockedByRunningJob(app.id, ['fetch_verification_data', 'reverify_app'])) {
           logger.info(
-            `Skipping compute diffs for ${app.team_slug}/${app.app_name} — a fetch job is currently running for it or its repository`,
+            `Skipping compute diffs for ${app.team_slug}/${app.app_name} — a fetch or reverify job is currently running for it or its repository`,
           )
           skippedRepoLocked++
         } else {
