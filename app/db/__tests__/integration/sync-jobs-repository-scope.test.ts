@@ -7,6 +7,7 @@ import {
   forceReleaseSyncJob,
   getAllSyncJobs,
   getFailedSyncJobsGrouped,
+  isAppBlockedByRunningFetchJob,
 } from '~/db/sync-jobs.server'
 import { seedApp, seedApplicationRepository, seedRepository, truncateAllTables } from './helpers'
 
@@ -213,6 +214,82 @@ describe('acquireSyncLockForRepository / acquireSyncLock cross-scope conflict ha
 
     const naisSyncJobId = await acquireSyncLock('nais_sync', appId)
     expect(naisSyncJobId).toEqual(expect.any(Number))
+  })
+})
+
+describe('isAppBlockedByRunningFetchJob', () => {
+  it('returns true when a repository-scoped fetch job is running for a linked (active) app', async () => {
+    const repoA = await seedRepo(pool, 'lock-i')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-i', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-i',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    await acquireSyncLockForRepository('fetch_verification_data', repoA)
+
+    expect(await isAppBlockedByRunningFetchJob(appId)).toBe(true)
+  })
+
+  it('returns true when a repository-scoped fetch job is running for a historically linked app', async () => {
+    const repoA = await seedRepo(pool, 'lock-j')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-j', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-j',
+      githubRepoId: String(repoIdCounter),
+      status: 'historical',
+    })
+
+    await acquireSyncLockForRepository('fetch_verification_data', repoA)
+
+    expect(await isAppBlockedByRunningFetchJob(appId)).toBe(true)
+  })
+
+  it('returns true when an app-scoped fetch job is running for the app itself', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-m', environment: 'prod-gcp' })
+
+    await acquireSyncLock('fetch_verification_data', appId)
+
+    expect(await isAppBlockedByRunningFetchJob(appId)).toBe(true)
+  })
+
+  it('returns false when the app has no linked repository with a running fetch job', async () => {
+    await seedRepo(pool, 'lock-k')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-k', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-k',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    // A repository-scoped job runs for an unrelated repository, not the app's own.
+    const unrelatedRepo = await seedRepo(pool, 'lock-k-unrelated')
+    await acquireSyncLockForRepository('fetch_verification_data', unrelatedRepo)
+
+    expect(await isAppBlockedByRunningFetchJob(appId)).toBe(false)
+  })
+
+  it("returns false when the repository-scoped fetch job's lock has expired", async () => {
+    const repoA = await seedRepo(pool, 'lock-l')
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-l', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-l',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    await insertRunningJob({ jobType: 'fetch_verification_data', repositoryId: repoA, lockExpiresInMinutes: -5 })
+
+    expect(await isAppBlockedByRunningFetchJob(appId)).toBe(false)
   })
 })
 

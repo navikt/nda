@@ -21,6 +21,7 @@ import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import {
   getSyncJobById,
   heartbeatSyncJob,
+  isAppBlockedByRunningFetchJob,
   isSyncJobCancelled,
   releaseExpiredLocks,
   updateSyncJobProgress,
@@ -240,12 +241,20 @@ async function processComputeAllAsync(jobId: number, apps: Array<{ id: number; t
   let processed = 0
   let totalDiffs = 0
   let errors = 0
+  let skippedRepoLocked = 0
 
   try {
     for (const app of apps) {
       try {
-        const result = await computeVerificationDiffs(app.id)
-        totalDiffs += result.diffsFound
+        if (await isAppBlockedByRunningFetchJob(app.id)) {
+          logger.info(
+            `Skipping compute diffs for ${app.team_slug}/${app.app_name} — a fetch job is currently running for it or its repository`,
+          )
+          skippedRepoLocked++
+        } else {
+          const result = await computeVerificationDiffs(app.id)
+          totalDiffs += result.diffsFound
+        }
       } catch (err) {
         logger.error(
           `Compute diffs failed for ${app.team_slug}/${app.app_name}`,
@@ -257,7 +266,7 @@ async function processComputeAllAsync(jobId: number, apps: Array<{ id: number; t
 
       await pool.query(`UPDATE sync_jobs SET result = $2 WHERE id = $1 AND status = 'running'`, [
         jobId,
-        JSON.stringify({ processed, total: apps.length, totalDiffs, errors }),
+        JSON.stringify({ processed, total: apps.length, totalDiffs, errors, skippedRepoLocked }),
       ])
 
       if (processed % 5 === 0) {
@@ -270,7 +279,7 @@ async function processComputeAllAsync(jobId: number, apps: Array<{ id: number; t
 
     await pool.query(`UPDATE sync_jobs SET status = 'completed', completed_at = NOW(), result = $2 WHERE id = $1`, [
       jobId,
-      JSON.stringify({ processed, total: apps.length, totalDiffs, errors }),
+      JSON.stringify({ processed, total: apps.length, totalDiffs, errors, skippedRepoLocked }),
     ])
   } catch (err) {
     await pool.query(`UPDATE sync_jobs SET status = 'failed', completed_at = NOW(), error = $2 WHERE id = $1`, [
@@ -404,6 +413,7 @@ export default function GlobalVerificationDiffsPage() {
     processed: number
     total: number
     totalDiffs: number
+    skippedRepoLocked: number
   } | null>(null)
 
   useEffect(() => {
@@ -411,7 +421,7 @@ export default function GlobalVerificationDiffsPage() {
       | {
           jobStatus?: {
             status: string
-            result?: { processed?: number; total?: number; totalDiffs?: number }
+            result?: { processed?: number; total?: number; totalDiffs?: number; skippedRepoLocked?: number }
           }
         }
       | undefined
@@ -427,6 +437,7 @@ export default function GlobalVerificationDiffsPage() {
           processed: jobResult.processed,
           total: jobResult.total,
           totalDiffs: jobResult.totalDiffs ?? 0,
+          skippedRepoLocked: jobResult.skippedRepoLocked ?? 0,
         })
       }
     }
@@ -588,7 +599,7 @@ export default function GlobalVerificationDiffsPage() {
               <Loader size="xsmall" />
               <Detail>
                 {jobProgress
-                  ? `App ${jobProgress.processed} av ${jobProgress.total}${jobProgress.totalDiffs > 0 ? ` — ${jobProgress.totalDiffs} avvik funnet` : ''}…`
+                  ? `App ${jobProgress.processed} av ${jobProgress.total}${jobProgress.totalDiffs > 0 ? ` — ${jobProgress.totalDiffs} avvik funnet` : ''}${jobProgress.skippedRepoLocked > 0 ? ` — ${jobProgress.skippedRepoLocked} hoppet over (fetch-jobb kjører)` : ''}…`
                   : 'Starter beregning…'}
               </Detail>
             </HStack>
