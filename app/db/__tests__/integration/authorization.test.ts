@@ -17,6 +17,7 @@ import type { UserIdentity } from '~/lib/auth.server'
 import {
   canAccessAppAdmin,
   canAccessRepositoryAdmin,
+  canAccessRepositoryAdminWithClient,
   canAccessRepositorySettingsAdmin,
   canAccessTeamAdmin,
   canAdministerTeam,
@@ -788,6 +789,38 @@ describe('canAccessRepositoryAdmin', () => {
     await assignTeamRole(tl.navIdent, teamAId, 'tech_lead', 'admin')
 
     expect(await canAccessRepositoryAdmin(tl, repositoryId)).toBe(false)
+  })
+
+  it('canAccessRepositoryAdminWithClient produces the same result as canAccessRepositoryAdmin when reusing an existing connection', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '5099',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-admin-with-client',
+    })
+    const sectionId = await seedSection(pool, 'pensjon-repo-admin')
+    const teamId = await seedDevTeam(pool, 'team-repo-admin-with-client', 'Team Repo Admin With Client', sectionId)
+    const appA = await seedApp(pool, { teamSlug: 'nais-repo-wc', appName: 'repo-wc', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-admin-with-client',
+      githubRepoId: '5099',
+    })
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appA,
+    ])
+
+    const tl = makeUser('T990099')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    const client = await pool.connect()
+    try {
+      expect(await canAccessRepositoryAdminWithClient(tl, repositoryId, client)).toBe(true)
+      expect(await canAccessRepositoryAdminWithClient(makeUser('T990098'), repositoryId, client)).toBe(false)
+    } finally {
+      client.release()
+    }
   })
 
   it('ignores a stale older active link to this repository when the app has since moved to another repository', async () => {

@@ -6,7 +6,7 @@ export async function cacheCheckLogsWithLock(
   monitoredAppId: number,
 ): Promise<{ success: boolean; result?: { cached: number }; locked?: boolean }> {
   const lockId = await acquireSyncLock('cache_check_logs', monitoredAppId, 10)
-  if (!lockId) {
+  if (typeof lockId !== 'number') {
     return { success: false, locked: true }
   }
 

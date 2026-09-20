@@ -3,15 +3,39 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockRequireUser,
   mockCanAccessRepositoryAdmin,
+  mockCanAccessRepositoryAdminWithClient,
   mockUpdateRepositorySettingsByRepositoryId,
   mockIsCurrentOrHistoricalNameForRepositoryId,
   mockGetRepositoryById,
+  mockAcquireSyncLockForRepository,
+  mockCancelSyncJob,
+  mockForceReleaseSyncJob,
+  mockGetSyncJobById,
+  mockReleaseSyncLock,
+  mockFetchVerificationDataForRepository,
+  mockRunWithJobContext,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockCanAccessRepositoryAdmin: vi.fn(),
+  mockCanAccessRepositoryAdminWithClient: vi.fn(),
   mockUpdateRepositorySettingsByRepositoryId: vi.fn(),
   mockIsCurrentOrHistoricalNameForRepositoryId: vi.fn(),
   mockGetRepositoryById: vi.fn(),
+  mockAcquireSyncLockForRepository: vi.fn(),
+  mockCancelSyncJob: vi.fn(),
+  mockForceReleaseSyncJob: vi.fn(),
+  mockGetSyncJobById: vi.fn(),
+  mockReleaseSyncLock: vi.fn(),
+  mockFetchVerificationDataForRepository: vi.fn(),
+  mockRunWithJobContext: vi.fn(
+    async (
+      _jobId: number,
+      _jobType: string,
+      _target: number | { repositoryId: number },
+      _debug: boolean,
+      fn: () => Promise<unknown>,
+    ) => fn(),
+  ),
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -20,12 +44,30 @@ vi.mock('~/lib/auth.server', () => ({
 
 vi.mock('~/lib/authorization.server', () => ({
   canAccessRepositoryAdmin: mockCanAccessRepositoryAdmin,
+  canAccessRepositoryAdminWithClient: mockCanAccessRepositoryAdminWithClient,
 }))
 
 vi.mock('~/db/repositories.server', () => ({
   updateRepositorySettingsByRepositoryId: mockUpdateRepositorySettingsByRepositoryId,
   isCurrentOrHistoricalNameForRepositoryId: mockIsCurrentOrHistoricalNameForRepositoryId,
   getRepositoryById: mockGetRepositoryById,
+}))
+
+vi.mock('~/db/sync-jobs.server', () => ({
+  acquireSyncLockForRepository: mockAcquireSyncLockForRepository,
+  cancelSyncJob: mockCancelSyncJob,
+  forceReleaseSyncJob: mockForceReleaseSyncJob,
+  getSyncJobById: mockGetSyncJobById,
+  releaseSyncLock: mockReleaseSyncLock,
+}))
+
+vi.mock('~/lib/verification', () => ({
+  fetchVerificationDataForRepository: mockFetchVerificationDataForRepository,
+}))
+
+vi.mock('~/lib/logger.server', () => ({
+  logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+  runWithJobContext: mockRunWithJobContext,
 }))
 
 vi.mock('~/lib/route-params.server', () => ({
@@ -51,7 +93,7 @@ vi.mock('~/lib/verification/types', () => ({
   isImplicitApprovalMode: (value: string) => value === 'off' || value === 'dependabot_only' || value === 'all',
 }))
 
-import { action } from './repository.$owner.$repo.admin.actions.server'
+import { action, processFetchDataJobForRepositoryAsync } from './repository.$owner.$repo.admin.actions.server'
 
 const REPO_PARAMS = { owner: 'navikt', repo: 'some-repo' }
 
@@ -326,5 +368,194 @@ describe('repository admin actions - authorization', () => {
     const result = await callAction(formData)
 
     expect(result).toEqual({ error: 'Ukjent handling' })
+  })
+})
+
+describe('repository admin actions - fetch verification data', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
+    mockCanAccessRepositoryAdmin.mockResolvedValue(true)
+    mockGetRepositoryById.mockResolvedValue({ id: 5, github_owner: 'navikt', github_repo_name: 'some-repo' })
+    mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
+  })
+
+  it('starts a repository-scoped fetch job when the lock is available', async () => {
+    mockAcquireSyncLockForRepository.mockResolvedValue(42)
+    mockFetchVerificationDataForRepository.mockResolvedValue({ total: 0, processed: 0 })
+
+    const formData = new FormData()
+    formData.set('action', 'fetch_verification_data')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(mockAcquireSyncLockForRepository).toHaveBeenCalledWith(
+      'fetch_verification_data',
+      5,
+      5,
+      undefined,
+      expect.any(Function),
+    )
+    expect(result).toEqual({ fetchJobStarted: 42 })
+  })
+
+  it('returns an error when a fetch job is already running for the repository', async () => {
+    mockAcquireSyncLockForRepository.mockResolvedValue(null)
+
+    const formData = new FormData()
+    formData.set('action', 'fetch_verification_data')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'En datahenting kjører allerede for dette repositoryet' })
+  })
+
+  it('returns a distinct error when blocked by a running app-scoped job', async () => {
+    mockAcquireSyncLockForRepository.mockResolvedValue('app_conflict')
+
+    const formData = new FormData()
+    formData.set('action', 'fetch_verification_data')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'En datahenting kjører allerede for en app i dette repositoryet' })
+  })
+
+  it('returns an error when access is revoked before the lock is acquired', async () => {
+    mockAcquireSyncLockForRepository.mockResolvedValue('unauthorized')
+
+    const formData = new FormData()
+    formData.set('action', 'fetch_verification_data')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
+  })
+
+  it('cancels a running fetch job scoped to this repository', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockCancelSyncJob.mockResolvedValue(true)
+
+    const formData = new FormData()
+    formData.set('action', 'cancel_fetch_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '42')
+
+    const result = await callAction(formData)
+
+    expect(mockCancelSyncJob).toHaveBeenCalledWith(42, expect.any(Function))
+    expect(result).toEqual({ success: 'Jobben ble avbrutt' })
+  })
+
+  it('rejects cancel_fetch_job for a job belonging to a different repository', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 999 })
+
+    const formData = new FormData()
+    formData.set('action', 'cancel_fetch_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '42')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke tilgang til denne jobben' })
+    expect(mockCancelSyncJob).not.toHaveBeenCalled()
+  })
+
+  it('returns an error when access is revoked before cancel_fetch_job commits', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockCancelSyncJob.mockResolvedValue('unauthorized')
+
+    const formData = new FormData()
+    formData.set('action', 'cancel_fetch_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '42')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
+  })
+
+  it('force-releases a job scoped to this repository', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockForceReleaseSyncJob.mockResolvedValue(true)
+
+    const formData = new FormData()
+    formData.set('action', 'force_release_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '42')
+
+    const result = await callAction(formData)
+
+    expect(mockForceReleaseSyncJob).toHaveBeenCalledWith(42, expect.any(Function))
+    expect(result).toEqual({ success: 'Jobben ble tvangsfrigjort' })
+  })
+
+  it('returns an error when access is revoked before force_release_job commits', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockForceReleaseSyncJob.mockResolvedValue('unauthorized')
+
+    const formData = new FormData()
+    formData.set('action', 'force_release_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '42')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
+  })
+})
+
+describe('processFetchDataJobForRepositoryAsync', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRunWithJobContext.mockImplementation(
+      async (
+        _jobId: number,
+        _jobType: string,
+        _target: number | { repositoryId: number },
+        _debug: boolean,
+        fn: () => Promise<unknown>,
+      ) => fn(),
+    )
+    mockGetSyncJobById.mockResolvedValue({ id: 5, repository_id: 7, status: 'running' })
+  })
+
+  it('releases the sync lock as "partial" when the bulk fetch reports rateLimited', async () => {
+    mockFetchVerificationDataForRepository.mockResolvedValue({
+      total: 10,
+      processed: 3,
+      skipped: 0,
+      fetched: 3,
+      derivedFromRaw: 0,
+      workflowTriggersFetched: 0,
+      errors: 0,
+      errorDetails: [],
+      rateLimited: true,
+    })
+
+    await processFetchDataJobForRepositoryAsync(5, 7)
+
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'partial', expect.objectContaining({ rateLimited: true }))
+  })
+
+  it('releases the sync lock as "completed" when the bulk fetch finishes without hitting the rate limit', async () => {
+    mockFetchVerificationDataForRepository.mockResolvedValue({
+      total: 10,
+      processed: 10,
+      skipped: 0,
+      fetched: 10,
+      derivedFromRaw: 0,
+      workflowTriggersFetched: 0,
+      errors: 0,
+      errorDetails: [],
+    })
+
+    await processFetchDataJobForRepositoryAsync(5, 7)
+
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'completed', expect.anything())
   })
 })

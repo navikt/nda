@@ -606,8 +606,10 @@ export {
 } from './github-data/commit-associated-prs-raw-snapshots.server'
 export { getLatestCommitRawSnapshot, saveCommitRawSnapshot } from './github-data/commit-raw-snapshots.server'
 export {
+  type GitHubDataStats,
   getDerivedCompareDataFromRawSnapshot,
   getGitHubDataStatsForApp,
+  getGitHubDataStatsForRepository,
   getLatestCompareRawSnapshot,
   getLatestCompareSnapshot,
   saveCompareRawSnapshot,

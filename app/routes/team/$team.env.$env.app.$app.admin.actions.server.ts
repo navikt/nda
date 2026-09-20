@@ -355,6 +355,9 @@ export async function action({ request }: { request: Request; params: Record<str
         ? { ...(debug ? { debug: true } : {}), ...(refreshDisplayData ? { refreshDisplayData: true } : {}) }
         : undefined
     const jobId = await acquireSyncLock('fetch_verification_data', appId, 5, jobOptions)
+    if (jobId === 'repository_conflict') {
+      return { error: 'En datahenting kjører allerede for repositoryet denne appen tilhører' }
+    }
     if (!jobId) {
       return { error: 'En datahenting kjører allerede for denne appen' }
     }
@@ -397,7 +400,7 @@ export async function action({ request }: { request: Request; params: Record<str
       return { error: 'Mangler app_id' }
     }
     const jobId = await acquireSyncLock('reverify_app', appId, 10)
-    if (!jobId) {
+    if (typeof jobId !== 'number') {
       const latest = await getLatestSyncJob(appId, 'reverify_app')
       if (latest?.status === 'running') {
         return { error: 'En avviksberegning kjører allerede for denne appen' }
