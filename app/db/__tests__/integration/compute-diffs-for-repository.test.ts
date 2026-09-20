@@ -195,6 +195,48 @@ describe('computeVerificationDiffsForRepository', () => {
     expect(result.appsProcessed).toBe(2)
   })
 
+  it('processes only the apps supplied via the appIds override, not every app linked to the repository', async () => {
+    const repoId = await seedRepo('override')
+    const appA = await seedApp(pool, { teamSlug: 'team-cdfr', appName: 'app-cdfr-override-a', environment: 'prod-gcp' })
+    const appB = await seedApp(pool, { teamSlug: 'team-cdfr', appName: 'app-cdfr-override-b', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-cdfr-override',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appB,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-cdfr-override',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appA,
+      teamSlug: 'team-cdfr',
+      environment: 'prod-gcp',
+      fourEyesStatus: 'baseline',
+      githubOwner: 'navikt',
+      githubRepo: 'repo-cdfr-override',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appB,
+      teamSlug: 'team-cdfr',
+      environment: 'prod-gcp',
+      fourEyesStatus: 'baseline',
+      githubOwner: 'navikt',
+      githubRepo: 'repo-cdfr-override',
+    })
+
+    const result = await computeVerificationDiffsForRepository(repoId, { appIds: [appA] })
+
+    expect(result.appsTotal).toBe(1)
+    expect(result.appsProcessed).toBe(1)
+    expect(result.deploymentsChecked).toBe(1)
+  })
+
   it('stops processing before the first app when the job has already been cancelled', async () => {
     const repoId = await seedRepo('cancelled')
     const appA = await seedApp(pool, {

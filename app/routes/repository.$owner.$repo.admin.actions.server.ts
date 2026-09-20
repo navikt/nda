@@ -1,3 +1,4 @@
+import { pool } from '~/db/connection.server'
 import {
   getRepositoryById,
   isCurrentOrHistoricalNameForRepositoryId,
@@ -12,14 +13,21 @@ import {
   releaseSyncLock,
   updateSyncJobProgress,
 } from '~/db/sync-jobs.server'
+import { getApprovedDeploymentsMissingApproverForApps } from '~/db/verification-diff.server'
 import { fail, ok } from '~/lib/action-result'
 import { requireUser } from '~/lib/auth.server'
-import { canAccessRepositoryAdmin, canAccessRepositoryAdminWithClient } from '~/lib/authorization.server'
+import {
+  canAccessRepositoryAdminWithClient,
+  resolveRepositoryAdminAccess,
+  resolveRepositoryAdminAccessWithClient,
+} from '~/lib/authorization.server'
 import { getFormString } from '~/lib/form-validators'
+import { isProtectedStatus } from '~/lib/four-eyes-status'
+import { isValidCommitSha } from '~/lib/git-constants'
 import { logger, runWithJobContext } from '~/lib/logger.server'
 import { repoAffectedAppsMessage } from '~/lib/repo-scope-messages'
 import { requireParams } from '~/lib/route-params.server'
-import { fetchVerificationDataForRepository } from '~/lib/verification'
+import { fetchVerificationDataForRepository, runVerification } from '~/lib/verification'
 import { computeVerificationDiffsForRepository } from '~/lib/verification/compute-diffs.server'
 import { isImplicitApprovalMode } from '~/lib/verification/types'
 import type { Route } from './+types/repository.$owner.$repo.admin'
@@ -45,11 +53,16 @@ export async function processFetchDataJobForRepositoryAsync(jobId: number, repos
   })
 }
 
-export async function processComputeDiffsJobForRepositoryAsync(jobId: number, repositoryId: number) {
+export async function processComputeDiffsJobForRepositoryAsync(
+  jobId: number,
+  repositoryId: number,
+  monitoredAppIds: number[],
+) {
   await runWithJobContext(jobId, 'reverify_app', { repositoryId }, false, async () => {
     try {
       const result = await computeVerificationDiffsForRepository(repositoryId, {
         jobId,
+        appIds: monitoredAppIds,
         onProgress: async (appsProcessed, appsTotal, diffsFound) => {
           await updateSyncJobProgress(jobId, { appsProcessed, appsTotal, diffsFound })
           if (appsProcessed % 5 === 0) {
@@ -65,6 +78,81 @@ export async function processComputeDiffsJobForRepositoryAsync(jobId: number, re
       const job = await getSyncJobById(jobId)
       if (job?.status === 'running') {
         await releaseSyncLock(jobId, 'failed', undefined, errorMessage)
+      }
+      throw err
+    }
+  })
+}
+
+export async function processRefreshMissingApproverJobForRepositoryAsync(
+  jobId: number,
+  repositoryId: number,
+  monitoredAppIds: number[],
+) {
+  await runWithJobContext(jobId, 'refresh_missing_approver', { repositoryId }, false, async () => {
+    let refreshed = 0
+    let skipped = 0
+    let errors = 0
+    try {
+      const deployments = await getApprovedDeploymentsMissingApproverForApps(monitoredAppIds)
+
+      for (const dep of deployments) {
+        const currentJob = await getSyncJobById(jobId)
+        if (currentJob?.status !== 'running') {
+          return
+        }
+
+        if (
+          !dep.commit_sha ||
+          !dep.detected_github_owner ||
+          !dep.detected_github_repo_name ||
+          !dep.default_branch ||
+          isProtectedStatus(dep.four_eyes_status) ||
+          !isValidCommitSha(dep.commit_sha)
+        ) {
+          skipped++
+        } else {
+          try {
+            await runVerification(dep.id, {
+              commitSha: dep.commit_sha,
+              repository: `${dep.detected_github_owner}/${dep.detected_github_repo_name}`,
+              environmentName: dep.environment_name,
+              baseBranch: dep.default_branch,
+              monitoredAppId: dep.monitored_app_id,
+              forceRefresh: true,
+            })
+            await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [dep.id])
+            refreshed++
+          } catch (err) {
+            logger.error(
+              `Refresh verification failed for deployment ${dep.id}`,
+              err instanceof Error ? err : new Error(String(err)),
+            )
+            errors++
+          }
+        }
+
+        const processed = refreshed + skipped + errors
+        if (processed === 1 || processed === deployments.length || processed % 5 === 0) {
+          await updateSyncJobProgress(jobId, { processed, refreshed, skipped, errors, total: deployments.length })
+          await heartbeatSyncJob(jobId, 30)
+        }
+      }
+
+      const job = await getSyncJobById(jobId)
+      if (job?.status !== 'running') return
+      await releaseSyncLock(jobId, 'completed', {
+        processed: refreshed + skipped + errors,
+        refreshed,
+        skipped,
+        errors,
+        total: deployments.length,
+      })
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      const job = await getSyncJobById(jobId)
+      if (job?.status === 'running') {
+        await releaseSyncLock(jobId, 'failed', { refreshed, skipped, errors }, errorMessage)
       }
       throw err
     }
@@ -103,7 +191,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const repositoryId = repository.id
 
-  if (!(await canAccessRepositoryAdmin(user, repositoryId))) {
+  const { authorized } = await resolveRepositoryAdminAccess(user, repositoryId)
+  if (!authorized) {
     return fail('Du har ikke administratortilgang til alle appene i dette repoet')
   }
 
@@ -239,9 +328,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (action === 'compute_diffs') {
-    const jobId = await acquireSyncLockForRepository('reverify_app', repositoryId, 10, undefined, (client) =>
-      canAccessRepositoryAdminWithClient(user, repositoryId, client),
-    )
+    let lockedComputeAppIds: number[] = []
+    const jobId = await acquireSyncLockForRepository('reverify_app', repositoryId, 10, undefined, async (client) => {
+      const access = await resolveRepositoryAdminAccessWithClient(user, repositoryId, client)
+      lockedComputeAppIds = access.affectedApps.map((app) => app.id)
+      return access.authorized
+    })
     if (jobId === 'unauthorized') {
       return { error: 'Du har ikke administratortilgang til alle appene i dette repoet' }
     }
@@ -252,18 +344,50 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { error: 'En reverifisering kjører allerede for dette repositoryet' }
     }
 
-    processComputeDiffsJobForRepositoryAsync(jobId, repositoryId).catch((err) => {
+    processComputeDiffsJobForRepositoryAsync(jobId, repositoryId, lockedComputeAppIds).catch((err) => {
       logger.error(`Compute diffs job ${jobId} failed`, err instanceof Error ? err : new Error(String(err)))
     })
 
     return { computeDiffsJobStarted: jobId }
   }
 
+  if (action === 'refresh_missing_approver') {
+    let lockedAffectedAppIds: number[] = []
+    const jobId = await acquireSyncLockForRepository(
+      'refresh_missing_approver',
+      repositoryId,
+      15,
+      undefined,
+      async (client) => {
+        const access = await resolveRepositoryAdminAccessWithClient(user, repositoryId, client)
+        lockedAffectedAppIds = access.affectedApps.map((app) => app.id)
+        return access.authorized
+      },
+    )
+    if (jobId === 'unauthorized') {
+      return { error: 'Du har ikke administratortilgang til alle appene i dette repoet' }
+    }
+    if (jobId === 'app_conflict') {
+      return { error: 'En oppdatering av godkjennere kjører allerede for en app i dette repositoryet' }
+    }
+    if (!jobId) {
+      return { error: 'En oppdatering av godkjennere kjører allerede for dette repositoryet' }
+    }
+
+    processRefreshMissingApproverJobForRepositoryAsync(jobId, repositoryId, lockedAffectedAppIds).catch((err) => {
+      logger.error(`Refresh missing approver job ${jobId} failed`, err instanceof Error ? err : new Error(String(err)))
+    })
+
+    return { refreshJobStarted: jobId }
+  }
+
   if (
     action === 'cancel_fetch_job' ||
     action === 'force_release_job' ||
     action === 'cancel_compute_diffs_job' ||
-    action === 'force_release_compute_diffs_job'
+    action === 'force_release_compute_diffs_job' ||
+    action === 'cancel_refresh_job' ||
+    action === 'force_release_refresh_job'
   ) {
     const jobIdRaw = formData.get('job_id')
     const jobId = typeof jobIdRaw === 'string' ? Number(jobIdRaw) : Number.NaN
@@ -272,14 +396,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     const expectedJobType =
-      action === 'cancel_fetch_job' || action === 'force_release_job' ? 'fetch_verification_data' : 'reverify_app'
+      action === 'cancel_fetch_job' || action === 'force_release_job'
+        ? 'fetch_verification_data'
+        : action === 'cancel_refresh_job' || action === 'force_release_refresh_job'
+          ? 'refresh_missing_approver'
+          : 'reverify_app'
 
     const job = await getSyncJobById(jobId)
     if (!job || job.repository_id !== repositoryId || job.job_type !== expectedJobType) {
       return { error: 'Du har ikke tilgang til denne jobben' }
     }
 
-    if (action === 'cancel_fetch_job' || action === 'cancel_compute_diffs_job') {
+    if (action === 'cancel_fetch_job' || action === 'cancel_compute_diffs_job' || action === 'cancel_refresh_job') {
       const cancelled = await cancelSyncJob(job.id, (client) =>
         canAccessRepositoryAdminWithClient(user, repositoryId, client),
       )

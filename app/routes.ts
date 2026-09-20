@@ -123,6 +123,10 @@ export default [
     route('team/:team/env/:env/app/:app/admin/deviations', 'routes/team/$team.env.$env.app.$app.admin.deviations.tsx'),
     route('repository/:owner/:repo', 'routes/repository.$owner.$repo.tsx'),
     route('repository/:owner/:repo/admin', 'routes/repository.$owner.$repo.admin.tsx'),
+    route(
+      'repository/:owner/:repo/admin/verification-diff',
+      'routes/repository.$owner.$repo.admin.verification-diff.tsx',
+    ),
     route('repository/:owner/:repo/admin/sync-job/:jobId', 'routes/repository.$owner.$repo.admin.sync-job.$jobId.tsx'),
     route('repository/:owner/:repo/deployments', 'routes/repository.$owner.$repo.deployments.tsx'),
   ]),

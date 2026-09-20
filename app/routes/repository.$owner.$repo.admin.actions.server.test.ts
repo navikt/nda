@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockRequireUser,
-  mockCanAccessRepositoryAdmin,
+  mockResolveRepositoryAdminAccess,
   mockCanAccessRepositoryAdminWithClient,
+  mockResolveRepositoryAdminAccessWithClient,
   mockUpdateRepositorySettingsByRepositoryId,
   mockIsCurrentOrHistoricalNameForRepositoryId,
   mockGetRepositoryById,
@@ -16,11 +17,15 @@ const {
   mockUpdateSyncJobProgress,
   mockFetchVerificationDataForRepository,
   mockComputeVerificationDiffsForRepository,
+  mockRunVerification,
+  mockGetApprovedDeploymentsMissingApproverForApps,
+  mockPoolQuery,
   mockRunWithJobContext,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
-  mockCanAccessRepositoryAdmin: vi.fn(),
+  mockResolveRepositoryAdminAccess: vi.fn(),
   mockCanAccessRepositoryAdminWithClient: vi.fn(),
+  mockResolveRepositoryAdminAccessWithClient: vi.fn(),
   mockUpdateRepositorySettingsByRepositoryId: vi.fn(),
   mockIsCurrentOrHistoricalNameForRepositoryId: vi.fn(),
   mockGetRepositoryById: vi.fn(),
@@ -33,6 +38,9 @@ const {
   mockUpdateSyncJobProgress: vi.fn(),
   mockFetchVerificationDataForRepository: vi.fn(),
   mockComputeVerificationDiffsForRepository: vi.fn(),
+  mockRunVerification: vi.fn(),
+  mockGetApprovedDeploymentsMissingApproverForApps: vi.fn(),
+  mockPoolQuery: vi.fn(),
   mockRunWithJobContext: vi.fn(
     async (
       _jobId: number,
@@ -49,8 +57,9 @@ vi.mock('~/lib/auth.server', () => ({
 }))
 
 vi.mock('~/lib/authorization.server', () => ({
-  canAccessRepositoryAdmin: mockCanAccessRepositoryAdmin,
+  resolveRepositoryAdminAccess: mockResolveRepositoryAdminAccess,
   canAccessRepositoryAdminWithClient: mockCanAccessRepositoryAdminWithClient,
+  resolveRepositoryAdminAccessWithClient: mockResolveRepositoryAdminAccessWithClient,
 }))
 
 vi.mock('~/db/repositories.server', () => ({
@@ -69,8 +78,17 @@ vi.mock('~/db/sync-jobs.server', () => ({
   updateSyncJobProgress: mockUpdateSyncJobProgress,
 }))
 
+vi.mock('~/db/verification-diff.server', () => ({
+  getApprovedDeploymentsMissingApproverForApps: mockGetApprovedDeploymentsMissingApproverForApps,
+}))
+
+vi.mock('~/db/connection.server', () => ({
+  pool: { query: mockPoolQuery },
+}))
+
 vi.mock('~/lib/verification', () => ({
   fetchVerificationDataForRepository: mockFetchVerificationDataForRepository,
+  runVerification: mockRunVerification,
 }))
 
 vi.mock('~/lib/verification/compute-diffs.server', () => ({
@@ -109,6 +127,7 @@ import {
   action,
   processComputeDiffsJobForRepositoryAsync,
   processFetchDataJobForRepositoryAsync,
+  processRefreshMissingApproverJobForRepositoryAsync,
 } from './repository.$owner.$repo.admin.actions.server'
 
 const REPO_PARAMS = { owner: 'navikt', repo: 'some-repo' }
@@ -128,7 +147,7 @@ describe('repository admin actions - authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
-    mockCanAccessRepositoryAdmin.mockResolvedValue(true)
+    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [{ id: 1 }] })
     mockGetRepositoryById.mockResolvedValue({ id: 5, github_owner: 'navikt', github_repo_name: 'some-repo' })
     mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
   })
@@ -150,7 +169,7 @@ describe('repository admin actions - authorization', () => {
 
     expect(mockGetRepositoryById).toHaveBeenCalledWith(5)
     expect(mockIsCurrentOrHistoricalNameForRepositoryId).toHaveBeenCalledWith(5, 'navikt', 'some-repo')
-    expect(mockCanAccessRepositoryAdmin).toHaveBeenCalledWith(expect.anything(), 5)
+    expect(mockResolveRepositoryAdminAccess).toHaveBeenCalledWith(expect.anything(), 5)
   })
 
   it('rejects when the submitted repository_id does not resolve to the repository in the URL', async () => {
@@ -165,7 +184,7 @@ describe('repository admin actions - authorization', () => {
     const result = await callAction(formData)
 
     expect(result).toEqual({ error: 'Repository-ID samsvarer ikke med repositoryet i URL-en' })
-    expect(mockCanAccessRepositoryAdmin).not.toHaveBeenCalled()
+    expect(mockResolveRepositoryAdminAccess).not.toHaveBeenCalled()
     expect(mockUpdateRepositorySettingsByRepositoryId).not.toHaveBeenCalled()
   })
 
@@ -180,7 +199,7 @@ describe('repository admin actions - authorization', () => {
     const result = await callAction(formData)
 
     expect(result).toEqual({ error: 'Fant ikke repositoryet' })
-    expect(mockCanAccessRepositoryAdmin).not.toHaveBeenCalled()
+    expect(mockResolveRepositoryAdminAccess).not.toHaveBeenCalled()
   })
 
   it('accepts the URL when it uses a historical (renamed) owner/repo for the submitted repository_id', async () => {
@@ -200,7 +219,7 @@ describe('repository admin actions - authorization', () => {
 
     const result = await callAction(formData)
 
-    expect(mockCanAccessRepositoryAdmin).toHaveBeenCalledWith(expect.anything(), 5)
+    expect(mockResolveRepositoryAdminAccess).toHaveBeenCalledWith(expect.anything(), 5)
     expect(result).toEqual({ success: expect.stringContaining('Default branch oppdatert') })
   })
 
@@ -216,11 +235,11 @@ describe('repository admin actions - authorization', () => {
     const result = await callAction(formData)
 
     expect(result).toEqual({ error: 'Repository-ID samsvarer ikke med repositoryet i URL-en' })
-    expect(mockCanAccessRepositoryAdmin).not.toHaveBeenCalled()
+    expect(mockResolveRepositoryAdminAccess).not.toHaveBeenCalled()
   })
 
   it('rejects when the actor lacks admin access to the repository', async () => {
-    mockCanAccessRepositoryAdmin.mockResolvedValue(false)
+    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: false, affectedApps: [] })
 
     const formData = new FormData()
     formData.set('action', 'update_default_branch')
@@ -247,7 +266,7 @@ describe('repository admin actions - authorization', () => {
     const result = await callAction(formData)
 
     expect(result).toEqual({ error: 'Ugyldig eller manglende repository-ID' })
-    expect(mockCanAccessRepositoryAdmin).not.toHaveBeenCalled()
+    expect(mockResolveRepositoryAdminAccess).not.toHaveBeenCalled()
     expect(mockUpdateRepositorySettingsByRepositoryId).not.toHaveBeenCalled()
   })
 
@@ -391,7 +410,7 @@ describe('repository admin actions - fetch verification data', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
-    mockCanAccessRepositoryAdmin.mockResolvedValue(true)
+    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [{ id: 1 }] })
     mockGetRepositoryById.mockResolvedValue({ id: 5, github_owner: 'navikt', github_repo_name: 'some-repo' })
     mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
   })
@@ -543,7 +562,7 @@ describe('repository admin actions - compute diffs (reverify)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
-    mockCanAccessRepositoryAdmin.mockResolvedValue(true)
+    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [{ id: 1 }] })
     mockGetRepositoryById.mockResolvedValue({ id: 5, github_owner: 'navikt', github_repo_name: 'some-repo' })
     mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
   })
@@ -609,6 +628,50 @@ describe('repository admin actions - compute diffs (reverify)', () => {
     const result = await callAction(formData)
 
     expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
+  })
+
+  it('resolves fresh authorized app IDs under the lock and scopes the background job to them', async () => {
+    mockAcquireSyncLockForRepository.mockImplementation(
+      async (
+        _jobType: string,
+        _repoId: number,
+        _timeout: number,
+        _opts: unknown,
+        verifyAccess?: (client: unknown) => Promise<boolean>,
+      ) => {
+        const authorized = await verifyAccess?.({})
+        expect(authorized).toBe(true)
+        return 42
+      },
+    )
+    mockResolveRepositoryAdminAccessWithClient.mockResolvedValue({
+      authorized: true,
+      affectedApps: [{ id: 10 }, { id: 20 }],
+    })
+    mockComputeVerificationDiffsForRepository.mockResolvedValue({
+      deploymentsChecked: 0,
+      diffsFound: 0,
+      skipped: 0,
+      errors: 0,
+      appsProcessed: 0,
+      appsTotal: 0,
+    })
+    mockGetSyncJobById.mockResolvedValue({ id: 42, status: 'running' })
+
+    const formData = new FormData()
+    formData.set('action', 'compute_diffs')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(mockResolveRepositoryAdminAccessWithClient).toHaveBeenCalledWith(expect.anything(), 5, expect.anything())
+    expect(result).toEqual({ computeDiffsJobStarted: 42 })
+
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(mockComputeVerificationDiffsForRepository).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ appIds: [10, 20] }),
+    )
   })
 
   it('cancels a running compute-diffs job scoped to this repository', async () => {
@@ -681,15 +744,19 @@ describe('processComputeDiffsJobForRepositoryAsync', () => {
       appsTotal: 3,
     })
 
-    await processComputeDiffsJobForRepositoryAsync(5, 7)
+    await processComputeDiffsJobForRepositoryAsync(5, 7, [1, 2])
 
+    expect(mockComputeVerificationDiffsForRepository).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ appIds: [1, 2] }),
+    )
     expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'completed', expect.objectContaining({ diffsFound: 2 }))
   })
 
   it('releases the sync lock as "failed" when compute diffs throws', async () => {
     mockComputeVerificationDiffsForRepository.mockRejectedValue(new Error('boom'))
 
-    await expect(processComputeDiffsJobForRepositoryAsync(5, 7)).rejects.toThrow('boom')
+    await expect(processComputeDiffsJobForRepositoryAsync(5, 7, [1, 2])).rejects.toThrow('boom')
 
     expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'failed', undefined, 'boom')
   })
@@ -705,7 +772,7 @@ describe('processComputeDiffsJobForRepositoryAsync', () => {
     })
     mockGetSyncJobById.mockResolvedValue({ id: 5, repository_id: 7, status: 'cancelled' })
 
-    await processComputeDiffsJobForRepositoryAsync(5, 7)
+    await processComputeDiffsJobForRepositoryAsync(5, 7, [1, 2])
 
     expect(mockReleaseSyncLock).not.toHaveBeenCalled()
   })
@@ -721,7 +788,7 @@ describe('processComputeDiffsJobForRepositoryAsync', () => {
     })
     mockGetSyncJobById.mockResolvedValue({ id: 5, repository_id: 7, status: 'failed' })
 
-    await processComputeDiffsJobForRepositoryAsync(5, 7)
+    await processComputeDiffsJobForRepositoryAsync(5, 7, [1, 2])
 
     expect(mockReleaseSyncLock).not.toHaveBeenCalled()
   })
@@ -775,5 +842,234 @@ describe('processFetchDataJobForRepositoryAsync', () => {
     await processFetchDataJobForRepositoryAsync(5, 7)
 
     expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'completed', expect.anything())
+  })
+})
+
+describe('repository admin actions - refresh missing approver', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
+    mockGetRepositoryById.mockResolvedValue({ id: 5, github_owner: 'navikt', github_repo_name: 'some-repo' })
+    mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
+    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [{ id: 1 }, { id: 2 }] })
+  })
+
+  it('acquires the refresh_missing_approver lock and starts the background job', async () => {
+    mockAcquireSyncLockForRepository.mockImplementation(
+      async (
+        _jobType: string,
+        _repoId: number,
+        _timeout: number,
+        _opts: unknown,
+        verifyAccess?: (client: unknown) => Promise<boolean>,
+      ) => {
+        const authorized = await verifyAccess?.({})
+        expect(authorized).toBe(true)
+        return 9
+      },
+    )
+    mockResolveRepositoryAdminAccessWithClient.mockResolvedValue({
+      authorized: true,
+      affectedApps: [{ id: 10 }, { id: 20 }],
+    })
+    mockGetApprovedDeploymentsMissingApproverForApps.mockResolvedValue([])
+    mockGetSyncJobById.mockResolvedValue({ id: 9, status: 'running' })
+
+    const formData = new FormData()
+    formData.set('action', 'refresh_missing_approver')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(mockAcquireSyncLockForRepository).toHaveBeenCalledWith(
+      'refresh_missing_approver',
+      5,
+      expect.any(Number),
+      undefined,
+      expect.any(Function),
+    )
+    expect(mockResolveRepositoryAdminAccessWithClient).toHaveBeenCalledWith(expect.anything(), 5, expect.anything())
+    expect(result).toEqual({ refreshJobStarted: 9 })
+
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(mockGetApprovedDeploymentsMissingApproverForApps).toHaveBeenCalledWith([10, 20])
+  })
+
+  it('returns an error when unauthorized', async () => {
+    mockAcquireSyncLockForRepository.mockResolvedValue('unauthorized')
+
+    const formData = new FormData()
+    formData.set('action', 'refresh_missing_approver')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
+  })
+
+  it('returns a distinct error when blocked by an app-scoped conflict', async () => {
+    mockAcquireSyncLockForRepository.mockResolvedValue('app_conflict')
+
+    const formData = new FormData()
+    formData.set('action', 'refresh_missing_approver')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'En oppdatering av godkjennere kjører allerede for en app i dette repositoryet' })
+  })
+
+  it('returns an error when a refresh job is already running for the repository', async () => {
+    mockAcquireSyncLockForRepository.mockResolvedValue(null)
+
+    const formData = new FormData()
+    formData.set('action', 'refresh_missing_approver')
+    formData.set('repository_id', '5')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'En oppdatering av godkjennere kjører allerede for dette repositoryet' })
+  })
+
+  it('cancels a running refresh job scoped to this repository', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 9, repository_id: 5, job_type: 'refresh_missing_approver' })
+    mockCancelSyncJob.mockResolvedValue(true)
+
+    const formData = new FormData()
+    formData.set('action', 'cancel_refresh_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '9')
+
+    const result = await callAction(formData)
+
+    expect(mockCancelSyncJob).toHaveBeenCalledWith(9, expect.any(Function))
+    expect(result).toEqual({ success: 'Jobben ble avbrutt' })
+  })
+
+  it('force-releases a refresh job scoped to this repository', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 9, repository_id: 5, job_type: 'refresh_missing_approver' })
+    mockForceReleaseSyncJob.mockResolvedValue(true)
+
+    const formData = new FormData()
+    formData.set('action', 'force_release_refresh_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '9')
+
+    const result = await callAction(formData)
+
+    expect(mockForceReleaseSyncJob).toHaveBeenCalledWith(9, expect.any(Function))
+    expect(result).toEqual({ success: 'Jobben ble tvangsfrigjort' })
+  })
+
+  it('rejects cancel_refresh_job when the job_id belongs to a different job type', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 9, repository_id: 5, job_type: 'reverify_app' })
+
+    const formData = new FormData()
+    formData.set('action', 'cancel_refresh_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '9')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke tilgang til denne jobben' })
+    expect(mockCancelSyncJob).not.toHaveBeenCalled()
+  })
+})
+
+describe('processRefreshMissingApproverJobForRepositoryAsync', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRunWithJobContext.mockImplementation(
+      async (
+        _jobId: number,
+        _jobType: string,
+        _target: number | { repositoryId: number },
+        _debug: boolean,
+        fn: () => Promise<unknown>,
+      ) => fn(),
+    )
+    mockGetSyncJobById.mockResolvedValue({ id: 5, repository_id: 7, status: 'running' })
+    mockPoolQuery.mockResolvedValue({ rows: [] })
+  })
+
+  it('refreshes eligible deployments and releases the lock as "completed"', async () => {
+    mockGetApprovedDeploymentsMissingApproverForApps.mockResolvedValue([
+      {
+        id: 1,
+        commit_sha: 'a'.repeat(40),
+        four_eyes_status: 'approved',
+        environment_name: 'prod-fss',
+        detected_github_owner: 'navikt',
+        detected_github_repo_name: 'some-repo',
+        monitored_app_id: 1,
+        default_branch: 'main',
+      },
+    ])
+    mockRunVerification.mockResolvedValue({ changed: true })
+
+    await processRefreshMissingApproverJobForRepositoryAsync(5, 7, [1, 2])
+
+    expect(mockRunVerification).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ commitSha: 'a'.repeat(40), forceRefresh: true }),
+    )
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(
+      5,
+      'completed',
+      expect.objectContaining({ refreshed: 1, skipped: 0, errors: 0 }),
+    )
+  })
+
+  it('skips deployments missing required fields without calling runVerification', async () => {
+    mockGetApprovedDeploymentsMissingApproverForApps.mockResolvedValue([
+      {
+        id: 1,
+        commit_sha: null,
+        four_eyes_status: 'approved',
+        environment_name: 'prod-fss',
+        detected_github_owner: 'navikt',
+        detected_github_repo_name: 'some-repo',
+        monitored_app_id: 1,
+        default_branch: 'main',
+      },
+    ])
+
+    await processRefreshMissingApproverJobForRepositoryAsync(5, 7, [1])
+
+    expect(mockRunVerification).not.toHaveBeenCalled()
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(
+      5,
+      'completed',
+      expect.objectContaining({ refreshed: 0, skipped: 1, errors: 0 }),
+    )
+  })
+
+  it('releases the sync lock as "failed" when the query throws', async () => {
+    mockGetApprovedDeploymentsMissingApproverForApps.mockRejectedValue(new Error('boom'))
+
+    await expect(processRefreshMissingApproverJobForRepositoryAsync(5, 7, [1])).rejects.toThrow('boom')
+
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'failed', expect.anything(), 'boom')
+  })
+
+  it('stops processing early when the job is no longer running (cancelled or force-released)', async () => {
+    mockGetApprovedDeploymentsMissingApproverForApps.mockResolvedValue([
+      {
+        id: 1,
+        commit_sha: 'a'.repeat(40),
+        four_eyes_status: 'approved',
+        environment_name: 'prod-fss',
+        detected_github_owner: 'navikt',
+        detected_github_repo_name: 'some-repo',
+        monitored_app_id: 1,
+        default_branch: 'main',
+      },
+    ])
+    mockGetSyncJobById.mockResolvedValue({ id: 5, repository_id: 7, status: 'failed' })
+
+    await processRefreshMissingApproverJobForRepositoryAsync(5, 7, [1])
+
+    expect(mockRunVerification).not.toHaveBeenCalled()
+    expect(mockReleaseSyncLock).not.toHaveBeenCalled()
   })
 })

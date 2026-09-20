@@ -13,7 +13,11 @@ import type { SyncJob, SyncJobLog, SyncJobStatus, SyncJobType, SyncJobWithApp } 
 
 export const SYNC_INTERVAL_MS = 5 * 60 * 1000
 
-const REPOSITORY_LINKED_JOB_TYPES: ReadonlySet<SyncJobType> = new Set(['fetch_verification_data', 'reverify_app'])
+const REPOSITORY_LINKED_JOB_TYPES: ReadonlySet<SyncJobType> = new Set([
+  'fetch_verification_data',
+  'reverify_app',
+  'refresh_missing_approver',
+])
 
 const POD_ID = process.env.HOSTNAME || `local-${process.pid}`
 const APP_VERSION = typeof __BUILD_VERSION__ !== 'undefined' ? __BUILD_VERSION__ : 'unknown'
@@ -70,18 +74,20 @@ export async function acquireSyncLock(
         [appId],
       )
       const repoIds = linkedRepos.rows.map((row) => row.id)
-      if (repoIds.length > 0) {
-        const conflictingRepoJob = await client.query(
-          `SELECT 1 FROM sync_jobs
-           WHERE job_type = $1 AND status = 'running' AND repository_id = ANY($2::int[])
-           LIMIT 1`,
-          [jobType, repoIds],
-        )
-        if (conflictingRepoJob.rowCount && conflictingRepoJob.rowCount > 0) {
-          logger.info(`⏳ ${jobType} lock for app ${appId} blocked by a running repository-scoped job`)
-          await client.query('COMMIT')
-          return 'repository_conflict'
-        }
+      const conflictingJob = await client.query(
+        `SELECT 1 FROM sync_jobs
+         WHERE job_type = $1 AND status = 'running'
+           AND (
+             repository_id = ANY($2::int[])
+             OR (repository_id IS NULL AND monitored_app_id IS NULL)
+           )
+         LIMIT 1`,
+        [jobType, repoIds],
+      )
+      if (conflictingJob.rowCount && conflictingJob.rowCount > 0) {
+        logger.info(`⏳ ${jobType} lock for app ${appId} blocked by a running repository-scoped or global job`)
+        await client.query('COMMIT')
+        return 'repository_conflict'
       }
     }
 
@@ -145,19 +151,22 @@ export async function acquireSyncLockForRepository(
     }
 
     if (needsCrossScopeCoordination) {
-      const conflictingAppJob = await client.query(
+      const conflictingJob = await client.query(
         `SELECT 1 FROM sync_jobs sj
          WHERE sj.job_type = $1 AND sj.status = 'running'
-           AND sj.monitored_app_id IN (
-             SELECT ar.monitored_app_id FROM application_repositories ar
-             JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-             WHERE ar.status IN ('active', 'historical') AND r.id = $2
+           AND (
+             sj.monitored_app_id IN (
+               SELECT ar.monitored_app_id FROM application_repositories ar
+               JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+               WHERE ar.status IN ('active', 'historical') AND r.id = $2
+             )
+             OR (sj.repository_id IS NULL AND sj.monitored_app_id IS NULL)
            )
          LIMIT 1`,
         [jobType, repositoryId],
       )
-      if (conflictingAppJob.rowCount && conflictingAppJob.rowCount > 0) {
-        logger.info(`⏳ ${jobType} lock for repository ${repositoryId} blocked by a running app-scoped job`)
+      if (conflictingJob.rowCount && conflictingJob.rowCount > 0) {
+        logger.info(`⏳ ${jobType} lock for repository ${repositoryId} blocked by a conflicting running job`)
         await client.query('COMMIT')
         return 'app_conflict'
       }
