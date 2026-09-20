@@ -1,6 +1,7 @@
 import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { heartbeatSyncJob, isAppBlockedByRunningJob, isSyncJobCancelled } from '~/db/sync-jobs.server'
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
@@ -273,6 +274,8 @@ interface ComputeDiffsForRepositoryOptions {
 export interface ComputeDiffsForRepositoryResult extends ComputeDiffsResult {
   appsProcessed: number
   appsTotal: number
+  appsSkippedLocked: number
+  cancelled: boolean
 }
 
 export async function computeVerificationDiffsForRepository(
@@ -280,6 +283,7 @@ export async function computeVerificationDiffsForRepository(
   options: ComputeDiffsForRepositoryOptions = {},
 ): Promise<ComputeDiffsForRepositoryResult> {
   const appIds = await getMonitoredAppIdsForRepository(repositoryId)
+  const { jobId } = options
 
   const result: ComputeDiffsForRepositoryResult = {
     deploymentsChecked: 0,
@@ -288,15 +292,37 @@ export async function computeVerificationDiffsForRepository(
     errors: 0,
     appsProcessed: 0,
     appsTotal: appIds.length,
+    appsSkippedLocked: 0,
+    cancelled: false,
   }
 
   for (const appId of appIds) {
+    if (jobId && (await isSyncJobCancelled(jobId))) {
+      logger.info(`Reverify job ${jobId} for repository ${repositoryId} was cancelled — stopping before app ${appId}`)
+      result.cancelled = true
+      break
+    }
+
     try {
-      const appResult = await computeVerificationDiffs(appId)
-      result.deploymentsChecked += appResult.deploymentsChecked
-      result.diffsFound += appResult.diffsFound
-      result.skipped += appResult.skipped
-      result.errors += appResult.errors
+      if (jobId && (await isAppBlockedByRunningJob(appId, ['reverify_app'], jobId))) {
+        logger.info(
+          `Skipping reverify for app ${appId} in repository ${repositoryId} — another reverify job is already running for it, or for a repository it is also linked to`,
+        )
+        result.appsSkippedLocked++
+      } else {
+        const appResult = await computeVerificationDiffs(appId, {
+          jobId,
+          onProgress: jobId
+            ? async () => {
+                await heartbeatSyncJob(jobId)
+              }
+            : undefined,
+        })
+        result.deploymentsChecked += appResult.deploymentsChecked
+        result.diffsFound += appResult.diffsFound
+        result.skipped += appResult.skipped
+        result.errors += appResult.errors
+      }
     } catch (err) {
       logger.error(
         `Error computing diffs for app ${appId} in repository ${repositoryId}`,
@@ -309,7 +335,7 @@ export async function computeVerificationDiffsForRepository(
   }
 
   logger.info(
-    `Verification diffs computed for repository ${repositoryId}: ${appIds.length} apps, ${result.deploymentsChecked} deployments checked, ${result.diffsFound} diffs, ${result.skipped} skipped, ${result.errors} errors`,
+    `Verification diffs computed for repository ${repositoryId}: ${result.appsProcessed}/${appIds.length} apps processed, ${result.deploymentsChecked} deployments checked, ${result.diffsFound} diffs, ${result.skipped} skipped, ${result.errors} errors, ${result.appsSkippedLocked} apps skipped due to lock conflict${result.cancelled ? ' (cancelled)' : ''}`,
   )
 
   return result
