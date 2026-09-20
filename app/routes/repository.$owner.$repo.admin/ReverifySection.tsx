@@ -37,8 +37,9 @@ export function ReverifySection({
             Reverifisering
           </Heading>
           <BodyShort textColor="subtle" size="small">
-            Beregner verifiseringsavvik på nytt for alle apper knyttet til dette repositoryet, basert på allerede lagret
-            GitHub-data.
+            Beregner verifiseringsavvik på nytt for alle apper knyttet til dette repositoryet. Bruker fortrinnsvis
+            allerede lagret GitHub-data, men kan i noen tilfeller hente ferske data fra GitHub (f.eks. ved manglende
+            eller foreldet cache).
           </BodyShort>
         </div>
 

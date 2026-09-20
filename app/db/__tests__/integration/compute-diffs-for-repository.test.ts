@@ -29,11 +29,12 @@ async function seedRepo(suffix: string): Promise<number> {
   })
 }
 
-async function insertCancelledJob(): Promise<number> {
+async function insertJobWithStatus(status: string): Promise<number> {
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO sync_jobs (job_type, status, started_at, completed_at, locked_by, lock_expires_at)
-     VALUES ('reverify_app', 'cancelled', NOW(), NOW(), 'test', NOW() + INTERVAL '10 minutes')
+     VALUES ('reverify_app', $1, NOW(), NOW(), 'test', NOW() + INTERVAL '10 minutes')
      RETURNING id`,
+    [status],
   )
   return rows[0].id
 }
@@ -90,7 +91,7 @@ describe('computeVerificationDiffsForRepository', () => {
     expect(result.skipped).toBe(3)
     expect(result.diffsFound).toBe(0)
     expect(result.appsSkippedLocked).toBe(0)
-    expect(result.cancelled).toBe(false)
+    expect(result.stoppedEarly).toBe(false)
   })
 
   it('reports per-app progress via onProgress as each app finishes', async () => {
@@ -206,11 +207,35 @@ describe('computeVerificationDiffsForRepository', () => {
       status: 'active',
     })
 
-    const jobId = await insertCancelledJob()
+    const jobId = await insertJobWithStatus('cancelled')
 
     const result = await computeVerificationDiffsForRepository(repoId, { jobId })
 
-    expect(result.cancelled).toBe(true)
+    expect(result.stoppedEarly).toBe(true)
+    expect(result.appsProcessed).toBe(0)
+    expect(result.deploymentsChecked).toBe(0)
+  })
+
+  it('stops processing before the first app when the job has been force-released (failed)', async () => {
+    const repoId = await seedRepo('force-released')
+    const appA = await seedApp(pool, {
+      teamSlug: 'team-cdfr',
+      appName: 'app-cdfr-force-released-a',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appA,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-cdfr-force-released',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const jobId = await insertJobWithStatus('failed')
+
+    const result = await computeVerificationDiffsForRepository(repoId, { jobId })
+
+    expect(result.stoppedEarly).toBe(true)
     expect(result.appsProcessed).toBe(0)
     expect(result.deploymentsChecked).toBe(0)
   })

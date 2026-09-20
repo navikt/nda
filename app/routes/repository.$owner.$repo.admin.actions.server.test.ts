@@ -453,7 +453,7 @@ describe('repository admin actions - fetch verification data', () => {
   })
 
   it('cancels a running fetch job scoped to this repository', async () => {
-    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5, job_type: 'fetch_verification_data' })
     mockCancelSyncJob.mockResolvedValue(true)
 
     const formData = new FormData()
@@ -481,8 +481,22 @@ describe('repository admin actions - fetch verification data', () => {
     expect(mockCancelSyncJob).not.toHaveBeenCalled()
   })
 
+  it('rejects cancel_fetch_job when the job_id belongs to a compute-diffs job', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5, job_type: 'reverify_app' })
+
+    const formData = new FormData()
+    formData.set('action', 'cancel_fetch_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '42')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke tilgang til denne jobben' })
+    expect(mockCancelSyncJob).not.toHaveBeenCalled()
+  })
+
   it('returns an error when access is revoked before cancel_fetch_job commits', async () => {
-    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5, job_type: 'fetch_verification_data' })
     mockCancelSyncJob.mockResolvedValue('unauthorized')
 
     const formData = new FormData()
@@ -496,7 +510,7 @@ describe('repository admin actions - fetch verification data', () => {
   })
 
   it('force-releases a job scoped to this repository', async () => {
-    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5, job_type: 'fetch_verification_data' })
     mockForceReleaseSyncJob.mockResolvedValue(true)
 
     const formData = new FormData()
@@ -511,7 +525,7 @@ describe('repository admin actions - fetch verification data', () => {
   })
 
   it('returns an error when access is revoked before force_release_job commits', async () => {
-    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5, job_type: 'fetch_verification_data' })
     mockForceReleaseSyncJob.mockResolvedValue('unauthorized')
 
     const formData = new FormData()
@@ -598,7 +612,7 @@ describe('repository admin actions - compute diffs (reverify)', () => {
   })
 
   it('cancels a running compute-diffs job scoped to this repository', async () => {
-    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5, job_type: 'reverify_app' })
     mockCancelSyncJob.mockResolvedValue(true)
 
     const formData = new FormData()
@@ -613,7 +627,7 @@ describe('repository admin actions - compute diffs (reverify)', () => {
   })
 
   it('force-releases a compute-diffs job scoped to this repository', async () => {
-    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5 })
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5, job_type: 'reverify_app' })
     mockForceReleaseSyncJob.mockResolvedValue(true)
 
     const formData = new FormData()
@@ -625,6 +639,20 @@ describe('repository admin actions - compute diffs (reverify)', () => {
 
     expect(mockForceReleaseSyncJob).toHaveBeenCalledWith(42, expect.any(Function))
     expect(result).toEqual({ success: 'Jobben ble tvangsfrigjort' })
+  })
+
+  it('rejects cancel_compute_diffs_job when the job_id belongs to a fetch job', async () => {
+    mockGetSyncJobById.mockResolvedValue({ id: 42, repository_id: 5, job_type: 'fetch_verification_data' })
+
+    const formData = new FormData()
+    formData.set('action', 'cancel_compute_diffs_job')
+    formData.set('repository_id', '5')
+    formData.set('job_id', '42')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke tilgang til denne jobben' })
+    expect(mockCancelSyncJob).not.toHaveBeenCalled()
   })
 })
 
@@ -676,6 +704,22 @@ describe('processComputeDiffsJobForRepositoryAsync', () => {
       appsTotal: 0,
     })
     mockGetSyncJobById.mockResolvedValue({ id: 5, repository_id: 7, status: 'cancelled' })
+
+    await processComputeDiffsJobForRepositoryAsync(5, 7)
+
+    expect(mockReleaseSyncLock).not.toHaveBeenCalled()
+  })
+
+  it('does not release the lock when the job was force-released (failed) mid-run', async () => {
+    mockComputeVerificationDiffsForRepository.mockResolvedValue({
+      deploymentsChecked: 0,
+      diffsFound: 0,
+      skipped: 0,
+      errors: 0,
+      appsProcessed: 0,
+      appsTotal: 0,
+    })
+    mockGetSyncJobById.mockResolvedValue({ id: 5, repository_id: 7, status: 'failed' })
 
     await processComputeDiffsJobForRepositoryAsync(5, 7)
 

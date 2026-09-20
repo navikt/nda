@@ -58,12 +58,12 @@ export async function processComputeDiffsJobForRepositoryAsync(jobId: number, re
         },
       })
       const job = await getSyncJobById(jobId)
-      if (job?.status === 'cancelled') return
+      if (job?.status !== 'running') return
       await releaseSyncLock(jobId, 'completed', result as unknown as Record<string, unknown>)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       const job = await getSyncJobById(jobId)
-      if (job?.status !== 'cancelled') {
+      if (job?.status === 'running') {
         await releaseSyncLock(jobId, 'failed', undefined, errorMessage)
       }
       throw err
@@ -271,8 +271,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { error: 'Mangler eller ugyldig job_id' }
     }
 
+    const expectedJobType =
+      action === 'cancel_fetch_job' || action === 'force_release_job' ? 'fetch_verification_data' : 'reverify_app'
+
     const job = await getSyncJobById(jobId)
-    if (!job || job.repository_id !== repositoryId) {
+    if (!job || job.repository_id !== repositoryId || job.job_type !== expectedJobType) {
       return { error: 'Du har ikke tilgang til denne jobben' }
     }
 

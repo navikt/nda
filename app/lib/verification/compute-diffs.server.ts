@@ -1,7 +1,7 @@
 import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp } from '~/db/repositories.server'
-import { heartbeatSyncJob, isAppBlockedByRunningJob, isSyncJobCancelled } from '~/db/sync-jobs.server'
+import { getSyncJobById, heartbeatSyncJob, isAppBlockedByRunningJob } from '~/db/sync-jobs.server'
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
@@ -275,7 +275,7 @@ export interface ComputeDiffsForRepositoryResult extends ComputeDiffsResult {
   appsProcessed: number
   appsTotal: number
   appsSkippedLocked: number
-  cancelled: boolean
+  stoppedEarly: boolean
 }
 
 export async function computeVerificationDiffsForRepository(
@@ -293,14 +293,19 @@ export async function computeVerificationDiffsForRepository(
     appsProcessed: 0,
     appsTotal: appIds.length,
     appsSkippedLocked: 0,
-    cancelled: false,
+    stoppedEarly: false,
   }
 
   for (const appId of appIds) {
-    if (jobId && (await isSyncJobCancelled(jobId))) {
-      logger.info(`Reverify job ${jobId} for repository ${repositoryId} was cancelled — stopping before app ${appId}`)
-      result.cancelled = true
-      break
+    if (jobId) {
+      const job = await getSyncJobById(jobId)
+      if (job?.status !== 'running') {
+        logger.info(
+          `Reverify job ${jobId} for repository ${repositoryId} is no longer running (status: ${job?.status ?? 'not found'}) — stopping before app ${appId}`,
+        )
+        result.stoppedEarly = true
+        break
+      }
     }
 
     try {
@@ -335,7 +340,7 @@ export async function computeVerificationDiffsForRepository(
   }
 
   logger.info(
-    `Verification diffs computed for repository ${repositoryId}: ${result.appsProcessed}/${appIds.length} apps processed, ${result.deploymentsChecked} deployments checked, ${result.diffsFound} diffs, ${result.skipped} skipped, ${result.errors} errors, ${result.appsSkippedLocked} apps skipped due to lock conflict${result.cancelled ? ' (cancelled)' : ''}`,
+    `Verification diffs computed for repository ${repositoryId}: ${result.appsProcessed}/${appIds.length} apps processed, ${result.deploymentsChecked} deployments checked, ${result.diffsFound} diffs, ${result.skipped} skipped, ${result.errors} errors, ${result.appsSkippedLocked} apps skipped due to lock conflict${result.stoppedEarly ? ' (stopped early — job no longer running)' : ''}`,
   )
 
   return result
