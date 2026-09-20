@@ -107,7 +107,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const jobResult = await pool.query(
     `SELECT id, status, result, started_at, completed_at
      FROM sync_jobs
-     WHERE job_type = 'reverify_all'
+     WHERE job_type = 'reverify_all' AND repository_id IS NULL
      ORDER BY created_at DESC
      LIMIT 1`,
   )
