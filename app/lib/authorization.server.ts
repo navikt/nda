@@ -210,16 +210,27 @@ async function resolveRepositoryAdminAccessQuery(
   queryable: Queryable,
 ): Promise<RepositoryAdminAccess> {
   const { rows } = await queryable.query<{ id: number; app_name: string; team_slug: string; environment_name: string }>(
-    `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name
+    `SELECT DISTINCT ma.id, ma.app_name, ma.team_slug, ma.environment_name
      FROM (
-       SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
-       FROM application_repositories
-       WHERE status = 'active'
-       ORDER BY monitored_app_id, created_at DESC, id DESC
-     ) latest
-     JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
-     JOIN repositories r ON r.github_repo_id = latest.github_repo_id
-     WHERE ma.is_active = true AND r.id = $1
+       SELECT monitored_app_id
+       FROM (
+         SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
+         FROM application_repositories
+         WHERE status = 'active'
+         ORDER BY monitored_app_id, created_at DESC, id DESC
+       ) latest_active
+       JOIN repositories r ON r.github_repo_id = latest_active.github_repo_id
+       WHERE r.id = $1
+
+       UNION
+
+       SELECT ar.monitored_app_id
+       FROM application_repositories ar
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+       WHERE ar.status = 'historical' AND r.id = $1
+     ) affected
+     JOIN monitored_applications ma ON ma.id = affected.monitored_app_id
+     WHERE ma.is_active = true
      ORDER BY ma.environment_name, ma.team_slug, ma.app_name`,
     [repositoryId],
   )

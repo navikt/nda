@@ -861,6 +861,33 @@ describe('canAccessRepositoryAdmin', () => {
 
     expect(await canAccessRepositoryAdmin(tl, repositoryId)).toBe(false)
   })
+
+  it('requires authorization for an app that is only historically linked to the repository', async () => {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '5007',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-admin-f',
+    })
+    const sectionId = await seedSection(pool, 'pensjon-repo-admin')
+    const teamId = await seedDevTeam(pool, 'team-repo-admin-f', 'Team Repo Admin F', sectionId)
+    const app = await seedApp(pool, { teamSlug: 'nais-repo-f', appName: 'repo-f', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-admin-f',
+      githubRepoId: '5007',
+      status: 'historical',
+    })
+
+    const tl = makeUser('T990005')
+    await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
+
+    expect(await canAccessRepositoryAdmin(tl, repositoryId)).toBe(false)
+
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [teamId, app])
+
+    expect(await canAccessRepositoryAdmin(tl, repositoryId)).toBe(true)
+  })
 })
 
 describe('canAdministerTeam', () => {
