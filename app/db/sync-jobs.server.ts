@@ -208,6 +208,24 @@ export async function releaseSyncLock(
   return released
 }
 
+export async function isAppBlockedByRunningFetchJob(appId: number): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1 FROM sync_jobs sj
+     WHERE sj.job_type = 'fetch_verification_data' AND sj.status = 'running' AND sj.lock_expires_at > NOW()
+       AND (
+         sj.monitored_app_id = $1
+         OR sj.repository_id IN (
+           SELECT r.id FROM application_repositories ar
+           JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+           WHERE ar.monitored_app_id = $1 AND ar.status IN ('active', 'historical')
+         )
+       )
+     LIMIT 1`,
+    [appId],
+  )
+  return (result.rowCount || 0) > 0
+}
+
 export async function cleanupOldSyncJobs(keepPerApp: number = 50): Promise<number> {
   const result = await pool.query(
     `DELETE FROM sync_jobs 
