@@ -35,8 +35,8 @@ const ORDERED_DEPLOYMENTS_SELECT = (defaultBranchSql: string, repositoryIdSql = 
              d.commit_checks_checked_at, d.github_pr_number, d.monitored_app_id,
              ${defaultBranchSql} AS default_branch, ${repositoryIdSql} AS matched_repository_id, d.created_at,
              LAG(d.commit_sha) OVER (
-               PARTITION BY d.monitored_app_id, d.environment_name, d.detected_github_owner, d.detected_github_repo_name
-               ORDER BY d.created_at ASC
+               PARTITION BY d.detected_github_owner, d.detected_github_repo_name
+               ORDER BY d.created_at ASC, d.id ASC
              ) AS prev_commit_sha
       FROM deployments d
       JOIN monitored_applications ma ON d.monitored_app_id = ma.id`
