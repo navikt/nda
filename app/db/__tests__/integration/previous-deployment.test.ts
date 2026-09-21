@@ -329,6 +329,8 @@ describe('getPreviousDeployment', () => {
     expect(prev).not.toBeNull()
     expect(prev?.id).toBe(siblingId)
     expect(prev?.commitSha).toBe('sibling-sha')
+    expect(prev?.monitoredAppId).toBe(appFrontend)
+    expect(prev?.fourEyesStatus).toBe('approved')
     expect(mockedGetCommitAncestryStatus).toHaveBeenCalledTimes(1)
   })
 

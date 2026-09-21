@@ -6,7 +6,7 @@ import * as stories from './DeploymentDetail.stories'
 
 setProjectAnnotations(preview)
 
-const { Approved, DirectPush, ManuallyApproved, NotApproved, Pending } = composeStories(stories)
+const { Approved, DirectPush, ManuallyApproved, NotApproved, Pending, VerifiedViaSibling } = composeStories(stories)
 
 describe('DeploymentDetail story baseline characterization', () => {
   it('Approved story keeps deployment summary and PR details', () => {
@@ -57,5 +57,12 @@ describe('DeploymentDetail story baseline characterization', () => {
     expect(html).toContain('Gjennomgått i Slack med Rask Elv.')
     expect(html).toContain('Se Slack-dokumentasjon')
     expect(html).not.toContain('Krever manuell godkjenning')
+  })
+
+  it('VerifiedViaSibling story shows the sibling-specific label, not the generic "Godkjent" tag', () => {
+    const html = renderToStaticMarkup(<VerifiedViaSibling />)
+
+    expect(html).toContain('Verifisert via søsterapp')
+    expect(html).not.toContain('>Godkjent<')
   })
 })

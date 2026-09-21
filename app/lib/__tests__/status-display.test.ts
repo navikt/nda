@@ -12,6 +12,7 @@ describe('getFourEyesStatus — maps deployment status to user-visible label, va
     { status: 'baseline', expectedText: 'Baseline', expectedVariant: 'success' },
     { status: 'pending_baseline', expectedText: 'Foreslått baseline', expectedVariant: 'warning' },
     { status: 'no_changes', expectedText: 'Ingen endringer', expectedVariant: 'success' },
+    { status: 'verified_via_sibling', expectedText: 'Verifisert via søsterapp', expectedVariant: 'success' },
     {
       status: 'unverified_commits',
       expectedText: 'Ikke-godkjente commits',

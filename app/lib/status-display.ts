@@ -29,6 +29,12 @@ export function getFourEyesStatus(deployment: any): {
         variant: 'success',
         description: 'Samme commit som forrige deployment.',
       }
+    case 'verified_via_sibling':
+      return {
+        text: 'Verifisert via søsterapp',
+        variant: 'success',
+        description: 'Samme commit er allerede verifisert via en annen apps deployment i samme repository (monorepo).',
+      }
     case 'unverified_commits':
       return {
         text: 'Ikke-godkjente commits',

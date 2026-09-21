@@ -179,10 +179,14 @@ Systemet henter listen over commits mellom forrige deployment sin commit-SHA og 
 > **Viktig:** `no_changes` betyr kun at det ikke finnes nye commits å diffe mot forrige deployment — det er **ikke** i seg selv en godkjenning. Hvis PR-en som ble deployet (`deployedPr`) er tilgjengelig, kjører systemet likevel den vanlige four-eyes-sjekken mot den før status settes. Er PR-en ikke four-eyes-godkjent (f.eks. selvgodkjenning), returneres status **`unverified_commits`** med `hasFourEyes: false` i stedet for å arve en eventuell tidligere (feilaktig) godkjent status. Dette hindrer at en re-deploy av en commit som opprinnelig ble feilverifisert, fortsetter å vises som godkjent for alltid. Hvis `deployedPr` derimot **ikke** er tilgjengelig (f.eks. direkte push uten PR, eller PR-oppslaget feilet), kan denne re-sjekken ikke utføres, og deploymentet beholder status `no_changes` med `hasFourEyes: true` som før.
 
 ##### Samme commit-SHA (re-deploy)
-- Deploymentet er en **re-deploy** av eksakt samme kode. Status: **`no_changes`**.
+- Deploymentet er en **re-deploy** av eksakt samme kode **i samme app** (samme `monitored_app_id`). Status: **`no_changes`**.
+- Hvis den forrige deploymentet med samme commit-SHA derimot tilhører en **annen app** (`monitored_app_id`) i samme repo — typisk i et monorepo der flere apper deployes fra samme push — er dette **ikke** en re-deploy for denne appen, men første gang *denne* appen ser commiten. Koden er allerede verifisert via søsterappens deployment. Status: **`verified_via_sibling`** i stedet for `no_changes`, forutsatt at søster-deploymentet selv har en *genuint rot-godkjent* status (se under). Er søster-deploymentet ikke selv godkjent ennå (f.eks. `pending`, `error`, `unverified_commits`), eller er dets status selv `verified_via_sibling` (dvs. en avledet, ikke-rot status — se rot-attribuering under), godtas det ikke som verifiseringskilde — status settes i stedet til **`error`**, og verifiseringen forsøkes på nytt senere når søsteren er løst. Dette hindrer at en uverifisert eller ikke-rot sibling kan «godkjenne» denne appen, som deretter propagerer tilbake og «godkjenner» søsteren i en sirkel. Denne grenen krever i tillegg at det faktisk er samme commit-SHA på begge sider (`input.commitSha === previousDeployment.commitSha`) — `handleNoChanges` brukes også for ancestor/nearby-deploy-tilfeller der SHA-ene bevisst er ulike, og de skal aldri klassifiseres som sibling-verifisering selv om forrige deployment tilhører en annen app.
+- **Rot-attribuering ved kjeding:** Hvis flere apper i samme repo deployer samme commit på ulike tidspunkt (f.eks. app A → B → C), skal `verified_via_sibling` alltid peke på den appen som faktisk ble reelt godkjent (roten), ikke på nærmeste mellomledd i kjeden. `verified_via_sibling` er selv en avledet status og teller derfor **ikke** som gyldig rot — systemet gjør et eget, avgrenset oppslag (`findRootApprovedSiblingForCommit`) på tvers av **alle** apper i repoet (typisk et fåtall), inkludert appen som selv verifiseres nå, for samme commit-SHA, og velger den eldste appen med en genuint rot-godkjent status (`approved`, `approved_pr`, `implicitly_approved`, `manually_approved`, `baseline` eller `no_changes`). Hvis C ellers ville blitt attribuert til B (fordi B er nærmest i tid), blir den i stedet attribuert direkte til A. Oppslaget kan også løse et annet tilfelle: hvis app A redeployer en commit den selv fikk godkjent tidligere, men en søsterapp i mellomtiden har deployet samme commit (og dermed blitt den nærmeste `previousDeployment`-kandidaten), finner oppslaget A sin egen, eldre rot-godkjente deployment — og resultatet blir korrekt attribuert til A selv, slik at dette forblir en ordinær `no_changes`-redeploy i stedet for en uløst sibling-verifisering. Oppslaget er i tillegg begrenset til deployments som allerede eksisterte **før** deploymentet som verifiseres (`d.id <= gjeldende deployment-id`, deployment-id er en monotont stigende SERIAL-PK), slik at en søster som blir godkjent *senere* aldri kan bli valgt som rot og retroaktivt godkjenne en eldre deployment.
+
+  > 📁 Se `findRootApprovedSiblingForCommit`/`preferRootApprovedSibling` i [`previous-deployment.server.ts`](../app/lib/verification/fetch-data/previous-deployment.server.ts)
 
 ##### Samme commit-SHA men GitHub compare returnerer 'identical'
-- Hvis GitHub compare-API returnerer `status = 'identical'`, bekrefter det at begge commitene er identiske. Status: **`no_changes`**.
+- Hvis GitHub compare-API returnerer `status = 'identical'`, bekrefter det at begge commitene er identiske. Status: **`no_changes`** (eller **`verified_via_sibling`** hvis forrige deployment tilhører en annen app, se over).
 
 ##### Forskjellig commit-SHA — no-diff-deteksjon
 
@@ -249,7 +253,8 @@ Hvert deployment får én av følgende statuser etter verifisering:
 |--------|-----------|-----------|-------------|
 | `approved` | Godkjent | ✅ Ja | Alle commits har godkjent PR-review |
 | `implicitly_approved` | Implisitt godkjent | ✅ Ja | Godkjent via implisitte regler (f.eks. Dependabot) |
-| `no_changes` | Ingen endringer | ✅ Ja | Re-deploy av eksakt samme commit, eller compare/tree bekrefter at det ikke finnes kodeendringer. Hvis en tilgjengelig `deployedPr` viser at PR-en ikke er four-eyes-godkjent, returneres i stedet `unverified_commits` |
+| `no_changes` | Ingen endringer | ✅ Ja | Re-deploy av eksakt samme commit **i samme app**, eller compare/tree bekrefter at det ikke finnes kodeendringer. Hvis en tilgjengelig `deployedPr` viser at PR-en ikke er four-eyes-godkjent, returneres i stedet `unverified_commits` |
+| `verified_via_sibling` | Verifisert via søsterapp | ✅ Ja | Samme commit-SHA er allerede godkjent via en **annen apps** deployment i samme repo (monorepo). Krever at søster-deploymentet selv har en godkjent status — hvis ikke, returneres `error` i stedet |
 | `pending_baseline` | Første deployment | ⚠️ Nei | Første deployment — brukes som referansepunkt |
 | `unverified_commits` | Uverifiserte commits | ❌ Nei | Én eller flere commits mangler godkjent PR-review |
 | `unauthorized_repository` | Ikke godkjent repo | ❌ Nei | Deploymentets repo er ikke godkjent for applikasjonen |
@@ -560,7 +565,7 @@ Kobling mellom `monitored_applications`-rader som representerer samme logiske ko
 **Propagering skjer når:**
 1. En deployment verifiseres (automatisk eller manuelt)
 2. Appen deler **aktivt** GitHub-repo (samme `github_repo_id` i `application_repositories`) med minst én annen app
-3. Statussen er positiv: `approved`, `approved_pr_with_unreviewed`, `implicitly_approved`, `no_changes`, eller `manually_approved`
+3. Statussen er positiv: `approved`, `approved_pr_with_unreviewed`, `implicitly_approved`, `no_changes`, `verified_via_sibling`, eller `manually_approved`
 4. Søsken-deployments **i samme repo** (uansett miljø) har **samme `commit_sha`** og status `pending`, `pending_baseline`, `unknown` (samlet `REVERIFIABLE_STATUSES`) eller `error`
 
 **Propagering skjer IKKE når:**
@@ -568,6 +573,8 @@ Kobling mellom `monitored_applications`-rader som representerer samme logiske ko
 - Søsken-deployment har annen `commit_sha`
 - Søsken-deployment allerede er verifisert
 - Appen ikke har noe registrert aktivt repo, eller `github_repo_id` ikke er kjent ennå
+
+**Hvilken status skrives til søsken:** for å unngå at resultatet avhenger av *timing* (om søsken-raden allerede eksisterte da kilden ble verifisert), skriver propagering alltid **`verified_via_sibling`** til søsken-deploymentene når kildestatusen er en «rot-godkjent» status (`approved`, `approved_pr`, `implicitly_approved`, `manually_approved`, `no_changes`, `baseline`) — samme resultat som appen ville fått ved uavhengig verifisering via `verify.ts`s egen sibling-deteksjon. Unntaket er `approved_pr_with_unreviewed`, som ikke er en full godkjenning (se `NOT_APPROVED_STATUSES`) og derfor propageres uendret, slik at søsknene ikke får en falsk tillitsheving.
 
 ### Propageringspunkter
 

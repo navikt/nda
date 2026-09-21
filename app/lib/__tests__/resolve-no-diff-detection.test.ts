@@ -22,7 +22,25 @@ vi.mock('~/db/sync-jobs.server', () => ({
   updateSyncJobProgress: vi.fn(),
 }))
 vi.mock('~/lib/four-eyes-status', () => ({
+  APPROVED_STATUSES: [
+    'approved',
+    'approved_pr',
+    'implicitly_approved',
+    'manually_approved',
+    'no_changes',
+    'verified_via_sibling',
+    'baseline',
+  ],
   APPROVED_STATUSES_SQL: "'approved'",
+  ROOT_APPROVED_STATUSES: [
+    'approved',
+    'approved_pr',
+    'implicitly_approved',
+    'manually_approved',
+    'no_changes',
+    'baseline',
+  ],
+  ROOT_APPROVED_STATUSES_SQL: "'approved'",
   LEGACY_STATUSES_SQL: "'legacy'",
   PROPAGATABLE_STATUSES: ['approved'],
   REVERIFIABLE_STATUSES: ['pending', 'pending_baseline', 'unknown'],

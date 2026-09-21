@@ -178,7 +178,11 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
           <HStack gap="space-8" align="center">
             {isApprovedStatus((deployment.four_eyes_status ?? '') as FourEyesStatus) && (
               <Tag data-color="success" variant="outline" size="small">
-                {deployment.four_eyes_status === 'implicitly_approved' ? 'Implisitt godkjent' : 'Godkjent'}
+                {deployment.four_eyes_status === 'implicitly_approved'
+                  ? 'Implisitt godkjent'
+                  : deployment.four_eyes_status === 'verified_via_sibling'
+                    ? 'Verifisert via søsterapp'
+                    : 'Godkjent'}
               </Tag>
             )}
             {deployment.github_pr_number ? (
@@ -232,6 +236,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
                 'approved_pr_with_unreviewed',
                 'baseline',
                 'no_changes',
+                'verified_via_sibling',
                 'pending_baseline',
                 'unauthorized_branch',
                 'unauthorized_repository',

@@ -4,6 +4,7 @@ export const FOUR_EYES_STATUSES = [
   'implicitly_approved', // Approved via implicit approval rules
   'manually_approved', // Manually approved by admin
   'no_changes', // No changes from previous deployment (same commit SHA)
+  'verified_via_sibling', // Same commit SHA already verified via a sibling app's deployment in the same repository (monorepo)
   'pending', // Awaiting verification
   'pending_baseline', // First deployment, awaiting baseline
   'pending_approval', // Alias for pending (legacy)
@@ -29,16 +30,27 @@ export const APPROVED_STATUSES: FourEyesStatus[] = [
   'implicitly_approved',
   'manually_approved',
   'no_changes',
+  'verified_via_sibling',
   'baseline',
 ]
 
 export const APPROVED_STATUSES_SQL = APPROVED_STATUSES.map((s) => `'${s}'`).join(', ')
+
+// verified_via_sibling is itself derived, never a valid root — used to gate cross-app
+// sibling attribution so a chain of resolutions always traces back to the deployment that
+// was actually reviewed, instead of the most recently resolved sibling.
+export const ROOT_APPROVED_STATUSES: FourEyesStatus[] = APPROVED_STATUSES.filter(
+  (status) => status !== 'verified_via_sibling',
+)
+
+export const ROOT_APPROVED_STATUSES_SQL = ROOT_APPROVED_STATUSES.map((s) => `'${s}'`).join(', ')
 
 export const PROPAGATABLE_STATUSES: FourEyesStatus[] = [
   'approved',
   'implicitly_approved',
   'manually_approved',
   'no_changes',
+  'verified_via_sibling',
   'approved_pr_with_unreviewed',
 ]
 
@@ -94,6 +106,7 @@ export const STATUS_DISPLAY: Record<
   implicitly_approved: { tagLabel: 'Godkjent', tagVariant: 'success' },
   manually_approved: { tagLabel: 'Godkjent', tagVariant: 'success' },
   no_changes: { tagLabel: 'Godkjent', tagVariant: 'success' },
+  verified_via_sibling: { tagLabel: 'Verifisert via søsterapp', tagVariant: 'success' },
   baseline: { tagLabel: 'Godkjent', tagVariant: 'success' },
   pending: { tagLabel: 'Venter', tagVariant: 'neutral' },
   pending_baseline: { tagLabel: 'Foreslått baseline', tagVariant: 'warning' },
@@ -117,6 +130,7 @@ export const FOUR_EYES_STATUS_LABELS: Record<FourEyesStatus, string> = {
   implicitly_approved: 'Implisitt godkjent',
   manually_approved: 'Manuelt godkjent',
   no_changes: 'Ingen endringer',
+  verified_via_sibling: 'Verifisert via søsterapp',
   pending: 'Venter',
   pending_baseline: 'Første deployment - venter',
   pending_approval: 'Venter godkjenning',
@@ -136,6 +150,10 @@ export const FOUR_EYES_STATUS_LABELS: Record<FourEyesStatus, string> = {
 
 export function isApprovedStatus(status: string): boolean {
   return APPROVED_STATUSES.includes(status as FourEyesStatus)
+}
+
+export function isRootApprovedStatus(status: string): boolean {
+  return ROOT_APPROVED_STATUSES.includes(status as FourEyesStatus)
 }
 
 export function isNotApprovedStatus(status: string): boolean {

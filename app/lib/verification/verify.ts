@@ -1,3 +1,4 @@
+import { isRootApprovedStatus } from '~/lib/four-eyes-status'
 import {
   checkImplicitApproval,
   extractApprovers,
@@ -157,6 +158,50 @@ function handleNoChanges(
         },
       })
     }
+  }
+
+  // If the "previous deployment" used for this comparison actually belongs to a different
+  // app (monitored_app_id) than the one being verified, this is not a redeploy of unchanged
+  // code — it's a different app in the same monorepo deploying a commit that was already
+  // verified via a sibling app's deployment. Label it distinctly so it isn't mistaken for
+  // "nothing changed" for this app. Only applies when the sibling actually deployed the exact
+  // same commit — handleNoChanges is also reached for ancestor/nearby-deploy cases where
+  // input.commitSha differs from previousDeployment.commitSha, and those are not sibling
+  // verifications even if the previous deployment happens to belong to another app.
+  const isSiblingVerification =
+    input.monitoredAppId != null &&
+    input.previousDeployment?.monitoredAppId != null &&
+    input.previousDeployment.monitoredAppId !== input.monitoredAppId &&
+    input.commitSha === input.previousDeployment.commitSha
+
+  if (isSiblingVerification) {
+    // The candidate-lookup queries also admit deployments with statuses like 'pending',
+    // 'error', or 'unverified_commits' — only genuinely root-approved siblings may be trusted
+    // as a verification source. 'verified_via_sibling' itself is excluded here even though it
+    // passes isApprovedStatus elsewhere: preferRootApprovedSibling already re-attributes to the
+    // true root when one exists, so a candidate still carrying 'verified_via_sibling' at this
+    // point means no root was found — accepting it would let a non-root, derived sibling
+    // approve this deployment, which contradicts root attribution and could enable
+    // approve-then-propagate-back circularity.
+    const siblingIsApproved =
+      input.previousDeployment?.fourEyesStatus != null && isRootApprovedStatus(input.previousDeployment.fourEyesStatus)
+
+    if (!siblingIsApproved) {
+      return handleCompareError(
+        input,
+        `${reason} — same commit found on sibling deployment #${input.previousDeployment?.id}, but its status (${input.previousDeployment?.fourEyesStatus ?? 'unknown'}) is not yet a root-approved status. Verification postponed until the sibling is resolved.`,
+      )
+    }
+
+    return buildResult(input, {
+      hasFourEyes: true,
+      status: 'verified_via_sibling',
+      approvalDetails: {
+        method: 'verified_via_sibling',
+        approvers: [],
+        reason: `${reason} — same commit already verified via sibling deployment #${input.previousDeployment?.id} in the same repository.`,
+      },
+    })
   }
 
   return buildResult(input, {

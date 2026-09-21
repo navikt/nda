@@ -61,6 +61,17 @@ describe('buildNewDeploymentBlocks', () => {
     expect(text).toContain('github.com/navikt/pensjon-pen/compare/')
   })
 
+  it('renders a "Verifisert via søsterapp" header for verified_via_sibling status (not the ❓ unknown fallback)', () => {
+    const blocks = buildNewDeploymentBlocks({
+      ...newDeploymentFixtures.withPr,
+      fourEyesStatus: 'verified_via_sibling',
+    })
+    const text = JSON.stringify(blocks)
+
+    expect(text).toContain('✅ Verifisert via søsterapp')
+    expect(text).not.toContain('❓')
+  })
+
   it('omits the GitHub button when neither pr.url nor githubUrl is present', () => {
     const blocks = buildNewDeploymentBlocks({ ...newDeploymentFixtures.legacy, githubUrl: undefined })
     const text = JSON.stringify(blocks)
