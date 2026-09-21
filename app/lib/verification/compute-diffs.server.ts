@@ -95,27 +95,32 @@ export async function computeVerificationDiffs(
       let input: VerificationInput
       let precomputedResult: ReturnType<typeof verifyDeployment> | null = null
 
-      const compareSnapshot = await getCompareSnapshotForCommit(row.commit_sha)
-      if (compareSnapshot) {
-        const { githubRepoId, status } = await resolveRepoInfo(owner, repo)
-        const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
-        const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
-        const previousDeployment = prevRow
-          ? await preferRootApprovedSibling(
-              {
-                id: prevRow.id,
-                commitSha: prevRow.commit_sha,
-                createdAt: prevRow.created_at.toISOString(),
-                monitoredAppId: prevRow.monitored_app_id,
-                fourEyesStatus: prevRow.four_eyes_status,
-              },
-              row.commit_sha,
-              githubRepoId,
-              monitoredAppId,
-              row.id,
-            )
-          : null
+      const { githubRepoId, status } = await resolveRepoInfo(owner, repo)
+      const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
+      const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
+      const previousDeployment = prevRow
+        ? await preferRootApprovedSibling(
+            {
+              id: prevRow.id,
+              commitSha: prevRow.commit_sha,
+              createdAt: prevRow.created_at.toISOString(),
+              monitoredAppId: prevRow.monitored_app_id,
+              fourEyesStatus: prevRow.four_eyes_status,
+            },
+            row.commit_sha,
+            githubRepoId,
+            monitoredAppId,
+            row.id,
+          )
+        : null
 
+      const compareSnapshot = await getCompareSnapshotForCommit(
+        owner,
+        repo,
+        row.commit_sha,
+        previousDeployment?.commitSha ?? null,
+      )
+      if (compareSnapshot) {
         const compareData = compareSnapshot.data as CompareData
 
         const hasCompareMetadata = compareData.compare !== undefined

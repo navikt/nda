@@ -62,6 +62,7 @@ const SNAPSHOT_JOIN_AND_ORDER = `
         AND gcs.repo = od.detected_github_repo_name
         AND gcs.base_sha = od.prev_commit_sha
         AND gcs.head_sha = od.commit_sha
+        AND gcs.base_sha != gcs.head_sha
         AND gcs.schema_version = ${CURRENT_SCHEMA_VERSION}
       ORDER BY gcs.fetched_at DESC LIMIT 1
     ) cmp_snap ON od.prev_commit_sha IS NOT NULL
