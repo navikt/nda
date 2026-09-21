@@ -8,8 +8,6 @@ const {
   mockGetRepositoryById,
   mockGetAppConfigAuditLog,
   mockGetAuditReportsForAppAdmin,
-  mockGetLatestSyncJob,
-  mockGetGitHubDataStatsForApp,
   mockGetUsersByIdentifiers,
 } = vi.hoisted(() => ({
   mockRequireAppAdminAccess: vi.fn(),
@@ -19,8 +17,6 @@ const {
   mockGetRepositoryById: vi.fn(),
   mockGetAppConfigAuditLog: vi.fn(),
   mockGetAuditReportsForAppAdmin: vi.fn(),
-  mockGetLatestSyncJob: vi.fn(),
-  mockGetGitHubDataStatsForApp: vi.fn(),
   mockGetUsersByIdentifiers: vi.fn(),
 }))
 
@@ -41,14 +37,6 @@ vi.mock('~/db/repositories.server', () => ({
 
 vi.mock('~/db/audit-reports.server', () => ({
   getAuditReportsForAppAdmin: mockGetAuditReportsForAppAdmin,
-}))
-
-vi.mock('~/db/github-data.server', () => ({
-  getGitHubDataStatsForApp: mockGetGitHubDataStatsForApp,
-}))
-
-vi.mock('~/db/sync-jobs.server', () => ({
-  getLatestSyncJob: mockGetLatestSyncJob,
 }))
 
 vi.mock('~/db/user-github-lookups.server', () => ({
@@ -85,8 +73,6 @@ describe('admin loader - scoped user lookups (no org-wide directory leak)', () =
     mockCanAccessRepositorySettingsAdmin.mockResolvedValue(false)
     mockGetRepositoryById.mockResolvedValue(null)
     mockGetAppConfigAuditLog.mockResolvedValue([])
-    mockGetLatestSyncJob.mockResolvedValue(null)
-    mockGetGitHubDataStatsForApp.mockResolvedValue(null)
     mockGetUsersByIdentifiers.mockResolvedValue(new Map())
   })
 
@@ -145,8 +131,6 @@ describe('admin loader - repository-admin capability gating', () => {
     mockCanAccessRepositorySettingsAdmin.mockResolvedValue(false)
     mockGetAppConfigAuditLog.mockResolvedValue([])
     mockGetAuditReportsForAppAdmin.mockResolvedValue([])
-    mockGetLatestSyncJob.mockResolvedValue(null)
-    mockGetGitHubDataStatsForApp.mockResolvedValue(null)
     mockGetUsersByIdentifiers.mockResolvedValue(new Map())
   })
 

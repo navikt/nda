@@ -15,11 +15,8 @@ import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
 import type { SyncJob } from '~/db/sync-job-types'
 import {
   acquireSyncLock,
-  cancelSyncJob,
-  forceReleaseSyncJob,
   getLatestSyncJob,
   getSyncJobById,
-  getSyncJobOptions,
   heartbeatSyncJob,
   releaseSyncLock,
   SYNC_INTERVAL_MS,
@@ -35,7 +32,6 @@ import { processReportJobAsync } from '~/lib/report-job-processor.server'
 import { isValidReportPeriodType } from '~/lib/report-periods'
 import type { SlackConfigSettingKey } from '~/lib/slack/config-setting-keys'
 import { serializeUserLookups } from '~/lib/user-display'
-import { fetchVerificationDataForAllDeployments } from '~/lib/verification'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
 
 class AppNotFoundError extends Error {}
@@ -100,31 +96,6 @@ async function updateSlackSettingWithAudit(params: {
   return {}
 }
 
-export async function processFetchDataJobAsync(jobId: number, appId: number) {
-  const options = await getSyncJobOptions(jobId)
-  const debug = options?.debug === true
-  const refreshDisplayData = options?.refreshDisplayData === true
-
-  await runWithJobContext(jobId, 'fetch_verification_data', appId, debug, async () => {
-    try {
-      const result = await fetchVerificationDataForAllDeployments(appId, { jobId, refreshDisplayData })
-      const job = await getSyncJobById(jobId)
-      if (job?.status === 'cancelled') {
-        return
-      }
-      const finalStatus = result.rateLimited ? 'partial' : 'completed'
-      await releaseSyncLock(jobId, finalStatus, result as unknown as Record<string, unknown>)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      const job = await getSyncJobById(jobId)
-      if (job?.status !== 'cancelled') {
-        await releaseSyncLock(jobId, 'failed', undefined, errorMessage)
-      }
-      throw err
-    }
-  })
-}
-
 async function processComputeDiffsJobAsync(jobId: number, appId: number) {
   await runWithJobContext(jobId, 'reverify_app', appId, false, async () => {
     try {
@@ -151,12 +122,7 @@ async function processComputeDiffsJobAsync(jobId: number, appId: number) {
   })
 }
 
-const JOB_ID_ACTIONS = new Set([
-  'check_fetch_job_status',
-  'cancel_fetch_job',
-  'force_release_job',
-  'check_compute_diffs_status',
-])
+const JOB_ID_ACTIONS = new Set(['check_compute_diffs_status'])
 
 export async function action({ request }: { request: Request; params: Record<string, string | undefined> }) {
   const user = await requireUser(request)
@@ -345,54 +311,6 @@ export async function action({ request }: { request: Request; params: Record<str
     })
 
     return { jobStarted: jobId }
-  }
-
-  if (action === 'fetch_verification_data') {
-    const debug = formData.get('debug') === 'on'
-    const refreshDisplayData = formData.get('refresh_display_data') === 'on'
-    const jobOptions =
-      debug || refreshDisplayData
-        ? { ...(debug ? { debug: true } : {}), ...(refreshDisplayData ? { refreshDisplayData: true } : {}) }
-        : undefined
-    const jobId = await acquireSyncLock('fetch_verification_data', appId, 5, jobOptions)
-    if (jobId === 'repository_conflict') {
-      return { error: 'En datahenting kjører allerede for repositoryet denne appen tilhører' }
-    }
-    if (!jobId) {
-      return { error: 'En datahenting kjører allerede for denne appen' }
-    }
-
-    processFetchDataJobAsync(jobId, appId).catch((err) => {
-      logger.error(`Fetch data job ${jobId} failed`, err instanceof Error ? err : new Error(String(err)))
-    })
-
-    return { fetchJobStarted: jobId }
-  }
-
-  if (action === 'check_fetch_job_status') {
-    return { fetchJobStatus: authorizedJob }
-  }
-
-  if (action === 'cancel_fetch_job') {
-    if (!authorizedJob) {
-      return { error: 'Mangler eller ugyldig job_id' }
-    }
-    const cancelled = await cancelSyncJob(authorizedJob.id)
-    if (!cancelled) {
-      return { error: 'Kunne ikke avbryte jobben (kanskje den allerede er ferdig?)' }
-    }
-    return { success: 'Jobben ble avbrutt' }
-  }
-
-  if (action === 'force_release_job') {
-    if (!authorizedJob) {
-      return { error: 'Mangler eller ugyldig job_id' }
-    }
-    const released = await forceReleaseSyncJob(authorizedJob.id)
-    if (!released) {
-      return { error: 'Kunne ikke frigjøre jobben' }
-    }
-    return { success: 'Jobben ble tvangsfrigjort' }
   }
 
   if (action === 'compute_diffs') {
