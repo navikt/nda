@@ -738,7 +738,14 @@ export default function GlobalVerificationDiffsPage() {
                     </Tag>
                   </Table.DataCell>
                   <Table.DataCell>
-                    <Tag variant={diff.newStatus === 'error' ? 'warning' : 'info'} size="xsmall">
+                    <Tag
+                      variant={
+                        diff.newStatus === 'error' || diff.newStatus === 'pending_sibling_resolution'
+                          ? 'warning'
+                          : 'info'
+                      }
+                      size="xsmall"
+                    >
                       {getFourEyesStatusLabel(diff.newStatus)}
                     </Tag>
                     {diff.errorReason && (

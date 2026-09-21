@@ -61,14 +61,14 @@ describe('buildNewDeploymentBlocks', () => {
     expect(text).toContain('github.com/navikt/pensjon-pen/compare/')
   })
 
-  it('renders a "Verifisert via søsterapp" header for verified_via_sibling status (not the ❓ unknown fallback)', () => {
+  it('renders a "Verifisert via søskenapplikasjon" header for verified_via_sibling status (not the ❓ unknown fallback)', () => {
     const blocks = buildNewDeploymentBlocks({
       ...newDeploymentFixtures.withPr,
       fourEyesStatus: 'verified_via_sibling',
     })
     const text = JSON.stringify(blocks)
 
-    expect(text).toContain('✅ Verifisert via søsterapp')
+    expect(text).toContain('✅ Verifisert via søskenapplikasjon')
     expect(text).not.toContain('❓')
   })
 

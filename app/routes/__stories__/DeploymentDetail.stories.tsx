@@ -494,7 +494,7 @@ export const ManuallyApproved: Story = {
 }
 
 export const VerifiedViaSibling: Story = {
-  name: 'Verifisert via søsterapp',
+  name: 'Verifisert via søskenapplikasjon',
   args: {
     loaderData: {
       ...baseLoaderData,

@@ -187,9 +187,9 @@ function handleNoChanges(
       input.previousDeployment?.fourEyesStatus != null && isRootApprovedStatus(input.previousDeployment.fourEyesStatus)
 
     if (!siblingIsApproved) {
-      return handleCompareError(
+      return handlePendingSiblingResolution(
         input,
-        `${reason} — same commit found on sibling deployment #${input.previousDeployment?.id}, but its status (${input.previousDeployment?.fourEyesStatus ?? 'unknown'}) is not yet a root-approved status. Verification postponed until the sibling is resolved.`,
+        `${reason} — same commit found on sibling application's deployment #${input.previousDeployment?.id}, but its status (${input.previousDeployment?.fourEyesStatus ?? 'unknown'}) is not yet a root-approved status. Verification postponed until the sibling application is resolved.`,
       )
     }
 
@@ -230,6 +230,18 @@ function handleCompareError(input: VerificationInput, reason: string): Verificat
   return buildResult(input, {
     hasFourEyes: false,
     status: 'error',
+    approvalDetails: {
+      method: null,
+      approvers: [],
+      reason,
+    },
+  })
+}
+
+function handlePendingSiblingResolution(input: VerificationInput, reason: string): VerificationResult {
+  return buildResult(input, {
+    hasFourEyes: false,
+    status: 'pending_sibling_resolution',
     approvalDetails: {
       method: null,
       approvers: [],

@@ -75,7 +75,7 @@ describe('reverifyPendingChecks', () => {
 
     const [sql, params] = mockPoolQuery.mock.calls[0]
     expect(sql).toContain('commit_checks_checked_at IS NULL')
-    expect(sql).toContain("NOT IN ('pending', 'pending_baseline', 'unknown', 'error')")
+    expect(sql).toContain("NOT IN ('pending', 'pending_baseline', 'unknown', 'pending_sibling_resolution', 'error')")
     expect(sql).toContain('d.created_at >')
     expect(params[0]).toBe(42)
     expect(params[2]).toBe(25)

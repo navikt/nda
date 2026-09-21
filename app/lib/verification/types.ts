@@ -40,6 +40,7 @@ const VERIFICATION_STATUSES = [
   'unauthorized_branch',
   'legacy',
   'error',
+  'pending_sibling_resolution',
 ] as const
 export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number]
 
@@ -49,12 +50,13 @@ const _VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   unverified_commits: 'Ikke godkjent',
   pending_baseline: 'Første deployment - venter',
   no_changes: 'Ingen endringer',
-  verified_via_sibling: 'Verifisert via søsterapp',
+  verified_via_sibling: 'Verifisert via søskenapplikasjon',
   manually_approved: 'Manuelt godkjent',
   unauthorized_repository: 'Ikke godkjent repo',
   unauthorized_branch: 'Ikke på godkjent branch',
   legacy: 'Legacy',
   error: 'Feil',
+  pending_sibling_resolution: 'Venter på søskenapplikasjon',
 }
 
 const REPOSITORY_STATUSES = ['active', 'historical', 'pending_approval', 'unknown'] as const

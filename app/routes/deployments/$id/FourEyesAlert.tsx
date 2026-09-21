@@ -353,6 +353,33 @@ export function FourEyesAlert({
           )}
         </VStack>
       )}
+      {deployment.four_eyes_status === 'pending_sibling_resolution' &&
+        verificationRun?.result &&
+        (() => {
+          const reason =
+            (verificationRun.result as { approvalDetails?: { reason?: string } })?.approvalDetails?.reason ?? null
+          const siblingMatch = reason?.match(/sibling application's deployment #(\d+)/)
+          const siblingDeploymentId = siblingMatch ? siblingMatch[1] : null
+
+          return (
+            <VStack gap="space-8" marginBlock="space-8 space-0">
+              {reason && (
+                <BodyShort>
+                  <strong>Årsak:</strong> {reason}
+                </BodyShort>
+              )}
+              {siblingDeploymentId && (
+                <BodyShort>
+                  <Link to={`/deployments/${siblingDeploymentId}`}>Se søskenapplikasjonens deployment</Link>
+                </BodyShort>
+              )}
+              <BodyShort textColor="subtle">
+                Denne statusen løser seg selv og trenger ingen handling her — re-verifisering kjøres automatisk når
+                søskenapplikasjonen får en godkjent status.
+              </BodyShort>
+            </VStack>
+          )
+        })()}
     </Alert>
   )
 }

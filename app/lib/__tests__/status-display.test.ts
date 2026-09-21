@@ -12,7 +12,7 @@ describe('getFourEyesStatus — maps deployment status to user-visible label, va
     { status: 'baseline', expectedText: 'Baseline', expectedVariant: 'success' },
     { status: 'pending_baseline', expectedText: 'Foreslått baseline', expectedVariant: 'warning' },
     { status: 'no_changes', expectedText: 'Ingen endringer', expectedVariant: 'success' },
-    { status: 'verified_via_sibling', expectedText: 'Verifisert via søsterapp', expectedVariant: 'success' },
+    { status: 'verified_via_sibling', expectedText: 'Verifisert via søskenapplikasjon', expectedVariant: 'success' },
     {
       status: 'unverified_commits',
       expectedText: 'Ikke-godkjente commits',
@@ -40,6 +40,11 @@ describe('getFourEyesStatus — maps deployment status to user-visible label, va
     },
     { status: 'missing', expectedText: 'Mangler godkjenning', expectedVariant: 'error' },
     { status: 'error', expectedText: 'Feil ved verifisering', expectedVariant: 'error' },
+    {
+      status: 'pending_sibling_resolution',
+      expectedText: 'Venter på søskenapplikasjon',
+      expectedVariant: 'warning',
+    },
     { status: 'pending', expectedText: 'Venter på verifisering', expectedVariant: 'info' },
   ]
 

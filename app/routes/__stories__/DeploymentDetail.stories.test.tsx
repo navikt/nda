@@ -62,7 +62,7 @@ describe('DeploymentDetail story baseline characterization', () => {
   it('VerifiedViaSibling story shows the sibling-specific label, not the generic "Godkjent" tag', () => {
     const html = renderToStaticMarkup(<VerifiedViaSibling />)
 
-    expect(html).toContain('Verifisert via søsterapp')
+    expect(html).toContain('Verifisert via søskenapplikasjon')
     expect(html).not.toContain('>Godkjent<')
   })
 })

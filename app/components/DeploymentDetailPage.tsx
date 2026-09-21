@@ -181,7 +181,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
                 {deployment.four_eyes_status === 'implicitly_approved'
                   ? 'Implisitt godkjent'
                   : deployment.four_eyes_status === 'verified_via_sibling'
-                    ? 'Verifisert via søsterapp'
+                    ? 'Verifisert via søskenapplikasjon'
                     : 'Godkjent'}
               </Tag>
             )}
