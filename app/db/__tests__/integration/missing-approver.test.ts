@@ -96,14 +96,14 @@ describe('missing approver detection — checkAuditReadiness', () => {
     expect(result.missing_approver_count).toBe(0)
   })
 
-  it('does not flag no_changes, baseline, or implicitly_approved', async () => {
+  it('does not flag no_changes, baseline, implicitly_approved, or verified_via_sibling', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'team-a',
       appName: 'app-a',
       environment: 'prod-gcp',
     })
 
-    for (const status of ['no_changes', 'baseline', 'implicitly_approved']) {
+    for (const status of ['no_changes', 'baseline', 'implicitly_approved', 'verified_via_sibling']) {
       await seedDeployment(pool, {
         monitoredAppId: appId,
         teamSlug: 'team-a',

@@ -34,6 +34,7 @@ const VERIFICATION_STATUSES = [
   'unverified_commits',
   'pending_baseline',
   'no_changes',
+  'verified_via_sibling',
   'manually_approved',
   'unauthorized_repository',
   'unauthorized_branch',
@@ -48,6 +49,7 @@ const _VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   unverified_commits: 'Ikke godkjent',
   pending_baseline: 'Første deployment - venter',
   no_changes: 'Ingen endringer',
+  verified_via_sibling: 'Verifisert via søsterapp',
   manually_approved: 'Manuelt godkjent',
   unauthorized_repository: 'Ikke godkjent repo',
   unauthorized_branch: 'Ikke på godkjent branch',
@@ -90,7 +92,14 @@ export const UNVERIFIED_REASON_DESCRIPTIONS: Record<UnverifiedReason, string> = 
     'Forfatteren av siste commit er ikke koblet til en verifisert GitHub-konto, så det er ikke mulig å bekrefte at godkjenneren er en annen person.',
 }
 
-const APPROVAL_METHODS = ['pr_review', 'implicit', 'base_merge', 'no_changes', 'pending_baseline'] as const
+const APPROVAL_METHODS = [
+  'pr_review',
+  'implicit',
+  'base_merge',
+  'no_changes',
+  'verified_via_sibling',
+  'pending_baseline',
+] as const
 export type ApprovalMethod = (typeof APPROVAL_METHODS)[number] | null
 
 export type PrDataType = 'metadata' | 'reviews' | 'commits' | 'comments' | 'checks'
@@ -404,10 +413,23 @@ export interface VerificationInput {
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
 
+  // monitored_app_id of the app this deployment belongs to. Used together with
+  // previousDeployment.monitoredAppId to detect when the "previous deployment" for an
+  // identical-commit comparison actually belongs to a sibling app in the same monorepo
+  // (verified_via_sibling), rather than this app's own deployment history (no_changes).
+  monitoredAppId?: number
+
   previousDeployment: {
     id: number
     commitSha: string
     createdAt: string
+    monitoredAppId?: number
+    // The candidate's own four_eyes_status at the time it was found. Required to gate
+    // verified_via_sibling: a sibling deployment must itself have been actually approved
+    // before its resolution is trusted for a different app (otherwise a pending/error/
+    // unverified sibling could rubber-stamp this deployment, and propagation could then
+    // rubber-stamp the sibling right back).
+    fourEyesStatus?: string
   } | null
 
   previousDeploymentLookupFailed?: boolean

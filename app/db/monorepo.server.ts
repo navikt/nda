@@ -1,4 +1,4 @@
-import { PROPAGATABLE_STATUSES, REVERIFIABLE_STATUSES } from '~/lib/four-eyes-status'
+import { PROPAGATABLE_STATUSES, REVERIFIABLE_STATUSES, ROOT_APPROVED_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from './connection.server'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from './repository-settings-sql'
 
@@ -214,6 +214,8 @@ export async function getMonorepoSiblings(monitoredAppId: number): Promise<Monor
 
 const PROPAGATABLE_STATUSES_SET = new Set<string>(PROPAGATABLE_STATUSES)
 
+const ROOT_APPROVED_STATUSES_SET = new Set<string>(ROOT_APPROVED_STATUSES)
+
 const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
 
 export async function propagateVerificationToSiblings(
@@ -225,12 +227,25 @@ export async function propagateVerificationToSiblings(
 ): Promise<number> {
   if (!hasFourEyes || !PROPAGATABLE_STATUSES_SET.has(status)) return 0
 
+  // A sibling never inherits the exact same "root" approval reason as the source deployment
+  // — it wasn't itself reviewed, it just shares the same commit. Always attribute it as
+  // verified_via_sibling instead, so the displayed status is consistent regardless of whether
+  // the sibling was caught by this instant bulk propagation or resolved later via its own,
+  // slower verification run reaching the same conclusion. Non-root statuses (e.g.
+  // approved_pr_with_unreviewed) are propagated as-is since they aren't a full approval.
+  const propagatedStatus = ROOT_APPROVED_STATUSES_SET.has(status) ? 'verified_via_sibling' : status
+
+  // Only propagate forward to siblings created after the source deployment (d.id > deploymentId,
+  // a monotonic SERIAL PK). This mirrors findRootApprovedSiblingForCommit's temporal bound
+  // (a root candidate must have existed before the deployment being verified) — without this,
+  // bulk propagation could retroactively approve an earlier-created pending sibling based on a
+  // later deployment, something independent (non-propagated) verification would reject.
   const result = await pool.query(
     `UPDATE deployments d
      SET four_eyes_status = $1
      WHERE d.commit_sha = $2
        AND d.four_eyes_status = ANY($3::text[])
-       AND d.id != $4
+       AND d.id > $4
        AND d.monitored_app_id IN (
          SELECT ar.monitored_app_id FROM application_repositories ar
          JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
@@ -254,7 +269,7 @@ export async function propagateVerificationToSiblings(
              WHERE ar4.monitored_app_id = $5 AND ar4.status = 'active' AND ar4.github_repo_id IS NOT NULL
            )
        )`,
-    [status, commitSha, PROPAGATION_TARGET_STATUSES, deploymentId, monitoredAppId],
+    [propagatedStatus, commitSha, PROPAGATION_TARGET_STATUSES, deploymentId, monitoredAppId],
   )
 
   return result.rowCount ?? 0

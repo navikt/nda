@@ -493,6 +493,20 @@ export const ManuallyApproved: Story = {
   render: (args) => renderDeploymentDetailStory(args),
 }
 
+export const VerifiedViaSibling: Story = {
+  name: 'Verifisert via søsterapp',
+  args: {
+    loaderData: {
+      ...baseLoaderData,
+      deployment: {
+        ...baseLoaderData.deployment,
+        four_eyes_status: 'verified_via_sibling',
+      },
+    },
+  },
+  render: (args) => renderDeploymentDetailStory(args),
+}
+
 export const PendingBaseline: Story = {
   name: 'Baseline: venter godkjenning (pending_baseline)',
   args: {

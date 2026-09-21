@@ -78,9 +78,15 @@ export async function getVerificationDiffsForApps(monitoredAppIds: number[]): Pr
 export async function getPreviousDeploymentForDiff(
   deploymentId: number,
   githubRepoId: string,
-): Promise<{ id: number; commit_sha: string; created_at: Date } | null> {
+): Promise<{
+  id: number
+  commit_sha: string
+  created_at: Date
+  monitored_app_id: number
+  four_eyes_status: string
+} | null> {
   const result = await pool.query(
-    `SELECT d.id, d.commit_sha, d.created_at
+    `SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
      FROM deployments d
      JOIN application_repositories ar
        ON ar.monitored_app_id = d.monitored_app_id
@@ -125,7 +131,7 @@ interface MissingApproverDeployment {
   default_branch: string | null
 }
 
-const MISSING_APPROVER_STATUS_EXCLUSIONS = `d.four_eyes_status NOT IN ('no_changes', 'baseline', 'implicitly_approved')`
+const MISSING_APPROVER_STATUS_EXCLUSIONS = `d.four_eyes_status NOT IN ('no_changes', 'verified_via_sibling', 'baseline', 'implicitly_approved')`
 
 const MISSING_APPROVER_CONDITIONS = `
   ${MISSING_APPROVER_STATUS_EXCLUSIONS}

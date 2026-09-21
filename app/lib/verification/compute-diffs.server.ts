@@ -9,6 +9,7 @@ import {
 } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
+import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
 import { buildCommitsBetweenFromCache, fetchVerificationData, getPrDataForDiff } from './fetch-data.server'
 import type { CompareData, VerificationInput } from './types'
 import { verifyDeployment } from './verify'
@@ -100,7 +101,19 @@ export async function computeVerificationDiffs(
         const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
         const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
         const previousDeployment = prevRow
-          ? { id: prevRow.id, commitSha: prevRow.commit_sha, createdAt: prevRow.created_at.toISOString() }
+          ? await preferRootApprovedSibling(
+              {
+                id: prevRow.id,
+                commitSha: prevRow.commit_sha,
+                createdAt: prevRow.created_at.toISOString(),
+                monitoredAppId: prevRow.monitored_app_id,
+                fourEyesStatus: prevRow.four_eyes_status,
+              },
+              row.commit_sha,
+              githubRepoId,
+              monitoredAppId,
+              row.id,
+            )
           : null
 
         const compareData = compareSnapshot.data as CompareData
@@ -156,6 +169,7 @@ export async function computeVerificationDiffs(
             commitOnBaseBranch: true,
             auditStartYear: row.audit_start_year,
             implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
+            monitoredAppId,
             previousDeployment,
             previousDeploymentLookupFailed,
             deployedPr,

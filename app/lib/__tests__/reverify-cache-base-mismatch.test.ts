@@ -22,6 +22,15 @@ vi.mock('~/db/application-repositories.server', () => ({
 }))
 
 vi.mock('~/lib/four-eyes-status', () => ({
+  APPROVED_STATUSES: [
+    'approved',
+    'approved_pr',
+    'implicitly_approved',
+    'manually_approved',
+    'no_changes',
+    'verified_via_sibling',
+    'baseline',
+  ],
   isProtectedStatus: vi.fn().mockReturnValue(false),
 }))
 

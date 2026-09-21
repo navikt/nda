@@ -1,18 +1,110 @@
 import { pool } from '~/db/connection.server'
-import { NON_DIFFABLE_STATUSES_SQL, UNAUTHORIZED_STATUSES_SQL } from '~/lib/four-eyes-status'
+import {
+  NON_DIFFABLE_STATUSES_SQL,
+  ROOT_APPROVED_STATUSES_SQL,
+  UNAUTHORIZED_STATUSES_SQL,
+} from '~/lib/four-eyes-status'
 import { getCommitAncestryStatus, getGitHubRateLimitRemaining } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
+
+export interface RootApprovedSibling {
+  id: number
+  monitoredAppId: number
+  fourEyesStatus: string
+}
+
+// Finds the earliest deployment in this repo that itself holds a root-approved status
+// (not verified_via_sibling) for the same commit. This may belong to ANY app sharing the
+// repo — including the app currently being verified, e.g. when that app deployed and had
+// this exact commit approved earlier, and a sibling app has since re-deployed the same
+// commit (making the sibling the nearest previousDeployment candidate even though the
+// current app's own earlier deployment is the true, more relevant root). Bounded to one
+// repo's apps, so this is a cheap single-hop lookup rather than a chain walk.
+// beforeDeploymentId excludes candidates created after the deployment currently being verified,
+// so a later deployment can never retroactively become the "root" for an earlier one (deployment
+// ids are a monotonic SERIAL PK, so this is equivalent to bounding on insertion order/created_at).
+export async function findRootApprovedSiblingForCommit(
+  commitSha: string,
+  githubRepoId: string,
+  beforeDeploymentId: number,
+): Promise<RootApprovedSibling | null> {
+  const result = await pool.query(
+    `SELECT d.id, d.monitored_app_id, d.four_eyes_status
+     FROM deployments d
+     JOIN application_repositories ar
+       ON ar.monitored_app_id = d.monitored_app_id
+       AND ar.github_owner = d.detected_github_owner
+       AND ar.github_repo_name = d.detected_github_repo_name
+       AND ar.status IN ('active', 'historical')
+     WHERE ar.github_repo_id = $1
+       AND d.commit_sha = $2
+       AND d.id <= $3
+       AND d.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
+     ORDER BY d.created_at ASC, d.id ASC
+     LIMIT 1`,
+    [githubRepoId, commitSha, beforeDeploymentId],
+  )
+
+  const row = result.rows[0]
+  if (!row) return null
+
+  return {
+    id: row.id,
+    monitoredAppId: row.monitored_app_id,
+    fourEyesStatus: row.four_eyes_status,
+  }
+}
+
+// Re-attributes a same-commit, different-app previousDeployment candidate to the true
+// root-approved deployment when one exists and differs, so a chain A -> B -> C is attributed
+// directly to A instead of B. The root may turn out to belong to the current app itself (a
+// same-app redeploy of a commit it already had approved) — in that case the caller's
+// monitoredAppId now matches the returned previousDeployment, so downstream logic correctly
+// treats this as an ordinary same-app "no_changes" redeploy rather than sibling verification.
+export async function preferRootApprovedSibling<
+  T extends { id: number; commitSha: string; monitoredAppId?: number; fourEyesStatus?: string },
+>(
+  previousDeployment: T | null,
+  commitSha: string,
+  githubRepoId: string | null,
+  monitoredAppId: number,
+  currentDeploymentId: number,
+): Promise<T | null> {
+  if (
+    !previousDeployment ||
+    !githubRepoId ||
+    previousDeployment.commitSha !== commitSha ||
+    previousDeployment.monitoredAppId == null ||
+    previousDeployment.monitoredAppId === monitoredAppId
+  ) {
+    return previousDeployment
+  }
+
+  const root = await findRootApprovedSiblingForCommit(commitSha, githubRepoId, currentDeploymentId)
+  if (!root || root.id === previousDeployment.id) return previousDeployment
+
+  return {
+    ...previousDeployment,
+    id: root.id,
+    monitoredAppId: root.monitoredAppId,
+    fourEyesStatus: root.fourEyesStatus,
+  }
+}
 
 export interface PreviousDeploymentResult {
   id: number
   commitSha: string
   createdAt: string
+  monitoredAppId: number
+  fourEyesStatus: string
 }
 
 interface PreviousDeploymentCandidate {
   id: number
   commitSha: string
   createdAt: Date
+  monitoredAppId: number
+  fourEyesStatus: string
 }
 
 const CANDIDATE_PAGE_SIZE = 20
@@ -115,7 +207,7 @@ async function queryCandidates(
   const offsetParamIndex = params.length
 
   const query = `
-    SELECT d.id, d.commit_sha, d.created_at
+    SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
     FROM deployments d
     JOIN application_repositories ar
       ON ar.monitored_app_id = d.monitored_app_id
@@ -136,6 +228,8 @@ async function queryCandidates(
     id: row.id,
     commitSha: row.commit_sha,
     createdAt: row.created_at,
+    monitoredAppId: row.monitored_app_id,
+    fourEyesStatus: row.four_eyes_status,
   }))
 }
 
@@ -178,7 +272,13 @@ async function findAncestorCandidate(
     }
 
     if (status === 'identical' || status === 'ahead') {
-      return { id: candidate.id, commitSha: candidate.commitSha, createdAt: candidate.createdAt.toISOString() }
+      return {
+        id: candidate.id,
+        commitSha: candidate.commitSha,
+        createdAt: candidate.createdAt.toISOString(),
+        monitoredAppId: candidate.monitoredAppId,
+        fourEyesStatus: candidate.fourEyesStatus,
+      }
     }
 
     if (status === 'diverged') {

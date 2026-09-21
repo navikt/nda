@@ -192,6 +192,162 @@ describe('verifyDeployment - Case 2a: no_changes (same commit SHA)', () => {
   })
 })
 
+describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, different monitored app)', () => {
+  it('should return verified_via_sibling when the identical-commit previous deployment belongs to a different app and is itself approved', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+      },
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('verified_via_sibling')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.method).toBe('verified_via_sibling')
+    expect(result.approvalDetails.reason).toContain('sibling deployment #999')
+  })
+
+  it('should NOT return verified_via_sibling when the sibling deployment is not itself approved (e.g. pending)', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'pending',
+      },
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.method).toBeNull()
+    expect(result.approvalDetails.reason).toContain('999')
+  })
+
+  it('should NOT return verified_via_sibling when the sibling deployment status is unknown (missing fourEyesStatus)', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+      },
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+  })
+
+  it('should NOT accept verified_via_sibling itself as an approval source (only a genuine root-approved status counts)', () => {
+    // preferRootApprovedSibling re-attributes to the true root when one exists; if the
+    // candidate here still carries 'verified_via_sibling', no root was found for it, and
+    // accepting it anyway would let a non-root, derived sibling approve this deployment.
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'verified_via_sibling',
+      },
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.reason).toContain('999')
+  })
+
+  it('should still return no_changes when the identical-commit previous deployment belongs to the same app', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 1,
+      },
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('no_changes')
+    expect(result.approvalDetails.method).toBe('no_changes')
+  })
+
+  it('should default to no_changes when monitoredAppId is not provided on either side (backwards compatible)', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+      },
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('no_changes')
+  })
+
+  it('should not blindly approve verified_via_sibling when the underlying PR was self-approved', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+      },
+      commitsBetween: [],
+      deployedPr: {
+        number: 833,
+        url: 'https://github.com/navikt/test-app/pull/833',
+        metadata: makePrMetadata({
+          author: { username: 'glad-fjord' },
+          mergedBy: { username: 'glad-fjord' },
+        }),
+        reviews: [makePrReview({ username: 'glad-fjord', submittedAt: '2026-02-27T13:00:00Z' })],
+        commits: [
+          makePrCommit({ sha: 'commit-a', authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T09:00:00Z' }),
+          makePrCommit({ sha: 'commit-b', authorUsername: 'glad-fjord', authorDate: '2026-02-27T12:00:00Z' }),
+        ],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+    expect(result.hasFourEyes).toBe(false)
+  })
+})
+
 describe('verifyDeployment - Case 2b: zero-commit handling', () => {
   it('should return no_changes when compare.status=identical (explicit match)', () => {
     const input = makeBaseInput({
@@ -542,6 +698,35 @@ describe('verifyDeployment - GitHub API and access failures', () => {
     expect(result.status).toBe('no_changes')
     expect(result.approvalDetails.reason).toContain('retry/duplicate')
     expect(result.approvalDetails.reason).not.toContain('Superseded')
+  })
+
+  it('should return no_changes (not verified_via_sibling) for an ancestor/superseded deploy even when the nearby-approved candidate belongs to a different app', () => {
+    // Regression: previousDeployment here belongs to a different monitoredAppId, but
+    // input.commitSha !== previousDeployment.commitSha (this is the ancestor/superseded
+    // scenario, not an identical-commit sibling). isSiblingVerification must not fire here.
+    const input = makeBaseInput({
+      commitSha: 'ec3489c',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 10450,
+        commitSha: 'ab169e8',
+        createdAt: '2026-02-19T07:46:34Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+      },
+      commitsBetween: [],
+      nearbyApprovedDeploy: {
+        deploymentId: 10450,
+        commitSha: 'ab169e8',
+        status: 'approved',
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('no_changes')
+    expect(result.approvalDetails.method).toBe('no_changes')
+    expect(result.approvalDetails.reason).toContain('Superseded deploy')
   })
 })
 

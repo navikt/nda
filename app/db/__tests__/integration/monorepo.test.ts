@@ -465,7 +465,7 @@ describe('propagateVerificationToSiblings', () => {
   const owner = 'navikt'
   const repo = 'monorepo-example'
 
-  it('should propagate approved status to sibling deployments with same commit SHA in the same repo', async () => {
+  it('should propagate approved status to sibling deployments as verified_via_sibling (root attribution)', async () => {
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
       monitoredAppId: app1,
@@ -505,7 +505,56 @@ describe('propagateVerificationToSiblings', () => {
     expect(propagated).toBe(1)
 
     const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [dep2])
-    expect(rows[0].four_eyes_status).toBe('approved')
+    expect(rows[0].four_eyes_status).toBe('verified_via_sibling')
+  })
+
+  it('should NOT retroactively approve a pending sibling that was created before the source deployment', async () => {
+    // Regression: findRootApprovedSiblingForCommit only accepts root candidates created before
+    // (lower id than) the deployment being verified. Bulk propagation must respect the same
+    // temporal rule, otherwise a later-approved deployment could retroactively approve an
+    // earlier-created pending sibling — something independent verification would reject.
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app1,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app2,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+
+    const commitSha = 'abc123def456earlier'
+    // The pending sibling is created FIRST (lower id) ...
+    const earlierPendingSibling = await seedDeployment(pool, {
+      monitoredAppId: app2,
+      teamSlug: 'team-a',
+      environment: 'prod-fss',
+      commitSha,
+      fourEyesStatus: 'pending',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    // ... and the source is approved AFTER (higher id).
+    const laterSource = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha,
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const propagated = await propagateVerificationToSiblings(laterSource, 'approved', commitSha, app1)
+    expect(propagated).toBe(0)
+
+    const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [earlierPendingSibling])
+    expect(rows[0].four_eyes_status).toBe('pending')
   })
 
   it('should NOT propagate negative statuses', async () => {
@@ -724,7 +773,7 @@ describe('propagateVerificationToSiblings', () => {
     expect(rows[0].four_eyes_status).toBe('pending')
   })
 
-  it('should propagate manually_approved status', async () => {
+  it('should propagate manually_approved status as verified_via_sibling (root attribution)', async () => {
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
       monitoredAppId: app1,
@@ -764,7 +813,7 @@ describe('propagateVerificationToSiblings', () => {
     expect(propagated).toBe(1)
 
     const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [dep2])
-    expect(rows[0].four_eyes_status).toBe('manually_approved')
+    expect(rows[0].four_eyes_status).toBe('verified_via_sibling')
   })
 
   it('should propagate to multiple siblings at once, including cross-environment ones', async () => {
@@ -823,9 +872,9 @@ describe('propagateVerificationToSiblings', () => {
     expect(propagated).toBe(2)
 
     const { rows } = await pool.query(
-      "SELECT id, four_eyes_status FROM deployments WHERE four_eyes_status = 'approved' ORDER BY id",
+      "SELECT id, four_eyes_status FROM deployments WHERE four_eyes_status = 'verified_via_sibling' ORDER BY id",
     )
-    expect(rows).toHaveLength(3)
+    expect(rows).toHaveLength(2)
   })
 
   it('should NOT propagate to a different github_repo_id even with matching owner/repo string', async () => {
@@ -908,11 +957,53 @@ describe('propagateVerificationToSiblings', () => {
     expect(propagated).toBe(0)
   })
 
-  it.each([
-    { status: 'implicitly_approved', label: 'implicitly_approved' },
-    { status: 'no_changes', label: 'no_changes' },
-    { status: 'approved_pr_with_unreviewed', label: 'approved_pr_with_unreviewed' },
-  ])('should propagate $label status', async ({ status }) => {
+  it.each([{ status: 'implicitly_approved' }, { status: 'no_changes' }])(
+    'should propagate $status status to siblings as verified_via_sibling (root attribution)',
+    async ({ status }) => {
+      const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+      await seedApplicationRepository(pool, {
+        monitoredAppId: app1,
+        githubOwner: owner,
+        githubRepo: repo,
+        githubRepoId: '1001',
+      })
+      const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+      await seedApplicationRepository(pool, {
+        monitoredAppId: app2,
+        githubOwner: owner,
+        githubRepo: repo,
+        githubRepoId: '1001',
+      })
+
+      const commitSha = 'abc123'
+      const dep1 = await seedDeployment(pool, {
+        monitoredAppId: app1,
+        teamSlug: 'team-a',
+        environment: 'prod-gcp',
+        commitSha,
+        fourEyesStatus: status,
+        githubOwner: owner,
+        githubRepo: repo,
+      })
+      const dep2 = await seedDeployment(pool, {
+        monitoredAppId: app2,
+        teamSlug: 'team-a',
+        environment: 'prod-fss',
+        commitSha,
+        fourEyesStatus: 'pending',
+        githubOwner: owner,
+        githubRepo: repo,
+      })
+
+      const propagated = await propagateVerificationToSiblings(dep1, status, commitSha, app1)
+      expect(propagated).toBe(1)
+
+      const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [dep2])
+      expect(rows[0].four_eyes_status).toBe('verified_via_sibling')
+    },
+  )
+
+  it('should propagate approved_pr_with_unreviewed status as-is (not a full approval, must not become verified_via_sibling)', async () => {
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
       monitoredAppId: app1,
@@ -934,7 +1025,7 @@ describe('propagateVerificationToSiblings', () => {
       teamSlug: 'team-a',
       environment: 'prod-gcp',
       commitSha,
-      fourEyesStatus: status,
+      fourEyesStatus: 'approved_pr_with_unreviewed',
       githubOwner: owner,
       githubRepo: repo,
     })
@@ -948,11 +1039,11 @@ describe('propagateVerificationToSiblings', () => {
       githubRepo: repo,
     })
 
-    const propagated = await propagateVerificationToSiblings(dep1, status, commitSha, app1)
+    const propagated = await propagateVerificationToSiblings(dep1, 'approved_pr_with_unreviewed', commitSha, app1)
     expect(propagated).toBe(1)
 
     const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [dep2])
-    expect(rows[0].four_eyes_status).toBe(status)
+    expect(rows[0].four_eyes_status).toBe('approved_pr_with_unreviewed')
   })
 
   it.each([

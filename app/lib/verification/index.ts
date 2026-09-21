@@ -9,6 +9,7 @@ import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { getMergedPullRequestsInWindow } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
+import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
 import { buildCommitsBetweenFromCache, fetchVerificationData, getPrDataForDiff } from './fetch-data.server'
 import { storeVerificationResult, updateDeploymentVerification } from './store-data.server'
 import type { CompareData, VerificationInput, VerificationResult } from './types'
@@ -544,7 +545,19 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !githubRepoId
   const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
   const previousDeployment = prevRow
-    ? { id: prevRow.id, commitSha: prevRow.commit_sha, createdAt: prevRow.created_at.toISOString() }
+    ? await preferRootApprovedSibling(
+        {
+          id: prevRow.id,
+          commitSha: prevRow.commit_sha,
+          createdAt: prevRow.created_at.toISOString(),
+          monitoredAppId: prevRow.monitored_app_id,
+          fourEyesStatus: prevRow.four_eyes_status,
+        },
+        dep.commit_sha,
+        githubRepoId,
+        dep.monitored_app_id,
+        dep.id,
+      )
     : null
 
   let input: VerificationInput
@@ -591,6 +604,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       baseBranch,
       auditStartYear: dep.audit_start_year,
       implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
+      monitoredAppId: dep.monitored_app_id,
       previousDeployment,
       previousDeploymentLookupFailed,
       deployedPr,

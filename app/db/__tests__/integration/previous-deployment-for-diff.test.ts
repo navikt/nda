@@ -286,6 +286,7 @@ describe('getPreviousDeploymentForDiff', () => {
       environment: 'prod-gcp',
       commitSha: 'sibsha11aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       createdAt: new Date('2026-01-01T10:00:00Z'),
+      fourEyesStatus: 'approved',
       githubOwner: owner,
       githubRepo: repo,
     })
@@ -301,5 +302,7 @@ describe('getPreviousDeploymentForDiff', () => {
 
     const prev = await getPreviousDeploymentForDiff(actingDeploymentId, '9001')
     expect(prev?.id).toBe(siblingDeploymentId)
+    expect(prev?.monitored_app_id).toBe(siblingAppId)
+    expect(prev?.four_eyes_status).toBe('approved')
   })
 })

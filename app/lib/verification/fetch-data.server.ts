@@ -7,7 +7,7 @@ import { buildBranchMismatch } from './branch-mismatch'
 import { fetchCommitChecks, getCachedCommitChecks } from './fetch-data/commit-checks.server'
 import { fetchCommitsBetween } from './fetch-data/commits-between.server'
 import { type FetchOptions, fetchDeployedPrData } from './fetch-data/pr-data.server'
-import { getPreviousDeployment } from './fetch-data/previous-deployment.server'
+import { getPreviousDeployment, preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
 import { fetchWorkflowTriggerConfig } from './fetch-data/workflow-triggers.server'
 import type { RepositoryStatus } from './types'
 import {
@@ -55,7 +55,9 @@ export async function fetchVerificationData(
     commitSha,
   )
   const previousDeploymentRateLimited = previousDeploymentResult === 'rate_limited'
-  const previousDeployment = previousDeploymentRateLimited ? null : previousDeploymentResult
+  const previousDeployment = previousDeploymentRateLimited
+    ? null
+    : await preferRootApprovedSibling(previousDeploymentResult, commitSha, githubRepoId, monitoredAppId, deploymentId)
   const previousDeploymentLookupFailed =
     (repositoryStatus === 'active' && !githubRepoId) || previousDeploymentRateLimited
 
@@ -213,6 +215,7 @@ export async function fetchVerificationData(
     detectedTitle,
     auditStartYear: appSettings.auditStartYear,
     implicitApprovalSettings: appSettings.implicitApprovalSettings,
+    monitoredAppId,
     previousDeployment,
     previousDeploymentLookupFailed,
     previousDeploymentRateLimited,
