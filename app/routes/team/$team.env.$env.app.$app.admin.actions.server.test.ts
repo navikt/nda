@@ -1,20 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireUser, mockCanAccessAppAdmin, mockGetSyncJobById, mockCancelSyncJob } = vi.hoisted(() => ({
+const { mockRequireUser, mockCanAccessAppAdmin, mockGetSyncJobById } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockCanAccessAppAdmin: vi.fn(),
   mockGetSyncJobById: vi.fn(),
-  mockCancelSyncJob: vi.fn(),
-}))
-
-const { mockRunWithJobContext, mockFetchVerificationDataForAllDeployments, mockReleaseSyncLock } = vi.hoisted(() => ({
-  mockRunWithJobContext: vi.fn(
-    async (_jobId: number, _jobType: string, _appId: number, _debug: boolean, fn: () => Promise<void>) => {
-      await fn()
-    },
-  ),
-  mockFetchVerificationDataForAllDeployments: vi.fn(),
-  mockReleaseSyncLock: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -49,13 +38,10 @@ vi.mock('~/db/report-jobs.server', () => ({
 
 vi.mock('~/db/sync-jobs.server', () => ({
   acquireSyncLock: vi.fn(),
-  cancelSyncJob: mockCancelSyncJob,
-  forceReleaseSyncJob: vi.fn(),
   getLatestSyncJob: vi.fn(),
   getSyncJobById: mockGetSyncJobById,
-  getSyncJobOptions: vi.fn().mockResolvedValue({}),
   heartbeatSyncJob: vi.fn(),
-  releaseSyncLock: mockReleaseSyncLock,
+  releaseSyncLock: vi.fn(),
   SYNC_INTERVAL_MS: 60000,
   updateSyncJobProgress: vi.fn(),
 }))
@@ -79,7 +65,11 @@ vi.mock('~/lib/form-validators', () => ({
 
 vi.mock('~/lib/logger.server', () => ({
   logger: { error: vi.fn(), info: vi.fn() },
-  runWithJobContext: mockRunWithJobContext,
+  runWithJobContext: vi.fn(
+    async (_jobId: number, _jobType: string, _appId: number, _debug: boolean, fn: () => Promise<void>) => {
+      await fn()
+    },
+  ),
 }))
 
 vi.mock('~/lib/report-job-processor.server', () => ({
@@ -94,10 +84,6 @@ vi.mock('~/lib/user-display', () => ({
   serializeUserLookups: vi.fn(),
 }))
 
-vi.mock('~/lib/verification', () => ({
-  fetchVerificationDataForAllDeployments: mockFetchVerificationDataForAllDeployments,
-}))
-
 vi.mock('~/lib/verification/compute-diffs.server', () => ({
   computeVerificationDiffs: vi.fn(),
 }))
@@ -106,10 +92,7 @@ vi.mock('~/lib/verification/types', () => ({
   isImplicitApprovalMode: vi.fn(),
 }))
 
-import { acquireSyncLock } from '~/db/sync-jobs.server'
-import { action, processFetchDataJobAsync } from './$team.env.$env.app.$app.admin.actions.server'
-
-const mockAcquireSyncLock = vi.mocked(acquireSyncLock)
+import { action } from './$team.env.$env.app.$app.admin.actions.server'
 
 function makeRequest(formData: FormData): Request {
   return new Request('http://localhost/team/pensjondeployer/env/prod-fss/app/pensjon-pen/admin', {
@@ -124,12 +107,11 @@ describe('admin actions - JOB_ID_ACTIONS IDOR protection', () => {
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
     mockCanAccessAppAdmin.mockResolvedValue(true)
     mockGetSyncJobById.mockResolvedValue({ id: 5, monitored_app_id: 1, status: 'completed' })
-    mockCancelSyncJob.mockResolvedValue(true)
   })
 
   it("authorizes using the job's real owning app, ignoring a spoofed app_id form field", async () => {
     const formData = new FormData()
-    formData.set('action', 'cancel_fetch_job')
+    formData.set('action', 'check_compute_diffs_status')
     formData.set('job_id', '5')
     formData.set('app_id', '999')
 
@@ -143,20 +125,19 @@ describe('admin actions - JOB_ID_ACTIONS IDOR protection', () => {
     mockCanAccessAppAdmin.mockResolvedValue(false)
 
     const formData = new FormData()
-    formData.set('action', 'cancel_fetch_job')
+    formData.set('action', 'check_compute_diffs_status')
     formData.set('job_id', '5')
 
     const result = await action({ request: makeRequest(formData), params: {} } as never)
 
     expect(result).toEqual({ error: 'Du har ikke tilgang til denne jobben' })
-    expect(mockCancelSyncJob).not.toHaveBeenCalled()
   })
 
   it('rejects when the job does not exist', async () => {
     mockGetSyncJobById.mockResolvedValue(null)
 
     const formData = new FormData()
-    formData.set('action', 'cancel_fetch_job')
+    formData.set('action', 'check_compute_diffs_status')
     formData.set('job_id', '404')
 
     const result = await action({ request: makeRequest(formData), params: {} } as never)
@@ -167,34 +148,12 @@ describe('admin actions - JOB_ID_ACTIONS IDOR protection', () => {
 
   it('rejects when job_id is missing or non-numeric', async () => {
     const formData = new FormData()
-    formData.set('action', 'cancel_fetch_job')
+    formData.set('action', 'check_compute_diffs_status')
 
     const result = await action({ request: makeRequest(formData), params: {} } as never)
 
     expect(result).toEqual({ error: 'Mangler eller ugyldig job_id' })
     expect(mockGetSyncJobById).not.toHaveBeenCalled()
-  })
-
-  it("proceeds with the action when authorized for the job's owning app", async () => {
-    const formData = new FormData()
-    formData.set('action', 'cancel_fetch_job')
-    formData.set('job_id', '5')
-
-    const result = await action({ request: makeRequest(formData), params: {} } as never)
-
-    expect(mockCancelSyncJob).toHaveBeenCalledWith(5)
-    expect(result).toEqual({ success: 'Jobben ble avbrutt' })
-  })
-
-  it('reuses the job fetched during authorization for check_fetch_job_status instead of refetching it', async () => {
-    const formData = new FormData()
-    formData.set('action', 'check_fetch_job_status')
-    formData.set('job_id', '5')
-
-    const result = await action({ request: makeRequest(formData), params: {} } as never)
-
-    expect(mockGetSyncJobById).toHaveBeenCalledTimes(1)
-    expect(result).toEqual({ fetchJobStatus: { id: 5, monitored_app_id: 1, status: 'completed' } })
   })
 
   it('reuses the job fetched during authorization for check_compute_diffs_status instead of refetching it', async () => {
@@ -206,84 +165,5 @@ describe('admin actions - JOB_ID_ACTIONS IDOR protection', () => {
 
     expect(mockGetSyncJobById).toHaveBeenCalledTimes(1)
     expect(result).toEqual({ computeDiffsJobStatus: { id: 5, monitored_app_id: 1, status: 'completed' } })
-  })
-})
-
-describe('processFetchDataJobAsync', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockRunWithJobContext.mockImplementation(
-      async (_jobId: number, _jobType: string, _appId: number, _debug: boolean, fn: () => Promise<void>) => {
-        await fn()
-      },
-    )
-    mockGetSyncJobById.mockResolvedValue({ id: 5, monitored_app_id: 1, status: 'running' })
-  })
-
-  it('releases the sync lock as "partial" (not "completed") when the bulk fetch reports rateLimited', async () => {
-    mockFetchVerificationDataForAllDeployments.mockResolvedValue({
-      total: 10,
-      processed: 3,
-      skipped: 0,
-      fetched: 3,
-      derivedFromRaw: 0,
-      workflowTriggersFetched: 0,
-      errors: 0,
-      errorDetails: [],
-      rateLimited: true,
-    })
-
-    await processFetchDataJobAsync(5, 1)
-
-    expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'partial', expect.objectContaining({ rateLimited: true }))
-  })
-
-  it('releases the sync lock as "completed" when the bulk fetch finishes without hitting the rate limit', async () => {
-    mockFetchVerificationDataForAllDeployments.mockResolvedValue({
-      total: 10,
-      processed: 10,
-      skipped: 0,
-      fetched: 10,
-      derivedFromRaw: 0,
-      workflowTriggersFetched: 0,
-      errors: 0,
-      errorDetails: [],
-    })
-
-    await processFetchDataJobAsync(5, 1)
-
-    expect(mockReleaseSyncLock).toHaveBeenCalledWith(5, 'completed', expect.anything())
-  })
-})
-
-describe('fetch_verification_data action', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
-    mockCanAccessAppAdmin.mockResolvedValue(true)
-  })
-
-  it('reports a distinct error when blocked by a running repository-scoped job', async () => {
-    mockAcquireSyncLock.mockResolvedValue('repository_conflict')
-
-    const formData = new FormData()
-    formData.set('action', 'fetch_verification_data')
-    formData.set('app_id', '1')
-
-    const result = await action({ request: makeRequest(formData), params: {} } as never)
-
-    expect(result).toEqual({ error: 'En datahenting kjører allerede for repositoryet denne appen tilhører' })
-  })
-
-  it("reports the app-scoped error when blocked by the app's own lock or cooldown", async () => {
-    mockAcquireSyncLock.mockResolvedValue(null)
-
-    const formData = new FormData()
-    formData.set('action', 'fetch_verification_data')
-    formData.set('app_id', '1')
-
-    const result = await action({ request: makeRequest(formData), params: {} } as never)
-
-    expect(result).toEqual({ error: 'En datahenting kjører allerede for denne appen' })
   })
 })

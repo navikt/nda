@@ -8,16 +8,12 @@ import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
 import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { getAppConfigAuditLog } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
-import { getGitHubDataStatsForApp } from '~/db/github-data.server'
 import { getEffectiveSettingsForApp, getRepositoryById } from '~/db/repositories.server'
-import type { SyncJob } from '~/db/sync-job-types'
-import { getLatestSyncJob } from '~/db/sync-jobs.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
 import { requireAppAdminAccess, resolveRepositoryAdminAccess } from '~/lib/authorization.server'
 import type { UserLookupMap } from '~/lib/user-display'
 import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
 import { DeployNotificationSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DeployNotificationSettings'
-import { FetchVerificationDataSection } from '~/routes/team/$team.env.$env.app.$app.admin/FetchVerificationDataSection'
 import { RecentConfigChanges } from '~/routes/team/$team.env.$env.app.$app.admin/RecentConfigChanges'
 import { ReminderSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ReminderSettings'
 import { Reverifisering } from '~/routes/team/$team.env.$env.app.$app.admin/Reverifisering'
@@ -36,11 +32,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const isProdApp = app.environment_name.startsWith('prod-')
 
-  const [effectiveSettings, recentConfigChanges, auditReports, latestFetchJob] = await Promise.all([
+  const [effectiveSettings, recentConfigChanges, auditReports] = await Promise.all([
     getEffectiveSettingsForApp(app.id),
     getAppConfigAuditLog(app.id, { limit: 10 }),
     getAuditReportsForAppAdmin(app.id),
-    getLatestSyncJob(app.id, 'fetch_verification_data'),
   ])
   const auditStartYear = effectiveSettings.auditStartYear
   const repositoryId = effectiveSettings.repositoryId
@@ -58,17 +53,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       : null
   const hasRepository = repositoryRow !== null
 
-  const [githubDataStats, userMappings] = await Promise.all([
-    getGitHubDataStatsForApp(app.id, auditStartYear),
-    (async () => {
-      const referencedNavIdents = Array.from(
-        new Set(
-          auditReports.flatMap((report) => [report.archived_by, report.superseded_by]).filter((id) => id != null),
-        ),
-      )
-      return getUsersByIdentifiers(referencedNavIdents)
-    })(),
-  ])
+  const referencedNavIdents = Array.from(
+    new Set(auditReports.flatMap((report) => [report.archived_by, report.superseded_by]).filter((id) => id != null)),
+  )
+  const userMappings = await getUsersByIdentifiers(referencedNavIdents)
 
   const displayNameMap: Record<string, string> = Object.fromEntries(
     Array.from(userMappings.entries())
@@ -86,8 +74,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     recentConfigChanges,
     auditReports,
     isProdApp,
-    latestFetchJob,
-    githubDataStats,
     displayNameMap,
   }
 }
@@ -103,8 +89,6 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     recentConfigChanges,
     auditReports,
     isProdApp,
-    latestFetchJob,
-    githubDataStats,
     displayNameMap,
   } = loaderData
   const navigation = useNavigation()
@@ -120,49 +104,11 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     ? ((jobFetcher.data?.status as 'pending' | 'processing' | 'completed' | 'failed' | null) ?? 'pending')
     : null
 
-  const [fetchJobId, setFetchJobId] = useState<number | null>(null)
-  const [fetchJobStatus, setFetchJobStatus] = useState<SyncJob | null>(latestFetchJob)
-
   const appUrl = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 
   const readinessData = actionData?.readiness
   const readinessPeriodKey = actionData?.readinessPeriodKey as string | undefined
   const readinessUserMappings = (actionData?.userMappings as UserLookupMap) ?? {}
-
-  useEffect(() => {
-    if (actionData?.fetchJobStarted) {
-      setFetchJobId(actionData.fetchJobStarted)
-    }
-  }, [actionData?.fetchJobStarted])
-
-  useEffect(() => {
-    if (actionData?.fetchJobStatus) {
-      setFetchJobStatus(actionData.fetchJobStatus)
-    }
-  }, [actionData?.fetchJobStatus])
-
-  useEffect(() => {
-    if (!fetchJobId) return
-    if (
-      fetchJobStatus?.status === 'completed' ||
-      fetchJobStatus?.status === 'partial' ||
-      fetchJobStatus?.status === 'failed' ||
-      fetchJobStatus?.status === 'cancelled'
-    )
-      return
-
-    const interval = setInterval(() => {
-      revalidator.revalidate()
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [fetchJobId, fetchJobStatus?.status, revalidator])
-
-  useEffect(() => {
-    if (latestFetchJob) {
-      setFetchJobStatus(latestFetchJob)
-    }
-  }, [latestFetchJob])
 
   useEffect(() => {
     if (actionData?.jobStarted) {
@@ -318,13 +264,6 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
       <DeployNotificationSettings app={app} />
 
       <ReminderSettings app={app} />
-
-      <FetchVerificationDataSection
-        app={app}
-        auditStartYear={auditStartYear}
-        githubDataStats={githubDataStats}
-        fetchJobStatus={fetchJobStatus}
-      />
 
       <Reverifisering app={app} />
 
