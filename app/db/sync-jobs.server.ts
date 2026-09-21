@@ -433,6 +433,35 @@ export async function getSyncJobsForApp(
   return result.rows
 }
 
+export async function getSyncJobsForRepository(
+  repositoryId: number,
+  options?: { limit?: number; jobType?: SyncJobType },
+): Promise<SyncJob[]> {
+  const conditions = ['repository_id = $1']
+  const params: (string | number)[] = [repositoryId]
+  let paramIndex = 2
+
+  if (options?.jobType) {
+    conditions.push(`job_type = $${paramIndex}`)
+    params.push(options.jobType)
+    paramIndex++
+  }
+
+  const limit = options?.limit ?? 100
+  params.push(limit)
+
+  const result = await pool.query(
+    `SELECT id, job_type, monitored_app_id, repository_id, status, started_at, completed_at,
+            locked_by, lock_expires_at, result, error, options, created_at
+     FROM sync_jobs
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY created_at DESC
+     LIMIT $${paramIndex}`,
+    params,
+  )
+  return result.rows
+}
+
 export async function getObservedSyncIntervalMs(
   appId: number,
   jobType: SyncJobType,

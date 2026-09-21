@@ -92,21 +92,21 @@ export async function getStatusHistory(deploymentId: number): Promise<StatusTran
   return result.rows
 }
 
-export async function getDeploymentsWithStatusChanges(monitoredAppId: number): Promise<
-  Array<{
-    deployment_id: number
-    created_at: Date
-    commit_sha: string | null
-    four_eyes_status: string
-    github_pr_number: number | null
-    title: string | null
-    transition_count: number
-    latest_change: Date
-    latest_from_status: string | null
-    latest_to_status: string
-    latest_change_source: string
-  }>
-> {
+interface DeploymentStatusChangeRow {
+  deployment_id: number
+  created_at: Date
+  commit_sha: string | null
+  four_eyes_status: string
+  github_pr_number: number | null
+  title: string | null
+  transition_count: number
+  latest_change: Date
+  latest_from_status: string | null
+  latest_to_status: string
+  latest_change_source: string
+}
+
+export async function getDeploymentsWithStatusChanges(monitoredAppId: number): Promise<DeploymentStatusChangeRow[]> {
   const result = await pool.query(
     `SELECT 
        d.id as deployment_id,
@@ -130,6 +130,59 @@ export async function getDeploymentsWithStatusChanges(monitoredAppId: number): P
      HAVING COUNT(h.id) > 1
      ORDER BY MAX(h.created_at) DESC`,
     [monitoredAppId],
+  )
+  return result.rows
+}
+
+export interface RepositoryDeploymentStatusChange extends DeploymentStatusChangeRow {
+  team_slug: string
+  app_name: string
+  environment_name: string
+}
+
+export async function getDeploymentsWithStatusChangesForApps(
+  monitoredAppIds: number[],
+  repositoryId: number,
+): Promise<RepositoryDeploymentStatusChange[]> {
+  if (monitoredAppIds.length === 0) return []
+  const result = await pool.query<RepositoryDeploymentStatusChange>(
+    `SELECT 
+       d.id as deployment_id,
+       d.created_at,
+       d.commit_sha,
+       d.four_eyes_status,
+       d.github_pr_number,
+       d.title,
+       ma.team_slug,
+       ma.app_name,
+       ma.environment_name,
+       COUNT(h.id)::int as transition_count,
+       MAX(h.created_at) as latest_change,
+       (SELECT from_status FROM deployment_status_history 
+        WHERE deployment_id = d.id ORDER BY created_at DESC, id DESC LIMIT 1) as latest_from_status,
+       (SELECT to_status FROM deployment_status_history 
+        WHERE deployment_id = d.id ORDER BY created_at DESC, id DESC LIMIT 1) as latest_to_status,
+       (SELECT change_source FROM deployment_status_history 
+        WHERE deployment_id = d.id ORDER BY created_at DESC, id DESC LIMIT 1) as latest_change_source
+     FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     INNER JOIN deployment_status_history h ON h.deployment_id = d.id
+     WHERE d.monitored_app_id = ANY($1)
+       AND d.detected_github_owner IS NOT NULL
+       AND d.detected_github_repo_name IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM application_repositories ar
+         JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+         WHERE ar.monitored_app_id = d.monitored_app_id
+           AND ar.github_owner = d.detected_github_owner
+           AND ar.github_repo_name = d.detected_github_repo_name
+           AND ar.status IN ('active', 'historical')
+           AND r.id = $2
+       )
+     GROUP BY d.id, ma.team_slug, ma.app_name, ma.environment_name
+     HAVING COUNT(h.id) > 1
+     ORDER BY MAX(h.created_at) DESC`,
+    [monitoredAppIds, repositoryId],
   )
   return result.rows
 }

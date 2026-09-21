@@ -619,8 +619,10 @@ export {
   getAppDeploymentStatsBatch,
   getPendingVerificationCount,
 } from './deployments/stats.server'
+export type { RepositoryDeploymentStatusChange } from './deployments/status-history.server'
 export {
   getDeploymentsWithStatusChanges,
+  getDeploymentsWithStatusChangesForApps,
   getStatusHistory,
   logStatusTransition,
   recordBaselineApproval,

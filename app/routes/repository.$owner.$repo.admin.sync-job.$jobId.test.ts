@@ -95,5 +95,6 @@ describe('repository sync-job detail loader - IDOR protection', () => {
     } as never)
 
     expect(result.job).toEqual(expect.objectContaining({ id: 5, repository_id: 5 }))
+    expect(result.repositoryContext).toEqual({ id: 5, githubOwner: 'navikt', githubRepoName: 'some-repo' })
   })
 })

@@ -143,6 +143,24 @@ const dynamicBreadcrumbs: Array<{
     parent: '/repository/:owner/:repo',
   },
   {
+    pattern: /^\/repository\/([^/]+)\/([^/]+)\/admin\/status-history$/,
+    getLabel: () => 'Statusoverganger',
+    parent: '/repository/:owner/:repo/admin',
+  },
+  {
+    pattern: /^\/repository\/([^/]+)\/([^/]+)\/admin\/sync-jobs$/,
+    getLabel: () => 'Synk-jobber',
+    parent: '/repository/:owner/:repo/admin',
+  },
+  {
+    pattern: /^\/repository\/([^/]+)\/([^/]+)\/admin\/sync-job\/(\d+)$/,
+    getLabel: (_matches, pathname) => {
+      const jobId = pathname.split('/')[6]
+      return `Jobb #${jobId}`
+    },
+    parent: '/repository/:owner/:repo/admin',
+  },
+  {
     pattern: /^\/users\/([^/]+)$/,
     getLabel: (_matches, pathname) => {
       const username = pathname.split('/')[2]
@@ -316,6 +334,28 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
             ? `/repository/${owner}/${repo}?repositoryId=${repositoryId}`
             : `/repository/${owner}/${repo}`
           crumbs.push({ path: repoPath, label: `${owner}/${repo}` })
+        }
+      } else if (dynamic.parent === '/repository/:owner/:repo/admin') {
+        const repoMatch = pathname.match(/^\/repository\/([^/]+)\/([^/]+)/)
+        if (repoMatch) {
+          const [, owner, repo] = repoMatch
+          const repoData = matches.find(
+            (m) =>
+              (m.loaderData as Record<string, unknown>)?.repository ||
+              (m.loaderData as Record<string, unknown>)?.repositoryContext,
+          )
+          const loaderData = repoData?.loaderData as
+            | { repository?: { id?: number }; repositoryContext?: { id?: number } }
+            | undefined
+          const repositoryId = loaderData?.repository?.id ?? loaderData?.repositoryContext?.id
+          const repoPath = repositoryId
+            ? `/repository/${owner}/${repo}?repositoryId=${repositoryId}`
+            : `/repository/${owner}/${repo}`
+          const adminPath = repositoryId
+            ? `/repository/${owner}/${repo}/admin?repositoryId=${repositoryId}`
+            : `/repository/${owner}/${repo}/admin`
+          crumbs.push({ path: repoPath, label: `${owner}/${repo}` })
+          crumbs.push({ path: adminPath, label: 'Administrer' })
         }
       }
       // Handle: /team/:team/env/:env/app/:app/admin

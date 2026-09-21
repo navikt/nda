@@ -41,6 +41,11 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     jobTypeLabel: SYNC_JOB_TYPE_LABELS[job.job_type] || job.job_type,
     jobStatusLabel: SYNC_JOB_STATUS_LABELS[job.status] || job.status,
     hasDebugLogs: logs.some((l) => l.level === 'debug'),
+    repositoryContext: {
+      id: repository.id,
+      githubOwner: repository.github_owner,
+      githubRepoName: repository.github_repo_name,
+    },
   }
 }
 
