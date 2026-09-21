@@ -43,12 +43,24 @@ export function ReverifySection({
           </BodyShort>
         </div>
 
-        <HStack gap="space-16" align="center">
+        <HStack gap="space-16" align="center" wrap>
           <AkselLink
             as={Link}
             to={`/repository/${githubOwner}/${githubRepoName}/admin/verification-diff?repositoryId=${repositoryId}`}
           >
             Se verifiseringsavvik →
+          </AkselLink>
+          <AkselLink
+            as={Link}
+            to={`/repository/${githubOwner}/${githubRepoName}/admin/status-history?repositoryId=${repositoryId}`}
+          >
+            Se statusoverganger →
+          </AkselLink>
+          <AkselLink
+            as={Link}
+            to={`/repository/${githubOwner}/${githubRepoName}/admin/sync-jobs?repositoryId=${repositoryId}`}
+          >
+            Se synk-jobber →
           </AkselLink>
         </HStack>
 
