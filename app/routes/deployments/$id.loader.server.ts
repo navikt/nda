@@ -297,6 +297,13 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
                 branchMismatch?: { expectedBranch: string; detectedBranches: string[]; prNumbers: number[] }
               } | null
             )?.branchMismatch,
+            approvalDetails:
+              fullVerificationRun.status === 'pending_sibling_resolution'
+                ? {
+                    reason: (fullVerificationRun.result as { approvalDetails?: { reason?: string } } | null)
+                      ?.approvalDetails?.reason,
+                  }
+                : undefined,
           },
         } as typeof fullVerificationRun)
       : null
