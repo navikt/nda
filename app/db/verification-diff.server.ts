@@ -112,6 +112,7 @@ export async function getCompareSnapshotForCommit(
   const result = await pool.query(
     `SELECT data, base_sha FROM github_compare_snapshots 
      WHERE head_sha = $1 
+       AND base_sha != head_sha
      ORDER BY fetched_at DESC LIMIT 1`,
     [commitSha],
   )
