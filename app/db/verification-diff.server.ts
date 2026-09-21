@@ -44,6 +44,37 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
   return result.rows
 }
 
+export interface RepositoryDeploymentDiff {
+  deployment_id: number
+  old_status: string | null
+  new_status: string
+  error_reason: string | null
+  commit_sha: string
+  environment_name: string
+  created_at: Date
+  detected_github_owner: string | null
+  detected_github_repo_name: string | null
+  monitored_app_id: number
+  team_slug: string
+  app_name: string
+}
+
+export async function getVerificationDiffsForApps(monitoredAppIds: number[]): Promise<RepositoryDeploymentDiff[]> {
+  if (monitoredAppIds.length === 0) return []
+  const result = await pool.query<RepositoryDeploymentDiff>(
+    `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.error_reason,
+            d.commit_sha, d.environment_name, d.created_at,
+            d.detected_github_owner, d.detected_github_repo_name,
+            d.monitored_app_id, d.team_slug, d.app_name
+     FROM verification_diffs vd
+     JOIN deployments d ON vd.deployment_id = d.id
+     WHERE vd.monitored_app_id = ANY($1)
+     ORDER BY d.created_at DESC`,
+    [monitoredAppIds],
+  )
+  return result.rows
+}
+
 export async function getPreviousDeploymentForDiff(
   deploymentId: number,
   githubRepoId: string,
@@ -142,6 +173,28 @@ export async function getApprovedDeploymentsMissingApprover(
 interface GlobalMissingApproverDeployment extends MissingApproverDeployment {
   team_slug: string
   app_name: string
+}
+
+export async function getApprovedDeploymentsMissingApproverForApps(
+  monitoredAppIds: number[],
+): Promise<GlobalMissingApproverDeployment[]> {
+  if (monitoredAppIds.length === 0) return []
+  const result = await pool.query<GlobalMissingApproverDeployment>(
+    `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
+            d.created_at, d.deployer_username,
+            d.detected_github_owner, d.detected_github_repo_name,
+            d.monitored_app_id, ${effectiveDefaultBranchSql('ma')} AS default_branch,
+            d.team_slug, d.app_name
+     FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE d.monitored_app_id = ANY($1)
+       AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+       AND ${MISSING_APPROVER_CONDITIONS}
+       AND ${AUDIT_START_YEAR_FILTER}
+     ORDER BY d.created_at DESC`,
+    [monitoredAppIds],
+  )
+  return result.rows
 }
 
 export async function getAllApprovedDeploymentsMissingApprover(): Promise<GlobalMissingApproverDeployment[]> {

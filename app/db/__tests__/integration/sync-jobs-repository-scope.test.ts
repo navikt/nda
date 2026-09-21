@@ -215,6 +215,22 @@ describe('acquireSyncLockForRepository / acquireSyncLock cross-scope conflict ha
     const naisSyncJobId = await acquireSyncLock('nais_sync', appId)
     expect(naisSyncJobId).toEqual(expect.any(Number))
   })
+
+  it('blocks a repository-scoped lock when a true-global job of the same type is running', async () => {
+    const repoA = await seedRepo(pool, 'lock-global-a')
+    await insertRunningJob({ jobType: 'refresh_missing_approver', repositoryId: null })
+
+    const repoJobId = await acquireSyncLockForRepository('refresh_missing_approver', repoA)
+    expect(repoJobId).toBe('app_conflict')
+  })
+
+  it('blocks an app-scoped lock when a true-global job of the same type is running', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-lock', appName: 'app-lock-global', environment: 'prod-gcp' })
+    await insertRunningJob({ jobType: 'refresh_missing_approver', repositoryId: null })
+
+    const appJobId = await acquireSyncLock('refresh_missing_approver', appId)
+    expect(appJobId).toBe('repository_conflict')
+  })
 })
 
 describe('acquireSyncLockForRepository / acquireSyncLock cross-scope conflict handling for reverify_app', () => {

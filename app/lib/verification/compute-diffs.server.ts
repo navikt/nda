@@ -268,6 +268,7 @@ export async function computeVerificationDiffs(
 
 interface ComputeDiffsForRepositoryOptions {
   jobId?: number
+  appIds?: number[]
   onProgress?: (processedApps: number, totalApps: number, diffsFound: number) => void | Promise<void>
 }
 
@@ -282,7 +283,7 @@ export async function computeVerificationDiffsForRepository(
   repositoryId: number,
   options: ComputeDiffsForRepositoryOptions = {},
 ): Promise<ComputeDiffsForRepositoryResult> {
-  const appIds = await getMonitoredAppIdsForRepository(repositoryId)
+  const appIds = options.appIds ?? (await getMonitoredAppIdsForRepository(repositoryId))
   const { jobId } = options
 
   const result: ComputeDiffsForRepositoryResult = {

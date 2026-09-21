@@ -267,6 +267,14 @@ export async function canAccessRepositoryAdminWithClient(
   return authorized
 }
 
+export async function resolveRepositoryAdminAccessWithClient(
+  actor: UserIdentity,
+  repositoryId: number,
+  queryable: Queryable,
+): Promise<RepositoryAdminAccess> {
+  return resolveRepositoryAdminAccessQuery(actor, repositoryId, queryable)
+}
+
 export async function canAccessAppsAdmin(
   actor: UserIdentity,
   monitoredAppIds: number[],

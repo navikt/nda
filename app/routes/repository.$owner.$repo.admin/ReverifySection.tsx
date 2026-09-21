@@ -44,6 +44,15 @@ export function ReverifySection({
         </div>
 
         <HStack gap="space-16" align="center">
+          <AkselLink
+            as={Link}
+            to={`/repository/${githubOwner}/${githubRepoName}/admin/verification-diff?repositoryId=${repositoryId}`}
+          >
+            Se verifiseringsavvik →
+          </AkselLink>
+        </HStack>
+
+        <HStack gap="space-16" align="center">
           <Form method="post">
             <input type="hidden" name="action" value="compute_diffs" />
             <input type="hidden" name="repository_id" value={repositoryId} />
