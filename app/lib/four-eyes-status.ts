@@ -4,7 +4,7 @@ export const FOUR_EYES_STATUSES = [
   'implicitly_approved', // Approved via implicit approval rules
   'manually_approved', // Manually approved by admin
   'no_changes', // No changes from previous deployment (same commit SHA)
-  'verified_via_sibling', // Same commit SHA already verified via a sibling app's deployment in the same repository (monorepo)
+  'verified_via_sibling', // Same commit SHA already verified via a sibling application's deployment in the same repository (monorepo)
   'pending', // Awaiting verification
   'pending_baseline', // First deployment, awaiting baseline
   'pending_approval', // Alias for pending (legacy)
@@ -19,6 +19,7 @@ export const FOUR_EYES_STATUSES = [
   'unauthorized_branch', // Deployed commit not on approved branch
   'missing', // Legacy: PR approval was missing at time of check
   'error', // Error during verification
+  'pending_sibling_resolution', // Same commit found on a sibling app's deployment, but that sibling isn't root-approved yet
   'unknown', // Not yet verified (DB default)
 ] as const
 
@@ -67,9 +68,20 @@ export const NOT_APPROVED_STATUSES: FourEyesStatus[] = [
   'error',
 ]
 
-export const PENDING_STATUSES: FourEyesStatus[] = ['pending', 'pending_baseline', 'pending_approval', 'unknown']
+export const PENDING_STATUSES: FourEyesStatus[] = [
+  'pending',
+  'pending_baseline',
+  'pending_approval',
+  'unknown',
+  'pending_sibling_resolution',
+]
 
-export const REVERIFIABLE_STATUSES: FourEyesStatus[] = ['pending', 'pending_baseline', 'unknown']
+export const REVERIFIABLE_STATUSES: FourEyesStatus[] = [
+  'pending',
+  'pending_baseline',
+  'unknown',
+  'pending_sibling_resolution',
+]
 
 export const REVERIFIABLE_STATUSES_SQL = REVERIFIABLE_STATUSES.map((s) => `'${s}'`).join(', ')
 
@@ -106,7 +118,7 @@ export const STATUS_DISPLAY: Record<
   implicitly_approved: { tagLabel: 'Godkjent', tagVariant: 'success' },
   manually_approved: { tagLabel: 'Godkjent', tagVariant: 'success' },
   no_changes: { tagLabel: 'Godkjent', tagVariant: 'success' },
-  verified_via_sibling: { tagLabel: 'Verifisert via søsterapp', tagVariant: 'success' },
+  verified_via_sibling: { tagLabel: 'Verifisert via søskenapplikasjon', tagVariant: 'success' },
   baseline: { tagLabel: 'Godkjent', tagVariant: 'success' },
   pending: { tagLabel: 'Venter', tagVariant: 'neutral' },
   pending_baseline: { tagLabel: 'Foreslått baseline', tagVariant: 'warning' },
@@ -120,6 +132,7 @@ export const STATUS_DISPLAY: Record<
   unverifiable: { tagLabel: 'Ikke sporbar', tagVariant: 'neutral' },
   missing: { tagLabel: 'Ikke godkjent', tagVariant: 'warning' },
   error: { tagLabel: 'Feil', tagVariant: 'danger' },
+  pending_sibling_resolution: { tagLabel: 'Venter på søskenapplikasjon', tagVariant: 'warning' },
   unauthorized_repository: { tagLabel: 'Ikke godkjent repo', tagVariant: 'danger' },
   unauthorized_branch: { tagLabel: 'Ikke på godkjent branch', tagVariant: 'danger' },
 }
@@ -130,7 +143,7 @@ export const FOUR_EYES_STATUS_LABELS: Record<FourEyesStatus, string> = {
   implicitly_approved: 'Implisitt godkjent',
   manually_approved: 'Manuelt godkjent',
   no_changes: 'Ingen endringer',
-  verified_via_sibling: 'Verifisert via søsterapp',
+  verified_via_sibling: 'Verifisert via søskenapplikasjon',
   pending: 'Venter',
   pending_baseline: 'Første deployment - venter',
   pending_approval: 'Venter godkjenning',
@@ -145,6 +158,7 @@ export const FOUR_EYES_STATUS_LABELS: Record<FourEyesStatus, string> = {
   unauthorized_branch: 'Ikke på godkjent branch',
   missing: 'Mangler godkjenning',
   error: 'Feil',
+  pending_sibling_resolution: 'Venter på søskenapplikasjon',
   unknown: 'Ukjent',
 }
 

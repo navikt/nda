@@ -64,10 +64,11 @@ function mapFourEyesStatus(status: string): { emoji: string; text: string } {
     case 'manually_approved':
       return { emoji: '✅', text: 'Godkjent' }
     case 'verified_via_sibling':
-      return { emoji: '✅', text: 'Verifisert via søsterapp' }
+      return { emoji: '✅', text: 'Verifisert via søskenapplikasjon' }
     case 'pending':
     case 'pending_baseline':
     case 'unknown':
+    case 'pending_sibling_resolution':
       return { emoji: '⏳', text: 'Venter' }
     case 'direct_push':
     case 'unverified_commits':

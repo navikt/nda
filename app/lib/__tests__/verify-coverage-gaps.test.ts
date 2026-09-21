@@ -231,7 +231,7 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
 
     const result = verifyDeployment(input)
 
-    expect(result.status).toBe('error')
+    expect(result.status).toBe('pending_sibling_resolution')
     expect(result.hasFourEyes).toBe(false)
     expect(result.approvalDetails.method).toBeNull()
     expect(result.approvalDetails.reason).toContain('999')
@@ -252,7 +252,7 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
 
     const result = verifyDeployment(input)
 
-    expect(result.status).toBe('error')
+    expect(result.status).toBe('pending_sibling_resolution')
     expect(result.hasFourEyes).toBe(false)
   })
 
@@ -275,7 +275,7 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
 
     const result = verifyDeployment(input)
 
-    expect(result.status).toBe('error')
+    expect(result.status).toBe('pending_sibling_resolution')
     expect(result.hasFourEyes).toBe(false)
     expect(result.approvalDetails.reason).toContain('999')
   })

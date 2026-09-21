@@ -31,7 +31,7 @@ export function getFourEyesStatus(deployment: any): {
       }
     case 'verified_via_sibling':
       return {
-        text: 'Verifisert via søsterapp',
+        text: 'Verifisert via søskenapplikasjon',
         variant: 'success',
         description: 'Samme commit er allerede verifisert via en annen apps deployment i samme repository (monorepo).',
       }
@@ -109,6 +109,13 @@ export function getFourEyesStatus(deployment: any): {
         text: 'Feil ved verifisering',
         variant: 'error',
         description: 'Det oppstod en feil ved sjekk av GitHub.',
+      }
+    case 'pending_sibling_resolution':
+      return {
+        text: 'Venter på søskenapplikasjon',
+        variant: 'warning',
+        description:
+          'Samme commit er deployet av en søskenapplikasjon i samme repository, men den er ikke godkjent ennå. Løser seg automatisk når søskenapplikasjonen blir godkjent.',
       }
     case 'pending':
       return {

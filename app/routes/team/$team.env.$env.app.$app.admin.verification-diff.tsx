@@ -479,7 +479,14 @@ export default function VerificationDiffPage() {
                       </Tag>
                     </Table.DataCell>
                     <Table.DataCell>
-                      <Tag variant={diff.newStatus === 'error' ? 'warning' : 'info'} size="small">
+                      <Tag
+                        variant={
+                          diff.newStatus === 'error' || diff.newStatus === 'pending_sibling_resolution'
+                            ? 'warning'
+                            : 'info'
+                        }
+                        size="small"
+                      >
                         {getFourEyesStatusLabel(diff.newStatus)}
                       </Tag>
                       {diff.errorReason && (
