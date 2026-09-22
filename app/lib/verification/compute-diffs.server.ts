@@ -10,7 +10,12 @@ import {
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
-import { buildCommitsBetweenFromCache, fetchVerificationData, getPrDataForDiff } from './fetch-data.server'
+import {
+  buildCommitsBetweenFromCache,
+  fetchVerificationData,
+  findPrForCommit,
+  getPrDataForDiff,
+} from './fetch-data.server'
 import type { CompareData, VerificationInput } from './types'
 import { verifyDeployment } from './verify'
 
@@ -151,12 +156,15 @@ export async function computeVerificationDiffs(
           })
 
           let deployedPr: VerificationInput['deployedPr'] = null
-          if (row.github_pr_number) {
-            const prData = await getPrDataForDiff(owner, repo, row.github_pr_number)
+          const cachedPrNumber =
+            row.github_pr_number ??
+            (await findPrForCommit(owner, repo, row.commit_sha, baseBranch, { cacheOnly: true })).prNumber
+          if (cachedPrNumber) {
+            const prData = await getPrDataForDiff(owner, repo, cachedPrNumber)
             if (prData) {
               deployedPr = {
-                number: row.github_pr_number,
-                url: `https://github.com/${owner}/${repo}/pull/${row.github_pr_number}`,
+                number: cachedPrNumber,
+                url: `https://github.com/${owner}/${repo}/pull/${cachedPrNumber}`,
                 metadata: prData.metadata,
                 reviews: prData.reviews,
                 commits: prData.commits,
@@ -186,7 +194,7 @@ export async function computeVerificationDiffs(
           const cacheOnlyResult = verifyDeployment(input)
           const normalizedOldStatus = normalizeStatus(row.four_eyes_status)
           const normalizedCacheStatus = normalizeStatus(cacheOnlyResult.status)
-          const missingPrSnapshot = row.github_pr_number != null && deployedPr == null
+          const missingPrSnapshot = cachedPrNumber != null && deployedPr == null
 
           if (normalizedOldStatus !== normalizedCacheStatus || missingPrSnapshot) {
             const reasons: string[] = []
@@ -194,7 +202,7 @@ export async function computeVerificationDiffs(
               reasons.push(`status diff: ${row.four_eyes_status} → ${cacheOnlyResult.status}`)
             }
             if (missingPrSnapshot) {
-              reasons.push(`missing PR snapshot: DB has PR#${row.github_pr_number} but cached snapshot is incomplete`)
+              reasons.push(`missing PR snapshot: DB has PR#${cachedPrNumber} but cached snapshot is incomplete`)
             }
             logger.info(`   🔄 Re-fetching deployment ${row.id}: ${reasons.join(', ')}`)
 
