@@ -236,32 +236,12 @@ export async function fetchDeployedPrData(
     }
   }
 
-  if (options?.forceRefresh) {
-    const cachedPrData = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
-    if (cachedPrData?.merged_at) {
-      const refreshed = await refreshMutablePrData(owner, repo, prNumber)
-      if (refreshed) {
-        const mapped = mapPrDataToVerificationTypes(prNumber, refreshed)
-        return {
-          deployedPr: {
-            number: prNumber,
-            url: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-            metadata: mapped.metadata,
-            reviews: mapped.reviews,
-            commits: mapped.commits,
-          },
-          mismatchedBaseBranches,
-          mismatchedPrNumbers,
-          derivedFromRaw: false,
-        }
-      }
-    }
-  }
-
-  const fetched = await fetchPrFromGitHub(owner, repo, prNumber)
-  const { metadata, reviews, commits } = fetched
-
-  await persistPrSnapshots(owner, repo, prNumber, fetched)
+  const { metadata, reviews, commits } = await fetchOrRefreshMergedPrData(
+    owner,
+    repo,
+    prNumber,
+    options?.forceRefresh ?? false,
+  )
 
   return {
     deployedPr: {
@@ -275,6 +255,27 @@ export async function fetchDeployedPrData(
     mismatchedPrNumbers,
     derivedFromRaw: false,
   }
+}
+
+export async function fetchOrRefreshMergedPrData(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  forceRefresh: boolean,
+): Promise<{ metadata: PrMetadata; reviews: PrReview[]; commits: PrCommit[] }> {
+  if (forceRefresh) {
+    const cachedPrData = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+    if (cachedPrData?.merged_at) {
+      const refreshed = await refreshMutablePrData(owner, repo, prNumber)
+      if (refreshed) {
+        return mapPrDataToVerificationTypes(prNumber, refreshed)
+      }
+    }
+  }
+
+  const fetched = await fetchPrFromGitHub(owner, repo, prNumber)
+  await persistPrSnapshots(owner, repo, prNumber, fetched)
+  return fetched
 }
 
 export async function findPrForCommit(
@@ -291,6 +292,7 @@ export async function findPrForCommit(
   const cacheOnly = options?.cacheOnly ?? false
   const forceRefresh = options?.forceRefresh ?? false
 
+  // See app/db/migrations/1787679200000_add-github-commit-associated-prs-raw-snapshots.sql
   if (!forceRefresh) {
     const cached = await getLatestCommitSnapshot(owner, repo, commitSha, 'prs')
     if (cached && cached.schemaVersion >= CURRENT_SCHEMA_VERSION) {

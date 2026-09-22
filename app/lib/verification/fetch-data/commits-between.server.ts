@@ -9,11 +9,10 @@ import { getCommitsBetween, haveSameCommitTree } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import {
   type FetchOptions,
-  fetchPrFromGitHub,
+  fetchOrRefreshMergedPrData,
   findPrForCommit,
   getCachedPrData,
   mapPrDataToVerificationTypes,
-  persistPrSnapshots,
 } from '../fetch-data/pr-data.server'
 import type { CompareData, CompareSummary, VerificationInput } from '../types'
 
@@ -154,7 +153,7 @@ export async function buildCommitsBetweenFromCache(
   options?: FetchOptions & { cacheOnly?: boolean },
 ): Promise<VerificationInput['commitsBetween']> {
   const cacheOnly = options?.cacheOnly ?? false
-  const prFetchCache = new Map<number, Promise<Awaited<ReturnType<typeof fetchPrFromGitHub>>>>()
+  const prFetchCache = new Map<number, Promise<Awaited<ReturnType<typeof fetchOrRefreshMergedPrData>>>>()
 
   const processCommit = async (commit: CompareData['commits'][0]) => {
     const { prNumber, mismatchedBaseBranches, mismatchedPrNumbers } = await findPrForCommit(
@@ -187,15 +186,10 @@ export async function buildCommitsBetweenFromCache(
     if (prNumber && !prData && !cacheOnly) {
       let prFetch = prFetchCache.get(prNumber)
       if (!prFetch) {
-        prFetch = fetchPrFromGitHub(owner, repo, prNumber)
-          .then(async (data) => {
-            await persistPrSnapshots(owner, repo, prNumber, data)
-            return data
-          })
-          .catch((error) => {
-            prFetchCache.delete(prNumber)
-            throw error
-          })
+        prFetch = fetchOrRefreshMergedPrData(owner, repo, prNumber, options?.forceRefresh ?? false).catch((error) => {
+          prFetchCache.delete(prNumber)
+          throw error
+        })
         prFetchCache.set(prNumber, prFetch)
       }
       try {
