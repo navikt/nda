@@ -133,7 +133,7 @@ export async function refreshMutablePrData(
   repo: string,
   prNumber: number,
   includeComments: boolean = true,
-  includeReviews: boolean = false,
+  includeReviews: boolean = true,
 ): Promise<GitHubPRData | null> {
   const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
   const prSnapshot = rawSnapshots.get('pr')
@@ -168,6 +168,7 @@ export interface FetchOptions {
   refreshDisplayData?: boolean
   dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[]
   includeComments?: boolean
+  includeReviews?: boolean
 }
 
 export async function fetchDeployedPrData(
@@ -239,6 +240,7 @@ export async function fetchDeployedPrData(
     prNumber,
     options?.forceRefresh ?? false,
     options?.includeComments ?? true,
+    options?.includeReviews ?? true,
   )
 
   return {
@@ -261,11 +263,12 @@ export async function fetchOrRefreshMergedPrData(
   prNumber: number,
   forceRefresh: boolean,
   includeComments: boolean = true,
+  includeReviews: boolean = true,
 ): Promise<{ metadata: PrMetadata; reviews: PrReview[]; commits: PrCommit[] }> {
   if (forceRefresh) {
     const cachedPrData = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
     if (cachedPrData?.merged_at) {
-      const refreshed = await refreshMutablePrData(owner, repo, prNumber, includeComments)
+      const refreshed = await refreshMutablePrData(owner, repo, prNumber, includeComments, includeReviews)
       if (refreshed) {
         return mapPrDataToVerificationTypes(prNumber, refreshed)
       }

@@ -94,7 +94,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
     mockGetAllLatestPrSnapshots.mockResolvedValue(new Map())
   })
 
-  it('refetches comments (not reviews, pr metadata, or commits) when force-refreshing a merged PR', async () => {
+  it('refetches reviews and comments (not pr metadata/commits) when force-refreshing a merged PR', async () => {
     mockGetAllLatestPrRawSnapshots.mockResolvedValue(setUpCachedRawSnapshot(100))
     mockGetPullRequestForCommit.mockResolvedValue({
       pr: { number: 100, title: 'Some PR', html_url: '', merged_at: '2026-01-02T00:00:00Z', state: 'closed' },
@@ -102,7 +102,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
     })
     mockGetMutablePrDataFromGitHub.mockResolvedValue({
       githubRepoId: 42,
-      reviews: null,
+      reviews: [],
       issueComments: [
         {
           id: 5,
@@ -119,7 +119,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
 
     const result = await fetchDeployedPrData('navikt', 'nda', 'abc123', 'main', { forceRefresh: true })
 
-    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, true, false)
+    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, true, true)
     expect(mockGetDetailedPullRequestInfo).not.toHaveBeenCalled()
     expect(mockSavePrRawSnapshotsBatch).toHaveBeenCalledWith(
       'navikt',
@@ -128,6 +128,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
       42,
       { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
       [
+        { dataType: 'reviews', data: [] },
         { dataType: 'comments', data: [expect.objectContaining({ id: 5 })] },
         { dataType: 'review_comments', data: [] },
       ],
@@ -135,7 +136,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
     expect(result.deployedPr?.number).toBe(100)
   })
 
-  it('skips fetching comments and does not overwrite cached comment or review snapshots when includeComments is false (status-only reverification)', async () => {
+  it('skips fetching comments and reviews and does not overwrite cached snapshots when includeComments and includeReviews are false (status-only reverification)', async () => {
     mockGetAllLatestPrRawSnapshots.mockResolvedValue(setUpCachedRawSnapshot(100))
     mockGetPullRequestForCommit.mockResolvedValue({
       pr: { number: 100, title: 'Some PR', html_url: '', merged_at: '2026-01-02T00:00:00Z', state: 'closed' },
@@ -153,6 +154,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
     const result = await fetchDeployedPrData('navikt', 'nda', 'abc123', 'main', {
       forceRefresh: true,
       includeComments: false,
+      includeReviews: false,
     })
 
     expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, false, false)
@@ -226,7 +228,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
 
     const result = await fetchDeployedPrData('navikt', 'nda', 'abc123', 'main', { forceRefresh: true })
 
-    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, true, false)
+    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, true, true)
     expect(mockGetDetailedPullRequestInfo).toHaveBeenCalledWith('navikt', 'nda', 100)
     expect(result.deployedPr?.number).toBe(100)
   })
