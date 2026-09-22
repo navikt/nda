@@ -12,10 +12,10 @@ import { getAppDeploymentStats, getPendingVerificationCount } from '~/db/deploym
 import { getDevTeamsForApp } from '~/db/dev-teams.server'
 import { getMonitoredApplicationByIdentity, updateMonitoredApplication } from '~/db/monitored-applications.server'
 import { getMonorepoSiblings } from '~/db/monorepo.server'
-import { getEffectiveAuditStartYear } from '~/db/repositories.server'
+import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { getLatestSyncJob, getObservedSyncIntervalMs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { getUserIdentity } from '~/lib/auth.server'
-import { canAccessAppAdmin, resolveAppCapabilities } from '~/lib/authorization.server'
+import { canAccessAppAdmin, resolveAppCapabilities, resolveRepositoryAdminAccess } from '~/lib/authorization.server'
 import { logger } from '~/lib/logger.server'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import { VERIFY_LIMIT_PER_APP } from '~/lib/sync'
@@ -44,7 +44,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       : Promise.resolve(null)
   const canAccessAdminPromise = identity ? canAccessAppAdmin(identity, app.id) : Promise.resolve(false)
   const repositoriesPromise = getRepositoriesByAppId(app.id)
-  const effectiveAuditStartYearPromise = getEffectiveAuditStartYear(app.id)
+  const effectiveSettingsPromise = getEffectiveSettingsForApp(app.id)
   const alertsPromise = getUnresolvedAlertsByApp(app.id)
   const auditReportsPromise = getAuditReportsForApp(app.id)
   const monorepoPromise = getMonorepoSiblings(app.id)
@@ -52,8 +52,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const latestSyncJobPromise = getLatestSyncJob(app.id, 'nais_sync')
   const verificationProgressPromise = getPendingVerificationCount(app.id)
   const observedVerifyIntervalMsPromise = getObservedSyncIntervalMs(app.id, 'github_verify')
-  const deploymentStatsPromise = effectiveAuditStartYearPromise.then((effectiveAuditStartYear) =>
-    getAppDeploymentStats(app.id, startDate, endDate, effectiveAuditStartYear),
+  const deploymentStatsPromise = effectiveSettingsPromise.then((settings) =>
+    getAppDeploymentStats(app.id, startDate, endDate, settings.auditStartYear),
   )
 
   const [
@@ -68,6 +68,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     verificationProgress,
     observedVerifyIntervalMs,
     deploymentStats,
+    effectiveSettings,
   ] = await Promise.all([
     capabilitiesPromise,
     canAccessAdminPromise,
@@ -80,6 +81,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     verificationProgressPromise,
     observedVerifyIntervalMsPromise,
     deploymentStatsPromise,
+    effectiveSettingsPromise,
   ])
 
   const canDeactivate = app.not_found_in_nais_at ? (capabilities?.canDeactivate ?? false) : false
@@ -89,6 +91,11 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const pendingRepos = repositories.filter((r) => r.status === 'pending_approval')
   const historicalRepos = repositories.filter((r) => r.status === 'historical')
 
+  const canAccessRepoAdmin =
+    identity && effectiveSettings.repositoryId !== null
+      ? (await resolveRepositoryAdminAccess(identity, effectiveSettings.repositoryId)).authorized
+      : false
+
   const verifyLimitPerCycle = VERIFY_LIMIT_PER_APP
   const syncIntervalMs = observedVerifyIntervalMs ?? SYNC_INTERVAL_MS
 
@@ -97,6 +104,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     canDeactivate,
     canReactivate,
     canAccessAdmin,
+    canAccessRepoAdmin,
+    repositoryId: effectiveSettings.repositoryId,
     repositories,
     activeRepo,
     pendingRepos,
@@ -218,5 +227,12 @@ export default function AppDetailRoute() {
   const loaderData = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
 
-  return <AppDetailPage loaderData={loaderData} actionData={actionData} canAccessAdmin={loaderData.canAccessAdmin} />
+  return (
+    <AppDetailPage
+      loaderData={loaderData}
+      actionData={actionData}
+      canAccessAdmin={loaderData.canAccessAdmin}
+      canAccessRepoAdmin={loaderData.canAccessRepoAdmin}
+    />
+  )
 }

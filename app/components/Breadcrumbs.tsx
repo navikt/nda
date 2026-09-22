@@ -71,32 +71,6 @@ const dynamicBreadcrumbs: Array<{
     parent: '/team/:team/env/:env/app/:app',
   },
   {
-    pattern: /^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)\/admin\/verification-diff$/,
-    getLabel: () => 'Verifiseringsavvik',
-    parent: '/team/:team/env/:env/app/:app/admin',
-  },
-  {
-    pattern: /^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)\/admin\/status-history$/,
-    getLabel: () => 'Statusoverganger',
-    parent: '/team/:team/env/:env/app/:app/admin',
-  },
-  {
-    pattern: /^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)\/admin\/sync-job\/(\d+)$/,
-    getLabel: (_matches, pathname) => {
-      const jobId = pathname.split('/')[8]
-      return `Jobb #${jobId}`
-    },
-    parent: '/team/:team/env/:env/app/:app/admin',
-  },
-  {
-    pattern: /^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)\/admin\/verification-diff\/(\d+)$/,
-    getLabel: (_matches, pathname) => {
-      const deploymentId = pathname.split('/')[8]
-      return deploymentId || 'Deployment'
-    },
-    parent: '/team/:team/env/:env/app/:app/admin/verification-diff',
-  },
-  {
     pattern: /^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)\/deployments$/,
     getLabel: () => 'Deployments',
     parent: '/team/:team/env/:env/app/:app',
@@ -145,6 +119,11 @@ const dynamicBreadcrumbs: Array<{
   {
     pattern: /^\/repository\/([^/]+)\/([^/]+)\/admin\/status-history$/,
     getLabel: () => 'Statusoverganger',
+    parent: '/repository/:owner/:repo/admin',
+  },
+  {
+    pattern: /^\/repository\/([^/]+)\/([^/]+)\/admin\/verification-diff$/,
+    getLabel: () => 'Verifiseringsavvik',
     parent: '/repository/:owner/:repo/admin',
   },
   {
@@ -307,21 +286,6 @@ function buildBreadcrumbs(pathname: string, matches: ReturnType<typeof useMatche
       if (dynamic.parent === '/team/:team/env/:env/app/:app/deployments/:id') {
         const match = pathname.match(/\/deployments\/(\d+)/)
         addSemanticCrumbs(pathname, true, true, match?.[1])
-      }
-      // Handle: /team/:team/env/:env/app/:app/admin/verification-diff/:id
-      else if (dynamic.parent === '/team/:team/env/:env/app/:app/admin/verification-diff') {
-        const semanticMatch = pathname.match(/^\/team\/([^/]+)\/env\/([^/]+)\/app\/([^/]+)/)
-        if (semanticMatch) {
-          const [, team, env, app] = semanticMatch
-          const teamPath = `/team/${team}`
-          const envPath = `/team/${team}/env/${env}`
-          const appPath = `/team/${team}/env/${env}/app/${app}`
-          crumbs.push({ path: teamPath, label: team })
-          crumbs.push({ path: envPath, label: env })
-          crumbs.push({ path: appPath, label: app })
-          crumbs.push({ path: `${appPath}/admin`, label: 'Administrasjon' })
-          crumbs.push({ path: `${appPath}/admin/verification-diff`, label: 'Verifiseringsavvik' })
-        }
       }
       // Handle: /repository/:owner/:repo/admin and /repository/:owner/:repo/deployments
       else if (dynamic.parent === '/repository/:owner/:repo') {

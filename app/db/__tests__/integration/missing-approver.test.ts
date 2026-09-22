@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { checkAuditReadiness } from '../../audit-reports.server'
 import {
   getAllApprovedDeploymentsMissingApprover,
-  getApprovedDeploymentsMissingApprover,
+  getApprovedDeploymentsMissingApproverForApps,
   getMissingApproverSummary,
 } from '../../verification-diff.server'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
@@ -189,7 +189,7 @@ describe('missing approver detection — checkAuditReadiness', () => {
   })
 })
 
-describe('missing approver detection — getApprovedDeploymentsMissingApprover', () => {
+describe('missing approver detection — getApprovedDeploymentsMissingApproverForApps', () => {
   it('returns approved deployment with no reviewers', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'team-b',
@@ -205,7 +205,7 @@ describe('missing approver detection — getApprovedDeploymentsMissingApprover',
       githubPrData: { reviewers: [] },
     })
 
-    const result = await getApprovedDeploymentsMissingApprover(appId)
+    const result = await getApprovedDeploymentsMissingApproverForApps([appId])
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe(deploymentId)
   })
@@ -227,7 +227,7 @@ describe('missing approver detection — getApprovedDeploymentsMissingApprover',
       },
     })
 
-    const result = await getApprovedDeploymentsMissingApprover(appId)
+    const result = await getApprovedDeploymentsMissingApproverForApps([appId])
     expect(result).toHaveLength(0)
   })
 
@@ -246,7 +246,7 @@ describe('missing approver detection — getApprovedDeploymentsMissingApprover',
       githubPrData: { reviewers: [] },
     })
 
-    const result = await getApprovedDeploymentsMissingApprover(appId)
+    const result = await getApprovedDeploymentsMissingApproverForApps([appId])
     expect(result).toHaveLength(0)
   })
 
@@ -271,7 +271,7 @@ describe('missing approver detection — getApprovedDeploymentsMissingApprover',
       [deploymentId],
     )
 
-    const result = await getApprovedDeploymentsMissingApprover(appId)
+    const result = await getApprovedDeploymentsMissingApproverForApps([appId])
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe(deploymentId)
   })

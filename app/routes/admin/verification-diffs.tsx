@@ -53,6 +53,7 @@ interface DiffWithApp {
   monitoredAppId: number
   githubOwner: string | null
   githubRepoName: string | null
+  repositoryId: number | null
 }
 
 export function meta(_args: Route.MetaArgs) {
@@ -63,12 +64,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
   const result = await pool.query(
-    `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.error_reason, vd.monitored_app_id,
+    `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.error_reason, vd.monitored_app_id, vd.repository_id,
             d.commit_sha, d.environment_name, d.created_at,
             d.team_slug, d.app_name,
-            d.detected_github_owner, d.detected_github_repo_name
+            r.github_owner, r.github_repo_name
      FROM verification_diffs vd
      JOIN deployments d ON vd.deployment_id = d.id
+     LEFT JOIN repositories r ON r.id = vd.repository_id
      ORDER BY d.team_slug, d.app_name, d.created_at DESC`,
   )
 
@@ -84,8 +86,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       team_slug: string
       app_name: string
       monitored_app_id: number
-      detected_github_owner: string | null
-      detected_github_repo_name: string | null
+      repository_id: number | null
+      github_owner: string | null
+      github_repo_name: string | null
     }) => ({
       id: row.deployment_id,
       commitSha: row.commit_sha,
@@ -97,8 +100,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       teamSlug: row.team_slug,
       appName: row.app_name,
       monitoredAppId: row.monitored_app_id,
-      githubOwner: row.detected_github_owner,
-      githubRepoName: row.detected_github_repo_name,
+      repositoryId: row.repository_id,
+      githubOwner: row.github_owner,
+      githubRepoName: row.github_repo_name,
     }),
   )
 
@@ -718,12 +722,16 @@ export default function GlobalVerificationDiffsPage() {
                     </Checkbox>
                   </Table.DataCell>
                   <Table.DataCell>
-                    <AkselLink
-                      as={Link}
-                      to={`/team/${diff.teamSlug}/env/${diff.environmentName}/app/${diff.appName}/admin/verification-diff`}
-                    >
-                      {diff.appName}
-                    </AkselLink>
+                    {diff.githubOwner && diff.githubRepoName ? (
+                      <AkselLink
+                        as={Link}
+                        to={`/repository/${diff.githubOwner}/${diff.githubRepoName}/admin/verification-diff?repositoryId=${diff.repositoryId}`}
+                      >
+                        {diff.appName}
+                      </AkselLink>
+                    ) : (
+                      diff.appName
+                    )}
                   </Table.DataCell>
                   <Table.DataCell>
                     <AkselLink as={Link} to={`/deployments/${diff.id}`}>

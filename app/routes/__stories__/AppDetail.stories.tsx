@@ -27,6 +27,7 @@ const baseLoaderData: AppDetailLoaderData = {
   },
   canDeactivate: false,
   canReactivate: false,
+  repositoryId: mockRepository.id,
   repositories: [mockRepository],
   activeRepo: mockRepository,
   pendingRepos: [],
@@ -97,6 +98,7 @@ function renderAppDetailStory({
   loaderData,
   actionData = null,
   canAccessAdmin = false,
+  canAccessRepoAdmin = false,
   initialEntry = '/team/pensjondeployer/env/prod-fss/app/pensjon-pen?period=last-week',
 }: StoryProps) {
   const mergedLoaderData: AppDetailLoaderData = {
@@ -121,7 +123,12 @@ function renderAppDetailStory({
       {
         path: '/team/:team/env/:env/app/:app',
         element: (
-          <AppDetailPage loaderData={mergedLoaderData} actionData={actionData} canAccessAdmin={canAccessAdmin} />
+          <AppDetailPage
+            loaderData={mergedLoaderData}
+            actionData={actionData}
+            canAccessAdmin={canAccessAdmin}
+            canAccessRepoAdmin={canAccessRepoAdmin}
+          />
         ),
       },
     ],
@@ -150,6 +157,7 @@ export const AdminView: Story = {
       repositories: [mockRepository, mockPendingRepository, ...baseLoaderData.historicalRepos],
     },
     canAccessAdmin: true,
+    canAccessRepoAdmin: true,
   },
   render: (args) => renderAppDetailStory(args),
 }
@@ -175,6 +183,7 @@ export const NoRepository: Story = {
       ...baseLoaderData,
       repositories: [mockPendingRepository],
       activeRepo: undefined,
+      repositoryId: null,
       pendingRepos: [mockPendingRepository],
       historicalRepos: [],
       deploymentStats: { ...baseLoaderData.deploymentStats, total: 0, last_deployment: null, last_deployment_id: null },

@@ -133,6 +133,7 @@ export interface AppDetailLoaderData {
   app: AppDetailApp
   canDeactivate: boolean
   canReactivate: boolean
+  repositoryId: number | null
   repositories: AppDetailRepository[]
   activeRepo: AppDetailRepository | undefined
   pendingRepos: AppDetailRepository[]
@@ -152,13 +153,15 @@ export interface AppDetailPageProps {
   loaderData: AppDetailLoaderData
   actionData?: Record<string, unknown> | null
   canAccessAdmin: boolean
+  canAccessRepoAdmin: boolean
 }
 
-export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDetailPageProps) {
+export function AppDetailPage({ loaderData, actionData, canAccessAdmin, canAccessRepoAdmin }: AppDetailPageProps) {
   const {
     app,
     canDeactivate,
     canReactivate,
+    repositoryId,
     repositories,
     activeRepo,
     pendingRepos,
@@ -229,8 +232,11 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin }: AppDet
                 Ingen synkronisering registrert
               </Tag>
             )}
-            {canAccessAdmin && (
-              <Link to={`${appUrl}/admin/sync-jobs`} style={{ fontSize: '0.75rem' }}>
+            {canAccessRepoAdmin && activeRepo && repositoryId !== null && (
+              <Link
+                to={`/repository/${activeRepo.github_owner}/${activeRepo.github_repo_name}/admin/sync-jobs?repositoryId=${repositoryId}`}
+                style={{ fontSize: '0.75rem' }}
+              >
                 Se sync-jobber
               </Link>
             )}

@@ -530,10 +530,7 @@ export default function RepositoryVerificationDiffPage() {
                       </Checkbox>
                     </Table.DataCell>
                     <Table.DataCell>
-                      <AkselLink
-                        as={Link}
-                        to={`/team/${diff.teamSlug}/env/${diff.environmentName}/app/${diff.appName}/admin/verification-diff/${diff.id}`}
-                      >
+                      <AkselLink as={Link} to={`/deployments/${diff.id}`}>
                         {diff.commitSha.substring(0, 7)}
                       </AkselLink>
                     </Table.DataCell>

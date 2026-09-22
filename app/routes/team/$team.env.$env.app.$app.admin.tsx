@@ -16,7 +16,6 @@ import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
 import { DeployNotificationSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DeployNotificationSettings'
 import { RecentConfigChanges } from '~/routes/team/$team.env.$env.app.$app.admin/RecentConfigChanges'
 import { ReminderSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ReminderSettings'
-import { Reverifisering } from '~/routes/team/$team.env.$env.app.$app.admin/Reverifisering'
 import { SlackConfigSettings } from '~/routes/team/$team.env.$env.app.$app.admin/SlackConfigSettings'
 import { TestRequirementSettings } from '~/routes/team/$team.env.$env.app.$app.admin/TestRequirementSettings'
 import type { Route } from './+types/$team.env.$env.app.$app.admin'
@@ -264,8 +263,6 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
       <DeployNotificationSettings app={app} />
 
       <ReminderSettings app={app} />
-
-      <Reverifisering app={app} />
 
       <Avvik app={app} />
 
