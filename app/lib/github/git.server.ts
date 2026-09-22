@@ -21,15 +21,17 @@ export async function getCommitsBetween(
 
     logger.info(`🔍 Comparing commits ${base.substring(0, 7)}...${head.substring(0, 7)} in ${owner}/${repo}`)
 
-    const [response, repoResponse] = await Promise.all([
+    const [response, githubRepoId] = await Promise.all([
       client.repos.compareCommits({
         owner,
         repo,
         base,
         head,
       }),
-      client.repos.get({ owner, repo }),
+      getRepositoryId(owner, repo),
     ])
+
+    if (githubRepoId === null) return null
 
     logger.info(`   📊 GitHub API response:`)
     logger.info(`      - Status: ${response.data.status}`)
@@ -56,7 +58,7 @@ export async function getCommitsBetween(
 
     const apiVersion = captureApiVersionMetadata(response.headers, null)
 
-    return { compareData, rawData: response.data, apiVersion, githubRepoId: repoResponse.data.id }
+    return { compareData, rawData: response.data, apiVersion, githubRepoId }
   } catch (error) {
     logger.error(`❌ Error comparing commits ${base.substring(0, 7)}...${head.substring(0, 7)}:`, error)
     return null

@@ -524,8 +524,8 @@ export async function getMutablePrDataFromGitHub(
       apiVersion = captureApiVersionMetadata(headers, apiVersion)
     }
 
-    const [repoResponse, allReviews, allIssueComments, allReviewComments] = await Promise.all([
-      client.repos.get({ owner, repo }),
+    const [githubRepoId, allReviews, allIssueComments, allReviewComments] = await Promise.all([
+      getRepositoryId(owner, repo),
       client.paginate(client.pulls.listReviews, { owner, repo, pull_number, per_page: 100 }, (response) => {
         captureHeaders(response.headers)
         return response.data
@@ -544,8 +544,10 @@ export async function getMutablePrDataFromGitHub(
       }),
     ])
 
+    if (githubRepoId === null) return null
+
     return {
-      githubRepoId: repoResponse.data.id,
+      githubRepoId,
       reviews: allReviews,
       issueComments: allIssueComments,
       reviewComments: allReviewComments,
