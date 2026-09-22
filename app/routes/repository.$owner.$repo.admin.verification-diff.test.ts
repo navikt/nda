@@ -11,7 +11,7 @@ const {
   mockGetGithubUserLookups,
   mockPoolQuery,
   mockReverifyDeployment,
-  mockGetVerificationDiffsForApps,
+  mockGetVerificationDiffsForRepository,
   mockGetApprovedDeploymentsMissingApproverForApps,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
@@ -24,7 +24,7 @@ const {
   mockGetGithubUserLookups: vi.fn(),
   mockPoolQuery: vi.fn(),
   mockReverifyDeployment: vi.fn(),
-  mockGetVerificationDiffsForApps: vi.fn(),
+  mockGetVerificationDiffsForRepository: vi.fn(),
   mockGetApprovedDeploymentsMissingApproverForApps: vi.fn(),
 }))
 
@@ -63,7 +63,7 @@ vi.mock('~/lib/verification', () => ({
 }))
 
 vi.mock('~/db/verification-diff.server', () => ({
-  getVerificationDiffsForApps: mockGetVerificationDiffsForApps,
+  getVerificationDiffsForRepository: mockGetVerificationDiffsForRepository,
   getApprovedDeploymentsMissingApproverForApps: mockGetApprovedDeploymentsMissingApproverForApps,
 }))
 
@@ -94,7 +94,7 @@ describe('verification-diff loader - authorization scoping', () => {
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
     mockResolveRepositoryFromParams.mockResolvedValue(repository)
     mockGetLatestSyncJobForRepository.mockResolvedValue(null)
-    mockGetVerificationDiffsForApps.mockResolvedValue([])
+    mockGetVerificationDiffsForRepository.mockResolvedValue([])
     mockGetApprovedDeploymentsMissingApproverForApps.mockResolvedValue([])
     mockGetGithubUserLookups.mockResolvedValue(new Map())
   })
@@ -104,11 +104,11 @@ describe('verification-diff loader - authorization scoping', () => {
 
     await expect(loader({ request: makeGetRequest(), params } as never)).rejects.toMatchObject({ status: 403 })
 
-    expect(mockGetVerificationDiffsForApps).not.toHaveBeenCalled()
+    expect(mockGetVerificationDiffsForRepository).not.toHaveBeenCalled()
     expect(mockGetApprovedDeploymentsMissingApproverForApps).not.toHaveBeenCalled()
   })
 
-  it('scopes diff/missing-approver queries to the authoritative affectedApps app IDs, not all active+historical links', async () => {
+  it('scopes diffs to the repository ID and the authoritative affectedApps app IDs, matching missing-approver scoping', async () => {
     mockResolveRepositoryAdminAccess.mockResolvedValue({
       authorized: true,
       affectedApps: [{ id: 1 }, { id: 2 }],
@@ -116,7 +116,7 @@ describe('verification-diff loader - authorization scoping', () => {
 
     await loader({ request: makeGetRequest(), params } as never)
 
-    expect(mockGetVerificationDiffsForApps).toHaveBeenCalledWith([1, 2])
+    expect(mockGetVerificationDiffsForRepository).toHaveBeenCalledWith(repository.id, [1, 2])
     expect(mockGetApprovedDeploymentsMissingApproverForApps).toHaveBeenCalledWith([1, 2])
   })
 })

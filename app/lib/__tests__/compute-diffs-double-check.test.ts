@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 vi.mock('~/db/repositories.server', () => ({
   getEffectiveSettingsForApp: vi.fn(),
+  getRepositoryIdByGithubRepoId: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => {
@@ -43,7 +44,8 @@ vi.mock('~/lib/verification/verify', () => ({
 }))
 
 import { findRepositoryForApp } from '~/db/application-repositories.server'
-import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { pool } from '~/db/connection.server'
+import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
@@ -66,9 +68,11 @@ const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetPrDataForDiff = getPrDataForDiff as Mock
 const mockFindPrForCommit = findPrForCommit as Mock
 const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
+const mockGetRepositoryIdByGithubRepoId = getRepositoryIdByGithubRepoId as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
 const mockVerifyDeployment = verifyDeployment as Mock
+const mockClient = (pool as unknown as { _mockClient: { query: Mock; release: Mock } })._mockClient
 
 function makeDeploymentRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -146,6 +150,7 @@ describe('computeVerificationDiffs double-check logic', () => {
       effectiveRepo: 'test-repo',
       isRedirected: false,
     })
+    mockGetRepositoryIdByGithubRepoId.mockResolvedValue(7)
   })
 
   it('triggers forceRefresh when cache-only produces different status than stored', async () => {
@@ -318,5 +323,83 @@ describe('computeVerificationDiffs double-check logic', () => {
 
     expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'head123', 'navikt/test-repo', 'prod-gcp', 'main', 1)
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Cached compare validation failed'))
+  })
+
+  it('persists the resolved repository_id on the inserted diff row', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', github_pr_number: null })])
+    mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({ prNumber: 100, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockGetRepositoryIdByGithubRepoId.mockResolvedValue(42)
+
+    mockVerifyDeployment.mockReturnValue({
+      status: 'approved',
+      approvalDetails: { reason: 'pr_approved' },
+      deployedPr: { number: 100 },
+    })
+
+    const result = await computeVerificationDiffs(1)
+
+    expect(mockGetRepositoryIdByGithubRepoId).toHaveBeenCalledWith('123')
+    expect(result.diffsFound).toBe(1)
+    const insertCall = mockClient.query.mock.calls.find((call: unknown[]) =>
+      (call[0] as string).includes('INSERT INTO verification_diffs'),
+    )
+    expect(insertCall?.[1]).toEqual([1, 1, 'approved', 'approved', null, 42])
+  })
+
+  it('resolves a distinct repository_id per deployment for apps linked to multiple repositories', async () => {
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({
+        id: 1,
+        four_eyes_status: 'approved',
+        github_pr_number: null,
+        detected_github_repo_name: 'repo-a',
+      }),
+      makeDeploymentRow({
+        id: 2,
+        four_eyes_status: 'approved',
+        github_pr_number: null,
+        detected_github_repo_name: 'repo-b',
+      }),
+    ])
+    mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({ prNumber: 100, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+    mockBuildCommitsBetween.mockResolvedValue([])
+
+    mockFindRepositoryForApp.mockImplementation(async (_appId: number, _owner: string, repo: string) => ({
+      repository: { github_repo_id: repo === 'repo-a' ? '111' : '222' },
+      effectiveOwner: 'navikt',
+      effectiveRepo: repo,
+      isRedirected: false,
+    }))
+    mockGetRepositoryIdByGithubRepoId.mockImplementation(async (githubRepoId: string) =>
+      githubRepoId === '111' ? 10 : 20,
+    )
+
+    mockVerifyDeployment.mockReturnValue({
+      status: 'approved',
+      approvalDetails: { reason: 'pr_approved' },
+      deployedPr: { number: 100 },
+    })
+
+    const result = await computeVerificationDiffs(1)
+
+    expect(result.diffsFound).toBe(2)
+    const insertCalls = mockClient.query.mock.calls.filter((call: unknown[]) =>
+      (call[0] as string).includes('INSERT INTO verification_diffs'),
+    )
+    const repositoryIdsByDeployment = new Map(
+      insertCalls.map((call: unknown[]) => {
+        const params = call[1] as unknown[]
+        return [params[1], params[5]]
+      }),
+    )
+    expect(repositoryIdsByDeployment.get(1)).toBe(10)
+    expect(repositoryIdsByDeployment.get(2)).toBe(20)
   })
 })
