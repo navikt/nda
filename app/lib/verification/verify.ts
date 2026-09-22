@@ -158,6 +158,46 @@ function handleNoChanges(
         },
       })
     }
+
+    const isDifferentApp =
+      input.monitoredAppId != null &&
+      input.previousDeployment?.monitoredAppId != null &&
+      input.previousDeployment.monitoredAppId !== input.monitoredAppId &&
+      input.commitSha === input.previousDeployment.commitSha
+
+    if (isDifferentApp) {
+      if (prApproval.method === 'implicit') {
+        return buildResult(input, {
+          hasFourEyes: true,
+          status: 'implicitly_approved',
+          approvalDetails: {
+            method: 'implicit',
+            approvers: input.deployedPr.metadata.mergedBy ? [input.deployedPr.metadata.mergedBy.username] : [],
+            reason: `${reason} — deployed PR is already implicitly verified on GitHub: ${prApproval.reason}`,
+          },
+        })
+      }
+
+      return buildResult(input, {
+        hasFourEyes: true,
+        status: 'approved',
+        approvalDetails: {
+          method: 'pr_review',
+          approvers: extractApprovers(input.deployedPr.reviews),
+          reason: `${reason} — deployed PR is already four-eyes verified on GitHub: ${prApproval.reason}`,
+        },
+      })
+    }
+
+    return buildResult(input, {
+      hasFourEyes: true,
+      status: 'no_changes',
+      approvalDetails: {
+        method: 'no_changes',
+        approvers: [],
+        reason: `${reason} — underlying PR is already four-eyes verified: ${prApproval.reason}`,
+      },
+    })
   }
 
   // If the "previous deployment" used for this comparison actually belongs to a different
@@ -477,6 +517,7 @@ interface PrDataForVerification {
 export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
   hasFourEyes: boolean
   reason: string
+  method?: 'pr_review' | 'implicit'
 } {
   const { reviewers, commits, baseBranch, mergedBy, prCreator, implicitApprovalMode } = prData
 
@@ -526,7 +567,7 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
       lastRealCommitIndex < commits.length - 1
         ? `Approved by ${approvedReviewsAfterLastCommit[0].username} (after ignoring ${commits.length - 1 - lastRealCommitIndex} base-merge commit(s))`
         : `Approved by ${approvedReviewsAfterLastCommit[0].username} after last commit`
-    return { hasFourEyes: true, reason }
+    return { hasFourEyes: true, reason, method: 'pr_review' }
   }
 
   const approvedReviews = reviewers.filter((r) => r.state === 'APPROVED')
@@ -543,6 +584,7 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
         return {
           hasFourEyes: true,
           reason: `Approved by ${approvedReviews[0].username} (before last commit), merged by ${mergedBy} who is not the last commit author`,
+          method: 'implicit',
         }
       }
     } else if (implicitApprovalMode === 'dependabot_only') {
@@ -560,6 +602,7 @@ export function verifyFourEyesFromPrData(prData: PrDataForVerification): {
         return {
           hasFourEyes: true,
           reason: `Approved by ${approvedReviews[0].username} (before last commit), merged by ${mergedBy} who is not the last commit author`,
+          method: 'implicit',
         }
       }
     }

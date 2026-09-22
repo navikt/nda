@@ -346,6 +346,105 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
     expect(result.status).toBe('unverified_commits')
     expect(result.hasFourEyes).toBe(false)
   })
+
+  it('should approve directly (approved, pr_review) instead of verified_via_sibling when the deployed PR is already four-eyes verified and belongs to a different app', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 82903,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'pending',
+      },
+      commitsBetween: [],
+      deployedPr: {
+        number: 2576,
+        url: 'https://github.com/navikt/pensjon-regler/pull/2576',
+        metadata: makePrMetadata({
+          author: { username: 'erik-hellerslien' },
+          mergedBy: { username: 'erik-hellerslien' },
+        }),
+        reviews: [makePrReview({ username: 'jens-schiefloe', submittedAt: '2026-02-27T13:00:00Z' })],
+        commits: [makePrCommit({ sha: 'commit-a', authorUsername: 'erik-hellerslien' })],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('approved')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.method).toBe('pr_review')
+    expect(result.approvalDetails.approvers).toEqual(['jens-schiefloe'])
+    expect(result.approvalDetails.reason).toContain('already four-eyes verified')
+    expect(result.approvalDetails.reason).not.toContain('sibling')
+  })
+
+  it('should classify as implicitly_approved (not approved/pr_review) when the deployed PR is already verified but only via implicit approval and belongs to a different app', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      implicitApprovalSettings: { mode: 'all' },
+      previousDeployment: {
+        id: 82903,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'pending',
+      },
+      commitsBetween: [],
+      deployedPr: {
+        number: 2577,
+        url: 'https://github.com/navikt/pensjon-regler/pull/2577',
+        metadata: makePrMetadata({
+          author: { username: 'erik-hellerslien' },
+          mergedBy: { username: 'ops-merger' },
+        }),
+        reviews: [makePrReview({ username: 'jens-schiefloe', submittedAt: '2026-02-27T11:00:00Z' })],
+        commits: [makePrCommit({ sha: 'commit-a', authorUsername: 'erik-hellerslien' })],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('implicitly_approved')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.method).toBe('implicit')
+    expect(result.approvalDetails.approvers).toEqual(['ops-merger'])
+    expect(result.approvalDetails.reason).toContain('implicitly verified')
+  })
+
+  it('should still return no_changes (not approved) when the deployed PR is already verified but the previous deployment belongs to the same app', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 998,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 1,
+        fourEyesStatus: 'approved',
+      },
+      commitsBetween: [],
+      deployedPr: {
+        number: 2576,
+        url: 'https://github.com/navikt/pensjon-regler/pull/2576',
+        metadata: makePrMetadata({
+          author: { username: 'erik-hellerslien' },
+          mergedBy: { username: 'erik-hellerslien' },
+        }),
+        reviews: [makePrReview({ username: 'jens-schiefloe', submittedAt: '2026-02-27T13:00:00Z' })],
+        commits: [makePrCommit({ sha: 'commit-a', authorUsername: 'erik-hellerslien' })],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('no_changes')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.method).toBe('no_changes')
+  })
 })
 
 describe('verifyDeployment - Case 2b: zero-commit handling', () => {
@@ -727,6 +826,41 @@ describe('verifyDeployment - GitHub API and access failures', () => {
     expect(result.status).toBe('no_changes')
     expect(result.approvalDetails.method).toBe('no_changes')
     expect(result.approvalDetails.reason).toContain('Superseded deploy')
+  })
+
+  it('should return no_changes (not approved) for an ancestor/superseded deploy with a verified deployedPr, even when the nearby-approved candidate belongs to a different app', () => {
+    const input = makeBaseInput({
+      commitSha: 'ec3489c',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 10450,
+        commitSha: 'ab169e8',
+        createdAt: '2026-02-19T07:46:34Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+      },
+      commitsBetween: [],
+      nearbyApprovedDeploy: {
+        deploymentId: 10450,
+        commitSha: 'ab169e8',
+        status: 'approved',
+      },
+      deployedPr: {
+        number: 3001,
+        url: 'https://github.com/navikt/test-app/pull/3001',
+        metadata: makePrMetadata({
+          author: { username: 'erik-hellerslien' },
+          mergedBy: { username: 'erik-hellerslien' },
+        }),
+        reviews: [makePrReview({ username: 'jens-schiefloe', submittedAt: '2026-02-27T13:00:00Z' })],
+        commits: [makePrCommit({ sha: 'commit-a', authorUsername: 'erik-hellerslien' })],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('no_changes')
+    expect(result.approvalDetails.method).toBe('no_changes')
   })
 })
 
