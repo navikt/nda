@@ -508,6 +508,7 @@ async function getExistingVerificationStatus(deploymentId: number): Promise<Exis
 
 export async function reverifyDeployment(deploymentId: number): Promise<{
   changed: boolean
+  prBackfilled: boolean
   oldStatus: string | null
   newStatus: string
 } | null> {
@@ -634,7 +635,9 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   applyPassthroughFields(newResult, input)
 
   const statusChanged = dep.four_eyes_status !== newResult.status
+  const prBackfillCandidate = dep.github_pr_number == null && newResult.deployedPr?.number != null
 
+  let prBackfilled = false
   if (statusChanged) {
     await storeVerificationResult(dep.id, newResult, { prSnapshotIds: [], commitSnapshotIds: [] }, 'reverification')
     await propagateVerificationToSiblings(
@@ -645,11 +648,13 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       newResult.hasFourEyes,
     )
   } else {
-    await updateDeploymentVerification(dep.id, newResult, 'reverification')
+    const persisted = await updateDeploymentVerification(dep.id, newResult, 'reverification')
+    prBackfilled = prBackfillCandidate && persisted
   }
 
   return {
     changed: statusChanged,
+    prBackfilled,
     oldStatus: dep.four_eyes_status,
     newStatus: newResult.status,
   }

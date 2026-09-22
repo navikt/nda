@@ -175,7 +175,7 @@ export async function action({ request }: Route.ActionArgs) {
     for (const id of ids) {
       try {
         const result = await reverifyDeployment(id)
-        if (result?.changed) {
+        if (result?.changed || result?.prBackfilled) {
           await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [id])
           applied++
         } else {

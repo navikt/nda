@@ -174,6 +174,26 @@ describe('verification-diff action - IDOR protection', () => {
       expect(mockReverifyDeployment).toHaveBeenCalledWith(42)
       expect(result).toEqual(expect.objectContaining({ applied: 42, success: expect.any(String) }))
     })
+
+    it('deletes the diff row and reports success when only PR data was backfilled (status unchanged)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 42, monitored_app_id: 1 }] })
+      mockReverifyDeployment.mockResolvedValue({
+        changed: false,
+        prBackfilled: true,
+        oldStatus: 'approved',
+        newStatus: 'approved',
+      })
+
+      const formData = new FormData()
+      formData.set('action', 'apply_reverification')
+      formData.set('repository_id', '5')
+      formData.set('deployment_id', '42')
+
+      const result = await action({ request: makeRequest(formData), params } as never)
+
+      expect(mockPoolQuery).toHaveBeenCalledWith('DELETE FROM verification_diffs WHERE deployment_id = $1', [42])
+      expect(result).toEqual(expect.objectContaining({ applied: 42, success: expect.any(String) }))
+    })
   })
 
   describe('apply_all', () => {
@@ -203,6 +223,30 @@ describe('verification-diff action - IDOR protection', () => {
       expect(mockReverifyDeployment).not.toHaveBeenCalledWith(2)
       expect(result).toEqual(
         expect.objectContaining({ appliedAll: true, applied: 1, skipped: 1, errors: 1, success: expect.any(String) }),
+      )
+    })
+
+    it('counts PR-backfill-only results (status unchanged) as applied, not skipped', async () => {
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{ id: 1, monitored_app_id: 1 }],
+      })
+      mockReverifyDeployment.mockResolvedValueOnce({
+        changed: false,
+        prBackfilled: true,
+        oldStatus: 'approved',
+        newStatus: 'approved',
+      })
+
+      const formData = new FormData()
+      formData.set('action', 'apply_all')
+      formData.set('repository_id', '5')
+      formData.append('deployment_ids', '1')
+
+      const result = await action({ request: makeRequest(formData), params } as never)
+
+      expect(mockPoolQuery).toHaveBeenCalledWith('DELETE FROM verification_diffs WHERE deployment_id = $1', [1])
+      expect(result).toEqual(
+        expect.objectContaining({ appliedAll: true, applied: 1, skipped: 0, errors: 0, success: expect.any(String) }),
       )
     })
   })

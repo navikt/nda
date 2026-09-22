@@ -187,9 +187,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       if (!result) {
         return { error: `Deployment ${deploymentId} ble hoppet over (manuelt godkjent, legacy, eller mangler data)` }
       }
-      if (result.changed) {
+      if (result.changed || result.prBackfilled) {
         await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [deploymentId])
-        const message = `Oppdatert: ${result.oldStatus} → ${result.newStatus}`
+        const message = result.changed ? `Oppdatert: ${result.oldStatus} → ${result.newStatus}` : 'PR-data oppdatert'
         return {
           applied: deploymentId,
           message,
@@ -226,7 +226,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       try {
         const result = await reverifyDeployment(id)
-        if (result?.changed) {
+        if (result?.changed || result?.prBackfilled) {
           await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [id])
           applied++
         } else {

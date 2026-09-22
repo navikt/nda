@@ -152,6 +152,7 @@ describe('reverifyDeployment cache base validation', () => {
     expect(mockBuildCommitsBetween).not.toHaveBeenCalled()
     expect(result).toEqual({
       changed: false,
+      prBackfilled: false,
       oldStatus: 'approved',
       newStatus: 'approved',
     })
@@ -202,5 +203,114 @@ describe('reverifyDeployment cache base validation', () => {
     expect(mockVerifyDeployment).toHaveBeenCalledWith(
       expect.objectContaining({ deployedPr: expect.objectContaining({ number: 1812 }) }),
     )
+  })
+
+  it('reports prBackfilled and persists via updateDeploymentVerification when status is unchanged but PR is newly discovered', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 12,
+          commit_sha: 'head789',
+          four_eyes_status: 'approved',
+          github_pr_number: null,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          default_branch: 'master',
+          audit_start_year: 2026,
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head789',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({ prNumber: 1812, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockGetPrDataForDiff.mockResolvedValue({
+      metadata: { title: 'PR', baseBranch: 'master' },
+      reviews: [{ username: 'reviewer', state: 'APPROVED' }],
+      commits: [{ sha: 'head789', message: 'bump' }],
+    })
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({
+      status: 'approved',
+      unverifiedCommits: [],
+      deployedPr: { number: 1812 },
+    })
+    mockUpdateDeploymentVerification.mockResolvedValue(true)
+
+    const result = await reverifyDeployment(12)
+
+    expect(mockUpdateDeploymentVerification).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({ status: 'approved', deployedPr: expect.objectContaining({ number: 1812 }) }),
+      'reverification',
+    )
+    expect(result).toEqual({
+      changed: false,
+      prBackfilled: true,
+      oldStatus: 'approved',
+      newStatus: 'approved',
+    })
+  })
+
+  it('does not report prBackfilled when the deployment update affects zero rows (e.g. status became protected mid-flight)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 13,
+          commit_sha: 'head999',
+          four_eyes_status: 'approved',
+          github_pr_number: null,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          default_branch: 'master',
+          audit_start_year: 2026,
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head999',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({ prNumber: 1900, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockGetPrDataForDiff.mockResolvedValue({
+      metadata: { title: 'PR', baseBranch: 'master' },
+      reviews: [{ username: 'reviewer', state: 'APPROVED' }],
+      commits: [{ sha: 'head999', message: 'bump' }],
+    })
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({
+      status: 'approved',
+      unverifiedCommits: [],
+      deployedPr: { number: 1900 },
+    })
+    mockUpdateDeploymentVerification.mockResolvedValue(false)
+
+    const result = await reverifyDeployment(13)
+
+    expect(result).toEqual({
+      changed: false,
+      prBackfilled: false,
+      oldStatus: 'approved',
+      newStatus: 'approved',
+    })
   })
 })
