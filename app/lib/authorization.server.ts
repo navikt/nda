@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg'
+import { LATEST_ACTIVE_REPOSITORY_LINK_SQL } from '~/db/application-repositories.server'
 import { pool, withTransaction } from '~/db/connection.server'
 import type { MonitoredApplication } from '~/db/monitored-applications.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
@@ -213,12 +214,7 @@ async function resolveRepositoryAdminAccessQuery(
     `SELECT DISTINCT ma.id, ma.app_name, ma.team_slug, ma.environment_name
      FROM (
        SELECT monitored_app_id
-       FROM (
-         SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
-         FROM application_repositories
-         WHERE status = 'active'
-         ORDER BY monitored_app_id, created_at DESC, id DESC
-       ) latest_active
+       FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) latest_active
        JOIN repositories r ON r.github_repo_id = latest_active.github_repo_id
        WHERE r.id = $1
 

@@ -28,6 +28,7 @@ vi.mock('~/db/connection.server', () => ({
 
 vi.mock('~/db/application-repositories.server', () => ({
   findRepositoryForApp: vi.fn(),
+  LATEST_ACTIVE_REPOSITORY_LINK_SQL: '',
 }))
 
 vi.mock('~/lib/github', () => ({

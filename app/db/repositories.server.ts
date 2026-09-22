@@ -5,6 +5,7 @@ import { logger } from '~/lib/logger.server'
 import { REPOSITORY_SETTING_KEYS } from '~/lib/repository-setting-keys'
 import { type EffectiveRepositorySettings, resolveEffectiveSettings } from '~/lib/repository-settings'
 import { type ImplicitApprovalMode, isImplicitApprovalMode } from '~/lib/verification/types'
+import { LATEST_ACTIVE_REPOSITORY_LINK_SQL } from './application-repositories.server'
 import type { AuditStartYearChangeResult, RepoScope } from './audit-start-year-baseline.server'
 import { lockRepositoryAdminForWrite, pool, withTransaction } from './connection.server'
 
@@ -70,12 +71,7 @@ export async function getRepositoryByOwnerRepo(
 export async function getAffectedAppsForRepositoryId(repositoryId: number): Promise<AffectedApp[]> {
   const { rows } = await pool.query<AffectedApp>(
     `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name
-     FROM (
-       SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
-       FROM application_repositories
-       WHERE status = 'active'
-       ORDER BY monitored_app_id, created_at DESC, id DESC
-     ) latest
+     FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) latest
      JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
      JOIN repositories r ON r.github_repo_id = latest.github_repo_id
      WHERE ma.is_active = true AND r.id = $1
@@ -88,12 +84,7 @@ export async function getAffectedAppsForRepositoryId(repositoryId: number): Prom
 export async function getAllAppsLinkedToRepositoryId(repositoryId: number): Promise<LinkedRepositoryApp[]> {
   const { rows } = await pool.query<LinkedRepositoryApp>(
     `SELECT ma.id, ma.app_name, ma.team_slug, ma.environment_name, ma.is_active
-     FROM (
-       SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
-       FROM application_repositories
-       WHERE status = 'active'
-       ORDER BY monitored_app_id, created_at DESC, id DESC
-     ) latest
+     FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) latest
      JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
      JOIN repositories r ON r.github_repo_id = latest.github_repo_id
      WHERE r.id = $1
@@ -308,12 +299,7 @@ export async function getRepositoryIdForApp(monitoredAppId: number, client?: Poo
 async function getAppIdsForGithubRepoId(queryable: Queryable, githubRepoId: string): Promise<number[]> {
   const { rows } = await queryable.query<{ id: number }>(
     `SELECT ma.id
-     FROM (
-       SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_repo_id
-       FROM application_repositories
-       WHERE status = 'active'
-       ORDER BY monitored_app_id, created_at DESC, id DESC
-     ) latest
+     FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) latest
      JOIN monitored_applications ma ON ma.id = latest.monitored_app_id
      WHERE ma.is_active = true AND latest.github_repo_id = $1`,
     [githubRepoId],

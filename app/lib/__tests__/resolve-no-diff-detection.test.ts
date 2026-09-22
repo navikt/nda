@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CompareData } from '~/lib/verification/types'
 
-vi.mock('~/db/application-repositories.server', () => ({ findRepositoryForApp: vi.fn() }))
+vi.mock('~/db/application-repositories.server', () => ({
+  findRepositoryForApp: vi.fn(),
+  LATEST_ACTIVE_REPOSITORY_LINK_SQL: '',
+}))
 vi.mock('~/db/connection.server', () => ({ pool: { query: vi.fn() } }))
 vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrSnapshots: vi.fn(),

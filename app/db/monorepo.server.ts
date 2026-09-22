@@ -1,4 +1,5 @@
 import { PROPAGATABLE_STATUSES, REVERIFIABLE_STATUSES, ROOT_APPROVED_STATUSES } from '~/lib/four-eyes-status'
+import { LATEST_ACTIVE_REPOSITORY_LINK_SQL } from './application-repositories.server'
 import { pool } from './connection.server'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from './repository-settings-sql'
 
@@ -38,12 +39,7 @@ interface MonorepoRow extends MonorepoAppEntry {
   repository_linked: boolean
 }
 
-const ACTIVE_REPO_PER_APP = `
-  SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name, github_repo_id
-  FROM application_repositories
-  WHERE status = 'active'
-  ORDER BY monitored_app_id, created_at DESC, id DESC
-`
+const ACTIVE_REPO_PER_APP = LATEST_ACTIVE_REPOSITORY_LINK_SQL
 
 const MONOREPO_ROWS_SELECT = `
   SELECT ar.github_owner, ar.github_repo_name,
