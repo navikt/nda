@@ -244,8 +244,9 @@ export async function computeVerificationDiffs(
       const normalizedOldStatus = normalizeStatus(row.four_eyes_status)
       const normalizedNewStatus = normalizeStatus(newResult.status)
       const statusDifferent = normalizedOldStatus !== normalizedNewStatus
+      const prBackfillAvailable = row.github_pr_number == null && newResult.deployedPr?.number != null
 
-      if (statusDifferent) {
+      if (statusDifferent || prBackfillAvailable) {
         diffs.push({
           deploymentId: row.id,
           oldStatus: row.four_eyes_status,

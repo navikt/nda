@@ -242,10 +242,14 @@ describe('computeVerificationDiffs double-check logic', () => {
     mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
     mockBuildCommitsBetween.mockResolvedValue([])
 
-    const verifyResult = { status: 'approved', approvalDetails: { reason: 'pr_approved' } }
+    const verifyResult = {
+      status: 'approved',
+      approvalDetails: { reason: 'pr_approved' },
+      deployedPr: { number: 100 },
+    }
     mockVerifyDeployment.mockReturnValue(verifyResult)
 
-    await computeVerificationDiffs(1)
+    const result = await computeVerificationDiffs(1)
 
     expect(mockFindPrForCommit).toHaveBeenCalledWith('navikt', 'test-repo', 'abc123', 'main', { cacheOnly: true })
     expect(mockGetPrDataForDiff).toHaveBeenCalledWith('navikt', 'test-repo', 100)
@@ -253,6 +257,44 @@ describe('computeVerificationDiffs double-check logic', () => {
       expect.objectContaining({ deployedPr: expect.objectContaining({ number: 100 }) }),
     )
     expect(mockFetchVerificationData).not.toHaveBeenCalled()
+    expect(result.diffsFound).toBe(1)
+  })
+
+  it('surfaces a diff row for PR backfill even when status is unchanged', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', github_pr_number: null })])
+    mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({ prNumber: 100, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+    mockBuildCommitsBetween.mockResolvedValue([])
+
+    mockVerifyDeployment.mockReturnValue({
+      status: 'approved',
+      approvalDetails: { reason: 'pr_approved' },
+      deployedPr: { number: 100 },
+    })
+
+    const result = await computeVerificationDiffs(1)
+
+    expect(result.diffsFound).toBe(1)
+  })
+
+  it('does not surface a diff row when status is unchanged and PR was already stored', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', github_pr_number: 100 })])
+    mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+    mockBuildCommitsBetween.mockResolvedValue([])
+
+    mockVerifyDeployment.mockReturnValue({
+      status: 'approved',
+      approvalDetails: { reason: 'pr_approved' },
+      deployedPr: { number: 100 },
+    })
+
+    const result = await computeVerificationDiffs(1)
+
+    expect(result.diffsFound).toBe(0)
   })
 
   it('refetches when compare snapshot base_sha does not match previous deployment', async () => {

@@ -42,9 +42,9 @@ export async function updateDeploymentVerification(
   deploymentId: number,
   result: VerificationResult,
   changeSource?: string,
-): Promise<void> {
-  if (result.status === 'manually_approved') return
-  if (result.status === 'legacy') return
+): Promise<boolean> {
+  if (result.status === 'manually_approved') return false
+  if (result.status === 'legacy') return false
 
   let githubPrDataJson: string | null = null
   if (result.deployedPr?.number) {
@@ -110,6 +110,8 @@ export async function updateDeploymentVerification(
       })
     }
   }
+
+  return Boolean(updateResult.rowCount && updateResult.rowCount > 0)
 }
 
 // Deliberately not gated by PROTECTED_STATUSES (unlike updateDeploymentVerification below): commit_checks_data
