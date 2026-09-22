@@ -119,7 +119,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
 
     const result = await fetchDeployedPrData('navikt', 'nda', 'abc123', 'main', { forceRefresh: true })
 
-    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, true)
+    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, true, true)
     expect(mockGetDetailedPullRequestInfo).not.toHaveBeenCalled()
     expect(mockSavePrRawSnapshotsBatch).toHaveBeenCalledWith(
       'navikt',
@@ -136,7 +136,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
     expect(result.deployedPr?.number).toBe(100)
   })
 
-  it('skips fetching comments and does not overwrite cached comment snapshots when includeComments is false (status-only reverification)', async () => {
+  it('skips fetching comments and reviews and does not overwrite cached snapshots when includeComments and includeReviews are false (status-only reverification)', async () => {
     mockGetAllLatestPrRawSnapshots.mockResolvedValue(setUpCachedRawSnapshot(100))
     mockGetPullRequestForCommit.mockResolvedValue({
       pr: { number: 100, title: 'Some PR', html_url: '', merged_at: '2026-01-02T00:00:00Z', state: 'closed' },
@@ -144,26 +144,27 @@ describe('fetchDeployedPrData granular force-refresh', () => {
     })
     mockGetMutablePrDataFromGitHub.mockResolvedValue({
       githubRepoId: 42,
-      reviews: [],
+      reviews: null,
       issueComments: null,
       reviewComments: null,
       apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
     })
-    mockSavePrRawSnapshotsBatch.mockResolvedValue([1])
+    mockSavePrRawSnapshotsBatch.mockResolvedValue([])
 
     const result = await fetchDeployedPrData('navikt', 'nda', 'abc123', 'main', {
       forceRefresh: true,
       includeComments: false,
+      includeReviews: false,
     })
 
-    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, false)
+    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, false, false)
     expect(mockSavePrRawSnapshotsBatch).toHaveBeenCalledWith(
       'navikt',
       'nda',
       100,
       42,
       { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
-      [{ dataType: 'reviews', data: [] }],
+      [],
     )
     expect(result.deployedPr?.number).toBe(100)
   })
@@ -227,7 +228,7 @@ describe('fetchDeployedPrData granular force-refresh', () => {
 
     const result = await fetchDeployedPrData('navikt', 'nda', 'abc123', 'main', { forceRefresh: true })
 
-    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, true)
+    expect(mockGetMutablePrDataFromGitHub).toHaveBeenCalledWith('navikt', 'nda', 100, true, true)
     expect(mockGetDetailedPullRequestInfo).toHaveBeenCalledWith('navikt', 'nda', 100)
     expect(result.deployedPr?.number).toBe(100)
   })

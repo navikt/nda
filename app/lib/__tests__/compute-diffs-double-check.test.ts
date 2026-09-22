@@ -164,6 +164,7 @@ describe('computeVerificationDiffs double-check logic', () => {
     expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'abc123', 'navikt/test-repo', 'prod-gcp', 'main', 1, {
       forceRefresh: true,
       includeComments: false,
+      includeReviews: false,
     })
     expect(result.diffsFound).toBe(0)
     expect(result.deploymentsChecked).toBe(1)
@@ -187,6 +188,7 @@ describe('computeVerificationDiffs double-check logic', () => {
     expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'abc123', 'navikt/test-repo', 'prod-gcp', 'main', 1, {
       forceRefresh: true,
       includeComments: false,
+      includeReviews: false,
     })
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('missing PR snapshot'))
   })

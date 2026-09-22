@@ -192,6 +192,7 @@ export async function buildCommitsBetweenFromCache(
           prNumber,
           options?.forceRefresh ?? false,
           options?.includeComments ?? true,
+          options?.includeReviews ?? true,
         ).catch((error) => {
           prFetchCache.delete(prNumber)
           throw error
