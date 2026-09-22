@@ -144,7 +144,13 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     deployment.four_eyes_status === 'unauthorized_repository'
       ? getRepositoriesByAppId(deployment.monitored_app_id)
       : Promise.resolve([]),
-    deployment.commit_sha ? getCompareSnapshotForCommit(deployment.commit_sha) : Promise.resolve(null),
+    deployment.commit_sha && deployment.detected_github_owner && deployment.detected_github_repo_name
+      ? getCompareSnapshotForCommit(
+          deployment.detected_github_owner,
+          deployment.detected_github_repo_name,
+          deployment.commit_sha,
+        )
+      : Promise.resolve(null),
     deployment.github_pr_number && deployment.detected_github_owner && deployment.detected_github_repo_name
       ? getPrDataForDiff(
           deployment.detected_github_owner,

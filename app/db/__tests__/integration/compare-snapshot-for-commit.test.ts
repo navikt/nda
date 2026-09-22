@@ -51,7 +51,7 @@ describe('getCompareSnapshotForCommit', () => {
       fetchedAt: new Date('2026-01-02T00:00:00Z'),
     })
 
-    const result = await getCompareSnapshotForCommit(headSha)
+    const result = await getCompareSnapshotForCommit(owner, repo, headSha)
 
     expect(result?.base_sha).toBe(realBaseSha)
   })
@@ -67,7 +67,57 @@ describe('getCompareSnapshotForCommit', () => {
       fetchedAt: new Date('2026-01-01T00:00:00Z'),
     })
 
-    const result = await getCompareSnapshotForCommit(headSha)
+    const result = await getCompareSnapshotForCommit(owner, repo, headSha)
+
+    expect(result).toBeNull()
+  })
+
+  it('ignores snapshots from a different repository sharing the same head_sha', async () => {
+    const headSha = 'a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d'
+    const realBaseSha = 'f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d'
+
+    await insertSnapshot(pool, {
+      owner,
+      repo: 'other-repo',
+      baseSha: realBaseSha,
+      headSha,
+      fetchedAt: new Date('2026-01-01T00:00:00Z'),
+    })
+
+    const result = await getCompareSnapshotForCommit(owner, repo, headSha)
+
+    expect(result).toBeNull()
+  })
+
+  it('returns the exact base_sha match when an expected base commit is provided, including self-compares', async () => {
+    const headSha = 'bb11cc22dd33ee44ff550011223344556677889a'
+    const expectedBaseSha = headSha
+
+    await insertSnapshot(pool, {
+      owner,
+      repo,
+      baseSha: expectedBaseSha,
+      headSha,
+      fetchedAt: new Date('2026-01-01T00:00:00Z'),
+    })
+
+    const result = await getCompareSnapshotForCommit(owner, repo, headSha, expectedBaseSha)
+
+    expect(result?.base_sha).toBe(expectedBaseSha)
+  })
+
+  it('returns null when the only cached snapshot does not match the expected base commit', async () => {
+    const headSha = 'cc22dd33ee44ff55001122334455667788990a1b'
+
+    await insertSnapshot(pool, {
+      owner,
+      repo,
+      baseSha: 'unrelated-base-sha',
+      headSha,
+      fetchedAt: new Date('2026-01-01T00:00:00Z'),
+    })
+
+    const result = await getCompareSnapshotForCommit(owner, repo, headSha, 'expected-base-sha')
 
     expect(result).toBeNull()
   })

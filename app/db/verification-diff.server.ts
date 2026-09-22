@@ -107,14 +107,27 @@ export async function getPreviousDeploymentForDiff(
 }
 
 export async function getCompareSnapshotForCommit(
+  owner: string,
+  repo: string,
   commitSha: string,
+  expectedBaseSha?: string | null,
 ): Promise<{ data: unknown; base_sha: string } | null> {
+  if (expectedBaseSha) {
+    const result = await pool.query(
+      `SELECT data, base_sha FROM github_compare_snapshots
+       WHERE owner = $1 AND repo = $2 AND head_sha = $3 AND base_sha = $4
+       ORDER BY fetched_at DESC LIMIT 1`,
+      [owner, repo, commitSha, expectedBaseSha],
+    )
+    return result.rows[0] || null
+  }
+
   const result = await pool.query(
-    `SELECT data, base_sha FROM github_compare_snapshots 
-     WHERE head_sha = $1 
+    `SELECT data, base_sha FROM github_compare_snapshots
+     WHERE owner = $1 AND repo = $2 AND head_sha = $3
        AND base_sha != head_sha
      ORDER BY fetched_at DESC LIMIT 1`,
-    [commitSha],
+    [owner, repo, commitSha],
   )
   return result.rows[0] || null
 }

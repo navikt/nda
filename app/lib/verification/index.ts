@@ -531,9 +531,6 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const { implicitApprovalSettings } = await getEffectiveSettingsForApp(dep.monitored_app_id)
 
-  const compareSnapshot = await getCompareSnapshotForCommit(dep.commit_sha)
-  if (!compareSnapshot) return null
-
   const owner = dep.detected_github_owner as string | null
   const repo = dep.detected_github_repo_name as string | null
   if (!owner || !repo) return null
@@ -559,6 +556,14 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
         dep.id,
       )
     : null
+
+  const compareSnapshot = await getCompareSnapshotForCommit(
+    owner,
+    repo,
+    dep.commit_sha,
+    previousDeployment?.commitSha ?? null,
+  )
+  if (!compareSnapshot) return null
 
   let input: VerificationInput
   const cacheBaseMismatch = previousDeployment && compareSnapshot.base_sha !== previousDeployment.commitSha
