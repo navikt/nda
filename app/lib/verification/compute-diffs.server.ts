@@ -1,6 +1,6 @@
 import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
 import { getSyncJobById, heartbeatSyncJob, isAppBlockedByRunningJob } from '~/db/sync-jobs.server'
 import {
   getCompareSnapshotForCommit,
@@ -55,18 +55,23 @@ export async function computeVerificationDiffs(
     errors: 0,
   }
 
-  const repoIdCache = new Map<string, { githubRepoId: string | null; status: string | null }>()
+  const repoIdCache = new Map<
+    string,
+    { githubRepoId: string | null; status: string | null; repositoryId: number | null }
+  >()
   async function resolveRepoInfo(
     owner: string,
     repo: string,
-  ): Promise<{ githubRepoId: string | null; status: string | null }> {
+  ): Promise<{ githubRepoId: string | null; status: string | null; repositoryId: number | null }> {
     const cacheKey = `${owner}/${repo}`
     const cached = repoIdCache.get(cacheKey)
     if (cached) return cached
     const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
+    const githubRepoId = repoCheck.repository?.github_repo_id ?? null
     const info = {
-      githubRepoId: repoCheck.repository?.github_repo_id ?? null,
+      githubRepoId,
       status: repoCheck.repository?.status ?? null,
+      repositoryId: githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null,
     }
     repoIdCache.set(cacheKey, info)
     return info
@@ -77,6 +82,7 @@ export async function computeVerificationDiffs(
     oldStatus: string | null
     newStatus: string
     errorReason: string | null
+    repositoryId: number | null
   }> = []
 
   for (const row of deployments) {
@@ -100,7 +106,7 @@ export async function computeVerificationDiffs(
       let input: VerificationInput
       let precomputedResult: ReturnType<typeof verifyDeployment> | null = null
 
-      const { githubRepoId, status } = await resolveRepoInfo(owner, repo)
+      const { githubRepoId, status, repositoryId } = await resolveRepoInfo(owner, repo)
       const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
       const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
       const previousDeployment = prevRow
@@ -252,6 +258,7 @@ export async function computeVerificationDiffs(
           oldStatus: row.four_eyes_status,
           newStatus: newResult.status,
           errorReason: newResult.status === 'error' ? newResult.approvalDetails.reason : null,
+          repositoryId,
         })
       }
 
@@ -272,9 +279,9 @@ export async function computeVerificationDiffs(
     for (const diff of diffs) {
       await client.query(
         `INSERT INTO verification_diffs 
-           (monitored_app_id, deployment_id, old_status, new_status, error_reason, computed_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [monitoredAppId, diff.deploymentId, diff.oldStatus, diff.newStatus, diff.errorReason],
+           (monitored_app_id, deployment_id, old_status, new_status, error_reason, repository_id, computed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [monitoredAppId, diff.deploymentId, diff.oldStatus, diff.newStatus, diff.errorReason, diff.repositoryId],
       )
     }
 

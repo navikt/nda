@@ -108,6 +108,13 @@ export async function getRepositoryById(repositoryId: number): Promise<Repositor
   return rows[0] ?? null
 }
 
+export async function getRepositoryIdByGithubRepoId(githubRepoId: string): Promise<number | null> {
+  const { rows } = await pool.query<{ id: number }>(`SELECT id FROM repositories WHERE github_repo_id = $1`, [
+    githubRepoId,
+  ])
+  return rows[0]?.id ?? null
+}
+
 export async function isCurrentOrHistoricalNameForRepositoryId(
   repositoryId: number,
   githubOwner: string,

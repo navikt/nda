@@ -24,7 +24,7 @@ import { getLatestSyncJobForRepository, getSyncJobById } from '~/db/sync-jobs.se
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import {
   getApprovedDeploymentsMissingApproverForApps,
-  getVerificationDiffsForApps,
+  getVerificationDiffsForRepository,
 } from '~/db/verification-diff.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
@@ -78,7 +78,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const appIds = affectedApps.map((app) => app.id)
 
   const [diffRows, latestJob, latestRefreshJob, missingApproverRows] = await Promise.all([
-    getVerificationDiffsForApps(appIds),
+    getVerificationDiffsForRepository(repository.id, appIds),
     getLatestSyncJobForRepository(repository.id, 'reverify_app'),
     getLatestSyncJobForRepository(repository.id, 'refresh_missing_approver'),
     getApprovedDeploymentsMissingApproverForApps(appIds),

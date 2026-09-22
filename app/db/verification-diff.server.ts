@@ -59,7 +59,10 @@ export interface RepositoryDeploymentDiff {
   app_name: string
 }
 
-export async function getVerificationDiffsForApps(monitoredAppIds: number[]): Promise<RepositoryDeploymentDiff[]> {
+export async function getVerificationDiffsForRepository(
+  repositoryId: number,
+  monitoredAppIds: number[],
+): Promise<RepositoryDeploymentDiff[]> {
   if (monitoredAppIds.length === 0) return []
   const result = await pool.query<RepositoryDeploymentDiff>(
     `SELECT vd.deployment_id, vd.old_status, vd.new_status, vd.error_reason,
@@ -68,9 +71,10 @@ export async function getVerificationDiffsForApps(monitoredAppIds: number[]): Pr
             d.monitored_app_id, d.team_slug, d.app_name
      FROM verification_diffs vd
      JOIN deployments d ON vd.deployment_id = d.id
-     WHERE vd.monitored_app_id = ANY($1)
+     WHERE vd.repository_id = $1
+       AND d.monitored_app_id = ANY($2)
      ORDER BY d.created_at DESC`,
-    [monitoredAppIds],
+    [repositoryId, monitoredAppIds],
   )
   return result.rows
 }
