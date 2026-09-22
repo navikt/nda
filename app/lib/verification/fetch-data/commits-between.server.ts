@@ -186,7 +186,13 @@ export async function buildCommitsBetweenFromCache(
     if (prNumber && !prData && !cacheOnly) {
       let prFetch = prFetchCache.get(prNumber)
       if (!prFetch) {
-        prFetch = fetchOrRefreshMergedPrData(owner, repo, prNumber, options?.forceRefresh ?? false).catch((error) => {
+        prFetch = fetchOrRefreshMergedPrData(
+          owner,
+          repo,
+          prNumber,
+          options?.forceRefresh ?? false,
+          options?.includeComments ?? true,
+        ).catch((error) => {
           prFetchCache.delete(prNumber)
           throw error
         })
