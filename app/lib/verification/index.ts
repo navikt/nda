@@ -578,7 +578,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       dep.environment_name,
       baseBranch,
       dep.monitored_app_id,
-      { forceRefresh: true },
+      { forceRefresh: true, includeComments: false },
     )
   } else {
     const compareData = compareSnapshot.data as CompareData

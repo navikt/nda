@@ -413,7 +413,7 @@ describe('findPrForCommit stale cache handling', () => {
       forceRefresh: true,
     })
 
-    expect(mockGetMutablePrData).toHaveBeenCalledWith('navikt', 'repo', 100)
+    expect(mockGetMutablePrData).toHaveBeenCalledWith('navikt', 'repo', 100, true)
     expect(mockGetDetailedPrInfo).not.toHaveBeenCalled()
     expect(result[0].pr?.number).toBe(100)
   })

@@ -138,6 +138,7 @@ describe('reverifyDeployment cache base validation', () => {
 
     expect(mockFetchVerificationData).toHaveBeenCalledWith(10, 'head123', 'navikt/repo', 'prod-gcp', 'main', 99, {
       forceRefresh: true,
+      includeComments: false,
     })
     expect(mockBuildCommitsBetween).not.toHaveBeenCalled()
     expect(result).toEqual({

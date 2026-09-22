@@ -95,14 +95,15 @@ export async function fetchMutablePrDataFromGitHub(
   owner: string,
   repo: string,
   prNumber: number,
+  includeComments: boolean = true,
 ): Promise<{
   githubRepoId: number
   reviews: RawPrReview[]
-  issueComments: RawIssueComment[]
-  reviewComments: RawReviewComment[]
+  issueComments: RawIssueComment[] | null
+  reviewComments: RawReviewComment[] | null
   apiVersion: ApiVersionMetadata
 }> {
-  const result = await getMutablePrDataFromGitHub(owner, repo, prNumber)
+  const result = await getMutablePrDataFromGitHub(owner, repo, prNumber, includeComments)
 
   if (!result) {
     throw new Error(`Failed to fetch mutable PR data for PR #${prNumber} from ${owner}/${repo}`)
@@ -118,11 +119,13 @@ export async function persistMutablePrSnapshots(
   githubRepoId: number,
   data: Awaited<ReturnType<typeof fetchMutablePrDataFromGitHub>>,
 ): Promise<void> {
-  await savePrRawSnapshotsBatch(owner, repo, prNumber, githubRepoId, data.apiVersion, [
+  const snapshots: Array<{ dataType: 'reviews' | 'comments' | 'review_comments'; data: unknown }> = [
     { dataType: 'reviews', data: data.reviews },
-    { dataType: 'comments', data: data.issueComments },
-    { dataType: 'review_comments', data: data.reviewComments },
-  ])
+  ]
+  if (data.issueComments !== null) snapshots.push({ dataType: 'comments', data: data.issueComments })
+  if (data.reviewComments !== null) snapshots.push({ dataType: 'review_comments', data: data.reviewComments })
+
+  await savePrRawSnapshotsBatch(owner, repo, prNumber, githubRepoId, data.apiVersion, snapshots)
 }
 
 /**
@@ -138,12 +141,13 @@ export async function refreshMutablePrData(
   owner: string,
   repo: string,
   prNumber: number,
+  includeComments: boolean = true,
 ): Promise<GitHubPRData | null> {
   const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
   const prSnapshot = rawSnapshots.get('pr')
   if (!prSnapshot) return null
 
-  const fetched = await fetchMutablePrDataFromGitHub(owner, repo, prNumber)
+  const fetched = await fetchMutablePrDataFromGitHub(owner, repo, prNumber, includeComments)
   if (fetched.githubRepoId !== prSnapshot.githubRepoId) return null
 
   await persistMutablePrSnapshots(owner, repo, prNumber, fetched.githubRepoId, fetched)
@@ -171,6 +175,7 @@ export interface FetchOptions {
   forceRefresh?: boolean
   refreshDisplayData?: boolean
   dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[]
+  includeComments?: boolean
 }
 
 export async function fetchDeployedPrData(
@@ -241,6 +246,7 @@ export async function fetchDeployedPrData(
     repo,
     prNumber,
     options?.forceRefresh ?? false,
+    options?.includeComments ?? true,
   )
 
   return {
@@ -262,11 +268,12 @@ export async function fetchOrRefreshMergedPrData(
   repo: string,
   prNumber: number,
   forceRefresh: boolean,
+  includeComments: boolean = true,
 ): Promise<{ metadata: PrMetadata; reviews: PrReview[]; commits: PrCommit[] }> {
   if (forceRefresh) {
     const cachedPrData = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
     if (cachedPrData?.merged_at) {
-      const refreshed = await refreshMutablePrData(owner, repo, prNumber)
+      const refreshed = await refreshMutablePrData(owner, repo, prNumber, includeComments)
       if (refreshed) {
         return mapPrDataToVerificationTypes(prNumber, refreshed)
       }

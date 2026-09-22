@@ -206,7 +206,7 @@ export async function computeVerificationDiffs(
                 row.environment_name,
                 baseBranch,
                 monitoredAppId,
-                { forceRefresh: true },
+                { forceRefresh: true, includeComments: false },
               )
             } catch (err) {
               logger.warn(`   ⚠️ Force-refresh failed for deployment ${row.id}, using cache-only result`, {

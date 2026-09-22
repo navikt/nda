@@ -509,11 +509,12 @@ export async function getMutablePrDataFromGitHub(
   owner: string,
   repo: string,
   pull_number: number,
+  includeComments: boolean = true,
 ): Promise<{
   githubRepoId: number
   reviews: RawPrSnapshotData['reviews']
-  issueComments: RawPrSnapshotData['issueComments']
-  reviewComments: RawPrSnapshotData['reviewComments']
+  issueComments: RawPrSnapshotData['issueComments'] | null
+  reviewComments: RawPrSnapshotData['reviewComments'] | null
   apiVersion: ApiVersionMetadata
 } | null> {
   const client = getGitHubClient()
@@ -530,18 +531,22 @@ export async function getMutablePrDataFromGitHub(
         captureHeaders(response.headers)
         return response.data
       }),
-      client.paginate(
-        client.issues.listComments,
-        { owner, repo, issue_number: pull_number, per_page: 100 },
-        (response) => {
-          captureHeaders(response.headers)
-          return response.data
-        },
-      ),
-      client.paginate(client.pulls.listReviewComments, { owner, repo, pull_number, per_page: 100 }, (response) => {
-        captureHeaders(response.headers)
-        return response.data
-      }),
+      includeComments
+        ? client.paginate(
+            client.issues.listComments,
+            { owner, repo, issue_number: pull_number, per_page: 100 },
+            (response) => {
+              captureHeaders(response.headers)
+              return response.data
+            },
+          )
+        : Promise.resolve(null),
+      includeComments
+        ? client.paginate(client.pulls.listReviewComments, { owner, repo, pull_number, per_page: 100 }, (response) => {
+            captureHeaders(response.headers)
+            return response.data
+          })
+        : Promise.resolve(null),
     ])
 
     return {
