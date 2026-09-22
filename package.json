@@ -84,7 +84,7 @@
     "@vitest/coverage-v8": "^4.1.0",
     "happy-dom": "^20.14.5",
     "knip": "^6.35.1",
-    "lefthook": "^2.1.12",
+    "lefthook": "^2.1.14",
     "storybook": "10.6.0",
     "testcontainers": "^12.1.0",
     "tsx": "^4.23.13",
