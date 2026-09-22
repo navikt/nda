@@ -10,7 +10,12 @@ import { getMergedPullRequestsInWindow } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
 import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
-import { buildCommitsBetweenFromCache, fetchVerificationData, getPrDataForDiff } from './fetch-data.server'
+import {
+  buildCommitsBetweenFromCache,
+  fetchVerificationData,
+  findPrForCommit,
+  getPrDataForDiff,
+} from './fetch-data.server'
 import { storeVerificationResult, updateDeploymentVerification } from './store-data.server'
 import type { CompareData, VerificationInput, VerificationResult } from './types'
 import { verifyDeployment } from './verify'
@@ -587,12 +592,15 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     })
 
     let deployedPr: VerificationInput['deployedPr'] = null
-    if (dep.github_pr_number) {
-      const prData = await getPrDataForDiff(owner, repo, dep.github_pr_number)
+    const cachedPrNumber =
+      dep.github_pr_number ??
+      (await findPrForCommit(owner, repo, dep.commit_sha, baseBranch, { cacheOnly: true })).prNumber
+    if (cachedPrNumber) {
+      const prData = await getPrDataForDiff(owner, repo, cachedPrNumber)
       if (prData) {
         deployedPr = {
-          number: dep.github_pr_number,
-          url: `https://github.com/${owner}/${repo}/pull/${dep.github_pr_number}`,
+          number: cachedPrNumber,
+          url: `https://github.com/${owner}/${repo}/pull/${cachedPrNumber}`,
           metadata: prData.metadata,
           reviews: prData.reviews,
           commits: prData.commits,

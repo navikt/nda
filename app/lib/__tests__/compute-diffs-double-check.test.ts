@@ -34,6 +34,7 @@ vi.mock('~/lib/logger.server', () => ({
 vi.mock('~/lib/verification/fetch-data.server', () => ({
   buildCommitsBetweenFromCache: vi.fn(),
   fetchVerificationData: vi.fn(),
+  findPrForCommit: vi.fn(),
   getPrDataForDiff: vi.fn(),
 }))
 
@@ -53,6 +54,7 @@ import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.serve
 import {
   buildCommitsBetweenFromCache,
   fetchVerificationData,
+  findPrForCommit,
   getPrDataForDiff,
 } from '~/lib/verification/fetch-data.server'
 import { verifyDeployment } from '~/lib/verification/verify'
@@ -62,6 +64,7 @@ const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
 const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetPrDataForDiff = getPrDataForDiff as Mock
+const mockFindPrForCommit = findPrForCommit as Mock
 const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
@@ -229,6 +232,27 @@ describe('computeVerificationDiffs double-check logic', () => {
     expect(mockFetchVerificationData).not.toHaveBeenCalled()
     expect(mockVerifyDeployment).toHaveBeenCalledTimes(1)
     expect(result.diffsFound).toBe(0)
+  })
+
+  it('discovers PR via cache-only lookup when deployment has no stored github_pr_number', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', github_pr_number: null })])
+    mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({ prNumber: 100, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+    mockBuildCommitsBetween.mockResolvedValue([])
+
+    const verifyResult = { status: 'approved', approvalDetails: { reason: 'pr_approved' } }
+    mockVerifyDeployment.mockReturnValue(verifyResult)
+
+    await computeVerificationDiffs(1)
+
+    expect(mockFindPrForCommit).toHaveBeenCalledWith('navikt', 'test-repo', 'abc123', 'main', { cacheOnly: true })
+    expect(mockGetPrDataForDiff).toHaveBeenCalledWith('navikt', 'test-repo', 100)
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ deployedPr: expect.objectContaining({ number: 100 }) }),
+    )
+    expect(mockFetchVerificationData).not.toHaveBeenCalled()
   })
 
   it('refetches when compare snapshot base_sha does not match previous deployment', async () => {

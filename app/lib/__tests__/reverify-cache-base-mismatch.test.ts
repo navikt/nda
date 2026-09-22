@@ -41,6 +41,7 @@ vi.mock('~/lib/logger.server', () => ({
 vi.mock('~/lib/verification/fetch-data.server', () => ({
   buildCommitsBetweenFromCache: vi.fn(),
   fetchVerificationData: vi.fn(),
+  findPrForCommit: vi.fn(),
   getPrDataForDiff: vi.fn(),
 }))
 
@@ -57,7 +58,12 @@ import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
-import { buildCommitsBetweenFromCache, fetchVerificationData } from '~/lib/verification/fetch-data.server'
+import {
+  buildCommitsBetweenFromCache,
+  fetchVerificationData,
+  findPrForCommit,
+  getPrDataForDiff,
+} from '~/lib/verification/fetch-data.server'
 import { reverifyDeployment } from '~/lib/verification/index'
 import { updateDeploymentVerification } from '~/lib/verification/store-data.server'
 import { verifyDeployment } from '~/lib/verification/verify'
@@ -68,6 +74,8 @@ const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
 const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
+const mockFindPrForCommit = findPrForCommit as Mock
+const mockGetPrDataForDiff = getPrDataForDiff as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockVerifyDeployment = verifyDeployment as Mock
 const mockUpdateDeploymentVerification = updateDeploymentVerification as Mock
@@ -147,5 +155,52 @@ describe('reverifyDeployment cache base validation', () => {
       oldStatus: 'approved',
       newStatus: 'approved',
     })
+  })
+
+  it('discovers PR via cache-only lookup when deployment has no stored github_pr_number', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 11,
+          commit_sha: 'head456',
+          four_eyes_status: 'unverified_commits',
+          github_pr_number: null,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          default_branch: 'master',
+          audit_start_year: 2026,
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head456',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({ prNumber: 1812, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockGetPrDataForDiff.mockResolvedValue({
+      metadata: { title: 'PR', baseBranch: 'master' },
+      reviews: [{ username: 'reviewer', state: 'APPROVED' }],
+      commits: [{ sha: 'head456', message: 'bump' }],
+    })
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+    mockUpdateDeploymentVerification.mockResolvedValue(undefined)
+
+    await reverifyDeployment(11)
+
+    expect(mockFindPrForCommit).toHaveBeenCalledWith('navikt', 'repo', 'head456', 'master', { cacheOnly: true })
+    expect(mockGetPrDataForDiff).toHaveBeenCalledWith('navikt', 'repo', 1812)
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ deployedPr: expect.objectContaining({ number: 1812 }) }),
+    )
   })
 })
