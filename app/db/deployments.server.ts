@@ -1,4 +1,4 @@
-import { notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { APPROVED_STATUSES_SQL, notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
 import { pool } from './connection.server'
@@ -300,6 +300,8 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   if (filters?.four_eyes_status) {
     if (filters.four_eyes_status === 'not_approved') {
       whereSql += ` AND ${notApprovedWhereClause('d.four_eyes_status')}`
+    } else if (filters.four_eyes_status === 'approved') {
+      whereSql += ` AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})`
     } else if (filters.four_eyes_status === 'pending') {
       whereSql += ` AND COALESCE(d.four_eyes_status, 'unknown') IN (${PENDING_STATUSES_SQL})`
     } else if (filters.four_eyes_status === 'baseline_action') {
@@ -614,10 +616,12 @@ export {
 } from './deployments/notifications.server'
 export type { SearchResult } from './deployments/search.server'
 export { searchDeployments } from './deployments/search.server'
+export type { AppDeploymentStats } from './deployments/stats.server'
 export {
   getAppDeploymentStats,
   getAppDeploymentStatsBatch,
   getPendingVerificationCount,
+  getRepositoryDeploymentStats,
 } from './deployments/stats.server'
 export type { RepositoryDeploymentStatusChange } from './deployments/status-history.server'
 export {

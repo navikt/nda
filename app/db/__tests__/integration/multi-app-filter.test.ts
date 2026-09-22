@@ -1,6 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getDeploymentsPaginated } from '~/db/deployments.server'
+import { APPROVED_STATUSES } from '~/lib/four-eyes-status'
 import {
   seedApp,
   seedApplicationRepository,
@@ -105,6 +106,46 @@ describe('getDeploymentsPaginated with monitored_app_ids', () => {
     for (const d of result.deployments) {
       expect(d.four_eyes_status).toBe('not_approved')
     }
+  })
+
+  it('matches every status in APPROVED_STATUSES when filtering by grouped four_eyes_status "approved"', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team', appName: 'app-1', environment: 'prod' })
+    const app2 = await seedApp(pool, { teamSlug: 'team', appName: 'app-2', environment: 'prod' })
+
+    for (const status of APPROVED_STATUSES) {
+      await seedDeployment(pool, {
+        monitoredAppId: app1,
+        teamSlug: 'team',
+        environment: 'prod',
+        fourEyesStatus: status,
+      })
+    }
+    await seedDeployment(pool, {
+      monitoredAppId: app2,
+      teamSlug: 'team',
+      environment: 'prod',
+      fourEyesStatus: 'pending',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: app2,
+      teamSlug: 'team',
+      environment: 'prod',
+      fourEyesStatus: 'direct_push',
+    })
+
+    const result = await getDeploymentsPaginated({
+      monitored_app_ids: [app1, app2],
+      four_eyes_status: 'approved',
+      per_page: APPROVED_STATUSES.length,
+    })
+
+    expect(result.total).toBe(APPROVED_STATUSES.length)
+    const statusesFound = result.deployments.map((d) => d.four_eyes_status)
+    for (const status of APPROVED_STATUSES) {
+      expect(statusesFound).toContain(status)
+    }
+    expect(statusesFound).not.toContain('pending')
+    expect(statusesFound).not.toContain('direct_push')
   })
 
   it('combines with goal_filter missing', async () => {

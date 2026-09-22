@@ -35,6 +35,44 @@ export async function getAppDeploymentStats(
   return map.get(monitoredAppId)!
 }
 
+export async function getRepositoryDeploymentStats(
+  apps: Array<{ id: number; audit_start_year?: number | null }>,
+  startDate?: Date,
+  endDate?: Date,
+): Promise<AppDeploymentStats> {
+  const statsByApp = await getAppDeploymentStatsBatch(apps, undefined, { startDate, endDate })
+
+  const combined: AppDeploymentStats = {
+    total: 0,
+    with_four_eyes: 0,
+    without_four_eyes: 0,
+    pending_verification: 0,
+    missing_goal_links: 0,
+    baseline_action_count: 0,
+    last_deployment: null,
+    last_deployment_id: null,
+    four_eyes_percentage: 0,
+  }
+
+  for (const stats of statsByApp.values()) {
+    combined.total += stats.total
+    combined.with_four_eyes += stats.with_four_eyes
+    combined.without_four_eyes += stats.without_four_eyes
+    combined.pending_verification += stats.pending_verification
+    combined.missing_goal_links = (combined.missing_goal_links ?? 0) + (stats.missing_goal_links ?? 0)
+    combined.baseline_action_count = (combined.baseline_action_count ?? 0) + (stats.baseline_action_count ?? 0)
+
+    if (stats.last_deployment && (!combined.last_deployment || stats.last_deployment > combined.last_deployment)) {
+      combined.last_deployment = stats.last_deployment
+      combined.last_deployment_id = stats.last_deployment_id
+    }
+  }
+
+  combined.four_eyes_percentage = combined.total > 0 ? Math.round((combined.with_four_eyes / combined.total) * 100) : 0
+
+  return combined
+}
+
 export async function getPendingVerificationCount(monitoredAppId: number): Promise<{ pending: number; total: number }> {
   const statusesToVerify = [...REVERIFIABLE_STATUSES.filter((s) => s !== 'pending_baseline'), 'error']
 
