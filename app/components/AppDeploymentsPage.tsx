@@ -43,6 +43,7 @@ export interface AppDeploymentsPageProps {
   deployments: DeploymentData[]
   total: number
   page: number
+  per_page: number
   total_pages: number
   userMappings: UserMappings
   deployerOptions: FilterOption[]
@@ -64,6 +65,7 @@ export function AppDeploymentsPage({
   deployments,
   total,
   page,
+  per_page,
   total_pages,
   userMappings,
   deployerOptions,
@@ -106,6 +108,13 @@ export function AppDeploymentsPage({
   const goToPage = (newPage: number) => {
     const newParams = new URLSearchParams(searchParams)
     newParams.set('page', String(newPage))
+    setSearchParams(newParams)
+  }
+
+  const changePerPage = (newPerPage: number) => {
+    const newParams = new URLSearchParams(searchParams)
+    newParams.set('perPage', String(newPerPage))
+    newParams.set('page', '1')
     setSearchParams(newParams)
   }
 
@@ -202,7 +211,13 @@ export function AppDeploymentsPage({
         )}
       </div>
 
-      <PaginationControls page={page} totalPages={total_pages} onPageChange={goToPage} />
+      <PaginationControls
+        page={page}
+        totalPages={total_pages}
+        onPageChange={goToPage}
+        perPage={per_page}
+        onPerPageChange={changePerPage}
+      />
     </VStack>
   )
 }

@@ -4,6 +4,7 @@ import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.s
 import { getMonorepoSiblings } from '~/db/monorepo.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getMultiAppDeploymentsPageData } from '~/lib/deployments/multi-app-deployments.server'
+import { parsePerPage } from '~/lib/pagination'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import type { Route } from './+types/$team.env.$env.app.$app.deployments'
@@ -21,6 +22,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   }
 
   const page = parseInt(url.searchParams.get('page') || '1', 10)
+  const perPage = parsePerPage(url.searchParams.get('perPage'))
   const status = url.searchParams.get('status') || undefined
   const method = url.searchParams.get('method') as 'pr' | 'direct_push' | 'legacy' | undefined
   const goalParam = url.searchParams.get('goal') || ''
@@ -59,6 +61,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     apps,
     {
       page,
+      perPage,
       status,
       method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
       goal,
