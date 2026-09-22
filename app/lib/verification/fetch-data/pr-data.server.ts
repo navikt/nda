@@ -96,14 +96,15 @@ export async function fetchMutablePrDataFromGitHub(
   repo: string,
   prNumber: number,
   includeComments: boolean = true,
+  includeReviews: boolean = true,
 ): Promise<{
   githubRepoId: number
-  reviews: RawPrReview[]
+  reviews: RawPrReview[] | null
   issueComments: RawIssueComment[] | null
   reviewComments: RawReviewComment[] | null
   apiVersion: ApiVersionMetadata
 }> {
-  const result = await getMutablePrDataFromGitHub(owner, repo, prNumber, includeComments)
+  const result = await getMutablePrDataFromGitHub(owner, repo, prNumber, includeComments, includeReviews)
 
   if (!result) {
     throw new Error(`Failed to fetch mutable PR data for PR #${prNumber} from ${owner}/${repo}`)
@@ -119,35 +120,26 @@ export async function persistMutablePrSnapshots(
   githubRepoId: number,
   data: Awaited<ReturnType<typeof fetchMutablePrDataFromGitHub>>,
 ): Promise<void> {
-  const snapshots: Array<{ dataType: 'reviews' | 'comments' | 'review_comments'; data: unknown }> = [
-    { dataType: 'reviews', data: data.reviews },
-  ]
+  const snapshots: Array<{ dataType: 'reviews' | 'comments' | 'review_comments'; data: unknown }> = []
+  if (data.reviews !== null) snapshots.push({ dataType: 'reviews', data: data.reviews })
   if (data.issueComments !== null) snapshots.push({ dataType: 'comments', data: data.issueComments })
   if (data.reviewComments !== null) snapshots.push({ dataType: 'review_comments', data: data.reviewComments })
 
   await savePrRawSnapshotsBatch(owner, repo, prNumber, githubRepoId, data.apiVersion, snapshots)
 }
 
-/**
- * Refreshes reviews, issue comments and review comments for a merged PR.
- * GitHub still allows adding reviews and comments after a PR is merged, so these
- * are re-fetched. PR metadata (branches, SHAs, merge state) and commits are frozen
- * by GitHub once merged and are intentionally not re-fetched here.
- * Returns null if the repository was deleted and recreated under the same name
- * (current github_repo_id no longer matches the cached one), so the caller can
- * fall back to a full refetch instead of mixing data from two different repositories.
- */
 export async function refreshMutablePrData(
   owner: string,
   repo: string,
   prNumber: number,
   includeComments: boolean = true,
+  includeReviews: boolean = false,
 ): Promise<GitHubPRData | null> {
   const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
   const prSnapshot = rawSnapshots.get('pr')
   if (!prSnapshot) return null
 
-  const fetched = await fetchMutablePrDataFromGitHub(owner, repo, prNumber, includeComments)
+  const fetched = await fetchMutablePrDataFromGitHub(owner, repo, prNumber, includeComments, includeReviews)
   if (fetched.githubRepoId !== prSnapshot.githubRepoId) return null
 
   await persistMutablePrSnapshots(owner, repo, prNumber, fetched.githubRepoId, fetched)

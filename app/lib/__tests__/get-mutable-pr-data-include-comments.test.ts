@@ -65,4 +65,20 @@ describe('getMutablePrDataFromGitHub includeComments', () => {
     expect(result?.issueComments).toEqual([{ id: 2, body: 'a comment' }])
     expect(result?.reviewComments).toEqual([{ id: 3, body: 'a review comment' }])
   })
+
+  it('does not call the reviews endpoint and returns null for reviews when includeReviews is false', async () => {
+    mockPaginate.mockImplementation((method) => {
+      if (method === mockListComments) return Promise.resolve([{ id: 2, body: 'a comment' }])
+      if (method === mockListReviewComments) return Promise.resolve([{ id: 3, body: 'a review comment' }])
+      throw new Error(`Unexpected paginate call for method: ${method}`)
+    })
+
+    const result = await getMutablePrDataFromGitHub('navikt', 'nda', 100, true, false)
+
+    expect(mockPaginate).toHaveBeenCalledTimes(2)
+    expect(mockPaginate).not.toHaveBeenCalledWith(mockListReviews, expect.anything(), expect.any(Function))
+    expect(result?.reviews).toBeNull()
+    expect(result?.issueComments).toEqual([{ id: 2, body: 'a comment' }])
+    expect(result?.reviewComments).toEqual([{ id: 3, body: 'a review comment' }])
+  })
 })
