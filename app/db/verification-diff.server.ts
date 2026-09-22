@@ -174,26 +174,6 @@ export async function findDeploymentIdsMissingApprover(deploymentIds: number[]):
   return new Set(result.rows.map((r) => r.id))
 }
 
-export async function getApprovedDeploymentsMissingApprover(
-  monitoredAppId: number,
-): Promise<MissingApproverDeployment[]> {
-  const result = await pool.query<MissingApproverDeployment>(
-    `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
-            d.created_at, d.deployer_username,
-            d.detected_github_owner, d.detected_github_repo_name,
-            d.monitored_app_id, ${effectiveDefaultBranchSql('ma')} AS default_branch
-     FROM deployments d
-     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     WHERE d.monitored_app_id = $1
-       AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
-       AND ${MISSING_APPROVER_CONDITIONS}
-       AND ${AUDIT_START_YEAR_FILTER}
-     ORDER BY d.created_at DESC`,
-    [monitoredAppId],
-  )
-  return result.rows
-}
-
 interface GlobalMissingApproverDeployment extends MissingApproverDeployment {
   team_slug: string
   app_name: string

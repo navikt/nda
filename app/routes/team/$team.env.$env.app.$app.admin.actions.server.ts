@@ -12,27 +12,16 @@ import {
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
-import type { SyncJob } from '~/db/sync-job-types'
-import {
-  acquireSyncLock,
-  getLatestSyncJob,
-  getSyncJobById,
-  heartbeatSyncJob,
-  releaseSyncLock,
-  SYNC_INTERVAL_MS,
-  updateSyncJobProgress,
-} from '~/db/sync-jobs.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
 import { canAccessAppAdmin } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { getFormString, isValidSlackChannel } from '~/lib/form-validators'
-import { logger, runWithJobContext } from '~/lib/logger.server'
+import { logger } from '~/lib/logger.server'
 import { processReportJobAsync } from '~/lib/report-job-processor.server'
 import { isValidReportPeriodType } from '~/lib/report-periods'
 import type { SlackConfigSettingKey } from '~/lib/slack/config-setting-keys'
 import { serializeUserLookups } from '~/lib/user-display'
-import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
 
 class AppNotFoundError extends Error {}
 
@@ -96,34 +85,6 @@ async function updateSlackSettingWithAudit(params: {
   return {}
 }
 
-async function processComputeDiffsJobAsync(jobId: number, appId: number) {
-  await runWithJobContext(jobId, 'reverify_app', appId, false, async () => {
-    try {
-      const result = await computeVerificationDiffs(appId, {
-        jobId,
-        onProgress: async (processed, total, diffsFound) => {
-          await updateSyncJobProgress(jobId, { processed, total, diffsFound })
-          if (processed % 10 === 0) {
-            await heartbeatSyncJob(jobId)
-          }
-        },
-      })
-      const job = await getSyncJobById(jobId)
-      if (job?.status === 'cancelled') return
-      await releaseSyncLock(jobId, 'completed', result as unknown as Record<string, unknown>)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      const job = await getSyncJobById(jobId)
-      if (job?.status !== 'cancelled') {
-        await releaseSyncLock(jobId, 'failed', undefined, errorMessage)
-      }
-      throw err
-    }
-  })
-}
-
-const JOB_ID_ACTIONS = new Set(['check_compute_diffs_status'])
-
 export async function action({ request }: { request: Request; params: Record<string, string | undefined> }) {
   const user = await requireUser(request)
 
@@ -131,19 +92,7 @@ export async function action({ request }: { request: Request; params: Record<str
   const action = formData.get('action') as string
   const appId = parseInt(formData.get('app_id') as string, 10)
 
-  let authorizedJob: SyncJob | null = null
-
-  if (JOB_ID_ACTIONS.has(action)) {
-    const jobId = parseInt(formData.get('job_id') as string, 10)
-    if (!Number.isFinite(jobId)) {
-      return { error: 'Mangler eller ugyldig job_id' }
-    }
-    const job = await getSyncJobById(jobId)
-    if (!job || job.monitored_app_id == null || !(await canAccessAppAdmin(user, job.monitored_app_id))) {
-      return { error: 'Du har ikke tilgang til denne jobben' }
-    }
-    authorizedJob = job
-  } else if (action === 'send_reminder') {
+  if (action === 'send_reminder') {
     const teamSlug = getFormString(formData, 'team_slug')
     const environmentName = getFormString(formData, 'environment_name')
     const appName = getFormString(formData, 'app_name')
@@ -311,36 +260,6 @@ export async function action({ request }: { request: Request; params: Record<str
     })
 
     return { jobStarted: jobId }
-  }
-
-  if (action === 'compute_diffs') {
-    if (Number.isNaN(appId)) {
-      return { error: 'Mangler app_id' }
-    }
-    const jobId = await acquireSyncLock('reverify_app', appId, 10)
-    if (typeof jobId !== 'number') {
-      const latest = await getLatestSyncJob(appId, 'reverify_app')
-      if (latest?.status === 'running') {
-        return { error: 'En avviksberegning kjører allerede for denne appen' }
-      }
-      if (latest?.started_at) {
-        const elapsedMs = Date.now() - new Date(latest.started_at).getTime()
-        const remainingSec = Math.max(1, Math.ceil((SYNC_INTERVAL_MS - elapsedMs) / 1000))
-        const unit = remainingSec === 1 ? 'sekund' : 'sekunder'
-        return {
-          error: `Avviksberegningen ble nettopp kjørt. Vent ${remainingSec} ${unit} før du prøver igjen.`,
-        }
-      }
-      return { error: 'Kunne ikke starte avviksberegning. Prøv igjen om litt.' }
-    }
-    processComputeDiffsJobAsync(jobId, appId).catch((err) => {
-      logger.error(`Compute diffs job ${jobId} failed`, err instanceof Error ? err : new Error(String(err)))
-    })
-    return { computeDiffsJobStarted: jobId }
-  }
-
-  if (action === 'check_compute_diffs_status') {
-    return { computeDiffsJobStatus: authorizedJob }
   }
 
   if (action === 'update_slack_config') {

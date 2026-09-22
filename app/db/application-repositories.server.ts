@@ -38,7 +38,7 @@ export async function getRepositoriesByAppId(appId: number): Promise<Application
          WHEN 'historical' THEN 2 
          WHEN 'pending_approval' THEN 3 
        END,
-       created_at DESC`,
+       created_at DESC, id DESC`,
     [appId],
   )
   return result.rows

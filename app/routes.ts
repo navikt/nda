@@ -41,23 +41,6 @@ export default [
     route('team/:team/env/:env/app/:app', 'routes/team/$team.env.$env.app.$app.tsx'),
     route('team/:team/env/:env/app/:app/admin', 'routes/team/$team.env.$env.app.$app.admin.tsx'),
     route('team/:team/env/:env/app/:app/slack', 'routes/team/$team.env.$env.app.$app.slack.tsx'),
-    route(
-      'team/:team/env/:env/app/:app/admin/verification-diff',
-      'routes/team/$team.env.$env.app.$app.admin.verification-diff.tsx',
-    ),
-    route(
-      'team/:team/env/:env/app/:app/admin/verification-diff/:deploymentId',
-      'routes/team/$team.env.$env.app.$app.admin.verification-diff.$deploymentId.tsx',
-    ),
-    route(
-      'team/:team/env/:env/app/:app/admin/status-history',
-      'routes/team/$team.env.$env.app.$app.admin.status-history.tsx',
-    ),
-    route('team/:team/env/:env/app/:app/admin/sync-jobs', 'routes/team/$team.env.$env.app.$app.admin.sync-jobs.tsx'),
-    route(
-      'team/:team/env/:env/app/:app/admin/sync-job/:jobId',
-      'routes/team/$team.env.$env.app.$app.admin.sync-job.$jobId.tsx',
-    ),
     route('team/:team/env/:env/app/:app/deployments', 'routes/team/$team.env.$env.app.$app.deployments.tsx'),
     route(
       'team/:team/env/:env/app/:app/deployments/:deploymentId',

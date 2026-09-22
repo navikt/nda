@@ -106,34 +106,6 @@ interface DeploymentStatusChangeRow {
   latest_change_source: string
 }
 
-export async function getDeploymentsWithStatusChanges(monitoredAppId: number): Promise<DeploymentStatusChangeRow[]> {
-  const result = await pool.query(
-    `SELECT 
-       d.id as deployment_id,
-       d.created_at,
-       d.commit_sha,
-       d.four_eyes_status,
-       d.github_pr_number,
-       d.title,
-       COUNT(h.id)::int as transition_count,
-       MAX(h.created_at) as latest_change,
-       (SELECT from_status FROM deployment_status_history 
-        WHERE deployment_id = d.id ORDER BY created_at DESC LIMIT 1) as latest_from_status,
-       (SELECT to_status FROM deployment_status_history 
-        WHERE deployment_id = d.id ORDER BY created_at DESC LIMIT 1) as latest_to_status,
-       (SELECT change_source FROM deployment_status_history 
-        WHERE deployment_id = d.id ORDER BY created_at DESC LIMIT 1) as latest_change_source
-     FROM deployments d
-     INNER JOIN deployment_status_history h ON h.deployment_id = d.id
-     WHERE d.monitored_app_id = $1
-     GROUP BY d.id
-     HAVING COUNT(h.id) > 1
-     ORDER BY MAX(h.created_at) DESC`,
-    [monitoredAppId],
-  )
-  return result.rows
-}
-
 export interface RepositoryDeploymentStatusChange extends DeploymentStatusChangeRow {
   team_slug: string
   app_name: string
