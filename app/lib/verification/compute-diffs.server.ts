@@ -202,7 +202,7 @@ export async function computeVerificationDiffs(
               reasons.push(`status diff: ${row.four_eyes_status} → ${cacheOnlyResult.status}`)
             }
             if (missingPrSnapshot) {
-              reasons.push(`missing PR snapshot: DB has PR#${cachedPrNumber} but cached snapshot is incomplete`)
+              reasons.push(`missing PR snapshot for PR#${cachedPrNumber}: cached snapshot is incomplete`)
             }
             logger.info(`   🔄 Re-fetching deployment ${row.id}: ${reasons.join(', ')}`)
 
