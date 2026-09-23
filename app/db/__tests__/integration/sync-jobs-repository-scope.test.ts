@@ -458,6 +458,83 @@ describe('isAppBlockedByRunningJob', () => {
     // where a reverify job is already running.
     expect(await isAppBlockedByRunningJob(appId, ['reverify_app'])).toBe(true)
   })
+
+  it('returns true for any app when a global reverify_all job is running, regardless of the app being linked to anything', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-lock',
+      appName: 'app-lock-reverify-all-e',
+      environment: 'prod-gcp',
+    })
+
+    await insertRunningJob({ jobType: 'reverify_all', repositoryId: null })
+
+    expect(await isAppBlockedByRunningJob(appId, ['reverify_all'])).toBe(true)
+  })
+
+  it('returns false for a running reverify_all job when it is not part of the requested job types', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-lock',
+      appName: 'app-lock-reverify-all-f',
+      environment: 'prod-gcp',
+    })
+
+    await insertRunningJob({ jobType: 'reverify_all', repositoryId: null })
+
+    expect(await isAppBlockedByRunningJob(appId, ['reverify_app'])).toBe(false)
+  })
+
+  it('returns true when a repository-scoped refresh_missing_approver job is running for a linked app, when checking reverify_app together with refresh_missing_approver', async () => {
+    const repoA = await seedRepo(pool, 'lock-refresh-g')
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-lock',
+      appName: 'app-lock-refresh-g',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-refresh-g',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    await acquireSyncLockForRepository('refresh_missing_approver', repoA)
+
+    expect(await isAppBlockedByRunningJob(appId, ['reverify_app', 'refresh_missing_approver'])).toBe(true)
+    expect(await isAppBlockedByRunningJob(appId, ['reverify_app'])).toBe(false)
+  })
+
+  it('returns true when a repository-scoped refresh_missing_approver job is running for a sibling repository the app is also linked to', async () => {
+    const repoA = await seedRepo(pool, 'lock-refresh-h-a')
+    const repoB = await seedRepo(pool, 'lock-refresh-h-b')
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-lock',
+      appName: 'app-lock-refresh-h',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-refresh-h-a',
+      githubRepoId: String(repoIdCounter - 1),
+      status: 'active',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-lock-refresh-h-b',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const jobForRepoB = await acquireSyncLockForRepository('refresh_missing_approver', repoB)
+    expect(jobForRepoB).toEqual(expect.any(Number))
+
+    const jobForRepoA = await acquireSyncLockForRepository('refresh_missing_approver', repoA)
+    expect(jobForRepoA).toEqual(expect.any(Number))
+
+    expect(await isAppBlockedByRunningJob(appId, ['refresh_missing_approver'], jobForRepoA as number)).toBe(true)
+  })
 })
 
 describe('forceReleaseSyncJob', () => {

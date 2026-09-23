@@ -195,6 +195,42 @@ describe('computeVerificationDiffsForRepository', () => {
     expect(result.appsProcessed).toBe(2)
   })
 
+  it('skips an app that is blocked by a refresh_missing_approver job running for a linked repository (cross job-type conflict)', async () => {
+    const repoA = await seedRepo('cross-type-a')
+    const repoB = await seedRepo('cross-type-b')
+    const sharedApp = await seedApp(pool, {
+      teamSlug: 'team-cdfr',
+      appName: 'app-cdfr-cross-type-shared',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: sharedApp,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-cdfr-cross-type-a',
+      githubRepoId: String(repoIdCounter - 1),
+      status: 'active',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: sharedApp,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-cdfr-cross-type-b',
+      githubRepoId: String(repoIdCounter),
+      status: 'active',
+    })
+
+    const refreshJobId = await acquireSyncLockForRepository('refresh_missing_approver', repoB)
+    expect(refreshJobId).toEqual(expect.any(Number))
+
+    const ownJobId = await acquireSyncLockForRepository('reverify_app', repoA)
+    expect(ownJobId).toEqual(expect.any(Number))
+
+    const result = await computeVerificationDiffsForRepository(repoA, { jobId: ownJobId as number })
+
+    expect(result.appsTotal).toBe(1)
+    expect(result.appsSkippedLocked).toBe(1)
+    expect(result.appsProcessed).toBe(1)
+  })
+
   it('processes only the apps supplied via the appIds override, not every app linked to the repository', async () => {
     const repoId = await seedRepo('override')
     const appA = await seedApp(pool, { teamSlug: 'team-cdfr', appName: 'app-cdfr-override-a', environment: 'prod-gcp' })

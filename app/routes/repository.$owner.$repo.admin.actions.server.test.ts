@@ -15,6 +15,7 @@ const {
   mockReleaseSyncLock,
   mockHeartbeatSyncJob,
   mockUpdateSyncJobProgress,
+  mockIsAppBlockedByRunningJob,
   mockFetchVerificationDataForRepository,
   mockComputeVerificationDiffsForRepository,
   mockRunVerification,
@@ -36,6 +37,7 @@ const {
   mockReleaseSyncLock: vi.fn(),
   mockHeartbeatSyncJob: vi.fn(),
   mockUpdateSyncJobProgress: vi.fn(),
+  mockIsAppBlockedByRunningJob: vi.fn(async () => false),
   mockFetchVerificationDataForRepository: vi.fn(),
   mockComputeVerificationDiffsForRepository: vi.fn(),
   mockRunVerification: vi.fn(),
@@ -76,6 +78,8 @@ vi.mock('~/db/sync-jobs.server', () => ({
   releaseSyncLock: mockReleaseSyncLock,
   heartbeatSyncJob: mockHeartbeatSyncJob,
   updateSyncJobProgress: mockUpdateSyncJobProgress,
+  isAppBlockedByRunningJob: mockIsAppBlockedByRunningJob,
+  VERIFICATION_DIFF_CONFLICT_GROUP: ['reverify_app', 'refresh_missing_approver', 'reverify_all'],
 }))
 
 vi.mock('~/db/verification-diff.server', () => ({
@@ -1036,6 +1040,36 @@ describe('processRefreshMissingApproverJobForRepositoryAsync', () => {
 
     await processRefreshMissingApproverJobForRepositoryAsync(5, 7, [1])
 
+    expect(mockRunVerification).not.toHaveBeenCalled()
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(
+      5,
+      'completed',
+      expect.objectContaining({ refreshed: 0, skipped: 1, errors: 0 }),
+    )
+  })
+
+  it('skips a deployment whose app is blocked by a conflicting reverify or refresh job, without calling runVerification', async () => {
+    mockGetApprovedDeploymentsMissingApproverForApps.mockResolvedValue([
+      {
+        id: 1,
+        commit_sha: 'a'.repeat(40),
+        four_eyes_status: 'approved',
+        environment_name: 'prod-fss',
+        detected_github_owner: 'navikt',
+        detected_github_repo_name: 'some-repo',
+        monitored_app_id: 1,
+        default_branch: 'main',
+      },
+    ])
+    mockIsAppBlockedByRunningJob.mockResolvedValue(true)
+
+    await processRefreshMissingApproverJobForRepositoryAsync(5, 7, [1])
+
+    expect(mockIsAppBlockedByRunningJob).toHaveBeenCalledWith(
+      1,
+      ['reverify_app', 'refresh_missing_approver', 'reverify_all'],
+      5,
+    )
     expect(mockRunVerification).not.toHaveBeenCalled()
     expect(mockReleaseSyncLock).toHaveBeenCalledWith(
       5,

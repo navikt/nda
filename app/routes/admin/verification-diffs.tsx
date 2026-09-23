@@ -25,6 +25,7 @@ import {
   isSyncJobCancelled,
   releaseExpiredLocks,
   updateSyncJobProgress,
+  VERIFICATION_DIFF_CONFLICT_GROUP,
 } from '~/db/sync-jobs.server'
 import { getAllApprovedDeploymentsMissingApprover, getMissingApproverSummary } from '~/db/verification-diff.server'
 import { requireAdmin } from '~/lib/auth.server'
@@ -250,9 +251,15 @@ async function processComputeAllAsync(jobId: number, apps: Array<{ id: number; t
   try {
     for (const app of apps) {
       try {
-        if (await isAppBlockedByRunningJob(app.id, ['fetch_verification_data', 'reverify_app'])) {
+        if (
+          await isAppBlockedByRunningJob(
+            app.id,
+            ['fetch_verification_data', ...VERIFICATION_DIFF_CONFLICT_GROUP],
+            jobId,
+          )
+        ) {
           logger.info(
-            `Skipping compute diffs for ${app.team_slug}/${app.app_name} — a fetch or reverify job is currently running for it or its repository`,
+            `Skipping compute diffs for ${app.team_slug}/${app.app_name} — a fetch, reverify or refresh job is currently running for it or its repository`,
           )
           skippedRepoLocked++
         } else {
@@ -328,6 +335,8 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
       ) {
         skipped++
       } else if (!dep.default_branch) {
+        skipped++
+      } else if (await isAppBlockedByRunningJob(dep.monitored_app_id, VERIFICATION_DIFF_CONFLICT_GROUP, jobId)) {
         skipped++
       } else {
         try {
