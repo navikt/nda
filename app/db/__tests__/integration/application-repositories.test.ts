@@ -1,6 +1,12 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { seedApp, seedApplicationRepository, seedRepository, truncateAllTables } from './helpers'
+import {
+  seedApp,
+  seedApplicationRepository,
+  seedRepository,
+  truncateAllTables,
+  waitForAdvisoryLockWaiter,
+} from './helpers'
 
 vi.mock('~/lib/github/git.server', () => ({
   getRepositoryId: vi.fn(),
@@ -8,10 +14,12 @@ vi.mock('~/lib/github/git.server', () => ({
 
 import { getRepositoryId } from '~/lib/github/git.server'
 import {
+  approveRepository,
   getAppIdsSharingRepo,
   getMonitoredAppIdsForRepository,
   upsertApplicationRepository,
 } from '../../application-repositories.server'
+import { lockRepositoryForVerificationJob, VERIFICATION_JOB_LOCK_NAMESPACE } from '../../connection.server'
 
 let pool: Pool
 
@@ -224,6 +232,46 @@ describe('application-repositories', () => {
     )
     expect(Number(rows[0].github_repo_id)).toBe(111)
     expect(rows[0].status).toBe('active')
+  })
+
+  it('approveRepository blocks until a transaction holding the same per-repository verification lock commits', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app-lock-coord', environment: 'prod' })
+    const githubRepoId = '778899'
+    const { rows: created } = await pool.query<{ id: number }>(
+      `INSERT INTO application_repositories (monitored_app_id, github_owner, github_repo_name, github_repo_id, status)
+       VALUES ($1, 'navikt', 'repo-lock-coord', $2, 'historical') RETURNING id`,
+      [appId, githubRepoId],
+    )
+    const repoId = created[0].id
+
+    const holder = await pool.connect()
+    let resolved = false
+    let committed = false
+
+    try {
+      await holder.query('BEGIN')
+      await lockRepositoryForVerificationJob(holder, githubRepoId)
+
+      const pending = approveRepository(repoId, 'alice', true).then((result) => {
+        resolved = true
+        return result
+      })
+
+      await waitForAdvisoryLockWaiter(pool, VERIFICATION_JOB_LOCK_NAMESPACE, githubRepoId)
+      expect(resolved).toBe(false)
+
+      await holder.query('COMMIT')
+      committed = true
+
+      const result = await pending
+      expect(resolved).toBe(true)
+      expect(result.status).toBe('active')
+    } finally {
+      if (!committed) {
+        await holder.query('ROLLBACK').catch(() => {})
+      }
+      holder.release()
+    }
   })
 
   it('redirect configuration works', async () => {

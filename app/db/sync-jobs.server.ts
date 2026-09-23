@@ -1,6 +1,11 @@
 import type { PoolClient } from 'pg'
 import { logger } from '~/lib/logger.server'
-import { lockRepositoryAdminForWrite, pool, withTransaction } from './connection.server'
+import {
+  lockRepositoryAdminForWrite,
+  lockRepositoryForVerificationJob,
+  pool,
+  withTransaction,
+} from './connection.server'
 
 export {
   SYNC_JOB_STATUS_LABELS,
@@ -40,15 +45,16 @@ export async function acquireSyncLock(
   appId: number,
   timeoutMinutes: number = 10,
   options?: Record<string, unknown>,
-): Promise<number | null | 'repository_conflict'> {
+): Promise<number | null> {
+  if (REPOSITORY_LINKED_JOB_TYPES.has(jobType)) {
+    throw new Error(
+      `${jobType} is repository-linked and must be acquired via acquireSyncLockForRepository, not the app-scoped acquireSyncLock`,
+    )
+  }
+
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-
-    const needsCrossScopeCoordination = REPOSITORY_LINKED_JOB_TYPES.has(jobType)
-    if (needsCrossScopeCoordination) {
-      await lockRepositoryAdminForWrite(client)
-    }
 
     const released = await releaseExpiredLocks(client)
     if (released > 0) {
@@ -65,31 +71,6 @@ export async function acquireSyncLock(
     if (cooldown.rowCount && cooldown.rowCount > 0) {
       await client.query('COMMIT')
       return null
-    }
-
-    if (needsCrossScopeCoordination) {
-      const linkedRepos = await client.query<{ id: number }>(
-        `SELECT r.id FROM application_repositories ar
-         JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-         WHERE ar.monitored_app_id = $1 AND ar.status IN ('active', 'historical')`,
-        [appId],
-      )
-      const repoIds = linkedRepos.rows.map((row) => row.id)
-      const conflictingJob = await client.query(
-        `SELECT 1 FROM sync_jobs
-         WHERE job_type = $1 AND status = 'running'
-           AND (
-             repository_id = ANY($2::int[])
-             OR (repository_id IS NULL AND monitored_app_id IS NULL)
-           )
-         LIMIT 1`,
-        [jobType, repoIds],
-      )
-      if (conflictingJob.rowCount && conflictingJob.rowCount > 0) {
-        logger.info(`⏳ ${jobType} lock for app ${appId} blocked by a running repository-scoped or global job`)
-        await client.query('COMMIT')
-        return 'repository_conflict'
-      }
     }
 
     const result = await client.query(
@@ -126,7 +107,14 @@ export async function acquireSyncLockForRepository(
 
     const needsCrossScopeCoordination = REPOSITORY_LINKED_JOB_TYPES.has(jobType)
     if (needsCrossScopeCoordination) {
-      await lockRepositoryAdminForWrite(client)
+      const { rows } = await client.query<{ github_repo_id: string }>(
+        'SELECT github_repo_id FROM repositories WHERE id = $1',
+        [repositoryId],
+      )
+      const githubRepoId = rows[0]?.github_repo_id
+      if (githubRepoId) {
+        await lockRepositoryForVerificationJob(client, githubRepoId)
+      }
     }
 
     if (verifyAccess && !(await verifyAccess(client))) {

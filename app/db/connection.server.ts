@@ -99,6 +99,18 @@ export async function lockRepositoryAdminForWrite(client: PoolClient): Promise<v
   await client.query('SELECT pg_advisory_xact_lock($1)', [REPOSITORY_ADMIN_LOCK_KEY])
 }
 
+export const VERIFICATION_JOB_LOCK_NAMESPACE = 837_002_219
+
+export async function lockRepositoryForVerificationJob(
+  client: PoolClient,
+  githubRepoId: string | number,
+): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock($1, hashtext($2::text))', [
+    VERIFICATION_JOB_LOCK_NAMESPACE,
+    String(githubRepoId),
+  ])
+}
+
 export function getSyncClient(): PoolClient | undefined {
   return syncClientStore.getStore()
 }
