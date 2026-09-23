@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS deployments (
   -- for deployments triggered outside GitHub Actions (e.g. manual `nais deploy`).
   detected_github_owner VARCHAR(255),
   detected_github_repo_name VARCHAR(255),
+  -- Immutable GitHub repository id for the detected repository, populated at
+  -- creation time via a live GitHub API lookup. NULL where it could not be
+  -- resolved (e.g. no workflow run to resolve it from, see
+  -- scripts/backfill-deployment-github-repo-id.ts for historical rows).
+  -- Prefer this over (detected_github_owner, detected_github_repo_name) once
+  -- populated, since owner/name can change on rename, org transfer, or be
+  -- reused by a different repository.
+  github_repo_id BIGINT,
   
   -- Four-eyes status
   four_eyes_status VARCHAR(50) DEFAULT 'unknown',
@@ -115,6 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_deployments_created_at ON deployments(created_at)
 CREATE INDEX IF NOT EXISTS idx_deployments_commit_sha ON deployments(commit_sha);
 CREATE INDEX IF NOT EXISTS idx_deployments_four_eyes_status ON deployments(four_eyes_status);
 CREATE INDEX IF NOT EXISTS idx_deployments_detected_repo ON deployments(detected_github_owner, detected_github_repo_name);
+CREATE INDEX IF NOT EXISTS idx_deployments_github_repo_id ON deployments(github_repo_id) WHERE github_repo_id IS NOT NULL;
 
 -- Repository mismatch alerts
 CREATE TABLE IF NOT EXISTS repository_alerts (

@@ -94,11 +94,40 @@ export async function getPreviousDeploymentForDiff(
      FROM deployments d
      JOIN application_repositories ar
        ON ar.monitored_app_id = d.monitored_app_id
-       AND ar.github_owner = d.detected_github_owner
-       AND ar.github_repo_name = d.detected_github_repo_name
        AND ar.status IN ('active', 'historical')
-     WHERE ar.github_repo_id = $2
-       AND (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
+       AND (
+         (ar.github_repo_id IS NOT NULL AND ar.github_repo_id = $2)
+         OR (
+           ar.github_repo_id IS NULL
+           AND ar.github_owner = d.detected_github_owner
+           AND ar.github_repo_name = d.detected_github_repo_name
+         )
+       )
+     JOIN deployments t ON t.id = $1
+     WHERE (
+       (d.github_repo_id IS NOT NULL AND d.github_repo_id = $2)
+       OR (
+         d.github_repo_id IS NULL
+         AND ar.github_repo_id = $2
+         AND ar.github_owner = d.detected_github_owner
+         AND ar.github_repo_name = d.detected_github_repo_name
+       )
+     )
+       AND (
+         (t.github_repo_id IS NOT NULL AND t.github_repo_id = $2)
+         OR (
+           t.github_repo_id IS NULL
+           AND EXISTS (
+             SELECT 1 FROM application_repositories tar
+             WHERE tar.monitored_app_id = t.monitored_app_id
+               AND tar.status IN ('active', 'historical')
+               AND tar.github_repo_id = $2
+               AND tar.github_owner = t.detected_github_owner
+               AND tar.github_repo_name = t.detected_github_repo_name
+           )
+         )
+       )
+       AND (d.created_at, d.id) < (t.created_at, t.id)
        AND d.commit_sha IS NOT NULL
        AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
        AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})

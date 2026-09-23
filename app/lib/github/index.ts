@@ -17,8 +17,10 @@ export {
   getRepositoryId,
   getSingleCommitMessage,
   getWorkflowTriggerConfig,
+  hasResolvableWorkflowRunId,
   haveSameCommitTree,
   isCommitOnBranch,
+  resolveGithubRepoIdFromWorkflowRun,
   WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
   type WorkflowTriggerConfig,
 } from './git.server'

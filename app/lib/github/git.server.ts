@@ -1,4 +1,9 @@
-import { saveCommitRawSnapshot, saveCompareRawSnapshot, saveWorkflowRunRawSnapshot } from '~/db/github-data.server'
+import {
+  getLatestWorkflowRunRawSnapshot,
+  saveCommitRawSnapshot,
+  saveCompareRawSnapshot,
+  saveWorkflowRunRawSnapshot,
+} from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
 import { getGitHubClient } from './client.server'
@@ -264,6 +269,72 @@ export async function getBranchFromWorkflowRun(
   return run?.head_branch || null
 }
 
+function extractRepositoryIdFromWorkflowRunData(data: unknown): number | null {
+  if (data && typeof data === 'object' && 'repository' in data) {
+    const repositoryId = (data as { repository?: { id?: unknown } }).repository?.id
+    if (typeof repositoryId === 'number') return repositoryId
+  }
+  return null
+}
+
+/**
+ * Whether triggerUrl contains a GitHub Actions workflow run id, i.e. whether
+ * resolveGithubRepoIdFromWorkflowRun below can even attempt a lookup. Callers should use
+ * this to decide whether a null result means "no workflow run to check" (safe to fall back
+ * to owner/name matching) versus "a workflow run exists but couldn't be resolved" (NOT safe
+ * to fall back, since the old repository's name may since have been reused by another repo).
+ */
+export function hasResolvableWorkflowRunId(triggerUrl: string | null | undefined): boolean {
+  return /\/actions\/runs\/(\d+)/.test(triggerUrl ?? '')
+}
+
+/**
+ * Resolves the immutable GitHub repository id for a deployment via its workflow run,
+ * rather than owner/repo name matching. A workflow run id is globally unique and
+ * permanently tied to the repository it was created in, so this is safe even when a
+ * repository has since been renamed (the API redirects) or its old name reused by an
+ * unrelated repository (the run id lookup then 404s instead of resolving to the wrong repo).
+ */
+export async function resolveGithubRepoIdFromWorkflowRun(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+): Promise<number | null> {
+  const match = triggerUrl?.match(/\/actions\/runs\/(\d+)/)
+  if (!match) return null
+  const runId = parseInt(match[1], 10)
+
+  const cached = await getLatestWorkflowRunRawSnapshot(owner, repo, runId)
+  if (cached) {
+    const cachedRepositoryId = extractRepositoryIdFromWorkflowRunData(cached.data)
+    if (cachedRepositoryId !== null) return cachedRepositoryId
+  }
+
+  try {
+    const client = getGitHubClient()
+    const response = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
+    const repositoryId = extractRepositoryIdFromWorkflowRunData(response.data)
+    if (repositoryId !== null) {
+      const apiVersion = captureApiVersionMetadata(response.headers, null)
+      await saveWorkflowRunRawSnapshot(owner, repo, repositoryId, runId, response.data, apiVersion)
+    }
+    return repositoryId
+  } catch (error) {
+    const status = (error as { status?: unknown }).status
+    if (typeof status === 'number' && status === 404) {
+      logger.info(`ℹ️ Workflow run ${runId} not found for ${owner}/${repo} (cannot resolve repository id)`)
+      return null
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to resolve repository id from workflow run ${runId} for ${owner}/${repo}:`, {
+      error: message,
+      stack_trace: stack,
+    })
+    return null
+  }
+}
+
 export const WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION = 3
 
 export type WorkflowTriggerConfig = {
@@ -306,10 +377,16 @@ const REPOSITORY_ID_CACHE_TTL_MS = 5 * 60 * 1000
 
 const repositoryIdCache = new Map<string, { promise: Promise<number | null>; expiresAt: number }>()
 
-export async function getRepositoryId(owner: string, repo: string): Promise<number | null> {
+export async function getRepositoryId(
+  owner: string,
+  repo: string,
+  options?: { bypassCache?: boolean },
+): Promise<number | null> {
   const cacheKey = `${owner}/${repo}`
-  const cached = repositoryIdCache.get(cacheKey)
-  if (cached && cached.expiresAt > Date.now()) return cached.promise
+  if (!options?.bypassCache) {
+    const cached = repositoryIdCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) return cached.promise
+  }
 
   const promise = (async () => {
     try {

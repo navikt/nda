@@ -117,6 +117,7 @@ const baseDeployment: DeploymentDetailLoaderData['deployment'] = {
   github_pr_url: 'https://github.com/navikt/pensjon-pen/pull/42',
   detected_github_owner: 'navikt',
   detected_github_repo_name: 'pensjon-pen',
+  github_repo_id: null,
   four_eyes_status: 'approved',
   synced_at: new Date('2026-02-08T10:31:00Z'),
   title: 'feat: Add new feature for pension calculation',

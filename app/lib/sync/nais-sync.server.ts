@@ -15,6 +15,7 @@ import {
   getMonitoredApplicationByIdentity,
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
+import { hasResolvableWorkflowRunId, resolveGithubRepoIdFromWorkflowRun } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { fetchApplicationDeployments, fetchNewDeployments, NaisResourceNotFoundError } from '~/lib/nais.server'
 import { syncDefaultBranchForApp } from './default-branch-sync.server'
@@ -105,6 +106,15 @@ async function syncDeploymentsFromNais(
 
     logger.info(`➕ Creating new deployment: ${naisDep.id}`)
 
+    let detectedGithubRepoId: number | null = null
+    if (detectedOwner && detectedRepoName && hasResolvableWorkflowRunId(naisDep.triggerUrl)) {
+      detectedGithubRepoId = await resolveGithubRepoIdFromWorkflowRun(
+        detectedOwner,
+        detectedRepoName,
+        naisDep.triggerUrl,
+      )
+    }
+
     const deploymentParams: CreateDeploymentParams = {
       monitoredApplicationId: monitoredApp.id,
       naisDeploymentId: naisDep.id,
@@ -117,6 +127,7 @@ async function syncDeploymentsFromNais(
       triggerUrl: naisDep.triggerUrl,
       detectedGithubOwner: detectedOwner,
       detectedGithubRepoName: detectedRepoName,
+      githubRepoId: detectedGithubRepoId !== null ? String(detectedGithubRepoId) : null,
       resources: naisDep.resources.nodes,
     }
 
@@ -301,6 +312,14 @@ export async function syncNewDeploymentsFromNais(
     }))
 
     logger.info(`➕ Creating new deployment: ${deployment.id}`)
+    let currentDeploymentGithubRepoId: number | null = null
+    if (currentDeploymentRepo && hasResolvableWorkflowRunId(deployment.triggerUrl)) {
+      currentDeploymentGithubRepoId = await resolveGithubRepoIdFromWorkflowRun(
+        currentDeploymentRepo.owner,
+        currentDeploymentRepo.repo,
+        deployment.triggerUrl,
+      )
+    }
     await createDeployment({
       monitoredApplicationId: monitoredAppId,
       naisDeploymentId: deployment.id,
@@ -313,6 +332,7 @@ export async function syncNewDeploymentsFromNais(
       triggerUrl: deployment.triggerUrl,
       detectedGithubOwner: currentDeploymentRepo?.owner ?? null,
       detectedGithubRepoName: currentDeploymentRepo?.repo ?? null,
+      githubRepoId: currentDeploymentGithubRepoId !== null ? String(currentDeploymentGithubRepoId) : null,
       resources,
     })
     newCount++
