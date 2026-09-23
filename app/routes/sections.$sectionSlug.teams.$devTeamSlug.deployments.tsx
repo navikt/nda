@@ -127,6 +127,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     unmapped_deployers: isUnmappedFilter || undefined,
     exclude_deployer_usernames: isNonMemberFilter ? deployerUsernames : undefined,
     deployer_usernames: deployer ? undefined : deployerUsernamesFilter,
+    team_board_linked_dev_team_id: deployer || isGoalSpecificFilter ? undefined : devTeam.id,
     commit_sha: sha,
     start_date: range?.startDate,
     end_date: range?.endDate,

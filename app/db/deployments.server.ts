@@ -220,6 +220,7 @@ export interface DeploymentFilters {
   deployer_username?: string
   deployer_usernames?: string[]
   exclude_deployer_usernames?: string[]
+  team_board_linked_dev_team_id?: number
   unmapped_deployers?: boolean
   commit_sha?: string
   method?: 'pr' | 'direct_push' | 'legacy'
@@ -320,12 +321,31 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   }
 
   if (filters?.deployer_usernames !== undefined) {
-    if (filters.deployer_usernames.length === 0) {
-      whereSql += ' AND FALSE'
-    } else {
-      whereSql += ` AND ${userDeploymentMatchAnySql(paramIndex)}`
+    let memberClauseSql: string | null = null
+    if (filters.deployer_usernames.length > 0) {
+      memberClauseSql = userDeploymentMatchAnySql(paramIndex)
       params.push(lowerUsernames(filters.deployer_usernames))
       paramIndex++
+    }
+
+    if (filters.team_board_linked_dev_team_id) {
+      const boardLinkedSql = `EXISTS (
+        SELECT 1 FROM deployment_goal_links dgl
+        LEFT JOIN board_objectives bo ON bo.id = dgl.objective_id AND bo.is_active = true
+        LEFT JOIN board_key_results bkr ON bkr.id = dgl.key_result_id AND bkr.is_active = true
+        LEFT JOIN board_objectives bo_kr ON bo_kr.id = bkr.objective_id AND bo_kr.is_active = true
+        JOIN boards b ON b.id = COALESCE(bo.board_id, bo_kr.board_id) AND b.is_active = true
+        WHERE dgl.deployment_id = d.id
+          AND dgl.is_active = true
+          AND b.dev_team_id = $${paramIndex}
+      )`
+      params.push(filters.team_board_linked_dev_team_id)
+      paramIndex++
+      whereSql += ` AND (${memberClauseSql ?? 'FALSE'} OR ${boardLinkedSql})`
+    } else if (memberClauseSql) {
+      whereSql += ` AND ${memberClauseSql}`
+    } else {
+      whereSql += ' AND FALSE'
     }
   }
 
