@@ -71,7 +71,12 @@ vi.mock('~/lib/logger.server', () => ({
   logger: { error: vi.fn() },
 }))
 
-import { action, loader } from './repository.$owner.$repo.admin.verification-diff'
+import {
+  action,
+  deriveComputeJobState,
+  deriveRefreshJobState,
+  loader,
+} from './repository.$owner.$repo.admin.verification-diff'
 
 const params = { owner: 'navikt', repo: 'mulighetsrommet' }
 
@@ -291,5 +296,93 @@ describe('verification-diff action - IDOR protection', () => {
 
       expect(result).toEqual({ refreshJobStatus: job })
     })
+  })
+})
+
+describe('deriveComputeJobState - job state reset on repository navigation (issue #741)', () => {
+  it('returns null activeJobId/jobError/jobWarning for no job', () => {
+    expect(deriveComputeJobState(null)).toEqual({ activeJobId: null, jobError: null, jobWarning: null })
+    expect(deriveComputeJobState(undefined)).toEqual({ activeJobId: null, jobError: null, jobWarning: null })
+  })
+
+  it('surfaces activeJobId for a running job', () => {
+    expect(deriveComputeJobState({ id: 42, status: 'running' })).toEqual({
+      activeJobId: 42,
+      jobError: null,
+      jobWarning: null,
+    })
+  })
+
+  it('surfaces jobError for a failed or cancelled job, without an activeJobId', () => {
+    expect(deriveComputeJobState({ id: 42, status: 'failed' })).toEqual({
+      activeJobId: null,
+      jobError: 'Beregning av avvik feilet.',
+      jobWarning: null,
+    })
+    expect(deriveComputeJobState({ id: 42, status: 'cancelled' })).toEqual({
+      activeJobId: null,
+      jobError: 'Beregning av avvik ble avbrutt.',
+      jobWarning: null,
+    })
+  })
+
+  it('surfaces jobWarning for a completed job with partial results', () => {
+    expect(deriveComputeJobState({ id: 42, status: 'completed', result: { errors: 2 } })).toEqual({
+      activeJobId: null,
+      jobError: null,
+      jobWarning: expect.stringContaining('2 feil'),
+    })
+  })
+
+  it("resets to a different repository's own job state (does not leak the previous repository's job)", () => {
+    const previousRepoState = deriveComputeJobState({ id: 42, status: 'running' })
+    expect(previousRepoState.activeJobId).toBe(42)
+
+    const nextRepoState = deriveComputeJobState(null)
+    expect(nextRepoState).toEqual({ activeJobId: null, jobError: null, jobWarning: null })
+  })
+})
+
+describe('deriveRefreshJobState - job state reset on repository navigation (issue #741)', () => {
+  it('returns null activeJobId/jobError/jobWarning for no job', () => {
+    expect(deriveRefreshJobState(null)).toEqual({ activeJobId: null, jobError: null, jobWarning: null })
+    expect(deriveRefreshJobState(undefined)).toEqual({ activeJobId: null, jobError: null, jobWarning: null })
+  })
+
+  it('surfaces activeJobId for a running job', () => {
+    expect(deriveRefreshJobState({ id: 7, status: 'running' })).toEqual({
+      activeJobId: 7,
+      jobError: null,
+      jobWarning: null,
+    })
+  })
+
+  it('surfaces jobError for a failed or cancelled job, without an activeJobId', () => {
+    expect(deriveRefreshJobState({ id: 7, status: 'failed' })).toEqual({
+      activeJobId: null,
+      jobError: 'Oppdatering av godkjennere feilet.',
+      jobWarning: null,
+    })
+    expect(deriveRefreshJobState({ id: 7, status: 'cancelled' })).toEqual({
+      activeJobId: null,
+      jobError: 'Oppdatering av godkjennere ble avbrutt.',
+      jobWarning: null,
+    })
+  })
+
+  it('surfaces jobWarning for a completed job with partial results', () => {
+    expect(deriveRefreshJobState({ id: 7, status: 'completed', result: { errors: 3 } })).toEqual({
+      activeJobId: null,
+      jobError: null,
+      jobWarning: expect.stringContaining('3 deployment'),
+    })
+  })
+
+  it("resets to a different repository's own job state (does not leak the previous repository's job)", () => {
+    const previousRepoState = deriveRefreshJobState({ id: 7, status: 'running' })
+    expect(previousRepoState.activeJobId).toBe(7)
+
+    const nextRepoState = deriveRefreshJobState(null)
+    expect(nextRepoState).toEqual({ activeJobId: null, jobError: null, jobWarning: null })
   })
 })
