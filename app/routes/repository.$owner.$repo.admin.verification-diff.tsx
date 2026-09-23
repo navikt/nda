@@ -64,6 +64,28 @@ function describeComputePartialResult(
   return `Beregningen ble fullført, men ikke alle apper ble prosessert: ${parts.join(', ')}. Avvikene som vises kan derfor være ufullstendige.`
 }
 
+type ComputeJobLike =
+  | { status: string; id: number; result?: { errors?: number; appsSkippedLocked?: number } | null }
+  | null
+  | undefined
+
+export function deriveComputeJobState(job: ComputeJobLike): {
+  activeJobId: number | null
+  jobError: string | null
+  jobWarning: string | null
+} {
+  return {
+    activeJobId: job?.status === 'running' ? job.id : null,
+    jobError:
+      job?.status === 'failed'
+        ? 'Beregning av avvik feilet.'
+        : job?.status === 'cancelled'
+          ? 'Beregning av avvik ble avbrutt.'
+          : null,
+    jobWarning: job?.status === 'completed' ? describeComputePartialResult(job.result) : null,
+  }
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { owner, repo } = requireParams(params, ['owner', 'repo'])
   const user = await requireUser(request)
@@ -285,23 +307,28 @@ export default function RepositoryVerificationDiffPage() {
   const submittingId = navigation.state === 'submitting' ? navigation.formData?.get('deployment_id')?.toString() : null
   const isApplyingAll = navigation.state === 'submitting' && navigation.formData?.get('action') === 'apply_all'
 
-  const computeFetcher = useFetcher()
-  const [activeJobId, setActiveJobId] = useState<number | null>(latestJob?.status === 'running' ? latestJob.id : null)
-  const [jobError, setJobError] = useState<string | null>(
-    latestJob?.status === 'failed'
-      ? 'Beregning av avvik feilet.'
-      : latestJob?.status === 'cancelled'
-        ? 'Beregning av avvik ble avbrutt.'
-        : null,
-  )
-  const [jobWarning, setJobWarning] = useState<string | null>(
-    latestJob?.status === 'completed' ? describeComputePartialResult(latestJob.result) : null,
-  )
+  const computeFetcher = useFetcher({ key: `verification-diff-compute-${repositoryContext.id}` })
+  const initialComputeJobState = deriveComputeJobState(latestJob)
+  const [activeJobId, setActiveJobId] = useState<number | null>(initialComputeJobState.activeJobId)
+  const [jobError, setJobError] = useState<string | null>(initialComputeJobState.jobError)
+  const [jobWarning, setJobWarning] = useState<string | null>(initialComputeJobState.jobWarning)
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const computeFetcherRef = useRef(computeFetcher)
   computeFetcherRef.current = computeFetcher
   const revalidatorRef = useRef(revalidator)
   revalidatorRef.current = revalidator
+  const [jobProgress, setJobProgress] = useState<{ processed: number; total: number; diffsFound: number } | null>(null)
+
+  const previousRepositoryIdRef = useRef(repositoryContext.id)
+  useEffect(() => {
+    if (previousRepositoryIdRef.current === repositoryContext.id) return
+    previousRepositoryIdRef.current = repositoryContext.id
+    const resetState = deriveComputeJobState(latestJob)
+    setActiveJobId(resetState.activeJobId)
+    setJobError(resetState.jobError)
+    setJobWarning(resetState.jobWarning)
+    setJobProgress(null)
+  }, [repositoryContext.id, latestJob])
 
   useEffect(() => {
     if (activeJobId) {
@@ -317,7 +344,6 @@ export default function RepositoryVerificationDiffPage() {
     }
   }, [activeJobId, repositoryContext.id])
 
-  const [jobProgress, setJobProgress] = useState<{ processed: number; total: number; diffsFound: number } | null>(null)
   useEffect(() => {
     const data = computeFetcher.data as
       | {
@@ -359,7 +385,7 @@ export default function RepositoryVerificationDiffPage() {
     }
   }, [computeFetcher.data])
 
-  const triggerFetcher = useFetcher()
+  const triggerFetcher = useFetcher({ key: `verification-diff-trigger-${repositoryContext.id}` })
   const triggerData = triggerFetcher.data as { computeDiffsJobStarted?: number; error?: string } | undefined
   useEffect(() => {
     if (triggerData?.computeDiffsJobStarted) {
@@ -623,6 +649,25 @@ function describeRefreshPartialResult(result: { errors?: number } | null | undef
   return `Oppdateringen ble fullført, men ${errors} deployment(er) feilet. Disse kan fortsatt mangle godkjenner.`
 }
 
+type RefreshJobLike = { status: string; id: number; result?: { errors?: number } | null } | null | undefined
+
+export function deriveRefreshJobState(job: RefreshJobLike): {
+  activeJobId: number | null
+  jobError: string | null
+  jobWarning: string | null
+} {
+  return {
+    activeJobId: job?.status === 'running' ? job.id : null,
+    jobError:
+      job?.status === 'failed'
+        ? 'Oppdatering av godkjennere feilet.'
+        : job?.status === 'cancelled'
+          ? 'Oppdatering av godkjennere ble avbrutt.'
+          : null,
+    jobWarning: job?.status === 'completed' ? describeRefreshPartialResult(job.result) : null,
+  }
+}
+
 function MissingApproverSection({
   deployments,
   userMappings,
@@ -638,14 +683,13 @@ function MissingApproverSection({
   githubRepoName: string
   latestRefreshJob: LatestRefreshJob
 }) {
-  const statusFetcher = useFetcher()
-  const triggerFetcher = useFetcher()
-  const cancelFetcher = useFetcher()
+  const statusFetcher = useFetcher({ key: `missing-approver-status-${repositoryId}` })
+  const triggerFetcher = useFetcher({ key: `missing-approver-trigger-${repositoryId}` })
+  const cancelFetcher = useFetcher({ key: `missing-approver-cancel-${repositoryId}` })
   const revalidator = useRevalidator()
 
-  const [activeJobId, setActiveJobId] = useState<number | null>(
-    latestRefreshJob?.status === 'running' ? latestRefreshJob.id : null,
-  )
+  const initialRefreshJobState = deriveRefreshJobState(latestRefreshJob)
+  const [activeJobId, setActiveJobId] = useState<number | null>(initialRefreshJobState.activeJobId)
   const [jobProgress, setJobProgress] = useState<{
     processed: number
     total: number
@@ -653,21 +697,24 @@ function MissingApproverSection({
     skipped: number
     errors: number
   } | null>(null)
-  const [jobError, setJobError] = useState<string | null>(
-    latestRefreshJob?.status === 'failed'
-      ? 'Oppdatering av godkjennere feilet.'
-      : latestRefreshJob?.status === 'cancelled'
-        ? 'Oppdatering av godkjennere ble avbrutt.'
-        : null,
-  )
-  const [jobWarning, setJobWarning] = useState<string | null>(
-    latestRefreshJob?.status === 'completed' ? describeRefreshPartialResult(latestRefreshJob.result) : null,
-  )
+  const [jobError, setJobError] = useState<string | null>(initialRefreshJobState.jobError)
+  const [jobWarning, setJobWarning] = useState<string | null>(initialRefreshJobState.jobWarning)
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const statusFetcherRef = useRef(statusFetcher)
   statusFetcherRef.current = statusFetcher
   const revalidatorRef = useRef(revalidator)
   revalidatorRef.current = revalidator
+
+  const previousRepositoryIdRef = useRef(repositoryId)
+  useEffect(() => {
+    if (previousRepositoryIdRef.current === repositoryId) return
+    previousRepositoryIdRef.current = repositoryId
+    const resetState = deriveRefreshJobState(latestRefreshJob)
+    setActiveJobId(resetState.activeJobId)
+    setJobProgress(null)
+    setJobError(resetState.jobError)
+    setJobWarning(resetState.jobWarning)
+  }, [repositoryId, latestRefreshJob])
 
   useEffect(() => {
     if (activeJobId) {
