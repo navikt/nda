@@ -16,6 +16,7 @@ export const VERIFICATION_DIFF_CONFLICT_GROUP: readonly SyncJobType[] = [
   'reverify_app',
   'refresh_missing_approver',
   'reverify_all',
+  'github_verify',
 ]
 
 export const SYNC_JOB_TYPE_LABELS: Record<SyncJobType, string> = {

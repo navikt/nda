@@ -32,6 +32,10 @@ function getJobContext(): JobContext | undefined {
   return jobContextStorage.getStore()
 }
 
+export function getCurrentJobId(): number | undefined {
+  return getJobContext()?.jobId
+}
+
 function getJobMeta(): Record<string, unknown> {
   const ctx = getJobContext()
   if (!ctx) return {}

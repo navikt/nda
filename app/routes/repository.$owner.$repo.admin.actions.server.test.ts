@@ -79,7 +79,7 @@ vi.mock('~/db/sync-jobs.server', () => ({
   heartbeatSyncJob: mockHeartbeatSyncJob,
   updateSyncJobProgress: mockUpdateSyncJobProgress,
   isAppBlockedByRunningJob: mockIsAppBlockedByRunningJob,
-  VERIFICATION_DIFF_CONFLICT_GROUP: ['reverify_app', 'refresh_missing_approver', 'reverify_all'],
+  VERIFICATION_DIFF_CONFLICT_GROUP: ['reverify_app', 'refresh_missing_approver', 'reverify_all', 'github_verify'],
 }))
 
 vi.mock('~/db/verification-diff.server', () => ({
@@ -1067,7 +1067,7 @@ describe('processRefreshMissingApproverJobForRepositoryAsync', () => {
 
     expect(mockIsAppBlockedByRunningJob).toHaveBeenCalledWith(
       1,
-      ['reverify_app', 'refresh_missing_approver', 'reverify_all'],
+      ['reverify_app', 'refresh_missing_approver', 'reverify_all', 'github_verify'],
       5,
     )
     expect(mockRunVerification).not.toHaveBeenCalled()

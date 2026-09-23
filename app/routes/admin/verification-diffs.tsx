@@ -259,7 +259,7 @@ async function processComputeAllAsync(jobId: number, apps: Array<{ id: number; t
           )
         ) {
           logger.info(
-            `Skipping compute diffs for ${app.team_slug}/${app.app_name} — a fetch, reverify or refresh job is currently running for it or its repository`,
+            `Skipping compute diffs for ${app.team_slug}/${app.app_name} — a fetch, reverify, refresh or GitHub verification job is currently running for it or its repository`,
           )
           skippedRepoLocked++
         } else {

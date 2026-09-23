@@ -229,6 +229,7 @@ export async function isAppBlockedByRunningJob(
        AND ($3::int IS NULL OR sj.id != $3)
        AND (
          (sj.job_type = 'reverify_all' AND sj.repository_id IS NULL)
+         OR (sj.job_type = 'refresh_missing_approver' AND sj.repository_id IS NULL AND sj.monitored_app_id IS NULL)
          OR sj.monitored_app_id = $2
          OR sj.repository_id IN (
            SELECT r.id FROM application_repositories ar

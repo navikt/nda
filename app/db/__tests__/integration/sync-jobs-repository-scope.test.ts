@@ -535,6 +535,18 @@ describe('isAppBlockedByRunningJob', () => {
 
     expect(await isAppBlockedByRunningJob(appId, ['refresh_missing_approver'], jobForRepoA as number)).toBe(true)
   })
+
+  it('returns true for any app when a true-global refresh_missing_approver job is running, regardless of the app being linked to anything', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-lock',
+      appName: 'app-lock-refresh-all-i',
+      environment: 'prod-gcp',
+    })
+
+    await insertRunningJob({ jobType: 'refresh_missing_approver', repositoryId: null })
+
+    expect(await isAppBlockedByRunningJob(appId, ['refresh_missing_approver'])).toBe(true)
+  })
 })
 
 describe('forceReleaseSyncJob', () => {

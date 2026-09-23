@@ -6,12 +6,18 @@ vi.mock('~/db/deployments.server', () => ({
   updateDeploymentFourEyes: vi.fn(),
 }))
 
+vi.mock('~/db/sync-jobs.server', () => ({
+  isAppBlockedByRunningJob: vi.fn(async () => false),
+  VERIFICATION_DIFF_CONFLICT_GROUP: ['reverify_app', 'refresh_missing_approver', 'reverify_all', 'github_verify'],
+}))
+
 vi.mock('~/lib/verification', () => ({
   runVerification: vi.fn(),
 }))
 
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  getCurrentJobId: vi.fn(() => undefined),
 }))
 
 vi.mock('~/lib/sync/goal-keyword-sync.server', () => ({
@@ -24,7 +30,9 @@ vi.mock('~/lib/github', () => ({
 }))
 
 import { getAllDeployments, getDeploymentById, updateDeploymentFourEyes } from '~/db/deployments.server'
+import { isAppBlockedByRunningJob } from '~/db/sync-jobs.server'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
+import { getCurrentJobId } from '~/lib/logger.server'
 import { verifyDeploymentsFourEyes } from '~/lib/sync/github-verify.server'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from '~/lib/sync/goal-keyword-sync.server'
 import { runVerification } from '~/lib/verification'
@@ -32,10 +40,12 @@ import { runVerification } from '~/lib/verification'
 const mockGetAll = getAllDeployments as Mock
 const mockGetById = getDeploymentById as Mock
 const mockUpdateFourEyes = updateDeploymentFourEyes as Mock
+const mockIsAppBlockedByRunningJob = isAppBlockedByRunningJob as Mock
 const mockRunVerification = runVerification as Mock
 const mockAutoLink = autoLinkGoalKeywords as Mock
 const mockAutoLinkDependabot = autoLinkDependabotGoal as Mock
 const mockRateLimitRemaining = getGitHubRateLimitRemaining as Mock
+const mockGetCurrentJobId = getCurrentJobId as Mock
 
 function makeDeployment(overrides: Record<string, unknown> = {}) {
   return {
@@ -91,6 +101,53 @@ describe('verifyDeploymentsFourEyes', () => {
 
     expect(mockRunVerification).toHaveBeenCalledTimes(2)
     expect(result.verified).toBe(2)
+  })
+
+  it('skips deployments whose app or repository has a running reverify/refresh job', async () => {
+    mockGetAll.mockResolvedValue([makeDeployment({ id: 1, monitored_app_id: 10, four_eyes_status: 'pending' })])
+    mockIsAppBlockedByRunningJob.mockResolvedValue(true)
+
+    const promise = verifyDeploymentsFourEyes()
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await promise
+
+    expect(mockIsAppBlockedByRunningJob).toHaveBeenCalledWith(
+      10,
+      ['reverify_app', 'refresh_missing_approver', 'reverify_all', 'github_verify'],
+      undefined,
+    )
+    expect(mockRunVerification).not.toHaveBeenCalled()
+    expect(result).toEqual({ verified: 0, failed: 0, skipped: 1, remaining: 0 })
+  })
+
+  it('verifies deployments when no conflicting job is running', async () => {
+    mockGetAll.mockResolvedValue([makeDeployment({ id: 1, monitored_app_id: 10, four_eyes_status: 'pending' })])
+    mockIsAppBlockedByRunningJob.mockResolvedValue(false)
+    mockRunVerification.mockResolvedValue({ status: 'approved' })
+
+    const promise = verifyDeploymentsFourEyes()
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await promise
+
+    expect(mockRunVerification).toHaveBeenCalledTimes(1)
+    expect(result.verified).toBe(1)
+  })
+
+  it('excludes its own running github_verify job from the conflict check', async () => {
+    mockGetAll.mockResolvedValue([makeDeployment({ id: 1, monitored_app_id: 10, four_eyes_status: 'pending' })])
+    mockGetCurrentJobId.mockReturnValue(42)
+    mockIsAppBlockedByRunningJob.mockResolvedValue(false)
+    mockRunVerification.mockResolvedValue({ status: 'approved' })
+
+    const promise = verifyDeploymentsFourEyes()
+    await vi.advanceTimersByTimeAsync(1000)
+    await promise
+
+    expect(mockIsAppBlockedByRunningJob).toHaveBeenCalledWith(
+      10,
+      ['reverify_app', 'refresh_missing_approver', 'reverify_all', 'github_verify'],
+      42,
+    )
   })
 
   it('skips deployments already approved', async () => {

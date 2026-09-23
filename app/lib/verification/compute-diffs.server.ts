@@ -352,7 +352,7 @@ export async function computeVerificationDiffsForRepository(
     try {
       if (jobId && (await isAppBlockedByRunningJob(appId, VERIFICATION_DIFF_CONFLICT_GROUP, jobId))) {
         logger.info(
-          `Skipping reverify for app ${appId} in repository ${repositoryId} — a conflicting reverify or refresh job is already running for it, or for a repository it is also linked to`,
+          `Skipping reverify for app ${appId} in repository ${repositoryId} — a conflicting reverify, refresh, or GitHub verification job is already running for it, or for a repository it is also linked to`,
         )
         result.appsSkippedLocked++
       } else {
