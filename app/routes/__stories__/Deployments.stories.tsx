@@ -228,6 +228,7 @@ const baseArgs: AppDeploymentsPageProps = {
   deployments: fixtureDeployments.slice(0, 3),
   total: 42,
   page: 1,
+  per_page: 20,
   total_pages: 3,
   userMappings,
   deployerOptions: getDeployerOptions(),

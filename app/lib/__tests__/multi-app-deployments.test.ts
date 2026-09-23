@@ -100,6 +100,12 @@ describe('getMultiAppDeploymentsPageData', () => {
     expect(calledFilters).not.toHaveProperty('audit_start_year')
   })
 
+  it('forwards a provided perPage value to getDeploymentsPaginated', async () => {
+    await getMultiAppDeploymentsPageData(apps, { page: 1, perPage: 50, teamFilter: '' }, null)
+
+    expect(mockGetDeploymentsPaginated).toHaveBeenCalledWith(expect.objectContaining({ per_page: 50 }))
+  })
+
   it('marks the team filter empty with no-user-teams when the current user has no dev teams', async () => {
     mockGetUserDevTeamsByRole.mockResolvedValue([])
 

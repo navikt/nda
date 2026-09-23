@@ -11,11 +11,13 @@ import {
 import { getGithubUserLookups, getUserByIdentifier } from '~/db/user-github-lookups.server'
 import type { UserIdentity } from '~/lib/auth.server'
 import { logger } from '~/lib/logger.server'
+import { DEFAULT_PER_PAGE } from '~/lib/pagination'
 import { serializeUserLookups } from '~/lib/user-display'
 import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 
 export interface MultiAppDeploymentsFilters {
   page: number
+  perPage?: number
   status?: string
   method?: 'pr' | 'direct_push' | 'legacy'
   goal?: 'missing' | 'linked'
@@ -83,7 +85,7 @@ export async function getMultiAppDeploymentsPageData(
     monitored_app_ids: appIds,
     per_app_audit_start_year: true,
     page: filters.page,
-    per_page: 20,
+    per_page: filters.perPage ?? DEFAULT_PER_PAGE,
     four_eyes_status: filters.status,
     method: filters.method,
     workflow_trigger_event: filters.triggerEvent,
