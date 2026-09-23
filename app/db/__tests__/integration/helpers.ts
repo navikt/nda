@@ -12,6 +12,27 @@ export async function truncateAllTables(pool: Pool): Promise<void> {
   await pool.query(`TRUNCATE TABLE ${tableList} CASCADE`)
 }
 
+export async function waitForAdvisoryLockWaiter(
+  pool: Pool,
+  lockNamespace: number,
+  githubRepoId: string,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const { rows } = await pool.query<{ count: string }>(
+      `SELECT count(*) FROM pg_locks
+       WHERE locktype = 'advisory' AND classid = $1 AND objid = hashtext($2::text) AND NOT granted`,
+      [lockNamespace, githubRepoId],
+    )
+    if (Number(rows[0].count) > 0) {
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`Timed out waiting for a blocked advisory lock waiter on github repo ${githubRepoId}`)
+}
+
 export async function seedSection(pool: Pool, slug: string, name?: string): Promise<number> {
   const { rows } = await pool.query<{ id: number }>(`INSERT INTO sections (slug, name) VALUES ($1, $2) RETURNING id`, [
     slug,

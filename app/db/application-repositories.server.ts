@@ -1,5 +1,23 @@
+import type { PoolClient } from 'pg'
 import { getRepositoryId } from '~/lib/github/git.server'
-import { lockRepositoryAdminForWrite, pool, withTransaction } from './connection.server'
+import {
+  lockRepositoryAdminForWrite,
+  lockRepositoryForVerificationJob,
+  pool,
+  withTransaction,
+} from './connection.server'
+
+async function lockRepositoriesForVerificationCoordination(
+  client: PoolClient,
+  githubRepoIds: Array<string | null>,
+): Promise<void> {
+  const uniqueSortedGithubRepoIds = [...new Set(githubRepoIds.filter((id): id is string => id !== null))].sort(
+    (a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0),
+  )
+  for (const githubRepoId of uniqueSortedGithubRepoIds) {
+    await lockRepositoryForVerificationJob(client, githubRepoId)
+  }
+}
 
 export const LATEST_ACTIVE_REPOSITORY_LINK_SQL = `
   SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name, github_repo_id
@@ -113,6 +131,18 @@ export async function upsertApplicationRepository(data: {
   return withTransaction(async (client) => {
     await lockRepositoryAdminForWrite(client)
 
+    const { rows: existingRows } = await client.query<{ github_repo_id: string | null }>(
+      `SELECT github_repo_id FROM application_repositories
+       WHERE monitored_app_id = $1 AND github_owner = $2 AND github_repo_name = $3`,
+      [data.monitoredAppId, data.githubOwner, data.githubRepoName],
+    )
+    const isGenuinelyNewPendingLink = existingRows.length === 0 && data.status === 'pending_approval'
+    if (!isGenuinelyNewPendingLink) {
+      const effectiveGithubRepoId =
+        existingRows[0]?.github_repo_id ?? (githubRepoId === null ? null : String(githubRepoId))
+      await lockRepositoriesForVerificationCoordination(client, [effectiveGithubRepoId])
+    }
+
     const result = await client.query(
       `INSERT INTO application_repositories (
         monitored_app_id, github_owner, github_repo_name, github_repo_id, status,
@@ -163,6 +193,17 @@ export async function approveRepository(
       throw new Error(`Repository with id ${repoId} not found`)
     }
 
+    const affectedGithubRepoIds = [repo.rows[0].github_repo_id]
+    if (setAsActive) {
+      const otherActiveLinks = await client.query<{ github_repo_id: string | null }>(
+        `SELECT github_repo_id FROM application_repositories
+         WHERE monitored_app_id = $1 AND status = 'active' AND id != $2`,
+        [repo.rows[0].monitored_app_id, repoId],
+      )
+      affectedGithubRepoIds.push(...otherActiveLinks.rows.map((row) => row.github_repo_id))
+    }
+    await lockRepositoriesForVerificationCoordination(client, affectedGithubRepoIds)
+
     if (setAsActive) {
       await client.query(
         `UPDATE application_repositories 
@@ -208,6 +249,16 @@ export async function setRepositoryAsActive(repoId: number): Promise<Application
     if (repo.rows.length === 0) {
       throw new Error(`Repository with id ${repoId} not found`)
     }
+
+    const otherActiveLinks = await client.query<{ github_repo_id: string | null }>(
+      `SELECT github_repo_id FROM application_repositories
+       WHERE monitored_app_id = $1 AND id != $2 AND status = 'active'`,
+      [repo.rows[0].monitored_app_id, repoId],
+    )
+    await lockRepositoriesForVerificationCoordination(client, [
+      repo.rows[0].github_repo_id,
+      ...otherActiveLinks.rows.map((row) => row.github_repo_id),
+    ])
 
     await client.query(
       `UPDATE application_repositories 
