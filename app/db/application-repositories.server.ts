@@ -1,14 +1,6 @@
 import { getRepositoryId } from '~/lib/github/git.server'
 import { lockRepositoryAdminForWrite, pool, withTransaction } from './connection.server'
 
-/**
- * Kanonisk "hvilken repository er appens gjeldende aktive lenke akkurat nå" — én rad per app,
- * nyeste `active`-lenke vinner ved uavgjort (`created_at DESC, id DESC`). Brukes overalt en
- * enkelt, entydig "appens repo" trengs (autorisasjon, monorepo-gruppering, effektive
- * innstillinger). Dekker IKKE `historical`-lenker eller apper med flere samtidige aktive
- * lenker til ulike repositories — for den type spørring (f.eks. jobb-/lås-koordinering, der
- * enhver tilknytning skal telle) brukes egne, bevisst mer permissive spørringer i stedet.
- */
 export const LATEST_ACTIVE_REPOSITORY_LINK_SQL = `
   SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name, github_repo_id
   FROM application_repositories
