@@ -1,6 +1,13 @@
 import { getRepositoryId } from '~/lib/github/git.server'
 import { lockRepositoryAdminForWrite, pool, withTransaction } from './connection.server'
 
+export const LATEST_ACTIVE_REPOSITORY_LINK_SQL = `
+  SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name, github_repo_id
+  FROM application_repositories
+  WHERE status = 'active'
+  ORDER BY monitored_app_id, created_at DESC, id DESC
+`
+
 interface ApplicationRepository {
   id: number
   monitored_app_id: number
@@ -222,12 +229,7 @@ export async function setRepositoryAsActive(repoId: number): Promise<Application
 }
 
 export async function getAllActiveRepositories(): Promise<Map<number, string>> {
-  const result = await pool.query(
-    `SELECT DISTINCT ON (monitored_app_id) monitored_app_id, github_owner, github_repo_name
-     FROM application_repositories 
-     WHERE status = 'active'
-     ORDER BY monitored_app_id, created_at DESC, id DESC`,
-  )
+  const result = await pool.query(`${LATEST_ACTIVE_REPOSITORY_LINK_SQL}`)
 
   const map = new Map<number, string>()
   for (const row of result.rows) {

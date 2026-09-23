@@ -26,6 +26,7 @@ vi.mock('~/db/verification-diff.server', () => ({
 
 vi.mock('~/db/application-repositories.server', () => ({
   findRepositoryForApp: vi.fn(),
+  LATEST_ACTIVE_REPOSITORY_LINK_SQL: '',
 }))
 
 vi.mock('~/lib/logger.server', () => ({
