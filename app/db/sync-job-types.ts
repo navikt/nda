@@ -12,6 +12,13 @@ const SYNC_JOB_TYPES = [
 ] as const
 export type SyncJobType = (typeof SYNC_JOB_TYPES)[number]
 
+export const VERIFICATION_DIFF_CONFLICT_GROUP: readonly SyncJobType[] = [
+  'reverify_app',
+  'refresh_missing_approver',
+  'reverify_all',
+  'github_verify',
+]
+
 export const SYNC_JOB_TYPE_LABELS: Record<SyncJobType, string> = {
   nais_sync: 'NAIS Sync',
   github_verify: 'GitHub Verifisering',

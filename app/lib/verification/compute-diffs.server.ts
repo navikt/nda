@@ -1,7 +1,12 @@
 import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
-import { getSyncJobById, heartbeatSyncJob, isAppBlockedByRunningJob } from '~/db/sync-jobs.server'
+import {
+  getSyncJobById,
+  heartbeatSyncJob,
+  isAppBlockedByRunningJob,
+  VERIFICATION_DIFF_CONFLICT_GROUP,
+} from '~/db/sync-jobs.server'
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
@@ -345,9 +350,9 @@ export async function computeVerificationDiffsForRepository(
     }
 
     try {
-      if (jobId && (await isAppBlockedByRunningJob(appId, ['reverify_app'], jobId))) {
+      if (jobId && (await isAppBlockedByRunningJob(appId, VERIFICATION_DIFF_CONFLICT_GROUP, jobId))) {
         logger.info(
-          `Skipping reverify for app ${appId} in repository ${repositoryId} — another reverify job is already running for it, or for a repository it is also linked to`,
+          `Skipping reverify for app ${appId} in repository ${repositoryId} — a conflicting reverify, refresh, or GitHub verification job is already running for it, or for a repository it is also linked to`,
         )
         result.appsSkippedLocked++
       } else {

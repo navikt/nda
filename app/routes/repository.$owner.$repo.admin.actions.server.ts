@@ -10,8 +10,10 @@ import {
   forceReleaseSyncJob,
   getSyncJobById,
   heartbeatSyncJob,
+  isAppBlockedByRunningJob,
   releaseSyncLock,
   updateSyncJobProgress,
+  VERIFICATION_DIFF_CONFLICT_GROUP,
 } from '~/db/sync-jobs.server'
 import { getApprovedDeploymentsMissingApproverForApps } from '~/db/verification-diff.server'
 import { fail, ok } from '~/lib/action-result'
@@ -110,6 +112,8 @@ export async function processRefreshMissingApproverJobForRepositoryAsync(
           isProtectedStatus(dep.four_eyes_status) ||
           !isValidCommitSha(dep.commit_sha)
         ) {
+          skipped++
+        } else if (await isAppBlockedByRunningJob(dep.monitored_app_id, VERIFICATION_DIFF_CONFLICT_GROUP, jobId)) {
           skipped++
         } else {
           try {

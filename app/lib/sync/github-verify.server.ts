@@ -6,12 +6,13 @@ import {
   getDeploymentById,
   updateDeploymentFourEyes,
 } from '~/db/deployments.server'
+import { isAppBlockedByRunningJob, VERIFICATION_DIFF_CONFLICT_GROUP } from '~/db/sync-jobs.server'
 import { isDependabotUser } from '~/lib/dependabot'
 import { isApprovedStatus, REVERIFIABLE_STATUSES, REVERIFIABLE_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
 import type { WorkflowTriggerConfig } from '~/lib/github/git.server'
-import { logger } from '~/lib/logger.server'
+import { getCurrentJobId, logger } from '~/lib/logger.server'
 import { refreshCommitChecksOnly, runVerification } from '~/lib/verification'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from './goal-keyword-sync.server'
 
@@ -182,6 +183,16 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
       }
 
       if (!deployment.default_branch) {
+        skipped++
+        continue
+      }
+
+      if (
+        await isAppBlockedByRunningJob(deployment.monitored_app_id, VERIFICATION_DIFF_CONFLICT_GROUP, getCurrentJobId())
+      ) {
+        logger.info(
+          `⏳ Skipping deployment ${deployment.nais_deployment_id} — a reverify or refresh job is currently running for its app or repository`,
+        )
         skipped++
         continue
       }
