@@ -323,6 +323,22 @@ export async function getSyncJobAppNames(): Promise<string[]> {
   return result.rows.map((row: { app_name: string }) => row.app_name)
 }
 
+export interface SyncJobRepository {
+  id: number
+  github_owner: string
+  github_repo_name: string
+}
+
+export async function getSyncJobRepositories(): Promise<SyncJobRepository[]> {
+  const result = await pool.query(`
+    SELECT DISTINCT r.id, r.github_owner, r.github_repo_name
+    FROM sync_jobs sj
+    JOIN repositories r ON sj.repository_id = r.id
+    ORDER BY r.github_owner, r.github_repo_name
+  `)
+  return result.rows
+}
+
 export async function getSyncJobStats(): Promise<{
   total: number
   running: number

@@ -27,6 +27,7 @@ import {
   getAllSyncJobs,
   getFailedSyncJobsGrouped,
   getSyncJobAppNames,
+  getSyncJobRepositories,
   getSyncJobStats,
   releaseExpiredLocks,
   type SyncJobStatus,
@@ -56,7 +57,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
       ? parsedRepositoryId
       : null
 
-  const [jobs, stats, appNames, failedGrouped] = await Promise.all([
+  const [jobs, stats, appNames, repositories, failedGrouped] = await Promise.all([
     getAllSyncJobs({
       status: status || undefined,
       jobType: jobType || undefined,
@@ -66,10 +67,11 @@ export async function loader({ request, url }: Route.LoaderArgs) {
     }),
     getSyncJobStats(),
     getSyncJobAppNames(),
+    getSyncJobRepositories(),
     getFailedSyncJobsGrouped(),
   ])
 
-  return { jobs, stats, appNames, failedGrouped, filters: { status, jobType, appName, repositoryId } }
+  return { jobs, stats, appNames, repositories, failedGrouped, filters: { status, jobType, appName, repositoryId } }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -226,7 +228,7 @@ function StatCard({
 }
 
 export default function AdminSyncJobs({ loaderData, actionData }: Route.ComponentProps) {
-  const { jobs, stats, appNames, failedGrouped, filters } = loaderData
+  const { jobs, stats, appNames, repositories, failedGrouped, filters } = loaderData
   const [, setSearchParams] = useSearchParams()
 
   function setStatusFilter(status: string | null) {
@@ -387,7 +389,6 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
       <HStack gap="space-16" justify="space-between" wrap>
         <Form method="get">
           <HStack gap="space-12">
-            {filters.repositoryId && <input type="hidden" name="repositoryId" value={filters.repositoryId} />}
             <Select label="Status" name="status" defaultValue={filters.status || ''} size="small">
               <option value="">Alle</option>
               <option value="running">Kjører</option>
@@ -410,6 +411,19 @@ export default function AdminSyncJobs({ loaderData, actionData }: Route.Componen
               {appNames.map((name) => (
                 <option key={name} value={name}>
                   {name}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="Repository"
+              name="repositoryId"
+              defaultValue={filters.repositoryId ? String(filters.repositoryId) : ''}
+              size="small"
+            >
+              <option value="">Alle</option>
+              {repositories.map((repo) => (
+                <option key={repo.id} value={repo.id}>
+                  {repo.github_owner}/{repo.github_repo_name} (#{repo.id})
                 </option>
               ))}
             </Select>

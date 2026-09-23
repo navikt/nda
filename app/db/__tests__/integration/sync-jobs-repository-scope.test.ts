@@ -7,6 +7,7 @@ import {
   forceReleaseSyncJob,
   getAllSyncJobs,
   getFailedSyncJobsGrouped,
+  getSyncJobRepositories,
   isAppBlockedByRunningJob,
 } from '~/db/sync-jobs.server'
 import { seedApp, seedApplicationRepository, seedRepository, truncateAllTables } from './helpers'
@@ -576,5 +577,33 @@ describe('getFailedSyncJobsGrouped repository projection', () => {
     expect(groupB?.github_repo_name).toBe('repo-b')
     expect(groupA?.failure_count).toBe(1)
     expect(groupB?.failure_count).toBe(1)
+  })
+})
+
+describe('getSyncJobRepositories', () => {
+  it('returns distinct repositories that have at least one sync job, excluding repositories without any', async () => {
+    const repoA = await seedRepo(pool, 'a')
+    const repoB = await seedRepo(pool, 'b')
+    await seedRepo(pool, 'c')
+
+    await seedCompletedJob({ repositoryId: repoA, createdAt: new Date() })
+    await seedCompletedJob({ repositoryId: repoA, createdAt: new Date() })
+    await seedFailedJob({ repositoryId: repoB, error: 'boom' })
+
+    const repositories = await getSyncJobRepositories()
+
+    expect(repositories).toHaveLength(2)
+    expect(repositories.map((r) => `${r.github_owner}/${r.github_repo_name}`).sort()).toEqual([
+      'navikt/repo-a',
+      'navikt/repo-b',
+    ])
+  })
+
+  it('excludes app-scoped jobs with no repository_id', async () => {
+    await seedCompletedJob({ repositoryId: null, createdAt: new Date() })
+
+    const repositories = await getSyncJobRepositories()
+
+    expect(repositories).toHaveLength(0)
   })
 })
