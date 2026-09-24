@@ -56,6 +56,7 @@ const ALL_ROUTES: { path: string; description: string }[] = [
     path: '/api/v1/apps/team/prod/myapp/audit-reports/AUDIT-2025-myapp-abc123/download',
     description: 'M2M: audit reports download',
   },
+  { path: '/api/v1/users/github-lookup', description: 'M2M: github user lookup' },
 
   { path: '/', description: 'Home' },
   { path: '/my-teams', description: 'My teams' },

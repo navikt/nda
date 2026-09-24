@@ -99,6 +99,17 @@ export interface AuditReportGenerateResponse {
   message: string
 }
 
+export interface GithubUserLookupResult {
+  githubUsername: string
+  displayName: string | null
+  navIdent: string | null
+  found: boolean
+}
+
+export interface GithubUserLookupResponse {
+  users: GithubUserLookupResult[]
+}
+
 export interface AuditReportJobStatusResponse {
   app: AuditReportAppMetadata
   jobId: string
