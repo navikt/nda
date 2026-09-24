@@ -349,7 +349,6 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'pensjon-app',
       environment: 'prod-gcp',
     })
-    // Link exists but is not yet hydrated with a github_repo_id.
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: owner,
@@ -381,6 +380,45 @@ describe('getPreviousDeploymentForDiff', () => {
     expect(prev?.id).toBe(olderId)
   })
 
+  it('matches a candidate via its own github_repo_id even when the app-repository link no longer matches it (e.g. link repointed to a different repo)', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    const otherOwner = 'navikt'
+    const otherRepo = 'pensjon-selvbetjening-soknad-alder-backend'
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: otherOwner,
+      githubRepo: otherRepo,
+      githubRepoId: '9005',
+    })
+    const olderId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'old9006aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2025-12-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9006',
+    })
+    const newId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'new9006aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2026-01-15T13:57:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9006',
+    })
+
+    const prev = await getPreviousDeploymentForDiff(newId, '9006')
+    expect(prev?.id).toBe(olderId)
+  })
+
   it('does not match a legacy (unhydrated) candidate from the old repo after the app-repository link is repointed to a new repo', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'pensjonselvbetjening',
@@ -389,14 +427,12 @@ describe('getPreviousDeploymentForDiff', () => {
     })
     const otherOwner = 'navikt'
     const otherRepo = 'pensjon-selvbetjening-soknad-alder-backend'
-    // The app-repository link has since been repointed to a different repository.
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: otherOwner,
       githubRepo: otherRepo,
       githubRepoId: '9004',
     })
-    // Legacy deployment recorded before the github_repo_id column existed, still bearing the OLD repo's owner/name.
     await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'pensjonselvbetjening',

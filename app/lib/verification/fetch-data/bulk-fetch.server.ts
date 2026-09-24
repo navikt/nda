@@ -32,10 +32,14 @@ export interface BulkFetchResult extends BulkFetchProgress {
 const ORDERED_DEPLOYMENTS_SELECT = (defaultBranchSql: string, repositoryIdSql = 'NULL::int') => `
       SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
              d.environment_name, d.trigger_url, d.workflow_trigger_config, d.commit_checks_data,
-             d.commit_checks_checked_at, d.github_pr_number, d.monitored_app_id,
+             d.commit_checks_checked_at, d.github_pr_number, d.monitored_app_id, d.github_repo_id,
              ${defaultBranchSql} AS default_branch, ${repositoryIdSql} AS matched_repository_id, d.created_at,
              LAG(d.commit_sha) OVER (
-               PARTITION BY d.detected_github_owner, d.detected_github_repo_name
+               -- Partition by the immutable github_repo_id when known, so a name reused after a
+               -- repository rename/deletion can't be treated as a continuation of the old
+               -- repository's deployment history. Falls back to owner/name for rows not yet
+               -- backfilled with github_repo_id.
+               PARTITION BY COALESCE(d.github_repo_id::text, d.detected_github_owner || '/' || d.detected_github_repo_name)
                ORDER BY d.created_at ASC, d.id ASC
              ) AS prev_commit_sha
       FROM deployments d
@@ -80,6 +84,7 @@ interface DeploymentRow {
   commit_checks_checked_at: string | null
   github_pr_number: number | null
   monitored_app_id: number
+  github_repo_id: string | null
   default_branch: string | null
   matched_repository_id: number | null
   created_at: string
@@ -142,6 +147,7 @@ async function processDeployments(
         repo,
         deployment.trigger_url,
         deployment.workflow_trigger_config,
+        deployment.github_repo_id != null ? Number(deployment.github_repo_id) : null,
       )
       if (workflowTriggerFetched) {
         result.workflowTriggersFetched++
@@ -220,7 +226,7 @@ async function processDeployments(
           baseBranch,
           deployment.monitored_app_id,
           { forceRefresh: false },
-          undefined,
+          deployment.trigger_url,
           deployment.matched_repository_id ?? undefined,
         )
         await updateDeploymentCommitChecks(deployment.id, input.commitChecks, input.commitChecksAttempted ?? true)
@@ -340,14 +346,39 @@ export async function fetchVerificationDataForRepository(
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
         AND ${VALID_COMMIT_SHA_SQL}
-        AND EXISTS (
-          SELECT 1 FROM application_repositories ar
-          JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-          WHERE ar.monitored_app_id = d.monitored_app_id
-            AND ar.github_owner = d.detected_github_owner
-            AND ar.github_repo_name = d.detected_github_repo_name
-            AND ar.status IN ('active', 'historical')
-            AND r.id = $1
+        AND (
+          -- Prefer the deployment's own immutable github_repo_id when it's known: it's the
+          -- authoritative source of truth and can't be fooled by a reused owner/name pointing at
+          -- a different repository. Only fall back to the owner/name-based app link when the
+          -- deployment hasn't been backfilled with github_repo_id yet.
+          CASE
+            WHEN d.github_repo_id IS NOT NULL THEN
+              d.github_repo_id = (SELECT r.github_repo_id FROM repositories r WHERE r.id = $1)
+              AND EXISTS (
+                SELECT 1 FROM application_repositories ar
+                WHERE ar.monitored_app_id = d.monitored_app_id
+                  AND ar.status IN ('active', 'historical')
+                  AND (
+                    ar.github_repo_id = d.github_repo_id
+                    OR (
+                      ar.github_repo_id IS NULL
+                      AND ar.github_owner = d.detected_github_owner
+                      AND ar.github_repo_name = d.detected_github_repo_name
+                    )
+                  )
+              )
+            ELSE
+              EXISTS (
+                SELECT 1 FROM application_repositories ar
+                JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+                WHERE ar.monitored_app_id = d.monitored_app_id
+                  AND ar.github_owner = d.detected_github_owner
+                  AND ar.github_repo_name = d.detected_github_repo_name
+                  AND ar.status IN ('active', 'historical')
+                  AND r.id = $1
+                  AND (d.trigger_url IS NULL OR d.trigger_url !~ '/actions/runs/[0-9]+')
+              )
+          END
         )
     )
     ${SNAPSHOT_JOIN_AND_ORDER}`

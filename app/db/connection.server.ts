@@ -99,6 +99,8 @@ export async function lockRepositoryAdminForWrite(client: PoolClient): Promise<v
   await client.query('SELECT pg_advisory_xact_lock($1)', [REPOSITORY_ADMIN_LOCK_KEY])
 }
 
+export const BACKFILL_GITHUB_REPO_ID_LOCK_KEY = 512_338_004
+
 export const VERIFICATION_JOB_LOCK_NAMESPACE = 837_002_219
 
 export async function lockRepositoryForVerificationJob(

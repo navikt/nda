@@ -1,6 +1,6 @@
 import { pool } from '~/db/connection.server'
 import { heartbeatSyncJob, isSyncJobCancelled, updateSyncJobProgress } from '~/db/sync-jobs.server'
-import { getWorkflowTriggerConfig, WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION } from '~/lib/github'
+import { resolveWorkflowRunDetails, WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import type { VerificationInput } from '../types'
 
@@ -9,34 +9,63 @@ interface FetchOptions {
   dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[]
 }
 
+export interface WorkflowTriggerConfigFetchResult {
+  config: VerificationInput['workflowTrigger']
+  repositoryId: number | null
+  headBranch: string | null
+  // True when this call made a live GitHub request for the workflow run (i.e. the cached
+  // workflow_trigger_config wasn't reusable); callers can use this to avoid a redundant second
+  // live call for data (e.g. head branch) that this same request already resolved.
+  liveFetchPerformed: boolean
+}
+
 export async function fetchWorkflowTriggerConfig(
   deploymentId: number,
   owner: string,
   repo: string,
   triggerUrl: string | null | undefined,
   options?: FetchOptions,
-): Promise<VerificationInput['workflowTrigger']> {
-  if (!triggerUrl) return undefined
+): Promise<WorkflowTriggerConfigFetchResult> {
+  if (!triggerUrl) return { config: undefined, repositoryId: null, headBranch: null, liveFetchPerformed: false }
 
+  let cached: Awaited<ReturnType<typeof getCachedWorkflowTriggerConfig>>
   if (!options?.forceRefresh) {
-    const cached = await getCachedWorkflowTriggerConfig(deploymentId)
-    if (cached) return cached
+    cached = await getCachedWorkflowTriggerConfig(deploymentId)
+    // Only fully reuse the cache when github_repo_id is already resolved. A config can have
+    // schemaVersion 3 with no repository id yet — either cached before this backfill existed, or
+    // written by backfillWorkflowTriggerConfig() — in which case a live lookup is still needed
+    // once to fill it in.
+    if (cached && cached.githubRepoId !== null) {
+      return {
+        config: cached.config,
+        repositoryId: cached.githubRepoId,
+        headBranch: null,
+        liveFetchPerformed: false,
+      }
+    }
   }
 
-  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
-  return workflowTrigger ?? undefined
+  const { workflowTrigger, repositoryId, headBranch } = await resolveWorkflowRunDetails(owner, repo, triggerUrl)
+  // If the live lookup can't reconstruct a trigger config (e.g. the workflow run has since 404'd),
+  // keep serving the previously-cached config instead of discarding it — only the repository id
+  // resolution failed here, not the config itself, and callers (e.g. fetchCommitChecks) rely on a
+  // missing config falling back to unscoped data.
+  return { config: workflowTrigger ?? cached?.config, repositoryId, headBranch, liveFetchPerformed: true }
 }
 
 async function getCachedWorkflowTriggerConfig(
   deploymentId: number,
-): Promise<VerificationInput['workflowTrigger'] | undefined> {
-  const existing = await pool.query<{ workflow_trigger_config: VerificationInput['workflowTrigger'] | null }>(
-    `SELECT workflow_trigger_config FROM deployments WHERE id = $1`,
-    [deploymentId],
-  )
-  const cached = existing.rows[0]?.workflow_trigger_config
-  if (cached?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) {
-    return cached
+): Promise<{ config: VerificationInput['workflowTrigger']; githubRepoId: number | null } | undefined> {
+  const existing = await pool.query<{
+    workflow_trigger_config: VerificationInput['workflowTrigger'] | null
+    github_repo_id: string | null
+  }>(`SELECT workflow_trigger_config, github_repo_id FROM deployments WHERE id = $1`, [deploymentId])
+  const row = existing.rows[0]
+  if (row?.workflow_trigger_config?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) {
+    return {
+      config: row.workflow_trigger_config,
+      githubRepoId: row.github_repo_id !== null ? Number(row.github_repo_id) : null,
+    }
   }
   return undefined
 }
@@ -47,17 +76,31 @@ export async function backfillWorkflowTriggerConfig(
   repo: string,
   triggerUrl: string | null | undefined,
   currentConfig?: VerificationInput['workflowTrigger'] | null,
+  currentGithubRepoId?: number | null,
 ): Promise<boolean> {
   if (!triggerUrl) return false
-  if (currentConfig?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) return false
+  // Only skip re-resolving when the config is current AND github_repo_id is already known —
+  // otherwise a config cached before repo-id extraction existed (or written by a prior call here
+  // that failed to extract it) would be stuck with a NULL github_repo_id forever.
+  if (currentConfig?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION && currentGithubRepoId != null) {
+    return false
+  }
 
-  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+  const { workflowTrigger, repositoryId } = await resolveWorkflowRunDetails(owner, repo, triggerUrl)
   if (!workflowTrigger) return false
 
-  await pool.query(`UPDATE deployments SET workflow_trigger_config = $1::jsonb WHERE id = $2`, [
-    JSON.stringify(workflowTrigger),
-    deploymentId,
-  ])
+  await pool.query(
+    `UPDATE deployments
+     SET
+       workflow_trigger_config = $1::jsonb,
+       github_repo_id = COALESCE(deployments.github_repo_id, $3::bigint),
+       github_repo_id_backfill_attempted_at = CASE
+         WHEN deployments.github_repo_id IS NULL AND $3::bigint IS NOT NULL THEN NULL
+         ELSE deployments.github_repo_id_backfill_attempted_at
+       END
+     WHERE id = $2`,
+    [JSON.stringify(workflowTrigger), deploymentId, repositoryId],
+  )
   return true
 }
 

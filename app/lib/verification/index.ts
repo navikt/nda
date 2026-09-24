@@ -6,7 +6,7 @@ import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
-import { getMergedPullRequestsInWindow } from '~/lib/github'
+import { getMergedPullRequestsInWindow, resolveGithubRepoIdFromWorkflowRunDetailed } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
 import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
@@ -48,6 +48,9 @@ function applyPassthroughFields(result: VerificationResult, input: VerificationI
   }
   if (input.detectedTitle) {
     result.detectedTitle = input.detectedTitle
+  }
+  if (input.detectedGithubRepoId != null) {
+    result.detectedGithubRepoId = input.detectedGithubRepoId
   }
   if (input.workflowTrigger) {
     result.workflowTrigger = input.workflowTrigger
@@ -230,6 +233,7 @@ export async function runDebugVerification(
     options.baseBranch,
     options.monitoredAppId,
     { forceRefresh: !useCache },
+    options.triggerUrl,
   )
 
   logger.info(`   ✅ Data fetched:`)
@@ -516,7 +520,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     `SELECT
        d.id, d.commit_sha, d.four_eyes_status,
        d.github_pr_number, d.environment_name, d.monitored_app_id,
-       d.detected_github_owner, d.detected_github_repo_name,
+       d.detected_github_owner, d.detected_github_repo_name, d.trigger_url, d.github_repo_id,
        ${effectiveDefaultBranchSql('ma')} AS default_branch,
        ${effectiveAuditStartYearSql('ma')} AS audit_start_year
      FROM deployments d
@@ -545,6 +549,12 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo)
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+  if (dep.github_repo_id && (!githubRepoId || dep.github_repo_id !== githubRepoId)) {
+    logger.warn(
+      `reverifyDeployment(${dep.id}): github_repo_id ${dep.github_repo_id} does not match currently linked repository ${owner}/${repo} (${githubRepoId ?? 'none'}) — name likely reused`,
+    )
+    return null
+  }
   const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !githubRepoId
   const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
   const previousDeployment = prevRow
@@ -585,6 +595,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       baseBranch,
       dep.monitored_app_id,
       { forceRefresh: true, includeComments: false, includeReviews: false },
+      dep.trigger_url,
     )
   } else {
     const compareData = compareSnapshot.data as CompareData
@@ -610,6 +621,17 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     }
 
     const hasCompareMetadata = compareData.compare !== undefined
+    const hasResolvableTriggerUrl = dep.trigger_url != null && /\/actions\/runs\/\d+/.test(dep.trigger_url)
+    const detectedGithubRepoId =
+      dep.github_repo_id != null
+        ? Number(dep.github_repo_id)
+        : (await resolveGithubRepoIdFromWorkflowRunDetailed(owner, repo, dep.trigger_url)).repositoryId
+    if (dep.github_repo_id == null && hasResolvableTriggerUrl && detectedGithubRepoId == null) {
+      logger.warn(
+        `reverifyDeployment(${dep.id}): failed to resolve github_repo_id from trigger_url ${dep.trigger_url} — aborting to avoid falling back to name-based data`,
+      )
+      return null
+    }
     input = {
       deploymentId: dep.id,
       commitSha: dep.commit_sha,
@@ -628,6 +650,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       repositoryStatus: 'active',
       commitOnBaseBranch: null,
       detectedTitle: deriveDetectedTitle(deployedPr, commitsBetween),
+      detectedGithubRepoId,
     }
   }
 

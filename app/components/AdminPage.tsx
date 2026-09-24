@@ -29,6 +29,29 @@ export function AdminPage() {
       </div>
 
       <HGrid gap="space-16" columns={{ xs: 1, md: 2, lg: 3 }}>
+        <Link to="/admin/backfill-github-repo-id" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <ArrowsCirclepathIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Backfill github_repo_id
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Fyll inn GitHubs immutable repo-id på eksisterende leveranser via workflow-kjøringer.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
         <Link to="/admin/users" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
@@ -52,215 +75,6 @@ export function AdminPage() {
             </VStack>
           </Box>
         </Link>
-
-        <Link to="/admin/data-mismatches" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <MagnifyingGlassIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Datakvalitet
-                </Heading>
-                <BodyShort textColor="subtle">
-                  Tittel-avvik, baseline uten godkjenner og andre datakvalitetsproblemer.
-                </BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/deployments/verify" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <CheckmarkCircleIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  GitHub-verifisering
-                </Heading>
-                <BodyShort textColor="subtle">Verifiser deployments mot GitHub.</BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/admin/snapshot-cleanup" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <TrashIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  GitHub-snapshot opprydning
-                </Heading>
-                <BodyShort textColor="subtle">
-                  Rydd opp i historiske GitHub-snapshots for å frigjøre diskplass i databasen.
-                </BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/admin/global-settings" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <CogIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Globale innstillinger
-                </Heading>
-                <BodyShort textColor="subtle">Konfigurer globale innstillinger som avvikskanal i Slack.</BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/admin/audit-reports" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <FileTextIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Leveranserapport
-                </Heading>
-                <BodyShort textColor="subtle">
-                  Generer leveranserapport for revisjon som dokumenterer four-eyes-prinsippet.
-                </BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/admin/monorepos" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <LayersIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Monorepoer
-                </Heading>
-                <BodyShort textColor="subtle">
-                  Se automatisk oppdagede monorepoer der flere apper deler samme git-repo.
-                </BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/sections" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <Buildings3Icon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Seksjoner
-                </Heading>
-                <BodyShort textColor="subtle">Administrer seksjoner, team-tilknytninger og Entra ID-grupper.</BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/admin/section-roles" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <PersonIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Seksjonsroller
-                </Heading>
-                <BodyShort textColor="subtle">
-                  Tildel og administrer roller på seksjonsnivå (Teknologileder, Seksjonsleder, Leveranseleder).
-                </BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/admin/soft-deleted" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <ArrowUndoIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Slettede rader
-                </Heading>
-                <BodyShort textColor="subtle">Se og gjenopprett logisk slettede rader.</BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
         <Link to="/admin/database-usage" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
@@ -285,7 +99,205 @@ export function AdminPage() {
             </VStack>
           </Box>
         </Link>
-
+        <Link to="/admin/data-mismatches" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <MagnifyingGlassIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Datakvalitet
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Tittel-avvik, baseline uten godkjenner og andre datakvalitetsproblemer.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+        <Link to="/admin/snapshot-cleanup" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <TrashIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  GitHub-snapshot opprydning
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Rydd opp i historiske GitHub-snapshots for å frigjøre diskplass i databasen.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+        <Link to="/deployments/verify" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <CheckmarkCircleIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  GitHub-verifisering
+                </Heading>
+                <BodyShort textColor="subtle">Verifiser deployments mot GitHub.</BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+        <Link to="/admin/global-settings" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <CogIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Globale innstillinger
+                </Heading>
+                <BodyShort textColor="subtle">Konfigurer globale innstillinger som avvikskanal i Slack.</BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+        <Link to="/admin/audit-reports" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <FileTextIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Leveranserapport
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Generer leveranserapport for revisjon som dokumenterer four-eyes-prinsippet.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+        <Link to="/admin/monorepos" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <LayersIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Monorepoer
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Se automatisk oppdagede monorepoer der flere apper deler samme git-repo.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+        <Link to="/sections" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <Buildings3Icon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Seksjoner
+                </Heading>
+                <BodyShort textColor="subtle">Administrer seksjoner, team-tilknytninger og Entra ID-grupper.</BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+        <Link to="/admin/section-roles" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <PersonIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Seksjonsroller
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Tildel og administrer roller på seksjonsnivå (Teknologileder, Seksjonsleder, Leveranseleder).
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+        <Link to="/admin/soft-deleted" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <ArrowUndoIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Slettede rader
+                </Heading>
+                <BodyShort textColor="subtle">Se og gjenopprett logisk slettede rader.</BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
         <Link to="/admin/sync-jobs" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
@@ -309,7 +321,6 @@ export function AdminPage() {
             </VStack>
           </Box>
         </Link>
-
         <Link to="/admin/validate-monitored-apps" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
@@ -333,7 +344,6 @@ export function AdminPage() {
             </VStack>
           </Box>
         </Link>
-
         <Link to="/admin/verification-diffs" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
@@ -355,7 +365,6 @@ export function AdminPage() {
             </VStack>
           </Box>
         </Link>
-
         <Link to="/admin/workflow-patterns" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
@@ -379,7 +388,6 @@ export function AdminPage() {
             </VStack>
           </Box>
         </Link>
-
         <Link to="/admin/workflow-triggers" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"

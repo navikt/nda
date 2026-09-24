@@ -112,6 +112,25 @@ export async function computeVerificationDiffs(
       let precomputedResult: ReturnType<typeof verifyDeployment> | null = null
 
       const { githubRepoId, status, repositoryId } = await resolveRepoInfo(owner, repo)
+
+      if (row.github_repo_id && (!githubRepoId || row.github_repo_id !== githubRepoId)) {
+        logger.warn(
+          `   ⚠️ Skipping deployment ${row.id}: github_repo_id ${row.github_repo_id} does not match currently linked repository ${owner}/${repo} (${githubRepoId ?? 'none'}) — name likely reused`,
+        )
+        result.skipped++
+        result.deploymentsChecked++
+        continue
+      }
+
+      if (!row.github_repo_id && row.trigger_url && /\/actions\/runs\/\d+/.test(row.trigger_url)) {
+        logger.warn(
+          `   ⚠️ Skipping deployment ${row.id}: github_repo_id not yet backfilled but a workflow run is available — cannot safely confirm identity via name lookup alone`,
+        )
+        result.skipped++
+        result.deploymentsChecked++
+        continue
+      }
+
       const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
       const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
       const previousDeployment = prevRow
@@ -160,6 +179,8 @@ export async function computeVerificationDiffs(
             row.environment_name,
             baseBranch,
             monitoredAppId,
+            undefined,
+            row.trigger_url,
           )
         } else {
           const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
@@ -226,6 +247,7 @@ export async function computeVerificationDiffs(
                 baseBranch,
                 monitoredAppId,
                 { forceRefresh: true, includeComments: false, includeReviews: false },
+                row.trigger_url,
               )
             } catch (err) {
               logger.warn(`   ⚠️ Force-refresh failed for deployment ${row.id}, using cache-only result`, {
@@ -247,6 +269,8 @@ export async function computeVerificationDiffs(
           row.environment_name,
           baseBranch,
           monitoredAppId,
+          undefined,
+          row.trigger_url,
         )
       }
 

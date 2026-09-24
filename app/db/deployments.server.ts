@@ -28,6 +28,7 @@ export interface Deployment {
   detected_github_owner: string | null
   detected_github_repo_name: string | null
   github_repo_id: string | null
+  github_repo_id_backfill_attempted_at: Date | null
   four_eyes_status: string
   github_pr_number: number | null
   github_pr_url: string | null
@@ -521,7 +522,12 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
     ON CONFLICT (nais_deployment_id) 
     DO UPDATE SET
       resources = EXCLUDED.resources,
-      synced_at = CURRENT_TIMESTAMP
+      synced_at = CURRENT_TIMESTAMP,
+      github_repo_id = COALESCE(deployments.github_repo_id, EXCLUDED.github_repo_id),
+      github_repo_id_backfill_attempted_at = CASE
+        WHEN deployments.github_repo_id IS NULL AND EXCLUDED.github_repo_id IS NOT NULL THEN NULL
+        ELSE deployments.github_repo_id_backfill_attempted_at
+      END
     RETURNING *`,
     [
       data.monitoredApplicationId,

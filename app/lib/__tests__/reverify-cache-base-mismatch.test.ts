@@ -55,10 +55,16 @@ vi.mock('~/lib/verification/verify', () => ({
   verifyDeployment: vi.fn(),
 }))
 
+vi.mock('~/lib/github', () => ({
+  getMergedPullRequestsInWindow: vi.fn(),
+  resolveGithubRepoIdFromWorkflowRunDetailed: vi.fn().mockResolvedValue({ repositoryId: null, permanentFailure: true }),
+}))
+
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
+import { resolveGithubRepoIdFromWorkflowRunDetailed } from '~/lib/github'
 import {
   buildCommitsBetweenFromCache,
   fetchVerificationData,
@@ -80,6 +86,7 @@ const mockGetPrDataForDiff = getPrDataForDiff as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockVerifyDeployment = verifyDeployment as Mock
 const mockUpdateDeploymentVerification = updateDeploymentVerification as Mock
+const mockResolveGithubRepoId = resolveGithubRepoIdFromWorkflowRunDetailed as Mock
 
 describe('reverifyDeployment cache base validation', () => {
   beforeEach(() => {
@@ -104,6 +111,7 @@ describe('reverifyDeployment cache base validation', () => {
           monitored_app_id: 99,
           detected_github_owner: 'navikt',
           detected_github_repo_name: 'repo',
+          trigger_url: 'https://github.com/navikt/repo/actions/runs/555',
           default_branch: 'main',
           audit_start_year: 2026,
         },
@@ -145,11 +153,20 @@ describe('reverifyDeployment cache base validation', () => {
 
     const result = await reverifyDeployment(10)
 
-    expect(mockFetchVerificationData).toHaveBeenCalledWith(10, 'head123', 'navikt/repo', 'prod-gcp', 'main', 99, {
-      forceRefresh: true,
-      includeComments: false,
-      includeReviews: false,
-    })
+    expect(mockFetchVerificationData).toHaveBeenCalledWith(
+      10,
+      'head123',
+      'navikt/repo',
+      'prod-gcp',
+      'main',
+      99,
+      {
+        forceRefresh: true,
+        includeComments: false,
+        includeReviews: false,
+      },
+      'https://github.com/navikt/repo/actions/runs/555',
+    )
     expect(mockBuildCommitsBetween).not.toHaveBeenCalled()
     expect(result).toEqual({
       changed: false,
@@ -173,6 +190,7 @@ describe('reverifyDeployment cache base validation', () => {
           detected_github_repo_name: 'repo',
           default_branch: 'master',
           audit_start_year: 2026,
+          github_repo_id: '123',
         },
       ],
     })
@@ -202,8 +220,127 @@ describe('reverifyDeployment cache base validation', () => {
     expect(mockFindPrForCommit).toHaveBeenCalledWith('navikt', 'repo', 'head456', 'master', { cacheOnly: true })
     expect(mockGetPrDataForDiff).toHaveBeenCalledWith('navikt', 'repo', 1812)
     expect(mockVerifyDeployment).toHaveBeenCalledWith(
-      expect.objectContaining({ deployedPr: expect.objectContaining({ number: 1812 }) }),
+      expect.objectContaining({ deployedPr: expect.objectContaining({ number: 1812 }), detectedGithubRepoId: 123 }),
     )
+  })
+
+  it('resolves detectedGithubRepoId from the workflow run when the deployment has no persisted id yet, never from the current owner/name link', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 13,
+          commit_sha: 'head999',
+          four_eyes_status: 'unverified_commits',
+          github_pr_number: 1900,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          trigger_url: 'https://github.com/navikt/repo/actions/runs/999',
+          default_branch: 'master',
+          audit_start_year: 2026,
+          github_repo_id: null,
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head999',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockGetPrDataForDiff.mockResolvedValue(null)
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockResolveGithubRepoId.mockResolvedValueOnce({ repositoryId: 555, permanentFailure: false })
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+    mockUpdateDeploymentVerification.mockResolvedValue(undefined)
+
+    await reverifyDeployment(13)
+
+    expect(mockResolveGithubRepoId).toHaveBeenCalledWith(
+      'navikt',
+      'repo',
+      'https://github.com/navikt/repo/actions/runs/999',
+    )
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ detectedGithubRepoId: 555 }))
+  })
+
+  it('returns null without re-verifying when the workflow run resolution fails for a deployment with no persisted github_repo_id', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 15,
+          commit_sha: 'head222',
+          four_eyes_status: 'unverified_commits',
+          github_pr_number: 1901,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          trigger_url: 'https://github.com/navikt/repo/actions/runs/222',
+          default_branch: 'master',
+          audit_start_year: 2026,
+          github_repo_id: null,
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head222',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockGetPrDataForDiff.mockResolvedValue(null)
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockResolveGithubRepoId.mockResolvedValueOnce({ repositoryId: null, permanentFailure: true })
+
+    const result = await reverifyDeployment(15)
+
+    expect(result).toBeNull()
+    expect(mockVerifyDeployment).not.toHaveBeenCalled()
+  })
+
+  it('returns null without re-verifying when the deployment own github_repo_id disagrees with the currently linked repository', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 14,
+          commit_sha: 'head111',
+          four_eyes_status: 'unverified_commits',
+          github_pr_number: null,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          trigger_url: 'https://github.com/navikt/repo/actions/runs/111',
+          default_branch: 'master',
+          audit_start_year: 2026,
+          github_repo_id: '999',
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+
+    const result = await reverifyDeployment(14)
+
+    expect(result).toBeNull()
+    expect(mockGetCompareSnapshot).not.toHaveBeenCalled()
+    expect(mockVerifyDeployment).not.toHaveBeenCalled()
   })
 
   it('reports prBackfilled and persists via updateDeploymentVerification when status is unchanged but PR is newly discovered', async () => {

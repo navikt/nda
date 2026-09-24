@@ -3,7 +3,7 @@ import { saveChecksRawSnapshot, saveCommitSnapshot } from '~/db/github-data.serv
 import {
   getChecksForCommit,
   getRepositoryId,
-  getWorkflowTriggerConfig,
+  resolveWorkflowRunDetails,
   WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
   type WorkflowTriggerConfig,
 } from '~/lib/github'
@@ -111,8 +111,8 @@ async function resolveCheckSuiteId(
     return cachedWorkflowTrigger.checkSuiteId
   }
   if (!triggerUrl) return null
-  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
-  return workflowTrigger?.checkSuiteId ?? null
+  const workflowTrigger = await resolveWorkflowRunDetails(owner, repo, triggerUrl)
+  return workflowTrigger.workflowTrigger?.checkSuiteId ?? null
 }
 
 export async function getCachedCommitChecks(

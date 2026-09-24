@@ -315,8 +315,6 @@ describe('getDeploymentsWithStatusChangesForApps', () => {
 
   it('includes a deployment matched via its own github_repo_id even when the app-repository link is not yet hydrated with an id', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-shft', appName: 'app-shft', environment: 'prod' })
-    // The app-repository link has no github_repo_id yet (e.g. link created before that column
-    // existed, or a prior GitHub API lookup failed) — only the repositories row is hydrated.
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: 'navikt',

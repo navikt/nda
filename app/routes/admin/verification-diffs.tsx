@@ -310,6 +310,7 @@ interface RefreshableDeployment {
   detected_github_repo_name: string | null
   monitored_app_id: number
   default_branch: string | null
+  trigger_url: string | null
 }
 
 async function processRefreshMissingApproverAsync(jobId: number, deployments: RefreshableDeployment[]) {
@@ -347,6 +348,7 @@ async function processRefreshMissingApproverAsync(jobId: number, deployments: Re
             baseBranch: dep.default_branch,
             monitoredAppId: dep.monitored_app_id,
             forceRefresh: true,
+            triggerUrl: dep.trigger_url,
           })
           await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [dep.id])
           refreshed++

@@ -118,6 +118,7 @@ const baseDeployment: DeploymentDetailLoaderData['deployment'] = {
   detected_github_owner: 'navikt',
   detected_github_repo_name: 'pensjon-pen',
   github_repo_id: null,
+  github_repo_id_backfill_attempted_at: null,
   four_eyes_status: 'approved',
   synced_at: new Date('2026-02-08T10:31:00Z'),
   title: 'feat: Add new feature for pension calculation',

@@ -69,14 +69,22 @@ CREATE TABLE IF NOT EXISTS deployments (
   -- for deployments triggered outside GitHub Actions (e.g. manual `nais deploy`).
   detected_github_owner VARCHAR(255),
   detected_github_repo_name VARCHAR(255),
-  -- Immutable GitHub repository id for the detected repository, populated at
-  -- creation time via a live GitHub API lookup. NULL where it could not be
-  -- resolved (e.g. no workflow run to resolve it from, see
-  -- scripts/backfill-deployment-github-repo-id.ts for historical rows).
+  -- Immutable GitHub repository id for the detected repository, resolved via
+  -- a live GitHub lookup at creation time for incrementally-synced rows
+  -- (app/lib/sync/nais-sync.server.ts). Full sync (up to ~1000 rows in one
+  -- run) inserts NULL instead to avoid that many serial live lookups; those
+  -- rows and other historical rows are resolved asynchronously by the admin
+  -- backfill route (see
+  -- app/lib/github/backfill-deployment-github-repo-id.server.ts) via the
+  -- deployment's GitHub Actions workflow run (trigger_url).
   -- Prefer this over (detected_github_owner, detected_github_repo_name) once
   -- populated, since owner/name can change on rename, org transfer, or be
   -- reused by a different repository.
   github_repo_id BIGINT,
+  -- Set when a github_repo_id backfill attempt could not resolve a
+  -- repository id. Excludes the row from future backfill attempts. NULL once
+  -- github_repo_id is populated.
+  github_repo_id_backfill_attempted_at TIMESTAMPTZ,
   
   -- Four-eyes status
   four_eyes_status VARCHAR(50) DEFAULT 'unknown',
@@ -124,6 +132,11 @@ CREATE INDEX IF NOT EXISTS idx_deployments_commit_sha ON deployments(commit_sha)
 CREATE INDEX IF NOT EXISTS idx_deployments_four_eyes_status ON deployments(four_eyes_status);
 CREATE INDEX IF NOT EXISTS idx_deployments_detected_repo ON deployments(detected_github_owner, detected_github_repo_name);
 CREATE INDEX IF NOT EXISTS idx_deployments_github_repo_id ON deployments(github_repo_id) WHERE github_repo_id IS NOT NULL;
+-- Supports the github_repo_id backfill's candidate/remaining-count queries, which filter on
+-- github_repo_id IS NULL AND github_repo_id_backfill_attempted_at IS NULL (see the migration
+-- comment on idx_deployments_pending_github_repo_id_backfill).
+CREATE INDEX IF NOT EXISTS idx_deployments_pending_github_repo_id_backfill
+  ON deployments(id) WHERE github_repo_id IS NULL AND github_repo_id_backfill_attempted_at IS NULL;
 
 -- Repository mismatch alerts
 CREATE TABLE IF NOT EXISTS repository_alerts (

@@ -15,6 +15,8 @@ interface VerificationDiffDeployment {
   detected_github_repo_name: string
   default_branch: string | null
   audit_start_year: number | null
+  trigger_url: string | null
+  github_repo_id: string | null
 }
 
 export async function getDeploymentsForDiffComputation(monitoredAppId: number): Promise<VerificationDiffDeployment[]> {
@@ -28,6 +30,8 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
         d.created_at,
         d.detected_github_owner,
         d.detected_github_repo_name,
+        d.trigger_url,
+        d.github_repo_id,
         ${effectiveDefaultBranchSql('ma')} AS default_branch,
         ${effectiveAuditStartYearSql('ma')} AS audit_start_year
       FROM deployments d
@@ -92,7 +96,7 @@ export async function getPreviousDeploymentForDiff(
   const result = await pool.query(
     `SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
      FROM deployments d
-     JOIN application_repositories ar
+     LEFT JOIN application_repositories ar
        ON ar.monitored_app_id = d.monitored_app_id
        AND ar.status IN ('active', 'historical')
        AND (
@@ -108,6 +112,7 @@ export async function getPreviousDeploymentForDiff(
        (d.github_repo_id IS NOT NULL AND d.github_repo_id = $2)
        OR (
          d.github_repo_id IS NULL
+         AND (d.trigger_url IS NULL OR d.trigger_url !~ '/actions/runs/[0-9]+')
          AND ar.github_repo_id = $2
          AND ar.github_owner = d.detected_github_owner
          AND ar.github_repo_name = d.detected_github_repo_name
@@ -117,6 +122,7 @@ export async function getPreviousDeploymentForDiff(
          (t.github_repo_id IS NOT NULL AND t.github_repo_id = $2)
          OR (
            t.github_repo_id IS NULL
+           AND (t.trigger_url IS NULL OR t.trigger_url !~ '/actions/runs/[0-9]+')
            AND EXISTS (
              SELECT 1 FROM application_repositories tar
              WHERE tar.monitored_app_id = t.monitored_app_id
@@ -176,6 +182,7 @@ interface MissingApproverDeployment {
   detected_github_repo_name: string | null
   monitored_app_id: number
   default_branch: string | null
+  trigger_url: string | null
 }
 
 const MISSING_APPROVER_STATUS_EXCLUSIONS = `d.four_eyes_status NOT IN ('no_changes', 'verified_via_sibling', 'baseline', 'implicitly_approved')`
@@ -215,7 +222,7 @@ export async function getApprovedDeploymentsMissingApproverForApps(
   const result = await pool.query<GlobalMissingApproverDeployment>(
     `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
             d.created_at, d.deployer_username,
-            d.detected_github_owner, d.detected_github_repo_name,
+            d.detected_github_owner, d.detected_github_repo_name, d.trigger_url,
             d.monitored_app_id, ${effectiveDefaultBranchSql('ma')} AS default_branch,
             d.team_slug, d.app_name
      FROM deployments d
@@ -234,7 +241,7 @@ export async function getAllApprovedDeploymentsMissingApprover(): Promise<Global
   const result = await pool.query<GlobalMissingApproverDeployment>(
     `SELECT d.id, d.commit_sha, d.four_eyes_status, d.environment_name,
             d.created_at, d.deployer_username,
-            d.detected_github_owner, d.detected_github_repo_name,
+            d.detected_github_owner, d.detected_github_repo_name, d.trigger_url,
             d.monitored_app_id, ${effectiveDefaultBranchSql('ma')} AS default_branch,
             d.team_slug, d.app_name
      FROM deployments d

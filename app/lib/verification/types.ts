@@ -412,6 +412,11 @@ export interface VerificationInput {
   detectedBranchName?: string
 
   detectedTitle?: string
+
+  // Extracted from the workflow run response when resolveWorkflowRunDetails makes a live/cached
+  // lookup (see fetchVerificationData); lets verification backfill deployments.github_repo_id as
+  // a side effect for deployments the sync/backfill paths haven't resolved yet.
+  detectedGithubRepoId?: number | null
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
 
@@ -542,6 +547,8 @@ export interface VerificationResult {
   detectedBranchName?: string
 
   detectedTitle?: string
+
+  detectedGithubRepoId?: number | null
 
   workflowTrigger?: WorkflowTriggerConfig
 

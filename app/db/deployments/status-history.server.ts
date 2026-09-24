@@ -159,6 +159,7 @@ export async function getDeploymentsWithStatusChangesForApps(
              (d.github_repo_id IS NOT NULL AND d.github_repo_id = r.github_repo_id)
              OR (
                d.github_repo_id IS NULL
+               AND (d.trigger_url IS NULL OR d.trigger_url !~ '/actions/runs/[0-9]+')
                AND d.detected_github_owner = r.github_owner
                AND d.detected_github_repo_name = r.github_repo_name
              )

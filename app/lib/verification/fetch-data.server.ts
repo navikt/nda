@@ -2,7 +2,8 @@ import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
-import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
+import { getSingleCommitMessage, isCommitOnBranch, resolveWorkflowRunDetails } from '~/lib/github'
+import { logger } from '~/lib/logger.server'
 import { buildBranchMismatch } from './branch-mismatch'
 import { fetchCommitChecks, getCachedCommitChecks } from './fetch-data/commit-checks.server'
 import { fetchCommitsBetween } from './fetch-data/commits-between.server'
@@ -43,6 +44,20 @@ export async function fetchVerificationData(
     ? (repoCheck.repository.status as RepositoryStatus)
     : 'unknown'
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+
+  const { rows: ownIdRows } = await pool.query<{ github_repo_id: string | null }>(
+    `SELECT github_repo_id FROM deployments WHERE id = $1`,
+    [deploymentId],
+  )
+  const ownGithubRepoId = ownIdRows[0]?.github_repo_id ?? null
+  if (ownGithubRepoId != null && (githubRepoId == null || ownGithubRepoId !== githubRepoId)) {
+    logger.warn(
+      `fetchVerificationData(${deploymentId}): deployment's own github_repo_id ${ownGithubRepoId} does not match currently linked repository ${owner}/${repo} (${githubRepoId ?? 'none'}) — name likely reused; aborting to avoid mixing data across repositories`,
+    )
+    throw new Error(
+      `Deployment ${deploymentId}: github_repo_id ${ownGithubRepoId} does not match currently linked repository ${owner}/${repo}`,
+    )
+  }
 
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
@@ -165,10 +180,22 @@ export async function fetchVerificationData(
     }
   }
 
-  const detectedBranchName: string | undefined =
-    deployedPr?.metadata.headBranch ?? (await getBranchFromWorkflowRun(owner, repo, triggerUrl)) ?? undefined
+  const workflowTriggerResult = await fetchWorkflowTriggerConfig(deploymentId, owner, repo, triggerUrl, options)
+  const workflowTrigger = workflowTriggerResult.config
 
-  const workflowTrigger = await fetchWorkflowTriggerConfig(deploymentId, owner, repo, triggerUrl, options)
+  // fetchWorkflowTriggerConfig runs unconditionally for every deployment with a trigger_url (unlike
+  // the branch-name fallback below, which only runs when there's no PR data), so it's the primary
+  // source for both github_repo_id and the workflow run's head branch. Only fall back to a second,
+  // dedicated live call when fetchWorkflowTriggerConfig didn't itself make one (cached config) and
+  // we still need a branch name — this avoids fetching the same workflow run twice per verification.
+  let workflowRunHeadBranch = workflowTriggerResult.headBranch
+  let detectedGithubRepoId = workflowTriggerResult.repositoryId
+  if (!deployedPr?.metadata.headBranch && !workflowTriggerResult.liveFetchPerformed && triggerUrl) {
+    const fallback = await resolveWorkflowRunDetails(owner, repo, triggerUrl)
+    workflowRunHeadBranch = fallback.headBranch
+    detectedGithubRepoId = detectedGithubRepoId ?? fallback.repositoryId
+  }
+  const detectedBranchName: string | undefined = deployedPr?.metadata.headBranch ?? workflowRunHeadBranch ?? undefined
 
   const rawFirstCommitMessage = await resolveRawCommitMessage({
     deployedPr,
@@ -213,6 +240,7 @@ export async function fetchVerificationData(
     commitOnBaseBranch,
     detectedBranchName: detectedBranchName ?? undefined,
     detectedTitle,
+    detectedGithubRepoId,
     auditStartYear: appSettings.auditStartYear,
     implicitApprovalSettings: appSettings.implicitApprovalSettings,
     monitoredAppId,

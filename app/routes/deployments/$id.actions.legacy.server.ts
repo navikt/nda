@@ -173,6 +173,7 @@ export async function handleConfirmLegacyLookup(
         baseBranch: updatedDeployment.default_branch,
         monitoredAppId: updatedDeployment.monitored_app_id,
         forceRefresh: true,
+        triggerUrl: updatedDeployment.trigger_url,
       })
 
       updatedDeployment = await getDeploymentById(deploymentId)
