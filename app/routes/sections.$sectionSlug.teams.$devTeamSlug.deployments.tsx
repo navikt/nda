@@ -9,6 +9,7 @@ import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { getMembersGithubUsernamesForDevTeamRoles } from '~/db/role-assignments.server'
 import { getActiveGithubAccountByNavIdent, getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
+import { parsePerPage } from '~/lib/pagination'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
 import { serializeUserLookups } from '~/lib/user-display'
 import type { Route } from './+types/sections.$sectionSlug.teams.$devTeamSlug.deployments'
@@ -24,6 +25,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   }
 
   const page = parseInt(url.searchParams.get('page') || '1', 10)
+  const perPage = parsePerPage(url.searchParams.get('perPage'))
   const status = url.searchParams.get('status') || undefined
   const method = url.searchParams.get('method') as 'pr' | 'direct_push' | 'legacy' | undefined
   const goalParam = url.searchParams.get('goal') || ''
@@ -57,6 +59,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       deployments: [] as Awaited<ReturnType<typeof getDeploymentsPaginated>>['deployments'],
       total: 0,
       page: 1,
+      per_page: perPage,
       total_pages: 0,
       userMappings: {} as ReturnType<typeof serializeUserLookups>,
       deployerOptions: [] as { value: string; label: string }[],
@@ -116,7 +119,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       : filteredAppIds,
     per_app_audit_start_year: isGoalSpecificFilter ? undefined : true,
     page,
-    per_page: 20,
+    per_page: perPage,
     four_eyes_status: status,
     method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
     goal_filter: goal && ['missing', 'linked'].includes(goal) ? goal : undefined,
@@ -248,6 +251,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     deployments: result.deployments,
     total: result.total,
     page: result.page,
+    per_page: result.per_page,
     total_pages: result.total_pages,
     userMappings: serializeUserLookups(userMappingsMap),
     deployerOptions,
@@ -268,6 +272,7 @@ export default function TeamDeployments() {
     deployments,
     total,
     page,
+    per_page,
     total_pages,
     userMappings,
     deployerOptions,
@@ -303,6 +308,13 @@ export default function TeamDeployments() {
   const goToPage = (newPage: number) => {
     const newParams = new URLSearchParams(searchParams)
     newParams.set('page', String(newPage))
+    setSearchParams(newParams)
+  }
+
+  const changePerPage = (newPerPage: number) => {
+    const newParams = new URLSearchParams(searchParams)
+    newParams.set('perPage', String(newPerPage))
+    newParams.set('page', '1')
     setSearchParams(newParams)
   }
 
@@ -366,7 +378,13 @@ export default function TeamDeployments() {
         )}
       </div>
 
-      <PaginationControls page={page} totalPages={total_pages} onPageChange={goToPage} />
+      <PaginationControls
+        page={page}
+        totalPages={total_pages}
+        onPageChange={goToPage}
+        perPage={per_page}
+        onPerPageChange={changePerPage}
+      />
     </VStack>
   )
 }
