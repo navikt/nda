@@ -150,4 +150,30 @@ describe('fetchVerificationData workflow-run resolved github_repo_id', () => {
     expect(result.detectedGithubRepoId).toBe(999)
     expect(logger.warn).not.toHaveBeenCalled()
   })
+
+  it('does not fall back to the currently linked repository when a resolvable-looking trigger_url fails to resolve', async () => {
+    mockFetchWorkflowTriggerConfig.mockResolvedValue({
+      config: undefined,
+      repositoryId: null,
+      headBranch: null,
+      liveFetchPerformed: true,
+    })
+
+    const result = await fetchVerificationData(
+      22,
+      'sha-unresolved',
+      'navikt/repo',
+      'prod-gcp',
+      'main',
+      99,
+      undefined,
+      'https://github.com/navikt/repo/actions/runs/777',
+    )
+
+    expect(result.detectedGithubRepoId).toBeNull()
+    expect(mockGetPreviousDeployment).toHaveBeenCalledWith(22, 'navikt', 'repo', null, null, 'sha-unresolved')
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('treating identity as unresolved instead of falling back'),
+    )
+  })
 })

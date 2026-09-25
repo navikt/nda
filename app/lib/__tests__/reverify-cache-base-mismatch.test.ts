@@ -65,6 +65,7 @@ import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { resolveGithubRepoIdFromWorkflowRunDetailed } from '~/lib/github'
+import { logger } from '~/lib/logger.server'
 import {
   buildCommitsBetweenFromCache,
   fetchVerificationData,
@@ -114,6 +115,7 @@ describe('reverifyDeployment cache base validation', () => {
           trigger_url: 'https://github.com/navikt/repo/actions/runs/555',
           default_branch: 'main',
           audit_start_year: 2026,
+          github_repo_id: '123',
         },
       ],
     })
@@ -268,6 +270,10 @@ describe('reverifyDeployment cache base validation', () => {
       'https://github.com/navikt/repo/actions/runs/999',
     )
     expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ detectedGithubRepoId: 123 }))
+    // The resolvable-looking trigger_url means the id was unresolved at the time previousDeployment
+    // was looked up (before the workflow run resolution above), so it must not have fallen back to
+    // the currently linked repository's id.
+    expect(mockGetPreviousDeployment).not.toHaveBeenCalled()
   })
 
   it('returns null without re-verifying when the resolved github_repo_id from the workflow run mismatches the currently linked repository', async () => {
@@ -397,6 +403,48 @@ describe('reverifyDeployment cache base validation', () => {
     expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ detectedGithubRepoId: 999 }))
     expect(result).toEqual(
       expect.objectContaining({ changed: true, oldStatus: 'unverified_commits', newStatus: 'approved' }),
+    )
+  })
+
+  it('does not fall back to the currently linked repository when a resolvable-looking trigger_url has not been backfilled yet', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 17,
+          commit_sha: 'head444',
+          four_eyes_status: 'unverified_commits',
+          github_pr_number: null,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          trigger_url: 'https://github.com/navikt/repo/actions/runs/444',
+          default_branch: 'master',
+          audit_start_year: 2026,
+          github_repo_id: null,
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head444',
+      data: { commits: [] },
+    })
+    mockGetPrDataForDiff.mockResolvedValue(null)
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockResolveGithubRepoId.mockResolvedValueOnce({ repositoryId: 123, permanentFailure: false })
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+
+    await reverifyDeployment(17)
+
+    expect(mockGetPreviousDeployment).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('treating identity as unresolved instead of falling back'),
     )
   })
 

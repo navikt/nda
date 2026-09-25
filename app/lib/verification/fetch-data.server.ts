@@ -62,13 +62,23 @@ export async function fetchVerificationData(
   // own identity when it's known, not application_repositories' cached link — that link is only
   // an admin-maintained approximation of "which repo this app is registered against" and can go
   // stale (e.g. after the owner/repo name is reused by an unrelated repository), whereas a
-  // deployment's own resolved id can't lie. Only fall back to the linked repository's id when
-  // this deployment has no resolvable identity of its own (e.g. no trigger_url at all).
+  // deployment's own resolved id can't lie. Only fall back to the linked repository's id when this
+  // deployment has no resolvable identity of its own — i.e. no trigger_url at all. If a trigger_url
+  // exists but looks like a workflow run (and yet failed to resolve, e.g. a 404 after name reuse),
+  // its identity is unresolved rather than confirmed to match the linked repository, so don't fall
+  // back to githubRepoId in that case either — treat it as unknown instead.
+  const hasResolvableTriggerUrl = triggerUrl != null && /\/actions\/runs\/[0-9]+/.test(triggerUrl)
   const resolvedRepoId =
-    ownGithubRepoId ?? (detectedGithubRepoId != null ? String(detectedGithubRepoId) : null) ?? githubRepoId
+    ownGithubRepoId ??
+    (detectedGithubRepoId != null ? String(detectedGithubRepoId) : null) ??
+    (hasResolvableTriggerUrl ? null : githubRepoId)
   if (resolvedRepoId != null && githubRepoId != null && resolvedRepoId !== githubRepoId) {
     logger.warn(
       `fetchVerificationData(${deploymentId}): resolved github_repo_id ${resolvedRepoId} does not match currently linked repository ${owner}/${repo} (${githubRepoId}) — name likely reused, using deployment's own id`,
+    )
+  } else if (resolvedRepoId == null && hasResolvableTriggerUrl) {
+    logger.warn(
+      `fetchVerificationData(${deploymentId}): failed to resolve github_repo_id from trigger_url ${triggerUrl} — treating identity as unresolved instead of falling back to currently linked repository ${owner}/${repo}`,
     )
   }
 

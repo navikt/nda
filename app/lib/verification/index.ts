@@ -552,11 +552,20 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   // Prefer the deployment's own already-resolved github_repo_id (backfilled from its own workflow
   // run — an authoritative, tamper-proof identity) as the anchor for scoping previousDeployment
   // over application_repositories' cached link, which is only an admin-maintained approximation
-  // and can go stale (e.g. after the owner/repo name is reused by an unrelated repository).
-  const resolvedRepoId = dep.github_repo_id ?? githubRepoId
+  // and can go stale (e.g. after the owner/repo name is reused by an unrelated repository). When
+  // the deployment's own id isn't backfilled yet but it has a trigger_url that looks like a
+  // workflow run, its identity is unresolved rather than confirmed to match the linked repository
+  // (backfill may simply not have run yet, or may have failed) — don't fall back to githubRepoId
+  // in that case either, since we can't yet tell whether it actually agrees.
+  const hasResolvableTriggerUrl = dep.trigger_url != null && /\/actions\/runs\/[0-9]+/.test(dep.trigger_url)
+  const resolvedRepoId = dep.github_repo_id ?? (hasResolvableTriggerUrl ? null : githubRepoId)
   if (dep.github_repo_id && (!githubRepoId || dep.github_repo_id !== githubRepoId)) {
     logger.warn(
       `reverifyDeployment(${dep.id}): github_repo_id ${dep.github_repo_id} does not match currently linked repository ${owner}/${repo} (${githubRepoId ?? 'none'}) — name likely reused, using deployment's own id`,
+    )
+  } else if (dep.github_repo_id == null && resolvedRepoId == null && hasResolvableTriggerUrl) {
+    logger.warn(
+      `reverifyDeployment(${dep.id}): github_repo_id not yet backfilled but trigger_url ${dep.trigger_url} looks resolvable — treating identity as unresolved instead of falling back to currently linked repository ${owner}/${repo}`,
     )
   }
   const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !resolvedRepoId
