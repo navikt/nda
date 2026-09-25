@@ -83,7 +83,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "^4.1.0",
     "happy-dom": "^20.14.5",
-    "knip": "^6.36.0",
+    "knip": "^6.37.0",
     "lefthook": "^2.1.14",
     "storybook": "10.6.0",
     "testcontainers": "^12.1.0",
