@@ -632,6 +632,22 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       )
       return null
     }
+    // The resolved ID can point at a different repository than the one owner/repo currently
+    // names (e.g. the workflow run belongs to a repo that has since had its name reused by
+    // another). The cached commitsBetween/deployedPr data above was built from owner/repo, so a
+    // mismatch here means that data — and the compareSnapshot fetched from owner/repo above —
+    // cannot be trusted to belong to the same repository as detectedGithubRepoId.
+    if (
+      dep.github_repo_id == null &&
+      detectedGithubRepoId != null &&
+      githubRepoId != null &&
+      detectedGithubRepoId !== Number(githubRepoId)
+    ) {
+      logger.warn(
+        `reverifyDeployment(${dep.id}): resolved github_repo_id ${detectedGithubRepoId} from trigger_url does not match currently linked repository ${owner}/${repo} (${githubRepoId}) — aborting to avoid persisting mismatched data`,
+      )
+      return null
+    }
     input = {
       deploymentId: dep.id,
       commitSha: dep.commit_sha,

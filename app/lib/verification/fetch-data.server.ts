@@ -195,6 +195,19 @@ export async function fetchVerificationData(
     workflowRunHeadBranch = fallback.headBranch
     detectedGithubRepoId = detectedGithubRepoId ?? fallback.repositoryId
   }
+  // The workflow run lookup above resolves an ID independently of `githubRepoId` (the currently
+  // linked repository, from application_repositories). All the data fetched earlier in this
+  // function (previousDeployment, deployedPr, commitsBetween) was correctly scoped by owner/repo,
+  // so it's still trustworthy — but if the two IDs disagree (owner/repo's name has since been
+  // reused by another repository than the one this workflow run actually belongs to), persisting
+  // detectedGithubRepoId as-is would tag this deployment with the wrong repository's identity.
+  // Discard it rather than propagate a mismatched ID; it can still be backfilled correctly later.
+  if (githubRepoId != null && detectedGithubRepoId != null && detectedGithubRepoId !== Number(githubRepoId)) {
+    logger.warn(
+      `fetchVerificationData(${deploymentId}): resolved github_repo_id ${detectedGithubRepoId} from workflow run does not match currently linked repository ${owner}/${repo} (${githubRepoId}) — discarding resolved id`,
+    )
+    detectedGithubRepoId = null
+  }
   const detectedBranchName: string | undefined = deployedPr?.metadata.headBranch ?? workflowRunHeadBranch ?? undefined
 
   const rawFirstCommitMessage = await resolveRawCommitMessage({

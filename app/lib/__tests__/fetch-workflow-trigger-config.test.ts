@@ -232,4 +232,46 @@ describe('backfillWorkflowTriggerConfig', () => {
       'https://github.com/navikt/repo/actions/runs/1',
     )
   })
+
+  it('persists a resolved repository id even when the trigger config itself could not be reconstructed', async () => {
+    mockResolveWorkflowRunDetails.mockResolvedValueOnce({
+      workflowTrigger: null,
+      repositoryId: 654,
+      headBranch: null,
+    })
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] })
+
+    const fetched = await backfillWorkflowTriggerConfig(
+      5,
+      'navikt',
+      'repo',
+      'https://github.com/navikt/repo/actions/runs/1',
+      null,
+    )
+
+    expect(fetched).toBe(true)
+    const [query, params] = (mockPoolQuery as Mock).mock.calls[0]
+    expect(query).not.toContain('workflow_trigger_config')
+    expect(query).toContain('github_repo_id = COALESCE(deployments.github_repo_id')
+    expect(params).toEqual([5, 654])
+  })
+
+  it('does nothing when neither the trigger config nor a repository id could be resolved', async () => {
+    mockResolveWorkflowRunDetails.mockResolvedValueOnce({
+      workflowTrigger: null,
+      repositoryId: null,
+      headBranch: null,
+    })
+
+    const fetched = await backfillWorkflowTriggerConfig(
+      5,
+      'navikt',
+      'repo',
+      'https://github.com/navikt/repo/actions/runs/1',
+      null,
+    )
+
+    expect(fetched).toBe(false)
+    expect(mockPoolQuery).not.toHaveBeenCalled()
+  })
 })

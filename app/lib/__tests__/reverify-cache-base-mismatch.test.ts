@@ -256,7 +256,7 @@ describe('reverifyDeployment cache base validation', () => {
     mockGetPreviousDeployment.mockResolvedValue(null)
     mockGetPrDataForDiff.mockResolvedValue(null)
     mockBuildCommitsBetween.mockResolvedValue([])
-    mockResolveGithubRepoId.mockResolvedValueOnce({ repositoryId: 555, permanentFailure: false })
+    mockResolveGithubRepoId.mockResolvedValueOnce({ repositoryId: 123, permanentFailure: false })
     mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
     mockUpdateDeploymentVerification.mockResolvedValue(undefined)
 
@@ -267,7 +267,54 @@ describe('reverifyDeployment cache base validation', () => {
       'repo',
       'https://github.com/navikt/repo/actions/runs/999',
     )
-    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ detectedGithubRepoId: 555 }))
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ detectedGithubRepoId: 123 }))
+  })
+
+  it('returns null without re-verifying when the resolved github_repo_id from the workflow run mismatches the currently linked repository', async () => {
+    mockFindRepositoryForApp.mockResolvedValue({
+      repository: { github_repo_id: '123' },
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'repo',
+      isRedirected: false,
+    })
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 16,
+          commit_sha: 'head333',
+          four_eyes_status: 'unverified_commits',
+          github_pr_number: 1902,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          trigger_url: 'https://github.com/navikt/repo/actions/runs/333',
+          default_branch: 'master',
+          audit_start_year: 2026,
+          github_repo_id: null,
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head333',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockGetPrDataForDiff.mockResolvedValue(null)
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockResolveGithubRepoId.mockResolvedValueOnce({ repositoryId: 555, permanentFailure: false })
+
+    const result = await reverifyDeployment(16)
+
+    expect(result).toBeNull()
+    expect(mockVerifyDeployment).not.toHaveBeenCalled()
+    expect(mockUpdateDeploymentVerification).not.toHaveBeenCalled()
   })
 
   it('returns null without re-verifying when the workflow run resolution fails for a deployment with no persisted github_repo_id', async () => {

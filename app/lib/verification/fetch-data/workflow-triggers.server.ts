@@ -87,7 +87,24 @@ export async function backfillWorkflowTriggerConfig(
   }
 
   const { workflowTrigger, repositoryId } = await resolveWorkflowRunDetails(owner, repo, triggerUrl)
-  if (!workflowTrigger) return false
+  if (!workflowTrigger) {
+    // The trigger config itself couldn't be reconstructed (e.g. missing inputs, unsupported event
+    // type), but the workflow run lookup can still independently resolve the repository ID — don't
+    // discard that just because the config is unavailable.
+    if (repositoryId == null) return false
+    await pool.query(
+      `UPDATE deployments
+       SET
+         github_repo_id = COALESCE(deployments.github_repo_id, $2::bigint),
+         github_repo_id_backfill_attempted_at = CASE
+           WHEN deployments.github_repo_id IS NULL AND $2::bigint IS NOT NULL THEN NULL
+           ELSE deployments.github_repo_id_backfill_attempted_at
+         END
+       WHERE id = $1`,
+      [deploymentId, repositoryId],
+    )
+    return true
+  }
 
   await pool.query(
     `UPDATE deployments
