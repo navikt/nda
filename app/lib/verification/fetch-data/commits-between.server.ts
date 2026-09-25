@@ -37,13 +37,14 @@ export async function fetchCommitsBetween(
   baseBranch: string,
   _previousDeploymentDate: string,
   options?: FetchOptions,
+  githubRepoId?: string | number | null,
 ): Promise<{
   commitsBetween: VerificationInput['commitsBetween']
   compareSummary: CompareSummary
   derivedFromRaw: boolean
 } | null> {
   if (!options?.forceRefresh) {
-    const cachedCompare = await getLatestCompareSnapshot(owner, repo, fromSha, toSha)
+    const cachedCompare = await getLatestCompareSnapshot(owner, repo, fromSha, toSha, { githubRepoId })
     if (cachedCompare) {
       logger.info(
         `   📦 Using cached compare data (${cachedCompare.data.commits.length} commits, ${cachedCompare.data.compare.changedFiles} files)`,
@@ -55,8 +56,9 @@ export async function fetchCommitsBetween(
       }
     }
 
-    const derivedCompareData = await getDerivedCompareDataFromRawSnapshot(owner, repo, fromSha, toSha)
-    if (derivedCompareData) {
+    const derivedFromRawSnapshot = await getDerivedCompareDataFromRawSnapshot(owner, repo, fromSha, toSha)
+    if (derivedFromRawSnapshot) {
+      const derivedCompareData = derivedFromRawSnapshot.data
       logger.info(
         `   🗃️  Deriving compare data from raw snapshot (${derivedCompareData.commits.length} commits, ${derivedCompareData.compare.changedFiles} files)`,
       )
@@ -85,7 +87,10 @@ export async function fetchCommitsBetween(
       }
 
       if (shouldPersistCompare) {
-        await saveCompareSnapshot(owner, repo, fromSha, toSha, storedDerivedCompareData, { source: 'cached' })
+        await saveCompareSnapshot(owner, repo, fromSha, toSha, storedDerivedCompareData, {
+          source: 'cached',
+          githubRepoId: derivedFromRawSnapshot.githubRepoId,
+        })
       }
       return {
         commitsBetween: await buildCommitsBetweenFromCache(owner, repo, baseBranch, storedDerivedCompareData, options),
@@ -103,7 +108,7 @@ export async function fetchCommitsBetween(
     return null
   }
 
-  const { compareData, rawData, apiVersion, githubRepoId } = compareResult
+  const { compareData, rawData, apiVersion, githubRepoId: resolvedGithubRepoId } = compareResult
 
   const isEmptyCompare = compareData.commits.length === 0 && compareData.compare.changedFiles === 0
   const shouldTryTreeFallback = isEmptyCompare && compareData.compare.status !== 'identical' && fromSha !== toSha
@@ -123,14 +128,14 @@ export async function fetchCommitsBetween(
   }
 
   if (shouldPersistCompare) {
-    await saveCompareSnapshot(owner, repo, fromSha, toSha, storedCompareData)
+    await saveCompareSnapshot(owner, repo, fromSha, toSha, storedCompareData, { githubRepoId: resolvedGithubRepoId })
   } else {
     logger.warn(
       `Skipping compare snapshot cache for ${fromSha.substring(0, 7)}...${toSha.substring(0, 7)}: tree fallback inconclusive`,
     )
   }
 
-  await saveCompareRawSnapshot(owner, repo, githubRepoId, fromSha, toSha, rawData, apiVersion)
+  await saveCompareRawSnapshot(owner, repo, resolvedGithubRepoId, fromSha, toSha, rawData, apiVersion)
 
   for (const commit of storedCompareData.commits) {
     await saveCommitSnapshot(owner, repo, commit.sha, 'metadata', commit)

@@ -135,6 +135,7 @@ export async function computeVerificationDiffs(
         repo,
         row.commit_sha,
         previousDeployment?.commitSha ?? null,
+        githubRepoId,
       )
       if (compareSnapshot) {
         const compareData = compareSnapshot.data as CompareData

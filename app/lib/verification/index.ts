@@ -568,6 +568,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     repo,
     dep.commit_sha,
     previousDeployment?.commitSha ?? null,
+    githubRepoId,
   )
   if (!compareSnapshot) return null
 

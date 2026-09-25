@@ -1,5 +1,5 @@
 import type { AvailableBoard, MyDevTeamForGoalLinking } from '~/components/GoalLinksSection'
-import { getRepositoriesByAppId } from '~/db/application-repositories.server'
+import { findRepositoryForApp, getRepositoriesByAppId } from '~/db/application-repositories.server'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import { getCommentsByDeploymentId, getLegacyInfo, getManualApproval } from '~/db/comments.server'
 import { pool } from '~/db/connection.server'
@@ -72,6 +72,17 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   }
 
   const deploymentDate = new Date(deployment.created_at).toISOString().split('T')[0]
+
+  const githubRepoId =
+    deployment.detected_github_owner && deployment.detected_github_repo_name
+      ? ((
+          await findRepositoryForApp(
+            deployment.monitored_app_id,
+            deployment.detected_github_owner,
+            deployment.detected_github_repo_name,
+          )
+        ).repository?.github_repo_id ?? null)
+      : null
 
   const nearbyDeploymentsPromise =
     deployment.four_eyes_status === 'error'
@@ -149,6 +160,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
           deployment.detected_github_owner,
           deployment.detected_github_repo_name,
           deployment.commit_sha,
+          null,
+          githubRepoId,
         )
       : Promise.resolve(null),
     deployment.github_pr_number && deployment.detected_github_owner && deployment.detected_github_repo_name
