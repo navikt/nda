@@ -18,12 +18,13 @@ export async function saveCompareSnapshot(
   options?: {
     source?: 'github' | 'cached'
     githubAvailable?: boolean
+    githubRepoId?: number | null
   },
 ): Promise<number> {
   const result = await pool.query(
     `INSERT INTO github_compare_snapshots 
-       (owner, repo, base_sha, head_sha, schema_version, data, source, github_available)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (owner, repo, base_sha, head_sha, schema_version, data, source, github_available, github_repo_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id`,
     [
       owner,
@@ -34,6 +35,7 @@ export async function saveCompareSnapshot(
       JSON.stringify(data),
       options?.source ?? 'github',
       options?.githubAvailable ?? true,
+      options?.githubRepoId ?? null,
     ],
   )
   return result.rows[0].id
@@ -46,19 +48,22 @@ export async function getLatestCompareSnapshot(
   headSha: string,
   options?: {
     requireCurrentSchema?: boolean
+    githubRepoId?: string | number | null
   },
 ): Promise<CompareSnapshot | null> {
   const requireCurrent = options?.requireCurrentSchema ?? true
+  const githubRepoId = options?.githubRepoId ?? null
 
   const result = await pool.query(
-    `SELECT id, owner, repo, base_sha, head_sha, schema_version, 
+    `SELECT id, owner, repo, github_repo_id, base_sha, head_sha, schema_version, 
             fetched_at, source, github_available, data
      FROM github_compare_snapshots
      WHERE owner = $1 AND repo = $2 AND base_sha = $3 AND head_sha = $4
        ${requireCurrent ? `AND schema_version = ${CURRENT_SCHEMA_VERSION}` : ''}
+       ${githubRepoId != null ? `AND (github_repo_id = $5 OR github_repo_id IS NULL)` : ''}
      ORDER BY fetched_at DESC
      LIMIT 1`,
-    [owner, repo, baseSha, headSha],
+    githubRepoId != null ? [owner, repo, baseSha, headSha, githubRepoId] : [owner, repo, baseSha, headSha],
   )
 
   if (result.rows.length === 0) {
@@ -70,6 +75,7 @@ export async function getLatestCompareSnapshot(
     id: row.id,
     owner: row.owner,
     repo: row.repo,
+    githubRepoId: row.github_repo_id != null ? Number(row.github_repo_id) : null,
     baseSha: row.base_sha,
     headSha: row.head_sha,
     schemaVersion: row.schema_version,
@@ -156,11 +162,11 @@ export async function getDerivedCompareDataFromRawSnapshot(
   repo: string,
   baseSha: string,
   headSha: string,
-): Promise<CompareData | null> {
+): Promise<{ data: CompareData; githubRepoId: number } | null> {
   const rawSnapshot = await getLatestCompareRawSnapshot(owner, repo, baseSha, headSha)
   if (!rawSnapshot) return null
   try {
-    return mapCompareResponse(rawSnapshot.data as RawCompareResponse)
+    return { data: mapCompareResponse(rawSnapshot.data as RawCompareResponse), githubRepoId: rawSnapshot.githubRepoId }
   } catch {
     return null
   }
