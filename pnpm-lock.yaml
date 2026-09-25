@@ -16,8 +16,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@google-cloud/storage':
-        specifier: ^8.1.0
-        version: 8.1.0(supports-color@7.2.0)
+        specifier: ^8.2.0
+        version: 8.2.0(supports-color@7.2.0)
       '@navikt/aksel-icons':
         specifier: ^8.16.2
         version: 8.16.2
@@ -557,8 +557,8 @@ packages:
     resolution: {integrity: sha512-lpN2AtoQ/iimp7jjm5zJFWbpW7OJc5qWmQdt59CI4ENeoIRIx+yf2ShSR2kanQfjFOshA74eSbimXXuRaSCUVg==}
     engines: {node: '>=22'}
 
-  '@google-cloud/storage@8.1.0':
-    resolution: {integrity: sha512-iFDlOGBzmzTelslzcf0yTpoqloyfTUi448PxJXvjtbvGqtc2ftT8HUSl5+sKQPRz70y64ha5FqojDhABP103EA==}
+  '@google-cloud/storage@8.2.0':
+    resolution: {integrity: sha512-7ckgSjeEprV92VrlLjpYFA3PFerflvFtF7Ea86oQXGNCprGZq5rtpAVK0zgWnCy+44mLjms42M7MiWa433gz2A==}
     engines: {node: '>=22'}
 
   '@graphql-typed-document-node/core@3.2.0':
@@ -4590,7 +4590,7 @@ snapshots:
 
   '@google-cloud/promisify@6.0.1': {}
 
-  '@google-cloud/storage@8.1.0(supports-color@7.2.0)':
+  '@google-cloud/storage@8.2.0(supports-color@7.2.0)':
     dependencies:
       '@google-cloud/paginator': 7.0.1
       '@google-cloud/projectify': 6.0.1
