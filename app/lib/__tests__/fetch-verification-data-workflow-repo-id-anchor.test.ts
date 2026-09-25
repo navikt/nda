@@ -77,7 +77,7 @@ vi.mock('~/lib/verification/fetch-data/commits-between.server', () => ({
 import { logger } from '~/lib/logger.server'
 import { fetchVerificationData } from '~/lib/verification/fetch-data.server'
 
-describe('fetchVerificationData workflow-run resolved github_repo_id mismatch', () => {
+describe('fetchVerificationData workflow-run resolved github_repo_id', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
@@ -88,8 +88,8 @@ describe('fetchVerificationData workflow-run resolved github_repo_id mismatch', 
     mockFindRepositoryForApp.mockResolvedValue({
       repository: { status: 'active', github_repo_id: '999' },
     })
-    // ownIdRows lookup — deployment has no persisted github_repo_id yet, so the early
-    // own-id guard doesn't trigger and the function proceeds to resolve one from the run.
+    // ownIdRows lookup — deployment has no persisted github_repo_id yet, so the deployment's own
+    // resolved id (from the workflow run below) becomes the anchor used for previousDeployment.
     mockPoolQuery.mockResolvedValueOnce({ rows: [{ github_repo_id: null }] })
     mockIsCommitOnBranch.mockResolvedValue(true)
     mockGetPreviousDeployment.mockResolvedValue(null)
@@ -104,7 +104,7 @@ describe('fetchVerificationData workflow-run resolved github_repo_id mismatch', 
     mockFetchCommitChecks.mockResolvedValue({ commitChecks: undefined, attempted: false })
   })
 
-  it('discards a resolved github_repo_id that mismatches the currently linked repository', async () => {
+  it('trusts and persists a resolved github_repo_id even when it mismatches the currently linked repository, using it to scope previousDeployment', async () => {
     mockFetchWorkflowTriggerConfig.mockResolvedValue({
       config: undefined,
       repositoryId: 555,
@@ -123,8 +123,9 @@ describe('fetchVerificationData workflow-run resolved github_repo_id mismatch', 
       'https://github.com/navikt/repo/actions/runs/555',
     )
 
-    expect(result.detectedGithubRepoId).toBeNull()
+    expect(result.detectedGithubRepoId).toBe(555)
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('does not match currently linked repository'))
+    expect(mockGetPreviousDeployment).toHaveBeenCalledWith(20, 'navikt', 'repo', '555', null, 'sha-mismatch')
   })
 
   it('keeps a resolved github_repo_id that matches the currently linked repository', async () => {
@@ -147,5 +148,6 @@ describe('fetchVerificationData workflow-run resolved github_repo_id mismatch', 
     )
 
     expect(result.detectedGithubRepoId).toBe(999)
+    expect(logger.warn).not.toHaveBeenCalled()
   })
 })

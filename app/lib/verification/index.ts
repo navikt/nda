@@ -549,14 +549,18 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo)
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+  // Prefer the deployment's own already-resolved github_repo_id (backfilled from its own workflow
+  // run — an authoritative, tamper-proof identity) as the anchor for scoping previousDeployment
+  // over application_repositories' cached link, which is only an admin-maintained approximation
+  // and can go stale (e.g. after the owner/repo name is reused by an unrelated repository).
+  const resolvedRepoId = dep.github_repo_id ?? githubRepoId
   if (dep.github_repo_id && (!githubRepoId || dep.github_repo_id !== githubRepoId)) {
     logger.warn(
-      `reverifyDeployment(${dep.id}): github_repo_id ${dep.github_repo_id} does not match currently linked repository ${owner}/${repo} (${githubRepoId ?? 'none'}) — name likely reused`,
+      `reverifyDeployment(${dep.id}): github_repo_id ${dep.github_repo_id} does not match currently linked repository ${owner}/${repo} (${githubRepoId ?? 'none'}) — name likely reused, using deployment's own id`,
     )
-    return null
   }
-  const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !githubRepoId
-  const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
+  const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !resolvedRepoId
+  const prevRow = resolvedRepoId ? await getPreviousDeploymentForDiff(dep.id, resolvedRepoId) : null
   const previousDeployment = prevRow
     ? await preferRootApprovedSibling(
         {
@@ -567,7 +571,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
           fourEyesStatus: prevRow.four_eyes_status,
         },
         dep.commit_sha,
-        githubRepoId,
+        resolvedRepoId,
         dep.monitored_app_id,
         dep.id,
       )

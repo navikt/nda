@@ -50,12 +50,25 @@ export async function fetchVerificationData(
     [deploymentId],
   )
   const ownGithubRepoId = ownIdRows[0]?.github_repo_id ?? null
-  if (ownGithubRepoId != null && (githubRepoId == null || ownGithubRepoId !== githubRepoId)) {
+
+  // Resolve the workflow-trigger config early so its repository id (derived from this
+  // deployment's own GitHub Actions run — globally unique and immutably tied to its real repo)
+  // is available before any repo-scoped lookups below, rather than only at the end of this
+  // function. See the head-branch fallback further down for why this call isn't repeated there.
+  const workflowTriggerResult = await fetchWorkflowTriggerConfig(deploymentId, owner, repo, triggerUrl, options)
+  let detectedGithubRepoId = workflowTriggerResult.repositoryId
+
+  // The anchor used to scope previousDeployment/sibling lookups below should be the deployment's
+  // own identity when it's known, not application_repositories' cached link — that link is only
+  // an admin-maintained approximation of "which repo this app is registered against" and can go
+  // stale (e.g. after the owner/repo name is reused by an unrelated repository), whereas a
+  // deployment's own resolved id can't lie. Only fall back to the linked repository's id when
+  // this deployment has no resolvable identity of its own (e.g. no trigger_url at all).
+  const resolvedRepoId =
+    ownGithubRepoId ?? (detectedGithubRepoId != null ? String(detectedGithubRepoId) : null) ?? githubRepoId
+  if (resolvedRepoId != null && githubRepoId != null && resolvedRepoId !== githubRepoId) {
     logger.warn(
-      `fetchVerificationData(${deploymentId}): deployment's own github_repo_id ${ownGithubRepoId} does not match currently linked repository ${owner}/${repo} (${githubRepoId ?? 'none'}) — name likely reused; aborting to avoid mixing data across repositories`,
-    )
-    throw new Error(
-      `Deployment ${deploymentId}: github_repo_id ${ownGithubRepoId} does not match currently linked repository ${owner}/${repo}`,
+      `fetchVerificationData(${deploymentId}): resolved github_repo_id ${resolvedRepoId} does not match currently linked repository ${owner}/${repo} (${githubRepoId}) — name likely reused, using deployment's own id`,
     )
   }
 
@@ -65,16 +78,16 @@ export async function fetchVerificationData(
     deploymentId,
     owner,
     repo,
-    githubRepoId,
+    resolvedRepoId,
     appSettings.auditStartYear,
     commitSha,
   )
   const previousDeploymentRateLimited = previousDeploymentResult === 'rate_limited'
   const previousDeployment = previousDeploymentRateLimited
     ? null
-    : await preferRootApprovedSibling(previousDeploymentResult, commitSha, githubRepoId, monitoredAppId, deploymentId)
+    : await preferRootApprovedSibling(previousDeploymentResult, commitSha, resolvedRepoId, monitoredAppId, deploymentId)
   const previousDeploymentLookupFailed =
-    (repositoryStatus === 'active' && !githubRepoId) || previousDeploymentRateLimited
+    (repositoryStatus === 'active' && !resolvedRepoId) || previousDeploymentRateLimited
 
   const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, options)
   const deployedPr = deployedPrResult.deployedPr
@@ -180,33 +193,18 @@ export async function fetchVerificationData(
     }
   }
 
-  const workflowTriggerResult = await fetchWorkflowTriggerConfig(deploymentId, owner, repo, triggerUrl, options)
   const workflowTrigger = workflowTriggerResult.config
 
-  // fetchWorkflowTriggerConfig runs unconditionally for every deployment with a trigger_url (unlike
-  // the branch-name fallback below, which only runs when there's no PR data), so it's the primary
-  // source for both github_repo_id and the workflow run's head branch. Only fall back to a second,
-  // dedicated live call when fetchWorkflowTriggerConfig didn't itself make one (cached config) and
-  // we still need a branch name — this avoids fetching the same workflow run twice per verification.
+  // fetchWorkflowTriggerConfig (called earlier, before the repo-scoped lookups above) runs
+  // unconditionally for every deployment with a trigger_url, so it's the primary source for both
+  // github_repo_id and the workflow run's head branch. Only fall back to a second, dedicated live
+  // call when fetchWorkflowTriggerConfig didn't itself make one (cached config) and we still need
+  // a branch name — this avoids fetching the same workflow run twice per verification.
   let workflowRunHeadBranch = workflowTriggerResult.headBranch
-  let detectedGithubRepoId = workflowTriggerResult.repositoryId
   if (!deployedPr?.metadata.headBranch && !workflowTriggerResult.liveFetchPerformed && triggerUrl) {
     const fallback = await resolveWorkflowRunDetails(owner, repo, triggerUrl)
     workflowRunHeadBranch = fallback.headBranch
     detectedGithubRepoId = detectedGithubRepoId ?? fallback.repositoryId
-  }
-  // The workflow run lookup above resolves an ID independently of `githubRepoId` (the currently
-  // linked repository, from application_repositories). All the data fetched earlier in this
-  // function (previousDeployment, deployedPr, commitsBetween) was correctly scoped by owner/repo,
-  // so it's still trustworthy — but if the two IDs disagree (owner/repo's name has since been
-  // reused by another repository than the one this workflow run actually belongs to), persisting
-  // detectedGithubRepoId as-is would tag this deployment with the wrong repository's identity.
-  // Discard it rather than propagate a mismatched ID; it can still be backfilled correctly later.
-  if (githubRepoId != null && detectedGithubRepoId != null && detectedGithubRepoId !== Number(githubRepoId)) {
-    logger.warn(
-      `fetchVerificationData(${deploymentId}): resolved github_repo_id ${detectedGithubRepoId} from workflow run does not match currently linked repository ${owner}/${repo} (${githubRepoId}) — discarding resolved id`,
-    )
-    detectedGithubRepoId = null
   }
   const detectedBranchName: string | undefined = deployedPr?.metadata.headBranch ?? workflowRunHeadBranch ?? undefined
 

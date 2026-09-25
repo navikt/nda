@@ -33,6 +33,7 @@ vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
+import { logger } from '~/lib/logger.server'
 import { fetchVerificationData } from '~/lib/verification/fetch-data.server'
 
 describe('fetchVerificationData identity guard', () => {
@@ -41,6 +42,7 @@ describe('fetchVerificationData identity guard', () => {
     mockFindRepositoryForApp.mockReset()
     mockGetEffectiveSettingsForApp.mockReset()
     mockIsCommitOnBranch.mockReset()
+    vi.mocked(logger.warn).mockReset()
 
     mockGetEffectiveSettingsForApp.mockResolvedValue({
       auditStartYear: null,
@@ -48,29 +50,32 @@ describe('fetchVerificationData identity guard', () => {
     })
   })
 
-  it('aborts before fetching any repository data when the deployment own github_repo_id disagrees with the currently linked repository', async () => {
+  it('prefers the deployment own github_repo_id over the currently linked repository when they disagree', async () => {
     mockFindRepositoryForApp.mockResolvedValue({
       repository: { status: 'active', github_repo_id: '999' },
     })
     mockPoolQuery.mockResolvedValueOnce({ rows: [{ github_repo_id: '111' }] })
+    mockIsCommitOnBranch.mockRejectedValueOnce(new Error('stop-here-test-boundary'))
 
     await expect(fetchVerificationData(10, 'sha123', 'navikt/repo', 'prod-gcp', 'main', 99)).rejects.toThrow(
-      /does not match currently linked repository/,
+      'stop-here-test-boundary',
     )
 
-    expect(mockIsCommitOnBranch).not.toHaveBeenCalled()
-    expect(mockPoolQuery).toHaveBeenCalledTimes(1)
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('does not match currently linked repository'))
+    expect(mockIsCommitOnBranch).toHaveBeenCalledWith('navikt', 'repo', 'sha123', 'main')
   })
 
-  it('aborts when the deployment has an own github_repo_id but the repository is no longer linked at all', async () => {
+  it('proceeds using the deployment own github_repo_id when the repository is no longer linked at all', async () => {
     mockFindRepositoryForApp.mockResolvedValue({ repository: null })
     mockPoolQuery.mockResolvedValueOnce({ rows: [{ github_repo_id: '111' }] })
+    mockIsCommitOnBranch.mockRejectedValueOnce(new Error('stop-here-test-boundary'))
 
     await expect(fetchVerificationData(11, 'sha456', 'navikt/repo', 'prod-gcp', 'main', 99)).rejects.toThrow(
-      /does not match currently linked repository/,
+      'stop-here-test-boundary',
     )
 
-    expect(mockIsCommitOnBranch).not.toHaveBeenCalled()
+    expect(logger.warn).not.toHaveBeenCalled()
+    expect(mockIsCommitOnBranch).toHaveBeenCalledWith('navikt', 'repo', 'sha456', 'main')
   })
 
   it('proceeds normally when the deployment has no persisted github_repo_id yet', async () => {

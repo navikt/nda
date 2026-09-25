@@ -357,7 +357,7 @@ describe('reverifyDeployment cache base validation', () => {
     expect(mockVerifyDeployment).not.toHaveBeenCalled()
   })
 
-  it('returns null without re-verifying when the deployment own github_repo_id disagrees with the currently linked repository', async () => {
+  it('uses the deployment own github_repo_id as the anchor when it disagrees with the currently linked repository', async () => {
     mockPoolQuery.mockResolvedValueOnce({
       rows: [
         {
@@ -382,12 +382,22 @@ describe('reverifyDeployment cache base validation', () => {
       implicitApprovalSettings: { mode: 'off' },
       defaultBranch: 'master',
     })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head111',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockGetPrDataForDiff.mockResolvedValue(null)
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
 
     const result = await reverifyDeployment(14)
 
-    expect(result).toBeNull()
-    expect(mockGetCompareSnapshot).not.toHaveBeenCalled()
-    expect(mockVerifyDeployment).not.toHaveBeenCalled()
+    expect(mockGetPreviousDeployment).toHaveBeenCalledWith(14, '999')
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ detectedGithubRepoId: 999 }))
+    expect(result).toEqual(
+      expect.objectContaining({ changed: true, oldStatus: 'unverified_commits', newStatus: 'approved' }),
+    )
   })
 
   it('reports prBackfilled and persists via updateDeploymentVerification when status is unchanged but PR is newly discovered', async () => {
