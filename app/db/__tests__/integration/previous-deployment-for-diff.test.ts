@@ -305,4 +305,155 @@ describe('getPreviousDeploymentForDiff', () => {
     expect(prev?.monitored_app_id).toBe(siblingAppId)
     expect(prev?.four_eyes_status).toBe('approved')
   })
+
+  it('does not match a candidate whose own github_repo_id differs from the target repo, even with matching owner/name text (name reuse)', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9002',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'stale111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2025-12-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '999999',
+    })
+    const newId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'new9999aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2026-01-15T13:57:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9002',
+    })
+
+    const prev = await getPreviousDeploymentForDiff(newId, '9002')
+    expect(prev).toBeNull()
+  })
+
+  it('matches a candidate via its own github_repo_id even when the app-repository link has no github_repo_id yet', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: undefined,
+    })
+    const olderId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'old9003aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2025-12-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9003',
+    })
+    const newId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'new9003aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2026-01-15T13:57:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9003',
+    })
+
+    const prev = await getPreviousDeploymentForDiff(newId, '9003')
+    expect(prev?.id).toBe(olderId)
+  })
+
+  it('matches a candidate via its own github_repo_id even when the app-repository link no longer matches it (e.g. link repointed to a different repo)', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    const otherOwner = 'navikt'
+    const otherRepo = 'pensjon-selvbetjening-soknad-alder-backend'
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: otherOwner,
+      githubRepo: otherRepo,
+      githubRepoId: '9005',
+    })
+    const olderId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'old9006aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2025-12-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9006',
+    })
+    const newId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'new9006aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2026-01-15T13:57:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9006',
+    })
+
+    const prev = await getPreviousDeploymentForDiff(newId, '9006')
+    expect(prev?.id).toBe(olderId)
+  })
+
+  it('does not match a legacy (unhydrated) candidate from the old repo after the app-repository link is repointed to a new repo', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    const otherOwner = 'navikt'
+    const otherRepo = 'pensjon-selvbetjening-soknad-alder-backend'
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: otherOwner,
+      githubRepo: otherRepo,
+      githubRepoId: '9004',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'legacy1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2025-12-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    const newId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'new9004aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2026-01-15T13:57:00Z'),
+      githubOwner: otherOwner,
+      githubRepo: otherRepo,
+      githubRepoId: '9004',
+    })
+
+    const prev = await getPreviousDeploymentForDiff(newId, '9004')
+    expect(prev).toBeNull()
+  })
 })

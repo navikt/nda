@@ -6,7 +6,7 @@ import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
-import { getMergedPullRequestsInWindow } from '~/lib/github'
+import { getMergedPullRequestsInWindow, resolveGithubRepoIdFromWorkflowRunDetailed } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
 import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
@@ -48,6 +48,9 @@ function applyPassthroughFields(result: VerificationResult, input: VerificationI
   }
   if (input.detectedTitle) {
     result.detectedTitle = input.detectedTitle
+  }
+  if (input.detectedGithubRepoId != null) {
+    result.detectedGithubRepoId = input.detectedGithubRepoId
   }
   if (input.workflowTrigger) {
     result.workflowTrigger = input.workflowTrigger
@@ -230,6 +233,7 @@ export async function runDebugVerification(
     options.baseBranch,
     options.monitoredAppId,
     { forceRefresh: !useCache },
+    options.triggerUrl,
   )
 
   logger.info(`   ✅ Data fetched:`)
@@ -516,7 +520,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     `SELECT
        d.id, d.commit_sha, d.four_eyes_status,
        d.github_pr_number, d.environment_name, d.monitored_app_id,
-       d.detected_github_owner, d.detected_github_repo_name,
+       d.detected_github_owner, d.detected_github_repo_name, d.trigger_url, d.github_repo_id,
        ${effectiveDefaultBranchSql('ma')} AS default_branch,
        ${effectiveAuditStartYearSql('ma')} AS audit_start_year
      FROM deployments d
@@ -545,8 +549,27 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo)
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
-  const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !githubRepoId
-  const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
+  // Prefer the deployment's own already-resolved github_repo_id (backfilled from its own workflow
+  // run — an authoritative, tamper-proof identity) as the anchor for scoping previousDeployment
+  // over application_repositories' cached link, which is only an admin-maintained approximation
+  // and can go stale (e.g. after the owner/repo name is reused by an unrelated repository). When
+  // the deployment's own id isn't backfilled yet but it has a trigger_url that looks like a
+  // workflow run, its identity is unresolved rather than confirmed to match the linked repository
+  // (backfill may simply not have run yet, or may have failed) — don't fall back to githubRepoId
+  // in that case either, since we can't yet tell whether it actually agrees.
+  const hasResolvableTriggerUrl = dep.trigger_url != null && /\/actions\/runs\/[0-9]+/.test(dep.trigger_url)
+  const resolvedRepoId = dep.github_repo_id ?? (hasResolvableTriggerUrl ? null : githubRepoId)
+  if (dep.github_repo_id && (!githubRepoId || dep.github_repo_id !== githubRepoId)) {
+    logger.warn(
+      `reverifyDeployment(${dep.id}): github_repo_id ${dep.github_repo_id} does not match currently linked repository ${owner}/${repo} (${githubRepoId ?? 'none'}) — name likely reused, using deployment's own id`,
+    )
+  } else if (dep.github_repo_id == null && resolvedRepoId == null && hasResolvableTriggerUrl) {
+    logger.warn(
+      `reverifyDeployment(${dep.id}): github_repo_id not yet backfilled but trigger_url ${dep.trigger_url} looks resolvable — treating identity as unresolved instead of falling back to currently linked repository ${owner}/${repo}`,
+    )
+  }
+  const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !resolvedRepoId
+  const prevRow = resolvedRepoId ? await getPreviousDeploymentForDiff(dep.id, resolvedRepoId) : null
   const previousDeployment = prevRow
     ? await preferRootApprovedSibling(
         {
@@ -557,7 +580,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
           fourEyesStatus: prevRow.four_eyes_status,
         },
         dep.commit_sha,
-        githubRepoId,
+        resolvedRepoId,
         dep.monitored_app_id,
         dep.id,
       )
@@ -585,6 +608,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       baseBranch,
       dep.monitored_app_id,
       { forceRefresh: true, includeComments: false, includeReviews: false },
+      dep.trigger_url,
     )
   } else {
     const compareData = compareSnapshot.data as CompareData
@@ -610,6 +634,33 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     }
 
     const hasCompareMetadata = compareData.compare !== undefined
+    const hasResolvableTriggerUrl = dep.trigger_url != null && /\/actions\/runs\/\d+/.test(dep.trigger_url)
+    const detectedGithubRepoId =
+      dep.github_repo_id != null
+        ? Number(dep.github_repo_id)
+        : (await resolveGithubRepoIdFromWorkflowRunDetailed(owner, repo, dep.trigger_url)).repositoryId
+    if (dep.github_repo_id == null && hasResolvableTriggerUrl && detectedGithubRepoId == null) {
+      logger.warn(
+        `reverifyDeployment(${dep.id}): failed to resolve github_repo_id from trigger_url ${dep.trigger_url} — aborting to avoid falling back to name-based data`,
+      )
+      return null
+    }
+    // The resolved ID can point at a different repository than the one owner/repo currently
+    // names (e.g. the workflow run belongs to a repo that has since had its name reused by
+    // another). The cached commitsBetween/deployedPr data above was built from owner/repo, so a
+    // mismatch here means that data — and the compareSnapshot fetched from owner/repo above —
+    // cannot be trusted to belong to the same repository as detectedGithubRepoId.
+    if (
+      dep.github_repo_id == null &&
+      detectedGithubRepoId != null &&
+      githubRepoId != null &&
+      detectedGithubRepoId !== Number(githubRepoId)
+    ) {
+      logger.warn(
+        `reverifyDeployment(${dep.id}): resolved github_repo_id ${detectedGithubRepoId} from trigger_url does not match currently linked repository ${owner}/${repo} (${githubRepoId}) — aborting to avoid persisting mismatched data`,
+      )
+      return null
+    }
     input = {
       deploymentId: dep.id,
       commitSha: dep.commit_sha,
@@ -628,6 +679,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       repositoryStatus: 'active',
       commitOnBaseBranch: null,
       detectedTitle: deriveDetectedTitle(deployedPr, commitsBetween),
+      detectedGithubRepoId,
     }
   }
 

@@ -32,7 +32,6 @@ vi.mock('~/db/application-repositories.server', () => ({
 }))
 
 vi.mock('~/lib/github', () => ({
-  getBranchFromWorkflowRun: vi.fn(),
   getChecksForCommit: mockGetChecksForCommit,
   getCommitsBetween: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
@@ -42,7 +41,7 @@ vi.mock('~/lib/github', () => ({
   getPullRequestForCommit: vi.fn(),
   getRepositoryId: mockGetRepositoryId,
   getSingleCommitMessage: vi.fn(),
-  getWorkflowTriggerConfig: vi.fn(),
+  resolveWorkflowRunDetails: vi.fn(),
   haveSameCommitTree: vi.fn(),
   isCommitOnBranch: vi.fn(),
   WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION: 1,

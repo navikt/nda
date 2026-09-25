@@ -105,6 +105,10 @@ async function syncDeploymentsFromNais(
 
     logger.info(`➕ Creating new deployment: ${naisDep.id}`)
 
+    // Full sync can process up to ~1000 rows in one run — resolving each one via a live
+    // GitHub lookup here would risk sync timeouts and GitHub rate-limit exhaustion. Leave
+    // github_repo_id NULL and let the admin backfill route resolve it afterwards in bounded
+    // batches instead.
     const deploymentParams: CreateDeploymentParams = {
       monitoredApplicationId: monitoredApp.id,
       naisDeploymentId: naisDep.id,
@@ -117,6 +121,7 @@ async function syncDeploymentsFromNais(
       triggerUrl: naisDep.triggerUrl,
       detectedGithubOwner: detectedOwner,
       detectedGithubRepoName: detectedRepoName,
+      githubRepoId: null,
       resources: naisDep.resources.nodes,
     }
 
@@ -301,6 +306,8 @@ export async function syncNewDeploymentsFromNais(
     }))
 
     logger.info(`➕ Creating new deployment: ${deployment.id}`)
+    // github_repo_id is left NULL here; the deployment's first verification pass fills it in
+    // as a side effect of the workflow-run lookup it does anyway (see fetchWorkflowTriggerConfig).
     await createDeployment({
       monitoredApplicationId: monitoredAppId,
       naisDeploymentId: deployment.id,
@@ -313,6 +320,7 @@ export async function syncNewDeploymentsFromNais(
       triggerUrl: deployment.triggerUrl,
       detectedGithubOwner: currentDeploymentRepo?.owner ?? null,
       detectedGithubRepoName: currentDeploymentRepo?.repo ?? null,
+      githubRepoId: null,
       resources,
     })
     newCount++

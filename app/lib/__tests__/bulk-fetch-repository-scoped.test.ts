@@ -96,13 +96,25 @@ describe('fetchVerificationDataForRepository', () => {
     expect(params).toEqual([42])
   })
 
-  it('partitions the prev-commit-sha window by repository only, with a deterministic id tie-breaker', async () => {
+  it('prefers the deployment own immutable github_repo_id over the owner/name app link when known', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [] })
 
     await fetchVerificationDataForRepository(42)
 
     const [query] = mockPoolQuery.mock.calls[0]
-    expect(query).toContain('PARTITION BY d.detected_github_owner, d.detected_github_repo_name')
+    expect(query).toContain('WHEN d.github_repo_id IS NOT NULL THEN')
+    expect(query).toContain('d.github_repo_id = (SELECT r.github_repo_id FROM repositories r WHERE r.id = $1)')
+  })
+
+  it('partitions the prev-commit-sha window by immutable github_repo_id when known, falling back to owner/name', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] })
+
+    await fetchVerificationDataForRepository(42)
+
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain(
+      "PARTITION BY COALESCE(d.github_repo_id::text, d.detected_github_owner || '/' || d.detected_github_repo_name)",
+    )
     expect(query).not.toContain('PARTITION BY d.monitored_app_id')
     expect(query).toContain('ORDER BY d.created_at ASC, d.id ASC')
   })

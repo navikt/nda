@@ -86,6 +86,8 @@ function makeDeploymentRow(overrides: Record<string, unknown> = {}) {
     default_branch: 'main',
     github_pr_number: 100,
     audit_start_year: 2026,
+    trigger_url: 'https://api.github.com/repos/navikt/test-repo/actions/runs/1',
+    github_repo_id: '123',
     ...overrides,
   }
 }
@@ -170,11 +172,20 @@ describe('computeVerificationDiffs double-check logic', () => {
 
     const result = await computeVerificationDiffs(1)
 
-    expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'abc123', 'navikt/test-repo', 'prod-gcp', 'main', 1, {
-      forceRefresh: true,
-      includeComments: false,
-      includeReviews: false,
-    })
+    expect(mockFetchVerificationData).toHaveBeenCalledWith(
+      1,
+      'abc123',
+      'navikt/test-repo',
+      'prod-gcp',
+      'main',
+      1,
+      {
+        forceRefresh: true,
+        includeComments: false,
+        includeReviews: false,
+      },
+      'https://api.github.com/repos/navikt/test-repo/actions/runs/1',
+    )
     expect(result.diffsFound).toBe(0)
     expect(result.deploymentsChecked).toBe(1)
   })
@@ -194,11 +205,20 @@ describe('computeVerificationDiffs double-check logic', () => {
 
     await computeVerificationDiffs(1)
 
-    expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'abc123', 'navikt/test-repo', 'prod-gcp', 'main', 1, {
-      forceRefresh: true,
-      includeComments: false,
-      includeReviews: false,
-    })
+    expect(mockFetchVerificationData).toHaveBeenCalledWith(
+      1,
+      'abc123',
+      'navikt/test-repo',
+      'prod-gcp',
+      'main',
+      1,
+      {
+        forceRefresh: true,
+        includeComments: false,
+        includeReviews: false,
+      },
+      'https://api.github.com/repos/navikt/test-repo/actions/runs/1',
+    )
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('missing PR snapshot'))
   })
 
@@ -304,7 +324,9 @@ describe('computeVerificationDiffs double-check logic', () => {
   })
 
   it('refetches when compare snapshot base_sha does not match previous deployment', async () => {
-    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', commit_sha: 'head123' })])
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({ four_eyes_status: 'approved', commit_sha: 'head123', github_repo_id: '123' }),
+    ])
     mockGetCompareSnapshot.mockResolvedValue({
       ...makeCompareSnapshot(),
       base_sha: 'wrong-base-sha',
@@ -322,12 +344,23 @@ describe('computeVerificationDiffs double-check logic', () => {
 
     await computeVerificationDiffs(1)
 
-    expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'head123', 'navikt/test-repo', 'prod-gcp', 'main', 1)
+    expect(mockFetchVerificationData).toHaveBeenCalledWith(
+      1,
+      'head123',
+      'navikt/test-repo',
+      'prod-gcp',
+      'main',
+      1,
+      undefined,
+      'https://api.github.com/repos/navikt/test-repo/actions/runs/1',
+    )
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Cached compare validation failed'))
   })
 
   it('persists the resolved repository_id on the inserted diff row', async () => {
-    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', github_pr_number: null })])
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({ four_eyes_status: 'approved', github_pr_number: null, github_repo_id: '123' }),
+    ])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
     mockGetPreviousDeployment.mockResolvedValue(null)
     mockFindPrForCommit.mockResolvedValue({ prNumber: 100, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
@@ -358,12 +391,14 @@ describe('computeVerificationDiffs double-check logic', () => {
         four_eyes_status: 'approved',
         github_pr_number: null,
         detected_github_repo_name: 'repo-a',
+        github_repo_id: '111',
       }),
       makeDeploymentRow({
         id: 2,
         four_eyes_status: 'approved',
         github_pr_number: null,
         detected_github_repo_name: 'repo-b',
+        github_repo_id: '222',
       }),
     ])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
@@ -402,5 +437,57 @@ describe('computeVerificationDiffs double-check logic', () => {
     )
     expect(repositoryIdsByDeployment.get(1)).toBe(10)
     expect(repositoryIdsByDeployment.get(2)).toBe(20)
+  })
+
+  it('skips a deployment whose own github_repo_id disagrees with the currently linked repository (name reused)', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ github_repo_id: '999' })])
+    mockFindRepositoryForApp.mockResolvedValue({
+      repository: { github_repo_id: '123' },
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'test-repo',
+      isRedirected: false,
+    })
+
+    const result = await computeVerificationDiffs(1)
+
+    expect(result.skipped).toBe(1)
+    expect(result.diffsFound).toBe(0)
+    expect(mockGetCompareSnapshot).not.toHaveBeenCalled()
+    expect(mockVerifyDeployment).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('does not match currently linked repository'))
+  })
+
+  it('does not skip a deployment when github_repo_id is not yet backfilled and there is no resolvable workflow run', async () => {
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({ github_repo_id: null, github_pr_number: null, trigger_url: null }),
+    ])
+    mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({ prNumber: 100, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+    mockBuildCommitsBetween.mockResolvedValue([])
+
+    mockVerifyDeployment.mockReturnValue({
+      status: 'approved',
+      approvalDetails: { reason: 'pr_approved' },
+      deployedPr: { number: 100 },
+    })
+
+    const result = await computeVerificationDiffs(1)
+
+    expect(result.skipped).toBe(0)
+    expect(mockGetCompareSnapshot).toHaveBeenCalled()
+  })
+
+  it('skips a deployment when github_repo_id is not yet backfilled but a resolvable workflow run trigger_url exists', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ github_repo_id: null })])
+
+    const result = await computeVerificationDiffs(1)
+
+    expect(result.skipped).toBe(1)
+    expect(result.diffsFound).toBe(0)
+    expect(mockGetCompareSnapshot).not.toHaveBeenCalled()
+    expect(mockVerifyDeployment).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('cannot safely confirm identity'))
   })
 })

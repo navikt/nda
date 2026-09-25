@@ -27,6 +27,8 @@ export interface Deployment {
   trigger_url: string | null
   detected_github_owner: string | null
   detected_github_repo_name: string | null
+  github_repo_id: string | null
+  github_repo_id_backfill_attempted_at: Date | null
   four_eyes_status: string
   github_pr_number: number | null
   github_pr_url: string | null
@@ -205,6 +207,7 @@ export interface CreateDeploymentParams {
   triggerUrl: string | null
   detectedGithubOwner: string | null
   detectedGithubRepoName: string | null
+  githubRepoId?: string | null
   resources?: any
 }
 
@@ -514,12 +517,17 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
     `INSERT INTO deployments 
       (monitored_app_id, nais_deployment_id, created_at, team_slug, environment_name, app_name,
        deployer_username, commit_sha, trigger_url,
-       detected_github_owner, detected_github_repo_name, resources, four_eyes_status)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       detected_github_owner, detected_github_repo_name, github_repo_id, resources, four_eyes_status)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     ON CONFLICT (nais_deployment_id) 
     DO UPDATE SET
       resources = EXCLUDED.resources,
-      synced_at = CURRENT_TIMESTAMP
+      synced_at = CURRENT_TIMESTAMP,
+      github_repo_id = COALESCE(deployments.github_repo_id, EXCLUDED.github_repo_id),
+      github_repo_id_backfill_attempted_at = CASE
+        WHEN deployments.github_repo_id IS NULL AND EXCLUDED.github_repo_id IS NOT NULL THEN NULL
+        ELSE deployments.github_repo_id_backfill_attempted_at
+      END
     RETURNING *`,
     [
       data.monitoredApplicationId,
@@ -533,6 +541,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
       data.triggerUrl,
       data.detectedGithubOwner,
       data.detectedGithubRepoName,
+      data.githubRepoId ?? null,
       data.resources ? JSON.stringify(data.resources) : null,
       initialStatus,
     ],

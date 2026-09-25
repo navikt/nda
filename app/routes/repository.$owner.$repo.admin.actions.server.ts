@@ -124,6 +124,7 @@ export async function processRefreshMissingApproverJobForRepositoryAsync(
               baseBranch: dep.default_branch,
               monitoredAppId: dep.monitored_app_id,
               forceRefresh: true,
+              triggerUrl: dep.trigger_url,
             })
             await pool.query('DELETE FROM verification_diffs WHERE deployment_id = $1', [dep.id])
             refreshed++

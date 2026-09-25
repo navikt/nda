@@ -63,6 +63,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       baseBranch: deployment.default_branch,
       monitoredAppId: deployment.monitored_app_id,
       forceRefresh: !useCache,
+      triggerUrl: deployment.trigger_url,
     })
 
     const usernames = new Set<string>()

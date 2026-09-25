@@ -73,6 +73,7 @@ export default [
     route('admin/soft-deleted', 'routes/admin/soft-deleted.tsx'),
     route('admin/database-usage', 'routes/admin/database-usage.tsx'),
     route('admin/snapshot-cleanup', 'routes/admin/snapshot-cleanup.tsx'),
+    route('admin/backfill-github-repo-id', 'routes/admin/backfill-github-repo-id.tsx'),
     route('admin/verification-diffs', 'routes/admin/verification-diffs.tsx'),
     route('admin/workflow-triggers', 'routes/admin/workflow-triggers.tsx'),
     route('admin/workflow-patterns', 'routes/admin/workflow-patterns.tsx'),

@@ -251,14 +251,35 @@ export async function getGitHubDataStatsForRepository(
        AND d.detected_github_owner IS NOT NULL
        AND d.detected_github_repo_name IS NOT NULL
        AND ${VALID_COMMIT_SHA_SQL}
-       AND EXISTS (
-         SELECT 1 FROM application_repositories ar
-         JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-         WHERE ar.monitored_app_id = d.monitored_app_id
-           AND ar.github_owner = d.detected_github_owner
-           AND ar.github_repo_name = d.detected_github_repo_name
-           AND ar.status IN ('active', 'historical')
-           AND r.id = $1
+       AND (
+         CASE
+           WHEN d.github_repo_id IS NOT NULL THEN
+             d.github_repo_id = (SELECT r.github_repo_id FROM repositories r WHERE r.id = $1)
+             AND EXISTS (
+               SELECT 1 FROM application_repositories ar
+               WHERE ar.monitored_app_id = d.monitored_app_id
+                 AND ar.status IN ('active', 'historical')
+                 AND (
+                   ar.github_repo_id = d.github_repo_id
+                   OR (
+                     ar.github_repo_id IS NULL
+                     AND ar.github_owner = d.detected_github_owner
+                     AND ar.github_repo_name = d.detected_github_repo_name
+                   )
+                 )
+             )
+           ELSE
+             EXISTS (
+               SELECT 1 FROM application_repositories ar
+               JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+               WHERE ar.monitored_app_id = d.monitored_app_id
+                 AND ar.github_owner = d.detected_github_owner
+                 AND ar.github_repo_name = d.detected_github_repo_name
+                 AND ar.status IN ('active', 'historical')
+                 AND r.id = $1
+                 AND (d.trigger_url IS NULL OR d.trigger_url !~ '/actions/runs/[0-9]+')
+             )
+         END
        )
        ${dateFilter}`,
     params,

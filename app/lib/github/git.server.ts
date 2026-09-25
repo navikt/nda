@@ -1,4 +1,9 @@
-import { saveCommitRawSnapshot, saveCompareRawSnapshot, saveWorkflowRunRawSnapshot } from '~/db/github-data.server'
+import {
+  getLatestWorkflowRunRawSnapshot,
+  saveCommitRawSnapshot,
+  saveCompareRawSnapshot,
+  saveWorkflowRunRawSnapshot,
+} from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
 import { getGitHubClient } from './client.server'
@@ -215,15 +220,16 @@ async function resolveWorkflowRun(
   owner: string,
   repo: string,
   triggerUrl: string | null | undefined,
-): Promise<WorkflowRunData | null> {
+): Promise<{ data: WorkflowRunData; repositoryId: number | null } | null> {
   const match = triggerUrl?.match(/\/actions\/runs\/(\d+)/)
   if (!match) return null
   const runId = parseInt(match[1], 10)
   try {
     const client = getGitHubClient()
     const response = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
-    await archiveWorkflowRunRawSnapshot(owner, repo, runId, response.data, response.headers)
-    return response.data
+    const repositoryId = extractRepositoryIdFromWorkflowRunData(response.data)
+    await archiveWorkflowRunRawSnapshot(owner, repo, runId, response.data, response.headers, repositoryId)
+    return { data: response.data, repositoryId }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const status = (error as { status?: unknown }).status
@@ -243,25 +249,119 @@ async function archiveWorkflowRunRawSnapshot(
   runId: number,
   data: WorkflowRunData,
   headers: Record<string, unknown>,
+  repositoryId: number | null,
 ): Promise<void> {
   try {
-    const githubRepoId = await getRepositoryId(owner, repo)
-    if (githubRepoId === null) return
+    // Only archive with an id extracted directly from the workflow-run payload. A name-based
+    // lookup (owner/repo) is not safe here: repository names can be reused after a rename, so it
+    // could silently attach a different repository's id, and this column is later trusted as
+    // authoritative (resolveGithubRepoIdFromWorkflowRunDetailed's cache-hit path). Skip archiving
+    // rather than guessing when extraction fails.
+    if (repositoryId === null) return
     const apiVersion = captureApiVersionMetadata(headers, null)
-    await saveWorkflowRunRawSnapshot(owner, repo, githubRepoId, runId, data, apiVersion)
+    await saveWorkflowRunRawSnapshot(owner, repo, repositoryId, runId, data, apiVersion)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.warn(`⚠️ Failed to archive workflow run ${runId} for ${owner}/${repo}:`, { error: message })
   }
 }
 
-export async function getBranchFromWorkflowRun(
+export interface WorkflowRunDetails {
+  headBranch: string | null
+  repositoryId: number | null
+  workflowTrigger: WorkflowTriggerConfig | null
+}
+
+// Resolves everything fetch-data.server.ts needs from a deployment's triggering workflow run in a
+// single live GitHub call (when not already cached elsewhere), instead of the previous approach of
+// two independent, uncached callers (branch name + trigger config) each fetching the same run.
+export async function resolveWorkflowRunDetails(
   owner: string,
   repo: string,
   triggerUrl: string | null | undefined,
-): Promise<string | null> {
+): Promise<WorkflowRunDetails> {
   const run = await resolveWorkflowRun(owner, repo, triggerUrl)
-  return run?.head_branch || null
+  return {
+    headBranch: run?.data.head_branch || null,
+    repositoryId: run?.repositoryId ?? null,
+    workflowTrigger: run?.data.path
+      ? {
+          workflowPath: run.data.path,
+          triggerEvent: run.data.event,
+          checkSuiteId: run.data.check_suite_id ?? null,
+          schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+        }
+      : null,
+  }
+}
+
+function extractRepositoryIdFromWorkflowRunData(data: unknown): number | null {
+  if (data && typeof data === 'object' && 'repository' in data) {
+    const repositoryId = (data as { repository?: { id?: unknown } }).repository?.id
+    if (typeof repositoryId === 'number') return repositoryId
+  }
+  return null
+}
+
+/**
+ * Result of attempting to resolve a repository id from a workflow run, distinguishing a
+ * permanent failure (no run id in the trigger url, or the run 404s — safe to treat as
+ * terminal) from a transient one (network error, rate limit, 5xx — should be retried later,
+ * not treated as terminal).
+ */
+export interface WorkflowRunRepoIdResolution {
+  repositoryId: number | null
+  /** True when the failure is permanent (safe to stop retrying); false for transient errors. */
+  permanentFailure: boolean
+}
+
+// Used by the backfill, which needs to avoid permanently giving up on a deployment due to a
+// temporary GitHub API issue — see WorkflowRunRepoIdResolution.permanentFailure.
+export async function resolveGithubRepoIdFromWorkflowRunDetailed(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+): Promise<WorkflowRunRepoIdResolution> {
+  const match = triggerUrl?.match(/\/actions\/runs\/(\d+)/)
+  if (!match) return { repositoryId: null, permanentFailure: true }
+  const runId = parseInt(match[1], 10)
+
+  try {
+    const cached = await getLatestWorkflowRunRawSnapshot(owner, repo, runId)
+    if (cached) {
+      const cachedRepositoryId = extractRepositoryIdFromWorkflowRunData(cached.data)
+      if (cachedRepositoryId !== null) {
+        return { repositoryId: cachedRepositoryId, permanentFailure: false }
+      }
+    }
+
+    const client = getGitHubClient()
+    const response = await client.actions.getWorkflowRun({ owner, repo, run_id: runId })
+    const repositoryId = extractRepositoryIdFromWorkflowRunData(response.data)
+    if (repositoryId !== null) {
+      const apiVersion = captureApiVersionMetadata(response.headers, null)
+      try {
+        await saveWorkflowRunRawSnapshot(owner, repo, repositoryId, runId, response.data, apiVersion)
+      } catch (snapshotError) {
+        const message = snapshotError instanceof Error ? snapshotError.message : String(snapshotError)
+        logger.warn(`⚠️ Failed to archive workflow run ${runId} for ${owner}/${repo}:`, { error: message })
+      }
+    }
+    return { repositoryId, permanentFailure: repositoryId === null }
+  } catch (error) {
+    const status = (error as { status?: unknown }).status
+    if (typeof status === 'number' && status === 404) {
+      logger.info(`ℹ️ Workflow run ${runId} not found for ${owner}/${repo} (cannot resolve repository id)`)
+      return { repositoryId: null, permanentFailure: true }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to resolve repository id from workflow run ${runId} for ${owner}/${repo}:`, {
+      error: message,
+      stack_trace: stack,
+    })
+    return { repositoryId: null, permanentFailure: false }
+  }
 }
 
 export const WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION = 3
@@ -271,22 +371,6 @@ export type WorkflowTriggerConfig = {
   triggerEvent: string
   checkSuiteId: number | null
   schemaVersion: number
-}
-
-export async function getWorkflowTriggerConfig(
-  owner: string,
-  repo: string,
-  triggerUrl: string | null | undefined,
-): Promise<WorkflowTriggerConfig | null> {
-  const run = await resolveWorkflowRun(owner, repo, triggerUrl)
-  if (!run?.path) return null
-
-  return {
-    workflowPath: run.path,
-    triggerEvent: run.event,
-    checkSuiteId: run.check_suite_id ?? null,
-    schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
-  }
 }
 
 export async function getRepositoryDefaultBranch(owner: string, repo: string): Promise<string | null> {

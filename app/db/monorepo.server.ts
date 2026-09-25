@@ -254,16 +254,29 @@ export async function propagateVerificationToSiblings(
            )
            AND ar.monitored_app_id != $5
        )
-       AND EXISTS (
-         SELECT 1 FROM application_repositories ar3
-         WHERE ar3.monitored_app_id = d.monitored_app_id
-           AND ar3.github_owner = d.detected_github_owner
-           AND ar3.github_repo_name = d.detected_github_repo_name
-           AND ar3.status IN ('active', 'historical')
-           AND ar3.github_repo_id IN (
+       AND (
+         (
+           d.github_repo_id IS NOT NULL
+           AND d.github_repo_id IN (
              SELECT ar4.github_repo_id FROM application_repositories ar4
              WHERE ar4.monitored_app_id = $5 AND ar4.status = 'active' AND ar4.github_repo_id IS NOT NULL
            )
+         )
+         OR (
+           d.github_repo_id IS NULL
+           AND (d.trigger_url IS NULL OR d.trigger_url !~ '/actions/runs/[0-9]+')
+           AND EXISTS (
+             SELECT 1 FROM application_repositories ar3
+             WHERE ar3.monitored_app_id = d.monitored_app_id
+               AND ar3.github_owner = d.detected_github_owner
+               AND ar3.github_repo_name = d.detected_github_repo_name
+               AND ar3.status IN ('active', 'historical')
+               AND ar3.github_repo_id IN (
+                 SELECT ar4.github_repo_id FROM application_repositories ar4
+                 WHERE ar4.monitored_app_id = $5 AND ar4.status = 'active' AND ar4.github_repo_id IS NOT NULL
+               )
+           )
+         )
        )`,
     [propagatedStatus, commitSha, PROPAGATION_TARGET_STATUSES, deploymentId, monitoredAppId],
   )

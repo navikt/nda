@@ -99,6 +99,7 @@ export async function seedDeployment(
     fourEyesStatus?: string
     githubOwner?: string
     githubRepo?: string
+    githubRepoId?: string | null
     deployerUsername?: string | null
     githubPrData?: Record<string, unknown> | null
     appName?: string
@@ -110,9 +111,9 @@ export async function seedDeployment(
     `INSERT INTO deployments (
       monitored_app_id, nais_deployment_id, team_slug, app_name, environment_name,
       commit_sha, created_at, title, four_eyes_status,
-      detected_github_owner, detected_github_repo_name,
+      detected_github_owner, detected_github_repo_name, github_repo_id,
       deployer_username, github_pr_data, workflow_trigger_config
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     RETURNING id`,
     [
       opts.monitoredAppId,
@@ -126,6 +127,7 @@ export async function seedDeployment(
       opts.fourEyesStatus ?? 'pending',
       opts.githubOwner ?? null,
       opts.githubRepo ?? null,
+      opts.githubRepoId ?? null,
       opts.deployerUsername ?? null,
       opts.githubPrData ? JSON.stringify(opts.githubPrData) : null,
       opts.workflowTriggerConfig ? JSON.stringify(opts.workflowTriggerConfig) : null,

@@ -235,4 +235,126 @@ describe('getDeploymentsWithStatusChangesForApps', () => {
     const result = await getDeploymentsWithStatusChangesForApps([], 1)
     expect(result).toEqual([])
   })
+
+  it('excludes a deployment whose owner/name text matches this repo but whose own github_repo_id points elsewhere (name reuse)', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-shfr', appName: 'app-shfr', environment: 'prod' })
+    const currentRepoId = await linkAppToRepo({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-shfr-reused',
+      githubRepoId: '910007',
+    })
+
+    const staleDeployment = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-shfr',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubOwner: 'navikt',
+      githubRepo: 'repo-shfr-reused',
+      githubRepoId: '999999',
+    })
+    await seedTransition({
+      deploymentId: staleDeployment,
+      fromStatus: null,
+      toStatus: 'pending',
+      changeSource: 'nais_sync',
+      createdAt: IN_PERIOD,
+    })
+    await seedTransition({
+      deploymentId: staleDeployment,
+      fromStatus: 'pending',
+      toStatus: 'approved',
+      changeSource: 'github_verify',
+      createdAt: new Date(IN_PERIOD.getTime() + 1000),
+    })
+
+    const result = await getDeploymentsWithStatusChangesForApps([appId], currentRepoId)
+    expect(result).toEqual([])
+  })
+
+  it('includes a deployment matched by its own github_repo_id even without owner/name matching (defense in depth)', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-shfs', appName: 'app-shfs', environment: 'prod' })
+    const repositoryId = await linkAppToRepo({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-shfs',
+      githubRepoId: '910008',
+    })
+
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-shfs',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubOwner: 'navikt',
+      githubRepo: 'repo-shfs',
+      githubRepoId: '910008',
+    })
+    await seedTransition({
+      deploymentId,
+      fromStatus: null,
+      toStatus: 'pending',
+      changeSource: 'nais_sync',
+      createdAt: IN_PERIOD,
+    })
+    await seedTransition({
+      deploymentId,
+      fromStatus: 'pending',
+      toStatus: 'approved',
+      changeSource: 'github_verify',
+      createdAt: new Date(IN_PERIOD.getTime() + 1000),
+    })
+
+    const result = await getDeploymentsWithStatusChangesForApps([appId], repositoryId)
+    expect(result).toHaveLength(1)
+    expect(result[0].deployment_id).toBe(deploymentId)
+  })
+
+  it('includes a deployment matched via its own github_repo_id even when the app-repository link is not yet hydrated with an id', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-shft', appName: 'app-shft', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-shft',
+      githubRepoId: undefined,
+      status: 'active',
+    })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '910009',
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-shft',
+    })
+
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-shft',
+      environment: 'prod',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubOwner: 'navikt',
+      githubRepo: 'repo-shft',
+      githubRepoId: '910009',
+    })
+    await seedTransition({
+      deploymentId,
+      fromStatus: null,
+      toStatus: 'pending',
+      changeSource: 'nais_sync',
+      createdAt: IN_PERIOD,
+    })
+    await seedTransition({
+      deploymentId,
+      fromStatus: 'pending',
+      toStatus: 'approved',
+      changeSource: 'github_verify',
+      createdAt: new Date(IN_PERIOD.getTime() + 1000),
+    })
+
+    const result = await getDeploymentsWithStatusChangesForApps([appId], repositoryId)
+    expect(result).toHaveLength(1)
+    expect(result[0].deployment_id).toBe(deploymentId)
+  })
 })

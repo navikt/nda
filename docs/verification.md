@@ -52,7 +52,7 @@ For hvert deployment sjekker systemet:
 `monitored_applications.default_branch` og andre DB-cachede verdier kan være foreldet — f.eks. om et repo har omdøpt default-branchen etter sist synkronisering. **Branch-relaterte data som lagres på et deployment (f.eks. `branch_name`) må alltid hentes direkte fra GitHub ved verifiseringstidspunktet**, ikke utledes fra cachede DB-verdier.
 
 I praksis betyr dette:
-- `detectedBranchName` hentes fra `deployedPr.metadata.headBranch` (GitHub PR API) eller `getBranchFromWorkflowRun()` (GitHub Actions API) — begge direkte fra GitHub ved verifisering
+- `detectedBranchName` hentes fra `deployedPr.metadata.headBranch` (GitHub PR API) eller `resolveWorkflowRunDetails()` (GitHub Actions API) — begge direkte fra GitHub ved verifisering
 - `baseBranch` fra DB skal **ikke** brukes som kilde for `branch_name`, selv om `commitOnBaseBranch === true`, fordi verdien kan reflektere en annen branch enn den som faktisk var default på deployment-tidspunktet
 
 ### Prosessflyt på overordnet nivå

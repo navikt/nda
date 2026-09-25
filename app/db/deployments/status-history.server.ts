@@ -144,12 +144,26 @@ export async function getDeploymentsWithStatusChangesForApps(
        AND d.detected_github_repo_name IS NOT NULL
        AND EXISTS (
          SELECT 1 FROM application_repositories ar
-         JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+         JOIN repositories r ON r.id = $2
          WHERE ar.monitored_app_id = d.monitored_app_id
-           AND ar.github_owner = d.detected_github_owner
-           AND ar.github_repo_name = d.detected_github_repo_name
            AND ar.status IN ('active', 'historical')
-           AND r.id = $2
+           AND (
+             (ar.github_repo_id IS NOT NULL AND ar.github_repo_id = r.github_repo_id)
+             OR (
+               ar.github_repo_id IS NULL
+               AND ar.github_owner = r.github_owner
+               AND ar.github_repo_name = r.github_repo_name
+             )
+           )
+           AND (
+             (d.github_repo_id IS NOT NULL AND d.github_repo_id = r.github_repo_id)
+             OR (
+               d.github_repo_id IS NULL
+               AND (d.trigger_url IS NULL OR d.trigger_url !~ '/actions/runs/[0-9]+')
+               AND d.detected_github_owner = r.github_owner
+               AND d.detected_github_repo_name = r.github_repo_name
+             )
+           )
        )
      GROUP BY d.id, ma.team_slug, ma.app_name, ma.environment_name
      HAVING COUNT(h.id) > 1

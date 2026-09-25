@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { createDeployment } from '~/db/deployments.server'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
@@ -306,6 +307,85 @@ describe('manual approval preserves existing data', () => {
     expect(rows[0].unverified_commits).toEqual([
       { sha: '7de20a1', message: 'Legg til oversetting for AFP Stat kontroll (#579)', author: 'alice' },
     ])
+  })
+})
+
+describe('createDeployment upsert preserves github_repo_id', () => {
+  it('preserves an already-resolved github_repo_id when a conflicting upsert has no id', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod' })
+
+    await createDeployment({
+      monitoredApplicationId: appId,
+      naisDeploymentId: 'nais-dep-1',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod',
+      appName: 'my-app',
+      deployerUsername: 'alice',
+      commitSha: 'abc1234',
+      triggerUrl: 'https://github.com/navikt/repo/actions/runs/1',
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'repo',
+      githubRepoId: '12345',
+    })
+
+    const updated = await createDeployment({
+      monitoredApplicationId: appId,
+      naisDeploymentId: 'nais-dep-1',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod',
+      appName: 'my-app',
+      deployerUsername: 'alice',
+      commitSha: 'abc1234',
+      triggerUrl: 'https://github.com/navikt/repo/actions/runs/1',
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'repo',
+      githubRepoId: null,
+    })
+
+    expect(updated.github_repo_id).toBe('12345')
+  })
+
+  it('fills a NULL github_repo_id and clears the backfill-attempted marker on a conflicting upsert', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod' })
+
+    await createDeployment({
+      monitoredApplicationId: appId,
+      naisDeploymentId: 'nais-dep-2',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod',
+      appName: 'my-app',
+      deployerUsername: 'alice',
+      commitSha: 'abc1234',
+      triggerUrl: 'https://github.com/navikt/repo/actions/runs/1',
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'repo',
+      githubRepoId: null,
+    })
+
+    await pool.query(
+      `UPDATE deployments SET github_repo_id_backfill_attempted_at = now() WHERE nais_deployment_id = 'nais-dep-2'`,
+    )
+
+    const updated = await createDeployment({
+      monitoredApplicationId: appId,
+      naisDeploymentId: 'nais-dep-2',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod',
+      appName: 'my-app',
+      deployerUsername: 'alice',
+      commitSha: 'abc1234',
+      triggerUrl: 'https://github.com/navikt/repo/actions/runs/1',
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'repo',
+      githubRepoId: '99999',
+    })
+
+    expect(updated.github_repo_id).toBe('99999')
+    expect(updated.github_repo_id_backfill_attempted_at).toBeNull()
   })
 })
 

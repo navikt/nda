@@ -1,4 +1,8 @@
 export {
+  backfillDeploymentGithubRepoIds,
+  countDeploymentsPendingGithubRepoIdBackfill,
+} from './backfill-deployment-github-repo-id.server'
+export {
   CHECKS_SNAPSHOT_SCHEMA_VERSION,
   type ChecksSnapshotData,
   parseCheckRunsSnapshot,
@@ -10,15 +14,15 @@ export {
 } from './client.server'
 export {
   type CommitAncestryStatus,
-  getBranchFromWorkflowRun,
   getCommitAncestryStatus,
   getCommitsBetween,
   getRepositoryDefaultBranch,
   getRepositoryId,
   getSingleCommitMessage,
-  getWorkflowTriggerConfig,
   haveSameCommitTree,
   isCommitOnBranch,
+  resolveGithubRepoIdFromWorkflowRunDetailed,
+  resolveWorkflowRunDetails,
   WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
   type WorkflowTriggerConfig,
 } from './git.server'

@@ -4,13 +4,13 @@ import { WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION } from '~/lib/github/git.server'
 const {
   mockGetChecksForCommit,
   mockSaveCommitSnapshot,
-  mockGetWorkflowTriggerConfig,
+  mockResolveWorkflowRunDetails,
   mockGetRepositoryId,
   mockSaveChecksRawSnapshot,
 } = vi.hoisted(() => ({
   mockGetChecksForCommit: vi.fn(),
   mockSaveCommitSnapshot: vi.fn(),
-  mockGetWorkflowTriggerConfig: vi.fn(),
+  mockResolveWorkflowRunDetails: vi.fn(),
   mockGetRepositoryId: vi.fn(),
   mockSaveChecksRawSnapshot: vi.fn(),
 }))
@@ -27,7 +27,6 @@ vi.mock('~/db/application-repositories.server', () => ({
 vi.mock('~/lib/github', async () => {
   const gitServer = await vi.importActual<typeof import('~/lib/github/git.server')>('~/lib/github/git.server')
   return {
-    getBranchFromWorkflowRun: vi.fn(),
     getChecksForCommit: mockGetChecksForCommit,
     getCommitsBetween: vi.fn(),
     getDetailedPullRequestInfo: vi.fn(),
@@ -35,7 +34,7 @@ vi.mock('~/lib/github', async () => {
     getPullRequestForCommit: vi.fn(),
     getRepositoryId: mockGetRepositoryId,
     getSingleCommitMessage: vi.fn(),
-    getWorkflowTriggerConfig: mockGetWorkflowTriggerConfig,
+    resolveWorkflowRunDetails: mockResolveWorkflowRunDetails,
     haveSameCommitTree: vi.fn(),
     isCommitOnBranch: vi.fn(),
     WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION: gitServer.WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
@@ -250,7 +249,7 @@ describe('refreshCommitChecksOnly', () => {
     mockGetAllLatestPrRawSnapshots.mockReset()
     mockGetAllLatestPrRawSnapshots.mockResolvedValue(new Map())
     mockUpdateDeploymentCommitChecks.mockReset()
-    mockGetWorkflowTriggerConfig.mockReset()
+    mockResolveWorkflowRunDetails.mockReset()
     mockGetRepositoryId.mockReset()
     mockGetRepositoryId.mockResolvedValue(123)
   })
@@ -321,7 +320,7 @@ describe('refreshCommitChecksOnly', () => {
       },
     )
 
-    expect(mockGetWorkflowTriggerConfig).not.toHaveBeenCalled()
+    expect(mockResolveWorkflowRunDetails).not.toHaveBeenCalled()
     expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined, 555)
   })
 
@@ -336,11 +335,15 @@ describe('refreshCommitChecksOnly', () => {
       matchedCheckSuiteId: null,
       isDefinitive: true,
     })
-    mockGetWorkflowTriggerConfig.mockResolvedValueOnce({
-      workflowPath: '.github/workflows/deploy.yml',
-      triggerEvent: 'push',
-      checkSuiteId: 777,
-      schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+    mockResolveWorkflowRunDetails.mockResolvedValueOnce({
+      headBranch: null,
+      workflowTrigger: {
+        workflowPath: '.github/workflows/deploy.yml',
+        triggerEvent: 'push',
+        checkSuiteId: 777,
+        schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+      },
+      repositoryId: null,
     })
 
     await refreshCommitChecksOnly(
@@ -353,7 +356,7 @@ describe('refreshCommitChecksOnly', () => {
       null,
     )
 
-    expect(mockGetWorkflowTriggerConfig).toHaveBeenCalledWith(
+    expect(mockResolveWorkflowRunDetails).toHaveBeenCalledWith(
       'navikt',
       'nda',
       'https://github.com/navikt/nda/actions/runs/1',

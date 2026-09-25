@@ -31,12 +31,27 @@ export async function findRootApprovedSiblingForCommit(
   const result = await pool.query(
     `SELECT d.id, d.monitored_app_id, d.four_eyes_status
      FROM deployments d
-     JOIN application_repositories ar
+     LEFT JOIN application_repositories ar
        ON ar.monitored_app_id = d.monitored_app_id
-       AND ar.github_owner = d.detected_github_owner
-       AND ar.github_repo_name = d.detected_github_repo_name
        AND ar.status IN ('active', 'historical')
-     WHERE ar.github_repo_id = $1
+       AND (
+         (ar.github_repo_id IS NOT NULL AND ar.github_repo_id = $1)
+         OR (
+           ar.github_repo_id IS NULL
+           AND ar.github_owner = d.detected_github_owner
+           AND ar.github_repo_name = d.detected_github_repo_name
+         )
+       )
+     WHERE (
+         (d.github_repo_id IS NOT NULL AND d.github_repo_id = $1)
+         OR (
+           d.github_repo_id IS NULL
+           AND (d.trigger_url IS NULL OR d.trigger_url !~ '/actions/runs/[0-9]+')
+           AND ar.github_repo_id = $1
+           AND ar.github_owner = d.detected_github_owner
+           AND ar.github_repo_name = d.detected_github_repo_name
+         )
+       )
        AND d.commit_sha = $2
        AND d.id <= $3
        AND d.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
@@ -209,13 +224,28 @@ async function queryCandidates(
   const query = `
     SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
     FROM deployments d
-    JOIN application_repositories ar
+    LEFT JOIN application_repositories ar
       ON ar.monitored_app_id = d.monitored_app_id
-      AND ar.github_owner = d.detected_github_owner
-      AND ar.github_repo_name = d.detected_github_repo_name
       AND ar.status IN ('active', 'historical')
+      AND (
+        (ar.github_repo_id IS NOT NULL AND ar.github_repo_id = $2)
+        OR (
+          ar.github_repo_id IS NULL
+          AND ar.github_owner = d.detected_github_owner
+          AND ar.github_repo_name = d.detected_github_repo_name
+        )
+      )
     WHERE (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
-      AND ar.github_repo_id = $2
+      AND (
+        (d.github_repo_id IS NOT NULL AND d.github_repo_id = $2)
+        OR (
+          d.github_repo_id IS NULL
+          AND (d.trigger_url IS NULL OR d.trigger_url !~ '/actions/runs/[0-9]+')
+          AND ar.github_repo_id = $2
+          AND ar.github_owner = d.detected_github_owner
+          AND ar.github_repo_name = d.detected_github_repo_name
+        )
+      )
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
       AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
