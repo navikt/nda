@@ -8,11 +8,12 @@ import {
   Scripts,
   ScrollRestoration,
   useLoaderData,
+  useNavigation,
 } from 'react-router'
 
 import type { Route } from './+types/root'
 import '@navikt/ds-css'
-import { Page, Theme } from '@navikt/ds-react'
+import { Loader, Page, Theme } from '@navikt/ds-react'
 import { ThemeProvider } from './hooks/useTheme'
 import { serializeAdminElevation } from './lib/admin-elevation.server'
 import { getUserIdentity } from './lib/auth.server'
@@ -78,9 +79,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const { theme } = useLoaderData<typeof loader>()
+  const navigation = useNavigation()
+  const isNavigating = Boolean(navigation.location)
+
   return (
     <ThemeProvider initialTheme={theme}>
       <Theme theme={theme}>
+        {isNavigating && (
+          <div className={styles.navigationLoading} role="status" aria-live="polite">
+            <Loader size="small" title="Laster side…" />
+          </div>
+        )}
         <Outlet />
       </Theme>
     </ThemeProvider>
