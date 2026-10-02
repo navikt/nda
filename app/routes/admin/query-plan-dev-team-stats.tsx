@@ -41,6 +41,12 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionData>
 
   const devTeams = await getAllDevTeams()
   const selectedTeams = devTeams.filter((t) => devTeamIds.includes(t.id))
+  const validatedDevTeamIds = selectedTeams.map((t) => t.id)
+
+  if (validatedDevTeamIds.length === 0) {
+    return { error: 'Fant ingen gyldige team blant de valgte' }
+  }
+
   const scope = await resolveDevTeamScope(selectedTeams)
   const ytdStart = new Date(new Date().getFullYear(), 0, 1)
 
@@ -49,7 +55,7 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionData>
     scope.directAppIds,
     ytdStart,
     scope.deployerUsernames,
-    devTeamIds,
+    validatedDevTeamIds,
   )
 
   const startedAt = Date.now()
@@ -57,7 +63,7 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionData>
     const explainResult = await pool.query(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${sql}`, params)
     const measuredDurationMs = Date.now() - startedAt
     const planJson = JSON.stringify(explainResult.rows[0]['QUERY PLAN'], null, 2)
-    return { planJson, measuredDurationMs, devTeamIds }
+    return { planJson, measuredDurationMs, devTeamIds: validatedDevTeamIds }
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) }
   }
