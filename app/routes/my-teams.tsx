@@ -70,7 +70,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const devTeamIds = selectedDevTeams.map((t) => t.id)
 
-  const [teamStats, issueApps, unmappedContributors, alertCounts, activeReposByApp, ...boardsByTeam] =
+  const [teamStats, issueApps, unmappedContributors, alertCounts, activeReposByApp, allApps, ...boardsByTeam] =
     await Promise.all([
       getDevTeamSummaryStats(scope.naisTeamSlugs, scope.directAppIds, ytdStart, scope.deployerUsernames, devTeamIds),
       getDevTeamAppsWithIssues(scope.naisTeamSlugs, scope.directAppIds, scope.deployerUsernames),
@@ -79,10 +79,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         : Promise.resolve([] as string[]),
       getAllAlertCounts(),
       getAllActiveRepositories(),
+      getAllMonitoredApplications(),
       ...selectedDevTeams.map((t) => getBoardsByDevTeam(t.id)),
     ])
-
-  const allApps = await getAllMonitoredApplications()
 
   const issueAppKeys = new Set(issueApps.map((a) => `${a.team_slug}/${a.environment_name}/${a.app_name}`))
   const matchingApps = allApps.filter((app) =>

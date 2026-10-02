@@ -135,8 +135,9 @@ export async function getAppDeploymentStatsBatch(
     paramIndex++
   }
 
-  const result = await pool.query(
-    `SELECT 
+  const [result, baselineResult, lastDeploymentResult] = await Promise.all([
+    pool.query(
+      `SELECT 
       monitored_app_id,
       COUNT(*) FILTER (WHERE TRUE${deployerFilterClause}) as total,
       COUNT(*) FILTER (WHERE COALESCE(four_eyes_status, 'unknown') = ANY($2::text[])${deployerFilterClause}) as with_four_eyes,
@@ -146,30 +147,29 @@ export async function getAppDeploymentStatsBatch(
     FROM deployments
     WHERE monitored_app_id = ANY($1) ${auditYearFilter} ${dateFilter}
     GROUP BY monitored_app_id`,
-    baseParams,
-  )
-
-  const baselineResult = await pool.query(
-    `SELECT monitored_app_id, COUNT(*) AS baseline_action_count
+      baseParams,
+    ),
+    pool.query(
+      `SELECT monitored_app_id, COUNT(*) AS baseline_action_count
      FROM deployments
      WHERE monitored_app_id = ANY($1) ${auditYearFilter}
        AND ${baselineActionSql('deployments')}
      GROUP BY monitored_app_id`,
-    [appIds],
-  )
+      [appIds],
+    ),
+    pool.query(
+      `SELECT DISTINCT ON (monitored_app_id) monitored_app_id, id
+     FROM deployments
+     WHERE monitored_app_id = ANY($1)
+     ORDER BY monitored_app_id, created_at DESC`,
+      [appIds],
+    ),
+  ])
 
   const baselineByApp = new Map<number, number>()
   for (const row of baselineResult.rows) {
     baselineByApp.set(row.monitored_app_id, parseInt(row.baseline_action_count, 10) || 0)
   }
-
-  const lastDeploymentResult = await pool.query(
-    `SELECT DISTINCT ON (monitored_app_id) monitored_app_id, id
-     FROM deployments
-     WHERE monitored_app_id = ANY($1)
-     ORDER BY monitored_app_id, created_at DESC`,
-    [appIds],
-  )
 
   const lastDeploymentIds = new Map<number, number>()
   for (const row of lastDeploymentResult.rows) {

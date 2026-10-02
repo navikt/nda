@@ -57,8 +57,9 @@ export async function getBoardObjectiveProgress(
     ? `LEFT JOIN (deployment_goal_links dgl JOIN deployments d ON d.id = dgl.deployment_id) ON dgl.key_result_id = bkr.id AND dgl.is_active = true${filterWhere}`
     : 'LEFT JOIN deployment_goal_links dgl ON dgl.key_result_id = bkr.id AND dgl.is_active = true'
 
-  const krResult = await pool.query(
-    `SELECT bkr.id, bkr.objective_id, bkr.title, bkr.sort_order,
+  const [krResult, combinedLinksResult, totalDistinctResult] = await Promise.all([
+    pool.query(
+      `SELECT bkr.id, bkr.objective_id, bkr.title, bkr.sort_order,
             COALESCE(bkr.keywords, '{}'::text[]) AS keywords, bkr.dependabot_target,
             COUNT(DISTINCT dgl.deployment_id) AS linked_deployments
      FROM board_key_results bkr
@@ -66,11 +67,10 @@ export async function getBoardObjectiveProgress(
      WHERE bkr.objective_id = ANY($1::int[]) AND bkr.is_active = true
      GROUP BY bkr.id, bkr.objective_id, bkr.title, bkr.sort_order, bkr.keywords, bkr.dependabot_target
      ORDER BY bkr.sort_order, bkr.id`,
-    baseParams,
-  )
-
-  const combinedLinksResult = await pool.query(
-    `SELECT combined.objective_id, COUNT(DISTINCT combined.deployment_id)::int AS cnt
+      baseParams,
+    ),
+    pool.query(
+      `SELECT combined.objective_id, COUNT(DISTINCT combined.deployment_id)::int AS cnt
      FROM (
        SELECT dgl.objective_id, dgl.deployment_id
        FROM deployment_goal_links dgl${deployerJoin}
@@ -82,8 +82,20 @@ export async function getBoardObjectiveProgress(
        WHERE bkr.objective_id = ANY($1::int[]) AND dgl.is_active = true${filterWhere}
      ) combined
      GROUP BY combined.objective_id`,
-    baseParams,
-  )
+      baseParams,
+    ),
+    pool.query(
+      `SELECT COUNT(DISTINCT dgl.deployment_id)::int AS cnt
+     FROM deployment_goal_links dgl${deployerJoin}
+     WHERE dgl.is_active = true${filterWhere}
+       AND (dgl.objective_id = ANY($1::int[])
+            OR dgl.key_result_id IN (
+              SELECT bkr.id FROM board_key_results bkr
+              WHERE bkr.objective_id = ANY($1::int[]) AND bkr.is_active = true
+            ))`,
+      baseParams,
+    ),
+  ])
 
   const krsByObjective = new Map<
     number,
@@ -107,17 +119,6 @@ export async function getBoardObjectiveProgress(
     combinedByObjective.set(row.objective_id as number, Number(row.cnt))
   }
 
-  const totalDistinctResult = await pool.query(
-    `SELECT COUNT(DISTINCT dgl.deployment_id)::int AS cnt
-     FROM deployment_goal_links dgl${deployerJoin}
-     WHERE dgl.is_active = true${filterWhere}
-       AND (dgl.objective_id = ANY($1::int[])
-            OR dgl.key_result_id IN (
-              SELECT bkr.id FROM board_key_results bkr
-              WHERE bkr.objective_id = ANY($1::int[]) AND bkr.is_active = true
-            ))`,
-    baseParams,
-  )
   const totalDistinctDeployments = Number(totalDistinctResult.rows[0]?.cnt ?? 0)
 
   return {
