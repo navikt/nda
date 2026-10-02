@@ -11,11 +11,13 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { Form, useActionData, useLoaderData, useNavigation } from 'react-router'
+import { ActionAlert } from '~/components/ActionAlert'
 import { pool } from '~/db/connection.server'
 import { resolveDevTeamScope } from '~/db/deployments/home.server'
 import { getAllDevTeams } from '~/db/dev-teams.server'
 import { effectiveAuditStartYearSql } from '~/db/repository-settings-sql'
 import { lowerUsernames } from '~/db/user-deployment-match'
+import { fail } from '~/lib/action-result'
 import { requireAdmin } from '~/lib/auth.server'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { Route } from './+types/query-plan-dev-team-stats'
@@ -30,7 +32,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { devTeams }
 }
 
-type ActionData = { error: string } | { planJson: string; measuredDurationMs: number; devTeamIds: number[] }
+type ActionData = ReturnType<typeof fail> | { planJson: string; measuredDurationMs: number; devTeamIds: number[] }
 
 function buildDiagnosticQuery(
   naisTeamSlugs: string[],
@@ -126,7 +128,7 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionData>
   const devTeamIds = formData.getAll('devTeamId').map((v) => Number(v))
 
   if (devTeamIds.length === 0) {
-    return { error: 'Velg minst ett team' }
+    return fail('Velg minst ett team')
   }
 
   const devTeams = await getAllDevTeams()
@@ -134,7 +136,7 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionData>
   const validatedDevTeamIds = selectedTeams.map((t) => t.id)
 
   if (validatedDevTeamIds.length === 0) {
-    return { error: 'Fant ingen gyldige team blant de valgte' }
+    return fail('Fant ingen gyldige team blant de valgte')
   }
 
   const scope = await resolveDevTeamScope(selectedTeams)
@@ -149,13 +151,19 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionData>
   )
 
   const startedAt = Date.now()
+  const client = await pool.connect()
   try {
-    const explainResult = await pool.query(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${sql}`, params)
+    await client.query('BEGIN')
+    await client.query("SET LOCAL statement_timeout = '15s'")
+    const explainResult = await client.query(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${sql}`, params)
     const measuredDurationMs = Date.now() - startedAt
     const planJson = JSON.stringify(explainResult.rows[0]['QUERY PLAN'], null, 2)
     return { planJson, measuredDurationMs, devTeamIds: validatedDevTeamIds }
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) }
+    return fail(error instanceof Error ? error.message : String(error))
+  } finally {
+    await client.query('ROLLBACK').catch(() => {})
+    client.release()
   }
 }
 
@@ -201,11 +209,7 @@ export default function QueryPlanDevTeamStatsPage() {
         </VStack>
       </Form>
 
-      {actionData && 'error' in actionData && (
-        <Alert variant="error" size="small">
-          {actionData.error}
-        </Alert>
-      )}
+      <ActionAlert data={actionData} />
 
       {actionData && 'planJson' in actionData && (
         <Box padding="space-16" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
