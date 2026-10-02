@@ -1302,4 +1302,134 @@ describe('getDevTeamSummaryStats board-based counting', () => {
     const result = await getDevTeamSummaryStats(['nais-nodep'], [], startDate, undefined, devTeamId)
     expect(result.total_deployments).toBe(1)
   })
+
+  it('counts deployments linked via board_key_results (key-result path) and excludes inactive key results', async () => {
+    const sectionId = await seedSection(pool, 'kr-path-section')
+    const devTeamId = await seedDevTeam(pool, 'kr-path-team', 'kr-path-team', sectionId)
+    const appId = await seedApp(pool, { teamSlug: 'nais-kr-path', appName: 'kr-path-app', environment: 'prod' })
+
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      devTeamId,
+      appId,
+    ])
+    await pool.query("INSERT INTO users (nav_ident, display_name) VALUES ('Z990101', 'Glad Fjord')")
+    await pool.query("INSERT INTO user_github_accounts (github_username, nav_ident) VALUES ('gladfjord', 'Z990101')")
+    await pool.query(
+      `INSERT INTO dev_team_role_assignments (nav_ident, dev_team_id, role, assigned_by) VALUES ('Z990101', $1, 'utvikler', 'test')`,
+      [devTeamId],
+    )
+
+    const boardId = (
+      await pool.query(
+        `INSERT INTO boards (dev_team_id, title, period_type, period_label, period_start, period_end, is_active)
+         VALUES ($1, 'Board', 'tertiary', 'T1 2026', '2026-01-01', '2026-04-30', true) RETURNING id`,
+        [devTeamId],
+      )
+    ).rows[0].id
+    const objectiveId = (
+      await pool.query(
+        `INSERT INTO board_objectives (board_id, title, is_active, sort_order)
+         VALUES ($1, 'Obj', true, 1) RETURNING id`,
+        [boardId],
+      )
+    ).rows[0].id
+    const activeKeyResultId = (
+      await pool.query(
+        `INSERT INTO board_key_results (objective_id, title, sort_order, is_active) VALUES ($1, 'KR-active', 0, true) RETURNING id`,
+        [objectiveId],
+      )
+    ).rows[0].id
+    const inactiveKeyResultId = (
+      await pool.query(
+        `INSERT INTO board_key_results (objective_id, title, sort_order, is_active) VALUES ($1, 'KR-inactive', 1, false) RETURNING id`,
+        [objectiveId],
+      )
+    ).rows[0].id
+
+    const otherDevTeamId = await seedDevTeam(pool, 'kr-path-other-team', 'kr-path-other-team', sectionId)
+    const otherBoardId = (
+      await pool.query(
+        `INSERT INTO boards (dev_team_id, title, period_type, period_label, period_start, period_end, is_active)
+         VALUES ($1, 'Other Board', 'tertiary', 'T1 2026', '2026-01-01', '2026-04-30', true) RETURNING id`,
+        [otherDevTeamId],
+      )
+    ).rows[0].id
+    const otherObjectiveId = (
+      await pool.query(
+        `INSERT INTO board_objectives (board_id, title, is_active, sort_order)
+         VALUES ($1, 'Other Obj', true, 1) RETURNING id`,
+        [otherBoardId],
+      )
+    ).rows[0].id
+    const otherTeamKeyResultId = (
+      await pool.query(
+        `INSERT INTO board_key_results (objective_id, title, sort_order, is_active) VALUES ($1, 'KR-other-team', 0, true) RETURNING id`,
+        [otherObjectiveId],
+      )
+    ).rows[0].id
+
+    const now = new Date()
+    const startDate = new Date(now.getFullYear(), 0, 1)
+
+    const depLinkedToActiveKeyResult = await seedDeploymentWithStatus(
+      pool,
+      appId,
+      'nais-kr-path',
+      now,
+      'approved_pr',
+      'outsider',
+    )
+    await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method, is_active)
+       VALUES ($1, $2, 'manual', true)`,
+      [depLinkedToActiveKeyResult, activeKeyResultId],
+    )
+
+    const depLinkedToInactiveKeyResult = await seedDeploymentWithStatus(
+      pool,
+      appId,
+      'nais-kr-path',
+      now,
+      'approved_pr',
+      'outsider',
+    )
+    await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method, is_active)
+       VALUES ($1, $2, 'manual', true)`,
+      [depLinkedToInactiveKeyResult, inactiveKeyResultId],
+    )
+
+    const depByMemberLinkedToActiveKeyResult = await seedDeploymentWithStatus(
+      pool,
+      appId,
+      'nais-kr-path',
+      now,
+      'approved_pr',
+      'gladfjord',
+    )
+    await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method, is_active)
+       VALUES ($1, $2, 'manual', true)`,
+      [depByMemberLinkedToActiveKeyResult, activeKeyResultId],
+    )
+
+    const depByMemberLinkedToOtherTeamsKeyResult = await seedDeploymentWithStatus(
+      pool,
+      appId,
+      'nais-kr-path',
+      now,
+      'approved_pr',
+      'gladfjord',
+    )
+    await pool.query(
+      `INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method, is_active)
+       VALUES ($1, $2, 'manual', true)`,
+      [depByMemberLinkedToOtherTeamsKeyResult, otherTeamKeyResultId],
+    )
+
+    const result = await getDevTeamSummaryStats(['nais-kr-path'], [], startDate, ['gladfjord'], devTeamId)
+
+    expect(result.total_deployments).toBe(2)
+    expect(result.linked_to_goal).toBe(2)
+  })
 })
