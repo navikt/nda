@@ -212,19 +212,28 @@ export async function isAppBlockedByRunningJob(
   excludeJobId?: number,
 ): Promise<boolean> {
   const result = await pool.query(
-    `SELECT 1 FROM sync_jobs sj
-     WHERE sj.job_type = ANY($1::text[]) AND sj.status = 'running' AND sj.lock_expires_at > NOW()
-       AND ($3::int IS NULL OR sj.id != $3)
-       AND (
-         (sj.job_type = 'reverify_all' AND sj.repository_id IS NULL)
-         OR (sj.job_type = 'refresh_missing_approver' AND sj.repository_id IS NULL AND sj.monitored_app_id IS NULL)
-         OR sj.monitored_app_id = $2
-         OR sj.repository_id IN (
-           SELECT r.id FROM application_repositories ar
-           JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-           WHERE ar.monitored_app_id = $2 AND ar.status IN ('active', 'historical')
-         )
-       )
+    `SELECT 1 FROM (
+       SELECT sj.id FROM sync_jobs sj
+       WHERE sj.job_type = ANY($1::text[]) AND sj.status = 'running' AND sj.lock_expires_at > NOW()
+         AND ($3::int IS NULL OR sj.id != $3)
+         AND sj.job_type = 'reverify_all' AND sj.repository_id IS NULL
+       UNION ALL
+       SELECT sj.id FROM sync_jobs sj
+       WHERE sj.job_type = ANY($1::text[]) AND sj.status = 'running' AND sj.lock_expires_at > NOW()
+         AND ($3::int IS NULL OR sj.id != $3)
+         AND sj.job_type = 'refresh_missing_approver' AND sj.repository_id IS NULL AND sj.monitored_app_id IS NULL
+       UNION ALL
+       SELECT sj.id FROM sync_jobs sj
+       WHERE sj.job_type = ANY($1::text[]) AND sj.status = 'running' AND sj.lock_expires_at > NOW()
+         AND ($3::int IS NULL OR sj.id != $3)
+         AND sj.monitored_app_id = $2
+       UNION ALL
+       SELECT sj.id FROM sync_jobs sj
+       JOIN application_repositories ar ON ar.monitored_app_id = $2 AND ar.status IN ('active', 'historical')
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id AND r.id = sj.repository_id
+       WHERE sj.job_type = ANY($1::text[]) AND sj.status = 'running' AND sj.lock_expires_at > NOW()
+         AND ($3::int IS NULL OR sj.id != $3)
+     ) blocked
      LIMIT 1`,
     [jobTypes, appId, excludeJobId ?? null],
   )

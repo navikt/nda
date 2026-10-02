@@ -85,14 +85,17 @@ export async function getBoardObjectiveProgress(
       baseParams,
     ),
     pool.query(
-      `SELECT COUNT(DISTINCT dgl.deployment_id)::int AS cnt
-     FROM deployment_goal_links dgl${deployerJoin}
-     WHERE dgl.is_active = true${filterWhere}
-       AND (dgl.objective_id = ANY($1::int[])
-            OR dgl.key_result_id IN (
-              SELECT bkr.id FROM board_key_results bkr
-              WHERE bkr.objective_id = ANY($1::int[]) AND bkr.is_active = true
-            ))`,
+      `SELECT COUNT(DISTINCT combined.deployment_id)::int AS cnt
+     FROM (
+       SELECT dgl.deployment_id
+       FROM deployment_goal_links dgl${deployerJoin}
+       WHERE dgl.objective_id = ANY($1::int[]) AND dgl.is_active = true${filterWhere}
+       UNION ALL
+       SELECT dgl.deployment_id
+       FROM deployment_goal_links dgl
+       JOIN board_key_results bkr ON bkr.id = dgl.key_result_id AND bkr.is_active = true${deployerJoin}
+       WHERE bkr.objective_id = ANY($1::int[]) AND dgl.is_active = true${filterWhere}
+     ) combined`,
       baseParams,
     ),
   ])
