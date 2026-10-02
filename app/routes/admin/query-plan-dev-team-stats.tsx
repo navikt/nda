@@ -57,9 +57,18 @@ function buildDiagnosticQuery(
          SELECT DISTINCT d.id AS deployment_id
          FROM boards b
          JOIN board_objectives bo ON bo.board_id = b.id AND bo.is_active = true
-         JOIN deployment_goal_links dgl ON dgl.is_active = true
-           AND (dgl.objective_id = bo.id
-                OR dgl.key_result_id IN (SELECT bkr.id FROM board_key_results bkr WHERE bkr.objective_id = bo.id AND bkr.is_active = true))
+         JOIN deployment_goal_links dgl ON dgl.is_active = true AND dgl.objective_id = bo.id
+         JOIN deployments d ON d.id = dgl.deployment_id
+           AND ($3::timestamptz IS NULL OR d.created_at >= $3)
+         JOIN team_apps ta ON ta.id = d.monitored_app_id
+         WHERE b.dev_team_id = ANY($${devTeamIdParam}::int[]) AND b.is_active = true
+           AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))
+         UNION
+         SELECT DISTINCT d.id AS deployment_id
+         FROM boards b
+         JOIN board_objectives bo ON bo.board_id = b.id AND bo.is_active = true
+         JOIN board_key_results bkr ON bkr.objective_id = bo.id AND bkr.is_active = true
+         JOIN deployment_goal_links dgl ON dgl.is_active = true AND dgl.key_result_id = bkr.id
          JOIN deployments d ON d.id = dgl.deployment_id
            AND ($3::timestamptz IS NULL OR d.created_at >= $3)
          JOIN team_apps ta ON ta.id = d.monitored_app_id
@@ -76,10 +85,15 @@ function buildDiagnosticQuery(
                 OR d.pr_creator_username = ANY($${deployerParam}::text[]))
          WHERE NOT EXISTS (
            SELECT 1 FROM deployment_goal_links dgl
-           JOIN board_objectives bo ON (dgl.objective_id = bo.id
-             OR dgl.key_result_id IN (SELECT bkr.id FROM board_key_results bkr WHERE bkr.objective_id = bo.id AND bkr.is_active = true))
+           JOIN board_objectives bo ON dgl.objective_id = bo.id AND bo.is_active = true
            JOIN boards b ON b.id = bo.board_id AND b.is_active = true
-           WHERE dgl.deployment_id = d.id AND dgl.is_active = true AND bo.is_active = true
+           WHERE dgl.deployment_id = d.id AND dgl.is_active = true
+           UNION ALL
+           SELECT 1 FROM deployment_goal_links dgl
+           JOIN board_key_results bkr ON dgl.key_result_id = bkr.id AND bkr.is_active = true
+           JOIN board_objectives bo ON bkr.objective_id = bo.id AND bo.is_active = true
+           JOIN boards b ON b.id = bo.board_id AND b.is_active = true
+           WHERE dgl.deployment_id = d.id AND dgl.is_active = true
          )
        ),
        team_deployments AS (
