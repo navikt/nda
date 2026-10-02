@@ -85,11 +85,9 @@ export default function App() {
   return (
     <ThemeProvider initialTheme={theme}>
       <Theme theme={theme}>
-        {isNavigating && (
-          <div className={styles.navigationLoading} role="status" aria-live="polite">
-            <Loader size="small" title="Laster side…" />
-          </div>
-        )}
+        <div className={styles.navigationLoading} role="status" aria-live="polite">
+          {isNavigating && <Loader size="small" title="Laster side…" />}
+        </div>
         <Outlet />
       </Theme>
     </ThemeProvider>

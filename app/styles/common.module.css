@@ -29,6 +29,11 @@
   border-bottom: 1px solid var(--ax-border-neutral-subtle);
 }
 
+.navigationLoading:empty {
+  padding: 0;
+  border-bottom: none;
+}
+
 /* Stacked list styles - for connected cards without gaps */
 .stackedListItem {
   border-radius: 0;
