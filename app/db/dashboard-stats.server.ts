@@ -142,23 +142,28 @@ export async function getSectionDashboardStats(
   }))
 }
 
-export function buildDevTeamSummaryStatsWithBoardsQuery(
+export async function getDevTeamSummaryStats(
   naisTeamSlugs: string[],
-  directAppIds: number[] | undefined,
-  startDate: Date | undefined,
-  deployerUsernames: string[] | undefined,
-  devTeamIds: number[],
-): { sql: string; params: unknown[] } {
+  directAppIds?: number[],
+  startDate?: Date,
+  deployerUsernames?: string[],
+  devTeamId?: number | number[],
+): Promise<DevTeamSummaryStats> {
   const ids = directAppIds ?? []
+
+  const hasDeployerFilter = deployerUsernames !== undefined
   const params: unknown[] = [naisTeamSlugs, ids, startDate ?? null]
 
-  params.push(devTeamIds)
-  const devTeamIdParam = params.length
-  const effectiveDeployers = deployerUsernames ?? []
-  params.push(lowerUsernames(effectiveDeployers))
-  const deployerParam = params.length
+  const devTeamIds = devTeamId !== undefined ? (Array.isArray(devTeamId) ? devTeamId : [devTeamId]) : undefined
+  if (devTeamIds !== undefined) {
+    params.push(devTeamIds)
+    const devTeamIdParam = params.length
+    const effectiveDeployers = deployerUsernames ?? []
+    params.push(lowerUsernames(effectiveDeployers))
+    const deployerParam = params.length
 
-  const sql = `WITH team_apps AS (
+    const result = await pool.query(
+      `WITH team_apps AS (
          SELECT ma.id, ${effectiveAuditStartYearSql('ma')} AS audit_start_year
          FROM monitored_applications ma
          WHERE ma.is_active = true
@@ -230,33 +235,9 @@ export function buildDevTeamSummaryStatsWithBoardsQuery(
          COUNT(*) FILTER (WHERE COALESCE(s.total_deployments, 0) - COALESCE(s.with_four_eyes, 0) - COALESCE(s.pending_verification, 0) > 0 OR COALESCE(s.pending_verification, 0) > 0 OR COALESCE(a.alert_count, 0) > 0 OR (COALESCE(s.total_deployments, 0) > 0 AND COALESCE(s.linked_to_goal, 0) < COALESCE(s.total_deployments, 0)))::int AS apps_with_issues
        FROM team_apps ta
        LEFT JOIN app_stats s ON s.monitored_app_id = ta.id
-       LEFT JOIN app_alerts a ON a.monitored_app_id = ta.id`
-
-  return { sql, params }
-}
-
-export async function getDevTeamSummaryStats(
-  naisTeamSlugs: string[],
-  directAppIds?: number[],
-  startDate?: Date,
-  deployerUsernames?: string[],
-  devTeamId?: number | number[],
-): Promise<DevTeamSummaryStats> {
-  const ids = directAppIds ?? []
-
-  const hasDeployerFilter = deployerUsernames !== undefined
-  const params: unknown[] = [naisTeamSlugs, ids, startDate ?? null]
-
-  const devTeamIds = devTeamId !== undefined ? (Array.isArray(devTeamId) ? devTeamId : [devTeamId]) : undefined
-  if (devTeamIds !== undefined) {
-    const built = buildDevTeamSummaryStatsWithBoardsQuery(
-      naisTeamSlugs,
-      directAppIds,
-      startDate,
-      deployerUsernames,
-      devTeamIds,
+       LEFT JOIN app_alerts a ON a.monitored_app_id = ta.id`,
+      params,
     )
-    const result = await pool.query(built.sql, built.params)
 
     const row = result.rows[0]
     const total = row?.total_deployments ?? 0
