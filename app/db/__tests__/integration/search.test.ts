@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { searchDeployments } from '../../deployments.server'
-import { seedApp, seedApplicationRepository, seedRepository, truncateAllTables } from './helpers'
+import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -109,6 +109,53 @@ describe('searchDeployments application results', () => {
     const appResult = (await searchDeployments('single-app', 10)).find((result) => result.type === 'app')
 
     expect(appResult?.subtitle).toBe('Miljø: prod-gcp · team-a')
+  })
+})
+
+describe('searchDeployments SHA results', () => {
+  it('includes the deployment environment in the result subtitle', async () => {
+    const monitoredAppId = await seedApp(pool, {
+      teamSlug: 'pensjonopptjening',
+      appName: 'pensjon-alde-pdf',
+      environment: 'prod-gcp',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId,
+      teamSlug: 'pensjonopptjening',
+      appName: 'pensjon-alde-pdf',
+      environment: 'prod-gcp',
+      commitSha: 'f782230c0d3abc123',
+      deployerUsername: 'c0d3x',
+    })
+
+    const result = (await searchDeployments('f782230', 10)).find((match) => match.type === 'deployment')
+
+    expect(result?.subtitle).toBe('pensjon-alde-pdf · Miljø: prod-gcp · c0d3x')
+  })
+
+  it('uses the deployment environment snapshot if the application environment changes', async () => {
+    const monitoredAppId = await seedApp(pool, {
+      teamSlug: 'pensjonopptjening',
+      appName: 'pensjon-alde-pdf',
+      environment: 'prod-fss',
+    })
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId,
+      teamSlug: 'pensjonopptjening',
+      appName: 'pensjon-alde-pdf',
+      environment: 'prod-fss',
+      commitSha: 'f782230c0d3abc123',
+      deployerUsername: 'c0d3x',
+    })
+    await pool.query('UPDATE monitored_applications SET environment_name = $1 WHERE id = $2', [
+      'prod-gcp',
+      monitoredAppId,
+    ])
+
+    const result = (await searchDeployments('f782230', 10)).find((match) => match.type === 'deployment')
+
+    expect(result?.url).toBe(`/team/pensjonopptjening/env/prod-gcp/app/pensjon-alde-pdf/deployments/${deploymentId}`)
+    expect(result?.subtitle).toBe('pensjon-alde-pdf · Miljø: prod-fss · c0d3x')
   })
 })
 

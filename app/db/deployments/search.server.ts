@@ -65,7 +65,8 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
 
   if (looksLikeSha) {
     const shaResult = await pool.query(
-      `SELECT d.id, d.commit_sha, d.deployer_username, d.created_at,
+      `SELECT d.id, d.commit_sha, d.environment_name AS deployment_environment_name,
+              d.deployer_username, d.created_at,
               ma.team_slug, ma.environment_name, ma.app_name
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
@@ -80,7 +81,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
         id: row.id,
         url: `/team/${row.team_slug}/env/${row.environment_name}/app/${row.app_name}/deployments/${row.id}`,
         title: `${row.commit_sha?.substring(0, 7)}`,
-        subtitle: `${row.app_name} • ${row.deployer_username || 'ukjent'}`,
+        subtitle: `${row.app_name} · Miljø: ${row.deployment_environment_name} · ${row.deployer_username || 'ukjent'}`,
       })
     }
     if (results.length > 0) {
