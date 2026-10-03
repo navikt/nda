@@ -127,17 +127,40 @@ export async function getPreviousDeploymentForNav(
 export async function getPreviousDeploymentForDiff(
   currentDeploymentId: number,
   monitoredAppId: number,
-): Promise<{ commit_sha: string } | null> {
-  const sql = `SELECT prev.commit_sha FROM deployments prev
-     CROSS JOIN deployments curr
+  githubRepoId?: string | null,
+): Promise<{ commit_sha: string; created_at: Date } | null> {
+  if (githubRepoId === null) return null
+
+  const repositoryIdentityJoins =
+    githubRepoId === undefined
+      ? ''
+      : `JOIN application_repositories prev_ar
+           ON prev_ar.monitored_app_id = prev.monitored_app_id
+           AND prev_ar.github_owner = prev.detected_github_owner
+           AND prev_ar.github_repo_name = prev.detected_github_repo_name
+           AND prev_ar.github_repo_id = $3
+           AND prev_ar.status IN ('active', 'historical')
+         JOIN application_repositories curr_ar
+           ON curr_ar.monitored_app_id = curr.monitored_app_id
+           AND curr_ar.github_owner = curr.detected_github_owner
+           AND curr_ar.github_repo_name = curr.detected_github_repo_name
+           AND curr_ar.github_repo_id = $3
+           AND curr_ar.status IN ('active', 'historical')`
+
+  const sql = `SELECT prev.commit_sha, prev.created_at FROM deployments prev
+     JOIN deployments curr ON curr.id = $2
+     ${repositoryIdentityJoins}
      WHERE prev.monitored_app_id = $1
-       AND curr.id = $2
        AND prev.created_at < curr.created_at
        AND prev.commit_sha IS NOT NULL
        AND prev.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
        AND prev.commit_sha !~ '^refs/'
      ORDER BY prev.created_at DESC LIMIT 1`
 
-  const result = await pool.query(sql, [monitoredAppId, currentDeploymentId])
+  const params =
+    githubRepoId === undefined
+      ? [monitoredAppId, currentDeploymentId]
+      : [monitoredAppId, currentDeploymentId, githubRepoId]
+  const result = await pool.query(sql, params)
   return result.rows[0] || null
 }

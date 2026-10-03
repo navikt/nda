@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { getPreviousDeploymentForDiff as getAppPreviousDeploymentForDiff } from '~/db/deployments/navigation.server'
 import { getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
@@ -55,6 +56,48 @@ describe('getPreviousDeploymentForDiff', () => {
 
     const prev = await getPreviousDeploymentForDiff(firstId, '9001')
     expect(prev?.id).toBe(olderId)
+  })
+
+  it('does not use a deployment from a previous repository after the app changes repositories', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: 'old-repository',
+      githubRepoId: '9001',
+      status: 'historical',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: 'new-repository',
+      githubRepoId: '9002',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'oldsha11aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2026-01-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: 'old-repository',
+    })
+    const newDeploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'newsha11aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2026-02-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: 'new-repository',
+    })
+
+    const previous = await getAppPreviousDeploymentForDiff(newDeploymentId, appId, '9002')
+    expect(previous).toBeNull()
   })
 
   it('returns previous deployment within audit window', async () => {

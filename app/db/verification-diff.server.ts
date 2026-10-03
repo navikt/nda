@@ -7,6 +7,7 @@ import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 interface VerificationDiffDeployment {
   id: number
   commit_sha: string
+  verification_base_sha: string | null
   four_eyes_status: string
   github_pr_number: number | null
   environment_name: string
@@ -22,6 +23,7 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
     `SELECT 
         d.id,
         d.commit_sha,
+        d.verification_base_sha,
         d.four_eyes_status,
         d.github_pr_number,
         d.environment_name,
@@ -88,9 +90,10 @@ export async function getPreviousDeploymentForDiff(
   created_at: Date
   monitored_app_id: number
   four_eyes_status: string
+  verification_base_sha: string | null
 } | null> {
   const result = await pool.query(
-    `SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
+    `SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status, d.verification_base_sha
      FROM deployments d
      JOIN application_repositories ar
        ON ar.monitored_app_id = d.monitored_app_id

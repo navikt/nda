@@ -259,6 +259,7 @@ const baseLoaderData: DeploymentDetailLoaderData = {
   },
   previousDeploymentForDiff: {
     commit_sha: '9999999999999999999999999999999999999999',
+    created_at: new Date('2026-02-08T08:00:00Z'),
   },
   nextDeployment: {
     ...baseDeployment,
@@ -460,6 +461,7 @@ export const DirectPush: Story = {
       statusHistory: [],
       previousDeploymentForDiff: {
         commit_sha: '9999999999999999999999999999999999999999',
+        created_at: new Date('2026-02-08T08:00:00Z'),
       },
     },
   },

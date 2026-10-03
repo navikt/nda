@@ -209,6 +209,8 @@ export async function action({
           'manually_approved',
           deployment.commit_sha,
           deployment.monitored_app_id,
+          true,
+          identity.navIdent,
         )
       }
 

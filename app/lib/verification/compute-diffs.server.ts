@@ -1,5 +1,6 @@
 import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
+import { getPreviousDeploymentForDiff as getAppPreviousDeploymentForDiff } from '~/db/deployments/navigation.server'
 import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
 import {
   getSyncJobById,
@@ -14,7 +15,7 @@ import {
 } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
-import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
+import { findRootApprovedSiblingForCommit, preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
 import {
   buildCommitsBetweenFromCache,
   fetchVerificationData,
@@ -113,29 +114,37 @@ export async function computeVerificationDiffs(
 
       const { githubRepoId, status, repositoryId } = await resolveRepoInfo(owner, repo)
       const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
+      const previousAppDeployment = await getAppPreviousDeploymentForDiff(row.id, monitoredAppId, githubRepoId)
+      const comparisonBaseSha = row.verification_base_sha ?? previousAppDeployment?.commit_sha ?? null
+      const matchingApprovedRoot =
+        githubRepoId && comparisonBaseSha
+          ? await findRootApprovedSiblingForCommit(row.commit_sha, githubRepoId, comparisonBaseSha, row.id)
+          : null
       const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
-      const previousDeployment = prevRow
-        ? await preferRootApprovedSibling(
-            {
-              id: prevRow.id,
-              commitSha: prevRow.commit_sha,
-              createdAt: prevRow.created_at.toISOString(),
-              monitoredAppId: prevRow.monitored_app_id,
-              fourEyesStatus: prevRow.four_eyes_status,
-            },
-            row.commit_sha,
-            githubRepoId,
-            monitoredAppId,
-            row.id,
-          )
-        : null
+      const previousDeployment = matchingApprovedRoot
+        ? {
+            ...matchingApprovedRoot,
+            commitSha: row.commit_sha,
+          }
+        : prevRow
+          ? await preferRootApprovedSibling(
+              {
+                id: prevRow.id,
+                commitSha: prevRow.commit_sha,
+                createdAt: prevRow.created_at.toISOString(),
+                monitoredAppId: prevRow.monitored_app_id,
+                fourEyesStatus: prevRow.four_eyes_status,
+                verificationBaseSha: prevRow.verification_base_sha,
+              },
+              row.commit_sha,
+              githubRepoId,
+              monitoredAppId,
+              comparisonBaseSha,
+            )
+          : null
+      const compareBaseSha = comparisonBaseSha ?? previousDeployment?.commitSha ?? null
 
-      const compareSnapshot = await getCompareSnapshotForCommit(
-        owner,
-        repo,
-        row.commit_sha,
-        previousDeployment?.commitSha ?? null,
-      )
+      const compareSnapshot = await getCompareSnapshotForCommit(owner, repo, row.commit_sha, compareBaseSha)
       if (compareSnapshot) {
         const compareData = compareSnapshot.data as CompareData
 
@@ -146,11 +155,11 @@ export async function computeVerificationDiffs(
           previousDeployment.commitSha !== row.commit_sha &&
           (!hasCompareMetadata || !compareData.compare.noDiffDetected)
 
-        const cacheBaseMismatch = previousDeployment && compareSnapshot.base_sha !== previousDeployment.commitSha
+        const cacheBaseMismatch = compareBaseSha && compareSnapshot.base_sha !== compareBaseSha
 
         if (hasSuspiciousCache || cacheBaseMismatch) {
           const reason = cacheBaseMismatch
-            ? `snapshot base_sha ${compareSnapshot.base_sha} ≠ previousDeployment ${previousDeployment?.commitSha}`
+            ? `snapshot base_sha ${compareSnapshot.base_sha} ≠ comparison base ${compareBaseSha}`
             : `0 commits between different SHAs`
           logger.info(`   🔄 Cached compare validation failed for deployment ${row.id}: ${reason} — refetching`)
           input = await fetchVerificationData(
@@ -195,6 +204,7 @@ export async function computeVerificationDiffs(
             implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
             monitoredAppId,
             previousDeployment,
+            comparisonBaseSha,
             previousDeploymentLookupFailed,
             deployedPr,
             commitsBetween,

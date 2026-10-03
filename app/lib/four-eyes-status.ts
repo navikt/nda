@@ -55,6 +55,13 @@ export const PROPAGATABLE_STATUSES: FourEyesStatus[] = [
   'approved_pr_with_unreviewed',
 ]
 
+export const SHAREABLE_REJECTION_STATUSES: FourEyesStatus[] = [
+  'direct_push',
+  'unverified_commits',
+  'approved_pr_with_unreviewed',
+  'missing',
+]
+
 export const NOT_APPROVED_STATUSES: FourEyesStatus[] = [
   'direct_push',
   'unverified_commits',

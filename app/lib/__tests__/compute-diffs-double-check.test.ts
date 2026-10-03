@@ -18,6 +18,10 @@ vi.mock('~/db/connection.server', () => {
   }
 })
 
+vi.mock('~/db/deployments/navigation.server', () => ({
+  getPreviousDeploymentForDiff: vi.fn(),
+}))
+
 vi.mock('~/db/verification-diff.server', () => ({
   getDeploymentsForDiffComputation: vi.fn(),
   getCompareSnapshotForCommit: vi.fn(),
@@ -40,12 +44,18 @@ vi.mock('~/lib/verification/fetch-data.server', () => ({
   getPrDataForDiff: vi.fn(),
 }))
 
+vi.mock('~/lib/verification/fetch-data/previous-deployment.server', () => ({
+  findRootApprovedSiblingForCommit: vi.fn(),
+  preferRootApprovedSibling: vi.fn(async (candidate) => candidate),
+}))
+
 vi.mock('~/lib/verification/verify', () => ({
   verifyDeployment: vi.fn(),
 }))
 
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
+import { getPreviousDeploymentForDiff as getAppPreviousDeploymentForDiff } from '~/db/deployments/navigation.server'
 import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
 import {
   getCompareSnapshotForCommit,
@@ -54,6 +64,7 @@ import {
 } from '~/db/verification-diff.server'
 import { logger } from '~/lib/logger.server'
 import { computeVerificationDiffs } from '~/lib/verification/compute-diffs.server'
+import { findRootApprovedSiblingForCommit } from '~/lib/verification/fetch-data/previous-deployment.server'
 import {
   buildCommitsBetweenFromCache,
   fetchVerificationData,
@@ -70,6 +81,8 @@ const mockGetPrDataForDiff = getPrDataForDiff as Mock
 const mockFindPrForCommit = findPrForCommit as Mock
 const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
 const mockGetRepositoryIdByGithubRepoId = getRepositoryIdByGithubRepoId as Mock
+const mockGetPreviousAppDeployment = getAppPreviousDeploymentForDiff as Mock
+const mockFindRootApprovedSibling = findRootApprovedSiblingForCommit as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
 const mockVerifyDeployment = verifyDeployment as Mock
@@ -139,6 +152,8 @@ function makeVerificationInput(): Record<string, unknown> {
 describe('computeVerificationDiffs double-check logic', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetPreviousAppDeployment.mockResolvedValue(null)
+    mockFindRootApprovedSibling.mockResolvedValue(null)
     mockGetEffectiveSettings.mockResolvedValue({
       repositoryId: null,
       auditStartYear: null,
@@ -324,6 +339,70 @@ describe('computeVerificationDiffs double-check logic', () => {
 
     expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'head123', 'navikt/test-repo', 'prod-gcp', 'main', 1)
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Cached compare validation failed'))
+  })
+
+  it('uses the app-local comparison base when the repository predecessor differs', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', commit_sha: 'head123' })])
+    mockGetPreviousAppDeployment.mockResolvedValue({
+      commit_sha: 'app-base-sha',
+      created_at: new Date('2026-01-01T00:00:00Z'),
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      ...makeCompareSnapshot(),
+      base_sha: 'app-base-sha',
+    })
+    mockGetPreviousDeployment.mockResolvedValue({
+      id: 42,
+      commit_sha: 'repository-base-sha',
+      created_at: new Date('2026-01-02T00:00:00Z'),
+      monitored_app_id: 2,
+      four_eyes_status: 'approved',
+      verification_base_sha: 'app-base-sha',
+    })
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', approvalDetails: { reason: 'pr_approved' } })
+
+    await computeVerificationDiffs(1)
+
+    expect(mockGetCompareSnapshot).toHaveBeenCalledWith('navikt', 'test-repo', 'head123', 'app-base-sha')
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ comparisonBaseSha: 'app-base-sha' }))
+  })
+
+  it('finds a matching sibling root when the app-local predecessor is not the same-head deployment', async () => {
+    mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'pending', commit_sha: 'head123' })])
+    mockGetPreviousAppDeployment.mockResolvedValue({
+      commit_sha: 'app-base-sha',
+      created_at: new Date('2026-01-01T00:00:00Z'),
+    })
+    mockFindRootApprovedSibling.mockResolvedValue({
+      id: 99,
+      monitoredAppId: 2,
+      fourEyesStatus: 'approved',
+      verificationBaseSha: 'app-base-sha',
+      createdAt: '2026-01-02T00:00:00.000Z',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      ...makeCompareSnapshot(),
+      base_sha: 'app-base-sha',
+    })
+    mockGetPrDataForDiff.mockResolvedValue(null)
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({ status: 'verified_via_sibling', approvalDetails: { reason: 'sibling' } })
+
+    await computeVerificationDiffs(1)
+
+    expect(mockFindRootApprovedSibling).toHaveBeenCalledWith('head123', '123', 'app-base-sha', 1)
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        comparisonBaseSha: 'app-base-sha',
+        previousDeployment: expect.objectContaining({
+          id: 99,
+          monitoredAppId: 2,
+          verificationBaseSha: 'app-base-sha',
+        }),
+      }),
+    )
   })
 
   it('persists the resolved repository_id on the inserted diff row', async () => {

@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS deployments (
   
   -- Four-eyes status
   four_eyes_status VARCHAR(50) DEFAULT 'unknown',
+  verification_base_sha VARCHAR(40),
   
   github_pr_number INTEGER,
   github_pr_url TEXT,
@@ -192,7 +193,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_deployment_status_history_baseline_approva
   WHERE change_source = 'baseline_approval' AND changed_by IS NOT NULL;
 
 COMMENT ON TABLE deployment_status_history IS 'Audit trail of all deployment status transitions';
-COMMENT ON COLUMN deployment_status_history.change_source IS 'Source of change: verification, manual_approval, reverification, sync, legacy, baseline_approval, admin_reset';
+COMMENT ON COLUMN deployment_status_history.change_source IS 'Source of change: verification, manual_approval, reverification, sync, legacy, baseline_approval, admin_reset, sibling_propagation';
 COMMENT ON COLUMN deployment_status_history.changed_by IS 'NAV-ident, GitHub username, or system identifier';
 
 -- Commits cache (for fast verification without GitHub API calls)

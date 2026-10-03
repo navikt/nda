@@ -203,7 +203,9 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
         createdAt: '2026-02-26T10:00:00Z',
         monitoredAppId: 2,
         fourEyesStatus: 'approved',
+        verificationBaseSha: 'base-sha',
       },
+      comparisonBaseSha: 'base-sha',
       commitsBetween: [],
     })
 
@@ -213,6 +215,95 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
     expect(result.hasFourEyes).toBe(true)
     expect(result.approvalDetails.method).toBe('verified_via_sibling')
     expect(result.approvalDetails.reason).toContain('sibling deployment #999')
+  })
+
+  it('should use an approved sibling when the app-local comparison range matches even if commits are present', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        verificationBaseSha: 'base-sha',
+      },
+      comparisonBaseSha: 'base-sha',
+      commitsBetween: [
+        {
+          sha: 'change-sha',
+          message: 'Change',
+          authorUsername: 'developer-a',
+          authorDate: '2026-02-26T10:00:00Z',
+          isMergeCommit: false,
+          parentShas: [],
+          htmlUrl: '',
+          pr: null,
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('verified_via_sibling')
+    expect(result.hasFourEyes).toBe(true)
+  })
+
+  it('should verify commits independently when sibling comparison ranges differ', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        verificationBaseSha: 'root-base-sha',
+      },
+      comparisonBaseSha: 'different-base-sha',
+      commitsBetween: [
+        {
+          sha: 'change-sha',
+          message: 'Change',
+          authorUsername: 'developer-a',
+          authorDate: '2026-02-26T10:00:00Z',
+          isMergeCommit: false,
+          parentShas: [],
+          htmlUrl: '',
+          pr: null,
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+    expect(result.hasFourEyes).toBe(false)
+  })
+
+  it('should not reuse a sibling approval when the comparison base SHA differs', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        verificationBaseSha: 'root-base-sha',
+      },
+      comparisonBaseSha: 'different-base-sha',
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('pending_sibling_resolution')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.reason).toContain('same from/to commits')
   })
 
   it('should NOT return verified_via_sibling when the sibling deployment is not itself approved (e.g. pending)', () => {

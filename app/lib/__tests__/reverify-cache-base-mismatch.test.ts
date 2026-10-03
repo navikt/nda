@@ -12,6 +12,10 @@ vi.mock('~/db/connection.server', () => ({
   pool: { query: vi.fn() },
 }))
 
+vi.mock('~/db/deployments/navigation.server', () => ({
+  getPreviousDeploymentForDiff: vi.fn(),
+}))
+
 vi.mock('~/db/verification-diff.server', () => ({
   getCompareSnapshotForCommit: vi.fn(),
   getPreviousDeploymentForDiff: vi.fn(),
@@ -46,6 +50,11 @@ vi.mock('~/lib/verification/fetch-data.server', () => ({
   getPrDataForDiff: vi.fn(),
 }))
 
+vi.mock('~/lib/verification/fetch-data/previous-deployment.server', () => ({
+  findRootApprovedSiblingForCommit: vi.fn(),
+  preferRootApprovedSibling: vi.fn(async (candidate) => candidate),
+}))
+
 vi.mock('~/lib/verification/store-data.server', () => ({
   storeVerificationResult: vi.fn(),
   updateDeploymentVerification: vi.fn(),
@@ -57,8 +66,10 @@ vi.mock('~/lib/verification/verify', () => ({
 
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
+import { getPreviousDeploymentForDiff as getAppPreviousDeploymentForDiff } from '~/db/deployments/navigation.server'
 import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
+import { findRootApprovedSiblingForCommit } from '~/lib/verification/fetch-data/previous-deployment.server'
 import {
   buildCommitsBetweenFromCache,
   fetchVerificationData,
@@ -70,6 +81,8 @@ import { updateDeploymentVerification } from '~/lib/verification/store-data.serv
 import { verifyDeployment } from '~/lib/verification/verify'
 
 const mockPoolQuery = pool.query as Mock
+const mockGetPreviousAppDeployment = getAppPreviousDeploymentForDiff as Mock
+const mockFindRootApprovedSibling = findRootApprovedSiblingForCommit as Mock
 const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
 const mockFindRepositoryForApp = findRepositoryForApp as Mock
@@ -84,6 +97,8 @@ const mockUpdateDeploymentVerification = updateDeploymentVerification as Mock
 describe('reverifyDeployment cache base validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetPreviousAppDeployment.mockResolvedValue(null)
+    mockFindRootApprovedSibling.mockResolvedValue(null)
     mockFindRepositoryForApp.mockResolvedValue({
       repository: { github_repo_id: '123' },
       effectiveOwner: 'navikt',
@@ -157,6 +172,66 @@ describe('reverifyDeployment cache base validation', () => {
       oldStatus: 'approved',
       newStatus: 'approved',
     })
+  })
+
+  it('uses the resolved app-local base to find an approved sibling root during reverification', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 10,
+          commit_sha: 'head123',
+          four_eyes_status: 'pending',
+          verification_base_sha: null,
+          github_pr_number: null,
+          environment_name: 'prod-gcp',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          default_branch: 'main',
+          audit_start_year: 2026,
+        },
+      ],
+    })
+    mockGetEffectiveSettings.mockResolvedValue({
+      repositoryId: null,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'main',
+    })
+    mockGetPreviousAppDeployment.mockResolvedValue({
+      commit_sha: 'app-base-sha',
+      created_at: new Date('2026-01-01T00:00:00Z'),
+    })
+    mockFindRootApprovedSibling.mockResolvedValue({
+      id: 12,
+      monitoredAppId: 100,
+      fourEyesStatus: 'approved',
+      verificationBaseSha: 'app-base-sha',
+      createdAt: '2026-01-02T00:00:00.000Z',
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'app-base-sha',
+      data: { commits: [] },
+    })
+    mockFindPrForCommit.mockResolvedValue({ prNumber: null, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({ status: 'verified_via_sibling', unverifiedCommits: [] })
+    mockUpdateDeploymentVerification.mockResolvedValue(undefined)
+
+    await reverifyDeployment(10)
+
+    expect(mockFindRootApprovedSibling).toHaveBeenCalledWith('head123', '123', 'app-base-sha', 10)
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        comparisonBaseSha: 'app-base-sha',
+        previousDeployment: expect.objectContaining({
+          id: 12,
+          monitoredAppId: 100,
+          verificationBaseSha: 'app-base-sha',
+        }),
+      }),
+    )
   })
 
   it('discovers PR via cache-only lookup when deployment has no stored github_pr_number', async () => {

@@ -293,6 +293,8 @@ export async function handleApproveLegacy(
         'manually_approved',
         currentDeployment.commit_sha,
         currentDeployment.monitored_app_id,
+        true,
+        identity.navIdent,
       )
     }
 

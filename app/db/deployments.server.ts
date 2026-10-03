@@ -28,6 +28,7 @@ export interface Deployment {
   detected_github_owner: string | null
   detected_github_repo_name: string | null
   four_eyes_status: string
+  verification_base_sha?: string | null
   github_pr_number: number | null
   github_pr_url: string | null
   github_pr_data: GitHubPRData | null
