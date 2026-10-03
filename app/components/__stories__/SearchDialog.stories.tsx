@@ -35,7 +35,13 @@ const mockResults: SearchResult[] = [
     type: 'app',
     url: '/team/pensjonopptjening/env/prod-fss/app/pensjon-pen',
     title: 'pensjon-pen',
-    subtitle: 'pensjonopptjening',
+    subtitle: 'Miljø: prod-fss · pensjonopptjening',
+  },
+  {
+    type: 'app',
+    url: '/team/pensjonopptjening/env/prod-gcp/app/pensjon-pen',
+    title: 'pensjon-pen',
+    subtitle: 'Miljø: prod-gcp · pensjonopptjening',
   },
   {
     type: 'user',

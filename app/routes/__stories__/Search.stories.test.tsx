@@ -6,7 +6,7 @@ import * as stories from './Search.stories'
 
 setProjectAnnotations(preview)
 
-const { Empty, ManyResults, NoResults, WithResults } = composeStories(stories)
+const { Empty, ManyResults, NoResults, SingleTeamResult, WithResults } = composeStories(stories)
 
 describe('Search story baseline characterization', () => {
   it('renders empty search state and search input', () => {
@@ -25,6 +25,14 @@ describe('Search story baseline characterization', () => {
     expect(html).toContain('Deployment')
     expect(html).toContain('Bruker')
     expect(html).toContain('search-result-item')
+  })
+
+  it('renders a single Nais team result with the singular application count', () => {
+    const html = renderToStaticMarkup(<SingleTeamResult />)
+
+    expect(html).toContain('pensjon-regler')
+    expect(html).toContain('Nais-team')
+    expect(html).toContain('1 applikasjon')
   })
 
   it('renders no-results message for no-hit scenario', () => {

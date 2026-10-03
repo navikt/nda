@@ -22,6 +22,8 @@ describe('SearchDialog story interaction characterization', () => {
 
     expect(screen.getByText('Deployment #123')).toBeInTheDocument()
     expect(screen.getByText('Ola Nordmann')).toBeInTheDocument()
+    expect(screen.getByText('Miljø: prod-fss · pensjonopptjening')).toBeInTheDocument()
+    expect(screen.getByText('Miljø: prod-gcp · pensjonopptjening')).toBeInTheDocument()
   })
 
   it('shows the empty-results message when the search yields no hits', async () => {

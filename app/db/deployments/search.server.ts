@@ -106,7 +106,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
       [`%${trimmedQuery}%`, limit],
     ),
     pool.query(
-      `SELECT DISTINCT ma.team_slug, COUNT(DISTINCT ma.app_name) AS app_count
+      `SELECT DISTINCT ma.team_slug, COUNT(DISTINCT ma.app_name)::int AS app_count
        FROM monitored_applications ma
        WHERE ma.is_active = true AND ma.team_slug ILIKE $1
        GROUP BY ma.team_slug
@@ -174,20 +174,16 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
       type: 'team',
       url: `/team/${row.team_slug}`,
       title: row.team_slug,
-      subtitle: `${row.app_count} applikasjon${row.app_count === 1 ? '' : 'er'}`,
+      subtitle: `${row.app_count} ${row.app_count === 1 ? 'applikasjon' : 'applikasjoner'}`,
     })
   }
 
-  const seenApps = new Set<string>()
   for (const row of appResult.rows) {
-    const key = `${row.team_slug}/${row.app_name}`
-    if (seenApps.has(key)) continue
-    seenApps.add(key)
     results.push({
       type: 'app',
       url: `/team/${row.team_slug}/env/${row.environment_name}/app/${row.app_name}`,
       title: row.app_name,
-      subtitle: row.team_slug,
+      subtitle: `Miljø: ${row.environment_name} · ${row.team_slug}`,
     })
   }
   for (const row of userResult.rows) {

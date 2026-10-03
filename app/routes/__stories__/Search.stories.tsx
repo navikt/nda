@@ -34,6 +34,21 @@ export const WithResults: Story = {
   },
 }
 
+export const SingleTeamResult: Story = {
+  name: 'Ett søkeresultat',
+  args: {
+    query: 'pensjon-regler',
+    results: [
+      {
+        type: 'team',
+        title: 'pensjon-regler',
+        subtitle: '1 applikasjon',
+        url: '/team/pensjon-regler',
+      },
+    ],
+  },
+}
+
 export const NoResults: Story = {
   name: 'Ingen treff',
   args: {

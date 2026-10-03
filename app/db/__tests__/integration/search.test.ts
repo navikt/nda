@@ -76,3 +76,48 @@ describe('searchDeployments monorepo results', () => {
     expect(monorepoResult?.url).toBe('/team/team-a/env/prod/app/service-a/deployments?monorepo=true')
   })
 })
+
+describe('searchDeployments application results', () => {
+  it('returns an app result for each environment and includes the environment in each subtitle', async () => {
+    await seedApp(pool, { teamSlug: 'pensjon-regler', appName: 'pensjon-regler', environment: 'prod-fss' })
+    await seedApp(pool, { teamSlug: 'pensjon-regler', appName: 'pensjon-regler', environment: 'prod-gcp' })
+
+    const appResults = (await searchDeployments('pensjon-regler', 10)).filter((result) => result.type === 'app')
+
+    expect(appResults).toHaveLength(2)
+    expect(appResults).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'app',
+          url: '/team/pensjon-regler/env/prod-fss/app/pensjon-regler',
+          title: 'pensjon-regler',
+          subtitle: 'Miljø: prod-fss · pensjon-regler',
+        },
+        {
+          type: 'app',
+          url: '/team/pensjon-regler/env/prod-gcp/app/pensjon-regler',
+          title: 'pensjon-regler',
+          subtitle: 'Miljø: prod-gcp · pensjon-regler',
+        },
+      ]),
+    )
+  })
+
+  it('includes the environment when an app only runs in one environment', async () => {
+    await seedApp(pool, { teamSlug: 'team-a', appName: 'single-app', environment: 'prod-gcp' })
+
+    const appResult = (await searchDeployments('single-app', 10)).find((result) => result.type === 'app')
+
+    expect(appResult?.subtitle).toBe('Miljø: prod-gcp · team-a')
+  })
+})
+
+describe('searchDeployments team results', () => {
+  it('uses the singular form when a Nais team has one application', async () => {
+    await seedApp(pool, { teamSlug: 'nais-team', appName: 'single-app', environment: 'prod-gcp' })
+
+    const teamResult = (await searchDeployments('nais-team', 10)).find((result) => result.type === 'team')
+
+    expect(teamResult?.subtitle).toBe('1 applikasjon')
+  })
+})
