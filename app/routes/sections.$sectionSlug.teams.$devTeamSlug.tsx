@@ -352,7 +352,7 @@ export default function DevTeamPage() {
             : 'Statistikk er filtrert til deploys utført av team-medlemmer.'}
         </Detail>
         {appCards.length > 0 ? (
-          <VStack gap="space-4">
+          <VStack gap="space-0">
             {appCards.map((app) => (
               <AppCard
                 key={app.id}

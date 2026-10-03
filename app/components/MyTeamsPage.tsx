@@ -326,11 +326,11 @@ export function MyTeamsPage({
                   <Heading level="3" size="small">
                     Applikasjoner som trenger oppfølging ({issueApps.length})
                   </Heading>
-                  <div>
+                  <VStack gap="space-0">
                     {issueApps.map((app) => (
                       <AppCard key={app.id} app={app} appendSearchParams="team=mine" />
                     ))}
-                  </div>
+                  </VStack>
                 </VStack>
               )}
             </>
