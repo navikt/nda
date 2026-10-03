@@ -34,6 +34,9 @@ export function mergeAppCardsByRepo(apps: AppCardData[]): AppCardData[] {
 function mergeAppsIntoCard(repoApps: AppCardData[], repoDisplayName: string): AppCardData {
   const primary = repoApps[0]
   const siblingEnvs = repoApps.slice(1).map((a) => a.environment_name)
+  const repositoryIds = new Set(repoApps.map((app) => app.repository_id))
+  const repositoryId =
+    repoApps.every((app) => app.repository_id != null) && repositoryIds.size === 1 ? primary.repository_id : null
 
   const mergedStats = {
     total: repoApps.reduce((sum, a) => sum + a.stats.total, 0),
@@ -55,6 +58,7 @@ function mergeAppsIntoCard(repoApps: AppCardData[], repoDisplayName: string): Ap
     ...primary,
     stats: mergedStats,
     alertCount: totalAlerts,
+    repository_id: repositoryId,
     siblingEnvironments: siblingEnvs,
     repoDisplayName,
     repoApps: allRepoApps,

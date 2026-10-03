@@ -30,6 +30,7 @@ export interface AppCardData {
   environment_name: string
   app_name: string
   active_repo: string | null
+  repository_id?: number | null
   stats: AppStats
   alertCount: number
   siblingEnvironments?: string[]
@@ -97,6 +98,13 @@ function getAppUrl(app: { team_slug: string; environment_name: string; app_name:
   return `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}`
 }
 
+function getRepositoryDeploymentsUrl(app: AppCardData) {
+  if (app.repository_id == null || !app.active_repo) return undefined
+  const [owner, repo] = app.active_repo.split('/')
+  if (!owner || !repo) return undefined
+  return `/repository/${owner}/${repo}/deployments?repositoryId=${app.repository_id}`
+}
+
 interface AppCardProps {
   app: AppCardData
   showEnvironment?: boolean
@@ -111,6 +119,7 @@ export function AppCard({ app, showEnvironment = true, appendSearchParams }: App
   const extraParams = appendSearchParams ? `&${appendSearchParams}` : ''
   const isGrouped = (app.siblingEnvironments?.length ?? 0) > 0
   const monorepoParam = isGrouped ? '&monorepo=true' : ''
+  const repositoryDeploymentsUrl = getRepositoryDeploymentsUrl(app)
 
   const uniqueAppNames = app.repoApps ? [...new Set(app.repoApps.map((a) => a.app_name))] : []
   const hasDistinctNames = uniqueAppNames.length > 1
@@ -188,7 +197,9 @@ export function AppCard({ app, showEnvironment = true, appendSearchParams }: App
             {getStatusBadge(app.stats, {
               failedTo:
                 app.stats.without_four_eyes > 0
-                  ? `${appUrl}/deployments?status=not_approved&period=all${monorepoParam}${extraParams}`
+                  ? isGrouped && repositoryDeploymentsUrl
+                    ? `${repositoryDeploymentsUrl}&status=not_approved&period=all&page=1${extraParams}`
+                    : `${appUrl}/deployments?status=not_approved&period=all${monorepoParam}${extraParams}`
                   : undefined,
               pendingTo:
                 app.stats.pending_verification > 0
