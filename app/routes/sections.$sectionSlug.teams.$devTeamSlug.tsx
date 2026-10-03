@@ -141,6 +141,7 @@ export async function loader({ request, params, url }: Route.LoaderArgs) {
     displayApps.map((app) => ({
       ...app,
       active_repo: activeRepos.get(app.id) || null,
+      repository_id: effectiveSettingsByApp.get(app.id)?.repositoryId ?? null,
       stats: statsByApp.get(app.id) || {
         total: 0,
         with_four_eyes: 0,

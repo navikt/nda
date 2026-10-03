@@ -124,6 +124,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       return {
         ...app,
         active_repo: activeReposByApp.get(app.id) || null,
+        repository_id: effectiveSettings.get(app.id)?.repositoryId ?? null,
         stats: {
           ...baseStats,
           missing_goal_links: missingGoalsByKey.get(`${app.team_slug}/${app.environment_name}/${app.app_name}`) ?? 0,
