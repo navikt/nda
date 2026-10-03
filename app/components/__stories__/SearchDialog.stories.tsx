@@ -10,14 +10,14 @@ const mockResults: SearchResult[] = [
     id: 123,
     url: '/team/pensjonopptjening/env/prod-fss/app/pensjon-pen/deployments/123',
     title: 'Deployment #123',
-    subtitle: 'pensjon-pen • abc1234',
+    subtitle: 'pensjon-pen · Miljø: prod-fss · abc1234',
   },
   {
     type: 'deployment',
     id: 122,
     url: '/team/pensjonopptjening/env/prod-fss/app/pensjon-pen/deployments/122',
     title: 'Deployment #122',
-    subtitle: 'pensjon-pen • def5678',
+    subtitle: 'pensjon-pen · Miljø: prod-fss · def5678',
   },
   {
     type: 'dev_team',

@@ -21,6 +21,7 @@ describe('SearchDialog story interaction characterization', () => {
     await SearchResultsStory.play?.({ canvasElement: container })
 
     expect(screen.getByText('Deployment #123')).toBeInTheDocument()
+    expect(screen.getByText('pensjon-pen · Miljø: prod-fss · abc1234')).toBeInTheDocument()
     expect(screen.getByText('Ola Nordmann')).toBeInTheDocument()
     expect(screen.getByText('Miljø: prod-fss · pensjonopptjening')).toBeInTheDocument()
     expect(screen.getByText('Miljø: prod-gcp · pensjonopptjening')).toBeInTheDocument()
