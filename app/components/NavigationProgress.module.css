@@ -1,0 +1,32 @@
+.track {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 1000;
+  height: var(--ax-space-2);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bar {
+  width: 35%;
+  height: 100%;
+  background: var(--ax-bg-accent-strong);
+  animation: navigation-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes navigation-progress {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    width: 100%;
+    animation: none;
+  }
+}
