@@ -81,10 +81,22 @@ export async function getAuditReportData(
        -- Commit SHAs bundled in this delivery, from the cached GitHub compare snapshot
        (
          SELECT ARRAY(SELECT jsonb_array_elements(cmp.data->'commits')->>'sha')
-         FROM github_compare_snapshots cmp
+         FROM github_compare_snapshots cmp,
+         LATERAL (
+           SELECT ar.github_repo_id
+           FROM application_repositories ar
+           WHERE ar.monitored_app_id = d.monitored_app_id
+             AND ar.github_owner = d.detected_github_owner
+             AND ar.github_repo_name = d.detected_github_repo_name
+         ) matched_repo
          WHERE cmp.owner = d.detected_github_owner
            AND cmp.repo = d.detected_github_repo_name
            AND cmp.head_sha = d.commit_sha
+           AND (
+             matched_repo.github_repo_id IS NULL
+             OR cmp.github_repo_id IS NULL
+             OR cmp.github_repo_id = matched_repo.github_repo_id
+           )
            AND cmp.base_sha = (
              SELECT prev.commit_sha
              FROM deployments prev
