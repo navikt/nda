@@ -1,5 +1,5 @@
 import type { AvailableBoard, MyDevTeamForGoalLinking } from '~/components/GoalLinksSection'
-import { getRepositoriesByAppId } from '~/db/application-repositories.server'
+import { findRepositoryForApp, getRepositoriesByAppId } from '~/db/application-repositories.server'
 import { getBoardsWithGoalsForDevTeam } from '~/db/boards.server'
 import { getCommentsByDeploymentId, getLegacyInfo, getManualApproval } from '~/db/comments.server'
 import { pool } from '~/db/connection.server'
@@ -8,7 +8,6 @@ import {
   type DeploymentNavFilters,
   getDeploymentById,
   getNextDeployment,
-  getPreviousDeploymentForDiff,
   getPreviousDeploymentForNav,
   getStatusHistory,
   TITLE_COALESCE_SQL,
@@ -20,7 +19,7 @@ import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
 import { getEffectiveAuditStartYear } from '~/db/repositories.server'
 import { getUserDevTeamsByRole } from '~/db/role-assignments.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
-import { getCompareSnapshotForCommit } from '~/db/verification-diff.server'
+import { getCompareSnapshotForCommit, getEffectiveComparisonBaseSha } from '~/db/verification-diff.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
 import { computeDisplayTitle, isExclusivelyThisPr } from '~/lib/delivery-title'
@@ -72,6 +71,14 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   }
 
   const deploymentDate = new Date(deployment.created_at).toISOString().split('T')[0]
+  const deploymentRepository =
+    deployment.detected_github_owner && deployment.detected_github_repo_name
+      ? await findRepositoryForApp(
+          deployment.monitored_app_id,
+          deployment.detected_github_owner,
+          deployment.detected_github_repo_name,
+        )
+      : null
 
   const nearbyDeploymentsPromise =
     deployment.four_eyes_status === 'error'
@@ -110,6 +117,15 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
           }>,
         )
 
+  const comparisonBaseSha =
+    deployment.commit_sha && deploymentRepository?.repository?.github_repo_id
+      ? await getEffectiveComparisonBaseSha(
+          deploymentId,
+          deploymentRepository.repository.github_repo_id,
+          deployment.commit_sha,
+        )
+      : null
+
   const [
     comments,
     manualApproval,
@@ -121,7 +137,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     allDevTeams,
     previousDeployment,
     nextDeployment,
-    previousDeploymentForDiff,
     fullVerificationRun,
     nearbyDeployments,
     registeredRepos,
@@ -138,17 +153,20 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     getDevTeamsForApp(deployment.monitored_app_id, app.team_slug),
     getPreviousDeploymentForNav(deploymentId, deployment.monitored_app_id, navFilters),
     getNextDeployment(deploymentId, deployment.monitored_app_id, navFilters),
-    getPreviousDeploymentForDiff(deploymentId, deployment.monitored_app_id),
     getLatestVerificationRun(deploymentId),
     nearbyDeploymentsPromise,
     deployment.four_eyes_status === 'unauthorized_repository'
       ? getRepositoriesByAppId(deployment.monitored_app_id)
       : Promise.resolve([]),
-    deployment.commit_sha && deployment.detected_github_owner && deployment.detected_github_repo_name
+    deployment.commit_sha &&
+    deployment.detected_github_owner &&
+    deployment.detected_github_repo_name &&
+    comparisonBaseSha
       ? getCompareSnapshotForCommit(
           deployment.detected_github_owner,
           deployment.detected_github_repo_name,
           deployment.commit_sha,
+          comparisonBaseSha,
         )
       : Promise.resolve(null),
     deployment.github_pr_number && deployment.detected_github_owner && deployment.detected_github_repo_name
@@ -161,9 +179,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   ])
 
   const deliveryCommits =
-    compareSnapshot &&
-    previousDeploymentForDiff?.commit_sha &&
-    compareSnapshot.base_sha === previousDeploymentForDiff.commit_sha
+    compareSnapshot && comparisonBaseSha && compareSnapshot.base_sha === comparisonBaseSha
       ? (compareSnapshot.data as CompareData).commits.map((c) => ({
           sha: c.sha,
           message: c.message,
@@ -332,7 +348,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       environmentName: app.environment_name,
     },
     previousDeployment,
-    previousDeploymentForDiff,
+    previousDeploymentForDiff: comparisonBaseSha ? { commit_sha: comparisonBaseSha } : null,
     nextDeployment,
     userMappings: serializeUserLookups(userMappings),
     appUrl,

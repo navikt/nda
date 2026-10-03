@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { pool } from '../connection.server'
 
 export interface StatusTransition {
@@ -52,8 +53,10 @@ export async function logStatusTransition(
     changedBy?: string
     details?: Record<string, unknown>
   },
+  client?: PoolClient,
 ): Promise<void> {
-  await pool.query(
+  const db = client ?? pool
+  await db.query(
     `INSERT INTO deployment_status_history 
        (deployment_id, from_status, to_status, 
         changed_by, change_source, details)
@@ -69,8 +72,13 @@ export async function logStatusTransition(
   )
 }
 
-export async function recordBaselineApproval(deploymentId: number, changedBy: string): Promise<boolean> {
-  const result = await pool.query(
+export async function recordBaselineApproval(
+  deploymentId: number,
+  changedBy: string,
+  client?: PoolClient,
+): Promise<boolean> {
+  const db = client ?? pool
+  const result = await db.query(
     `INSERT INTO deployment_status_history
        (deployment_id, from_status, to_status, changed_by, change_source)
      VALUES ($1, 'baseline', 'baseline', $2, 'baseline_approval')

@@ -138,6 +138,7 @@ export function formatChangeSource(source: string): string {
     verification: 'Verifisering',
     manual_approval: 'Manuell godkjenning',
     reverification: 'Reverifisering',
+    sibling_propagation: 'Godkjenning fra søskenapplikasjon',
     sync: 'Synkronisering',
     legacy: 'Legacy',
     baseline_approval: 'Baseline godkjent',

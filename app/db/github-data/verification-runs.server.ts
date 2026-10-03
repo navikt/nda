@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { pool } from '~/db/connection.server'
 import { CURRENT_SCHEMA_VERSION } from '~/lib/verification/types'
 
@@ -11,8 +12,10 @@ export async function saveVerificationRun(
     prSnapshotIds: number[]
     commitSnapshotIds: number[]
   },
+  client?: PoolClient,
 ): Promise<number> {
-  const queryResult = await pool.query(
+  const db = client ?? pool
+  const queryResult = await db.query(
     `INSERT INTO verification_runs 
        (deployment_id, schema_version, pr_snapshot_ids, commit_snapshot_ids, result, status)
      VALUES ($1, $2, $3, $4, $5, $6)
@@ -43,7 +46,7 @@ export async function getLatestVerificationRun(deploymentId: number): Promise<{
             result, status
      FROM verification_runs
      WHERE deployment_id = $1
-     ORDER BY run_at DESC
+     ORDER BY run_at DESC, id DESC
      LIMIT 1`,
     [deploymentId],
   )

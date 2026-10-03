@@ -234,7 +234,6 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
                 'unverified_commits',
                 'pr_not_approved',
                 'approved_pr_with_unreviewed',
-                'baseline',
                 'no_changes',
                 'verified_via_sibling',
                 'pending_baseline',
@@ -261,6 +260,18 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
                   !statusHistory.some((h) => h.change_source === 'baseline_approval' && h.changed_by !== null))) && (
                 <Form method="post" style={{ display: 'inline' }}>
                   <input type="hidden" name="intent" value="approve_baseline" />
+                  {deployment.commit_sha &&
+                    deployment.detected_github_owner &&
+                    deployment.detected_github_repo_name && (
+                      <>
+                        <input type="hidden" name="comparison_head_sha" value={deployment.commit_sha} />
+                        <input
+                          type="hidden"
+                          name="comparison_base_sha"
+                          value={previousDeploymentForDiff?.commit_sha ?? ''}
+                        />
+                      </>
+                    )}
                   <Button
                     type="submit"
                     size="small"
@@ -630,7 +641,12 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
         <LegacyLookupSection actionData={actionData} userMappings={userMappings} />
       )}
       {(isPendingApproval || (legacyInfo && !manualApproval)) && (
-        <LegacyPendingApproval legacyInfo={legacyInfo} capabilities={capabilities} />
+        <LegacyPendingApproval
+          legacyInfo={legacyInfo}
+          capabilities={capabilities}
+          deployment={deployment}
+          previousDeploymentForDiff={previousDeploymentForDiff}
+        />
       )}
       {manualApproval && (
         <Alert variant="success">

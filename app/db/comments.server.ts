@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { query } from './connection.server'
 
 interface DeploymentComment {
@@ -31,11 +32,13 @@ export async function getCommentsByDeploymentId(deployment_id: number): Promise<
   return result.rows
 }
 
-export async function createComment(params: CreateCommentParams): Promise<DeploymentComment> {
+export async function createComment(params: CreateCommentParams, client?: PoolClient): Promise<DeploymentComment> {
   const commentType = params.comment_type || 'comment'
   const approvedAt = commentType === 'manual_approval' ? new Date() : null
 
-  const result = await query<DeploymentComment>(
+  const executeQuery = (text: string, values: unknown[]) =>
+    client ? client.query<DeploymentComment>(text, values) : query<DeploymentComment>(text, values)
+  const result = await executeQuery(
     `INSERT INTO deployment_comments (deployment_id, comment_text, slack_link, comment_type, approved_by, approved_at, registered_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,

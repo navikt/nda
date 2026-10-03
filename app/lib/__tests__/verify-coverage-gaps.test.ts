@@ -117,6 +117,77 @@ describe('verifyDeployment - Case 1: pending_baseline', () => {
 })
 
 describe('verifyDeployment - Case 2a: no_changes (same commit SHA)', () => {
+  it.each(['missing', 'approved', 'self-approved'] as const)(
+    'preserves same-app redeploy handling with a non-empty monorepo diff and %s PR',
+    (prStatus) => {
+      const input = makeBaseInput({
+        monitoredAppId: 1,
+        isSameAppRedeploy: true,
+        previousDeployment: {
+          id: 999,
+          commitSha: 'deploy-sha-1000',
+          createdAt: '2026-02-26T10:00:00Z',
+          monitoredAppId: 2,
+          fourEyesStatus: 'approved',
+        },
+        commitsBetween: [
+          {
+            sha: 'unreviewed-change',
+            message: 'Change',
+            authorUsername: 'glad-fjord',
+            authorDate: '2026-02-27T12:00:00Z',
+            isMergeCommit: false,
+            parentShas: [],
+            htmlUrl: '',
+            pr: null,
+          },
+        ],
+        deployedPr:
+          prStatus === 'missing'
+            ? null
+            : {
+                number: 100,
+                url: 'https://github.com/navikt/test-app/pull/100',
+                metadata: makePrMetadata(),
+                reviews: [makePrReview({ username: prStatus === 'approved' ? 'rolig-fjell' : 'glad-fjord' })],
+                commits: [makePrCommit({ authorUsername: 'glad-fjord' })],
+              },
+      })
+
+      const result = verifyDeployment(input)
+
+      expect(result.status).toBe(prStatus === 'self-approved' ? 'unverified_commits' : 'no_changes')
+      expect(result.hasFourEyes).toBe(prStatus !== 'self-approved')
+    },
+  )
+
+  it('does not treat a different latest same-app commit as an unchanged redeploy', () => {
+    const input = makeBaseInput({
+      monitoredAppId: 1,
+      isSameAppRedeploy: false,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'deploy-sha-1000',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 1,
+      },
+      commitsBetween: [
+        {
+          sha: 'rollback-change',
+          message: 'Rollback',
+          authorUsername: 'glad-fjord',
+          authorDate: '2026-02-27T12:00:00Z',
+          isMergeCommit: false,
+          parentShas: [],
+          htmlUrl: '',
+          pr: null,
+        },
+      ],
+    })
+
+    expect(verifyDeployment(input).status).toBe('unverified_commits')
+  })
+
   it('should return no_changes when commitsBetween is empty and SHAs match', () => {
     const input = makeBaseInput({
       commitSha: 'same-sha-abc',
@@ -193,6 +264,58 @@ describe('verifyDeployment - Case 2a: no_changes (same commit SHA)', () => {
 })
 
 describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, different monitored app)', () => {
+  it.each([false, true])('does not use a non-shareable redeploy through sibling fallback (PR present: %s)', (hasPr) => {
+    const input = makeBaseInput({
+      monitoredAppId: 1,
+      comparisonBaseSha: 'base-sha',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'deploy-sha-1000',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'no_changes',
+        comparisonBaseSha: 'base-sha',
+        canShareApproval: false,
+      },
+      deployedPr: hasPr
+        ? {
+            number: 100,
+            url: 'https://github.com/navikt/test-app/pull/100',
+            metadata: makePrMetadata(),
+            reviews: [makePrReview({ username: 'glad-fjord' })],
+            commits: [makePrCommit({ authorUsername: 'glad-fjord' })],
+          }
+        : null,
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.status).toBe(hasPr ? 'unverified_commits' : 'pending_sibling_resolution')
+  })
+
+  it('shares an approval when both deployments have no earlier distinct repository commit', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        comparisonBaseSha: null,
+      },
+      comparisonBaseSha: null,
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('verified_via_sibling')
+    expect(result.hasFourEyes).toBe(true)
+  })
+
   it('should return verified_via_sibling when the identical-commit previous deployment belongs to a different app and is itself approved', () => {
     const input = makeBaseInput({
       commitSha: 'same-sha-abc',
@@ -203,7 +326,9 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
         createdAt: '2026-02-26T10:00:00Z',
         monitoredAppId: 2,
         fourEyesStatus: 'approved',
+        comparisonBaseSha: 'base-sha',
       },
+      comparisonBaseSha: 'base-sha',
       commitsBetween: [],
     })
 
@@ -213,6 +338,95 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
     expect(result.hasFourEyes).toBe(true)
     expect(result.approvalDetails.method).toBe('verified_via_sibling')
     expect(result.approvalDetails.reason).toContain('sibling deployment #999')
+  })
+
+  it('should use an approved sibling when the monorepo comparison range matches even if commits are present', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        comparisonBaseSha: 'base-sha',
+      },
+      comparisonBaseSha: 'base-sha',
+      commitsBetween: [
+        {
+          sha: 'change-sha',
+          message: 'Change',
+          authorUsername: 'developer-a',
+          authorDate: '2026-02-26T10:00:00Z',
+          isMergeCommit: false,
+          parentShas: [],
+          htmlUrl: '',
+          pr: null,
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('verified_via_sibling')
+    expect(result.hasFourEyes).toBe(true)
+  })
+
+  it('should verify commits independently when sibling comparison ranges differ', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        comparisonBaseSha: 'root-base-sha',
+      },
+      comparisonBaseSha: 'different-base-sha',
+      commitsBetween: [
+        {
+          sha: 'change-sha',
+          message: 'Change',
+          authorUsername: 'developer-a',
+          authorDate: '2026-02-26T10:00:00Z',
+          isMergeCommit: false,
+          parentShas: [],
+          htmlUrl: '',
+          pr: null,
+        },
+      ],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+    expect(result.hasFourEyes).toBe(false)
+  })
+
+  it('should not reuse a sibling approval when the comparison base SHA differs', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        comparisonBaseSha: 'root-base-sha',
+      },
+      comparisonBaseSha: 'different-base-sha',
+      commitsBetween: [],
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('pending_sibling_resolution')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.reason).toContain('same from/to commits')
   })
 
   it('should NOT return verified_via_sibling when the sibling deployment is not itself approved (e.g. pending)', () => {
@@ -326,6 +540,132 @@ describe('verifyDeployment - Case 2a2: verified_via_sibling (same commit, differ
         monitoredAppId: 2,
       },
       commitsBetween: [],
+      deployedPr: {
+        number: 833,
+        url: 'https://github.com/navikt/test-app/pull/833',
+        metadata: makePrMetadata({
+          author: { username: 'glad-fjord' },
+          mergedBy: { username: 'glad-fjord' },
+        }),
+        reviews: [makePrReview({ username: 'glad-fjord', submittedAt: '2026-02-27T13:00:00Z' })],
+        commits: [
+          makePrCommit({ sha: 'commit-a', authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T09:00:00Z' }),
+          makePrCommit({ sha: 'commit-b', authorUsername: 'glad-fjord', authorDate: '2026-02-27T12:00:00Z' }),
+        ],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('unverified_commits')
+    expect(result.hasFourEyes).toBe(false)
+  })
+
+  it('should use an exact-range approved sibling when the deployed PR is not four-eyes verified', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      comparisonBaseSha: 'base-sha',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        comparisonBaseSha: 'base-sha',
+      },
+      commitsBetween: [
+        {
+          sha: 'unreviewed-commit',
+          message: 'Change',
+          authorUsername: 'developer-a',
+          authorDate: '2026-02-26T10:00:00Z',
+          isMergeCommit: false,
+          parentShas: [],
+          htmlUrl: '',
+          pr: null,
+        },
+      ],
+      deployedPr: {
+        number: 833,
+        url: 'https://github.com/navikt/test-app/pull/833',
+        metadata: makePrMetadata({
+          author: { username: 'glad-fjord' },
+          mergedBy: { username: 'glad-fjord' },
+        }),
+        reviews: [makePrReview({ username: 'glad-fjord', submittedAt: '2026-02-27T13:00:00Z' })],
+        commits: [
+          makePrCommit({ sha: 'commit-a', authorUsername: 'dependabot[bot]', authorDate: '2026-02-27T09:00:00Z' }),
+          makePrCommit({ sha: 'commit-b', authorUsername: 'glad-fjord', authorDate: '2026-02-27T12:00:00Z' }),
+        ],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('verified_via_sibling')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.method).toBe('verified_via_sibling')
+  })
+
+  it('should use an exact-range approved sibling when an unchanged-commit PR is not four-eyes verified', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      comparisonBaseSha: 'base-sha',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        comparisonBaseSha: 'base-sha',
+      },
+      commitsBetween: [],
+      deployedPr: {
+        number: 833,
+        url: 'https://github.com/navikt/test-app/pull/833',
+        metadata: makePrMetadata({
+          author: { username: 'glad-fjord' },
+          mergedBy: { username: 'glad-fjord' },
+        }),
+        reviews: [makePrReview({ username: 'glad-fjord' })],
+        commits: [makePrCommit({ authorUsername: 'glad-fjord' })],
+      },
+    })
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('verified_via_sibling')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.method).toBe('verified_via_sibling')
+  })
+
+  it('should not use an approved sibling when its range differs from an unverified deployed PR', () => {
+    const input = makeBaseInput({
+      commitSha: 'same-sha-abc',
+      monitoredAppId: 1,
+      comparisonBaseSha: 'current-base-sha',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'same-sha-abc',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        comparisonBaseSha: 'different-base-sha',
+      },
+      commitsBetween: [
+        {
+          sha: 'unreviewed-commit',
+          message: 'Change',
+          authorUsername: 'developer-a',
+          authorDate: '2026-02-26T10:00:00Z',
+          isMergeCommit: false,
+          parentShas: [],
+          htmlUrl: '',
+          pr: null,
+        },
+      ],
       deployedPr: {
         number: 833,
         url: 'https://github.com/navikt/test-app/pull/833',
@@ -622,6 +962,72 @@ describe('verifyDeployment - Case 2b: zero-commit handling', () => {
 })
 
 describe('verifyDeployment - GitHub API and access failures', () => {
+  function inputWithSibling(overrides: Partial<VerificationInput> = {}): VerificationInput {
+    return makeBaseInput({
+      commitSha: 'head-sha',
+      monitoredAppId: 1,
+      comparisonBaseSha: 'base-sha',
+      previousDeployment: {
+        id: 999,
+        commitSha: 'head-sha',
+        createdAt: '2026-02-26T10:00:00Z',
+        monitoredAppId: 2,
+        fourEyesStatus: 'approved',
+        comparisonBaseSha: 'base-sha',
+        canShareApproval: true,
+      },
+      commitsBetween: [],
+      compareFailed: true,
+      deployedPr: {
+        number: 833,
+        url: 'https://github.com/navikt/test-app/pull/833',
+        metadata: makePrMetadata({ author: { username: 'glad-fjord' }, mergedBy: { username: 'glad-fjord' } }),
+        reviews: [],
+        commits: [makePrCommit({ authorUsername: 'glad-fjord' })],
+      },
+      ...overrides,
+    })
+  }
+
+  it('uses an exact-range shareable sibling root for a PR deployment when comparison fails', () => {
+    const result = verifyDeployment(inputWithSibling())
+
+    expect(result.status).toBe('verified_via_sibling')
+    expect(result.hasFourEyes).toBe(true)
+    expect(result.approvalDetails.method).toBe('verified_via_sibling')
+    expect(result.approvalDetails.reason).toContain('#999')
+  })
+
+  it.each([
+    { comparisonBaseSha: 'other-base' },
+    { commitSha: 'other-head' },
+    { monitoredAppId: 1 },
+    { fourEyesStatus: 'pending' },
+    { fourEyesStatus: 'verified_via_sibling' },
+    { canShareApproval: false },
+  ])('preserves comparison errors without a valid sibling root: %j', (siblingOverrides) => {
+    const input = inputWithSibling()
+    if (!input.previousDeployment) throw new Error('Expected sibling fixture')
+    input.previousDeployment = { ...input.previousDeployment, ...siblingOverrides }
+
+    const result = verifyDeployment(input)
+
+    expect(result.status).toBe('error')
+    expect(result.hasFourEyes).toBe(false)
+    expect(result.approvalDetails.reason).toContain('GitHub compare API failed')
+  })
+
+  it.each([
+    { overrides: { repositoryStatus: 'historical' as const }, status: 'unauthorized_repository' },
+    { overrides: { commitOnBaseBranch: false }, status: 'unauthorized_branch' },
+    { overrides: { previousDeploymentLookupFailed: true }, status: 'error' },
+  ])('does not bypass verification guards with a sibling root: $status', ({ overrides, status }) => {
+    const result = verifyDeployment(inputWithSibling(overrides))
+
+    expect(result.status).toBe(status)
+    expect(result.hasFourEyes).toBe(false)
+  })
+
   it('should return error when GitHub compare API fails with 403 (access denied)', () => {
     const input = makeBaseInput({
       commitSha: 'deploy-sha-new',

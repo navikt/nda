@@ -71,6 +71,12 @@ export function ManualApprovalSection({
         ) : (
           <Form method="post">
             <input type="hidden" name="intent" value="manual_approval" />
+            {deployment.commit_sha && deployment.detected_github_owner && deployment.detected_github_repo_name && (
+              <>
+                <input type="hidden" name="comparison_head_sha" value={deployment.commit_sha} />
+                <input type="hidden" name="comparison_base_sha" value={previousDeploymentForDiff?.commit_sha ?? ''} />
+              </>
+            )}
             <VStack gap="space-16">
               <TextField
                 label="Slack-lenke (valgfritt)"

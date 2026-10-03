@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { PENDING_STATUSES } from '~/lib/four-eyes-status'
 import { pool } from '../connection.server'
 import type { Deployment, GitHubPRData, UnverifiedCommit } from '../deployments.server'
@@ -52,10 +53,15 @@ export async function updateDeploymentFourEyes(
     changedBy?: string
     details?: Record<string, unknown>
   },
+  client?: PoolClient,
 ): Promise<Deployment> {
-  const current = await pool.query(`SELECT four_eyes_status FROM deployments WHERE id = $1`, [deploymentId])
+  const db = client ?? pool
+  const current = await db.query(
+    `SELECT four_eyes_status FROM deployments WHERE id = $1${client ? ' FOR UPDATE' : ''}`,
+    [deploymentId],
+  )
 
-  const result = await pool.query(
+  const result = await db.query(
     `UPDATE deployments 
      SET four_eyes_status = $1,
          github_pr_number = $2,
@@ -88,13 +94,17 @@ export async function updateDeploymentFourEyes(
     const prev = current.rows[0]
     if (prev.four_eyes_status !== data.fourEyesStatus) {
       const source = statusChangeOptions?.changeSource || 'unknown'
-      await logStatusTransition(deploymentId, {
-        fromStatus: prev.four_eyes_status,
-        toStatus: data.fourEyesStatus,
-        changeSource: source,
-        changedBy: statusChangeOptions?.changedBy,
-        details: statusChangeOptions?.details,
-      })
+      await logStatusTransition(
+        deploymentId,
+        {
+          fromStatus: prev.four_eyes_status,
+          toStatus: data.fourEyesStatus,
+          changeSource: source,
+          changedBy: statusChangeOptions?.changedBy,
+          details: statusChangeOptions?.details,
+        },
+        client,
+      )
     }
   }
 

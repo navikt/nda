@@ -7,16 +7,25 @@ vi.mock('~/db/deployments/home.server', () => ({
   resolveDevTeamScope: vi.fn(),
 }))
 
+const findRepositoryForAppMock = vi.fn()
+
+vi.mock('~/db/application-repositories.server', () => ({
+  findRepositoryForApp: findRepositoryForAppMock,
+}))
+
 const claimDeploymentForDeployNotifyMock = vi.fn()
 const getDeploymentsNeedingDeployNotifyMock = vi.fn()
-const getPreviousDeploymentForDiffMock = vi.fn().mockResolvedValue(null)
+const getEffectiveComparisonBaseShaMock = vi.fn().mockResolvedValue(null)
+
+vi.mock('~/db/verification-diff.server', () => ({
+  getEffectiveComparisonBaseSha: getEffectiveComparisonBaseShaMock,
+}))
 
 vi.mock('~/db/deployments.server', () => ({
   claimDeploymentForDeployNotify: claimDeploymentForDeployNotifyMock,
   claimDeploymentForSlackNotification: vi.fn(),
   getDeploymentsNeedingDeployNotify: getDeploymentsNeedingDeployNotifyMock,
   getPersonalDeploymentsMissingGoalLinks: vi.fn(),
-  getPreviousDeploymentForDiff: getPreviousDeploymentForDiffMock,
 }))
 
 vi.mock('~/db/role-assignments.server', () => ({ getUserDevTeamsByRole: vi.fn() }))
@@ -87,8 +96,10 @@ describe('sendPendingDeployNotifications', () => {
     chatDeleteMock.mockReset()
     claimDeploymentForDeployNotifyMock.mockReset()
     getDeploymentsNeedingDeployNotifyMock.mockReset()
-    getPreviousDeploymentForDiffMock.mockReset()
-    getPreviousDeploymentForDiffMock.mockResolvedValue(null)
+    findRepositoryForAppMock.mockReset()
+    findRepositoryForAppMock.mockResolvedValue({ repository: { github_repo_id: '123' } })
+    getEffectiveComparisonBaseShaMock.mockReset()
+    getEffectiveComparisonBaseShaMock.mockResolvedValue(null)
     createSlackNotificationMock.mockReset()
     loggerErrorMock.mockReset()
     process.env.SLACK_BOT_TOKEN = 'xoxb-test'
@@ -162,7 +173,7 @@ describe('sendPendingDeployNotifications', () => {
       detected_github_repo_name: 'pensjon-pen',
     })
     getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
-    getPreviousDeploymentForDiffMock.mockResolvedValue({ commit_sha: 'prev1230def567890123456789012345678901234' })
+    getEffectiveComparisonBaseShaMock.mockResolvedValue('prev1230def567890123456789012345678901234')
     postMessageMock.mockResolvedValue({ ts: '1234.5678' })
     claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
 
@@ -170,6 +181,7 @@ describe('sendPendingDeployNotifications', () => {
 
     await sendPendingDeployNotifications('https://nda.ansatt.nav.no')
 
+    expect(getEffectiveComparisonBaseShaMock).toHaveBeenCalledWith(1, '123', 'abc1234def5678901234567890abcdef1234567')
     const blocks = JSON.stringify(postMessageMock.mock.calls[0][0].blocks)
     expect(blocks).toContain(
       'https://github.com/navikt/pensjon-pen/compare/prev1230def567890123456789012345678901234...abc1234def5678901234567890abcdef1234567',
@@ -183,7 +195,7 @@ describe('sendPendingDeployNotifications', () => {
       detected_github_repo_name: 'pensjon-pen',
     })
     getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
-    getPreviousDeploymentForDiffMock.mockResolvedValue(null)
+    getEffectiveComparisonBaseShaMock.mockResolvedValue(null)
     postMessageMock.mockResolvedValue({ ts: '1234.5678' })
     claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
 
@@ -202,7 +214,7 @@ describe('sendPendingDeployNotifications', () => {
       detected_github_repo_name: 'pensjon-pen',
     })
     getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
-    getPreviousDeploymentForDiffMock.mockRejectedValue(new Error('db unavailable'))
+    getEffectiveComparisonBaseShaMock.mockRejectedValue(new Error('db unavailable'))
     postMessageMock.mockResolvedValue({ ts: '1234.5678' })
     claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
 
@@ -213,7 +225,7 @@ describe('sendPendingDeployNotifications', () => {
     const blocks = JSON.stringify(postMessageMock.mock.calls[0][0].blocks)
     expect(blocks).toContain('https://github.com/navikt/pensjon-pen/commit/abc1234def5678901234567890abcdef1234567')
     expect(loggerErrorMock).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to resolve previous deployment for GitHub link'),
+      expect.stringContaining('Failed to resolve comparison base for GitHub link'),
       expect.any(Error),
     )
   })
@@ -233,7 +245,7 @@ describe('sendPendingDeployNotifications', () => {
 
     await sendPendingDeployNotifications('https://nda.ansatt.nav.no')
 
-    expect(getPreviousDeploymentForDiffMock).not.toHaveBeenCalled()
+    expect(getEffectiveComparisonBaseShaMock).not.toHaveBeenCalled()
     const blocks = JSON.stringify(postMessageMock.mock.calls[0][0].blocks)
     expect(blocks).not.toContain('github.com')
   })
@@ -245,7 +257,7 @@ describe('sendPendingDeployNotifications', () => {
       detected_github_repo_name: 'pensjon-pen',
     })
     getDeploymentsNeedingDeployNotifyMock.mockResolvedValue([deployment])
-    getPreviousDeploymentForDiffMock.mockResolvedValue({ commit_sha: 'refs/heads/main' })
+    getEffectiveComparisonBaseShaMock.mockResolvedValue('refs/heads/main')
     postMessageMock.mockResolvedValue({ ts: '1234.5678' })
     claimDeploymentForDeployNotifyMock.mockResolvedValue(deployment)
 

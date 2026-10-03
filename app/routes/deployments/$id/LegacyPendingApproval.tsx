@@ -9,9 +9,16 @@ type LoaderData = Route.ComponentProps['loaderData']
 export type LegacyPendingApprovalProps = {
   legacyInfo: LoaderData['legacyInfo']
   capabilities: LoaderData['capabilities']
+  deployment?: LoaderData['deployment']
+  previousDeploymentForDiff?: LoaderData['previousDeploymentForDiff']
 }
 
-export function LegacyPendingApproval({ legacyInfo, capabilities }: LegacyPendingApprovalProps) {
+export function LegacyPendingApproval({
+  legacyInfo,
+  capabilities,
+  deployment,
+  previousDeploymentForDiff,
+}: LegacyPendingApprovalProps) {
   return (
     <Box background="warning-moderate" padding="space-24" borderRadius="8">
       <VStack gap="space-16">
@@ -37,6 +44,16 @@ export function LegacyPendingApproval({ legacyInfo, capabilities }: LegacyPendin
             <ExternalLink href={legacyInfo.slack_link}>Se Slack-melding</ExternalLink>
           </BodyShort>
         )}
+        {deployment?.commit_sha &&
+          deployment.detected_github_owner &&
+          deployment.detected_github_repo_name &&
+          previousDeploymentForDiff?.commit_sha && (
+            <ExternalLink
+              href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff.commit_sha}...${deployment.commit_sha}`}
+            >
+              Se endringer på GitHub
+            </ExternalLink>
+          )}
         <Alert variant="info" size="small">
           En annen person enn {legacyInfo?.registered_by} må godkjenne.
         </Alert>
@@ -45,6 +62,12 @@ export function LegacyPendingApproval({ legacyInfo, capabilities }: LegacyPendin
           <HStack gap="space-16" wrap>
             <Form method="post">
               <input type="hidden" name="intent" value="approve_legacy" />
+              {deployment?.commit_sha && deployment.detected_github_owner && deployment.detected_github_repo_name && (
+                <>
+                  <input type="hidden" name="comparison_head_sha" value={deployment.commit_sha} />
+                  <input type="hidden" name="comparison_base_sha" value={previousDeploymentForDiff?.commit_sha ?? ''} />
+                </>
+              )}
               <Button type="submit" variant="primary" size="small">
                 Godkjenn
               </Button>
