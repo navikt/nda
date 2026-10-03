@@ -4,12 +4,16 @@ import { TITLE_COALESCE_SQL } from '~/db/deployments.server'
 import { propagateVerificationToSiblings } from '~/db/monorepo.server'
 import { getEffectiveSettingsForApp } from '~/db/repositories.server'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
-import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
-import { isProtectedStatus } from '~/lib/four-eyes-status'
+import {
+  getCompareSnapshotForCommit,
+  getMonorepoComparisonBase,
+  getPreviousDeploymentForDiff,
+} from '~/db/verification-diff.server'
+import { isProtectedStatus, ROOT_APPROVED_STATUSES } from '~/lib/four-eyes-status'
 import { getMergedPullRequestsInWindow } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
-import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
+import { findRootApprovedSiblingForCommit, preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
 import {
   buildCommitsBetweenFromCache,
   fetchVerificationData,
@@ -34,6 +38,8 @@ export type { VerificationResult } from './types'
 export const isVerificationDebugMode = process.env.VERIFICATION_DEBUG === 'true'
 
 function applyPassthroughFields(result: VerificationResult, input: VerificationInput): void {
+  result.comparisonRange =
+    input.comparisonBaseSha !== undefined ? { baseSha: input.comparisonBaseSha, headSha: input.commitSha } : null
   if (input.branchMismatch) {
     result.branchMismatch = input.branchMismatch
   }
@@ -540,37 +546,46 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo)
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
   const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !githubRepoId
-  const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
-  const previousDeployment = prevRow
-    ? await preferRootApprovedSibling(
-        {
-          id: prevRow.id,
-          commitSha: prevRow.commit_sha,
-          createdAt: prevRow.created_at.toISOString(),
-          monitoredAppId: prevRow.monitored_app_id,
-          fourEyesStatus: prevRow.four_eyes_status,
-        },
+  const comparisonBaseDeployment = githubRepoId
+    ? await getMonorepoComparisonBase(dep.id, githubRepoId, dep.commit_sha)
+    : null
+  const comparisonBaseSha = comparisonBaseDeployment?.commit_sha ?? null
+  const matchingApprovedRoot = githubRepoId
+    ? await findRootApprovedSiblingForCommit(
         dep.commit_sha,
         githubRepoId,
-        dep.monitored_app_id,
+        comparisonBaseSha,
         dep.id,
+        dep.monitored_app_id,
       )
     : null
-
-  const compareSnapshot = await getCompareSnapshotForCommit(
-    owner,
-    repo,
-    dep.commit_sha,
-    previousDeployment?.commitSha ?? null,
-  )
-  if (!compareSnapshot) return null
+  const prevRow =
+    githubRepoId && !matchingApprovedRoot ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
+  const previousDeployment = matchingApprovedRoot
+    ? {
+        ...matchingApprovedRoot,
+        commitSha: dep.commit_sha,
+      }
+    : prevRow
+      ? await preferRootApprovedSibling(
+          {
+            id: prevRow.id,
+            commitSha: prevRow.commit_sha,
+            createdAt: prevRow.created_at.toISOString(),
+            monitoredAppId: prevRow.monitored_app_id,
+            fourEyesStatus: prevRow.four_eyes_status,
+            comparisonBaseSha: prevRow.comparison_base_sha,
+          },
+          dep.commit_sha,
+          githubRepoId,
+          dep.monitored_app_id,
+          comparisonBaseSha,
+          dep.id,
+        )
+      : null
 
   let input: VerificationInput
-  const cacheBaseMismatch = previousDeployment && compareSnapshot.base_sha !== previousDeployment.commitSha
-  if (cacheBaseMismatch) {
-    logger.warn(
-      `reverifyDeployment(${dep.id}): cache snapshot base_sha ${compareSnapshot.base_sha} ≠ previousDeployment ${previousDeployment.commitSha} — refetching`,
-    )
+  if (!comparisonBaseSha) {
     input = await fetchVerificationData(
       dep.id,
       dep.commit_sha,
@@ -578,50 +593,77 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       dep.environment_name,
       baseBranch,
       dep.monitored_app_id,
-      { forceRefresh: true, includeComments: false, includeReviews: false },
     )
   } else {
-    const compareData = compareSnapshot.data as CompareData
-    const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
-      cacheOnly: true,
-    })
+    const compareSnapshot = await getCompareSnapshotForCommit(owner, repo, dep.commit_sha, comparisonBaseSha)
+    if (!compareSnapshot) {
+      logger.warn(`reverifyDeployment(${dep.id}): no compare snapshot for base ${comparisonBaseSha} — refetching`)
+      input = await fetchVerificationData(
+        dep.id,
+        dep.commit_sha,
+        `${owner}/${repo}`,
+        dep.environment_name,
+        baseBranch,
+        dep.monitored_app_id,
+        { forceRefresh: true, includeComments: false, includeReviews: false },
+      )
+    } else if (compareSnapshot.base_sha !== comparisonBaseSha) {
+      logger.warn(
+        `reverifyDeployment(${dep.id}): cache snapshot base_sha ${compareSnapshot.base_sha} ≠ comparison base ${comparisonBaseSha} — refetching`,
+      )
+      input = await fetchVerificationData(
+        dep.id,
+        dep.commit_sha,
+        `${owner}/${repo}`,
+        dep.environment_name,
+        baseBranch,
+        dep.monitored_app_id,
+        { forceRefresh: true, includeComments: false, includeReviews: false },
+      )
+    } else {
+      const compareData = compareSnapshot.data as CompareData
+      const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
+        cacheOnly: true,
+      })
 
-    let deployedPr: VerificationInput['deployedPr'] = null
-    const cachedPrNumber =
-      dep.github_pr_number ??
-      (await findPrForCommit(owner, repo, dep.commit_sha, baseBranch, { cacheOnly: true })).prNumber
-    if (cachedPrNumber) {
-      const prData = await getPrDataForDiff(owner, repo, cachedPrNumber)
-      if (prData) {
-        deployedPr = {
-          number: cachedPrNumber,
-          url: `https://github.com/${owner}/${repo}/pull/${cachedPrNumber}`,
-          metadata: prData.metadata,
-          reviews: prData.reviews,
-          commits: prData.commits,
+      let deployedPr: VerificationInput['deployedPr'] = null
+      const cachedPrNumber =
+        dep.github_pr_number ??
+        (await findPrForCommit(owner, repo, dep.commit_sha, baseBranch, { cacheOnly: true })).prNumber
+      if (cachedPrNumber) {
+        const prData = await getPrDataForDiff(owner, repo, cachedPrNumber)
+        if (prData) {
+          deployedPr = {
+            number: cachedPrNumber,
+            url: `https://github.com/${owner}/${repo}/pull/${cachedPrNumber}`,
+            metadata: prData.metadata,
+            reviews: prData.reviews,
+            commits: prData.commits,
+          }
         }
       }
-    }
 
-    const hasCompareMetadata = compareData.compare !== undefined
-    input = {
-      deploymentId: dep.id,
-      commitSha: dep.commit_sha,
-      repository: `${owner}/${repo}`,
-      environmentName: dep.environment_name,
-      baseBranch,
-      auditStartYear: dep.audit_start_year,
-      implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
-      monitoredAppId: dep.monitored_app_id,
-      previousDeployment,
-      previousDeploymentLookupFailed,
-      deployedPr,
-      commitsBetween,
-      compareSummary: hasCompareMetadata ? compareData.compare : null,
-      dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
-      repositoryStatus: 'active',
-      commitOnBaseBranch: null,
-      detectedTitle: deriveDetectedTitle(deployedPr, commitsBetween),
+      const hasCompareMetadata = compareData.compare !== undefined
+      input = {
+        deploymentId: dep.id,
+        commitSha: dep.commit_sha,
+        repository: `${owner}/${repo}`,
+        environmentName: dep.environment_name,
+        baseBranch,
+        auditStartYear: dep.audit_start_year,
+        implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
+        monitoredAppId: dep.monitored_app_id,
+        previousDeployment,
+        comparisonBaseSha,
+        previousDeploymentLookupFailed,
+        deployedPr,
+        commitsBetween,
+        compareSummary: hasCompareMetadata ? compareData.compare : null,
+        dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
+        repositoryStatus: 'active',
+        commitOnBaseBranch: null,
+        detectedTitle: deriveDetectedTitle(deployedPr, commitsBetween),
+      }
     }
   }
 
@@ -644,6 +686,15 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   } else {
     const persisted = await updateDeploymentVerification(dep.id, newResult, 'reverification')
     prBackfilled = prBackfillCandidate && persisted
+    if (persisted && newResult.comparisonRange && ROOT_APPROVED_STATUSES.includes(newResult.status)) {
+      await propagateVerificationToSiblings(
+        dep.id,
+        newResult.status,
+        dep.commit_sha,
+        dep.monitored_app_id,
+        newResult.hasFourEyes,
+      )
+    }
   }
 
   return {

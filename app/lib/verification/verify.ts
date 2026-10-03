@@ -46,6 +46,11 @@ export function verifyDeployment(input: VerificationInput): VerificationResult {
     return handlePendingBaseline(input)
   }
 
+  if (!input.deployedPr) {
+    const siblingResult = handleSiblingVerification(input)
+    if (siblingResult) return siblingResult
+  }
+
   if (input.commitsBetween.length === 0) {
     if (input.compareFailed) {
       return handleCompareError(
@@ -93,6 +98,11 @@ export function verifyDeployment(input: VerificationInput): VerificationResult {
     if (implicitResult) return implicitResult
   }
 
+  if (input.deployedPr) {
+    const siblingResult = handleSiblingVerification(input, true)
+    if (siblingResult) return siblingResult
+  }
+
   return handleUnverifiedCommits(input, unverifiedCommits)
 }
 
@@ -132,6 +142,45 @@ function handlePendingBaseline(input: VerificationInput): VerificationResult {
   })
 }
 
+function handleSiblingVerification(input: VerificationInput, approvedOnly = false): VerificationResult | null {
+  const sibling = input.previousDeployment
+  const isSiblingDeployment =
+    input.monitoredAppId != null &&
+    sibling?.monitoredAppId != null &&
+    sibling.monitoredAppId !== input.monitoredAppId &&
+    input.commitSha === sibling.commitSha
+
+  if (!isSiblingDeployment) return null
+
+  const siblingRangeMatches = (input.comparisonBaseSha ?? null) === (sibling.comparisonBaseSha ?? null)
+  if (!siblingRangeMatches && (input.commitsBetween.length > 0 || approvedOnly)) return null
+
+  if (!siblingRangeMatches) {
+    return handlePendingSiblingResolution(
+      input,
+      `Same commit found on sibling application's deployment #${sibling.id}, but its comparison range does not match. Verification postponed until a sibling deployment with the same from/to commits is approved.`,
+    )
+  }
+
+  if (sibling.fourEyesStatus == null || !isRootApprovedStatus(sibling.fourEyesStatus)) {
+    if (approvedOnly) return null
+    return handlePendingSiblingResolution(
+      input,
+      `Same commit found on sibling application's deployment #${sibling.id}, but its status (${sibling.fourEyesStatus ?? 'unknown'}) is not root-approved. Verification postponed until the sibling application is resolved.`,
+    )
+  }
+
+  return buildResult(input, {
+    hasFourEyes: true,
+    status: 'verified_via_sibling',
+    approvalDetails: {
+      method: 'verified_via_sibling',
+      approvers: [],
+      reason: `Same commit and comparison range already approved via sibling deployment #${sibling.id}.`,
+    },
+  })
+}
+
 function handleNoChanges(
   input: VerificationInput,
   reason = 'No new commits since previous deployment',
@@ -148,6 +197,9 @@ function handleNoChanges(
     })
 
     if (!prApproval.hasFourEyes) {
+      const siblingResult = handleSiblingVerification(input, true)
+      if (siblingResult) return siblingResult
+
       return buildResult(input, {
         hasFourEyes: false,
         status: 'unverified_commits',
@@ -196,50 +248,6 @@ function handleNoChanges(
         method: 'no_changes',
         approvers: [],
         reason: `${reason} — underlying PR is already four-eyes verified: ${prApproval.reason}`,
-      },
-    })
-  }
-
-  // If the "previous deployment" used for this comparison actually belongs to a different
-  // app (monitored_app_id) than the one being verified, this is not a redeploy of unchanged
-  // code — it's a different app in the same monorepo deploying a commit that was already
-  // verified via a sibling app's deployment. Label it distinctly so it isn't mistaken for
-  // "nothing changed" for this app. Only applies when the sibling actually deployed the exact
-  // same commit — handleNoChanges is also reached for ancestor/nearby-deploy cases where
-  // input.commitSha differs from previousDeployment.commitSha, and those are not sibling
-  // verifications even if the previous deployment happens to belong to another app.
-  const isSiblingVerification =
-    input.monitoredAppId != null &&
-    input.previousDeployment?.monitoredAppId != null &&
-    input.previousDeployment.monitoredAppId !== input.monitoredAppId &&
-    input.commitSha === input.previousDeployment.commitSha
-
-  if (isSiblingVerification) {
-    // The candidate-lookup queries also admit deployments with statuses like 'pending',
-    // 'error', or 'unverified_commits' — only genuinely root-approved siblings may be trusted
-    // as a verification source. 'verified_via_sibling' itself is excluded here even though it
-    // passes isApprovedStatus elsewhere: preferRootApprovedSibling already re-attributes to the
-    // true root when one exists, so a candidate still carrying 'verified_via_sibling' at this
-    // point means no root was found — accepting it would let a non-root, derived sibling
-    // approve this deployment, which contradicts root attribution and could enable
-    // approve-then-propagate-back circularity.
-    const siblingIsApproved =
-      input.previousDeployment?.fourEyesStatus != null && isRootApprovedStatus(input.previousDeployment.fourEyesStatus)
-
-    if (!siblingIsApproved) {
-      return handlePendingSiblingResolution(
-        input,
-        `${reason} — same commit found on sibling application's deployment #${input.previousDeployment?.id}, but its status (${input.previousDeployment?.fourEyesStatus ?? 'unknown'}) is not yet a root-approved status. Verification postponed until the sibling application is resolved.`,
-      )
-    }
-
-    return buildResult(input, {
-      hasFourEyes: true,
-      status: 'verified_via_sibling',
-      approvalDetails: {
-        method: 'verified_via_sibling',
-        approvers: [],
-        reason: `${reason} — same commit already verified via sibling deployment #${input.previousDeployment?.id} in the same repository.`,
       },
     })
   }

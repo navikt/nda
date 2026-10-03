@@ -426,6 +426,7 @@ export interface VerificationInput {
     commitSha: string
     createdAt: string
     monitoredAppId?: number
+    comparisonBaseSha?: string | null
     // The candidate's own four_eyes_status at the time it was found. Required to gate
     // verified_via_sibling: a sibling deployment must itself have been actually approved
     // before its resolution is trusted for a different app (otherwise a pending/error/
@@ -436,6 +437,7 @@ export interface VerificationInput {
 
   previousDeploymentLookupFailed?: boolean
   previousDeploymentRateLimited?: boolean
+  comparisonBaseSha?: string | null
 
   deployedPr: {
     number: number
@@ -514,6 +516,10 @@ export interface ImplicitApprovalSettings {
 export interface VerificationResult {
   hasFourEyes: boolean
   status: VerificationStatus
+  comparisonRange?: {
+    baseSha: string | null
+    headSha: string
+  } | null
 
   deployedPr: {
     number: number
