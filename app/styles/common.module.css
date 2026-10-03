@@ -18,22 +18,6 @@
   flex-direction: column;
 }
 
-.navigationLoading {
-  position: fixed;
-  inset: 0 0 auto;
-  z-index: 1000;
-  display: flex;
-  justify-content: center;
-  padding: var(--ax-space-4);
-  background: var(--ax-bg-default);
-  border-bottom: 1px solid var(--ax-border-neutral-subtle);
-}
-
-.navigationLoading:empty {
-  padding: 0;
-  border-bottom: none;
-}
-
 /* Stacked list styles - for connected cards without gaps */
 .stackedListItem {
   border-radius: 0;

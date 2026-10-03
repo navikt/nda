@@ -13,7 +13,8 @@ import {
 
 import type { Route } from './+types/root'
 import '@navikt/ds-css'
-import { Loader, Page, Theme } from '@navikt/ds-react'
+import { Page, Theme } from '@navikt/ds-react'
+import { NavigationProgress } from './components/NavigationProgress'
 import { ThemeProvider } from './hooks/useTheme'
 import { serializeAdminElevation } from './lib/admin-elevation.server'
 import { getUserIdentity } from './lib/auth.server'
@@ -85,9 +86,7 @@ export default function App() {
   return (
     <ThemeProvider initialTheme={theme}>
       <Theme theme={theme}>
-        <div className={styles.navigationLoading} role="status" aria-live="polite">
-          {isNavigating && <Loader size="small" title="Laster side…" />}
-        </div>
+        <NavigationProgress isNavigating={isNavigating} />
         <Outlet />
       </Theme>
     </ThemeProvider>
