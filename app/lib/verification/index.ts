@@ -20,10 +20,7 @@ import { storeVerificationResult, updateDeploymentVerification } from './store-d
 import type { CompareData, VerificationInput, VerificationResult } from './types'
 import { verifyDeployment } from './verify'
 
-export {
-  fetchVerificationDataForAllDeployments,
-  fetchVerificationDataForRepository,
-} from './fetch-data/bulk-fetch.server'
+export { fetchVerificationDataForRepository } from './fetch-data/bulk-fetch.server'
 export {
   backfillWorkflowTriggerConfigForAllApps,
   countDeploymentsMissingWorkflowTriggerConfig,
@@ -32,10 +29,7 @@ export {
   type WorkflowTriggerBackfillResult,
 } from './fetch-data.server'
 
-export type {
-  VerificationInput,
-  VerificationResult,
-} from './types'
+export type { VerificationResult } from './types'
 
 export const isVerificationDebugMode = process.env.VERIFICATION_DEBUG === 'true'
 

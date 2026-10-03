@@ -4,7 +4,7 @@ import { metrics } from '@opentelemetry/api'
 import { logger, logOutgoingHttp } from '~/lib/logger.server'
 import { withGitHubSpan } from '~/lib/tracing.server'
 
-export type GitHubRateLimitStatus = {
+type GitHubRateLimitStatus = {
   remaining: number
   limit: number | null
   resetAt: Date | null

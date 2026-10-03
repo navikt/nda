@@ -110,7 +110,7 @@ export async function archiveCommitRawSnapshot(
   }
 }
 
-export type CommitAncestryStatus = 'identical' | 'ahead' | 'behind' | 'diverged'
+type CommitAncestryStatus = 'identical' | 'ahead' | 'behind' | 'diverged'
 
 export async function getCommitAncestryStatus(
   owner: string,

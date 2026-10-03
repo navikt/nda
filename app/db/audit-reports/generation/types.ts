@@ -114,7 +114,7 @@ export interface ReviewerEntry {
   review_count: number
 }
 
-export interface UnverifiedCommitEntry {
+interface UnverifiedCommitEntry {
   sha: string
   message: string
   author: string

@@ -117,48 +117,6 @@ export const mockAuditReport = {
   created_at: '2026-02-01T12:00:00Z',
 }
 
-const mockDeployment = {
-  id: 1,
-  commit_sha: 'abc123def456',
-  commit_message: 'feat: Add new feature',
-  commit_author: 'john-doe',
-  commit_author_email: 'john.doe@nav.no',
-  deployer: 'jane-smith',
-  deploy_started_at: '2026-02-08T10:30:00Z',
-  created_at: '2026-02-08T10:30:00Z',
-  team_slug: 'pensjondeployer',
-  environment_name: 'prod-fss',
-  app_name: 'pensjon-pen',
-  four_eyes_status: 'approved' as const,
-  approval_source: 'pr_approval' as const,
-  github_owner: 'navikt',
-  github_repo_name: 'pensjon-pen',
-}
-
-export const mockDeployments = [
-  mockDeployment,
-  {
-    ...mockDeployment,
-    id: 2,
-    commit_sha: 'def456abc789',
-    commit_message: 'fix: Bug fix',
-    four_eyes_status: 'direct_push' as const,
-    approval_source: null,
-    deploy_started_at: '2026-02-07T15:00:00Z',
-    created_at: '2026-02-07T15:00:00Z',
-  },
-  {
-    ...mockDeployment,
-    id: 3,
-    commit_sha: 'ghi789jkl012',
-    commit_message: 'chore: Update dependencies',
-    four_eyes_status: 'pending' as const,
-    approval_source: null,
-    deploy_started_at: '2026-02-06T09:00:00Z',
-    created_at: '2026-02-06T09:00:00Z',
-  },
-]
-
 export const mockUserMapping = {
   github_username: 'glad-fjord',
   display_name: 'Glad Fjord',

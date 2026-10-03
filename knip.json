@@ -1,6 +1,15 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["server.ts", "scripts/*.ts", ".storybook/vite.config.ts"],
+  "workspaces": {
+    ".": {
+      "entry": ["server.ts", "scripts/*.ts", ".storybook/vite.config.ts"]
+    },
+    "landing": {
+      "entry": ["src/pages/**/*.{astro,js,ts}"],
+      "project": ["**/*.{astro,js,mjs,ts,tsx}"],
+      "ignoreBinaries": ["astro"]
+    }
+  },
   "ignoreDependencies": [
     "@fontsource/source-sans-pro",
     "@storybook/builder-vite",

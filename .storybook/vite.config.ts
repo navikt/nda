@@ -1,16 +1,16 @@
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
-import tsconfigPaths from 'vite-tsconfig-paths';
-import { getBuildVersion } from '../get-build-version';
+import { getBuildVersion } from '../get-build-version.ts';
 
 // Separate Vite config for Storybook (without react-router plugin)
 export default defineConfig({
-  plugins: [react(), tsconfigPaths()],
+  plugins: [react()],
   define: {
     __BUILD_VERSION__: JSON.stringify(getBuildVersion()),
   },
   resolve: {
+    tsconfigPaths: true,
     alias: {
       // node:path is used in audit-report-pdf.tsx for production font paths.
       // fontBasePath is only set server-side (typeof window === 'undefined'),
