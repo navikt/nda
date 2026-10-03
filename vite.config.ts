@@ -1,14 +1,16 @@
 import { tmpdir } from 'node:os';
 import { reactRouter } from '@react-router/dev/vite';
-import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
-import { getBuildVersion } from './get-build-version';
+import { getBuildVersion } from './get-build-version.ts';
 
 const isTest = process.env.VITEST === 'true';
 
 export default defineConfig({
-  plugins: [...(isTest ? [] : [reactRouter()]), tsconfigPaths()],
+  plugins: [...(isTest ? [] : [reactRouter()])],
   envDir: isTest ? tmpdir() : undefined,
+  resolve: {
+    tsconfigPaths: true,
+  },
   define: {
     __BUILD_VERSION__: JSON.stringify(getBuildVersion()),
   },

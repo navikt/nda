@@ -14,14 +14,12 @@ export { getAuditReportFile, saveAuditReportFile } from './audit-reports/file-st
 export type {
   AdminResetEntry,
   AuditDeploymentEntry,
-  AuditGoalLinkEntry,
   AuditReportData,
   ContributorEntry,
   DeviationEntry,
   ManualApprovalEntry,
   ReviewerEntry,
   UnverifiedCommitDeploymentEntry,
-  UnverifiedCommitEntry,
 } from './audit-reports/generation.server'
 export { buildReportData, getAuditReportData, saveAuditReport } from './audit-reports/generation.server'
 export type { AuditReadinessCheck } from './audit-reports/readiness.server'

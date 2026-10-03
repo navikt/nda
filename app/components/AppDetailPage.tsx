@@ -40,8 +40,6 @@ import { StatCard } from '~/components/StatCard'
 import { SYNC_JOB_STATUS_LABELS, type SyncJobStatus } from '~/db/sync-job-types'
 import { TIME_PERIOD_OPTIONS } from '~/lib/time-periods'
 
-export type { SyncJobStatus }
-
 interface AppDetailApp {
   id: number
   team_slug: string

@@ -6,13 +6,13 @@ import { StatCard } from '~/components/StatCard'
 import type { AppDeploymentStats } from '~/db/deployments.server'
 import { TIME_PERIOD_OPTIONS, type TimePeriod } from '~/lib/time-periods'
 
-export interface RepositoryPageRepository {
+interface RepositoryPageRepository {
   id: number
   github_owner: string
   github_repo_name: string
 }
 
-export interface RepositoryPageAffectedApp {
+interface RepositoryPageAffectedApp {
   id: number
   app_name: string
   team_slug: string

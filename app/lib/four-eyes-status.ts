@@ -97,11 +97,11 @@ export const LEGACY_STATUSES_SQL = LEGACY_STATUSES.map((s) => `'${s}'`).join(', 
 
 // Statuses excluded from commit-diff/baseline-eligibility logic because there is no
 // repository to diff against (legacy: pre-audit; unverifiable: missing repo metadata).
-export const NON_DIFFABLE_STATUSES: FourEyesStatus[] = [...LEGACY_STATUSES, 'unverifiable']
+const NON_DIFFABLE_STATUSES: FourEyesStatus[] = [...LEGACY_STATUSES, 'unverifiable']
 
 export const NON_DIFFABLE_STATUSES_SQL = NON_DIFFABLE_STATUSES.map((s) => `'${s}'`).join(', ')
 
-export const UNAUTHORIZED_STATUSES: FourEyesStatus[] = ['unauthorized_repository', 'unauthorized_branch']
+const UNAUTHORIZED_STATUSES: FourEyesStatus[] = ['unauthorized_repository', 'unauthorized_branch']
 
 export const UNAUTHORIZED_STATUSES_SQL = UNAUTHORIZED_STATUSES.map((s) => `'${s}'`).join(', ')
 

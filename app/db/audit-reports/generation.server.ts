@@ -15,15 +15,12 @@ export { getAuditReportData } from './generation/query-data.server'
 export type {
   AdminResetEntry,
   AuditDeploymentEntry,
-  AuditDeploymentRow,
-  AuditGoalLinkEntry,
   AuditReportData,
   ContributorEntry,
   DeviationEntry,
   ManualApprovalEntry,
   ReviewerEntry,
   UnverifiedCommitDeploymentEntry,
-  UnverifiedCommitEntry,
 } from './generation/types'
 
 export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditReportData>>): AuditReportData {
@@ -126,32 +123,35 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
 
   const manualApprovalEntries: ManualApprovalEntry[] = manual_approvals.map((a) => {
     const deployment = deployments.find((d) => d.id === a.deployment_id)
+    if (!deployment) {
+      throw new Error(`Manual approval for deployment ${a.deployment_id} has no matching deployment.`)
+    }
     const legacyInfo = legacyInfoMap.get(a.deployment_id)
 
     let reason = 'Ekstra commits etter godkjenning'
     if (legacyInfo) {
       reason = 'Legacy deployment (GitHub-verifisert)'
-    } else if (deployment?.four_eyes_status === 'direct_push') {
+    } else if (deployment.four_eyes_status === 'direct_push') {
       reason = 'Direct push til main'
     }
 
     return {
       deployment_id: a.deployment_id,
-      nais_deployment_id: deployment!.nais_deployment_id,
+      nais_deployment_id: deployment.nais_deployment_id,
       title:
         computeDisplayTitle(
-          deployment?.title ?? null,
-          deployment?.delivery_commit_shas?.length || 1,
+          deployment.title,
+          deployment.delivery_commit_shas?.length || 1,
           isExclusivelyThisPr(
-            deployment?.github_pr_number != null,
-            deployment?.delivery_commit_shas ?? [],
-            deployment?.pr_commit_shas ? new Set(deployment.pr_commit_shas) : null,
+            deployment.github_pr_number != null,
+            deployment.delivery_commit_shas ?? [],
+            deployment.pr_commit_shas ? new Set(deployment.pr_commit_shas) : null,
           ),
         ) || '',
-      date: deployment?.created_at.toISOString() || '',
-      commit_sha: deployment?.commit_sha || '',
-      deployer: deployment?.deployer_username || '',
-      deployer_display_name: getDisplayName(deployment?.deployer_username),
+      date: deployment.created_at.toISOString(),
+      commit_sha: deployment.commit_sha || '',
+      deployer: deployment.deployer_username || '',
+      deployer_display_name: getDisplayName(deployment.deployer_username),
       reason,
       registered_by: legacyInfo?.registered_by || '',
       registered_by_display_name: getDisplayName(legacyInfo?.registered_by),

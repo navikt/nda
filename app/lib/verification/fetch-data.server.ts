@@ -239,19 +239,17 @@ export async function fetchVerificationData(
   }
 }
 
-export type { CommitChecksFetchResult } from './fetch-data/commit-checks.server'
 export { fetchCommitChecks, refreshCommitChecksOnly } from './fetch-data/commit-checks.server'
 export { buildCommitsBetweenFromCache, resolveNoDiffDetection } from './fetch-data/commits-between.server'
 export type { FetchOptions } from './fetch-data/pr-data.server'
-export { fetchPrFromGitHub, findPrForCommit, getPrDataForDiff } from './fetch-data/pr-data.server'
+export { findPrForCommit, getPrDataForDiff } from './fetch-data/pr-data.server'
 export type { WorkflowTriggerBackfillResult } from './fetch-data/workflow-triggers.server'
 export {
-  backfillWorkflowTriggerConfig,
   backfillWorkflowTriggerConfigForAllApps,
   countDeploymentsMissingWorkflowTriggerConfig,
 } from './fetch-data/workflow-triggers.server'
 
-export async function getAppSettings(monitoredAppId: number): Promise<{
+async function getAppSettings(monitoredAppId: number): Promise<{
   auditStartYear: number | null
   implicitApprovalSettings: ImplicitApprovalSettings
 }> {

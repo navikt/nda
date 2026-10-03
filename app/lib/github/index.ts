@@ -1,19 +1,11 @@
 export {
-  CHECKS_SNAPSHOT_SCHEMA_VERSION,
-  type ChecksSnapshotData,
-  parseCheckRunsSnapshot,
-} from './checks-snapshot'
-export {
-  type GitHubRateLimitStatus,
   getGitHubClient,
   getGitHubRateLimitRemaining,
 } from './client.server'
 export {
-  type CommitAncestryStatus,
   getBranchFromWorkflowRun,
   getCommitAncestryStatus,
   getCommitsBetween,
-  getRepositoryDefaultBranch,
   getRepositoryId,
   getSingleCommitMessage,
   getWorkflowTriggerConfig,

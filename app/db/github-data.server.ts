@@ -44,44 +44,6 @@ export async function getAllLatestPrSnapshots(
   return snapshots
 }
 
-export async function savePrSnapshotsBatch(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  snapshots: Array<{ dataType: PrDataType; data: unknown }>,
-): Promise<number[]> {
-  if (snapshots.length === 0) return []
-
-  const values: unknown[] = []
-  const placeholders: string[] = []
-
-  snapshots.forEach((snapshot, idx) => {
-    const offset = idx * 7
-    placeholders.push(
-      `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7})`,
-    )
-    values.push(
-      owner,
-      repo,
-      prNumber,
-      snapshot.dataType,
-      CURRENT_SCHEMA_VERSION,
-      JSON.stringify(snapshot.data),
-      'github',
-    )
-  })
-
-  const result = await pool.query(
-    `INSERT INTO github_pr_snapshots 
-       (owner, repo, pr_number, data_type, schema_version, data, source)
-     VALUES ${placeholders.join(', ')}
-     RETURNING id`,
-    values,
-  )
-
-  return result.rows.map((row: { id: number }) => row.id)
-}
-
 export async function saveCommitSnapshot(
   owner: string,
   repo: string,
@@ -591,33 +553,23 @@ async function cleanupOldSnapshotsInternal(options?: SnapshotCleanupOptions): Pr
   return { counts, truncated }
 }
 
-export {
-  getLatestCheckAnnotationsRawSnapshot,
-  saveCheckAnnotationsRawSnapshot,
-} from './github-data/check-annotations-raw-snapshots.server'
+export { saveCheckAnnotationsRawSnapshot } from './github-data/check-annotations-raw-snapshots.server'
 export {
   getDerivedChecksDataFromRawSnapshot,
   getLatestDefinitiveChecksRawSnapshot,
   saveChecksRawSnapshot,
 } from './github-data/checks-raw-snapshots.server'
-export {
-  getLatestCommitAssociatedPrsRawSnapshot,
-  saveCommitAssociatedPrsRawSnapshot,
-} from './github-data/commit-associated-prs-raw-snapshots.server'
-export { getLatestCommitRawSnapshot, saveCommitRawSnapshot } from './github-data/commit-raw-snapshots.server'
+export { saveCommitAssociatedPrsRawSnapshot } from './github-data/commit-associated-prs-raw-snapshots.server'
+export { saveCommitRawSnapshot } from './github-data/commit-raw-snapshots.server'
 export {
   type GitHubDataStats,
   getDerivedCompareDataFromRawSnapshot,
-  getGitHubDataStatsForApp,
   getGitHubDataStatsForRepository,
   getLatestCompareRawSnapshot,
   getLatestCompareSnapshot,
   saveCompareRawSnapshot,
   saveCompareSnapshot,
 } from './github-data/compare-stats.server'
-export { getLatestPrWindowRawSnapshot, savePrWindowRawSnapshot } from './github-data/pr-window-raw-snapshots.server'
+export { savePrWindowRawSnapshot } from './github-data/pr-window-raw-snapshots.server'
 export { getLatestVerificationRun, saveVerificationRun } from './github-data/verification-runs.server'
-export {
-  getLatestWorkflowRunRawSnapshot,
-  saveWorkflowRunRawSnapshot,
-} from './github-data/workflow-run-raw-snapshots.server'
+export { saveWorkflowRunRawSnapshot } from './github-data/workflow-run-raw-snapshots.server'

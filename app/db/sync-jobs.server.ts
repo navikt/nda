@@ -634,11 +634,6 @@ export async function logSyncJobMessage(
   ])
 }
 
-export async function getSyncJobOptions(jobId: number): Promise<Record<string, unknown> | null> {
-  const result = await pool.query(`SELECT options FROM sync_jobs WHERE id = $1`, [jobId])
-  return result.rows[0]?.options || null
-}
-
 export async function getSyncJobLogs(
   jobId: number,
   options?: { afterId?: number; limit?: number },

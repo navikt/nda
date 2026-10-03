@@ -42,7 +42,7 @@ const VERIFICATION_STATUSES = [
   'error',
   'pending_sibling_resolution',
 ] as const
-export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number]
+type VerificationStatus = (typeof VERIFICATION_STATUSES)[number]
 
 const _VERIFICATION_STATUS_LABELS: Record<VerificationStatus, string> = {
   approved: 'Godkjent',
@@ -102,7 +102,7 @@ const APPROVAL_METHODS = [
   'verified_via_sibling',
   'pending_baseline',
 ] as const
-export type ApprovalMethod = (typeof APPROVAL_METHODS)[number] | null
+type ApprovalMethod = (typeof APPROVAL_METHODS)[number] | null
 
 export type PrDataType = 'metadata' | 'reviews' | 'commits' | 'comments' | 'checks'
 
@@ -110,7 +110,7 @@ export type PrRawDataType = 'pr' | 'reviews' | 'commits' | 'comments' | 'review_
 
 export type CommitDataType = 'metadata' | 'status' | 'checks' | 'prs'
 
-export interface SnapshotBase {
+interface SnapshotBase {
   id: number
   schemaVersion: number
   fetchedAt: Date

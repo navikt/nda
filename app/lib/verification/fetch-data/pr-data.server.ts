@@ -26,7 +26,7 @@ import { buildGithubPrDataFromSnapshots } from '../build-github-pr-data'
 import type { PrChecks, PrComment, PrCommit, PrMetadata, PrReview, VerificationInput } from '../types'
 import { CURRENT_SCHEMA_VERSION } from '../types'
 
-export async function getDerivedPrDataFromRawSnapshots(
+async function getDerivedPrDataFromRawSnapshots(
   owner: string,
   repo: string,
   prNumber: number,
@@ -91,7 +91,7 @@ export async function getPrDataForDiff(
   return { metadata, reviews, commits }
 }
 
-export async function fetchMutablePrDataFromGitHub(
+async function fetchMutablePrDataFromGitHub(
   owner: string,
   repo: string,
   prNumber: number,
@@ -113,7 +113,7 @@ export async function fetchMutablePrDataFromGitHub(
   return result
 }
 
-export async function persistMutablePrSnapshots(
+async function persistMutablePrSnapshots(
   owner: string,
   repo: string,
   prNumber: number,
@@ -128,7 +128,7 @@ export async function persistMutablePrSnapshots(
   await savePrRawSnapshotsBatch(owner, repo, prNumber, githubRepoId, data.apiVersion, snapshots)
 }
 
-export async function refreshMutablePrData(
+async function refreshMutablePrData(
   owner: string,
   repo: string,
   prNumber: number,
@@ -471,7 +471,7 @@ export function mapPrDataToVerificationTypes(
   return { metadata, reviews, commits, checks, comments }
 }
 
-export async function fetchPrFromGitHub(
+async function fetchPrFromGitHub(
   owner: string,
   repo: string,
   prNumber: number,
@@ -497,7 +497,7 @@ export async function fetchPrFromGitHub(
   return { ...mapped, raw, githubRepoId, apiVersion }
 }
 
-export async function persistPrSnapshots(
+async function persistPrSnapshots(
   owner: string,
   repo: string,
   prNumber: number,

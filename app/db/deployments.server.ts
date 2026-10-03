@@ -178,7 +178,7 @@ export interface GitHubPRData {
   }>
 }
 
-export interface CommitChecksData {
+interface CommitChecksData {
   checked_sha: string
   checks_passed: boolean | null
   checks: GitHubPRData['checks']
@@ -623,7 +623,6 @@ export {
   getPendingVerificationCount,
   getRepositoryDeploymentStats,
 } from './deployments/stats.server'
-export type { RepositoryDeploymentStatusChange } from './deployments/status-history.server'
 export {
   getDeploymentsWithStatusChangesForApps,
   getStatusHistory,

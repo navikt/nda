@@ -63,7 +63,7 @@ export interface AuditReportSummaryM2M {
   availableFormats: string[]
 }
 
-export type ReportJobStatus = 'pending' | 'processing' | 'completed' | 'failed'
+type ReportJobStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
 export interface AuditReportStatusResponse {
   app: AuditReportAppMetadata
