@@ -106,7 +106,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
       [`%${trimmedQuery}%`, limit],
     ),
     pool.query(
-      `SELECT DISTINCT ma.team_slug, COUNT(DISTINCT ma.app_name) AS app_count
+      `SELECT DISTINCT ma.team_slug, COUNT(DISTINCT ma.app_name)::int AS app_count
        FROM monitored_applications ma
        WHERE ma.is_active = true AND ma.team_slug ILIKE $1
        GROUP BY ma.team_slug
