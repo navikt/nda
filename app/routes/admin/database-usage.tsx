@@ -41,15 +41,30 @@ interface GrowthRow {
   dailyCounts: Array<{ day: string; count: number }>
 }
 
-// Growth analysis is limited to tables above this size: below this threshold a table can't be a
-// meaningful contributor to a ~20 GB/day growth problem, and skipping them keeps the number of
-// per-table queries bounded.
 const GROWTH_ANALYSIS_MIN_BYTES = 5 * 1024 * 1024
 const GROWTH_ANALYSIS_MAX_TABLES = 12
 const GROWTH_WINDOW_DAYS = 35
+const GROWTH_RECENT_AVERAGE_DAYS = 7
 
-// Preferred timestamp column to use for growth-over-time analysis, in priority order.
-const TIME_COLUMN_CANDIDATES = ['fetched_at', 'created_at', 'observed_at', 'run_at']
+const TIME_COLUMN_PRIORITY_ORDER = ['fetched_at', 'created_at', 'observed_at', 'run_at']
+
+function buildZeroFilledDailySeries(
+  dailyCounts: Array<{ day: string; count: number }>,
+  windowDays: number,
+): Array<{ day: string; count: number }> {
+  const countsByDay = new Map(dailyCounts.map((d) => [d.day, d.count]))
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+
+  const series: Array<{ day: string; count: number }> = []
+  for (let offset = windowDays - 1; offset >= 0; offset--) {
+    const day = new Date(today)
+    day.setUTCDate(day.getUTCDate() - offset)
+    const dayKey = day.toISOString().slice(0, 10)
+    series.push({ day: dayKey, count: countsByDay.get(dayKey) ?? 0 })
+  }
+  return series
+}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -57,6 +72,10 @@ function formatBytes(bytes: number): string {
   const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   const value = bytes / 1024 ** exponent
   return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`
+}
+
+function quotedTrustedIdentifier(identifier: string): string {
+  return `"${identifier}"`
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -96,7 +115,7 @@ export async function loader({ request }: Route.LoaderArgs) {
      WHERE table_schema = 'public'
        AND column_name = ANY($1::text[])
        AND data_type IN ('timestamp with time zone', 'timestamp without time zone')`,
-    [TIME_COLUMN_CANDIDATES],
+    [TIME_COLUMN_PRIORITY_ORDER],
   )
   const timeColumnsByTable = new Map<string, string[]>()
   for (const row of timeColumnsResult.rows) {
@@ -109,7 +128,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     .filter((t) => t.totalBytes >= GROWTH_ANALYSIS_MIN_BYTES)
     .map((t) => {
       const columns = timeColumnsByTable.get(t.tableName)
-      const timeColumn = columns && TIME_COLUMN_CANDIDATES.find((c) => columns.includes(c))
+      const timeColumn = columns && TIME_COLUMN_PRIORITY_ORDER.find((c) => columns.includes(c))
       if (!timeColumn) return null
       return { tableName: t.tableName, timeColumn, totalBytes: t.totalBytes, rowEstimate: t.rowEstimate }
     })
@@ -118,34 +137,42 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const growthRows: GrowthRow[] = []
   for (const candidate of growthCandidates) {
-    // Table/column names here come from pg_catalog/information_schema (trusted DB metadata), not
-    // user input, so interpolating them directly into the SQL is safe.
     const { tableName, timeColumn } = candidate
+    const quotedTable = quotedTrustedIdentifier(tableName)
+    const quotedColumn = quotedTrustedIdentifier(timeColumn)
+
     const dailyResult = await pool.query<{ day: string; cnt: string }>(
-      `SELECT date_trunc('day', "${timeColumn}")::text AS day, count(*)::text AS cnt
-       FROM "${tableName}"
-       WHERE "${timeColumn}" > now() - interval '${GROWTH_WINDOW_DAYS} days'
+      `SELECT date_trunc('day', ${quotedColumn})::text AS day, count(*)::text AS cnt
+       FROM ${quotedTable}
+       WHERE ${quotedColumn} > now() - interval '${GROWTH_WINDOW_DAYS} days'
        GROUP BY 1
        ORDER BY 1`,
     )
-    const dailyCounts = dailyResult.rows.map((r) => ({ day: r.day, count: parseInt(r.cnt, 10) }))
+    const dailyCounts = buildZeroFilledDailySeries(
+      dailyResult.rows.map((r) => ({ day: r.day.slice(0, 10), count: parseInt(r.cnt, 10) })),
+      GROWTH_WINDOW_DAYS,
+    )
+
+    const last24hResult = await pool.query<{ cnt: string }>(
+      `SELECT count(*)::text AS cnt FROM ${quotedTable} WHERE ${quotedColumn} > now() - interval '24 hours'`,
+    )
+    const rowsLast24h = parseInt(last24hResult.rows[0].cnt, 10)
 
     const rangeResult = await pool.query<{ oldest: string | null; newest: string | null }>(
-      `SELECT MIN("${timeColumn}")::text AS oldest, MAX("${timeColumn}")::text AS newest FROM "${tableName}"`,
+      `SELECT MIN(${quotedColumn})::text AS oldest, MAX(${quotedColumn})::text AS newest FROM ${quotedTable}`,
     )
     const oldestRow = rangeResult.rows[0]?.oldest ?? null
     const newestRow = rangeResult.rows[0]?.newest ?? null
 
-    const last24hCount = dailyCounts.length > 0 ? (dailyCounts[dailyCounts.length - 1]?.count ?? 0) : 0
-    const last7Days = dailyCounts.slice(-7)
-    const avgRowsPerDay7d = last7Days.length > 0 ? last7Days.reduce((sum, d) => sum + d.count, 0) / last7Days.length : 0
+    const recentDays = dailyCounts.slice(-GROWTH_RECENT_AVERAGE_DAYS)
+    const avgRowsPerDay7d = recentDays.reduce((sum, d) => sum + d.count, 0) / recentDays.length
 
     const avgRowBytes = candidate.rowEstimate > 0 ? candidate.totalBytes / candidate.rowEstimate : 0
     const estimatedDailyGrowthBytes = avgRowBytes * avgRowsPerDay7d
 
     growthRows.push({
       tableName,
-      rowsLast24h: last24hCount,
+      rowsLast24h,
       avgRowsPerDay7d,
       avgRowBytes,
       estimatedDailyGrowthBytes,
