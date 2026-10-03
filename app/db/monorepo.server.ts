@@ -1,8 +1,10 @@
 import {
+  NON_DIFFABLE_STATUSES_SQL,
   PROPAGATABLE_STATUSES,
   REVERIFIABLE_STATUSES,
   ROOT_APPROVED_STATUSES,
   SHAREABLE_REJECTION_STATUSES,
+  UNAUTHORIZED_STATUSES_SQL,
 } from '~/lib/four-eyes-status'
 import { LATEST_ACTIVE_REPOSITORY_LINK_SQL } from './application-repositories.server'
 import { pool } from './connection.server'
@@ -241,45 +243,72 @@ export async function propagateVerificationToSiblings(
     : PROPAGATION_TARGET_STATUSES
 
   const result = await pool.query(
-    `WITH targets AS MATERIALIZED (
-       SELECT d.id, d.four_eyes_status AS from_status
-       FROM deployments d
-       WHERE d.commit_sha = $2
-         AND d.verification_base_sha IS NOT NULL
-         AND d.verification_base_sha = (
-           SELECT source.verification_base_sha FROM deployments source WHERE source.id = $4
-         )
-         AND d.four_eyes_status = ANY($3::text[])
-         AND d.monitored_app_id IN (
-           SELECT ar.monitored_app_id FROM application_repositories ar
-           JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
-           WHERE ar.status = 'active'
-             AND ma.is_active = true
-             AND ar.github_repo_id IS NOT NULL
-             AND ar.github_repo_id IN (
-               SELECT ar2.github_repo_id FROM application_repositories ar2
-               WHERE ar2.monitored_app_id = $5 AND ar2.status = 'active' AND ar2.github_repo_id IS NOT NULL
-             )
-             AND ar.monitored_app_id != $5
-         )
-         AND EXISTS (
-           SELECT 1 FROM application_repositories ar3
-           WHERE ar3.monitored_app_id = d.monitored_app_id
-             AND ar3.github_owner = d.detected_github_owner
-             AND ar3.github_repo_name = d.detected_github_repo_name
-             AND ar3.status IN ('active', 'historical')
-             AND ar3.github_repo_id IN (
-               SELECT ar4.github_repo_id FROM application_repositories ar4
-               WHERE ar4.monitored_app_id = $5 AND ar4.status = 'active' AND ar4.github_repo_id IS NOT NULL
-             )
-         )
+    `WITH active_repo_per_app AS MATERIALIZED (
+       ${LATEST_ACTIVE_REPOSITORY_LINK_SQL}
+     ),
+    repo_deployments AS MATERIALIZED (
+      SELECT DISTINCT d.id, d.created_at, d.monitored_app_id, d.commit_sha, d.four_eyes_status,
+             ar.github_repo_id
+      FROM deployments d
+      JOIN application_repositories deployment_ar
+        ON deployment_ar.monitored_app_id = d.monitored_app_id
+        AND deployment_ar.github_owner = d.detected_github_owner
+        AND deployment_ar.github_repo_name = d.detected_github_repo_name
+        AND deployment_ar.status IN ('active', 'historical')
+      JOIN active_repo_per_app ar
+        ON ar.monitored_app_id = d.monitored_app_id
+        AND ar.github_repo_id = deployment_ar.github_repo_id
+      WHERE d.commit_sha IS NOT NULL
+        AND d.commit_sha !~ '^refs/'
+        AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
+        AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
+    ),
+    source_repo AS MATERIALIZED (
+      SELECT source.id, source.github_repo_id, previous.commit_sha AS comparison_base_sha
+      FROM repo_deployments source
+      LEFT JOIN LATERAL (
+        SELECT prior.commit_sha
+        FROM repo_deployments prior
+        WHERE prior.github_repo_id = source.github_repo_id
+          AND (prior.created_at, prior.id) < (source.created_at, source.id)
+          AND prior.commit_sha != source.commit_sha
+        ORDER BY prior.created_at DESC, prior.id DESC
+        LIMIT 1
+      ) previous ON true
+      WHERE source.id = $4
+        AND source.monitored_app_id = $5
+        AND source.commit_sha = $2
+    ),
+    targets AS MATERIALIZED (
+      SELECT d.id, d.four_eyes_status AS from_status
+      FROM deployments d
+      JOIN repo_deployments current_repo ON current_repo.id = d.id
+      LEFT JOIN LATERAL (
+        SELECT prior.commit_sha
+        FROM repo_deployments prior
+        WHERE prior.github_repo_id = current_repo.github_repo_id
+          AND (prior.created_at, prior.id) < (current_repo.created_at, current_repo.id)
+          AND prior.commit_sha != current_repo.commit_sha
+        ORDER BY prior.created_at DESC, prior.id DESC
+        LIMIT 1
+      ) previous ON true
+      CROSS JOIN source_repo source
+      WHERE current_repo.commit_sha = $2
+        AND current_repo.github_repo_id = source.github_repo_id
+        AND previous.commit_sha IS NOT DISTINCT FROM source.comparison_base_sha
+        AND d.four_eyes_status = ANY($3::text[])
+        AND d.monitored_app_id != $5
+        AND EXISTS (
+          SELECT 1 FROM monitored_applications ma
+          WHERE ma.id = d.monitored_app_id AND ma.is_active = true
+        )
        ORDER BY d.id
        FOR UPDATE OF d
      ),
      updated AS (
        UPDATE deployments d
        SET four_eyes_status = $1,
-           unverified_commits = CASE WHEN $1 = 'verified_via_sibling' THEN NULL ELSE d.unverified_commits END
+           unverified_commits = CASE WHEN $1::varchar = 'verified_via_sibling' THEN NULL ELSE d.unverified_commits END
        FROM targets t
        WHERE d.id = t.id
        RETURNING d.id
@@ -288,7 +317,7 @@ export async function propagateVerificationToSiblings(
        (deployment_id, from_status, to_status, changed_by, change_source, details)
      SELECT t.id, t.from_status, $1, $6, 'sibling_propagation',
             jsonb_build_object('source_deployment_id', $4::integer, 'source_status', $7::text, 'commit_sha', $2::text,
-                               'comparison_base_sha', (SELECT source.verification_base_sha FROM deployments source WHERE source.id = $4))
+                               'comparison_base_sha', (SELECT source.comparison_base_sha FROM source_repo source))
      FROM targets t
      JOIN updated u ON u.id = t.id`,
     [propagatedStatus, commitSha, targetStatuses, deploymentId, monitoredAppId, changedBy ?? null, status],

@@ -72,7 +72,6 @@ CREATE TABLE IF NOT EXISTS deployments (
   
   -- Four-eyes status
   four_eyes_status VARCHAR(50) DEFAULT 'unknown',
-  verification_base_sha VARCHAR(40),
   
   github_pr_number INTEGER,
   github_pr_url TEXT,

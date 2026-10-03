@@ -97,7 +97,6 @@ export async function seedDeployment(
     createdAt?: Date
     title?: string
     fourEyesStatus?: string
-    verificationBaseSha?: string | null
     githubOwner?: string
     githubRepo?: string
     deployerUsername?: string | null
@@ -112,8 +111,8 @@ export async function seedDeployment(
       monitored_app_id, nais_deployment_id, team_slug, app_name, environment_name,
       commit_sha, created_at, title, four_eyes_status,
       detected_github_owner, detected_github_repo_name,
-      deployer_username, github_pr_data, workflow_trigger_config, verification_base_sha
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      deployer_username, github_pr_data, workflow_trigger_config
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     RETURNING id`,
     [
       opts.monitoredAppId,
@@ -130,7 +129,6 @@ export async function seedDeployment(
       opts.deployerUsername ?? null,
       opts.githubPrData ? JSON.stringify(opts.githubPrData) : null,
       opts.workflowTriggerConfig ? JSON.stringify(opts.workflowTriggerConfig) : null,
-      opts.verificationBaseSha === undefined ? 'test-base-sha' : opts.verificationBaseSha,
     ],
   )
   return rows[0].id

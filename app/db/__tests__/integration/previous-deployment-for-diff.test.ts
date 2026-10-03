@@ -1,7 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { getPreviousDeploymentForDiff as getAppPreviousDeploymentForDiff } from '~/db/deployments/navigation.server'
-import { getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
+import { getMonorepoComparisonBase, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -28,6 +27,7 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'pensjon-app',
       environment: 'prod-gcp',
     })
+
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: owner,
@@ -56,48 +56,6 @@ describe('getPreviousDeploymentForDiff', () => {
 
     const prev = await getPreviousDeploymentForDiff(firstId, '9001')
     expect(prev?.id).toBe(olderId)
-  })
-
-  it('does not use a deployment from a previous repository after the app changes repositories', async () => {
-    const appId = await seedApp(pool, {
-      teamSlug: 'pensjonselvbetjening',
-      appName: 'pensjon-app',
-      environment: 'prod-gcp',
-    })
-    await seedApplicationRepository(pool, {
-      monitoredAppId: appId,
-      githubOwner: owner,
-      githubRepo: 'old-repository',
-      githubRepoId: '9001',
-      status: 'historical',
-    })
-    await seedApplicationRepository(pool, {
-      monitoredAppId: appId,
-      githubOwner: owner,
-      githubRepo: 'new-repository',
-      githubRepoId: '9002',
-    })
-    await seedDeployment(pool, {
-      monitoredAppId: appId,
-      teamSlug: 'pensjonselvbetjening',
-      environment: 'prod-gcp',
-      commitSha: 'oldsha11aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      createdAt: new Date('2026-01-01T10:00:00Z'),
-      githubOwner: owner,
-      githubRepo: 'old-repository',
-    })
-    const newDeploymentId = await seedDeployment(pool, {
-      monitoredAppId: appId,
-      teamSlug: 'pensjonselvbetjening',
-      environment: 'prod-gcp',
-      commitSha: 'newsha11aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      createdAt: new Date('2026-02-01T10:00:00Z'),
-      githubOwner: owner,
-      githubRepo: 'new-repository',
-    })
-
-    const previous = await getAppPreviousDeploymentForDiff(newDeploymentId, appId, '9002')
-    expect(previous).toBeNull()
   })
 
   it('returns previous deployment within audit window', async () => {
@@ -229,6 +187,101 @@ describe('getPreviousDeploymentForDiff', () => {
     expect(unauthorizedPrev).toBeNull()
   })
 
+  it('uses the last diffable deployment before unauthorized deployments', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9001',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'approved-base',
+      createdAt: new Date('2026-01-01T10:00:00Z'),
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'unauthorized-repo',
+      createdAt: new Date('2026-01-02T10:00:00Z'),
+      fourEyesStatus: 'unauthorized_repository',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'unauthorized-branch',
+      createdAt: new Date('2026-01-03T10:00:00Z'),
+      fourEyesStatus: 'unauthorized_branch',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'current-head',
+      createdAt: new Date('2026-01-04T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const previous = await getMonorepoComparisonBase(currentId, '9001', 'current-head')
+    expect(previous?.commit_sha).toBe('approved-base')
+    expect(previous?.created_at).toEqual(new Date('2026-01-01T10:00:00Z'))
+  })
+
+  it('uses deployment ID to order repository predecessors with the same timestamp', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9001',
+    })
+    const sameTimestamp = new Date('2026-01-15T13:57:00Z')
+    const previousId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'previous-sha',
+      createdAt: sameTimestamp,
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'current-sha',
+      createdAt: sameTimestamp,
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const previous = await getMonorepoComparisonBase(currentId, '9001', 'current-sha')
+    expect(previous?.commit_sha).toBe('previous-sha')
+    expect(previous?.created_at).toEqual(sameTimestamp)
+    expect(previousId).toBeLessThan(currentId)
+  })
+
   it('skips deployments with refs/* commit_sha', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'pensjonselvbetjening',
@@ -347,5 +400,86 @@ describe('getPreviousDeploymentForDiff', () => {
     expect(prev?.id).toBe(siblingDeploymentId)
     expect(prev?.monitored_app_id).toBe(siblingAppId)
     expect(prev?.four_eyes_status).toBe('approved')
+  })
+})
+
+describe('getMonorepoComparisonBase', () => {
+  it('uses the latest distinct valid commit across apps and skips same-head and unauthorized deployments', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-b', environment: 'prod-fss' })
+    for (const monitoredAppId of [app1, app2]) {
+      await seedApplicationRepository(pool, {
+        monitoredAppId,
+        githubOwner: 'navikt',
+        githubRepo: 'monorepo',
+        githubRepoId: '9010',
+      })
+    }
+
+    await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha: 'base-commit',
+      createdAt: new Date('2026-01-01T10:00:00Z'),
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo',
+    })
+    const firstHead = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha: 'shared-head',
+      createdAt: new Date('2026-01-02T10:00:00Z'),
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo',
+    })
+    const siblingHead = await seedDeployment(pool, {
+      monitoredAppId: app2,
+      teamSlug: 'team-a',
+      environment: 'prod-fss',
+      commitSha: 'shared-head',
+      createdAt: new Date('2026-01-03T10:00:00Z'),
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: app2,
+      teamSlug: 'team-a',
+      environment: 'prod-fss',
+      commitSha: 'intervening-commit',
+      createdAt: new Date('2026-01-04T10:00:00Z'),
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha: 'unauthorized-commit',
+      createdAt: new Date('2026-01-05T10:00:00Z'),
+      fourEyesStatus: 'unauthorized_branch',
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo',
+    })
+    const laterHead = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha: 'shared-head',
+      createdAt: new Date('2026-01-06T10:00:00Z'),
+      githubOwner: 'navikt',
+      githubRepo: 'monorepo',
+    })
+
+    await expect(getMonorepoComparisonBase(firstHead, '9010', 'shared-head')).resolves.toMatchObject({
+      commit_sha: 'base-commit',
+    })
+    await expect(getMonorepoComparisonBase(siblingHead, '9010', 'shared-head')).resolves.toMatchObject({
+      commit_sha: 'base-commit',
+    })
+    await expect(getMonorepoComparisonBase(laterHead, '9010', 'shared-head')).resolves.toMatchObject({
+      commit_sha: 'intervening-commit',
+    })
   })
 })

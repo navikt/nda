@@ -98,6 +98,11 @@ export function verifyDeployment(input: VerificationInput): VerificationResult {
     if (implicitResult) return implicitResult
   }
 
+  if (input.deployedPr) {
+    const siblingResult = handleSiblingVerification(input, true)
+    if (siblingResult) return siblingResult
+  }
+
   return handleUnverifiedCommits(input, unverifiedCommits)
 }
 
@@ -137,7 +142,7 @@ function handlePendingBaseline(input: VerificationInput): VerificationResult {
   })
 }
 
-function handleSiblingVerification(input: VerificationInput): VerificationResult | null {
+function handleSiblingVerification(input: VerificationInput, approvedOnly = false): VerificationResult | null {
   const sibling = input.previousDeployment
   const isSiblingDeployment =
     input.monitoredAppId != null &&
@@ -147,8 +152,8 @@ function handleSiblingVerification(input: VerificationInput): VerificationResult
 
   if (!isSiblingDeployment) return null
 
-  const siblingRangeMatches = input.comparisonBaseSha != null && input.comparisonBaseSha === sibling.verificationBaseSha
-  if (!siblingRangeMatches && input.commitsBetween.length > 0) return null
+  const siblingRangeMatches = (input.comparisonBaseSha ?? null) === (sibling.comparisonBaseSha ?? null)
+  if (!siblingRangeMatches && (input.commitsBetween.length > 0 || approvedOnly)) return null
 
   if (!siblingRangeMatches) {
     return handlePendingSiblingResolution(
@@ -158,6 +163,7 @@ function handleSiblingVerification(input: VerificationInput): VerificationResult
   }
 
   if (sibling.fourEyesStatus == null || !isRootApprovedStatus(sibling.fourEyesStatus)) {
+    if (approvedOnly) return null
     return handlePendingSiblingResolution(
       input,
       `Same commit found on sibling application's deployment #${sibling.id}, but its status (${sibling.fourEyesStatus ?? 'unknown'}) is not root-approved. Verification postponed until the sibling application is resolved.`,
@@ -191,6 +197,9 @@ function handleNoChanges(
     })
 
     if (!prApproval.hasFourEyes) {
+      const siblingResult = handleSiblingVerification(input, true)
+      if (siblingResult) return siblingResult
+
       return buildResult(input, {
         hasFourEyes: false,
         status: 'unverified_commits',

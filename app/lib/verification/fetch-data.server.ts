@@ -1,7 +1,7 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getPreviousDeploymentForDiff as getAppPreviousDeploymentForDiff } from '~/db/deployments/navigation.server'
 import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
+import { getMonorepoComparisonBase } from '~/db/verification-diff.server'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
 import { buildBranchMismatch } from './branch-mismatch'
@@ -38,42 +38,31 @@ export async function fetchVerificationData(
     throw new Error(`Invalid repository format: ${repository}`)
   }
 
-  const currentDeployment = await pool.query<{
-    four_eyes_status: string
-    verification_base_sha: string | null
-  }>('SELECT four_eyes_status, verification_base_sha FROM deployments WHERE id = $1', [deploymentId])
   const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
   const repositoryStatus: RepositoryStatus = repoCheck.repository
     ? (repoCheck.repository.status as RepositoryStatus)
     : 'unknown'
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
-  const existingSiblingBaseSha =
-    currentDeployment.rows[0]?.four_eyes_status === 'verified_via_sibling'
-      ? currentDeployment.rows[0].verification_base_sha
-      : null
-  const previousAppDeployment = await getAppPreviousDeploymentForDiff(deploymentId, monitoredAppId, githubRepoId)
+  const comparisonBaseDeployment = githubRepoId
+    ? await getMonorepoComparisonBase(deploymentId, githubRepoId, commitSha)
+    : null
 
   const appSettings =
     repositoryId != null
       ? await getEffectiveSettingsForRepository(repositoryId, monitoredAppId)
       : await getAppSettings(monitoredAppId)
 
-  const comparisonBaseSha = existingSiblingBaseSha ?? previousAppDeployment?.commit_sha ?? null
-  const matchingApprovedRoot =
-    comparisonBaseSha && githubRepoId
-      ? await findRootApprovedSiblingForCommit(commitSha, githubRepoId, comparisonBaseSha, deploymentId)
-      : null
+  const comparisonBaseSha = comparisonBaseDeployment?.commit_sha ?? null
+  const matchingApprovedRoot = githubRepoId
+    ? await findRootApprovedSiblingForCommit(commitSha, githubRepoId, comparisonBaseSha, deploymentId, monitoredAppId)
+    : null
 
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
-  const previousDeploymentResult = await getPreviousDeployment(
-    deploymentId,
-    owner,
-    repo,
-    githubRepoId,
-    appSettings.auditStartYear,
-    commitSha,
-  )
+  const previousDeploymentResult =
+    githubRepoId && !matchingApprovedRoot
+      ? await getPreviousDeployment(deploymentId, owner, repo, githubRepoId, appSettings.auditStartYear, commitSha)
+      : null
   const previousDeploymentRateLimited = previousDeploymentResult === 'rate_limited'
   const previousDeployment = matchingApprovedRoot
     ? {
@@ -88,6 +77,7 @@ export async function fetchVerificationData(
           githubRepoId,
           monitoredAppId,
           comparisonBaseSha,
+          deploymentId,
         )
   const previousDeploymentLookupFailed =
     (repositoryStatus === 'active' && !githubRepoId) || previousDeploymentRateLimited
@@ -99,7 +89,7 @@ export async function fetchVerificationData(
   let compareSummary: CompareSummary | null = null
   let compareFailed = false
   let compareDerivedFromRaw = false
-  const comparisonCommitSha = comparisonBaseSha ?? previousDeployment?.commitSha ?? null
+  const comparisonCommitSha = comparisonBaseSha
   if (comparisonCommitSha) {
     const result = await fetchCommitsBetween(
       owner,
@@ -107,7 +97,7 @@ export async function fetchVerificationData(
       comparisonCommitSha,
       commitSha,
       baseBranch,
-      previousAppDeployment?.created_at.toISOString() ?? previousDeployment?.createdAt ?? new Date(0).toISOString(),
+      comparisonBaseDeployment?.created_at.toISOString() ?? previousDeployment?.createdAt ?? new Date(0).toISOString(),
       options,
     )
     if (result === null) {

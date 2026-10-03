@@ -106,6 +106,30 @@ describe('getCompareSnapshotForCommit', () => {
     expect(result?.base_sha).toBe(expectedBaseSha)
   })
 
+  it('returns the expected base even when another app has a newer snapshot for the same head', async () => {
+    const headSha = 'dd33ee44ff55001122334455667788990a1b2c3d'
+    const expectedBaseSha = 'ee44ff55001122334455667788990a1b2c3d4e5f6'
+
+    await insertSnapshot(pool, {
+      owner,
+      repo,
+      baseSha: expectedBaseSha,
+      headSha,
+      fetchedAt: new Date('2026-01-01T00:00:00Z'),
+    })
+    await insertSnapshot(pool, {
+      owner,
+      repo,
+      baseSha: 'other-app-base',
+      headSha,
+      fetchedAt: new Date('2026-01-02T00:00:00Z'),
+    })
+
+    const result = await getCompareSnapshotForCommit(owner, repo, headSha, expectedBaseSha)
+
+    expect(result?.base_sha).toBe(expectedBaseSha)
+  })
+
   it('returns null when the only cached snapshot does not match the expected base commit', async () => {
     const headSha = 'cc22dd33ee44ff55001122334455667788990a1b'
 

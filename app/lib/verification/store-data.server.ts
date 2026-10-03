@@ -68,8 +68,7 @@ export async function updateDeploymentVerification(
        branch_name = COALESCE($8, branch_name),
        workflow_trigger_config = COALESCE($10::jsonb, workflow_trigger_config),
        commit_checks_data = COALESCE($11::jsonb, commit_checks_data),
-       commit_checks_checked_at = CASE WHEN $12 THEN now() ELSE commit_checks_checked_at END,
-       verification_base_sha = $13
+       commit_checks_checked_at = CASE WHEN $12 THEN now() ELSE commit_checks_checked_at END
      WHERE id = $3
        AND four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})`,
     [
@@ -97,7 +96,6 @@ export async function updateDeploymentVerification(
       result.workflowTrigger ? JSON.stringify(result.workflowTrigger) : null,
       result.commitChecks !== undefined ? JSON.stringify(result.commitChecks) : null,
       result.commitChecksAttempted ?? false,
-      result.comparisonRange?.baseSha ?? null,
     ],
   )
 

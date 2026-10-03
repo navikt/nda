@@ -33,10 +33,10 @@ describe('findRootApprovedSiblingForCommit', () => {
     await findRootApprovedSiblingForCommit('sha-abc', 'repo-1', 'base-sha')
 
     const [query, params] = mockPoolQuery.mock.calls[0]
-    expect(query).toContain('d.verification_base_sha = $3')
+    expect(query).toContain('previous.commit_sha = $3')
     expect(query).not.toContain('d.id <=')
-    expect(query).toContain('ORDER BY d.created_at ASC, d.id ASC')
-    expect(params).toEqual(['repo-1', 'sha-abc', 'base-sha', null])
+    expect(query).toContain('ORDER BY (d.monitored_app_id = $5) DESC NULLS LAST, d.created_at ASC, d.id ASC')
+    expect(params).toEqual(['repo-1', 'sha-abc', 'base-sha', null, null])
   })
 
   it('excludes the deployment being verified from root lookup', async () => {
@@ -46,7 +46,28 @@ describe('findRootApprovedSiblingForCommit', () => {
 
     const [query, params] = mockPoolQuery.mock.calls[0]
     expect(query).toContain('d.id != $4')
-    expect(params).toEqual(['repo-1', 'sha-abc', 'base-sha', 42])
+    expect(params).toEqual(['repo-1', 'sha-abc', 'base-sha', 42, null])
+  })
+
+  it('also considers an earlier root-approved deployment from the same app for same-head redeploys', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] })
+
+    await findRootApprovedSiblingForCommit('sha-abc', 'repo-1', 'sha-abc', 42, 7)
+
+    const [query, params] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('OR (d.monitored_app_id = $5 AND $3 = $2)')
+    expect(query).toContain('d.monitored_app_id = $5) DESC')
+    expect(params).toEqual(['repo-1', 'sha-abc', 'sha-abc', 42, 7])
+  })
+
+  it('allows a same-app root with a different base only for a same-SHA redeploy', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] })
+
+    await findRootApprovedSiblingForCommit('sha-abc', 'repo-1', 'sha-abc', 42, 7)
+
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('OR (d.monitored_app_id = $5 AND $3 = $2)')
+    expect(query).not.toContain('OR d.monitored_app_id = $5)')
   })
 
   it('returns the oldest matching sibling when found', async () => {
@@ -68,7 +89,7 @@ describe('findRootApprovedSiblingForCommit', () => {
       id: 1,
       monitoredAppId: 10,
       fourEyesStatus: 'approved',
-      verificationBaseSha: null,
+      comparisonBaseSha: null,
       createdAt: '2026-01-01T00:00:00.000Z',
     })
   })
@@ -136,7 +157,7 @@ describe('preferRootApprovedSibling', () => {
       commitSha: 'sha-abc',
       monitoredAppId: 1,
       fourEyesStatus: 'approved',
-      verificationBaseSha: null,
+      comparisonBaseSha: null,
     })
   })
 
@@ -144,10 +165,10 @@ describe('preferRootApprovedSibling', () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [] })
 
     const candidate = { id: 200, commitSha: 'sha-abc', monitoredAppId: 2, fourEyesStatus: 'verified_via_sibling' }
-    await preferRootApprovedSibling(candidate, 'sha-abc', 'repo-1', 3, 'base-sha')
+    await preferRootApprovedSibling(candidate, 'sha-abc', 'repo-1', 3, 'base-sha', 42)
 
     const [, params] = mockPoolQuery.mock.calls[0]
-    expect(params).toEqual(['repo-1', 'sha-abc', 'base-sha', null])
+    expect(params).toEqual(['repo-1', 'sha-abc', 'base-sha', 42, null])
   })
 
   it('re-attributes to the current app itself when it holds the true root (same-app redeploy racing a sibling)', async () => {
@@ -177,7 +198,7 @@ describe('preferRootApprovedSibling', () => {
       commitSha: 'sha-abc',
       monitoredAppId: 1,
       fourEyesStatus: 'approved',
-      verificationBaseSha: null,
+      comparisonBaseSha: null,
     })
   })
 

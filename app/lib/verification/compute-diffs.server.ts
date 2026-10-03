@@ -1,6 +1,5 @@
 import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getPreviousDeploymentForDiff as getAppPreviousDeploymentForDiff } from '~/db/deployments/navigation.server'
 import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
 import {
   getSyncJobById,
@@ -11,6 +10,7 @@ import {
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
+  getMonorepoComparisonBase,
   getPreviousDeploymentForDiff,
 } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
@@ -114,13 +114,21 @@ export async function computeVerificationDiffs(
 
       const { githubRepoId, status, repositoryId } = await resolveRepoInfo(owner, repo)
       const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
-      const previousAppDeployment = await getAppPreviousDeploymentForDiff(row.id, monitoredAppId, githubRepoId)
-      const comparisonBaseSha = row.verification_base_sha ?? previousAppDeployment?.commit_sha ?? null
-      const matchingApprovedRoot =
-        githubRepoId && comparisonBaseSha
-          ? await findRootApprovedSiblingForCommit(row.commit_sha, githubRepoId, comparisonBaseSha, row.id)
-          : null
-      const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
+      const comparisonBaseDeployment = githubRepoId
+        ? await getMonorepoComparisonBase(row.id, githubRepoId, row.commit_sha)
+        : null
+      const comparisonBaseSha = comparisonBaseDeployment?.commit_sha ?? null
+      const matchingApprovedRoot = githubRepoId
+        ? await findRootApprovedSiblingForCommit(
+            row.commit_sha,
+            githubRepoId,
+            comparisonBaseSha,
+            row.id,
+            monitoredAppId,
+          )
+        : null
+      const prevRow =
+        githubRepoId && !matchingApprovedRoot ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
       const previousDeployment = matchingApprovedRoot
         ? {
             ...matchingApprovedRoot,
@@ -134,17 +142,20 @@ export async function computeVerificationDiffs(
                 createdAt: prevRow.created_at.toISOString(),
                 monitoredAppId: prevRow.monitored_app_id,
                 fourEyesStatus: prevRow.four_eyes_status,
-                verificationBaseSha: prevRow.verification_base_sha,
+                comparisonBaseSha: prevRow.comparison_base_sha,
               },
               row.commit_sha,
               githubRepoId,
               monitoredAppId,
               comparisonBaseSha,
+              row.id,
             )
           : null
-      const compareBaseSha = comparisonBaseSha ?? previousDeployment?.commitSha ?? null
+      const compareBaseSha = comparisonBaseSha
 
-      const compareSnapshot = await getCompareSnapshotForCommit(owner, repo, row.commit_sha, compareBaseSha)
+      const compareSnapshot = compareBaseSha
+        ? await getCompareSnapshotForCommit(owner, repo, row.commit_sha, compareBaseSha)
+        : null
       if (compareSnapshot) {
         const compareData = compareSnapshot.data as CompareData
 
