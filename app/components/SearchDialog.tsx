@@ -220,7 +220,7 @@ export function SearchDialog() {
                   return (
                     <Box
                       as="li"
-                      key={`${result.type}-${result.id || result.title}`}
+                      key={`${result.type}-${result.url}`}
                       padding="space-12"
                       paddingInline="space-16"
                       borderRadius="4"

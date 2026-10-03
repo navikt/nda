@@ -61,11 +61,7 @@ export function SearchPage({ query, results }: SearchPageProps) {
       {results.length > 0 && (
         <VStack gap="space-8">
           {results.map((result) => (
-            <Link
-              key={`${result.type}-${result.id || result.title}`}
-              to={result.url}
-              style={{ textDecoration: 'none' }}
-            >
+            <Link key={`${result.type}-${result.url}`} to={result.url} style={{ textDecoration: 'none' }}>
               <Box
                 background="default"
                 padding="space-16"
