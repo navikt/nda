@@ -6,6 +6,10 @@
 
 ---
 
+## Repositoryreferanse på deployments
+
+`deployments.repository_id` er en nullable fremmednøkkel til `repositories.id`, klargjort for repositorysentrisk leveransevisning. Kolonnen har ingen standardverdi og fylles eller leses ikke av applikasjonen ennå. Eksisterende og nye deployments beholder dermed `NULL`; ingen historikk, statuser eller repositorykoblinger endres. Fremmednøkkelen hindrer ugyldige referanser og sletting av et repository som er referert, uten å slette deployments. Populering, tilbakefylling, indekser og endrede oppslag håndteres i senere steg.
+
 ## Checks — samlet kilde for alle leveransetyper
 
 GitHub Checks API (`checks.listForRef`) fungerer mot en vilkårlig commit-SHA, uavhengig av om commiten er del av en PR eller ikke. Derfor hentes check runs alltid mot `deployment.commit_sha` og lagres i `deployments.commit_checks_data` — dette gjelder **alle** leveransetyper (pull request, direct push og eventuelt andre), ikke bare direct push. Dette er **kun visningsdata** — check-status påvirker ikke fire-øyne-godkjenningsstatusen.
