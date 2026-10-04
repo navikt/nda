@@ -515,7 +515,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
       (monitored_app_id, nais_deployment_id, created_at, team_slug, environment_name, app_name,
        deployer_username, commit_sha, trigger_url,
        detected_github_owner, detected_github_repo_name, resources, four_eyes_status, repository_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, (
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::varchar, $11::varchar, $12, $13, (
       SELECT r.id
       FROM application_repositories ar
       JOIN repositories r ON r.github_repo_id = ar.github_repo_id
