@@ -8,7 +8,9 @@
 
 ## Repositoryreferanse på deployments
 
-`deployments.repository_id` er en nullable fremmednøkkel til `repositories.id`, klargjort for repositorysentrisk leveransevisning. Kolonnen har ingen standardverdi og fylles eller leses ikke av applikasjonen ennå. Eksisterende og nye deployments beholder dermed `NULL`; ingen historikk, statuser eller repositorykoblinger endres. Fremmednøkkelen hindrer ugyldige referanser og sletting av et repository som er referert, uten å slette deployments. Populering, tilbakefylling, indekser og endrede oppslag håndteres i senere steg.
+`deployments.repository_id` er en nullable fremmednøkkel til `repositories.id`. Ved innsetting fylles den bare når deploymentens detekterte owner/name matcher både en repositorykobling for appen og en `repositories`-rad med samme `github_repo_id`. Koblingens godkjenningsstatus påvirker ikke identitetslagringen; verifisering og godkjenning er uendret. Oppslaget bruker ikke appens nåværende repository som fallback og gjør ingen GitHub-kall. Manglende kobling, ID eller navnematch gir `NULL`, inkludert historiske navn som ikke matcher repositoryets nåværende navn.
+
+Eksisterende deployments endres ikke, heller ikke ved upsert. Tilbakefylling, oppløsning av historiske navn, indekser og endrede leseoppslag håndteres i senere steg. Fremmednøkkelen hindrer ugyldige referanser og sletting av et repository som er referert, uten å slette deployments.
 
 ## Checks — samlet kilde for alle leveransetyper
 
@@ -89,4 +91,3 @@ Rådata som lagres i snapshotet (`ChecksSnapshotData` i `app/lib/github/checks-s
 GitHub sin REST API er selv date-versjonert (`X-GitHub-Api-Version`), med en stabil default (`2022-11-28` per i dag) som GitHub aktivt migrerer uversjonerte klienter videre fra ved behov. Vi pinner **ikke** en eksplisitt versjon — det ville krevd aktiv fornyelse før 24-måneders støttevinduet utløper, med fare for et hardt `410 Gone`-brudd om det glemmes, og additive endringer (nye felt) gjelder uansett alle versjoner samtidig. I stedet leser `fetchChecksForRefs()` responsheaderen `X-GitHub-Api-Version-Selected` og lagrer den i `ChecksSnapshotData.githubApiVersion` — rent observasjonelt, slik at enhver arkivert rad kan spores tilbake til nøyaktig hvilken GitHub API-versjon som produserte den. `Deprecation`/`Sunset`-responsheadere logges som advarsel dersom de dukker opp.
 
 > **Koderef**: `app/lib/github/checks-snapshot.ts` (`ChecksSnapshotData`, `parseCheckRunsSnapshot`, `mapRawCheckRunToCheckRun`), `saveCommitSnapshot()`-kallet i `fetchCommitChecks()` ([`app/lib/verification/fetch-data/commit-checks.server.ts`](../app/lib/verification/fetch-data/commit-checks.server.ts)), `github_commit_snapshots`-tabellen ([`app/db/migrations/1770090000000_add-github-snapshots.sql`](../app/db/migrations/1770090000000_add-github-snapshots.sql)).
-
