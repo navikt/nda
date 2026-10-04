@@ -514,8 +514,15 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
     `INSERT INTO deployments 
       (monitored_app_id, nais_deployment_id, created_at, team_slug, environment_name, app_name,
        deployer_username, commit_sha, trigger_url,
-       detected_github_owner, detected_github_repo_name, resources, four_eyes_status)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       detected_github_owner, detected_github_repo_name, resources, four_eyes_status, repository_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, (
+      SELECT r.id
+      FROM application_repositories ar
+      JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+      WHERE ar.monitored_app_id = $1
+        AND ar.github_owner = $10 AND ar.github_repo_name = $11
+        AND r.github_owner = $10 AND r.github_repo_name = $11
+    ))
     ON CONFLICT (nais_deployment_id) 
     DO UPDATE SET
       resources = EXCLUDED.resources,
