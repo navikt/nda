@@ -160,7 +160,7 @@ export function RepositoryDeploymentsPage({
                 borderWidth="1"
                 borderRadius="8"
               >
-                <VStack gap="space-8">
+                <VStack gap="space-0">
                   <Box padding="space-16">
                     <Heading
                       size="small"
