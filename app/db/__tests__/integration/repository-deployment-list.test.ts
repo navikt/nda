@@ -9,6 +9,7 @@ import {
   seedDeployment,
   seedDevTeam,
   seedRepository,
+  seedSection,
   truncateAllTables,
 } from './helpers'
 
@@ -154,7 +155,8 @@ it('scopes goal options to repository deployments within its audit boundary with
     githubRepoId: '123',
     status: 'historical',
   })
-  const teamId = await seedDevTeam(pool, 'team-a')
+  const sectionId = await seedSection(pool, 'section-a')
+  const teamId = await seedDevTeam(pool, 'team-a', 'Team A', sectionId)
   const { rows: boards } = await pool.query<{ id: number }>(
     `INSERT INTO boards (dev_team_id, title, period_type, period_start, period_end, period_label)
      VALUES ($1, 'Board', 'tertiary', '2025-01-01', '2025-04-30', 'T1 2025') RETURNING id`,
