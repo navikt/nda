@@ -53,6 +53,15 @@ it.each([
   { previousDeployment: null },
   { previousDeployment: { ...previousDeployment, commitSha: '' } },
   { commitSha: '' },
+  { commitSha: headSha.slice(0, 7) },
+  { previousDeployment: { ...previousDeployment, commitSha: baseSha.slice(0, 7) } },
+  { commitSha: 'g'.repeat(40) },
+  { previousDeployment: { ...previousDeployment, commitSha: 'g'.repeat(40) } },
+  { commitSha: 'b'.repeat(39) },
+  { commitSha: 'b'.repeat(41) },
+  { commitSha: `${headSha}\n` },
+  { commitSha: ` ${headSha}` },
+  { commitSha: 'refs/heads/main' },
   { previousDeploymentLookupFailed: true },
   { previousDeploymentRateLimited: true },
 ])('persists no interval when input does not establish both ends: %j', async (override) => {
@@ -62,4 +71,14 @@ it.each([
   > = { commitSha: headSha, previousDeployment, ...override }
   await storeVerificationResult(3, result, snapshotIds, input)
   expect(mockSaveVerificationRun.mock.calls[0][1].result.comparisonRange).toBeNull()
+  expect(mockSaveVerificationRun.mock.calls[0][1].status).toBe(result.status)
+})
+
+it('accepts full hexadecimal SHAs without changing their input values', async () => {
+  const uppercaseHead = headSha.toUpperCase()
+  await storeVerificationResult(3, result, snapshotIds, { commitSha: uppercaseHead, previousDeployment })
+  expect(mockSaveVerificationRun.mock.calls[0][1].result.comparisonRange).toEqual({
+    baseSha,
+    headSha: uppercaseHead,
+  })
 })

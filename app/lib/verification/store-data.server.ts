@@ -7,6 +7,10 @@ import type { buildGithubPrDataFromSnapshots } from './build-github-pr-data'
 import { getCachedPrData } from './fetch-data/pr-data.server'
 import type { StoredVerificationResult, VerificationInput, VerificationResult } from './types'
 
+function isFullCommitSha(sha: string): boolean {
+  return sha.length === 40 && /^[0-9a-f]{40}$/i.test(sha)
+}
+
 export async function storeVerificationResult(
   deploymentId: number,
   result: VerificationResult,
@@ -28,7 +32,8 @@ export async function storeVerificationResult(
     ...result,
     comparisonRange:
       input.previousDeployment?.commitSha &&
-      input.commitSha &&
+      isFullCommitSha(input.previousDeployment.commitSha) &&
+      isFullCommitSha(input.commitSha) &&
       !input.previousDeploymentLookupFailed &&
       !input.previousDeploymentRateLimited
         ? { baseSha: input.previousDeployment.commitSha, headSha: input.commitSha }
