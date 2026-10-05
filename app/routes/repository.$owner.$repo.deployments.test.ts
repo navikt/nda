@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockResolveRepositoryFromParams,
-  mockGetAllAppsLinkedToRepositoryId,
+  mockGetDeploymentAppsForRepository,
   mockGetUserIdentity,
   mockGetMultiAppDeploymentsPageData,
 } = vi.hoisted(() => ({
   mockResolveRepositoryFromParams: vi.fn(),
-  mockGetAllAppsLinkedToRepositoryId: vi.fn(),
+  mockGetDeploymentAppsForRepository: vi.fn(),
   mockGetUserIdentity: vi.fn(),
   mockGetMultiAppDeploymentsPageData: vi.fn(),
 }))
@@ -16,8 +16,8 @@ vi.mock('~/lib/repository-resolution.server', () => ({
   resolveRepositoryFromParams: mockResolveRepositoryFromParams,
 }))
 
-vi.mock('~/db/repositories.server', () => ({
-  getAllAppsLinkedToRepositoryId: mockGetAllAppsLinkedToRepositoryId,
+vi.mock('~/db/deployments.server', () => ({
+  getDeploymentAppsForRepository: mockGetDeploymentAppsForRepository,
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -61,8 +61,8 @@ describe('repository deployments loader', () => {
     mockGetUserIdentity.mockResolvedValue(null)
   })
 
-  it('returns empty defaults without querying deployments when no apps are linked', async () => {
-    mockGetAllAppsLinkedToRepositoryId.mockResolvedValue([])
+  it('returns empty defaults when no deployments belong to the repository', async () => {
+    mockGetDeploymentAppsForRepository.mockResolvedValue([])
 
     const result = await loader(makeArgs())
 
@@ -72,33 +72,33 @@ describe('repository deployments loader', () => {
   })
 
   it('clamps a non-positive page value to 1 before querying deployments', async () => {
-    mockGetAllAppsLinkedToRepositoryId.mockResolvedValue([linkedApp])
+    mockGetDeploymentAppsForRepository.mockResolvedValue([linkedApp])
     mockGetMultiAppDeploymentsPageData.mockResolvedValue({ deployments: [], total: 0, page: 1, total_pages: 0 })
 
     await loader(makeArgs('?page=-1'))
 
     expect(mockGetMultiAppDeploymentsPageData).toHaveBeenCalledWith(
       [linkedApp],
-      expect.objectContaining({ page: 1 }),
+      expect.objectContaining({ page: 1, repositoryId: repository.id }),
       null,
     )
   })
 
   it('clamps a non-numeric page value to 1 before querying deployments', async () => {
-    mockGetAllAppsLinkedToRepositoryId.mockResolvedValue([linkedApp])
+    mockGetDeploymentAppsForRepository.mockResolvedValue([linkedApp])
     mockGetMultiAppDeploymentsPageData.mockResolvedValue({ deployments: [], total: 0, page: 1, total_pages: 0 })
 
     await loader(makeArgs('?page=not-a-number'))
 
     expect(mockGetMultiAppDeploymentsPageData).toHaveBeenCalledWith(
       [linkedApp],
-      expect.objectContaining({ page: 1 }),
+      expect.objectContaining({ page: 1, repositoryId: repository.id }),
       null,
     )
   })
 
   it('redirects to the last page when the requested page exceeds total_pages', async () => {
-    mockGetAllAppsLinkedToRepositoryId.mockResolvedValue([linkedApp])
+    mockGetDeploymentAppsForRepository.mockResolvedValue([linkedApp])
     mockGetMultiAppDeploymentsPageData.mockResolvedValue({ deployments: [], total: 40, page: 5, total_pages: 2 })
 
     const thrown = await loader(makeArgs('?page=5')).catch((e) => e)
@@ -109,7 +109,7 @@ describe('repository deployments loader', () => {
   })
 
   it('returns repository merged with the deployment data on success', async () => {
-    mockGetAllAppsLinkedToRepositoryId.mockResolvedValue([linkedApp])
+    mockGetDeploymentAppsForRepository.mockResolvedValue([linkedApp])
     mockGetMultiAppDeploymentsPageData.mockResolvedValue({
       deployments: [{ id: 1 }],
       total: 1,
@@ -121,5 +121,6 @@ describe('repository deployments loader', () => {
 
     expect(result.repository).toBe(repository)
     expect(result.deployments).toEqual([{ id: 1 }])
+    expect(mockGetDeploymentAppsForRepository).toHaveBeenCalledWith(repository.id)
   })
 })
