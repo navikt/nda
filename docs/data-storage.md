@@ -18,6 +18,12 @@ Repositorysiden har en valgfri SHA-visning (`view=sha`); deploymentlisten er for
 
 SHA-gruppene viser antall godkjente, ikke godkjente og ventende deployments etter eksisterende statuskategorier. Oppsummeringen gjelder bare viste deployments som matcher filtrene, ikke en felles godkjenning av SHA-en. Eventuelle ukjente statusverdier telles separat.
 
+## Lagring av repositorykodeleveranser
+
+`repository_code_deliveries` lagrer ordinære kodeintervaller med obligatorisk `repository_id`, `base_sha`, `head_sha` og opprettelsestidspunkt. Repositoryreferansen peker til `repositories.id` og hindrer sletting av refererte repositories. Begge SHA-er krever nøyaktig 40 heksadesimale tegn. Store og små bokstaver beholdes ved lagring, men unikhet for repository/head-SHA er uavhengig av bokstavstørrelse.
+
+Tabellen brukes foreløpig ikke av applikasjonen. Ingen leveranser opprettes eller tilbakefylles, og deployments, verifisering og godkjenning er uendret. Tabellen inneholder ikke baseline, godkjenningsbeslutninger eller deploymentkoblinger. Formatkontrollene beviser ikke at committene finnes, at base er en forfar til head eller at intervallet er gjennomgått. Låsing av intervaller ved fremtidige skrivehandlinger er ikke implementert.
+
 ## Checks — samlet kilde for alle leveransetyper
 
 GitHub Checks API (`checks.listForRef`) fungerer mot en vilkårlig commit-SHA, uavhengig av om commiten er del av en PR eller ikke. Derfor hentes check runs alltid mot `deployment.commit_sha` og lagres i `deployments.commit_checks_data` — dette gjelder **alle** leveransetyper (pull request, direct push og eventuelt andre), ikke bare direct push. Dette er **kun visningsdata** — check-status påvirker ikke fire-øyne-godkjenningsstatusen.
