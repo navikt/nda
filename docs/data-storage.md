@@ -10,7 +10,9 @@
 
 `deployments.repository_id` er en nullable fremmednøkkel til `repositories.id`. Ved innsetting fylles den bare når deploymentens detekterte owner/name matcher både en repositorykobling for appen og en `repositories`-rad med samme `github_repo_id`. Koblingens godkjenningsstatus påvirker ikke identitetslagringen; verifisering og godkjenning er uendret. Oppslaget bruker ikke appens nåværende repository som fallback og gjør ingen GitHub-kall. Manglende kobling, ID eller navnematch gir `NULL`, inkludert historiske navn som ikke matcher repositoryets nåværende navn.
 
-Eksisterende deployments endres ikke, heller ikke ved upsert. Tilbakefylling, oppløsning av historiske navn, indekser og endrede leseoppslag håndteres i senere steg. Fremmednøkkelen hindrer ugyldige referanser og sletting av et repository som er referert, uten å slette deployments.
+Eksisterende deployments endres ikke, heller ikke ved upsert. Tilbakefylling, utvidet identitetsoppløsning og indekser håndteres i senere steg. Fremmednøkkelen hindrer ugyldige referanser og sletting av et repository som er referert, uten å slette deployments.
+
+Repositoryets deploymentliste og telling bruker lagret `repository_id` når den finnes. For `NULL` kreves en aktiv eller historisk appkobling som matcher deploymentens detekterte owner/name og repositoryets GitHub-ID. Navn som et annet repository har brukt, nå eller i registrert navnehistorikk, utelates fra dette fallback-oppslaget. Apper som har flyttet eller er inaktive, kan fortsatt bidra med historikk. Listens revisjonsgrense hentes fra repositoryet som vises, og deploymentbaserte filtervalg bruker samme repositoryavgrensning. Ingen rader tilbakefylles; øvrige sider og verifiseringsoppslag er uendret.
 
 ## Checks — samlet kilde for alle leveransetyper
 

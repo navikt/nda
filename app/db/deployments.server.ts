@@ -2,6 +2,7 @@ import { APPROVED_STATUSES_SQL, notApprovedWhereClause, PENDING_STATUSES_SQL } f
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
 import { pool } from './connection.server'
+import { repositoryDeploymentSql } from './repository-deployment-sql'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from './repository-settings-sql'
 import { lowerUsernames, userDeploymentMatchAnySql } from './user-deployment-match'
 
@@ -209,6 +210,7 @@ export interface CreateDeploymentParams {
 }
 
 export interface DeploymentFilters {
+  repository_id?: number
   monitored_app_id?: number
   monitored_app_ids?: number[]
   team_slug?: string
@@ -248,10 +250,35 @@ export async function getAllDeployments(filters?: DeploymentFilters): Promise<De
   return result.deployments
 }
 
+export async function getDeploymentAppsForRepository(
+  repositoryId: number,
+): Promise<{ id: number; team_slug: string }[]> {
+  const result = await pool.query<{ id: number; team_slug: string }>(
+    `SELECT ma.id, ma.team_slug
+     FROM monitored_applications ma
+     WHERE EXISTS (
+       SELECT 1 FROM deployments d
+       WHERE d.monitored_app_id = ma.id AND ${repositoryDeploymentSql('$1')}
+     )
+     ORDER BY ma.id`,
+    [repositoryId],
+  )
+  return result.rows
+}
+
 export async function getDeploymentsPaginated(filters?: DeploymentFilters): Promise<PaginatedDeployments> {
   let whereSql = ' WHERE 1=1'
   const params: any[] = []
   let paramIndex = 1
+
+  if (filters?.repository_id != null) {
+    whereSql += ` AND ${repositoryDeploymentSql(`$${paramIndex}`)}
+      AND d.created_at >= make_date(COALESCE(
+        (SELECT audit_start_year FROM repositories WHERE id = $${paramIndex}), 1
+      ), 1, 1)`
+    params.push(filters.repository_id)
+    paramIndex++
+  }
 
   if (filters?.monitored_app_id) {
     whereSql += ` AND d.monitored_app_id = $${paramIndex}`
@@ -277,9 +304,9 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     paramIndex++
   }
 
-  if (filters?.per_app_audit_start_year) {
+  if (filters?.repository_id == null && filters?.per_app_audit_start_year) {
     whereSql += ` AND d.created_at >= make_date(COALESCE(${effectiveAuditStartYearSql('ma')}, 1), 1, 1)`
-  } else if (filters?.audit_start_year) {
+  } else if (filters?.repository_id == null && filters?.audit_start_year) {
     whereSql += ` AND d.created_at >= make_date($${paramIndex}, 1, 1)`
     params.push(filters.audit_start_year)
     paramIndex++
@@ -448,7 +475,7 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
       AND c.repo_name = d.detected_github_repo_name
     ${goalJoinSql}
     ${whereSql}
-    ORDER BY d.created_at DESC
+    ORDER BY d.created_at DESC${filters?.repository_id != null ? ', d.id DESC' : ''}
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `
   params.push(per_page, offset)

@@ -106,6 +106,19 @@ describe('getMultiAppDeploymentsPageData', () => {
     expect(mockGetDeploymentsPaginated).toHaveBeenCalledWith(expect.objectContaining({ per_page: 50 }))
   })
 
+  it('scopes repository deployments and deployment-derived filter options to the same repository', async () => {
+    await getMultiAppDeploymentsPageData(apps, { page: 1, repositoryId: 216 }, null)
+
+    expect(mockGetDeploymentsPaginated).toHaveBeenCalledWith(expect.objectContaining({ repository_id: 216 }))
+    const metadataQueries = mockPoolQuery.mock.calls.filter(([sql]) => sql.includes('FROM deployments d'))
+    expect(metadataQueries).toHaveLength(3)
+    for (const [sql, params] of metadataQueries) {
+      expect(sql).toContain('d.repository_id = $2')
+      expect(sql).toContain('SELECT audit_start_year FROM repositories WHERE id = $2')
+      expect(params).toEqual([[1, 2], 216])
+    }
+  })
+
   it('marks the team filter empty with no-user-teams when the current user has no dev teams', async () => {
     mockGetUserDevTeamsByRole.mockResolvedValue([])
 

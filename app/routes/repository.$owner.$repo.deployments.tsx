@@ -1,6 +1,6 @@
 import { redirect, useLoaderData } from 'react-router'
 import { RepositoryDeploymentsPage } from '~/components/RepositoryDeploymentsPage'
-import { getAllAppsLinkedToRepositoryId } from '~/db/repositories.server'
+import { getDeploymentAppsForRepository } from '~/db/deployments.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { getMultiAppDeploymentsPageData } from '~/lib/deployments/multi-app-deployments.server'
 import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
@@ -20,7 +20,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const { owner, repo } = requireParams(params, ['owner', 'repo'])
   const repository = await resolveRepositoryFromParams(owner, repo, url, '/deployments')
 
-  const linkedApps = await getAllAppsLinkedToRepositoryId(repository.id)
+  const linkedApps = await getDeploymentAppsForRepository(repository.id)
 
   const parsedPage = parseInt(url.searchParams.get('page') || '1', 10)
   const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1
@@ -64,6 +64,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const data = await getMultiAppDeploymentsPageData(
     linkedApps,
     {
+      repositoryId: repository.id,
       page,
       status,
       method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,

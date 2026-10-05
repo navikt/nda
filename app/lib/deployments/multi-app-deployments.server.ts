@@ -2,6 +2,7 @@ import { pool } from '~/db/connection.server'
 import { getLinkedObjectivesForApps } from '~/db/deployment-goal-links.server'
 import { type DeploymentFilters, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getDevTeamBySlug, getDevTeamsForApps } from '~/db/dev-teams.server'
+import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { effectiveAuditStartYearSql } from '~/db/repository-settings-sql'
 import {
   getDevTeamsForGithubUsernamesByRole,
@@ -16,6 +17,7 @@ import { serializeUserLookups } from '~/lib/user-display'
 import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 
 export interface MultiAppDeploymentsFilters {
+  repositoryId?: number
   page: number
   perPage?: number
   status?: string
@@ -37,6 +39,12 @@ export async function getMultiAppDeploymentsPageData(
   currentUser: UserIdentity | null,
 ) {
   const appIds = apps.map((a) => a.id)
+  const metadataParams = filters.repositoryId == null ? [appIds] : [appIds, filters.repositoryId]
+  const repositoryScope = filters.repositoryId == null ? '' : `AND ${repositoryDeploymentSql('$2')}`
+  const auditStartYearSql =
+    filters.repositoryId == null
+      ? effectiveAuditStartYearSql('ma')
+      : '(SELECT audit_start_year FROM repositories WHERE id = $2)'
 
   const owningDevTeams = await getDevTeamsForApps(apps.map((a) => ({ monitoredAppId: a.id, teamSlug: a.team_slug })))
 
@@ -82,6 +90,7 @@ export async function getMultiAppDeploymentsPageData(
   const isUnmappedFilter = filters.deployer === '__unmapped__'
 
   const deploymentFilters: DeploymentFilters = {
+    repository_id: filters.repositoryId,
     monitored_app_ids: appIds,
     per_app_audit_start_year: true,
     page: filters.page,
@@ -126,11 +135,12 @@ export async function getMultiAppDeploymentsPageData(
        FROM deployments d
        INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE d.monitored_app_id = ANY($1)
+         ${repositoryScope}
          AND d.deployer_username IS NOT NULL
          AND d.deployer_username != ''
-         AND d.created_at >= make_date(COALESCE(${effectiveAuditStartYearSql('ma')}, 1), 1, 1)
+         AND d.created_at >= make_date(COALESCE(${auditStartYearSql}, 1), 1, 1)
        ORDER BY d.deployer_username`,
-      [appIds],
+      metadataParams,
     ),
     pool.query(
       `SELECT username FROM (
@@ -138,25 +148,28 @@ export async function getMultiAppDeploymentsPageData(
          FROM deployments d
          INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
          WHERE d.monitored_app_id = ANY($1)
+           ${repositoryScope}
            AND d.deployer_username IS NOT NULL AND d.deployer_username != ''
-           AND d.created_at >= make_date(COALESCE(${effectiveAuditStartYearSql('ma')}, 1), 1, 1)
+           AND d.created_at >= make_date(COALESCE(${auditStartYearSql}, 1), 1, 1)
          UNION
          SELECT d.pr_creator_username
          FROM deployments d
          INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
          WHERE d.monitored_app_id = ANY($1)
+           ${repositoryScope}
            AND d.pr_creator_username IS NOT NULL
-           AND d.created_at >= make_date(COALESCE(${effectiveAuditStartYearSql('ma')}, 1), 1, 1)
+           AND d.created_at >= make_date(COALESCE(${auditStartYearSql}, 1), 1, 1)
          UNION
          SELECT d.github_pr_data->'merged_by'->>'username'
          FROM deployments d
          INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
          WHERE d.monitored_app_id = ANY($1)
+           ${repositoryScope}
            AND d.github_pr_data->'merged_by'->>'username' IS NOT NULL
-           AND d.created_at >= make_date(COALESCE(${effectiveAuditStartYearSql('ma')}, 1), 1, 1)
+           AND d.created_at >= make_date(COALESCE(${auditStartYearSql}, 1), 1, 1)
        ) sub
        WHERE username IS NOT NULL AND username != ''`,
-      [appIds],
+      metadataParams,
     ),
     currentUser?.navIdent ? getUserByIdentifier(currentUser.navIdent) : Promise.resolve(null),
     getLinkedObjectivesForApps(appIds),
@@ -167,9 +180,10 @@ export async function getMultiAppDeploymentsPageData(
        FROM deployments d
        INNER JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE d.monitored_app_id = ANY($1)
+         ${repositoryScope}
          AND d.workflow_trigger_config IS NOT NULL
-         AND d.created_at >= make_date(COALESCE(${effectiveAuditStartYearSql('ma')}, 1), 1, 1)`,
-      [appIds],
+         AND d.created_at >= make_date(COALESCE(${auditStartYearSql}, 1), 1, 1)`,
+      metadataParams,
     ),
   ])
 
