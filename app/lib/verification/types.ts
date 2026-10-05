@@ -511,6 +511,15 @@ export interface ImplicitApprovalSettings {
   mode: ImplicitApprovalMode
 }
 
+interface VerificationComparisonRange {
+  baseSha: string
+  headSha: string
+}
+
+export interface StoredVerificationResult extends VerificationResult {
+  comparisonRange: VerificationComparisonRange | null
+}
+
 export interface VerificationResult {
   hasFourEyes: boolean
   status: VerificationStatus
