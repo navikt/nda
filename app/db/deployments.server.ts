@@ -637,7 +637,6 @@ export { getPersonalDeploymentsMissingGoalLinks } from './deployments/home.serve
 export type { DeploymentNavFilters } from './deployments/navigation.server'
 export {
   getNextDeployment,
-  getPreviousDeploymentForDiff,
   getPreviousDeploymentForNav,
 } from './deployments/navigation.server'
 export {

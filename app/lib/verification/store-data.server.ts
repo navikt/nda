@@ -1,8 +1,9 @@
+import type { PoolClient } from 'pg'
 import { updateCommitPrVerification } from '~/db/commits.server'
-import { pool } from '~/db/connection.server'
+import { pool, withTransaction } from '~/db/connection.server'
 import { logStatusTransition } from '~/db/deployments.server'
 import { saveVerificationRun } from '~/db/github-data.server'
-import { PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { isProtectedStatus, PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { buildGithubPrDataFromSnapshots } from './build-github-pr-data'
 import { getCachedPrData } from './fetch-data/pr-data.server'
 import type { VerificationInput, VerificationResult } from './types'
@@ -20,16 +21,19 @@ export async function storeVerificationResult(
     commitsBetween: VerificationInput['commitsBetween']
   },
 ): Promise<{ verificationRunId: number }> {
-  const verificationRunId = await saveVerificationRun(
-    deploymentId,
-    {
-      status: result.status,
-      result: result,
-    },
-    snapshotIds,
-  )
-
-  await updateDeploymentVerification(deploymentId, result, changeSource)
+  const verificationRunId = await withTransaction(async (client) => {
+    const persisted = await updateDeploymentVerification(deploymentId, result, changeSource, client)
+    if (!persisted) throw new Error('Godkjenningen er beskyttet eller leveransen er endret. Last siden på nytt.')
+    return saveVerificationRun(
+      deploymentId,
+      {
+        status: result.status,
+        result: result,
+      },
+      snapshotIds,
+      client,
+    )
+  })
 
   if (commitCacheContext) {
     await updateCommitCache(commitCacheContext.repository, result, commitCacheContext.commitsBetween)
@@ -42,6 +46,7 @@ export async function updateDeploymentVerification(
   deploymentId: number,
   result: VerificationResult,
   changeSource?: string,
+  client?: PoolClient,
 ): Promise<boolean> {
   if (result.status === 'manually_approved') return false
   if (result.status === 'legacy') return false
@@ -54,9 +59,14 @@ export async function updateDeploymentVerification(
     }
   }
 
-  const current = await pool.query(`SELECT four_eyes_status FROM deployments WHERE id = $1`, [deploymentId])
+  const db = client ?? pool
+  const current = await db.query(
+    `SELECT four_eyes_status FROM deployments WHERE id = $1${client ? ' FOR UPDATE' : ''}`,
+    [deploymentId],
+  )
+  if (!current.rows[0] || isProtectedStatus(current.rows[0].four_eyes_status)) return false
 
-  const updateResult = await pool.query(
+  const updateResult = await db.query(
     `UPDATE deployments
      SET 
        four_eyes_status = $1,
@@ -103,11 +113,15 @@ export async function updateDeploymentVerification(
     const prev = current.rows[0]
     const newStatus = result.status
     if (prev.four_eyes_status !== newStatus) {
-      await logStatusTransition(deploymentId, {
-        fromStatus: prev.four_eyes_status,
-        toStatus: newStatus,
-        changeSource: changeSource || 'verification',
-      })
+      await logStatusTransition(
+        deploymentId,
+        {
+          fromStatus: prev.four_eyes_status,
+          toStatus: newStatus,
+          changeSource: changeSource || 'verification',
+        },
+        client,
+      )
     }
   }
 

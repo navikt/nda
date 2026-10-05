@@ -1,12 +1,12 @@
 import { App, type BlockAction, LogLevel } from '@slack/bolt'
 import type { KnownBlock } from '@slack/types'
+import { findRepositoryForApp } from '~/db/application-repositories.server'
 import {
   claimDeploymentForDeployNotify,
   claimDeploymentForSlackNotification,
   type DeploymentWithApp,
   type GitHubPRData,
   getDeploymentsNeedingDeployNotify,
-  getPreviousDeploymentForDiff,
 } from '~/db/deployments.server'
 import {
   createSlackNotification,
@@ -15,6 +15,7 @@ import {
   updateSlackNotification,
 } from '~/db/slack-notifications.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
+import { getEffectiveComparisonBaseSha } from '~/db/verification-diff.server'
 import {
   isApprovedStatus,
   isLegacyStatus,
@@ -565,13 +566,21 @@ async function notifyNewDeploymentIfNeeded(
   ) {
     const repoBase = `https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`
     try {
-      const previousDeployment = await getPreviousDeploymentForDiff(deployment.id, deployment.monitored_app_id)
+      const repository = await findRepositoryForApp(
+        deployment.monitored_app_id,
+        deployment.detected_github_owner,
+        deployment.detected_github_repo_name,
+      )
+      const githubRepoId = repository.repository?.github_repo_id
+      const comparisonBaseSha = githubRepoId
+        ? await getEffectiveComparisonBaseSha(deployment.id, githubRepoId, deployment.commit_sha)
+        : null
       githubUrl =
-        previousDeployment && isValidCommitSha(previousDeployment.commit_sha)
-          ? `${repoBase}/compare/${previousDeployment.commit_sha}...${deployment.commit_sha}`
+        comparisonBaseSha && isValidCommitSha(comparisonBaseSha)
+          ? `${repoBase}/compare/${comparisonBaseSha}...${deployment.commit_sha}`
           : `${repoBase}/commit/${deployment.commit_sha}`
     } catch (error) {
-      logger.error(`Failed to resolve previous deployment for GitHub link ${deployment.id}:`, error)
+      logger.error(`Failed to resolve comparison base for GitHub link ${deployment.id}:`, error)
       githubUrl = `${repoBase}/commit/${deployment.commit_sha}`
     }
   }

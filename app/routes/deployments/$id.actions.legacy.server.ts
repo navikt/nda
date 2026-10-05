@@ -1,15 +1,18 @@
 import { createComment, deleteLegacyInfo, getLegacyInfo } from '~/db/comments.server'
+import { withTransaction } from '~/db/connection.server'
 import {
   type DeploymentWithApp,
   getDeploymentById,
   updateDeploymentFourEyes,
   updateDeploymentLegacyData,
 } from '~/db/deployments.server'
+import { saveVerificationRun } from '~/db/github-data.server'
 import { propagateVerificationToSiblings } from '~/db/monorepo.server'
 import type { UserIdentity } from '~/lib/auth.server'
 import { type LegacyLookupResult, lookupLegacyByCommit, lookupLegacyByPR } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import { runVerification } from '~/lib/verification'
+import { resolveReviewedComparisonRange } from '~/lib/verification/manual-approval-range.server'
 
 export function parsePrNumber(raw: FormDataEntryValue | null | undefined): { value: number | null; error?: string } {
   if (raw === null || raw === undefined) {
@@ -251,7 +254,7 @@ export async function handleApproveLegacy(
   deploymentId: number,
   _deployment: DeploymentWithApp,
   identity: UserIdentity,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<ActionResult> {
   const legacyInfo = await getLegacyInfo(deploymentId)
 
@@ -265,39 +268,73 @@ export async function handleApproveLegacy(
 
   try {
     const currentDeployment = await getDeploymentById(deploymentId)
+    if (!currentDeployment) return { error: 'Deployment ikke funnet' }
+    const reviewed = await resolveReviewedComparisonRange(currentDeployment, formData)
+    if (reviewed.error) return { error: reviewed.error }
 
-    await createComment({
-      deployment_id: deploymentId,
-      comment_text: 'Legacy deployment godkjent etter gjennomgang',
-      slack_link: legacyInfo.slack_link || undefined,
-      comment_type: 'manual_approval',
-      approved_by: identity.navIdent,
-      registered_by: identity.navIdent,
-    })
-
-    await updateDeploymentFourEyes(
-      deploymentId,
-      {
-        fourEyesStatus: 'manually_approved',
-        githubPrNumber: currentDeployment?.github_pr_number || null,
-        githubPrUrl: currentDeployment?.github_pr_url || null,
-        githubPrData: currentDeployment?.github_pr_data || undefined,
-        title: currentDeployment?.title || null,
-      },
-      { changeSource: 'legacy', changedBy: identity.navIdent },
-    )
-
-    if (currentDeployment?.commit_sha) {
-      await propagateVerificationToSiblings(
-        deploymentId,
-        'manually_approved',
-        currentDeployment.commit_sha,
-        currentDeployment.monitored_app_id,
+    const recorded = await withTransaction(async (client) => {
+      const current = await client.query<{ four_eyes_status: string }>(
+        'SELECT four_eyes_status FROM deployments WHERE id = $1 FOR UPDATE',
+        [deploymentId],
       )
+      if (current.rows[0]?.four_eyes_status !== 'pending_approval') return false
+      await createComment(
+        {
+          deployment_id: deploymentId,
+          comment_text: 'Legacy deployment godkjent etter gjennomgang',
+          slack_link: legacyInfo.slack_link || undefined,
+          comment_type: 'manual_approval',
+          approved_by: identity.navIdent,
+          registered_by: identity.navIdent,
+        },
+        client,
+      )
+      await updateDeploymentFourEyes(
+        deploymentId,
+        {
+          fourEyesStatus: 'manually_approved',
+          githubPrNumber: currentDeployment.github_pr_number || null,
+          githubPrUrl: currentDeployment.github_pr_url || null,
+          githubPrData: currentDeployment.github_pr_data || undefined,
+          title: currentDeployment.title || null,
+        },
+        { changeSource: 'legacy', changedBy: identity.navIdent },
+        client,
+      )
+      await saveVerificationRun(
+        deploymentId,
+        { status: 'manually_approved', result: { comparisonRange: reviewed.range } },
+        { prSnapshotIds: [], commitSnapshotIds: [] },
+        client,
+      )
+      return true
+    })
+    if (!recorded) return { error: 'Leveransen venter ikke lenger på legacy-godkjenning. Last siden på nytt.' }
+    if (currentDeployment.commit_sha && reviewed.range) {
+      try {
+        await propagateVerificationToSiblings(
+          deploymentId,
+          'manually_approved',
+          currentDeployment.commit_sha,
+          currentDeployment.monitored_app_id,
+          true,
+          identity.navIdent,
+        )
+      } catch (error) {
+        logger.error('Legacy approval sibling propagation failed', { deploymentId, error })
+        return {
+          success: 'Legacy deployment godkjent, men delingen av godkjenningen til andre leveranser feilet.',
+        }
+      }
     }
 
-    return { success: 'Legacy deployment godkjent' }
-  } catch (_error) {
+    return {
+      success: reviewed.range
+        ? 'Legacy deployment godkjent'
+        : 'Legacy deployment godkjent. Godkjenningen deles ikke fordi sammenligningsintervallet mangler.',
+    }
+  } catch (error) {
+    logger.error('Legacy approval failed', { deploymentId, error })
     return { error: 'Kunne ikke godkjenne legacy deployment' }
   }
 }

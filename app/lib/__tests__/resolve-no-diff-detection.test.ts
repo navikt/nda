@@ -24,7 +24,8 @@ vi.mock('~/db/sync-jobs.server', () => ({
   logSyncJobMessage: vi.fn(),
   updateSyncJobProgress: vi.fn(),
 }))
-vi.mock('~/lib/four-eyes-status', () => ({
+vi.mock('~/lib/four-eyes-status', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/lib/four-eyes-status')>()),
   APPROVED_STATUSES: [
     'approved',
     'approved_pr',

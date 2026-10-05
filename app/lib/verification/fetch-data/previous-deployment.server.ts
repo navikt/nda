@@ -1,4 +1,6 @@
+import { LATEST_ACTIVE_REPOSITORY_LINK_SQL } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
+import { canShareApprovalSql, recordedComparisonRangeSql } from '~/db/verification-root-sql'
 import {
   NON_DIFFABLE_STATUSES_SQL,
   ROOT_APPROVED_STATUSES_SQL,
@@ -11,38 +13,60 @@ export interface RootApprovedSibling {
   id: number
   monitoredAppId: number
   fourEyesStatus: string
+  comparisonBaseSha: string | null
+  createdAt: string
 }
 
-// Finds the earliest deployment in this repo that itself holds a root-approved status
-// (not verified_via_sibling) for the same commit. This may belong to ANY app sharing the
-// repo — including the app currently being verified, e.g. when that app deployed and had
-// this exact commit approved earlier, and a sibling app has since re-deployed the same
-// commit (making the sibling the nearest previousDeployment candidate even though the
-// current app's own earlier deployment is the true, more relevant root). Bounded to one
-// repo's apps, so this is a cheap single-hop lookup rather than a chain walk.
-// beforeDeploymentId excludes candidates created after the deployment currently being verified,
-// so a later deployment can never retroactively become the "root" for an earlier one (deployment
-// ids are a monotonic SERIAL PK, so this is equivalent to bounding on insertion order/created_at).
 export async function findRootApprovedSiblingForCommit(
   commitSha: string,
   githubRepoId: string,
-  beforeDeploymentId: number,
+  comparisonBaseSha?: string | null,
+  excludeDeploymentId?: number,
+  currentAppId?: number,
 ): Promise<RootApprovedSibling | null> {
   const result = await pool.query(
-    `SELECT d.id, d.monitored_app_id, d.four_eyes_status
-     FROM deployments d
-     JOIN application_repositories ar
-       ON ar.monitored_app_id = d.monitored_app_id
-       AND ar.github_owner = d.detected_github_owner
-       AND ar.github_repo_name = d.detected_github_repo_name
-       AND ar.status IN ('active', 'historical')
-     WHERE ar.github_repo_id = $1
+    `WITH active_repo_per_app AS MATERIALIZED (
+       ${LATEST_ACTIVE_REPOSITORY_LINK_SQL}
+     ),
+     repo_deployments AS MATERIALIZED (
+       SELECT DISTINCT d.id, d.created_at, d.monitored_app_id, d.commit_sha, d.four_eyes_status,
+              ar.github_repo_id
+       FROM deployments d
+       JOIN application_repositories ar
+         ON ar.monitored_app_id = d.monitored_app_id
+         AND ar.github_owner = d.detected_github_owner
+         AND ar.github_repo_name = d.detected_github_repo_name
+         AND ar.status IN ('active', 'historical')
+       JOIN active_repo_per_app active_ar
+         ON active_ar.monitored_app_id = d.monitored_app_id
+         AND active_ar.github_repo_id = ar.github_repo_id
+       WHERE ar.github_repo_id = $1
+         AND d.commit_sha IS NOT NULL
+         AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
+         AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
+         AND d.commit_sha !~ '^refs/'
+     )
+     SELECT d.id, d.created_at, d.monitored_app_id, d.four_eyes_status,
+            recorded.comparison_range->>'baseSha' AS comparison_base_sha
+     FROM repo_deployments d
+     JOIN LATERAL ${recordedComparisonRangeSql('d')} recorded ON true
+     WHERE d.github_repo_id = $1
        AND d.commit_sha = $2
-       AND d.id <= $3
+       AND (
+         recorded.comparison_range->>'baseSha' IS NOT DISTINCT FROM $3::text
+       )
+       AND ($4::integer IS NULL OR d.id != $4)
+       AND ($5::integer IS NULL OR d.monitored_app_id != $5)
+       AND NOT EXISTS (
+         SELECT 1 FROM deployments current
+         WHERE current.id = $4
+           AND current.monitored_app_id = d.monitored_app_id
+       )
        AND d.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
+       AND ${canShareApprovalSql('d')}
      ORDER BY d.created_at ASC, d.id ASC
      LIMIT 1`,
-    [githubRepoId, commitSha, beforeDeploymentId],
+    [githubRepoId, commitSha, comparisonBaseSha ?? null, excludeDeploymentId ?? null, currentAppId ?? null],
   )
 
   const row = result.rows[0]
@@ -52,23 +76,27 @@ export async function findRootApprovedSiblingForCommit(
     id: row.id,
     monitoredAppId: row.monitored_app_id,
     fourEyesStatus: row.four_eyes_status,
+    comparisonBaseSha: row.comparison_base_sha ?? null,
+    createdAt: row.created_at.toISOString(),
   }
 }
 
-// Re-attributes a same-commit, different-app previousDeployment candidate to the true
-// root-approved deployment when one exists and differs, so a chain A -> B -> C is attributed
-// directly to A instead of B. The root may turn out to belong to the current app itself (a
-// same-app redeploy of a commit it already had approved) — in that case the caller's
-// monitoredAppId now matches the returned previousDeployment, so downstream logic correctly
-// treats this as an ordinary same-app "no_changes" redeploy rather than sibling verification.
 export async function preferRootApprovedSibling<
-  T extends { id: number; commitSha: string; monitoredAppId?: number; fourEyesStatus?: string },
+  T extends {
+    id: number
+    commitSha: string
+    monitoredAppId?: number
+    fourEyesStatus?: string
+    comparisonBaseSha?: string | null
+    canShareApproval?: boolean
+  },
 >(
   previousDeployment: T | null,
   commitSha: string,
   githubRepoId: string | null,
   monitoredAppId: number,
-  currentDeploymentId: number,
+  comparisonBaseSha?: string | null,
+  excludeDeploymentId?: number,
 ): Promise<T | null> {
   if (
     !previousDeployment ||
@@ -80,7 +108,13 @@ export async function preferRootApprovedSibling<
     return previousDeployment
   }
 
-  const root = await findRootApprovedSiblingForCommit(commitSha, githubRepoId, currentDeploymentId)
+  const root = await findRootApprovedSiblingForCommit(
+    commitSha,
+    githubRepoId,
+    comparisonBaseSha,
+    excludeDeploymentId,
+    monitoredAppId,
+  )
   if (!root || root.id === previousDeployment.id) return previousDeployment
 
   return {
@@ -88,6 +122,8 @@ export async function preferRootApprovedSibling<
     id: root.id,
     monitoredAppId: root.monitoredAppId,
     fourEyesStatus: root.fourEyesStatus,
+    comparisonBaseSha: root.comparisonBaseSha,
+    canShareApproval: true,
   }
 }
 
@@ -97,6 +133,8 @@ export interface PreviousDeploymentResult {
   createdAt: string
   monitoredAppId: number
   fourEyesStatus: string
+  comparisonBaseSha: string | null
+  canShareApproval?: boolean
 }
 
 interface PreviousDeploymentCandidate {
@@ -105,6 +143,8 @@ interface PreviousDeploymentCandidate {
   createdAt: Date
   monitoredAppId: number
   fourEyesStatus: string
+  comparisonBaseSha: string | null
+  canShareApproval?: boolean
 }
 
 const CANDIDATE_PAGE_SIZE = 20
@@ -207,6 +247,10 @@ async function queryCandidates(
   const offsetParamIndex = params.length
 
   const query = `
+    WITH active_repo_per_app AS MATERIALIZED (
+      ${LATEST_ACTIVE_REPOSITORY_LINK_SQL}
+    ),
+    candidates AS MATERIALIZED (
     SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
     FROM deployments d
     JOIN application_repositories ar
@@ -214,6 +258,9 @@ async function queryCandidates(
       AND ar.github_owner = d.detected_github_owner
       AND ar.github_repo_name = d.detected_github_repo_name
       AND ar.status IN ('active', 'historical')
+    JOIN active_repo_per_app current_ar
+      ON current_ar.monitored_app_id = d.monitored_app_id
+      AND current_ar.github_repo_id = ar.github_repo_id
     WHERE (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
       AND ar.github_repo_id = $2
       AND d.commit_sha IS NOT NULL
@@ -221,6 +268,35 @@ async function queryCandidates(
       AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
       AND d.commit_sha !~ '^refs/'
     ORDER BY d.created_at DESC, d.id DESC LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
+    )
+    SELECT d.*, CASE WHEN recorded.comparison_range IS NOT NULL
+                    THEN recorded.comparison_range->>'baseSha'
+                    ELSE previous.commit_sha END AS comparison_base_sha,
+           (recorded.comparison_range IS NOT NULL AND ${canShareApprovalSql('d')}) AS can_share_approval
+    FROM candidates d
+    LEFT JOIN LATERAL ${recordedComparisonRangeSql('d')} recorded ON true
+    LEFT JOIN LATERAL (
+      SELECT prior.commit_sha
+      FROM deployments prior
+      JOIN application_repositories prior_ar
+        ON prior_ar.monitored_app_id = prior.monitored_app_id
+        AND prior_ar.github_owner = prior.detected_github_owner
+        AND prior_ar.github_repo_name = prior.detected_github_repo_name
+        AND prior_ar.github_repo_id = $2
+        AND prior_ar.status IN ('active', 'historical')
+      JOIN active_repo_per_app prior_current_ar
+        ON prior_current_ar.monitored_app_id = prior.monitored_app_id
+        AND prior_current_ar.github_repo_id = prior_ar.github_repo_id
+      WHERE (prior.created_at, prior.id) < (d.created_at, d.id)
+        AND prior.commit_sha IS NOT NULL
+        AND prior.commit_sha != d.commit_sha
+        AND prior.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
+        AND prior.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
+        AND prior.commit_sha !~ '^refs/'
+      ORDER BY prior.created_at DESC, prior.id DESC
+      LIMIT 1
+    ) previous ON true
+    ORDER BY d.created_at DESC, d.id DESC
   `
 
   const result = await pool.query(query, params)
@@ -230,6 +306,8 @@ async function queryCandidates(
     createdAt: row.created_at,
     monitoredAppId: row.monitored_app_id,
     fourEyesStatus: row.four_eyes_status,
+    comparisonBaseSha: row.comparison_base_sha ?? null,
+    canShareApproval: row.can_share_approval,
   }))
 }
 
@@ -278,6 +356,8 @@ async function findAncestorCandidate(
         createdAt: candidate.createdAt.toISOString(),
         monitoredAppId: candidate.monitoredAppId,
         fourEyesStatus: candidate.fourEyesStatus,
+        canShareApproval: candidate.canShareApproval,
+        comparisonBaseSha: candidate.comparisonBaseSha,
       }
     }
 

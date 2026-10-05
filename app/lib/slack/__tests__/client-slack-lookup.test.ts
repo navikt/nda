@@ -11,7 +11,9 @@ vi.mock('~/db/deployments.server', () => ({
   claimDeploymentForSlackNotification: vi.fn(),
   getDeploymentsNeedingDeployNotify: vi.fn(),
   getPersonalDeploymentsMissingGoalLinks: vi.fn(),
-  getPreviousDeploymentForDiff: vi.fn().mockResolvedValue(null),
+}))
+vi.mock('~/db/verification-diff.server', () => ({
+  getEffectiveComparisonBaseSha: vi.fn().mockResolvedValue(null),
 }))
 vi.mock('~/db/role-assignments.server', () => ({ getUserDevTeamsByRole: vi.fn() }))
 vi.mock('~/db/slack-notifications.server', () => ({

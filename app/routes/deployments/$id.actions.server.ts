@@ -1,8 +1,10 @@
 import { createComment, deleteComment } from '~/db/comments.server'
+import { withTransaction } from '~/db/connection.server'
 import { addDeploymentGoalLink, removeDeploymentGoalLink } from '~/db/deployment-goal-links.server'
 import { resetVerificationStatus } from '~/db/deployments/status-history.server'
 import { getDeploymentById, recordBaselineApproval, updateDeploymentFourEyes } from '~/db/deployments.server'
 import { createDeviation } from '~/db/deviations.server'
+import { saveVerificationRun } from '~/db/github-data.server'
 import { getDeviationSlackChannel } from '~/db/global-settings.server'
 import { getMonitoredApplicationById } from '~/db/monitored-applications.server'
 import { propagateVerificationToSiblings } from '~/db/monorepo.server'
@@ -14,6 +16,7 @@ import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
 import { notifyDeploymentIfNeeded, sendDeviationNotification } from '~/lib/slack/client.server'
 import { runVerification } from '~/lib/verification'
+import { resolveReviewedComparisonRange } from '~/lib/verification/manual-approval-range.server'
 import {
   type ActionResult,
   handleApproveLegacy,
@@ -101,6 +104,9 @@ export async function action({
   }
 
   if (intent === 'verify_four_eyes') {
+    if (isProtectedStatus(deployment.four_eyes_status ?? '')) {
+      return { error: 'Godkjenningen er beskyttet og kan ikke reverifiseres.' }
+    }
     if (!deployment.commit_sha) {
       return { error: 'Kan ikke verifisere: deployment mangler commit SHA' }
     }
@@ -181,39 +187,74 @@ export async function action({
     }
 
     try {
-      await createComment({
-        deployment_id: deploymentId,
-        comment_text: reason || 'Manuelt godkjent etter gjennomgang',
-        slack_link: slackLink?.trim() || undefined,
-        comment_type: 'manual_approval',
-        approved_by: identity.navIdent,
-        registered_by: identity.navIdent,
-      })
-
-      await updateDeploymentFourEyes(
-        deploymentId,
-        {
-          fourEyesStatus: 'manually_approved',
-          githubPrNumber: deployment.github_pr_number ?? null,
-          githubPrUrl: deployment.github_pr_url ?? null,
-          githubPrData: deployment.github_pr_data ?? undefined,
-          title: deployment.title ?? null,
-          unverifiedCommits: deployment.unverified_commits ?? undefined,
-        },
-        { changeSource: 'manual_approval', changedBy: identity.navIdent },
-      )
-
-      if (deployment.commit_sha) {
-        await propagateVerificationToSiblings(
-          deploymentId,
-          'manually_approved',
-          deployment.commit_sha,
-          deployment.monitored_app_id,
+      const reviewed = await resolveReviewedComparisonRange(deployment, formData)
+      if (reviewed.error) return { error: reviewed.error }
+      const recorded = await withTransaction(async (client) => {
+        const current = await client.query<{ four_eyes_status: string }>(
+          'SELECT four_eyes_status FROM deployments WHERE id = $1 FOR UPDATE',
+          [deploymentId],
         )
+        if (!current.rows[0]) throw new Error('Deployment not found')
+        if (isProtectedStatus(current.rows[0].four_eyes_status)) return false
+        await createComment(
+          {
+            deployment_id: deploymentId,
+            comment_text: reason || 'Manuelt godkjent etter gjennomgang',
+            slack_link: slackLink?.trim() || undefined,
+            comment_type: 'manual_approval',
+            approved_by: identity.navIdent,
+            registered_by: identity.navIdent,
+          },
+          client,
+        )
+        await updateDeploymentFourEyes(
+          deploymentId,
+          {
+            fourEyesStatus: 'manually_approved',
+            githubPrNumber: deployment.github_pr_number ?? null,
+            githubPrUrl: deployment.github_pr_url ?? null,
+            githubPrData: deployment.github_pr_data ?? undefined,
+            title: deployment.title ?? null,
+            unverifiedCommits: deployment.unverified_commits ?? undefined,
+          },
+          { changeSource: 'manual_approval', changedBy: identity.navIdent },
+          client,
+        )
+        await saveVerificationRun(
+          deploymentId,
+          { status: 'manually_approved', result: { comparisonRange: reviewed.range } },
+          { prSnapshotIds: [], commitSnapshotIds: [] },
+          client,
+        )
+        return true
+      })
+      if (!recorded) return { error: 'Godkjenningen er beskyttet og kan ikke overskrives. Last siden på nytt.' }
+
+      if (deployment.commit_sha && reviewed.range) {
+        try {
+          await propagateVerificationToSiblings(
+            deploymentId,
+            'manually_approved',
+            deployment.commit_sha,
+            deployment.monitored_app_id,
+            true,
+            identity.navIdent,
+          )
+        } catch (error) {
+          logger.error('Manual approval sibling propagation failed', { deploymentId, error })
+          return {
+            success: 'Deployment manuelt godkjent, men delingen av godkjenningen til andre leveranser feilet.',
+          }
+        }
       }
 
-      return { success: 'Deployment manuelt godkjent' }
-    } catch (_error) {
+      return {
+        success: reviewed.range
+          ? 'Deployment manuelt godkjent'
+          : 'Deployment manuelt godkjent. Godkjenningen deles ikke fordi sammenligningsintervallet mangler.',
+      }
+    } catch (error) {
+      logger.error('Manual approval failed', { deploymentId, error })
       return { error: 'Kunne ikke godkjenne deployment' }
     }
   }
@@ -307,21 +348,49 @@ export async function action({
 
   if (intent === 'approve_baseline') {
     try {
-      if (deployment.four_eyes_status === 'baseline') {
-        await recordBaselineApproval(deploymentId, identity.navIdent)
-      } else {
-        await updateDeploymentFourEyes(
-          deploymentId,
-          {
-            fourEyesStatus: 'baseline',
-            githubPrNumber: null,
-            githubPrUrl: null,
-          },
-          { changeSource: 'baseline_approval', changedBy: identity.navIdent },
+      const reviewed = await resolveReviewedComparisonRange(deployment, formData)
+      if (reviewed.error) return { error: reviewed.error }
+      const recorded = await withTransaction(async (client) => {
+        const current = await client.query<{ four_eyes_status: string }>(
+          'SELECT four_eyes_status FROM deployments WHERE id = $1 FOR UPDATE',
+          [deploymentId],
         )
+        if (!current.rows[0]) throw new Error('Deployment not found')
+        if (current.rows[0].four_eyes_status !== deployment.four_eyes_status) return false
+        if (current.rows[0].four_eyes_status !== 'pending_baseline' && current.rows[0].four_eyes_status !== 'baseline')
+          return false
+        if (current.rows[0].four_eyes_status === 'baseline') {
+          if (!(await recordBaselineApproval(deploymentId, identity.navIdent, client))) return false
+        } else {
+          await updateDeploymentFourEyes(
+            deploymentId,
+            {
+              fourEyesStatus: 'baseline',
+              githubPrNumber: null,
+              githubPrUrl: null,
+            },
+            { changeSource: 'baseline_approval', changedBy: identity.navIdent },
+            client,
+          )
+        }
+        await saveVerificationRun(
+          deploymentId,
+          { status: 'baseline', result: { comparisonRange: reviewed.range } },
+          { prSnapshotIds: [], commitSnapshotIds: [] },
+          client,
+        )
+        return true
+      })
+      if (!recorded) {
+        return { error: 'Baseline er allerede godkjent eller statusen er endret. Last siden på nytt.' }
       }
-      return { success: 'Deployment godkjent som baseline' }
-    } catch (_error) {
+      return {
+        success: reviewed.range
+          ? 'Deployment godkjent som baseline'
+          : 'Deployment godkjent som baseline. Godkjenningen deles ikke fordi sammenligningsintervallet mangler.',
+      }
+    } catch (error) {
+      logger.error('Baseline approval failed', { deploymentId, error })
       return { error: 'Kunne ikke godkjenne baseline' }
     }
   }

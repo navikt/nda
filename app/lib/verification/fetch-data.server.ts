@@ -1,13 +1,18 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
+import { getMonorepoComparisonBase } from '~/db/verification-diff.server'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
 import { buildBranchMismatch } from './branch-mismatch'
 import { fetchCommitChecks, getCachedCommitChecks } from './fetch-data/commit-checks.server'
 import { fetchCommitsBetween } from './fetch-data/commits-between.server'
 import { type FetchOptions, fetchDeployedPrData } from './fetch-data/pr-data.server'
-import { getPreviousDeployment, preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
+import {
+  findRootApprovedSiblingForCommit,
+  getPreviousDeployment,
+  preferRootApprovedSibling,
+} from './fetch-data/previous-deployment.server'
 import { fetchWorkflowTriggerConfig } from './fetch-data/workflow-triggers.server'
 import type { RepositoryStatus } from './types'
 import {
@@ -33,31 +38,47 @@ export async function fetchVerificationData(
     throw new Error(`Invalid repository format: ${repository}`)
   }
 
-  const appSettings =
-    repositoryId != null
-      ? await getEffectiveSettingsForRepository(repositoryId, monitoredAppId)
-      : await getAppSettings(monitoredAppId)
-
   const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
   const repositoryStatus: RepositoryStatus = repoCheck.repository
     ? (repoCheck.repository.status as RepositoryStatus)
     : 'unknown'
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+  const comparisonBaseDeployment = githubRepoId
+    ? await getMonorepoComparisonBase(deploymentId, githubRepoId, commitSha)
+    : null
+
+  const appSettings =
+    repositoryId != null
+      ? await getEffectiveSettingsForRepository(repositoryId, monitoredAppId)
+      : await getAppSettings(monitoredAppId)
+
+  const comparisonBaseSha = comparisonBaseDeployment?.commit_sha ?? null
+  const matchingApprovedRoot = githubRepoId
+    ? await findRootApprovedSiblingForCommit(commitSha, githubRepoId, comparisonBaseSha, deploymentId, monitoredAppId)
+    : null
 
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
-  const previousDeploymentResult = await getPreviousDeployment(
-    deploymentId,
-    owner,
-    repo,
-    githubRepoId,
-    appSettings.auditStartYear,
-    commitSha,
-  )
+  const previousDeploymentResult =
+    githubRepoId && !matchingApprovedRoot
+      ? await getPreviousDeployment(deploymentId, owner, repo, githubRepoId, appSettings.auditStartYear, commitSha)
+      : null
   const previousDeploymentRateLimited = previousDeploymentResult === 'rate_limited'
-  const previousDeployment = previousDeploymentRateLimited
-    ? null
-    : await preferRootApprovedSibling(previousDeploymentResult, commitSha, githubRepoId, monitoredAppId, deploymentId)
+  const previousDeployment = matchingApprovedRoot
+    ? {
+        ...matchingApprovedRoot,
+        commitSha,
+      }
+    : previousDeploymentRateLimited
+      ? null
+      : await preferRootApprovedSibling(
+          previousDeploymentResult,
+          commitSha,
+          githubRepoId,
+          monitoredAppId,
+          comparisonBaseSha,
+          deploymentId,
+        )
   const previousDeploymentLookupFailed =
     (repositoryStatus === 'active' && !githubRepoId) || previousDeploymentRateLimited
 
@@ -68,14 +89,15 @@ export async function fetchVerificationData(
   let compareSummary: CompareSummary | null = null
   let compareFailed = false
   let compareDerivedFromRaw = false
-  if (previousDeployment) {
+  const comparisonCommitSha = comparisonBaseSha
+  if (comparisonCommitSha) {
     const result = await fetchCommitsBetween(
       owner,
       repo,
-      previousDeployment.commitSha,
+      comparisonCommitSha,
       commitSha,
       baseBranch,
-      previousDeployment.createdAt,
+      comparisonBaseDeployment?.created_at?.toISOString() ?? previousDeployment?.createdAt ?? new Date(0).toISOString(),
       options,
     )
     if (result === null) {
@@ -217,6 +239,8 @@ export async function fetchVerificationData(
     implicitApprovalSettings: appSettings.implicitApprovalSettings,
     monitoredAppId,
     previousDeployment,
+    comparisonBaseSha,
+    isSameAppRedeploy: comparisonBaseDeployment?.is_same_app_redeploy ?? false,
     previousDeploymentLookupFailed,
     previousDeploymentRateLimited,
     deployedPr,

@@ -1,4 +1,4 @@
-import { NON_DIFFABLE_STATUSES_SQL, notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { baselineActionSql } from '../baseline-action'
 import { pool } from '../connection.server'
 import type { Deployment } from '../deployments.server'
@@ -121,23 +121,5 @@ export async function getPreviousDeploymentForNav(
     [monitoredAppId, currentDeploymentId, ...params],
   )
 
-  return result.rows[0] || null
-}
-
-export async function getPreviousDeploymentForDiff(
-  currentDeploymentId: number,
-  monitoredAppId: number,
-): Promise<{ commit_sha: string } | null> {
-  const sql = `SELECT prev.commit_sha FROM deployments prev
-     CROSS JOIN deployments curr
-     WHERE prev.monitored_app_id = $1
-       AND curr.id = $2
-       AND prev.created_at < curr.created_at
-       AND prev.commit_sha IS NOT NULL
-       AND prev.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
-       AND prev.commit_sha !~ '^refs/'
-     ORDER BY prev.created_at DESC LIMIT 1`
-
-  const result = await pool.query(sql, [monitoredAppId, currentDeploymentId])
   return result.rows[0] || null
 }
