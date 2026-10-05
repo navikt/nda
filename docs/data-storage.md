@@ -16,6 +16,8 @@ Repositoryets deploymentliste og telling bruker lagret `repository_id` når den 
 
 Repositorysiden har en valgfri SHA-visning (`view=sha`); deploymentlisten er fortsatt standard. Bare deployments som matcher filtrene grupperes etter full SHA innenfor repositoryet. Deployments med manglende eller tom SHA vises hver for seg. Grupper telles og pagineres før deploymentradene hentes, slik at samme SHA ikke deles mellom sider. Gruppene sorteres etter siste matchende deployment; tidspunkt og sekundær sorterings-ID hentes fra samme rad, valgt etter `(created_at DESC, id DESC)`. Visningen skriver ingen data og innfører ikke felles godkjenningsstatus eller handlinger; hver deployment beholder sin status og detaljlenke.
 
+SHA-gruppene viser antall godkjente, ikke godkjente og ventende deployments etter eksisterende statuskategorier. Oppsummeringen gjelder bare viste deployments som matcher filtrene, ikke en felles godkjenning av SHA-en. Eventuelle ukjente statusverdier telles separat.
+
 ## Checks — samlet kilde for alle leveransetyper
 
 GitHub Checks API (`checks.listForRef`) fungerer mot en vilkårlig commit-SHA, uavhengig av om commiten er del av en PR eller ikke. Derfor hentes check runs alltid mot `deployment.commit_sha` og lagres i `deployments.commit_checks_data` — dette gjelder **alle** leveransetyper (pull request, direct push og eventuelt andre), ikke bare direct push. Dette er **kun visningsdata** — check-status påvirker ikke fire-øyne-godkjenningsstatusen.

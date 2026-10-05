@@ -152,3 +152,17 @@ export const EmptyShaView: Story = {
     total_pages: 0,
   },
 }
+
+export const ShaStatusSummary: Story = {
+  name: 'Statusoppsummering for viste deployments',
+  args: {
+    ...baseArgs,
+    groupBySha: true,
+    total: 1,
+    deployments: [
+      { ...baseDeployment, commit_sha: 'a'.repeat(40) },
+      { ...fixtureDeployments[1], commit_sha: 'a'.repeat(40) },
+      { ...fixtureDeployments[2], commit_sha: 'a'.repeat(40) },
+    ],
+  },
+}
