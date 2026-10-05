@@ -469,10 +469,13 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
         JOIN monitored_applications ma ON d.monitored_app_id = ma.id
         ${goalJoinSql}
         ${whereSql}
-      ), selected_groups AS (
-        SELECT group_key, MAX(created_at) AS latest_at, MAX(id) AS latest_id
+      ), latest_deployments AS (
+        SELECT DISTINCT ON (group_key) group_key, created_at AS latest_at, id AS latest_id
         FROM matching_deployments
-        GROUP BY group_key
+        ORDER BY group_key, created_at DESC, id DESC
+      ), selected_groups AS (
+        SELECT group_key, latest_at, latest_id
+        FROM latest_deployments
         ORDER BY latest_at DESC, latest_id DESC
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
       )`

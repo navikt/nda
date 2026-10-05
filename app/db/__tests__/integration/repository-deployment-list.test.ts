@@ -269,3 +269,35 @@ it('paginates complete filtered SHA groups, keeping missing SHAs separate and ex
   expect(normal.total).toBe(5)
   expect(normal.deployments).toHaveLength(1)
 })
+
+it('orders tied SHA groups by their latest deployment IDs, not IDs of later-imported historical rows', async () => {
+  const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
+  const repositoryId = await seedRepository(pool, {
+    githubRepoId: '123',
+    githubOwner: 'navikt',
+    githubRepoName: 'repo-a',
+  })
+  const seed = async (sha: string, createdAt: string) => {
+    const id = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha: sha,
+      createdAt: new Date(createdAt),
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryId, id])
+    return id
+  }
+  const latestA = await seed('a'.repeat(40), '2025-06-02T12:00:00Z')
+  const latestB = await seed('b'.repeat(40), '2025-06-02T12:00:00Z')
+  const filters = { repository_id: repositoryId, group_by_sha: true, per_page: 1 }
+  const beforeImport = await getDeploymentsPaginated(filters)
+  expect(beforeImport.deployments.map((d) => d.id)).toEqual([latestB])
+  const historicalA = await seed('a'.repeat(40), '2025-06-01T12:00:00Z')
+  const afterImport = await getDeploymentsPaginated(filters)
+  expect(afterImport.total).toBe(2)
+  expect(afterImport.total_pages).toBe(2)
+  expect(afterImport.deployments.map((d) => d.id)).toEqual([latestB])
+  const second = await getDeploymentsPaginated({ ...filters, page: 2 })
+  expect(second.deployments.map((d) => d.id)).toEqual([latestA, historicalA])
+})
