@@ -128,3 +128,27 @@ export const Empty: Story = {
     total_pages: 0,
   },
 }
+
+export const GroupedBySha: Story = {
+  name: 'Gruppert per SHA med ulike statuser',
+  args: {
+    ...baseArgs,
+    groupBySha: true,
+    total: 2,
+    deployments: [
+      { ...baseDeployment, commit_sha: 'a'.repeat(40) },
+      { ...fixtureDeployments[1], commit_sha: 'a'.repeat(40) },
+      { ...fixtureDeployments[2], commit_sha: null },
+    ],
+  },
+}
+
+export const EmptyShaView: Story = {
+  args: {
+    ...baseArgs,
+    groupBySha: true,
+    deployments: [],
+    total: 0,
+    total_pages: 0,
+  },
+}

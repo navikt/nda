@@ -68,6 +68,7 @@ describe('repository deployments loader', () => {
 
     expect(result.deployments).toEqual([])
     expect(result.total_pages).toBe(0)
+    expect(result.groupBySha).toBe(false)
     expect(mockGetMultiAppDeploymentsPageData).not.toHaveBeenCalled()
   })
 
@@ -122,5 +123,18 @@ describe('repository deployments loader', () => {
     expect(result.repository).toBe(repository)
     expect(result.deployments).toEqual([{ id: 1 }])
     expect(mockGetDeploymentAppsForRepository).toHaveBeenCalledWith(repository.id)
+    expect(result.groupBySha).toBe(false)
+  })
+
+  it('opts into SHA pagination and preserves the view when redirecting', async () => {
+    mockGetDeploymentAppsForRepository.mockResolvedValue([linkedApp])
+    mockGetMultiAppDeploymentsPageData.mockResolvedValue({ deployments: [], total: 2, page: 5, total_pages: 2 })
+    const thrown = await loader(makeArgs('?view=sha&page=5')).catch((error) => error)
+    expect(mockGetMultiAppDeploymentsPageData).toHaveBeenCalledWith(
+      [linkedApp],
+      expect.objectContaining({ groupBySha: true }),
+      null,
+    )
+    expect(thrown.headers.get('location')).toBe('/repository/navikt/some-repo/deployments?view=sha&page=2')
   })
 })

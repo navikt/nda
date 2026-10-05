@@ -205,3 +205,67 @@ it('scopes goal options to repository deployments within its audit boundary with
   const unscoped = await getLinkedObjectivesForApps([appId])
   expect(unscoped.map((option) => option.id).sort()).toEqual(objectiveIds.sort())
 })
+
+it('paginates complete filtered SHA groups, keeping missing SHAs separate and excluding other repositories', async () => {
+  const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
+  const secondAppId = await seedApp(pool, { teamSlug: 'team-b', appName: 'app-b', environment: 'dev-gcp' })
+  const repositoryId = await seedRepository(pool, {
+    githubRepoId: '123',
+    githubOwner: 'navikt',
+    githubRepoName: 'repo-a',
+  })
+  const otherRepositoryId = await seedRepository(pool, {
+    githubRepoId: '456',
+    githubOwner: 'navikt',
+    githubRepoName: 'repo-b',
+  })
+  const seed = async (
+    sha: string | null,
+    day: number,
+    repoId = repositoryId,
+    status = 'unverified_commits',
+    monitoredAppId = appId,
+  ) => {
+    const id = await seedDeployment(pool, {
+      monitoredAppId,
+      teamSlug: monitoredAppId === appId ? 'team-a' : 'team-b',
+      environment: monitoredAppId === appId ? 'prod-gcp' : 'dev-gcp',
+      commitSha: sha,
+      createdAt: new Date(`2025-06-${String(day).padStart(2, '0')}T12:00:00Z`),
+      fourEyesStatus: status,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repoId, id])
+    return id
+  }
+  const olderSameSha = await seed('a'.repeat(40), 1)
+  const otherSha = await seed(`${'a'.repeat(39)}b`, 2)
+  const newerSameSha = await seed('a'.repeat(40), 3, repositoryId, 'unverified_commits', secondAppId)
+  await seed('a'.repeat(40), 4, otherRepositoryId)
+  await seed('a'.repeat(40), 5, repositoryId, 'approved')
+  const noSha = await seed(null, 1)
+  const emptySha = await seed('', 1)
+  const filters = {
+    repository_id: repositoryId,
+    group_by_sha: true,
+    four_eyes_status: 'not_approved',
+    start_date: new Date('2025-06-01T00:00:00Z'),
+    end_date: new Date('2025-06-04T00:00:00Z'),
+    per_page: 1,
+  }
+  const first = await getDeploymentsPaginated(filters)
+  expect(first.total).toBe(4)
+  expect(first.total_pages).toBe(4)
+  expect(first.deployments.map((d) => d.id)).toEqual([newerSameSha, olderSameSha])
+  const second = await getDeploymentsPaginated({ ...filters, page: 2 })
+  expect(second.deployments.map((d) => d.id)).toEqual([otherSha])
+  const third = await getDeploymentsPaginated({ ...filters, page: 3 })
+  const fourth = await getDeploymentsPaginated({ ...filters, page: 4 })
+  expect(third.deployments.map((d) => d.id)).toEqual([emptySha])
+  expect(fourth.deployments.map((d) => d.id)).toEqual([noSha])
+  const beyond = await getDeploymentsPaginated({ ...filters, page: 5 })
+  expect(beyond.deployments).toEqual([])
+  expect(beyond.total).toBe(4)
+  const normal = await getDeploymentsPaginated({ ...filters, group_by_sha: false })
+  expect(normal.total).toBe(5)
+  expect(normal.deployments).toHaveLength(1)
+})
