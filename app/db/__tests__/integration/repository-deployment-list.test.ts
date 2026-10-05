@@ -1,8 +1,16 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
 import { closePool } from '~/db/connection.server'
+import { getLinkedObjectivesForApps } from '~/db/deployment-goal-links.server'
 import { getDeploymentAppsForRepository, getDeploymentsPaginated } from '~/db/deployments.server'
-import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
+import {
+  seedApp,
+  seedApplicationRepository,
+  seedDeployment,
+  seedDevTeam,
+  seedRepository,
+  truncateAllTables,
+} from './helpers'
 
 let pool: Pool
 
@@ -124,4 +132,74 @@ it('excludes ambiguous legacy names while retaining explicit repository identiti
   const explicit = await getDeploymentsPaginated({ repository_id: repositoryId })
   expect(explicit.total).toBe(3)
   expect(explicit.deployments.map((d) => d.id).sort()).toEqual(ids.slice(0, 3).sort())
+})
+
+it('scopes goal options to repository deployments within its audit boundary without changing unscoped options', async () => {
+  const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
+  const repositoryId = await seedRepository(pool, {
+    githubRepoId: '123',
+    githubOwner: 'navikt',
+    githubRepoName: 'repo-a',
+    auditStartYear: 2025,
+  })
+  const otherRepositoryId = await seedRepository(pool, {
+    githubRepoId: '456',
+    githubOwner: 'navikt',
+    githubRepoName: 'repo-b',
+  })
+  await seedApplicationRepository(pool, {
+    monitoredAppId: appId,
+    githubOwner: 'navikt',
+    githubRepo: 'repo-a',
+    githubRepoId: '123',
+    status: 'historical',
+  })
+  const teamId = await seedDevTeam(pool, 'team-a')
+  const { rows: boards } = await pool.query<{ id: number }>(
+    `INSERT INTO boards (dev_team_id, title, period_type, period_start, period_end, period_label)
+     VALUES ($1, 'Board', 'tertiary', '2025-01-01', '2025-04-30', 'T1 2025') RETURNING id`,
+    [teamId],
+  )
+  const objectiveIds: number[] = []
+  for (const [index, title] of ['Stored', 'Legacy', 'Other repository', 'Before audit'].entries()) {
+    const { rows } = await pool.query<{ id: number }>(
+      'INSERT INTO board_objectives (board_id, title, sort_order) VALUES ($1, $2, $3) RETURNING id',
+      [boards[0].id, title, index],
+    )
+    const objectiveId = rows[0].id
+    objectiveIds.push(objectiveId)
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      githubOwner: 'navikt',
+      githubRepo: 'repo-a',
+      createdAt: new Date(index === 3 ? '2024-06-01T12:00:00Z' : '2025-06-01T12:00:00Z'),
+    })
+    if (index !== 1) {
+      await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [
+        index === 2 ? otherRepositoryId : repositoryId,
+        deploymentId,
+      ])
+    }
+    if (index === 1) {
+      const { rows: keyResults } = await pool.query<{ id: number }>(
+        "INSERT INTO board_key_results (objective_id, title, sort_order) VALUES ($1, 'Key result', 0) RETURNING id",
+        [objectiveId],
+      )
+      await pool.query(
+        "INSERT INTO deployment_goal_links (deployment_id, key_result_id, link_method) VALUES ($1, $2, 'manual')",
+        [deploymentId, keyResults[0].id],
+      )
+    } else {
+      await pool.query(
+        "INSERT INTO deployment_goal_links (deployment_id, objective_id, link_method) VALUES ($1, $2, 'manual')",
+        [deploymentId, objectiveId],
+      )
+    }
+  }
+  const scoped = await getLinkedObjectivesForApps([appId], repositoryId)
+  expect(scoped.map((option) => option.id).sort()).toEqual(objectiveIds.slice(0, 2).sort())
+  const unscoped = await getLinkedObjectivesForApps([appId])
+  expect(unscoped.map((option) => option.id).sort()).toEqual(objectiveIds.sort())
 })

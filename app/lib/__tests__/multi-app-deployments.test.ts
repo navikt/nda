@@ -98,6 +98,7 @@ describe('getMultiAppDeploymentsPageData', () => {
     const calledFilters = mockGetDeploymentsPaginated.mock.calls[0][0]
     expect(calledFilters).toMatchObject({ monitored_app_ids: [1, 2], per_app_audit_start_year: true })
     expect(calledFilters).not.toHaveProperty('audit_start_year')
+    expect(mockGetLinkedObjectivesForApps).toHaveBeenCalledWith([1, 2], undefined)
   })
 
   it('forwards a provided perPage value to getDeploymentsPaginated', async () => {
@@ -110,6 +111,7 @@ describe('getMultiAppDeploymentsPageData', () => {
     await getMultiAppDeploymentsPageData(apps, { page: 1, repositoryId: 216 }, null)
 
     expect(mockGetDeploymentsPaginated).toHaveBeenCalledWith(expect.objectContaining({ repository_id: 216 }))
+    expect(mockGetLinkedObjectivesForApps).toHaveBeenCalledWith([1, 2], 216)
     const metadataQueries = mockPoolQuery.mock.calls.filter(([sql]) => sql.includes('FROM deployments d'))
     expect(metadataQueries).toHaveLength(3)
     for (const [sql, params] of metadataQueries) {

@@ -1,6 +1,7 @@
 import { APPROVED_STATUSES } from '~/lib/four-eyes-status'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
+import { repositoryDeploymentSql } from './repository-deployment-sql'
 import { lowerUsernames, userDeploymentMatchAnySql, userDeploymentMatchSql } from './user-deployment-match'
 
 export interface DeploymentGoalLink {
@@ -66,8 +67,15 @@ export interface GoalFilterOptionWithType extends GoalFilterOption {
   parent_objective_id: number | null
 }
 
-export async function getLinkedObjectivesForApps(appIds: number[]): Promise<GoalFilterOption[]> {
+export async function getLinkedObjectivesForApps(appIds: number[], repositoryId?: number): Promise<GoalFilterOption[]> {
   if (appIds.length === 0) return []
+  const repositoryScope =
+    repositoryId == null
+      ? ''
+      : `AND ${repositoryDeploymentSql('$2')}
+         AND d.created_at >= make_date(COALESCE(
+           (SELECT audit_start_year FROM repositories WHERE id = $2), 1
+         ), 1, 1)`
   const result = await pool.query<GoalFilterOption>(
     `SELECT DISTINCT COALESCE(bo.id, bo_via_kr.id) AS id,
             COALESCE(bo.title, bo_via_kr.title) AS title,
@@ -82,10 +90,11 @@ export async function getLinkedObjectivesForApps(appIds: number[]): Promise<Goal
      LEFT JOIN boards b_via_kr ON b_via_kr.id = bo_via_kr.board_id
      LEFT JOIN dev_teams dt ON dt.id = COALESCE(b.dev_team_id, b_via_kr.dev_team_id)
      WHERE d.monitored_app_id = ANY($1)
+       ${repositoryScope}
        AND dgl.is_active = true
        AND COALESCE(bo.id, bo_via_kr.id) IS NOT NULL
      ORDER BY dev_team_name, period_label, title`,
-    [appIds],
+    repositoryId == null ? [appIds] : [appIds, repositoryId],
   )
   return result.rows
 }

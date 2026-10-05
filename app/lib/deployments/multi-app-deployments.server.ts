@@ -172,7 +172,7 @@ export async function getMultiAppDeploymentsPageData(
       metadataParams,
     ),
     currentUser?.navIdent ? getUserByIdentifier(currentUser.navIdent) : Promise.resolve(null),
-    getLinkedObjectivesForApps(appIds),
+    getLinkedObjectivesForApps(appIds, filters.repositoryId),
     pool.query(
       `SELECT DISTINCT
            d.workflow_trigger_config ->> 'triggerEvent' AS trigger_event,
