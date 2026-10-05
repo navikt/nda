@@ -39,6 +39,7 @@ describe('repository code delivery storage', () => {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await client.query('ALTER TABLE deployments DROP COLUMN repository_code_delivery_id')
       await client.query('DROP TABLE repository_code_deliveries')
       const deploymentsBefore = await client.query('SELECT to_jsonb(d) AS data FROM deployments d ORDER BY id')
       const repositoryBefore = await client.query('SELECT to_jsonb(r) AS data FROM repositories r WHERE id = $1', [
