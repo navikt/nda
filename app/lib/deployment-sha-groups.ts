@@ -1,3 +1,5 @@
+import { isApprovedStatus, isNotApprovedStatus, isPendingStatus } from './four-eyes-status'
+
 export function groupDeploymentsBySha<T extends { id: number; commit_sha: string | null }>(
   deployments: T[],
 ): { key: string; sha: string | null; deployments: T[] }[] {
@@ -14,8 +16,6 @@ export function groupDeploymentsBySha<T extends { id: number; commit_sha: string
   }
   return [...groups.values()]
 }
-
-import { isApprovedStatus, isNotApprovedStatus, isPendingStatus } from './four-eyes-status'
 
 export function getDeploymentStatusSummary(deployments: { four_eyes_status: string }[]): string {
   let approved = 0
