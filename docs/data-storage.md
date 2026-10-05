@@ -22,7 +22,9 @@ SHA-gruppene viser antall godkjente, ikke godkjente og ventende deployments ette
 
 `repository_code_deliveries` lagrer ordinære kodeintervaller med obligatorisk `repository_id`, `base_sha`, `head_sha` og opprettelsestidspunkt. Repositoryreferansen peker til `repositories.id` og hindrer sletting av refererte repositories. Begge SHA-er krever nøyaktig 40 heksadesimale tegn. Store og små bokstaver beholdes ved lagring, men unikhet for repository/head-SHA er uavhengig av bokstavstørrelse.
 
-Tabellen brukes foreløpig ikke av applikasjonen. Ingen leveranser opprettes eller tilbakefylles, og deployments, verifisering og godkjenning er uendret. Tabellen inneholder ikke baseline, godkjenningsbeslutninger eller deploymentkoblinger. Formatkontrollene beviser ikke at committene finnes, at base er en forfar til head eller at intervallet er gjennomgått. Låsing av intervaller ved fremtidige skrivehandlinger er ikke implementert.
+`getRepositoryCodeDelivery()` i `app/db/repository-code-deliveries.server.ts` slår opp en leveranse på repository-ID og head-SHA. `createRepositoryCodeDelivery()` lagrer et eksplisitt base-/head-intervall. Gjentatte og samtidige kall med samme intervall returnerer den eksisterende raden uten å endre SHA-er eller opprettelsestidspunkt. En annen base for samme repository/head gir `RepositoryCodeDeliveryConflictError` og endrer ikke leveransen. Begge oppslag og sammenligning av intervaller er uavhengige av bokstavstørrelse.
+
+Lagringsfunksjonene velger ikke intervallet og brukes ikke av produksjonsflyten. Ingen leveranser opprettes automatisk eller tilbakefylles, og deployments, verifisering og godkjenning er uendret. Tabellen inneholder ikke baseline, godkjenningsbeslutninger eller deploymentkoblinger. Formatkontrollene beviser ikke at committene finnes, at base er en forfar til head eller at intervallet er gjennomgått. Lagringsfunksjonene endrer aldri eksisterende intervaller; tabellen har ingen trigger som hindrer direkte SQL-oppdateringer.
 
 ## Checks — samlet kilde for alle leveransetyper
 
