@@ -76,6 +76,7 @@ describe('deployment code delivery link storage', () => {
       )
       expect(indexes).toHaveLength(1)
       expect(indexes[0].indexdef).toContain('(repository_code_delivery_id)')
+      expect(indexes[0].indexdef).toContain('WHERE (repository_code_delivery_id IS NOT NULL)')
     } finally {
       try {
         await client.query('ROLLBACK')
