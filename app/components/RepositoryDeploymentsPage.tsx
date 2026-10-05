@@ -1,7 +1,7 @@
 import { BodyShort, Box, Heading, HStack, Select, VStack } from '@navikt/ds-react'
 import type { ComponentProps } from 'react'
 import { useSearchParams } from 'react-router'
-import { groupDeploymentsBySha } from '~/lib/deployment-sha-groups'
+import { getDeploymentStatusSummary, groupDeploymentsBySha } from '~/lib/deployment-sha-groups'
 import { DeploymentFilters, DeploymentRow, PaginationControls } from './deployments'
 
 type DeploymentData = ComponentProps<typeof DeploymentRow>['deployment']
@@ -172,6 +172,9 @@ export function RepositoryDeploymentsPage({
                     </Heading>
                     <BodyShort textColor="subtle">
                       Deployet til – {group.deployments.length} deployment{group.deployments.length !== 1 ? 's' : ''}
+                    </BodyShort>
+                    <BodyShort>
+                      Status for viste deployments: {getDeploymentStatusSummary(group.deployments)}.
                     </BodyShort>
                   </Box>
                   {group.deployments.map((deployment) => (

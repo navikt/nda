@@ -61,6 +61,7 @@ it('renders one SHA heading with separate deployment statuses, apps, environment
   expect(markup).toContain(`SHA ${deployment.commit_sha}`)
   expect(markup.match(/id="sha-group-/g)).toHaveLength(1)
   expect(markup).toContain('1 kodegruppe funnet')
+  expect(markup).toContain('Status for viste deployments: 1 godkjent, 1 ikke godkjent.')
   expect(markup).toContain('app-a')
   expect(markup).toContain('app-b')
   expect(markup).toContain('prod-gcp')
@@ -73,4 +74,5 @@ it('keeps the default deployment list without group headings', () => {
   const markup = renderPage(false)
   expect(markup).not.toContain('id="sha-group-')
   expect(markup).toContain('2 deployments funnet')
+  expect(markup).not.toContain('Status for viste deployments:')
 })
