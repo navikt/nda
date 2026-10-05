@@ -16,6 +16,7 @@ interface RepositoryDeploymentsRepository {
 }
 
 export interface RepositoryDeploymentsPageProps {
+  comparisonRanges?: Record<number, ComponentProps<typeof DeploymentRow>['comparisonRange']>
   groupBySha?: boolean
   repository: RepositoryDeploymentsRepository
   deployments: DeploymentData[]
@@ -35,6 +36,7 @@ export interface RepositoryDeploymentsPageProps {
 }
 
 export function RepositoryDeploymentsPage({
+  comparisonRanges = {},
   groupBySha = false,
   repository,
   deployments,
@@ -134,7 +136,8 @@ export function RepositoryDeploymentsPage({
       {groupBySha && (
         <BodyShort textColor="subtle">
           Hver gruppe viser bare deployments som matcher filtrene. Status og godkjenning gjelder fortsatt hver
-          deployment. Deployments uten SHA vises separat.
+          deployment. Deployments uten SHA vises separat. Intervallene viser input til siste lagrede
+          verifiseringskjøring, ikke et godkjenningsbevis.
         </BodyShort>
       )}
 
@@ -179,6 +182,7 @@ export function RepositoryDeploymentsPage({
                   </Box>
                   {group.deployments.map((deployment) => (
                     <DeploymentRow
+                      comparisonRange={comparisonRanges[deployment.id] ?? null}
                       key={deployment.id}
                       deployment={deployment}
                       userMappings={userMappings}

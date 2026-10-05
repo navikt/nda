@@ -1,7 +1,11 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
 import { closePool } from '~/db/connection.server'
-import { getLatestVerificationRun, saveVerificationRun } from '~/db/github-data/verification-runs.server'
+import {
+  getLatestVerificationRanges,
+  getLatestVerificationRun,
+  saveVerificationRun,
+} from '~/db/github-data/verification-runs.server'
 import { storeVerificationResult } from '~/lib/verification/store-data.server'
 import type { VerificationResult } from '~/lib/verification/types'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
@@ -10,6 +14,32 @@ let pool: Pool
 
 beforeAll(() => {
   pool = new Pool({ connectionString: process.env.DATABASE_URL })
+})
+
+it('reads only requested deployments and the latest run, never an older available interval', async () => {
+  const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
+  const ids: number[] = []
+  for (let index = 0; index < 5; index++) {
+    ids.push(await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team-a', environment: 'prod-gcp' }))
+  }
+  const range = { baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) }
+  const save = (id: number, result: unknown) =>
+    saveVerificationRun(id, { status: 'approved', result }, { prSnapshotIds: [], commitSnapshotIds: [] })
+  const earlierId = await save(ids[0], { comparisonRange: range })
+  const laterId = await save(ids[0], {})
+  await pool.query("UPDATE verification_runs SET run_at = '2026-01-01T00:00:00Z' WHERE id = ANY($1)", [
+    [earlierId, laterId],
+  ])
+  await save(ids[1], { comparisonRange: range })
+  await save(ids[2], { comparisonRange: range })
+  await save(ids[2], { comparisonRange: { ...range, baseSha: 'short' } })
+  await save(ids[4], { comparisonRange: range })
+  expect(await getLatestVerificationRanges(ids.slice(0, 4))).toEqual({
+    [ids[0]]: null,
+    [ids[1]]: range,
+    [ids[2]]: null,
+  })
+  expect(await getLatestVerificationRanges([])).toEqual({})
 })
 
 afterEach(async () => {

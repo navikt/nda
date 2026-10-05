@@ -2,6 +2,7 @@ import { pool } from '~/db/connection.server'
 import { getLinkedObjectivesForApps } from '~/db/deployment-goal-links.server'
 import { type DeploymentFilters, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getDevTeamBySlug, getDevTeamsForApps } from '~/db/dev-teams.server'
+import { getLatestVerificationRanges } from '~/db/github-data/verification-runs.server'
 import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { effectiveAuditStartYearSql } from '~/db/repository-settings-sql'
 import {
@@ -116,6 +117,7 @@ export async function getMultiAppDeploymentsPageData(
   const errorDeploymentIds = result.deployments.filter((d) => d.four_eyes_status === 'error').map((d) => d.id)
 
   const [
+    comparisonRanges,
     errorReasonsResult,
     allDeployersResult,
     allContributorsResult,
@@ -123,6 +125,9 @@ export async function getMultiAppDeploymentsPageData(
     goalOptions,
     workflowTriggerOptionsResult,
   ] = await Promise.all([
+    filters.repositoryId != null && filters.groupBySha
+      ? getLatestVerificationRanges(result.deployments.map((deployment) => deployment.id))
+      : Promise.resolve({}),
     errorDeploymentIds.length > 0
       ? pool.query(
           `SELECT DISTINCT ON (deployment_id) deployment_id, result
@@ -264,6 +269,7 @@ export async function getMultiAppDeploymentsPageData(
 
   return {
     ...result,
+    comparisonRanges,
     userMappings: serializeUserLookups(userMappings),
     deployerOptions,
     currentUserGithub,
