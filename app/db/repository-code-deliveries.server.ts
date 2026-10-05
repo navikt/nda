@@ -1,5 +1,5 @@
 import { isFullCommitSha } from '~/lib/git-constants'
-import { pool } from './connection.server'
+import { pool, withTransaction } from './connection.server'
 
 export interface RepositoryCodeDelivery {
   id: number
@@ -76,4 +76,60 @@ export async function createRepositoryCodeDelivery({
     throw new RepositoryCodeDeliveryConflictError(existingDelivery, baseSha)
   }
   return existingDelivery
+}
+
+export async function linkDeploymentToRepositoryCodeDelivery(
+  deploymentId: number,
+  deliveryId: number,
+): Promise<boolean> {
+  if (!Number.isSafeInteger(deploymentId) || deploymentId <= 0) {
+    throw new Error('Deployment ID must be a positive integer')
+  }
+  if (!Number.isSafeInteger(deliveryId) || deliveryId <= 0) {
+    throw new Error('Code delivery ID must be a positive integer')
+  }
+  return withTransaction(async (client) => {
+    const { rows: deployments } = await client.query<{
+      repository_id: number | null
+      commit_sha: string | null
+      repository_code_delivery_id: number | null
+    }>(
+      `SELECT repository_id, commit_sha, repository_code_delivery_id
+       FROM deployments WHERE id = $1 FOR UPDATE`,
+      [deploymentId],
+    )
+    const deployment = deployments[0]
+    if (!deployment) throw new Error(`Deployment ${deploymentId} was not found`)
+
+    const { rows: deliveries } = await client.query<Pick<RepositoryCodeDelivery, 'repository_id' | 'head_sha'>>(
+      `SELECT repository_id, head_sha
+       FROM repository_code_deliveries WHERE id = $1 FOR SHARE`,
+      [deliveryId],
+    )
+    const delivery = deliveries[0]
+    if (!delivery) throw new Error(`Code delivery ${deliveryId} was not found`)
+    if (deployment.repository_id !== delivery.repository_id) {
+      throw new Error(`Deployment ${deploymentId} and code delivery ${deliveryId} have different repository identities`)
+    }
+    if (
+      !deployment.commit_sha ||
+      !isFullCommitSha(deployment.commit_sha) ||
+      deployment.commit_sha.toLowerCase() !== delivery.head_sha.toLowerCase()
+    ) {
+      throw new Error(`Deployment ${deploymentId} does not have the full head SHA of code delivery ${deliveryId}`)
+    }
+    if (deployment.repository_code_delivery_id === deliveryId) return false
+    if (deployment.repository_code_delivery_id !== null) {
+      throw new Error(
+        `Deployment ${deploymentId} is already linked to code delivery ${deployment.repository_code_delivery_id}`,
+      )
+    }
+    const result = await client.query(
+      `UPDATE deployments SET repository_code_delivery_id = $1
+       WHERE id = $2 AND repository_code_delivery_id IS NULL`,
+      [deliveryId, deploymentId],
+    )
+    if (result.rowCount !== 1) throw new Error(`Deployment ${deploymentId} code delivery link was not set`)
+    return true
+  })
 }
