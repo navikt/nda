@@ -153,6 +153,20 @@ export const EmptyShaView: Story = {
   },
 }
 
+export const StoredComparisonRanges: Story = {
+  name: 'Lagrede intervaller og manglende intervall',
+  args: {
+    ...baseArgs,
+    groupBySha: true,
+    total: 1,
+    comparisonRanges: {
+      1: { baseSha: 'b'.repeat(40), headSha: 'a'.repeat(40) },
+      2: { baseSha: 'c'.repeat(40), headSha: 'a'.repeat(40) },
+    },
+    deployments: fixtureDeployments.map((deployment) => ({ ...deployment, commit_sha: 'a'.repeat(40) })),
+  },
+}
+
 export const ShaStatusSummary: Story = {
   name: 'Statusoppsummering for viste deployments',
   args: {

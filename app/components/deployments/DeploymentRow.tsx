@@ -7,6 +7,7 @@ import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import type { UserLookupMap } from '~/lib/user-display'
+import type { StoredVerificationResult } from '~/lib/verification/types'
 import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 import styles from '~/styles/common.module.css'
 
@@ -34,6 +35,7 @@ interface DeploymentData {
 }
 
 interface DeploymentRowProps {
+  comparisonRange?: StoredVerificationResult['comparisonRange']
   deployment: DeploymentData
   userMappings: UserLookupMap
   errorReason?: string
@@ -44,6 +46,7 @@ interface DeploymentRowProps {
 }
 
 export function DeploymentRow({
+  comparisonRange,
   deployment,
   userMappings,
   errorReason,
@@ -166,6 +169,18 @@ export function DeploymentRow({
             </Button>
           </HStack>
         </HStack>
+
+        {comparisonRange !== undefined && (
+          <Detail textColor="subtle" style={{ overflowWrap: 'anywhere' }}>
+            {comparisonRange ? (
+              <>
+                Intervall fra siste verifiseringskjøring: {comparisonRange.baseSha} → {comparisonRange.headSha}
+              </>
+            ) : (
+              'Sammenligningsintervall ikke tilgjengelig'
+            )}
+          </Detail>
+        )}
 
         {/* Error reason for deployments with error status */}
         {errorReason && (

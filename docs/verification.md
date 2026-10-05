@@ -41,7 +41,7 @@ Nye lagrede verifiseringskjøringer inneholder `result.comparisonRange` med full
 
 Feltet lagres når ordinær verifisering eller reverifisering oppretter en ny rad i `verification_runs`. Reverifisering uten statusendring oppretter fortsatt ingen ny kjøring. Eldre resultater uten feltet beholdes uendret; ingen tilbakefylling, endring av beslutningsalgoritmen eller ny visning inngår.
 
-Ved senere visning skal manglende intervall omtales som «Sammenligningsintervall ikke tilgjengelig», ikke som manglende dokumentasjon eller godkjenning av deploymenten.
+SHA-visningen på repositorysiden viser «Intervall fra siste verifiseringskjøring» per deployment. Intervallet hentes i ett samlet oppslag for sidens deployments fra siste kjøring etter `(run_at DESC, id DESC)`. Manglende eller ugyldig intervall vises som «Sammenligningsintervall ikke tilgjengelig», ikke som manglende dokumentasjon eller godkjenning av deploymenten. Det brukes ingen fallback til eldre kjøringer eller cache. Standardlisten er uendret.
 
 | Kilde | Hva hentes | Når |
 |-------|-----------|-----|

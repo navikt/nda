@@ -14,6 +14,7 @@ const {
   mockGetGithubUserLookups,
   mockGetUserByIdentifier,
   mockGetLinkedObjectivesForApps,
+  mockGetLatestVerificationRanges,
 } = vi.hoisted(() => ({
   mockGetDeploymentsPaginated: vi.fn(),
   mockGetDevTeamBySlug: vi.fn(),
@@ -24,6 +25,11 @@ const {
   mockGetGithubUserLookups: vi.fn(),
   mockGetUserByIdentifier: vi.fn(),
   mockGetLinkedObjectivesForApps: vi.fn(),
+  mockGetLatestVerificationRanges: vi.fn(),
+}))
+
+vi.mock('~/db/github-data/verification-runs.server', () => ({
+  getLatestVerificationRanges: mockGetLatestVerificationRanges,
 }))
 
 vi.mock('~/db/deployments.server', () => ({
@@ -87,6 +93,7 @@ describe('getMultiAppDeploymentsPageData', () => {
     mockGetDevTeamBySlug.mockResolvedValue(null)
     mockGetDevTeamsForGithubUsernamesByRole.mockResolvedValue([])
     mockGetLinkedObjectivesForApps.mockResolvedValue([])
+    mockGetLatestVerificationRanges.mockResolvedValue({})
     mockGetGithubUserLookups.mockResolvedValue(new Map())
     mockGetUserByIdentifier.mockResolvedValue(null)
     mockGetDeploymentsPaginated.mockResolvedValue({ deployments: [], total: 0, page: 1, per_page: 20, total_pages: 0 })
@@ -98,6 +105,7 @@ describe('getMultiAppDeploymentsPageData', () => {
     const calledFilters = mockGetDeploymentsPaginated.mock.calls[0][0]
     expect(calledFilters).toMatchObject({ monitored_app_ids: [1, 2], per_app_audit_start_year: true })
     expect(calledFilters).not.toHaveProperty('audit_start_year')
+    expect(mockGetLatestVerificationRanges).not.toHaveBeenCalled()
     expect(mockGetLinkedObjectivesForApps).toHaveBeenCalledWith([1, 2], undefined)
   })
 
@@ -108,7 +116,16 @@ describe('getMultiAppDeploymentsPageData', () => {
   })
 
   it('forwards SHA grouping only when requested by the caller', async () => {
-    await getMultiAppDeploymentsPageData(apps, { page: 1, repositoryId: 216, groupBySha: true }, null)
+    mockGetDeploymentsPaginated.mockResolvedValue({
+      deployments: [{ id: 42 }],
+      total: 1,
+      page: 1,
+      total_pages: 1,
+    })
+    mockGetLatestVerificationRanges.mockResolvedValue({ 42: { baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) } })
+    const data = await getMultiAppDeploymentsPageData(apps, { page: 1, repositoryId: 216, groupBySha: true }, null)
+    expect(mockGetLatestVerificationRanges).toHaveBeenCalledExactlyOnceWith([42])
+    expect(data.comparisonRanges).toEqual({ 42: { baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) } })
     expect(mockGetDeploymentsPaginated).toHaveBeenCalledWith(
       expect.objectContaining({ repository_id: 216, group_by_sha: true }),
     )

@@ -30,6 +30,7 @@ function renderPage(groupBySha: boolean) {
           <RepositoryDeploymentsPage
             repository={{ id: 1, github_owner: 'navikt', github_repo_name: 'repo-a' }}
             groupBySha={groupBySha}
+            comparisonRanges={{ 1: { baseSha: 'b'.repeat(40), headSha: 'a'.repeat(40) } }}
             deployments={[
               deployment,
               { ...deployment, id: 2, app_name: 'app-b', environment_name: 'dev-gcp', four_eyes_status: 'direct_push' },
@@ -62,6 +63,8 @@ it('renders one SHA heading with separate deployment statuses, apps, environment
   expect(markup.match(/id="sha-group-/g)).toHaveLength(1)
   expect(markup).toContain('1 kodegruppe funnet')
   expect(markup).toContain('Status for viste deployments: 1 godkjent, 1 ikke godkjent.')
+  expect(markup).toContain(`Intervall fra siste verifiseringskjøring: ${'b'.repeat(40)} → ${deployment.commit_sha}`)
+  expect(markup).toContain('Sammenligningsintervall ikke tilgjengelig')
   expect(markup).toContain('app-a')
   expect(markup).toContain('app-b')
   expect(markup).toContain('prod-gcp')
@@ -75,4 +78,6 @@ it('keeps the default deployment list without group headings', () => {
   expect(markup).not.toContain('id="sha-group-')
   expect(markup).toContain('2 deployments funnet')
   expect(markup).not.toContain('Status for viste deployments:')
+  expect(markup).not.toContain('Intervall fra siste verifiseringskjøring:')
+  expect(markup).not.toContain('Sammenligningsintervall ikke tilgjengelig')
 })
