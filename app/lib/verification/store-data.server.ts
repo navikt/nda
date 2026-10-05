@@ -5,7 +5,7 @@ import { saveVerificationRun } from '~/db/github-data.server'
 import { PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { buildGithubPrDataFromSnapshots } from './build-github-pr-data'
 import { getCachedPrData } from './fetch-data/pr-data.server'
-import type { VerificationInput, VerificationResult } from './types'
+import type { StoredVerificationResult, VerificationInput, VerificationResult } from './types'
 
 export async function storeVerificationResult(
   deploymentId: number,
@@ -14,17 +14,31 @@ export async function storeVerificationResult(
     prSnapshotIds: number[]
     commitSnapshotIds: number[]
   },
+  input: Pick<
+    VerificationInput,
+    'commitSha' | 'previousDeployment' | 'previousDeploymentLookupFailed' | 'previousDeploymentRateLimited'
+  >,
   changeSource?: string,
   commitCacheContext?: {
     repository: string
     commitsBetween: VerificationInput['commitsBetween']
   },
 ): Promise<{ verificationRunId: number }> {
+  const storedResult: StoredVerificationResult = {
+    ...result,
+    comparisonRange:
+      input.previousDeployment?.commitSha &&
+      input.commitSha &&
+      !input.previousDeploymentLookupFailed &&
+      !input.previousDeploymentRateLimited
+        ? { baseSha: input.previousDeployment.commitSha, headSha: input.commitSha }
+        : null,
+  }
   const verificationRunId = await saveVerificationRun(
     deploymentId,
     {
       status: result.status,
-      result: result,
+      result: storedResult,
     },
     snapshotIds,
   )

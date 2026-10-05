@@ -37,6 +37,10 @@ For hvert deployment sjekker systemet:
 
 ### Datakilder
 
+Nye lagrede verifiseringskjøringer inneholder `result.comparisonRange` med full `baseSha` fra inputens forrige deployment og `headSha` fra deploymenten som vurderes. Feltet er `null` når et endepunkt mangler eller oppslaget etter forrige deployment feilet. Det dokumenterer sammenligningsintervallet i input, ikke at sammenligningen lyktes eller at hele intervallet ble godkjent. Ingen intervalldata utledes fra dagens cache ved lesing.
+
+Feltet lagres når ordinær verifisering eller reverifisering oppretter en ny rad i `verification_runs`. Reverifisering uten statusendring oppretter fortsatt ingen ny kjøring. Eldre resultater uten feltet beholdes uendret; ingen tilbakefylling, endring av beslutningsalgoritmen eller ny visning inngår.
+
 | Kilde | Hva hentes | Når |
 |-------|-----------|-----|
 | **Nais API** | Deployments (app, tidspunkt, commit-SHA, miljø) | Periodisk hvert 5. minutt |

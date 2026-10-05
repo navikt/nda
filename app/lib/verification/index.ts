@@ -112,7 +112,7 @@ export async function runVerification(
     commitSnapshotIds: [], // Would be populated by fetch-data
   }
 
-  const { verificationRunId } = await storeVerificationResult(deploymentId, result, snapshotIds, undefined, {
+  const { verificationRunId } = await storeVerificationResult(deploymentId, result, snapshotIds, input, undefined, {
     repository: options.repository,
     commitsBetween: input.commitsBetween,
   })
@@ -633,7 +633,13 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   let prBackfilled = false
   if (statusChanged) {
-    await storeVerificationResult(dep.id, newResult, { prSnapshotIds: [], commitSnapshotIds: [] }, 'reverification')
+    await storeVerificationResult(
+      dep.id,
+      newResult,
+      { prSnapshotIds: [], commitSnapshotIds: [] },
+      input,
+      'reverification',
+    )
     await propagateVerificationToSiblings(
       dep.id,
       newResult.status,
