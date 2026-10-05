@@ -36,12 +36,14 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const workflowPath = url.searchParams.get('workflowFile') || undefined
   const period = (url.searchParams.get('period') || 'last-week') as TimePeriod
   const teamFilter = url.searchParams.get('team') || ''
+  const groupBySha = url.searchParams.get('view') === 'sha'
 
   const range = getDateRangeForPeriod(period)
 
   if (linkedApps.length === 0) {
     return {
       repository,
+      groupBySha,
       deployments: [],
       total: 0,
       page: 1,
@@ -65,6 +67,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     linkedApps,
     {
       repositoryId: repository.id,
+      groupBySha,
       page,
       status,
       method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
@@ -88,6 +91,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
 
   return {
     repository,
+    groupBySha,
     ...data,
   }
 }

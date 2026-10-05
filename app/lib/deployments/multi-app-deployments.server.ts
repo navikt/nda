@@ -18,6 +18,7 @@ import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 
 export interface MultiAppDeploymentsFilters {
   repositoryId?: number
+  groupBySha?: boolean
   page: number
   perPage?: number
   status?: string
@@ -91,6 +92,7 @@ export async function getMultiAppDeploymentsPageData(
 
   const deploymentFilters: DeploymentFilters = {
     repository_id: filters.repositoryId,
+    group_by_sha: filters.groupBySha,
     monitored_app_ids: appIds,
     per_app_audit_start_year: true,
     page: filters.page,

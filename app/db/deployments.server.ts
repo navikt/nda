@@ -211,6 +211,7 @@ export interface CreateDeploymentParams {
 
 export interface DeploymentFilters {
   repository_id?: number
+  group_by_sha?: boolean
   monitored_app_id?: number
   monitored_app_ids?: number[]
   team_slug?: string
@@ -445,8 +446,10 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     }
   }
 
+  const groupBySha = filters?.repository_id != null && filters.group_by_sha === true
+  const groupKeySql = "COALESCE(NULLIF(d.commit_sha, ''), 'deployment:' || d.id::text)"
   const countSql = `
-    SELECT COUNT(*) as total
+    SELECT ${groupBySha ? `COUNT(DISTINCT ${groupKeySql})` : 'COUNT(*)'} as total
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
     ${goalJoinSql}
@@ -459,7 +462,27 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
   const per_page = filters?.per_page || 20
   const offset = (page - 1) * per_page
 
+  const groupPageSql = groupBySha
+    ? `WITH matching_deployments AS (
+        SELECT d.id, d.created_at, ${groupKeySql} AS group_key
+        FROM deployments d
+        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+        ${goalJoinSql}
+        ${whereSql}
+      ), latest_deployments AS (
+        SELECT DISTINCT ON (group_key) group_key, created_at AS latest_at, id AS latest_id
+        FROM matching_deployments
+        ORDER BY group_key, created_at DESC, id DESC
+      ), selected_groups AS (
+        SELECT group_key, latest_at, latest_id
+        FROM latest_deployments
+        ORDER BY latest_at DESC, latest_id DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      )`
+    : ''
+
   const dataSql = `
+    ${groupPageSql}
     SELECT 
       d.*,
       ${TITLE_COALESCE_SQL} AS title,
@@ -473,10 +496,16 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     LEFT JOIN commits c ON c.sha = d.commit_sha
       AND c.repo_owner = d.detected_github_owner
       AND c.repo_name = d.detected_github_repo_name
-    ${goalJoinSql}
-    ${whereSql}
-    ORDER BY d.created_at DESC${filters?.repository_id != null ? ', d.id DESC' : ''}
-    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    ${
+      groupBySha
+        ? `JOIN matching_deployments matching ON matching.id = d.id
+           JOIN selected_groups groups ON groups.group_key = matching.group_key
+           ORDER BY groups.latest_at DESC, groups.latest_id DESC, d.created_at DESC, d.id DESC`
+        : `${goalJoinSql}
+           ${whereSql}
+           ORDER BY d.created_at DESC${filters?.repository_id != null ? ', d.id DESC' : ''}
+           LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`
+    }
   `
   params.push(per_page, offset)
 

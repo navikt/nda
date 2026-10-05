@@ -1,6 +1,7 @@
-import { BodyShort, Box, Heading, HStack, VStack } from '@navikt/ds-react'
+import { BodyShort, Box, Heading, HStack, Select, VStack } from '@navikt/ds-react'
 import type { ComponentProps } from 'react'
 import { useSearchParams } from 'react-router'
+import { groupDeploymentsBySha } from '~/lib/deployment-sha-groups'
 import { DeploymentFilters, DeploymentRow, PaginationControls } from './deployments'
 
 type DeploymentData = ComponentProps<typeof DeploymentRow>['deployment']
@@ -15,6 +16,7 @@ interface RepositoryDeploymentsRepository {
 }
 
 export interface RepositoryDeploymentsPageProps {
+  groupBySha?: boolean
   repository: RepositoryDeploymentsRepository
   deployments: DeploymentData[]
   total: number
@@ -33,6 +35,7 @@ export interface RepositoryDeploymentsPageProps {
 }
 
 export function RepositoryDeploymentsPage({
+  groupBySha = false,
   repository,
   deployments,
   total,
@@ -86,9 +89,19 @@ export function RepositoryDeploymentsPage({
           Deployments for {repository.github_owner}/{repository.github_repo_name}
         </Heading>
         <BodyShort textColor="subtle">
-          Viser deployments for alle apper (aktive og inaktive) koblet til dette repoet.
+          Viser repositoryets deployments til apper og miljøer, også historiske deployments.
         </BodyShort>
       </div>
+
+      <Select
+        label="Visning"
+        size="small"
+        value={groupBySha ? 'sha' : ''}
+        onChange={(event) => updateFilter('view', event.target.value)}
+      >
+        <option value="">Deployments</option>
+        <option value="sha">Gruppert per SHA</option>
+      </Select>
 
       <DeploymentFilters
         currentPeriod={currentPeriod}
@@ -112,9 +125,18 @@ export function RepositoryDeploymentsPage({
 
       <HStack justify="space-between" align="center" wrap>
         <BodyShort textColor="subtle">
-          {total} deployment{total !== 1 ? 's' : ''} funnet (alle apper og miljøer)
+          {groupBySha
+            ? `${total} kodegruppe${total !== 1 ? 'r' : ''} funnet`
+            : `${total} deployment${total !== 1 ? 's' : ''} funnet (alle apper og miljøer)`}
         </BodyShort>
       </HStack>
+
+      {groupBySha && (
+        <BodyShort textColor="subtle">
+          Hver gruppe viser bare deployments som matcher filtrene. Status og godkjenning gjelder fortsatt hver
+          deployment. Deployments uten SHA vises separat.
+        </BodyShort>
+      )}
 
       <div>
         {deployments.length === 0 ? (
@@ -127,6 +149,46 @@ export function RepositoryDeploymentsPage({
                   : 'Ingen deployments funnet med valgte filtre.'}
             </BodyShort>
           </Box>
+        ) : groupBySha ? (
+          <VStack gap="space-24">
+            {groupDeploymentsBySha(deployments).map((group) => (
+              <Box
+                key={group.key}
+                as="section"
+                aria-labelledby={`sha-group-${group.deployments[0].id}`}
+                borderColor="neutral-subtle"
+                borderWidth="1"
+                borderRadius="8"
+              >
+                <VStack gap="space-8">
+                  <Box padding="space-16">
+                    <Heading
+                      size="small"
+                      level="2"
+                      id={`sha-group-${group.deployments[0].id}`}
+                      style={{ overflowWrap: 'anywhere' }}
+                    >
+                      {group.sha ? `SHA ${group.sha}` : `Uten SHA – deployment ${group.deployments[0].id}`}
+                    </Heading>
+                    <BodyShort textColor="subtle">
+                      Deployet til – {group.deployments.length} deployment{group.deployments.length !== 1 ? 's' : ''}
+                    </BodyShort>
+                  </Box>
+                  {group.deployments.map((deployment) => (
+                    <DeploymentRow
+                      key={deployment.id}
+                      deployment={deployment}
+                      userMappings={userMappings}
+                      errorReason={errorReasons[deployment.id]}
+                      showEnv
+                      showApp
+                      searchParams={searchParams}
+                    />
+                  ))}
+                </VStack>
+              </Box>
+            ))}
+          </VStack>
         ) : (
           deployments.map((deployment) => (
             <DeploymentRow

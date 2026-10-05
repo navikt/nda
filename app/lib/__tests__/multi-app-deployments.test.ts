@@ -107,6 +107,13 @@ describe('getMultiAppDeploymentsPageData', () => {
     expect(mockGetDeploymentsPaginated).toHaveBeenCalledWith(expect.objectContaining({ per_page: 50 }))
   })
 
+  it('forwards SHA grouping only when requested by the caller', async () => {
+    await getMultiAppDeploymentsPageData(apps, { page: 1, repositoryId: 216, groupBySha: true }, null)
+    expect(mockGetDeploymentsPaginated).toHaveBeenCalledWith(
+      expect.objectContaining({ repository_id: 216, group_by_sha: true }),
+    )
+  })
+
   it('scopes repository deployments and deployment-derived filter options to the same repository', async () => {
     await getMultiAppDeploymentsPageData(apps, { page: 1, repositoryId: 216 }, null)
 
