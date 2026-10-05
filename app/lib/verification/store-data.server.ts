@@ -3,13 +3,10 @@ import { pool } from '~/db/connection.server'
 import { logStatusTransition } from '~/db/deployments.server'
 import { saveVerificationRun } from '~/db/github-data.server'
 import { PROTECTED_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { isFullCommitSha } from '~/lib/git-constants'
 import type { buildGithubPrDataFromSnapshots } from './build-github-pr-data'
 import { getCachedPrData } from './fetch-data/pr-data.server'
 import type { StoredVerificationResult, VerificationInput, VerificationResult } from './types'
-
-function isFullCommitSha(sha: string): boolean {
-  return sha.length === 40 && /^[0-9a-f]{40}$/i.test(sha)
-}
 
 export async function storeVerificationResult(
   deploymentId: number,

@@ -5,3 +5,7 @@ export const VALID_COMMIT_SHA_SQL = `d.commit_sha !~ '^refs/' AND LENGTH(d.commi
 export function isValidCommitSha(sha: string): boolean {
   return !sha.startsWith('refs/') && sha.length >= MIN_COMMIT_SHA_LENGTH
 }
+
+export function isFullCommitSha(sha: string): boolean {
+  return sha.length === 40 && /^[0-9a-f]{40}$/i.test(sha)
+}

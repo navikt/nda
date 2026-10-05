@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { closePool } from '~/db/connection.server'
 import {
   createRepositoryCodeDelivery,
   getRepositoryCodeDelivery,
@@ -17,6 +18,7 @@ beforeAll(() => {
 })
 
 afterAll(async () => {
+  await closePool()
   await pool.end()
 })
 

@@ -1,3 +1,4 @@
+import { isFullCommitSha } from '~/lib/git-constants'
 import { pool } from './connection.server'
 
 export interface RepositoryCodeDelivery {
@@ -32,18 +33,14 @@ function validateRepositoryId(repositoryId: number): void {
   }
 }
 
-function validateFullSha(sha: string): void {
-  if (sha.length !== 40 || !/^[0-9a-f]{40}$/i.test(sha)) {
-    throw new Error('Commit SHA must contain exactly 40 hexadecimal characters')
-  }
-}
-
 export async function getRepositoryCodeDelivery(
   repositoryId: number,
   headSha: string,
 ): Promise<RepositoryCodeDelivery | null> {
   validateRepositoryId(repositoryId)
-  validateFullSha(headSha)
+  if (!isFullCommitSha(headSha)) {
+    throw new Error('Commit SHA must contain exactly 40 hexadecimal characters')
+  }
   const { rows } = await pool.query<RepositoryCodeDelivery>(
     `SELECT id, repository_id, base_sha, head_sha, created_at
      FROM repository_code_deliveries
@@ -59,8 +56,9 @@ export async function createRepositoryCodeDelivery({
   headSha,
 }: CreateRepositoryCodeDeliveryInput): Promise<RepositoryCodeDelivery> {
   validateRepositoryId(repositoryId)
-  validateFullSha(baseSha)
-  validateFullSha(headSha)
+  if (!isFullCommitSha(baseSha) || !isFullCommitSha(headSha)) {
+    throw new Error('Commit SHA must contain exactly 40 hexadecimal characters')
+  }
   const { rows } = await pool.query<RepositoryCodeDelivery>(
     `INSERT INTO repository_code_deliveries (repository_id, base_sha, head_sha)
      VALUES ($1, $2, $3)
