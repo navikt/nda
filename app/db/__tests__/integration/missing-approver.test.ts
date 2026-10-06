@@ -27,6 +27,19 @@ const PERIOD_END = new Date('2026-12-31T23:59:59Z')
 const IN_PERIOD = new Date('2026-06-15T10:00:00Z')
 
 describe('missing approver detection — checkAuditReadiness', () => {
+  it('returns is_ready true and no_deployments true when app has no deployments in period', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'app-a',
+      environment: 'prod-gcp',
+    })
+
+    const result = await checkAuditReadiness(appId, PERIOD_START, PERIOD_END)
+    expect(result.is_ready).toBe(true)
+    expect(result.no_deployments).toBe(true)
+    expect(result.total_deployments).toBe(0)
+  })
+
   it('blocks when approved deployment has no reviewers and no manual approval', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'team-a',

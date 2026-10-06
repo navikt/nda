@@ -127,9 +127,9 @@ function addSammendragSheet(workbook: ExcelJS.Workbook, props: AuditReportExcelP
     noteTitle.font = { bold: true, size: 11 }
     sheet.mergeCells(noteTitle.number, 1, noteTitle.number, 2)
     const noteRow = sheet.addRow([
-      `Det ble ikke registrert noen deployments til produksjon for denne applikasjonen i perioden ${formatDate(
+      `Ingen produksjonsendringer ble registrert for denne applikasjonen i perioden ${formatDate(
         periodStart,
-      )} - ${formatDate(periodEnd)}. Denne rapporten bekrefter dette og kan brukes som dokumentasjon på at det ikke har vært endringer å vurdere opp mot regelverket for endringshåndtering i perioden.`,
+      )} - ${formatDate(periodEnd)}.`,
     ])
     sheet.mergeCells(noteRow.number, 1, noteRow.number, 2)
     noteRow.getCell(1).alignment = { wrapText: true }

@@ -283,7 +283,7 @@ function ReadinessResult({
         {readinessData.is_ready && readinessData.no_deployments && (
           <BodyShort size="small">
             Ingen deployments ble registrert i perioden. Du kan likevel generere en rapport som bekrefter dette, til
-            bruk som dokumentasjon (f.eks. i KISS-rutiner).
+            bruk som dokumentasjon.
           </BodyShort>
         )}
 

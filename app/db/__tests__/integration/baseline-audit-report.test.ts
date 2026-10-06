@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildReportData, getAuditReportData } from '../../audit-reports.server'
-import { seedApp, seedDeployment, truncateAllTables } from './helpers'
+import { seedApp, seedApplicationRepository, seedDeployment, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -116,5 +116,40 @@ describe('baseline deployment in audit report', () => {
     expect(report.deployments).toHaveLength(3)
     expect(report.baseline_count).toBe(1)
     expect(report.deployments.filter((d) => d.method === 'pr')).toHaveLength(2)
+  })
+})
+
+describe('repository resolution for zero-deployment audit report', () => {
+  it('resolves the newest active repository link when the period has no deployments', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-e', appName: 'app-e', environment: 'prod-gcp' })
+
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'old-repo',
+      githubRepoId: '1001',
+      status: 'active',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'new-repo',
+      githubRepoId: '1002',
+      status: 'active',
+    })
+
+    const rawData = await getAuditReportData(appId, PERIOD_START, PERIOD_END)
+
+    expect(rawData.deployments).toHaveLength(0)
+    expect(rawData.repository).toBe('navikt/new-repo')
+  })
+
+  it('falls back to "unknown" when the app has no active repository link and no deployments', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-f', appName: 'app-f', environment: 'prod-gcp' })
+
+    const rawData = await getAuditReportData(appId, PERIOD_START, PERIOD_END)
+
+    expect(rawData.deployments).toHaveLength(0)
+    expect(rawData.repository).toBe('unknown')
   })
 })

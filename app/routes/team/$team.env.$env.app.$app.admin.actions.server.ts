@@ -12,18 +12,110 @@ import {
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
+import { getEffectiveAuditStartYear } from '~/db/repositories.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
+import { PROD_ENVIRONMENTS } from '~/lib/api/errors'
 import { requireUser } from '~/lib/auth.server'
 import { canAccessAppAdmin } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
 import { getFormString, isValidSlackChannel } from '~/lib/form-validators'
 import { logger } from '~/lib/logger.server'
 import { processReportJobAsync } from '~/lib/report-job-processor.server'
-import { isValidReportPeriodType } from '~/lib/report-periods'
+import { buildCustomPeriod, isValidReportPeriodType, type ReportPeriodType, resolvePeriod } from '~/lib/report-periods'
 import type { SlackConfigSettingKey } from '~/lib/slack/config-setting-keys'
 import { serializeUserLookups } from '~/lib/user-display'
 
 class AppNotFoundError extends Error {}
+
+interface ResolvedReportPeriod {
+  periodType: ReportPeriodType
+  periodLabel: string
+  year: number
+  periodStart: Date
+  periodEnd: Date
+}
+
+const RESOLVE_PERIOD_ERROR_TRANSLATIONS: Record<string, string> = {
+  'periodStart must be the 1st of the month': 'Fra-dato må være den 1. i måneden',
+  'periodStart for yearly must be January 1st (YYYY-01-01)': 'Fra-dato for årlig periode må være 1. januar',
+  'periodStart for tertiary must start in January, May, or September':
+    'Fra-dato for tertialsvis periode må starte i januar, mai eller september',
+  'periodStart for quarterly must start in January, April, July, or October':
+    'Fra-dato for kvartalsvis periode må starte i januar, april, juli eller oktober',
+  'Period has not ended yet': 'Kan ikke generere rapport for ufullstendige perioder',
+}
+
+async function resolveAndValidateReportPeriod(
+  appId: number,
+  periodType: ReportPeriodType,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ period: ResolvedReportPeriod; error: null } | { period: null; error: string }> {
+  if (periodStart > periodEnd) {
+    return { period: null, error: 'Ugyldig periode: fra-dato kan ikke være etter til-dato' }
+  }
+
+  const app = await getMonitoredApplicationById(appId)
+  if (!app) {
+    return { period: null, error: 'Fant ikke applikasjonen' }
+  }
+  if (!PROD_ENVIRONMENTS.has(app.environment_name)) {
+    return { period: null, error: 'Leveranserapporter kan kun genereres for produksjonsmiljøer (prod-fss, prod-gcp)' }
+  }
+
+  const auditStartYear = await getEffectiveAuditStartYear(appId)
+  if (auditStartYear !== null && periodStart.getFullYear() < auditStartYear) {
+    return { period: null, error: `Perioden starter før appens revisjonsstartår (${auditStartYear})` }
+  }
+
+  if (periodType === 'custom') {
+    const resolvedCustom = buildCustomPeriod(
+      periodStart.getFullYear(),
+      periodStart.getMonth(),
+      periodEnd.getFullYear(),
+      periodEnd.getMonth(),
+    )
+    const isAligned =
+      !!resolvedCustom &&
+      resolvedCustom.startDate.getTime() === periodStart.getTime() &&
+      resolvedCustom.endDate.getTime() === periodEnd.getTime()
+
+    if (!isAligned) {
+      const expectedEnd = new Date(periodEnd.getFullYear(), periodEnd.getMonth() + 1, 0, 23, 59, 59, 999)
+      if (expectedEnd >= new Date()) {
+        return { period: null, error: 'Kan ikke generere rapport for ufullstendige perioder' }
+      }
+      return { period: null, error: 'Egendefinert periode må dekke hele kalendermåneder' }
+    }
+
+    return {
+      period: {
+        periodType: 'custom',
+        periodLabel: resolvedCustom.label,
+        year: resolvedCustom.year,
+        periodStart: resolvedCustom.startDate,
+        periodEnd: resolvedCustom.endDate,
+      },
+      error: null,
+    }
+  }
+
+  const resolved = resolvePeriod(periodType, periodStart, null)
+  if (resolved.error !== null) {
+    return { period: null, error: RESOLVE_PERIOD_ERROR_TRANSLATIONS[resolved.error] ?? resolved.error }
+  }
+
+  return {
+    period: {
+      periodType,
+      periodLabel: resolved.period.label,
+      year: resolved.period.year,
+      periodStart: resolved.period.startDate,
+      periodEnd: resolved.period.endDate,
+    },
+    error: null,
+  }
+}
 
 async function updateSlackSettingWithAudit(params: {
   appId: number
@@ -133,14 +225,21 @@ export async function action({ request }: { request: Request; params: Record<str
     }
 
     let parsedStart: Date
-    let readinessEnd: Date
+    let parsedEnd: Date
     try {
       parsedStart = parseLocalDate(periodStart)
-      readinessEnd = endOfDay(parseLocalDate(periodEnd))
+      parsedEnd = endOfDay(parseLocalDate(periodEnd))
     } catch {
       return { error: 'Ugyldig datoformat for periode (forventet YYYY-MM-DD)' }
     }
-    const readiness = await checkAuditReadiness(appId, parsedStart, readinessEnd)
+
+    const resolved = await resolveAndValidateReportPeriod(appId, periodTypeRaw, parsedStart, parsedEnd)
+    if (resolved.error !== null) {
+      return { error: resolved.error }
+    }
+    const { periodStart: resolvedStart, periodEnd: resolvedEnd } = resolved.period
+
+    const readiness = await checkAuditReadiness(appId, resolvedStart, resolvedEnd)
 
     const deployerUsernames = [
       ...readiness.pending_deployments.map((d) => d.deployer_username),
@@ -157,33 +256,36 @@ export async function action({ request }: { request: Request; params: Record<str
 
   if (action === 'generate_report') {
     const periodTypeRaw = formData.get('period_type') as string
-    const periodLabel = formData.get('period_label') as string
     const periodStartStr = formData.get('period_start') as string
     const periodEndStr = formData.get('period_end') as string
-    const year = Number(formData.get('year'))
     const supersedeReason = (formData.get('supersede_reason') as string)?.trim() || undefined
 
-    if (!appId || !periodStartStr || !periodEndStr || !periodLabel || !year) {
+    if (!appId || !periodStartStr || !periodEndStr) {
       return { error: 'Mangler påkrevde felter for rapportgenerering' }
     }
 
     if (!periodTypeRaw || !isValidReportPeriodType(periodTypeRaw)) {
       return { error: 'Ugyldig periodetype' }
     }
-    const periodType = periodTypeRaw
 
-    let periodStart: Date
-    let periodEnd: Date
+    let parsedStart: Date
+    let parsedEnd: Date
     try {
-      periodStart = parseLocalDate(periodStartStr)
-      periodEnd = endOfDay(parseLocalDate(periodEndStr))
+      parsedStart = parseLocalDate(periodStartStr)
+      parsedEnd = endOfDay(parseLocalDate(periodEndStr))
     } catch {
       return { error: 'Ugyldig datoformat for periode (forventet YYYY-MM-DD)' }
     }
 
-    if (periodEnd > new Date()) {
+    if (parsedEnd > new Date()) {
       return { error: 'Kan ikke generere rapport for ufullstendige perioder' }
     }
+
+    const resolved = await resolveAndValidateReportPeriod(appId, periodTypeRaw, parsedStart, parsedEnd)
+    if (resolved.error !== null) {
+      return { error: resolved.error }
+    }
+    const { periodType, periodLabel, year, periodStart, periodEnd } = resolved.period
 
     const hasExisting = await hasActiveReportForPeriod(appId, periodType, periodStart, periodEnd)
     if (hasExisting && !supersedeReason) {
