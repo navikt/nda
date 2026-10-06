@@ -53,6 +53,31 @@ export function AdminPage() {
           </Box>
         </Link>
 
+        <Link to="/admin/database-usage" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <DatabaseIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Databasebruk
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Se hvilke tabeller som bruker mest diskplass og hvor veksten skjer, for å finne kilden til uventet
+                  diskbruk.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
         <Link to="/admin/data-mismatches" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
@@ -256,31 +281,6 @@ export function AdminPage() {
                   Slettede rader
                 </Heading>
                 <BodyShort textColor="subtle">Se og gjenopprett logisk slettede rader.</BodyShort>
-              </div>
-            </VStack>
-          </Box>
-        </Link>
-
-        <Link to="/admin/database-usage" style={{ textDecoration: 'none', height: '100%' }}>
-          <Box
-            padding="space-24"
-            borderRadius="8"
-            background="raised"
-            borderColor="neutral-subtle"
-            borderWidth="1"
-            className="admin-card"
-            style={{ height: '100%' }}
-          >
-            <VStack gap="space-12">
-              <DatabaseIcon fontSize="2rem" aria-hidden />
-              <div>
-                <Heading level="2" size="small" spacing>
-                  Databasebruk
-                </Heading>
-                <BodyShort textColor="subtle">
-                  Se hvilke tabeller som bruker mest diskplass og hvor veksten skjer, for å finne kilden til uventet
-                  diskbruk.
-                </BodyShort>
               </div>
             </VStack>
           </Box>
