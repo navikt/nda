@@ -120,6 +120,20 @@ function addSammendragSheet(workbook: ExcelJS.Workbook, props: AuditReportExcelP
     const row = sheet.addRow([label, value])
     row.getCell(1).font = { bold: true }
   }
+
+  if (totalDeployments === 0) {
+    sheet.addRow([])
+    const noteTitle = sheet.addRow(['Ingen deployments i perioden'])
+    noteTitle.font = { bold: true, size: 11 }
+    sheet.mergeCells(noteTitle.number, 1, noteTitle.number, 2)
+    const noteRow = sheet.addRow([
+      `Det ble ikke registrert noen deployments til produksjon for denne applikasjonen i perioden ${formatDate(
+        periodStart,
+      )} - ${formatDate(periodEnd)}. Denne rapporten bekrefter dette og kan brukes som dokumentasjon på at det ikke har vært endringer å vurdere opp mot regelverket for endringshåndtering i perioden.`,
+    ])
+    sheet.mergeCells(noteRow.number, 1, noteRow.number, 2)
+    noteRow.getCell(1).alignment = { wrapText: true }
+  }
 }
 
 function addDeploymentsSheet(

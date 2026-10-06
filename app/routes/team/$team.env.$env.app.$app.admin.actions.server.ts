@@ -193,9 +193,6 @@ export async function action({ request }: { request: Request; params: Record<str
     const readiness = await checkAuditReadiness(appId, periodStart, periodEnd)
     if (!readiness.is_ready) {
       const reasons: string[] = []
-      if (readiness.total_deployments === 0) {
-        reasons.push('Ingen deployments funnet i perioden')
-      }
       if (readiness.pending_count > 0) {
         reasons.push(`${readiness.pending_count} deployments mangler godkjenning`)
       }
