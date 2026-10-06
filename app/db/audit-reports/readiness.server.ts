@@ -6,6 +6,7 @@ import { findDeploymentIdsMissingApprover } from '../verification-diff.server'
 
 export interface AuditReadinessCheck {
   is_ready: boolean
+  no_deployments: boolean
   total_deployments: number
   approved_count: number
   legacy_count: number
@@ -97,11 +98,8 @@ export async function checkAuditReadiness(
 
   return {
     is_ready:
-      pending.length === 0 &&
-      unverifiable.length === 0 &&
-      missingApprover.length === 0 &&
-      manualTrigger.length === 0 &&
-      deployments.length > 0,
+      pending.length === 0 && unverifiable.length === 0 && missingApprover.length === 0 && manualTrigger.length === 0,
+    no_deployments: deployments.length === 0,
     total_deployments: deployments.length,
     approved_count: approved.length,
     legacy_count: legacy.length,

@@ -20,6 +20,7 @@ type Story = StoryObj<typeof AuditReportGenerateSection>
 
 const readyReadiness: AuditReadinessCheck = {
   is_ready: true,
+  no_deployments: false,
   total_deployments: 42,
   approved_count: 40,
   legacy_count: 2,
@@ -35,6 +36,7 @@ const readyReadiness: AuditReadinessCheck = {
 
 const notReadyReadiness: AuditReadinessCheck = {
   is_ready: false,
+  no_deployments: false,
   total_deployments: 42,
   approved_count: 35,
   legacy_count: 2,
@@ -126,6 +128,29 @@ export const FørKontroll: Story = {
 export const KlarForRapport: Story = {
   args: {
     readinessData: readyReadiness,
+    readinessPeriodKey: 'yearly:2025-01-01',
+  },
+}
+
+const noDeploymentsReadiness: AuditReadinessCheck = {
+  is_ready: true,
+  no_deployments: true,
+  total_deployments: 0,
+  approved_count: 0,
+  legacy_count: 0,
+  unverifiable_count: 0,
+  pending_count: 0,
+  pending_deployments: [],
+  unverifiable_deployments: [],
+  missing_approver_count: 0,
+  missing_approver_deployments: [],
+  manual_trigger_count: 0,
+  manual_trigger_deployments: [],
+}
+
+export const KlarForNullrapport: Story = {
+  args: {
+    readinessData: noDeploymentsReadiness,
     readinessPeriodKey: 'yearly:2025-01-01',
   },
 }

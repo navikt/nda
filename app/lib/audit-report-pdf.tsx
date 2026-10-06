@@ -243,6 +243,16 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
           </View>
         </View>
 
+        {totalDeployments === 0 && (
+          <View style={styles.methodologyBox}>
+            <Text style={styles.methodologyTitle}>Ingen deployments i perioden</Text>
+            <Text style={styles.methodologyText}>
+              Ingen produksjonsendringer ble registrert for denne applikasjonen i perioden {formatDate(periodStart)} -{' '}
+              {formatDate(periodEnd)}.
+            </Text>
+          </View>
+        )}
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>Generert: {formatDateTime(generatedAt)} | Deployment Audit System</Text>
           <Text style={styles.hashText}>SHA256: {contentHash}</Text>

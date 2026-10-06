@@ -242,6 +242,7 @@ export function AuditReportGenerateSection({
             onSupersedeReasonChange={setSupersedeReason}
             isGeneratingReport={isGeneratingReport}
             pendingJobId={pendingJobId}
+            noDeployments={readinessData.no_deployments}
           />
         )}
       </VStack>
@@ -266,7 +267,7 @@ function ReadinessResult({
             <>
               <CheckmarkCircleIcon aria-hidden fontSize="1.5rem" />
               <Heading size="xsmall" level="3">
-                Klar for leveranserapport
+                {readinessData.no_deployments ? 'Klar for nullrapport' : 'Klar for leveranserapport'}
               </Heading>
             </>
           ) : (
@@ -278,6 +279,13 @@ function ReadinessResult({
             </>
           )}
         </HStack>
+
+        {readinessData.is_ready && readinessData.no_deployments && (
+          <BodyShort size="small">
+            Ingen deployments ble registrert i perioden. Du kan likevel generere en rapport som bekrefter dette, til
+            bruk som dokumentasjon.
+          </BodyShort>
+        )}
 
         <HStack gap="space-24" wrap>
           <div>
@@ -398,6 +406,7 @@ function GenerateAction({
   onSupersedeReasonChange,
   isGeneratingReport,
   pendingJobId,
+  noDeployments,
 }: {
   selectedPeriod: ReportPeriod | undefined
   existingReportForPeriod: AuditReportSummary | undefined
@@ -405,6 +414,7 @@ function GenerateAction({
   onSupersedeReasonChange: (reason: string) => void
   isGeneratingReport: boolean
   pendingJobId: string | null
+  noDeployments: boolean
 }) {
   return (
     <VStack gap="space-12">
@@ -441,7 +451,13 @@ function GenerateAction({
           loading={(isGeneratingReport && !pendingJobId) || !!pendingJobId}
           disabled={!!pendingJobId || (!!existingReportForPeriod && !supersedeReason.trim())}
         >
-          {pendingJobId ? 'Genererer...' : existingReportForPeriod ? 'Erstatt rapport' : 'Generer rapport'}
+          {pendingJobId
+            ? 'Genererer...'
+            : existingReportForPeriod
+              ? 'Erstatt rapport'
+              : noDeployments
+                ? 'Generer nullrapport'
+                : 'Generer rapport'}
         </Button>
       </div>
     </VStack>

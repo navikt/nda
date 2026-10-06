@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { toDateString } from '~/lib/date-utils'
 
 const {
   mockRequireUser,
@@ -6,12 +7,22 @@ const {
   mockGetMonitoredApplicationById,
   mockUpdateMonitoredApplication,
   mockRecordAppConfigAuditLog,
+  mockGetEffectiveAuditStartYear,
+  mockCheckAuditReadiness,
+  mockHasActiveReportForPeriod,
+  mockCreateReportJob,
+  mockProcessReportJobAsync,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockCanAccessAppAdmin: vi.fn(),
   mockGetMonitoredApplicationById: vi.fn(),
   mockUpdateMonitoredApplication: vi.fn(),
   mockRecordAppConfigAuditLog: vi.fn(),
+  mockGetEffectiveAuditStartYear: vi.fn(),
+  mockCheckAuditReadiness: vi.fn(),
+  mockHasActiveReportForPeriod: vi.fn(),
+  mockCreateReportJob: vi.fn(),
+  mockProcessReportJobAsync: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({ requireUser: mockRequireUser }))
@@ -24,8 +35,8 @@ vi.mock('~/db/app-settings.server', () => ({
 
 vi.mock('~/db/audit-reports.server', () => ({
   archiveAuditReport: vi.fn(),
-  checkAuditReadiness: vi.fn(),
-  hasActiveReportForPeriod: vi.fn(),
+  checkAuditReadiness: mockCheckAuditReadiness,
+  hasActiveReportForPeriod: mockHasActiveReportForPeriod,
   restoreAuditReport: vi.fn(),
 }))
 
@@ -39,8 +50,12 @@ vi.mock('~/db/monitored-applications.server', () => ({
   updateMonitoredApplication: mockUpdateMonitoredApplication,
 }))
 
+vi.mock('~/db/repositories.server', () => ({
+  getEffectiveAuditStartYear: mockGetEffectiveAuditStartYear,
+}))
+
 vi.mock('~/db/report-jobs.server', () => ({
-  createReportJob: vi.fn(),
+  createReportJob: mockCreateReportJob,
   isStaleJob: vi.fn(),
 }))
 
@@ -64,7 +79,7 @@ vi.mock('~/lib/logger.server', () => ({
   runWithJobContext: vi.fn(),
 }))
 
-vi.mock('~/lib/report-job-processor.server', () => ({ processReportJobAsync: vi.fn() }))
+vi.mock('~/lib/report-job-processor.server', () => ({ processReportJobAsync: mockProcessReportJobAsync }))
 vi.mock('~/lib/user-display', () => ({ serializeUserLookups: vi.fn() }))
 vi.mock('~/lib/verification', () => ({ fetchVerificationDataForAllDeployments: vi.fn() }))
 vi.mock('~/lib/verification/compute-diffs.server', () => ({ computeVerificationDiffs: vi.fn() }))
@@ -303,5 +318,251 @@ describe('admin actions - Slack config toggles', () => {
     })
     expect(mockUpdateMonitoredApplication).not.toHaveBeenCalled()
     expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
+  })
+})
+
+describe('admin actions - audit report scope validation', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    mockRequireUser.mockReset()
+    mockCanAccessAppAdmin.mockReset()
+    mockGetMonitoredApplicationById.mockReset()
+    mockGetEffectiveAuditStartYear.mockReset()
+    mockCheckAuditReadiness.mockReset()
+    mockHasActiveReportForPeriod.mockReset()
+    mockCreateReportJob.mockReset()
+    mockProcessReportJobAsync.mockReset()
+    mockProcessReportJobAsync.mockResolvedValue(undefined)
+    mockRequireUser.mockResolvedValue({ navIdent: 'Z990001', name: 'Glad Fjord', role: 'admin', isActualAdmin: true })
+    mockCanAccessAppAdmin.mockResolvedValue(true)
+    mockGetMonitoredApplicationById.mockResolvedValue({ id: 42, environment_name: 'prod-gcp' })
+    mockGetEffectiveAuditStartYear.mockResolvedValue(2024)
+  })
+
+  async function getAction() {
+    const mod = await import('../$team.env.$env.app.$app.admin.actions.server')
+    return mod.action
+  }
+
+  it('rejects check_readiness when periodStart is after periodEnd', async () => {
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'check_readiness',
+        app_id: '42',
+        period_type: 'custom',
+        period_start: '2026-06-01',
+        period_end: '2026-01-01',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Ugyldig periode: fra-dato kan ikke være etter til-dato' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+  })
+
+  it('rejects check_readiness for a non-production app environment', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({ id: 42, environment_name: 'dev-gcp' })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'check_readiness',
+        app_id: '42',
+        period_type: 'yearly',
+        period_start: '2026-01-01',
+        period_end: '2026-12-31',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({
+      error: 'Leveranserapporter kan kun genereres for produksjonsmiljøer (prod-fss, prod-gcp)',
+    })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+  })
+
+  it('rejects check_readiness for a period before the effective audit start year', async () => {
+    mockGetEffectiveAuditStartYear.mockResolvedValue(2026)
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'check_readiness',
+        app_id: '42',
+        period_type: 'yearly',
+        period_start: '2025-01-01',
+        period_end: '2025-12-31',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Perioden starter før appens revisjonsstartår (2026)' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+  })
+
+  it('allows check_readiness for a valid production period within the audit start year', async () => {
+    mockCheckAuditReadiness.mockResolvedValue({
+      is_ready: true,
+      no_deployments: true,
+      total_deployments: 0,
+      approved_count: 0,
+      legacy_count: 0,
+      unverifiable_count: 0,
+      pending_count: 0,
+      pending_deployments: [],
+      unverifiable_deployments: [],
+      missing_approver_count: 0,
+      missing_approver_deployments: [],
+      manual_trigger_count: 0,
+      manual_trigger_deployments: [],
+    })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'check_readiness',
+        app_id: '42',
+        period_type: 'yearly',
+        period_start: '2025-01-01',
+        period_end: '2025-12-31',
+      }),
+      params: {},
+    })
+
+    expect(mockCheckAuditReadiness).toHaveBeenCalledWith(42, expect.any(Date), expect.any(Date))
+    expect(result).toMatchObject({ readiness: expect.objectContaining({ is_ready: true, no_deployments: true }) })
+  })
+
+  it('rejects generate_report when periodStart is after periodEnd without creating a job', async () => {
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'generate_report',
+        app_id: '42',
+        period_type: 'custom',
+        period_label: 'Custom',
+        period_start: '2026-06-01',
+        period_end: '2026-01-01',
+        year: '2026',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Ugyldig periode: fra-dato kan ikke være etter til-dato' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+    expect(mockCreateReportJob).not.toHaveBeenCalled()
+  })
+
+  it('rejects generate_report for a non-production app environment without creating a job', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({ id: 42, environment_name: 'dev-gcp' })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'generate_report',
+        app_id: '42',
+        period_type: 'yearly',
+        period_label: '2025',
+        period_start: '2025-01-01',
+        period_end: '2025-12-31',
+        year: '2025',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({
+      error: 'Leveranserapporter kan kun genereres for produksjonsmiljøer (prod-fss, prod-gcp)',
+    })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+    expect(mockCreateReportJob).not.toHaveBeenCalled()
+  })
+
+  it('rejects generate_report for a period before the effective audit start year without creating a job', async () => {
+    mockGetEffectiveAuditStartYear.mockResolvedValue(2026)
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'generate_report',
+        app_id: '42',
+        period_type: 'yearly',
+        period_label: '2025',
+        period_start: '2025-01-01',
+        period_end: '2025-12-31',
+        year: '2025',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Perioden starter før appens revisjonsstartår (2026)' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+    expect(mockCreateReportJob).not.toHaveBeenCalled()
+  })
+
+  it('ignores a forged narrow period_end and re-derives the full canonical year boundaries for generate_report', async () => {
+    mockCheckAuditReadiness.mockResolvedValue({
+      is_ready: true,
+      no_deployments: true,
+      total_deployments: 0,
+      approved_count: 0,
+      legacy_count: 0,
+      unverifiable_count: 0,
+      pending_count: 0,
+      pending_deployments: [],
+      unverifiable_deployments: [],
+      missing_approver_count: 0,
+      missing_approver_deployments: [],
+      manual_trigger_count: 0,
+      manual_trigger_deployments: [],
+    })
+    mockHasActiveReportForPeriod.mockResolvedValue(false)
+    mockCreateReportJob.mockResolvedValue({ created: true, jobId: 'job-1', status: 'pending' })
+    const action = await getAction()
+
+    await action({
+      request: buildRequest({
+        action: 'generate_report',
+        app_id: '42',
+        period_type: 'yearly',
+        period_label: '2025',
+        period_start: '2025-01-01',
+        period_end: '2025-01-02',
+        year: '2025',
+      }),
+      params: {},
+    })
+
+    expect(mockCheckAuditReadiness).toHaveBeenCalledTimes(1)
+    const [, readinessStart, readinessEnd] = mockCheckAuditReadiness.mock.calls[0]
+    expect(toDateString(readinessStart)).toBe('2025-01-01')
+    expect(toDateString(readinessEnd)).toBe('2025-12-31')
+
+    expect(mockCreateReportJob).toHaveBeenCalledTimes(1)
+    const [, , , , , createJobEnd] = mockCreateReportJob.mock.calls[0]
+    expect(toDateString(createJobEnd)).toBe('2025-12-31')
+  })
+
+  it('rejects a custom period that does not cover whole calendar months', async () => {
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'generate_report',
+        app_id: '42',
+        period_type: 'custom',
+        period_label: 'Egendefinert',
+        period_start: '2025-01-05',
+        period_end: '2025-01-31',
+        year: '2025',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Egendefinert periode må dekke hele kalendermåneder' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+    expect(mockCreateReportJob).not.toHaveBeenCalled()
   })
 })

@@ -5,7 +5,7 @@ export function jsonError(message: string, status: number): Response {
   })
 }
 
-const PROD_ENVIRONMENTS = new Set(['prod-fss', 'prod-gcp'])
+export const PROD_ENVIRONMENTS = new Set(['prod-fss', 'prod-gcp'])
 
 export function validateProdEnvironment(env: string): Response | null {
   if (!PROD_ENVIRONMENTS.has(env)) {

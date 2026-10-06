@@ -1,8 +1,20 @@
 import { NON_DIFFABLE_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { LATEST_ACTIVE_REPOSITORY_LINK_SQL } from '../../application-repositories.server'
 import { AUDIT_START_YEAR_FILTER } from '../../audit-start-year'
 import { pool } from '../../connection.server'
 import { getDeviationsForPeriod } from '../../deviations.server'
 import type { AuditDeploymentRow, AuditGoalLinkEntry } from './types'
+
+async function resolveLinkedRepository(monitoredAppId: number): Promise<string> {
+  const result = await pool.query<{ github_owner: string; github_repo_name: string }>(
+    `SELECT github_owner, github_repo_name
+     FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) latest
+     WHERE monitored_app_id = $1`,
+    [monitoredAppId],
+  )
+  const linked = result.rows[0]
+  return linked ? `${linked.github_owner}/${linked.github_repo_name}` : 'unknown'
+}
 
 export async function getAuditReportData(
   monitoredAppId: number,
@@ -147,7 +159,7 @@ export async function getAuditReportData(
   const repository =
     deployments.length > 0
       ? `${deployments[0].detected_github_owner}/${deployments[0].detected_github_repo_name}`
-      : 'unknown'
+      : await resolveLinkedRepository(monitoredAppId)
 
   const deploymentIds = deployments.map((d) => d.id)
   let manual_approvals: Array<{
