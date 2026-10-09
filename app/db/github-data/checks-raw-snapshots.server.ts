@@ -1,4 +1,5 @@
 import { pool } from '~/db/connection.server'
+import { stringifyForJsonbColumn } from '~/db/jsonb-sanitize.server'
 import { computeChecksPassed, mapRawCheckRunToCheckRun, type RawCheckRun } from '~/lib/github/checks-snapshot'
 import type { CheckRun } from '~/lib/github/pr/checks.server'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
@@ -31,7 +32,7 @@ export async function saveChecksRawSnapshot(
       apiVersion.apiDeprecatedAt,
       apiVersion.apiSunsetAt,
       observedAt,
-      JSON.stringify(rawCheckRuns),
+      stringifyForJsonbColumn(rawCheckRuns),
     ],
   )
   return result.rows[0].id

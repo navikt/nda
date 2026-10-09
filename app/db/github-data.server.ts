@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg'
 import { pool } from '~/db/connection.server'
+import { stringifyForJsonbColumn } from '~/db/jsonb-sanitize.server'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
 import {
   type CommitDataType,
@@ -66,7 +67,7 @@ export async function saveCommitSnapshot(
       sha,
       dataType,
       CURRENT_SCHEMA_VERSION,
-      JSON.stringify(data),
+      stringifyForJsonbColumn(data),
       options?.source ?? 'github',
       options?.githubAvailable ?? true,
     ],
@@ -174,7 +175,7 @@ async function _saveCommitSnapshotsBatch(
       snapshot.sha,
       snapshot.dataType,
       CURRENT_SCHEMA_VERSION,
-      JSON.stringify(snapshot.data),
+      stringifyForJsonbColumn(snapshot.data),
       'github',
     )
   })
@@ -217,7 +218,7 @@ export async function savePrRawSnapshotsBatch(
       apiVersion.apiVersion,
       apiVersion.apiDeprecatedAt,
       apiVersion.apiSunsetAt,
-      JSON.stringify(snapshot.data),
+      stringifyForJsonbColumn(snapshot.data),
     )
   })
 

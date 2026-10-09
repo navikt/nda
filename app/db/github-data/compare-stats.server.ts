@@ -1,4 +1,5 @@
 import { pool } from '~/db/connection.server'
+import { stringifyForJsonbColumn } from '~/db/jsonb-sanitize.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { mapCompareResponse, type RawCompareResponse } from '~/lib/github/compare-snapshot'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
@@ -31,7 +32,7 @@ export async function saveCompareSnapshot(
       baseSha,
       headSha,
       CURRENT_SCHEMA_VERSION,
-      JSON.stringify(data),
+      stringifyForJsonbColumn(data),
       options?.source ?? 'github',
       options?.githubAvailable ?? true,
     ],
@@ -103,7 +104,7 @@ export async function saveCompareRawSnapshot(
       apiVersion.apiVersion,
       apiVersion.apiDeprecatedAt,
       apiVersion.apiSunsetAt,
-      JSON.stringify(rawData),
+      stringifyForJsonbColumn(rawData),
     ],
   )
   return result.rows[0].id

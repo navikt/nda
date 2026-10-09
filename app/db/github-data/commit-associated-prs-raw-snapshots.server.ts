@@ -1,4 +1,5 @@
 import { pool } from '~/db/connection.server'
+import { stringifyForJsonbColumn } from '~/db/jsonb-sanitize.server'
 import type { ApiVersionMetadata } from '~/lib/github/pr-snapshot'
 import type { CommitAssociatedPrsRawSnapshot } from '~/lib/verification/types'
 
@@ -23,7 +24,7 @@ export async function saveCommitAssociatedPrsRawSnapshot(
       apiVersion.apiVersion,
       apiVersion.apiDeprecatedAt,
       apiVersion.apiSunsetAt,
-      JSON.stringify(rawData),
+      stringifyForJsonbColumn(rawData),
     ],
   )
   return result.rows[0].id

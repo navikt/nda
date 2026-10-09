@@ -1,4 +1,5 @@
 import { pool } from '~/db/connection.server'
+import { stringifyForJsonbColumn } from '~/db/jsonb-sanitize.server'
 import { CURRENT_SCHEMA_VERSION, type StoredVerificationResult } from '~/lib/verification/types'
 
 export async function getLatestVerificationRanges(
@@ -48,7 +49,7 @@ export async function saveVerificationRun(
       CURRENT_SCHEMA_VERSION,
       snapshotIds.prSnapshotIds,
       snapshotIds.commitSnapshotIds,
-      JSON.stringify(result.result),
+      stringifyForJsonbColumn(result.result),
       result.status,
     ],
   )
