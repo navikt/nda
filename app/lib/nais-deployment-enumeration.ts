@@ -19,6 +19,7 @@ export type NaisDeploymentEnumerationValidation =
         | 'no_pages'
         | 'invalid_total_count'
         | 'inconsistent_total_count'
+        | 'application_unavailable'
         | 'invalid_deployment_id'
         | 'duplicate_deployment_id'
         | 'missing_page'
