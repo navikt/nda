@@ -108,5 +108,6 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     expect(upsertApplicationRepository).not.toHaveBeenCalled()
     expect(createRepositoryAlert).not.toHaveBeenCalled()
     expect(updateMonitoredApplication).not.toHaveBeenCalled()
+    expect(syncDefaultBranchForApp).not.toHaveBeenCalled()
   })
 })
