@@ -13,6 +13,7 @@ const {
   getMonitoredApplicationByIdentity,
   getRepositoriesByAppId,
   logger,
+  markInitialNaisHistorySynced,
   syncDefaultBranchForApp,
   updateMonitoredApplication,
   upsertApplicationRepository,
@@ -28,6 +29,7 @@ const {
   getMonitoredApplicationByIdentity: vi.fn(),
   getRepositoriesByAppId: vi.fn(),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  markInitialNaisHistorySynced: vi.fn(),
   syncDefaultBranchForApp: vi.fn(),
   updateMonitoredApplication: vi.fn(),
   upsertApplicationRepository: vi.fn(),
@@ -47,6 +49,7 @@ vi.mock('~/db/deployments.server', () => ({
 vi.mock('~/db/monitored-applications.server', () => ({
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
+  markInitialNaisHistorySynced,
   updateMonitoredApplication,
 }))
 vi.mock('~/lib/logger.server', () => ({ logger }))
@@ -80,6 +83,7 @@ const monitoredApp: MonitoredApplication = {
   slack_deploy_notify_enabled: false,
   slack_deploy_notify_enabled_at: null,
   not_found_in_nais_at: null,
+  initial_nais_history_synced_at: null,
   created_at: new Date('2026-01-01T00:00:00Z'),
   updated_at: new Date('2026-01-01T00:00:00Z'),
 }
@@ -109,5 +113,32 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     expect(createRepositoryAlert).not.toHaveBeenCalled()
     expect(updateMonitoredApplication).not.toHaveBeenCalled()
     expect(syncDefaultBranchForApp).not.toHaveBeenCalled()
+    expect(markInitialNaisHistorySynced).not.toHaveBeenCalled()
+  })
+
+  it('records initial history completion after processing a complete full enumeration', async () => {
+    vi.mocked(fetchApplicationDeployments).mockResolvedValue([
+      {
+        id: 'deployment-1',
+        createdAt: '2026-10-10T00:00:00Z',
+        environmentName: 'prod-gcp',
+        teamSlug: 'team-a',
+        triggerUrl: '',
+        repository: null,
+        commitSha: null,
+        deployerUsername: null,
+        resources: { nodes: [] },
+      },
+    ])
+
+    const result = await syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)
+
+    expect(result).toEqual({ newCount: 1, alertsCreated: 0, stoppedEarly: false })
+    expect(createDeployment).toHaveBeenCalledOnce()
+    expect(markInitialNaisHistorySynced).toHaveBeenCalledOnce()
+    expect(markInitialNaisHistorySynced).toHaveBeenCalledWith(monitoredApp.id)
+    expect(createDeployment.mock.invocationCallOrder[0]).toBeLessThan(
+      markInitialNaisHistorySynced.mock.invocationCallOrder[0],
+    )
   })
 })

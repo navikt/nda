@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   createMonitoredApplication,
   getMonitoredApplicationById,
+  markInitialNaisHistorySynced,
   updateMonitoredApplication,
 } from '../../monitored-applications.server'
 import { truncateAllTables } from './helpers'
@@ -29,6 +30,7 @@ describe('createMonitoredApplication', () => {
       app_name: 'app-c',
       default_branch: 'master',
     })
+
     expect(app.default_branch).toBe('master')
   })
 
@@ -56,5 +58,29 @@ describe('createMonitoredApplication', () => {
     })
     expect(readded.is_active).toBe(true)
     expect(readded.not_found_in_nais_at).toBeNull()
+  })
+})
+
+describe('markInitialNaisHistorySynced', () => {
+  it('records the first successful full-history sync time without replacing it later', async () => {
+    const app = await createMonitoredApplication({
+      team_slug: 'team-e',
+      environment_name: 'prod-gcp',
+      app_name: 'app-e',
+    })
+
+    expect(app.initial_nais_history_synced_at).toBeNull()
+
+    await markInitialNaisHistorySynced(app.id)
+    const firstCompletion = await getMonitoredApplicationById(app.id)
+    expect(firstCompletion?.initial_nais_history_synced_at).toBeInstanceOf(Date)
+
+    await markInitialNaisHistorySynced(app.id)
+    const secondCompletion = await getMonitoredApplicationById(app.id)
+    expect(secondCompletion?.initial_nais_history_synced_at).toEqual(firstCompletion?.initial_nais_history_synced_at)
+  })
+
+  it('throws when the monitored application does not exist', async () => {
+    await expect(markInitialNaisHistorySynced(-1)).rejects.toThrow('Monitored application not found: -1')
   })
 })
