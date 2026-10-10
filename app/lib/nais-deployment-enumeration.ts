@@ -91,9 +91,10 @@ export function haveSameNaisDeploymentIds(
   first: CompleteNaisDeploymentEnumeration,
   second: CompleteNaisDeploymentEnumeration,
 ): boolean {
+  const secondDeploymentIds = new Set(second.deploymentIds)
   return (
     first.totalCount === second.totalCount &&
     first.deploymentIds.length === second.deploymentIds.length &&
-    first.deploymentIds.every((deploymentId) => second.deploymentIds.includes(deploymentId))
+    first.deploymentIds.every((deploymentId) => secondDeploymentIds.has(deploymentId))
   )
 }
