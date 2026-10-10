@@ -1,11 +1,23 @@
 import { readFile } from 'node:fs/promises'
 import { GraphQLClient } from 'graphql-request'
 import { fetchWithLogging, logger } from '~/lib/logger.server'
+import {
+  type NaisDeploymentEnumerationPage,
+  type NaisDeploymentEnumerationValidation,
+  validateNaisDeploymentEnumeration,
+} from '~/lib/nais-deployment-enumeration'
 
 export class NaisResourceNotFoundError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'NaisResourceNotFoundError'
+  }
+}
+
+export class NaisDeploymentEnumerationError extends Error {
+  constructor(readonly validation: Extract<NaisDeploymentEnumerationValidation, { status: 'incomplete' }>) {
+    super(`Nais deployment enumeration is incomplete: ${validation.reason}`)
+    this.name = 'NaisDeploymentEnumerationError'
   }
 }
 
@@ -217,6 +229,8 @@ export async function fetchApplicationDeployments(
   })
 
   const allDeployments: NaisDeployment[] = []
+  const pages: NaisDeploymentEnumerationPage[] = []
+  const requestedCursors = new Set<string>()
   let after: string | undefined
   let pageCount = 0
   let hasMore = true
@@ -237,8 +251,7 @@ export async function fetchApplicationDeployments(
       })
 
       if (!response.team?.environment?.application) {
-        logger.warn('⚠️  Application not found or no access')
-        break
+        throw new NaisDeploymentEnumerationError({ status: 'incomplete', reason: 'application_unavailable' })
       }
 
       const deployments = response.team.environment.application.deployments
@@ -249,13 +262,39 @@ export async function fetchApplicationDeployments(
       )
 
       allDeployments.push(...deployments.nodes)
+      pages.push({
+        deploymentIds: deployments.nodes.map((deployment) => deployment.id),
+        totalCount: deployments.pageInfo.totalCount,
+        hasNextPage: deployments.pageInfo.hasNextPage,
+        endCursor: deployments.pageInfo.endCursor || null,
+      })
 
       after = deployments.pageInfo.endCursor
       hasMore = deployments.pageInfo.hasNextPage
 
       if (hasMore) {
+        if (!after?.trim()) {
+          throw new NaisDeploymentEnumerationError({
+            status: 'incomplete',
+            reason: 'missing_cursor',
+            pageIndex: pageCount - 1,
+          })
+        }
+        if (requestedCursors.has(after)) {
+          throw new NaisDeploymentEnumerationError({
+            status: 'incomplete',
+            reason: 'duplicate_cursor',
+            pageIndex: pageCount - 1,
+          })
+        }
+        requestedCursors.add(after)
         logger.info(`  ➡️  More deployments available, fetching next page...`)
       }
+    }
+
+    const validation = validateNaisDeploymentEnumeration(pages)
+    if (validation.status === 'incomplete') {
+      throw new NaisDeploymentEnumerationError(validation)
     }
 
     logger.info(`✨ Total deployments fetched: ${allDeployments.length} (from ${pageCount} page(s))`)
