@@ -130,13 +130,20 @@ describe('haveSameNaisDeploymentIds', () => {
 
   it('compares ID sets independently of enumeration order', () => {
     expect(
-      haveSameNaisDeploymentIds(complete(['deployment-a', 'deployment-b']), complete(['deployment-b', 'deployment-a'])),
+      haveSameNaisDeploymentIds(
+        { status: 'complete', totalCount: 2, deploymentIds: ['deployment-b', 'deployment-a'] },
+        { status: 'complete', totalCount: 2, deploymentIds: ['deployment-a', 'deployment-b'] },
+      ),
     ).toBe(true)
   })
 
   it('detects changed ID sets even when counts match', () => {
     expect(
-      haveSameNaisDeploymentIds(complete(['deployment-a', 'deployment-b']), complete(['deployment-a', 'deployment-c'])),
+      haveSameNaisDeploymentIds(complete(['deployment-a', 'deployment-b']), {
+        status: 'complete',
+        totalCount: 2,
+        deploymentIds: ['deployment-a', 'deployment-c'],
+      }),
     ).toBe(false)
   })
 })

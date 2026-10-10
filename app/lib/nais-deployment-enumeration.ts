@@ -94,6 +94,6 @@ export function haveSameNaisDeploymentIds(
   return (
     first.totalCount === second.totalCount &&
     first.deploymentIds.length === second.deploymentIds.length &&
-    first.deploymentIds.every((deploymentId, index) => deploymentId === second.deploymentIds[index])
+    first.deploymentIds.every((deploymentId) => second.deploymentIds.includes(deploymentId))
   )
 }
