@@ -215,6 +215,9 @@ const TEAM_ENVIRONMENTS_QUERY = `
   }
 `
 
+const MAX_NAIS_DEPLOYMENT_ENUMERATIONS = 3
+const NAIS_DEPLOYMENT_ENUMERATION_RETRY_DELAY_MS = 1000
+
 async function fetchApplicationDeploymentsOnce(
   teamSlug: string,
   environmentName: string,
@@ -336,27 +339,46 @@ export async function fetchApplicationDeployments(
     app: appName,
   })
 
-  const first = await fetchApplicationDeploymentsOnce(teamSlug, environmentName, appName, limit)
-  const second = await fetchApplicationDeploymentsOnce(teamSlug, environmentName, appName, limit)
+  let previous = await fetchApplicationDeploymentsOnce(teamSlug, environmentName, appName, limit)
 
-  if (!haveSameNaisDeploymentIds(first.enumeration, second.enumeration)) {
-    logger.error('❌ Nais deployment IDs changed between consecutive complete enumerations:', {
-      team: teamSlug,
-      environment: environmentName,
-      app: appName,
-      firstTotalCount: first.enumeration.totalCount,
-      secondTotalCount: second.enumeration.totalCount,
-    })
-    throw new NaisDeploymentEnumerationError({ status: 'incomplete', reason: 'deployment_id_set_changed' })
+  for (let enumerationNumber = 2; enumerationNumber <= MAX_NAIS_DEPLOYMENT_ENUMERATIONS; enumerationNumber++) {
+    if (enumerationNumber > 2) {
+      await new Promise((resolve) => setTimeout(resolve, NAIS_DEPLOYMENT_ENUMERATION_RETRY_DELAY_MS))
+    }
+
+    const current = await fetchApplicationDeploymentsOnce(teamSlug, environmentName, appName, limit)
+    if (haveSameNaisDeploymentIds(previous.enumeration, current.enumeration)) {
+      logger.info('✅ Nais deployment history matched across consecutive complete enumerations', {
+        team: teamSlug,
+        environment: environmentName,
+        app: appName,
+        deploymentCount: current.enumeration.totalCount,
+        enumerationCount: enumerationNumber,
+      })
+      return current.deployments
+    }
+
+    if (enumerationNumber < MAX_NAIS_DEPLOYMENT_ENUMERATIONS) {
+      logger.warn('⚠️ Nais deployment IDs changed between complete enumerations; checking again', {
+        team: teamSlug,
+        environment: environmentName,
+        app: appName,
+        previousTotalCount: previous.enumeration.totalCount,
+        currentTotalCount: current.enumeration.totalCount,
+        enumerationCount: enumerationNumber,
+      })
+    }
+    previous = current
   }
 
-  logger.info('✅ Nais deployment history matched across consecutive complete enumerations', {
+  logger.error('❌ Nais deployment IDs did not stabilize across consecutive complete enumerations:', {
     team: teamSlug,
     environment: environmentName,
     app: appName,
-    deploymentCount: second.enumeration.totalCount,
+    maxEnumerations: MAX_NAIS_DEPLOYMENT_ENUMERATIONS,
+    retryDelayMs: NAIS_DEPLOYMENT_ENUMERATION_RETRY_DELAY_MS,
   })
-  return second.deployments
+  throw new NaisDeploymentEnumerationError({ status: 'incomplete', reason: 'deployment_id_set_changed' })
 }
 
 export async function fetchNewDeployments(
