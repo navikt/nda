@@ -22,6 +22,8 @@ export interface MonitoredApplication {
   slack_deploy_notify_enabled: boolean
   slack_deploy_notify_enabled_at: Date | null
   not_found_in_nais_at: Date | null
+  initial_nais_history_sync_started_at: Date | null
+  initial_nais_history_synced_at: Date | null
   created_at: Date
   updated_at: Date
 }
@@ -85,6 +87,34 @@ export async function getMonitoredApplicationByIdentity(
     [teamSlug, environmentName, appName],
   )
   return result.rows[0] || null
+}
+
+export async function markInitialNaisHistorySynced(monitoredAppId: number): Promise<void> {
+  const result = await pool.query(
+    `UPDATE monitored_applications
+      SET initial_nais_history_synced_at = COALESCE(initial_nais_history_synced_at, CURRENT_TIMESTAMP),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1`,
+    [monitoredAppId],
+  )
+
+  if (result.rowCount === 0) {
+    throw new Error(`Monitored application not found: ${monitoredAppId}`)
+  }
+}
+
+export async function markInitialNaisHistorySyncStarted(monitoredAppId: number): Promise<void> {
+  const result = await pool.query(
+    `UPDATE monitored_applications
+      SET initial_nais_history_sync_started_at = COALESCE(initial_nais_history_sync_started_at, CURRENT_TIMESTAMP),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1`,
+    [monitoredAppId],
+  )
+
+  if (result.rowCount === 0) {
+    throw new Error(`Monitored application not found: ${monitoredAppId}`)
+  }
 }
 
 export async function createMonitoredApplication(

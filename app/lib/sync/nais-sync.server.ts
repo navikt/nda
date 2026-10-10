@@ -13,6 +13,8 @@ import {
 import {
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
+  markInitialNaisHistorySynced,
+  markInitialNaisHistorySyncStarted,
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { logger } from '~/lib/logger.server'
@@ -63,14 +65,23 @@ async function syncDeploymentsFromNais(
     throw new Error(`Application not found in monitored applications: ${teamSlug}/${environmentName}/${appName}`)
   }
 
+  let fullHistoryFetched = false
   const naisDeployments = await markNaisResourceStatus(
     monitoredApp.id,
     monitoredApp.not_found_in_nais_at,
-    () => fetchApplicationDeployments(teamSlug, environmentName, appName),
+    async () => {
+      const deployments = await fetchApplicationDeployments(teamSlug, environmentName, appName)
+      fullHistoryFetched = true
+      return deployments
+    },
     [],
   )
 
   logger.info(`📦 Processing ${naisDeployments.length} deployments from Nais`)
+
+  if (fullHistoryFetched) {
+    await markInitialNaisHistorySyncStarted(monitoredApp.id)
+  }
 
   let newCount = 0
   let skippedCount = 0
@@ -208,6 +219,10 @@ async function syncDeploymentsFromNais(
     totalProcessed,
   })
 
+  if (fullHistoryFetched) {
+    await markInitialNaisHistorySynced(monitoredApp.id)
+  }
+
   await runDefaultBranchSync(monitoredApp.id)
 
   return {
@@ -249,6 +264,16 @@ export async function syncNewDeploymentsFromNais(
   logger.info(`🔍 Looking for deployments newer than ${latestDeployment.nais_deployment_id.substring(0, 20)}...`)
 
   const monitoredApp = await getMonitoredApplicationById(monitoredAppId)
+  if (monitoredApp?.initial_nais_history_sync_started_at && !monitoredApp.initial_nais_history_synced_at) {
+    logger.info('📋 Resuming incomplete initial full sync')
+    const result = await syncDeploymentsFromNais(teamSlug, environmentName, appName)
+    return {
+      newCount: result.newCount,
+      alertsCreated: result.alertsCreated,
+      stoppedEarly: false,
+    }
+  }
+
   const { deployments, stoppedEarly } = await markNaisResourceStatus(
     monitoredAppId,
     monitoredApp?.not_found_in_nais_at ?? null,
