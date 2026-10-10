@@ -205,6 +205,72 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     expect(markInitialNaisHistorySynced).toHaveBeenCalledOnce()
   })
 
+  it('retries repository handling for deployments stored before initial sync failed', async () => {
+    vi.mocked(fetchApplicationDeployments).mockResolvedValue([
+      {
+        id: 'deployment-1',
+        createdAt: '2026-10-10T00:00:00Z',
+        environmentName: 'prod-gcp',
+        teamSlug: 'team-a',
+        triggerUrl: '',
+        repository: 'navikt/app-a',
+        commitSha: 'abc123',
+        deployerUsername: null,
+        resources: { nodes: [] },
+      },
+    ])
+    vi.mocked(getLatestDeploymentForApp)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({
+        nais_deployment_id: 'deployment-1',
+      } as Awaited<ReturnType<typeof getLatestDeploymentForApp>>)
+    vi.mocked(getMonitoredApplicationById).mockResolvedValue({
+      ...monitoredApp,
+      initial_nais_history_sync_started_at: new Date('2026-10-10T00:00:00Z'),
+    })
+    const persistedDeployments = new Set<string>()
+    vi.mocked(getDeploymentByNaisId).mockImplementation(async (id) =>
+      persistedDeployments.has(id)
+        ? ({ nais_deployment_id: id } as Awaited<ReturnType<typeof getDeploymentByNaisId>>)
+        : null,
+    )
+    vi.mocked(createDeployment).mockImplementation(async ({ naisDeploymentId }) => {
+      persistedDeployments.add(naisDeploymentId)
+      return undefined as never
+    })
+    vi.mocked(findRepositoryForApp).mockRejectedValueOnce(new Error('repository check failed')).mockResolvedValue({
+      repository: null,
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'app-a',
+      isRedirected: false,
+    })
+    vi.mocked(getRepositoriesByAppId).mockResolvedValue([])
+
+    await expect(syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)).rejects.toThrow(
+      'repository check failed',
+    )
+    expect(createDeployment).toHaveBeenCalledOnce()
+    expect(markInitialNaisHistorySynced).not.toHaveBeenCalled()
+
+    const result = await syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)
+
+    expect(result).toEqual({ newCount: 0, alertsCreated: 0, stoppedEarly: false })
+    expect(fetchApplicationDeployments).toHaveBeenCalledTimes(2)
+    expect(createDeployment).toHaveBeenCalledOnce()
+    expect(findRepositoryForApp).toHaveBeenCalledTimes(2)
+    expect(upsertApplicationRepository).toHaveBeenCalledWith({
+      monitoredAppId: monitoredApp.id,
+      githubOwner: 'navikt',
+      githubRepoName: 'app-a',
+      status: 'active',
+      approvedBy: 'system',
+    })
+    expect(markInitialNaisHistorySynced).toHaveBeenCalledOnce()
+    expect(upsertApplicationRepository.mock.invocationCallOrder[0]).toBeLessThan(
+      markInitialNaisHistorySynced.mock.invocationCallOrder[0],
+    )
+  })
+
   it('keeps existing applications without an initial sync marker on the incremental path', async () => {
     vi.mocked(getLatestDeploymentForApp).mockResolvedValue({
       nais_deployment_id: 'existing-deployment',
