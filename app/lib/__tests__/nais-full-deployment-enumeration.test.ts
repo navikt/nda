@@ -51,8 +51,9 @@ function responsePage(page: DeploymentPage | null) {
   )
 }
 
-function mockPages(pages: Array<DeploymentPage | null>) {
+function mockPages(pages: Array<DeploymentPage | null>, onFetch?: (callCount: number) => void) {
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+    onFetch?.(fetchMock.mock.calls.length)
     const page = pages.shift()
     if (page === undefined) throw new Error('Unexpected Nais pagination request')
     return responsePage(page)
@@ -63,6 +64,7 @@ function mockPages(pages: Array<DeploymentPage | null>) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 describe('fetchApplicationDeployments completeness validation', () => {
@@ -81,16 +83,35 @@ describe('fetchApplicationDeployments completeness validation', () => {
   })
 
   it('accepts the third enumeration when it matches the second ID set', async () => {
-    const fetchMock = mockPages([
-      { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-a' },
-      { nodes: [{ id: 'deployment-b' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-b' },
-      { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-c' },
-      { nodes: [{ id: 'deployment-c' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-d' },
-      { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-e' },
-      { nodes: [{ id: 'deployment-c' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-f' },
-    ])
+    vi.useFakeTimers()
+    let notifySecondEnumerationStarted = () => {}
+    const secondEnumerationStarted = new Promise<void>((resolve) => {
+      notifySecondEnumerationStarted = resolve
+    })
+    const fetchMock = mockPages(
+      [
+        { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-a' },
+        { nodes: [{ id: 'deployment-b' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-b' },
+        { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-c' },
+        { nodes: [{ id: 'deployment-c' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-d' },
+        { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-e' },
+        { nodes: [{ id: 'deployment-c' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-f' },
+      ],
+      (callCount) => {
+        if (callCount === 4) notifySecondEnumerationStarted()
+      },
+    )
 
-    const deployments = await fetchApplicationDeployments('team-a', 'prod-gcp', 'app-a', 1)
+    const deploymentsPromise = fetchApplicationDeployments('team-a', 'prod-gcp', 'app-a', 1)
+    await secondEnumerationStarted
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+
+    await vi.advanceTimersByTimeAsync(1)
+    const deployments = await deploymentsPromise
 
     expect(deployments.map((deployment) => deployment.id)).toEqual(['deployment-a', 'deployment-c'])
     expect(fetchMock).toHaveBeenCalledTimes(6)

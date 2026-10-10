@@ -358,14 +358,16 @@ export async function fetchApplicationDeployments(
       return current.deployments
     }
 
-    logger.warn('⚠️ Nais deployment IDs changed between complete enumerations; checking again', {
-      team: teamSlug,
-      environment: environmentName,
-      app: appName,
-      previousTotalCount: previous.enumeration.totalCount,
-      currentTotalCount: current.enumeration.totalCount,
-      enumerationCount: enumerationNumber,
-    })
+    if (enumerationNumber < MAX_NAIS_DEPLOYMENT_ENUMERATIONS) {
+      logger.warn('⚠️ Nais deployment IDs changed between complete enumerations; checking again', {
+        team: teamSlug,
+        environment: environmentName,
+        app: appName,
+        previousTotalCount: previous.enumeration.totalCount,
+        currentTotalCount: current.enumeration.totalCount,
+        enumerationCount: enumerationNumber,
+      })
+    }
     previous = current
   }
 
