@@ -14,7 +14,6 @@ import {
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
   markInitialNaisHistorySynced,
-  markInitialNaisHistorySyncStarted,
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { logger } from '~/lib/logger.server'
@@ -48,7 +47,6 @@ async function syncDeploymentsFromNais(
   teamSlug: string,
   environmentName: string,
   appName: string,
-  retryIncompleteInitialSync = false,
 ): Promise<{
   newCount: number
   skippedCount: number
@@ -80,10 +78,6 @@ async function syncDeploymentsFromNais(
 
   logger.info(`📦 Processing ${naisDeployments.length} deployments from Nais`)
 
-  if (fullHistoryFetched) {
-    await markInitialNaisHistorySyncStarted(monitoredApp.id)
-  }
-
   let newCount = 0
   let skippedCount = 0
   let alertsCreated = 0
@@ -112,32 +106,28 @@ async function syncDeploymentsFromNais(
     if (existingDep) {
       logger.info(`⏭️  Deployment already exists: ${naisDep.id}`)
       skippedCount++
-      if (!retryIncompleteInitialSync) {
-        continue
-      }
-
-      logger.info(`🔄 Retrying repository checks for existing deployment: ${naisDep.id}`)
-    } else {
-      logger.info(`➕ Creating new deployment: ${naisDep.id}`)
-
-      const deploymentParams: CreateDeploymentParams = {
-        monitoredApplicationId: monitoredApp.id,
-        naisDeploymentId: naisDep.id,
-        createdAt: new Date(naisDep.createdAt),
-        teamSlug: teamSlug,
-        environmentName: environmentName,
-        appName: appName,
-        commitSha: naisDep.commitSha,
-        deployerUsername: naisDep.deployerUsername,
-        triggerUrl: naisDep.triggerUrl,
-        detectedGithubOwner: detectedOwner,
-        detectedGithubRepoName: detectedRepoName,
-        resources: naisDep.resources.nodes,
-      }
-
-      await createDeployment(deploymentParams)
-      newCount++
+      continue
     }
+
+    logger.info(`➕ Creating new deployment: ${naisDep.id}`)
+
+    const deploymentParams: CreateDeploymentParams = {
+      monitoredApplicationId: monitoredApp.id,
+      naisDeploymentId: naisDep.id,
+      createdAt: new Date(naisDep.createdAt),
+      teamSlug: teamSlug,
+      environmentName: environmentName,
+      appName: appName,
+      commitSha: naisDep.commitSha,
+      deployerUsername: naisDep.deployerUsername,
+      triggerUrl: naisDep.triggerUrl,
+      detectedGithubOwner: detectedOwner,
+      detectedGithubRepoName: detectedRepoName,
+      resources: naisDep.resources.nodes,
+    }
+
+    await createDeployment(deploymentParams)
+    newCount++
 
     const isLegacyDeployment = !naisDep.commitSha
     if (isLegacyDeployment) {
@@ -269,16 +259,6 @@ export async function syncNewDeploymentsFromNais(
   logger.info(`🔍 Looking for deployments newer than ${latestDeployment.nais_deployment_id.substring(0, 20)}...`)
 
   const monitoredApp = await getMonitoredApplicationById(monitoredAppId)
-  if (monitoredApp?.initial_nais_history_sync_started_at && !monitoredApp.initial_nais_history_synced_at) {
-    logger.info('📋 Resuming incomplete initial full sync')
-    const result = await syncDeploymentsFromNais(teamSlug, environmentName, appName, true)
-    return {
-      newCount: result.newCount,
-      alertsCreated: result.alertsCreated,
-      stoppedEarly: false,
-    }
-  }
-
   const { deployments, stoppedEarly } = await markNaisResourceStatus(
     monitoredAppId,
     monitoredApp?.not_found_in_nais_at ?? null,
