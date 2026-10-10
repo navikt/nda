@@ -77,6 +77,7 @@ export async function fetchVerificationData(
       baseBranch,
       previousDeployment.createdAt,
       options,
+      githubRepoId,
     )
     if (result === null) {
       compareFailed = true
