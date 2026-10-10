@@ -70,11 +70,41 @@ describe('fetchApplicationDeployments completeness validation', () => {
     const fetchMock = mockPages([
       { nodes: [{ id: 'deployment-b' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-a' },
       { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-b' },
+      { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-c' },
+      { nodes: [{ id: 'deployment-b' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-d' },
     ])
 
     const deployments = await fetchApplicationDeployments('team-a', 'prod-gcp', 'app-a', 1)
 
-    expect(deployments.map((deployment) => deployment.id)).toEqual(['deployment-b', 'deployment-a'])
+    expect(deployments.map((deployment) => deployment.id)).toEqual(['deployment-a', 'deployment-b'])
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('rejects two complete enumerations whose ID sets differ', async () => {
+    const fetchMock = mockPages([
+      { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-a' },
+      { nodes: [{ id: 'deployment-b' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-b' },
+      { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: true, endCursor: 'cursor-c' },
+      { nodes: [{ id: 'deployment-c' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-d' },
+    ])
+
+    await expect(fetchApplicationDeployments('team-a', 'prod-gcp', 'app-a', 1)).rejects.toMatchObject({
+      name: 'NaisDeploymentEnumerationError',
+      validation: { reason: 'deployment_id_set_changed' },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('rejects an incomplete second enumeration instead of using the first result', async () => {
+    const fetchMock = mockPages([
+      { nodes: [{ id: 'deployment-a' }], totalCount: 1, hasNextPage: false, endCursor: 'cursor-a' },
+      { nodes: [{ id: 'deployment-a' }], totalCount: 2, hasNextPage: false, endCursor: 'cursor-b' },
+    ])
+
+    await expect(fetchApplicationDeployments('team-a', 'prod-gcp', 'app-a', 1)).rejects.toMatchObject({
+      name: 'NaisDeploymentEnumerationError',
+      validation: { reason: 'id_count_mismatch' },
+    })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 

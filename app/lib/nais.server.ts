@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises'
 import { GraphQLClient } from 'graphql-request'
 import { fetchWithLogging, logger } from '~/lib/logger.server'
 import {
+  type CompleteNaisDeploymentEnumeration,
+  haveSameNaisDeploymentIds,
   type NaisDeploymentEnumerationPage,
   type NaisDeploymentEnumerationValidation,
   validateNaisDeploymentEnumeration,
@@ -213,12 +215,12 @@ const TEAM_ENVIRONMENTS_QUERY = `
   }
 `
 
-export async function fetchApplicationDeployments(
+async function fetchApplicationDeploymentsOnce(
   teamSlug: string,
   environmentName: string,
   appName: string,
   limit: number = 1000,
-): Promise<NaisDeployment[]> {
+): Promise<{ deployments: NaisDeployment[]; enumeration: CompleteNaisDeploymentEnumeration }> {
   const client = getNaisClient()
 
   logger.info('📡 Fetching deployments from Nais API:', {
@@ -298,7 +300,7 @@ export async function fetchApplicationDeployments(
     }
 
     logger.info(`✨ Total deployments fetched: ${allDeployments.length} (from ${pageCount} page(s))`)
-    return allDeployments
+    return { deployments: allDeployments, enumeration: validation }
   } catch (error) {
     if (isResourceNotFoundError(error)) {
       logger.warn('⚠️  Resource not found in Nais (application may have been removed):', {
@@ -320,6 +322,41 @@ export async function fetchApplicationDeployments(
 
     throw error
   }
+}
+
+export async function fetchApplicationDeployments(
+  teamSlug: string,
+  environmentName: string,
+  appName: string,
+  limit: number = 1000,
+): Promise<NaisDeployment[]> {
+  logger.info('🔍 Verifying Nais deployment history with consecutive complete enumerations', {
+    team: teamSlug,
+    environment: environmentName,
+    app: appName,
+  })
+
+  const first = await fetchApplicationDeploymentsOnce(teamSlug, environmentName, appName, limit)
+  const second = await fetchApplicationDeploymentsOnce(teamSlug, environmentName, appName, limit)
+
+  if (!haveSameNaisDeploymentIds(first.enumeration, second.enumeration)) {
+    logger.error('❌ Nais deployment IDs changed between consecutive complete enumerations:', {
+      team: teamSlug,
+      environment: environmentName,
+      app: appName,
+      firstTotalCount: first.enumeration.totalCount,
+      secondTotalCount: second.enumeration.totalCount,
+    })
+    throw new NaisDeploymentEnumerationError({ status: 'incomplete', reason: 'deployment_id_set_changed' })
+  }
+
+  logger.info('✅ Nais deployment history matched across consecutive complete enumerations', {
+    team: teamSlug,
+    environment: environmentName,
+    app: appName,
+    deploymentCount: second.enumeration.totalCount,
+  })
+  return second.deployments
 }
 
 export async function fetchNewDeployments(
