@@ -4,6 +4,7 @@ import {
   createMonitoredApplication,
   getMonitoredApplicationById,
   markInitialNaisHistorySynced,
+  markInitialNaisHistorySyncStarted,
   updateMonitoredApplication,
 } from '../../monitored-applications.server'
 import { truncateAllTables } from './helpers'
@@ -61,8 +62,8 @@ describe('createMonitoredApplication', () => {
   })
 })
 
-describe('markInitialNaisHistorySynced', () => {
-  it('records the first successful full-history sync time without replacing it later', async () => {
+describe('initial Nais history sync markers', () => {
+  it('records the first start and completion times without replacing them later', async () => {
     const app = await createMonitoredApplication({
       team_slug: 'team-e',
       environment_name: 'prod-gcp',
@@ -70,6 +71,15 @@ describe('markInitialNaisHistorySynced', () => {
     })
 
     expect(app.initial_nais_history_synced_at).toBeNull()
+    expect(app.initial_nais_history_sync_started_at).toBeNull()
+
+    await markInitialNaisHistorySyncStarted(app.id)
+    const firstStart = await getMonitoredApplicationById(app.id)
+    expect(firstStart?.initial_nais_history_sync_started_at).toBeInstanceOf(Date)
+
+    await markInitialNaisHistorySyncStarted(app.id)
+    const secondStart = await getMonitoredApplicationById(app.id)
+    expect(secondStart?.initial_nais_history_sync_started_at).toEqual(firstStart?.initial_nais_history_sync_started_at)
 
     await markInitialNaisHistorySynced(app.id)
     const firstCompletion = await getMonitoredApplicationById(app.id)
@@ -82,5 +92,6 @@ describe('markInitialNaisHistorySynced', () => {
 
   it('throws when the monitored application does not exist', async () => {
     await expect(markInitialNaisHistorySynced(-1)).rejects.toThrow('Monitored application not found: -1')
+    await expect(markInitialNaisHistorySyncStarted(-1)).rejects.toThrow('Monitored application not found: -1')
   })
 })
