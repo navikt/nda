@@ -29,7 +29,11 @@ describe('createRepositoryAlert', () => {
     })
 
     expect(inserted).toBe(true)
-    expect(poolQuery.mock.calls[1][0]).toContain('ON CONFLICT DO NOTHING')
+    const insertQuery = poolQuery.mock.calls[1][0]
+    expect(insertQuery).toMatch(
+      /idempotency_key_enabled\)\s*VALUES\s*\(\$1,\s*\$2,\s*\$3,\s*\$4,\s*\$5,\s*\$6,\s*\$7,\s*TRUE\)/,
+    )
+    expect(insertQuery).toContain('ON CONFLICT DO NOTHING')
   })
 
   it('returns false when the insert is ignored by a database constraint', async () => {

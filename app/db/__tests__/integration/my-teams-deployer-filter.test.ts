@@ -75,7 +75,7 @@ describe('getDevTeamAppsWithIssues deployer filter', () => {
     const appId = await seedApp(pool, { teamSlug: 'team-x', appName: 'svc', environment: 'prod' })
     await seedDeployment(appId, 'team-x', 'direct_push', 'alice')
     await pool.query(
-      `INSERT INTO repository_alerts (monitored_app_id, new_owner, new_repo, status)
+      `INSERT INTO repository_alerts (monitored_app_id, detected_github_owner, detected_github_repo_name, status)
        VALUES ($1, 'navikt', 'svc', 'open')`,
       [appId],
     )
