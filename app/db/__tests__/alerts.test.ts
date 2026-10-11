@@ -31,12 +31,13 @@ describe('createRepositoryAlert', () => {
     expect(inserted).toBe(true)
     const insertQuery = poolQuery.mock.calls[1][0]
     expect(insertQuery).toMatch(
-      /idempotency_key_enabled\)\s*VALUES\s*\(\$1,\s*\$2,\s*\$3,\s*\$4,\s*\$5,\s*\$6,\s*\$7,\s*TRUE\)/,
+      /idempotency_key_enabled\)\s*SELECT\s+\$1,\s*\$2,\s*\$3,\s*\$4,\s*\$5,\s*\$6,\s*\$7,\s*TRUE/,
     )
+    expect(insertQuery).toContain('WHERE NOT EXISTS')
     expect(insertQuery).toContain('ON CONFLICT DO NOTHING')
   })
 
-  it('returns false when the insert is ignored by a database constraint', async () => {
+  it('returns false when an alert with the same event identity already exists', async () => {
     poolQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 })
 
     const inserted = await createRepositoryAlert({
@@ -50,5 +51,6 @@ describe('createRepositoryAlert', () => {
     })
 
     expect(inserted).toBe(false)
+    expect(poolQuery.mock.calls[1][0]).toContain('WHERE NOT EXISTS')
   })
 })
