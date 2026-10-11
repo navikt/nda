@@ -165,7 +165,7 @@ async function syncDeploymentsFromNais(
           status: 'pending_approval',
         })
 
-        await createRepositoryAlert({
+        const alertCreated = await createRepositoryAlert({
           monitoredApplicationId: monitoredApp.id,
           deploymentNaisId: naisDep.id,
           detectedGithubOwner: detectedOwner,
@@ -173,12 +173,12 @@ async function syncDeploymentsFromNais(
           alertType: 'pending_approval',
         })
 
-        alertsCreated++
+        if (alertCreated) alertsCreated++
       }
     } else if (repoCheck.repository.status === 'pending_approval') {
       logger.warn(`⏸️  Deployment from pending approval repository: ${detectedOwner}/${detectedRepoName}`)
 
-      await createRepositoryAlert({
+      const alertCreated = await createRepositoryAlert({
         monitoredApplicationId: monitoredApp.id,
         deploymentNaisId: naisDep.id,
         detectedGithubOwner: detectedOwner,
@@ -186,13 +186,13 @@ async function syncDeploymentsFromNais(
         alertType: 'pending_approval',
       })
 
-      alertsCreated++
+      if (alertCreated) alertsCreated++
     } else if (repoCheck.repository.status === 'historical') {
       logger.warn(`⚠️  Deployment from historical repository: ${detectedOwner}/${detectedRepoName}`)
 
       const activeRepo = (await getRepositoriesByAppId(monitoredApp.id)).find((r) => r.status === 'active')
 
-      await createRepositoryAlert({
+      const alertCreated = await createRepositoryAlert({
         monitoredApplicationId: monitoredApp.id,
         deploymentNaisId: naisDep.id,
         detectedGithubOwner: detectedOwner,
@@ -202,7 +202,7 @@ async function syncDeploymentsFromNais(
         alertType: 'historical_repository',
       })
 
-      alertsCreated++
+      if (alertCreated) alertsCreated++
     }
     // else: repository is active - all good, no alert needed
   }
