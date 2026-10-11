@@ -30,9 +30,8 @@ describe('createRepositoryAlert', () => {
 
     expect(inserted).toBe(true)
     const insertQuery = poolQuery.mock.calls[1][0]
-    expect(insertQuery).toMatch(
-      /idempotency_key_enabled\)\s*SELECT\s+\$1,\s*\$2,\s*\$3,\s*\$4,\s*\$5,\s*\$6,\s*\$7,\s*TRUE/,
-    )
+    expect(insertQuery).toMatch(/WITH alert_event AS\s*\(\s*SELECT\s+\$1::integer.*\$3::varchar\(50\)/s)
+    expect(insertQuery).toContain('FROM alert_event input_values')
     expect(insertQuery).toContain('WHERE NOT EXISTS')
     expect(insertQuery).toContain('ON CONFLICT DO NOTHING')
   })

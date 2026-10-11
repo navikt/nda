@@ -57,18 +57,37 @@ export async function createRepositoryAlert(data: {
   const expectedRepoName = data.expectedGithubRepoName || data.detectedGithubRepoName
 
   const result = await pool.query(
-    `INSERT INTO repository_alerts 
+    `WITH alert_event AS (
+      SELECT
+        $1::integer AS monitored_app_id,
+        $2::integer AS deployment_id,
+        $3::varchar(50) AS alert_type,
+        $4::varchar(255) AS expected_github_owner,
+        $5::varchar(255) AS expected_github_repo_name,
+        $6::varchar(255) AS detected_github_owner,
+        $7::varchar(255) AS detected_github_repo_name
+    )
+    INSERT INTO repository_alerts
       (monitored_app_id, deployment_id, alert_type, expected_github_owner, expected_github_repo_name, detected_github_owner, detected_github_repo_name, idempotency_key_enabled)
-    SELECT $1, $2, $3, $4, $5, $6, $7, TRUE
+    SELECT
+      input_values.monitored_app_id,
+      input_values.deployment_id,
+      input_values.alert_type,
+      input_values.expected_github_owner,
+      input_values.expected_github_repo_name,
+      input_values.detected_github_owner,
+      input_values.detected_github_repo_name,
+      TRUE
+    FROM alert_event input_values
     WHERE NOT EXISTS (
       SELECT 1
-      FROM repository_alerts
-      WHERE deployment_id = $2
-        AND alert_type = $3
-        AND expected_github_owner = $4
-        AND expected_github_repo_name = $5
-        AND detected_github_owner = $6
-        AND detected_github_repo_name = $7
+      FROM repository_alerts existing
+      WHERE existing.deployment_id = input_values.deployment_id
+        AND existing.alert_type = input_values.alert_type
+        AND existing.expected_github_owner = input_values.expected_github_owner
+        AND existing.expected_github_repo_name = input_values.expected_github_repo_name
+        AND existing.detected_github_owner = input_values.detected_github_owner
+        AND existing.detected_github_repo_name = input_values.detected_github_repo_name
     )
     ON CONFLICT DO NOTHING
     RETURNING id`,

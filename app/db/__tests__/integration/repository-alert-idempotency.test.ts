@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { createRepositoryAlert } from '~/db/alerts.server'
+import { seedApp } from './helpers'
 
 let pool: Pool
 
@@ -14,6 +16,40 @@ afterAll(async () => {
 })
 
 describe('repository alert idempotency migration', () => {
+  it('creates an alert and treats a repeated event as an idempotent no-op', async () => {
+    const appName = `alert-idempotency-${Date.now()}`
+    const appId = await seedApp(pool, {
+      teamSlug: 'alert-idempotency-test',
+      appName,
+      environment: 'prod-gcp',
+    })
+    const deploymentId = `alert-idempotency-${Date.now()}`
+
+    try {
+      await pool.query(
+        `INSERT INTO deployments (
+          monitored_app_id, nais_deployment_id, created_at, team_slug, environment_name, app_name
+        ) VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5)`,
+        [appId, deploymentId, 'alert-idempotency-test', 'prod-gcp', appName],
+      )
+
+      const alert = {
+        monitoredApplicationId: appId,
+        deploymentNaisId: deploymentId,
+        detectedGithubOwner: 'navikt',
+        detectedGithubRepoName: 'alert-idempotency-test',
+        expectedGithubOwner: 'navikt',
+        expectedGithubRepoName: 'expected-repository',
+        alertType: 'pending_approval' as const,
+      }
+
+      expect(await createRepositoryAlert(alert)).toBe(true)
+      expect(await createRepositoryAlert(alert)).toBe(false)
+    } finally {
+      await pool.query('DELETE FROM monitored_applications WHERE id = $1', [appId])
+    }
+  })
+
   it('preserves historical duplicates and resolutions while enforcing uniqueness for new alerts', async () => {
     const migration = readFileSync(
       join(process.cwd(), 'app/db/migrations/1791719000000_add-new-alert-event-uniqueness.sql'),
