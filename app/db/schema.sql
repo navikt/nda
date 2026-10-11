@@ -142,12 +142,23 @@ CREATE TABLE IF NOT EXISTS repository_alerts (
   resolved_by VARCHAR(255),
   resolution_note TEXT,
   
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  idempotency_key_enabled BOOLEAN DEFAULT TRUE
 );
 
 CREATE INDEX IF NOT EXISTS idx_alerts_monitored_app ON repository_alerts(monitored_app_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON repository_alerts(resolved);
 CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON repository_alerts(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_alerts_event_identity
+  ON repository_alerts (
+    deployment_id,
+    alert_type,
+    expected_github_owner,
+    expected_github_repo_name,
+    detected_github_owner,
+    detected_github_repo_name
+  )
+  WHERE idempotency_key_enabled IS TRUE AND deployment_id IS NOT NULL;
 
 -- Comments on deployments (including Slack links for direct pushes)
 CREATE TABLE IF NOT EXISTS deployment_comments (
