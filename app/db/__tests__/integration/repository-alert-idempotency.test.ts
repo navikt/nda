@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createRepositoryAlert } from '~/db/alerts.server'
+import { closePool } from '~/db/connection.server'
 import { seedApp } from './helpers'
 
 let pool: Pool
@@ -12,6 +13,7 @@ beforeAll(() => {
 })
 
 afterAll(async () => {
+  await closePool()
   await pool.end()
 })
 

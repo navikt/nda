@@ -61,11 +61,11 @@ export async function createRepositoryAlert(data: {
       SELECT
         $1::integer AS monitored_app_id,
         $2::integer AS deployment_id,
-        $3::varchar(50) AS alert_type,
-        $4::varchar(255) AS expected_github_owner,
-        $5::varchar(255) AS expected_github_repo_name,
-        $6::varchar(255) AS detected_github_owner,
-        $7::varchar(255) AS detected_github_repo_name
+        $3::varchar AS alert_type,
+        $4::varchar AS expected_github_owner,
+        $5::varchar AS expected_github_repo_name,
+        $6::varchar AS detected_github_owner,
+        $7::varchar AS detected_github_repo_name
     )
     INSERT INTO repository_alerts
       (monitored_app_id, deployment_id, alert_type, expected_github_owner, expected_github_repo_name, detected_github_owner, detected_github_repo_name, idempotency_key_enabled)
