@@ -141,4 +141,28 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
       markInitialNaisHistorySynced.mock.invocationCallOrder[0],
     )
   })
+
+  it('does not record initial history completion when deployment processing fails', async () => {
+    const error = new Error('deployment persistence failed')
+    vi.mocked(fetchApplicationDeployments).mockResolvedValue([
+      {
+        id: 'deployment-1',
+        createdAt: '2026-10-10T00:00:00Z',
+        environmentName: 'prod-gcp',
+        teamSlug: 'team-a',
+        triggerUrl: '',
+        repository: null,
+        commitSha: null,
+        deployerUsername: null,
+        resources: { nodes: [] },
+      },
+    ])
+    vi.mocked(createDeployment).mockRejectedValue(error)
+
+    await expect(syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)).rejects.toBe(error)
+
+    expect(createDeployment).toHaveBeenCalledOnce()
+    expect(markInitialNaisHistorySynced).not.toHaveBeenCalled()
+    expect(syncDefaultBranchForApp).not.toHaveBeenCalled()
+  })
 })
