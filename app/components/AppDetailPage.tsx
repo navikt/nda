@@ -261,9 +261,11 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin, canAcces
 
       {!app.initial_nais_history_synced_at && (
         <Alert variant="warning">
-          {app.not_found_in_nais_at
-            ? 'Initial historikksynk venter til appen finnes i Nais igjen.'
-            : 'Full historikksynk fra Nais er ikke fullført. Den forsøkes på nytt automatisk. Se siste synkstatus over ved eventuelle feil.'}
+          {!app.is_active
+            ? 'Appen er inaktiv. Full historikksynk fortsetter automatisk når appen aktiveres igjen.'
+            : app.not_found_in_nais_at
+              ? 'Initial historikksynk venter til appen finnes i Nais igjen.'
+              : 'Full historikksynk fra Nais er ikke fullført. Den forsøkes på nytt automatisk. Se siste synkstatus over ved eventuelle feil.'}
         </Alert>
       )}
 

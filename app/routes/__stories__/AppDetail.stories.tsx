@@ -161,6 +161,18 @@ export const InitialHistoryPending: Story = {
   render: (args) => renderAppDetailStory(args),
 }
 
+export const InitialHistoryPendingInactive: Story = {
+  name: 'Initial historikksynk venter – inaktiv app',
+  args: {
+    loaderData: {
+      ...baseLoaderData,
+      app: { ...baseLoaderData.app, is_active: false, initial_nais_history_synced_at: null },
+    },
+    canAccessAdmin: false,
+  },
+  render: (args) => renderAppDetailStory(args),
+}
+
 export const AdminView: Story = {
   name: 'Som admin',
   args: {
