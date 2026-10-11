@@ -59,7 +59,7 @@ vi.mock('~/lib/nais.server', async (importOriginal) => {
 })
 vi.mock('../default-branch-sync.server', () => ({ syncDefaultBranchForApp }))
 
-import { NaisDeploymentEnumerationError, NaisResourceNotFoundError } from '~/lib/nais.server'
+import { NaisDeploymentEnumerationError } from '~/lib/nais.server'
 import { syncNewDeploymentsFromNais } from '../nais-sync.server'
 
 const monitoredApp: MonitoredApplication = {
@@ -288,7 +288,9 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
   })
 
   it('keeps initial history pending when the application is not found in Nais', async () => {
-    vi.mocked(fetchApplicationDeployments).mockRejectedValue(new NaisResourceNotFoundError('Resource not found'))
+    vi.mocked(fetchApplicationDeployments).mockRejectedValue(
+      new NaisDeploymentEnumerationError({ status: 'incomplete', reason: 'application_unavailable' }),
+    )
 
     const result = await syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)
 
@@ -301,6 +303,19 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     })
     expect(markInitialNaisHistorySynced).not.toHaveBeenCalled()
     expect(updateMonitoredApplication).toHaveBeenCalledWith(monitoredApp.id, { not_found_in_nais_at: expect.any(Date) })
+  })
+
+  it('keeps incomplete enumeration errors as failed syncs', async () => {
+    const error = new NaisDeploymentEnumerationError({
+      status: 'incomplete',
+      reason: 'id_count_mismatch',
+    })
+    vi.mocked(fetchApplicationDeployments).mockRejectedValue(error)
+
+    await expect(syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)).rejects.toBe(error)
+
+    expect(updateMonitoredApplication).not.toHaveBeenCalled()
+    expect(markInitialNaisHistorySynced).not.toHaveBeenCalled()
   })
 
   it.each([

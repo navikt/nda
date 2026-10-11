@@ -17,7 +17,12 @@ import {
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { logger } from '~/lib/logger.server'
-import { fetchApplicationDeployments, fetchNewDeployments, NaisResourceNotFoundError } from '~/lib/nais.server'
+import {
+  fetchApplicationDeployments,
+  fetchNewDeployments,
+  NaisDeploymentEnumerationError,
+  NaisResourceNotFoundError,
+} from '~/lib/nais.server'
 import { syncDefaultBranchForApp } from './default-branch-sync.server'
 import { parseRepository } from './repo-parser'
 
@@ -34,7 +39,10 @@ async function markNaisResourceStatus<T>(
     }
     return result
   } catch (error) {
-    if (error instanceof NaisResourceNotFoundError) {
+    if (
+      error instanceof NaisResourceNotFoundError ||
+      (error instanceof NaisDeploymentEnumerationError && error.validation.reason === 'application_unavailable')
+    ) {
       await updateMonitoredApplication(monitoredAppId, { not_found_in_nais_at: new Date() })
       logger.warn(`⚠️  Application not found in Nais - treating as no-op sync: ${monitoredAppId}`)
       return notFoundFallback
