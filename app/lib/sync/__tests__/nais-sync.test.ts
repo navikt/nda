@@ -93,6 +93,7 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     vi.clearAllMocks()
     vi.mocked(getLatestDeploymentForApp).mockResolvedValue(null)
     vi.mocked(getMonitoredApplicationByIdentity).mockResolvedValue(monitoredApp)
+    vi.mocked(createDeployment).mockResolvedValue(undefined as never)
   })
 
   it.each([
@@ -164,5 +165,49 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     expect(createDeployment).toHaveBeenCalledOnce()
     expect(markInitialNaisHistorySynced).not.toHaveBeenCalled()
     expect(syncDefaultBranchForApp).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { inserted: true, alertsCreated: 1 },
+    { inserted: false, alertsCreated: 0 },
+  ])('counts a repository alert only when it was inserted ($inserted)', async ({ inserted, alertsCreated }) => {
+    vi.mocked(fetchApplicationDeployments).mockResolvedValue([
+      {
+        id: 'deployment-1',
+        createdAt: '2026-10-10T00:00:00Z',
+        environmentName: 'prod-gcp',
+        teamSlug: 'team-a',
+        triggerUrl: '',
+        repository: 'navikt/new-repo',
+        commitSha: 'abc123',
+        deployerUsername: null,
+        resources: { nodes: [] },
+      },
+    ])
+    vi.mocked(findRepositoryForApp).mockResolvedValue({
+      repository: {
+        id: 1,
+        monitored_app_id: monitoredApp.id,
+        github_owner: 'navikt',
+        github_repo_name: 'new-repo',
+        github_repo_id: null,
+        status: 'pending_approval',
+        redirects_to_owner: null,
+        redirects_to_repo: null,
+        notes: null,
+        approved_at: null,
+        approved_by: null,
+        created_at: new Date('2026-10-10T00:00:00Z'),
+      },
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'new-repo',
+      isRedirected: false,
+    })
+    vi.mocked(createRepositoryAlert).mockResolvedValue(inserted)
+
+    const result = await syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)
+
+    expect(result.alertsCreated).toBe(alertsCreated)
+    expect(createRepositoryAlert).toHaveBeenCalledOnce()
   })
 })

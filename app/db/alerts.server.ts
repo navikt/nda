@@ -36,7 +36,7 @@ export async function createRepositoryAlert(data: {
   expectedGithubOwner?: string
   expectedGithubRepoName?: string
   alertType: RepositoryAlertType
-}): Promise<RepositoryAlert> {
+}): Promise<boolean> {
   const depResult = await pool.query('SELECT id, monitored_app_id FROM deployments WHERE nais_deployment_id = $1', [
     data.deploymentNaisId,
   ])
@@ -61,7 +61,7 @@ export async function createRepositoryAlert(data: {
       (monitored_app_id, deployment_id, alert_type, expected_github_owner, expected_github_repo_name, detected_github_owner, detected_github_repo_name)
     VALUES ($1, $2, $3, $4, $5, $6, $7)
     ON CONFLICT DO NOTHING
-    RETURNING *`,
+    RETURNING id`,
     [
       deployment.monitored_app_id,
       deployment.id,
@@ -72,7 +72,7 @@ export async function createRepositoryAlert(data: {
       data.detectedGithubRepoName,
     ],
   )
-  return result.rows[0]
+  return result.rowCount === 1
 }
 
 export async function resolveRepositoryAlert(id: number, resolutionNote: string): Promise<RepositoryAlert> {
