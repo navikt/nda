@@ -13,6 +13,7 @@ import {
 import {
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
+  markInitialNaisHistorySynced,
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { logger } from '~/lib/logger.server'
@@ -63,10 +64,15 @@ async function syncDeploymentsFromNais(
     throw new Error(`Application not found in monitored applications: ${teamSlug}/${environmentName}/${appName}`)
   }
 
+  let fullHistoryFetched = false
   const naisDeployments = await markNaisResourceStatus(
     monitoredApp.id,
     monitoredApp.not_found_in_nais_at,
-    () => fetchApplicationDeployments(teamSlug, environmentName, appName),
+    async () => {
+      const deployments = await fetchApplicationDeployments(teamSlug, environmentName, appName)
+      fullHistoryFetched = true
+      return deployments
+    },
     [],
   )
 
@@ -207,6 +213,10 @@ async function syncDeploymentsFromNais(
     alertsCreated,
     totalProcessed,
   })
+
+  if (fullHistoryFetched) {
+    await markInitialNaisHistorySynced(monitoredApp.id)
+  }
 
   await runDefaultBranchSync(monitoredApp.id)
 
