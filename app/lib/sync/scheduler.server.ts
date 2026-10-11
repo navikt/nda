@@ -31,6 +31,12 @@ async function syncNewDeploymentsWithLock(
         newCount: r.newCount,
         alertsCreated: r.alertsCreated,
         stoppedEarly: r.stoppedEarly,
+        ...(r.initialHistorySyncStatus
+          ? {
+              initialHistorySyncStatus: r.initialHistorySyncStatus,
+              ...(r.initialHistorySyncReason ? { initialHistorySyncReason: r.initialHistorySyncReason } : {}),
+            }
+          : {}),
       }),
     },
     () => syncNewDeploymentsFromNais(teamSlug, environmentName, appName, monitoredAppId),
@@ -90,6 +96,7 @@ async function runPeriodicSync(): Promise<void> {
       let cachedLogsCount = 0
       let lockedCount = 0
       let failedCount = 0
+      let initialHistoryPendingCount = 0
 
       for (const app of apps) {
         let didWork = false
@@ -102,6 +109,9 @@ async function runPeriodicSync(): Promise<void> {
           } else if (syncResult.success) {
             syncedCount++
             newDeploymentsCount += syncResult.result?.newCount || 0
+            if (syncResult.result?.initialHistorySyncStatus === 'pending') {
+              initialHistoryPendingCount++
+            }
             didWork = true
           }
 
@@ -176,7 +186,7 @@ async function runPeriodicSync(): Promise<void> {
       }
 
       logger.info(
-        `✅ Periodic sync complete: synced ${syncedCount} apps (${newDeploymentsCount} new deployments), verified ${verifiedCount} deployments, reverified checks for ${checksReverifiedCount} deployments, cached ${cachedLogsCount} logs, ${lockedCount} locked, ${failedCount} failed`,
+        `✅ Periodic sync complete: synced ${syncedCount} apps (${newDeploymentsCount} new deployments), initial Nais history pending for ${initialHistoryPendingCount} apps, verified ${verifiedCount} deployments, reverified checks for ${checksReverifiedCount} deployments, cached ${cachedLogsCount} logs, ${lockedCount} locked, ${failedCount} failed`,
       )
     })
 

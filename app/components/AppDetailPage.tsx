@@ -48,6 +48,7 @@ interface AppDetailApp {
   default_branch: string | null
   is_active: boolean
   not_found_in_nais_at: string | Date | null
+  initial_nais_history_synced_at: string | Date | null
 }
 
 interface AppDetailRepository {
@@ -230,6 +231,11 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin, canAcces
                 Ingen synkronisering registrert
               </Tag>
             )}
+            {app.initial_nais_history_synced_at && (
+              <Tag variant="success" size="small">
+                Historisk synk fullført
+              </Tag>
+            )}
             {canAccessRepoAdmin && activeRepo && repositoryId !== null && (
               <Link
                 to={`/repository/${activeRepo.github_owner}/${activeRepo.github_repo_name}/admin/sync-jobs?repositoryId=${repositoryId}`}
@@ -252,6 +258,16 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin, canAcces
       {!app.is_active && <ReactivateAppNotice canReactivate={canReactivate} />}
 
       {app.not_found_in_nais_at && <NotFoundInNaisNotice variant="alert" canDeactivate={canDeactivate} />}
+
+      {!app.initial_nais_history_synced_at && (
+        <Alert variant="warning">
+          {!app.is_active
+            ? 'Appen er inaktiv. Full historikksynk fortsetter automatisk når appen aktiveres igjen.'
+            : app.not_found_in_nais_at
+              ? 'Initial historikksynk venter til appen finnes i Nais igjen.'
+              : 'Full historikksynk fra Nais er ikke fullført. Den forsøkes på nytt automatisk. Se siste synkstatus over ved eventuelle feil.'}
+        </Alert>
+      )}
 
       {verificationProgress.pending > verifyLimitPerCycle && (
         <GithubVerificationProgress

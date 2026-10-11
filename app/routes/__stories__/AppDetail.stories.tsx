@@ -24,6 +24,7 @@ const baseLoaderData: AppDetailLoaderData = {
     default_branch: 'main',
     is_active: true,
     not_found_in_nais_at: null,
+    initial_nais_history_synced_at: new Date('2026-02-08T10:00:15Z'),
   },
   canDeactivate: false,
   canReactivate: false,
@@ -143,6 +144,30 @@ function renderAppDetailStory({
 export const Default: Story = {
   args: {
     loaderData: baseLoaderData,
+    canAccessAdmin: false,
+  },
+  render: (args) => renderAppDetailStory(args),
+}
+
+export const InitialHistoryPending: Story = {
+  name: 'Initial historikksynk venter',
+  args: {
+    loaderData: {
+      ...baseLoaderData,
+      app: { ...baseLoaderData.app, initial_nais_history_synced_at: null },
+    },
+    canAccessAdmin: false,
+  },
+  render: (args) => renderAppDetailStory(args),
+}
+
+export const InitialHistoryPendingInactive: Story = {
+  name: 'Initial historikksynk venter – inaktiv app',
+  args: {
+    loaderData: {
+      ...baseLoaderData,
+      app: { ...baseLoaderData.app, is_active: false, initial_nais_history_synced_at: null },
+    },
     canAccessAdmin: false,
   },
   render: (args) => renderAppDetailStory(args),

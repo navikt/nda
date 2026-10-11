@@ -17,7 +17,12 @@ import {
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
 import { logger } from '~/lib/logger.server'
-import { fetchApplicationDeployments, fetchNewDeployments, NaisResourceNotFoundError } from '~/lib/nais.server'
+import {
+  fetchApplicationDeployments,
+  fetchNewDeployments,
+  NaisDeploymentEnumerationError,
+  NaisResourceNotFoundError,
+} from '~/lib/nais.server'
 import { syncDefaultBranchForApp } from './default-branch-sync.server'
 import { parseRepository } from './repo-parser'
 
@@ -34,7 +39,10 @@ async function markNaisResourceStatus<T>(
     }
     return result
   } catch (error) {
-    if (error instanceof NaisResourceNotFoundError) {
+    if (
+      error instanceof NaisResourceNotFoundError ||
+      (error instanceof NaisDeploymentEnumerationError && error.validation.reason === 'application_unavailable')
+    ) {
       await updateMonitoredApplication(monitoredAppId, { not_found_in_nais_at: new Date() })
       logger.warn(`⚠️  Application not found in Nais - treating as no-op sync: ${monitoredAppId}`)
       return notFoundFallback
@@ -52,6 +60,8 @@ async function syncDeploymentsFromNais(
   skippedCount: number
   alertsCreated: number
   totalProcessed: number
+  initialHistorySyncStatus: 'completed' | 'pending'
+  initialHistorySyncReason?: 'application_not_found'
 }> {
   logger.info('📥 Syncing deployments from Nais (no GitHub verification):', {
     team: teamSlug,
@@ -106,28 +116,32 @@ async function syncDeploymentsFromNais(
     if (existingDep) {
       logger.info(`⏭️  Deployment already exists: ${naisDep.id}`)
       skippedCount++
-      continue
+      if (existingDep.monitored_app_id !== monitoredApp.id) {
+        throw new Error(
+          `Deployment ${naisDep.id} belongs to monitored application ${existingDep.monitored_app_id}, not ${monitoredApp.id}`,
+        )
+      }
+    } else {
+      logger.info(`➕ Creating new deployment: ${naisDep.id}`)
+
+      const deploymentParams: CreateDeploymentParams = {
+        monitoredApplicationId: monitoredApp.id,
+        naisDeploymentId: naisDep.id,
+        createdAt: new Date(naisDep.createdAt),
+        teamSlug: teamSlug,
+        environmentName: environmentName,
+        appName: appName,
+        commitSha: naisDep.commitSha,
+        deployerUsername: naisDep.deployerUsername,
+        triggerUrl: naisDep.triggerUrl,
+        detectedGithubOwner: detectedOwner,
+        detectedGithubRepoName: detectedRepoName,
+        resources: naisDep.resources.nodes,
+      }
+
+      await createDeployment(deploymentParams)
+      newCount++
     }
-
-    logger.info(`➕ Creating new deployment: ${naisDep.id}`)
-
-    const deploymentParams: CreateDeploymentParams = {
-      monitoredApplicationId: monitoredApp.id,
-      naisDeploymentId: naisDep.id,
-      createdAt: new Date(naisDep.createdAt),
-      teamSlug: teamSlug,
-      environmentName: environmentName,
-      appName: appName,
-      commitSha: naisDep.commitSha,
-      deployerUsername: naisDep.deployerUsername,
-      triggerUrl: naisDep.triggerUrl,
-      detectedGithubOwner: detectedOwner,
-      detectedGithubRepoName: detectedRepoName,
-      resources: naisDep.resources.nodes,
-    }
-
-    await createDeployment(deploymentParams)
-    newCount++
 
     const isLegacyDeployment = !naisDep.commitSha
     if (isLegacyDeployment) {
@@ -225,6 +239,8 @@ async function syncDeploymentsFromNais(
     skippedCount,
     alertsCreated,
     totalProcessed,
+    initialHistorySyncStatus: fullHistoryFetched ? 'completed' : 'pending',
+    ...(!fullHistoryFetched ? { initialHistorySyncReason: 'application_not_found' as const } : {}),
   }
 }
 
@@ -237,6 +253,8 @@ export async function syncNewDeploymentsFromNais(
   newCount: number
   alertsCreated: number
   stoppedEarly: boolean
+  initialHistorySyncStatus?: 'completed' | 'pending'
+  initialHistorySyncReason?: 'application_not_found'
 }> {
   logger.info('📥 Incremental sync - fetching only new deployments:', {
     team: teamSlug,
@@ -245,23 +263,33 @@ export async function syncNewDeploymentsFromNais(
   })
 
   const latestDeployment = await getLatestDeploymentForApp(monitoredAppId)
+  const monitoredApp = await getMonitoredApplicationById(monitoredAppId)
 
-  if (!latestDeployment) {
-    logger.info('📋 No existing deployments - performing full sync instead')
+  if (!monitoredApp) {
+    throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
+  }
+
+  if (!latestDeployment || !monitoredApp.initial_nais_history_synced_at) {
+    logger.info(
+      latestDeployment
+        ? '📋 Initial Nais history sync is incomplete - performing full sync'
+        : '📋 No existing deployments - performing full sync instead',
+    )
     const result = await syncDeploymentsFromNais(teamSlug, environmentName, appName)
     return {
       newCount: result.newCount,
       alertsCreated: result.alertsCreated,
       stoppedEarly: false,
+      initialHistorySyncStatus: result.initialHistorySyncStatus,
+      ...(result.initialHistorySyncReason ? { initialHistorySyncReason: result.initialHistorySyncReason } : {}),
     }
   }
 
   logger.info(`🔍 Looking for deployments newer than ${latestDeployment.nais_deployment_id.substring(0, 20)}...`)
 
-  const monitoredApp = await getMonitoredApplicationById(monitoredAppId)
   const { deployments, stoppedEarly } = await markNaisResourceStatus(
     monitoredAppId,
-    monitoredApp?.not_found_in_nais_at ?? null,
+    monitoredApp.not_found_in_nais_at,
     () =>
       fetchNewDeployments(
         teamSlug,
