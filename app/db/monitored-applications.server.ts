@@ -104,10 +104,20 @@ export async function getNaisHistoryRiskApps(): Promise<NaisHistoryRiskApp[]> {
          EXISTS (
            SELECT 1 FROM sync_jobs sj
            WHERE sj.monitored_app_id = ma.id AND sj.job_type = 'nais_sync' AND sj.status = 'failed'
-             AND (sj.error ILIKE '%different monitored application%' OR sj.error ILIKE '%belongs to monitored application%')
+             AND (
+               sj.error ILIKE '%different monitored application%'
+               OR sj.error ILIKE '%belongs to monitored application%'
+               OR sj.error ILIKE '%could not be inserted or found for monitored application%'
+             )
+             AND (ma.initial_nais_history_synced_at IS NULL OR sj.started_at > ma.initial_nais_history_synced_at)
          ) AS id_collision,
          (
            ma.initial_nais_history_synced_at IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM sync_jobs o
+             WHERE o.monitored_app_id = ma.id AND o.job_type = 'nais_sync'
+               AND o.started_at <= ma.initial_nais_history_synced_at
+           )
            AND NOT EXISTS (
              SELECT 1 FROM sync_jobs c
              WHERE c.monitored_app_id = ma.id AND c.job_type = 'nais_sync' AND c.status = 'completed'
