@@ -8,13 +8,21 @@ export async function evaluateEstablishmentGrounds(deploymentId: number): Promis
 
   const { githubOwner, githubRepoName, defaultBranch, headSha, latestDeliveryHeadSha, headHasDelivery } = context
   const currentGithubRepoId = await getRepositoryId(githubOwner, githubRepoName)
-  if (currentGithubRepoId !== context.githubRepoId) {
-    return { confirmed: false, reason: 'source_unauthorized', headSha }
+  const identity =
+    currentGithubRepoId === null ? 'unknown' : currentGithubRepoId === context.githubRepoId ? 'match' : 'mismatch'
+  if (identity !== 'match') {
+    return decideEstablishmentGrounds({
+      headSha,
+      baseSha: latestDeliveryHeadSha,
+      identity,
+      onApprovedBranch: null,
+      ancestry: null,
+    })
   }
 
   const onApprovedBranch = defaultBranch
     ? await isCommitOnBranch(githubOwner, githubRepoName, headSha, defaultBranch)
-    : null
+    : false
 
   let ancestry: AncestryStatus | null | 'not_required' = 'not_required'
   if (onApprovedBranch === true && !headHasDelivery && latestDeliveryHeadSha) {
@@ -30,6 +38,7 @@ export async function evaluateEstablishmentGrounds(deploymentId: number): Promis
   return decideEstablishmentGrounds({
     headSha,
     baseSha: latestDeliveryHeadSha,
+    identity,
     onApprovedBranch,
     ancestry,
   })

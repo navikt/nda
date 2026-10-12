@@ -15,3 +15,7 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER repositories_set_code_delivery_tracking_since
   BEFORE INSERT OR UPDATE OF code_delivery_tracking ON repositories
   FOR EACH ROW EXECUTE FUNCTION set_code_delivery_tracking_since();
+
+CREATE INDEX idx_deployments_unlinked_code_delivery_candidates
+  ON deployments (repository_id, created_at, id)
+  WHERE repository_code_delivery_id IS NULL AND repository_id IS NOT NULL;

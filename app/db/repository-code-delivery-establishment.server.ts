@@ -6,7 +6,7 @@ import {
   linkDeploymentToRepositoryCodeDeliveryInTransaction,
 } from './repository-code-deliveries.server'
 
-type UnresolvedReason = 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized'
+type UnresolvedReason = 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized' | 'source_unknown'
 
 export type EstablishmentGrounds =
   | { confirmed: true; baseSha: string | null; headSha: string }
@@ -163,7 +163,7 @@ export async function getDeploymentIdsAwaitingCodeDelivery(limit: number): Promi
        AND d.repository_code_delivery_id IS NULL
        AND d.commit_sha ~ '^[0-9a-fA-F]{40}$'
        AND (u.deployment_id IS NULL
-            OR (u.reason = 'ancestry_unknown' AND u.updated_at < now() - interval '1 hour'))
+            OR (u.reason IN ('ancestry_unknown', 'source_unknown') AND u.updated_at < now() - interval '1 hour'))
      ORDER BY d.repository_id, d.created_at, d.id
      LIMIT $1`,
     [limit],

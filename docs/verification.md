@@ -633,7 +633,8 @@ For hvert deployment:
 
 1. `evaluateEstablishmentGrounds` ([`grounds.server.ts`](../app/lib/repository-code-delivery/grounds.server.ts)) avgjør grunnlaget mot GitHub:
    - GitHubs gjeldende repository-ID må være lik den lagrede, ellers `source_unauthorized`.
-   - Committen må ligge på repositoryets standardbranch, ellers `source_unauthorized`.
+   - Committen må ligge på repositoryets standardbranch, ellers `source_unauthorized`. Mangler repositoryet standardbranch, regnes det også som `source_unauthorized`.
+   - Mislykket oppslag av repository-ID eller branch (nettverksfeil, rate limit) gir `source_unknown`, ikke `source_unauthorized`.
    - Forrige leveranses head må være forfedre til deploymentets head (`ahead`). Mislykket oppslag gir `ancestry_unknown`, alt annet enn `ahead` gir `ancestry_diverged`. Sjekken hoppes over for første leveranse og når SHA-en allerede har en leveranse.
 2. `establishCodeDeliveryForDeployment` ([`repository-code-delivery-establishment.server.ts`](../app/db/repository-code-delivery-establishment.server.ts)) skriver resultatet i én transaksjon, serialisert per repository:
    - Kjent SHA (søsken eller tilbakerulling) kobles til eksisterende leveranse og flytter ikke fremdriften.
@@ -643,7 +644,7 @@ For hvert deployment:
 
 ### Ny vurdering av uavklarte
 
-Uavklarte deployments vurderes ikke på nytt hver kjøring. Unntaket er `ancestry_unknown`, som prøves på nytt etter én time, siden den kan skyldes en midlertidig GitHub-feil. `ancestry_diverged` og `source_unauthorized` krever senere avklaring.
+Uavklarte deployments vurderes ikke på nytt hver kjøring. Unntaket er `ancestry_unknown` og `source_unknown`, som prøves på nytt etter én time, siden de kan skyldes en midlertidig GitHub-feil. `ancestry_diverged` og `source_unauthorized` krever senere avklaring.
 
 ### Ikke med ennå
 

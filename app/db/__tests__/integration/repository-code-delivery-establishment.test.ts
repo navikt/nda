@@ -76,7 +76,7 @@ async function establish(deploymentId: number, baseSha: string | null = null) {
 
 async function establishUnresolved(
   deploymentId: number,
-  reason: 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized',
+  reason: 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized' | 'source_unknown',
 ) {
   const { headSha } = await confirmed(deploymentId)
   return establishCodeDeliveryForDeployment(deploymentId, { confirmed: false, reason, headSha })
@@ -299,7 +299,7 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(await getDeliveries(repositoryId)).toEqual([])
   })
 
-  it.each(['ancestry_unknown', 'ancestry_diverged', 'source_unauthorized'] as const)(
+  it.each(['ancestry_unknown', 'ancestry_diverged', 'source_unauthorized', 'source_unknown'] as const)(
     'does not create or link when grounds are unresolved (%s)',
     async (reason) => {
       const repositoryId = await createRepository()
@@ -563,20 +563,24 @@ describe('getDeploymentIdsAwaitingCodeDelivery', () => {
     expect(await getDeploymentIdsAwaitingCodeDelivery(2)).toHaveLength(2)
   })
 
-  it('excludes open unresolved deployments but retries stale ancestry_unknown ones', async () => {
+  it('excludes open unresolved deployments but retries stale unknown ones', async () => {
     const repositoryId = await createRepository()
     const appId = await createApp('app-a')
     const diverged = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
     const unknownFresh = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_101 })
     const unknownStale = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
+    const sourceUnknownStale = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
+    const unauthorized = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
     await pool.query(
       `INSERT INTO repository_code_delivery_unresolved (deployment_id, reason, updated_at) VALUES
         ($1, 'ancestry_diverged', now() - interval '3 hours'),
         ($2, 'ancestry_unknown', now()),
-        ($3, 'ancestry_unknown', now() - interval '3 hours')`,
-      [diverged, unknownFresh, unknownStale],
+        ($3, 'ancestry_unknown', now() - interval '3 hours'),
+        ($4, 'source_unknown', now() - interval '3 hours'),
+        ($5, 'source_unauthorized', now() - interval '3 hours')`,
+      [diverged, unknownFresh, unknownStale, sourceUnknownStale, unauthorized],
     )
 
-    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([unknownStale])
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([unknownStale, sourceUnknownStale])
   })
 })
