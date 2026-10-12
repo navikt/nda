@@ -585,7 +585,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
         AND ar.github_owner = $10 AND ar.github_repo_name = $11
         AND r.github_owner = $10 AND r.github_repo_name = $11
     ))
-    ON CONFLICT DO UPDATE SET
+    ON CONFLICT (nais_deployment_id) DO UPDATE SET
       resources = EXCLUDED.resources,
       synced_at = CURRENT_TIMESTAMP
     WHERE deployments.monitored_app_id = EXCLUDED.monitored_app_id
