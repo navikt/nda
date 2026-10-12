@@ -1,5 +1,5 @@
 import { type EstablishmentGrounds, getEstablishmentContext } from '~/db/repository-code-delivery-establishment.server'
-import { getCommitAncestryStatus, isCommitOnBranch } from '~/lib/github'
+import { getCommitAncestryStatus, getRepositoryId, isCommitOnBranch } from '~/lib/github'
 import { type AncestryStatus, decideEstablishmentGrounds } from './grounds'
 
 export async function evaluateEstablishmentGrounds(deploymentId: number): Promise<EstablishmentGrounds | null> {
@@ -7,6 +7,11 @@ export async function evaluateEstablishmentGrounds(deploymentId: number): Promis
   if (!context) return null
 
   const { githubOwner, githubRepoName, defaultBranch, headSha, latestDeliveryHeadSha, headHasDelivery } = context
+  const currentGithubRepoId = await getRepositoryId(githubOwner, githubRepoName)
+  if (currentGithubRepoId !== context.githubRepoId) {
+    return { confirmed: false, reason: 'source_unauthorized', headSha }
+  }
+
   const onApprovedBranch = defaultBranch
     ? await isCommitOnBranch(githubOwner, githubRepoName, headSha, defaultBranch)
     : null

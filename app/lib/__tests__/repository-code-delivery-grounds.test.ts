@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const getEstablishmentContext = vi.fn()
 const isCommitOnBranch = vi.fn()
 const getCommitAncestryStatus = vi.fn()
+const getRepositoryId = vi.fn()
 
 vi.mock('~/db/repository-code-delivery-establishment.server', () => ({
   getEstablishmentContext: (...args: unknown[]) => getEstablishmentContext(...args),
@@ -10,6 +11,7 @@ vi.mock('~/db/repository-code-delivery-establishment.server', () => ({
 vi.mock('~/lib/github', () => ({
   isCommitOnBranch: (...args: unknown[]) => isCommitOnBranch(...args),
   getCommitAncestryStatus: (...args: unknown[]) => getCommitAncestryStatus(...args),
+  getRepositoryId: (...args: unknown[]) => getRepositoryId(...args),
 }))
 
 import { decideEstablishmentGrounds } from '../repository-code-delivery/grounds'
@@ -68,6 +70,24 @@ describe('evaluateEstablishmentGrounds', () => {
 
   beforeEach(() => {
     vi.resetAllMocks()
+    getRepositoryId.mockResolvedValue(77)
+  })
+
+  it.each([
+    ['a different repository id', 78],
+    ['a failed lookup', null],
+  ])('reports an unauthorized source and makes no further calls for %s', async (_label, resolvedId) => {
+    getEstablishmentContext.mockResolvedValue(context)
+    getRepositoryId.mockResolvedValue(resolvedId)
+
+    expect(await evaluateEstablishmentGrounds(1)).toEqual({
+      confirmed: false,
+      reason: 'source_unauthorized',
+      headSha: HEAD,
+    })
+    expect(getRepositoryId).toHaveBeenCalledWith('navikt', 'repo-fjord')
+    expect(isCommitOnBranch).not.toHaveBeenCalled()
+    expect(getCommitAncestryStatus).not.toHaveBeenCalled()
   })
 
   it('returns null when there is nothing to evaluate', async () => {
