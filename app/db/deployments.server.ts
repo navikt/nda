@@ -572,7 +572,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
   const isLegacyDeployment = !data.commitSha
   const initialStatus = missingRepositoryInfo ? 'unverifiable' : isLegacyDeployment ? 'legacy' : 'pending'
 
-  const result = await pool.query(
+  const insertResult = await pool.query(
     `INSERT INTO deployments 
       (monitored_app_id, nais_deployment_id, created_at, team_slug, environment_name, app_name,
        deployer_username, commit_sha, trigger_url,
@@ -585,10 +585,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
         AND ar.github_owner = $10 AND ar.github_repo_name = $11
         AND r.github_owner = $10 AND r.github_repo_name = $11
     ))
-    ON CONFLICT (nais_deployment_id) DO UPDATE SET
-      resources = EXCLUDED.resources,
-      synced_at = CURRENT_TIMESTAMP
-    WHERE deployments.monitored_app_id = EXCLUDED.monitored_app_id
+    ON CONFLICT DO NOTHING
     RETURNING *`,
     [
       data.monitoredApplicationId,
@@ -606,7 +603,19 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
       initialStatus,
     ],
   )
-  const deployment = result.rows[0]
+  if (insertResult.rows[0]) {
+    return insertResult.rows[0]
+  }
+
+  const updateResult = await pool.query(
+    `UPDATE deployments SET
+      resources = $3,
+      synced_at = CURRENT_TIMESTAMP
+    WHERE nais_deployment_id = $1 AND monitored_app_id = $2
+    RETURNING *`,
+    [data.naisDeploymentId, data.monitoredApplicationId, data.resources ? JSON.stringify(data.resources) : null],
+  )
+  const deployment = updateResult.rows[0]
   if (!deployment) {
     throw new Error(
       `Nais deployment ID ${data.naisDeploymentId} is already stored for a different monitored application; the database uniqueness migration is pending`,
