@@ -6,7 +6,11 @@ import { seedApp, seedDeployment, seedRepository, truncateAllTables } from './he
 const SHA_100 = '1'.repeat(40)
 const SHA_101 = '2'.repeat(40)
 const SHA_102 = '3'.repeat(40)
-const CONFIRMED = { confirmed: true } as const
+const CONFIRMED = { confirmed: true, baseSha: null } as const
+
+function confirmedAgainst(baseSha: string | null) {
+  return { confirmed: true, baseSha } as const
+}
 
 let pool: Pool
 
@@ -98,9 +102,9 @@ describe('establishCodeDeliveryForDeployment', () => {
     const b102 = await createDeployment({ appId: appB, appName: 'app-b', repositoryId, commitSha: SHA_102 })
 
     await establishCodeDeliveryForDeployment(a100, CONFIRMED)
-    await establishCodeDeliveryForDeployment(b101, CONFIRMED)
-    const first102 = await establishCodeDeliveryForDeployment(a102, CONFIRMED)
-    const second102 = await establishCodeDeliveryForDeployment(b102, CONFIRMED)
+    await establishCodeDeliveryForDeployment(b101, confirmedAgainst(SHA_100))
+    const first102 = await establishCodeDeliveryForDeployment(a102, confirmedAgainst(SHA_101))
+    const second102 = await establishCodeDeliveryForDeployment(b102, confirmedAgainst(SHA_101))
 
     expect(await getDeliveries(repositoryId)).toEqual([
       expect.objectContaining({ base_sha: SHA_100, head_sha: SHA_100 }),
@@ -119,11 +123,14 @@ describe('establishCodeDeliveryForDeployment', () => {
     for (const sha of [SHA_100, SHA_101, SHA_102, SHA_100]) {
       ids.push(await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: sha }))
     }
-    for (const id of ids) await establishCodeDeliveryForDeployment(id, CONFIRMED)
+    const bases = [null, SHA_100, SHA_101, SHA_102]
+    for (const [index, id] of ids.entries()) {
+      await establishCodeDeliveryForDeployment(id, confirmedAgainst(bases[index]))
+    }
 
     const sha103 = '4'.repeat(40)
     const next = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: sha103 })
-    await establishCodeDeliveryForDeployment(next, CONFIRMED)
+    await establishCodeDeliveryForDeployment(next, confirmedAgainst(SHA_102))
 
     const deliveries = await getDeliveries(repositoryId)
     expect(deliveries).toHaveLength(4)
@@ -138,7 +145,7 @@ describe('establishCodeDeliveryForDeployment', () => {
     const second = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_101 })
 
     await establishCodeDeliveryForDeployment(first, CONFIRMED)
-    await establishCodeDeliveryForDeployment(second, CONFIRMED)
+    await establishCodeDeliveryForDeployment(second, confirmedAgainst(SHA_100))
 
     expect((await getDeliveries(repositoryId))[1]).toEqual(expect.objectContaining({ base_sha: SHA_100 }))
   })
@@ -160,21 +167,37 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(await getLinkedDeliveryId(a)).toBe(await getLinkedDeliveryId(b))
   })
 
-  it('builds a single chain when different SHAs are established concurrently', async () => {
+  it('reports stale grounds instead of chaining from an unverified head when different SHAs race', async () => {
     const repositoryId = await createRepository()
     const appA = await createApp('app-a')
     const appB = await createApp('app-b')
     const a = await createDeployment({ appId: appA, appName: 'app-a', repositoryId, commitSha: SHA_101 })
     const b = await createDeployment({ appId: appB, appName: 'app-b', repositoryId, commitSha: SHA_102 })
 
-    await Promise.all([
+    const results = await Promise.all([
       establishCodeDeliveryForDeployment(a, CONFIRMED),
       establishCodeDeliveryForDeployment(b, CONFIRMED),
     ])
 
-    const [first, second] = await getDeliveries(repositoryId)
-    expect(first.base_sha).toBe(first.head_sha)
-    expect(second.base_sha).toBe(first.head_sha)
+    expect(results.map((result) => result.outcome).sort()).toEqual(['created', 'stale_grounds'])
+    expect(await getDeliveries(repositoryId)).toHaveLength(1)
+    const staleDeploymentId = results[0].outcome === 'stale_grounds' ? a : b
+    expect(await getLinkedDeliveryId(staleDeploymentId)).toBeNull()
+  })
+
+  it('rejects grounds confirmed against an outdated base', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const first = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    const second = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_101 })
+    const third = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
+    await establishCodeDeliveryForDeployment(first, CONFIRMED)
+    await establishCodeDeliveryForDeployment(second, confirmedAgainst(SHA_100))
+
+    expect(await establishCodeDeliveryForDeployment(third, confirmedAgainst(SHA_100))).toEqual({
+      outcome: 'stale_grounds',
+    })
+    expect(await getDeliveries(repositoryId)).toHaveLength(2)
   })
 
   it('does nothing when tracking is disabled', async () => {
@@ -255,6 +278,16 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(first.outcome).toBe('created')
     expect(second).toEqual({ outcome: 'already_linked', deliveryId: (first as { deliveryId: number }).deliveryId })
     expect(await getDeliveries(repositoryId)).toHaveLength(1)
+  })
+
+  it('revalidates an existing link and rejects a link that no longer matches the deployment', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const deploymentId = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    await establishCodeDeliveryForDeployment(deploymentId, CONFIRMED)
+    await pool.query('UPDATE deployments SET commit_sha = $1 WHERE id = $2', [SHA_101, deploymentId])
+
+    await expect(establishCodeDeliveryForDeployment(deploymentId, CONFIRMED)).rejects.toThrow('full head SHA')
   })
 
   it('keeps delivery chains separate per repository', async () => {

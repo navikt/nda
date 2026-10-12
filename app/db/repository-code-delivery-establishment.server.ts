@@ -8,13 +8,16 @@ import {
 
 type UnresolvedReason = 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized'
 
-export type EstablishmentGrounds = { confirmed: true } | { confirmed: false; reason: UnresolvedReason }
+export type EstablishmentGrounds =
+  | { confirmed: true; baseSha: string | null }
+  | { confirmed: false; reason: UnresolvedReason }
 
 type SkippedReason = 'tracking_disabled' | 'missing_repository' | 'missing_commit_sha'
 
 export type EstablishmentOutcome =
   | { outcome: 'skipped'; reason: SkippedReason }
   | { outcome: 'unresolved'; reason: UnresolvedReason }
+  | { outcome: 'stale_grounds' }
   | { outcome: 'already_linked'; deliveryId: number }
   | { outcome: 'linked'; deliveryId: number }
   | { outcome: 'created'; deliveryId: number; baseSha: string; headSha: string }
@@ -59,6 +62,11 @@ export async function establishCodeDeliveryForDeployment(
       throw new Error(`Deployment ${deploymentId} changed repository identity during establishment`)
     }
     if (deployment.repository_code_delivery_id !== null) {
+      await linkDeploymentToRepositoryCodeDeliveryInTransaction(
+        client,
+        deploymentId,
+        deployment.repository_code_delivery_id,
+      )
       return { outcome: 'already_linked', deliveryId: deployment.repository_code_delivery_id }
     }
     const headSha = deployment.commit_sha
@@ -77,7 +85,9 @@ export async function establishCodeDeliveryForDeployment(
        WHERE repository_id = $1 ORDER BY id DESC LIMIT 1`,
       [repositoryId],
     )
-    const baseSha = previous[0]?.head_sha ?? headSha
+    const currentHead = previous[0]?.head_sha ?? null
+    if (grounds.baseSha?.toLowerCase() !== currentHead?.toLowerCase()) return { outcome: 'stale_grounds' }
+    const baseSha = currentHead ?? headSha
     const created = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha }, client)
     await linkDeploymentToRepositoryCodeDeliveryInTransaction(client, deploymentId, created.id)
     return { outcome: 'created', deliveryId: created.id, baseSha: created.base_sha, headSha: created.head_sha }
