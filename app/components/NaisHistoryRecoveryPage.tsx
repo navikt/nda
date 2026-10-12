@@ -1,7 +1,11 @@
 import { Alert, BodyShort, Button, Checkbox, Heading, HStack, Table, TextField, VStack } from '@navikt/ds-react'
 import { Form } from 'react-router'
 import type { ActionResult } from '~/lib/action-result'
-import type { CompletedNaisSyncInWindow, NaisHistoryRecoveryCandidate } from '~/lib/nais-history-recovery'
+import {
+  getNaisSyncWindowRisks,
+  type NaisHistoryRecoveryCandidate,
+  type NaisSyncWindowApp,
+} from '~/lib/nais-history-recovery'
 import { ActionAlert } from './ActionAlert'
 
 interface NaisHistoryRecoveryPageProps {
@@ -9,7 +13,7 @@ interface NaisHistoryRecoveryPageProps {
   search: string
   from?: string
   to?: string
-  windowSyncs?: CompletedNaisSyncInWindow[] | null
+  windowSyncs?: NaisSyncWindowApp[] | null
   windowError?: string | null
   actionData?: ActionResult | null
 }
@@ -55,11 +59,11 @@ export function NaisHistoryRecoveryPage({
         <input type="hidden" name="q" value={search} />
         <VStack gap="space-12">
           <Heading level="2" size="medium">
-            Fullførte NAIS-synker i tidsrom
+            Mulige feil i tidsrom
           </Heading>
           <BodyShort>
-            Viser fullførte NAIS-synkjobber startet i tidsrommet, for eksempel mellom to produksjonssettinger, for å
-            finne kandidater.
+            Viser aktive applikasjoner med fullførte eller feilede NAIS-synkjobber startet i tidsrommet, for eksempel
+            mellom to produksjonssettinger. Risikoer er avledet av synkjobber og lagrede leveranser.
           </BodyShort>
           <HStack gap="space-12" align="end">
             <TextField
@@ -72,12 +76,12 @@ export function NaisHistoryRecoveryPage({
             <TextField
               label="Til"
               name="to"
-              description="F.eks. 2026-01-14T10:00:00+01:00"
+              description="F.eks. 2026-01-14T16:00:00+01:00"
               defaultValue={to}
               size="small"
             />
             <Button type="submit" variant="secondary" size="small">
-              Vis synker
+              Vis applikasjoner
             </Button>
           </HStack>
         </VStack>
@@ -86,42 +90,54 @@ export function NaisHistoryRecoveryPage({
       {windowError && <Alert variant="error">{windowError}</Alert>}
       {windowSyncs &&
         (windowSyncs.length === 0 ? (
-          <Alert variant="info">Fant ingen fullførte NAIS-synker i tidsrommet.</Alert>
+          <Alert variant="info">Fant ingen NAIS-synker i tidsrommet.</Alert>
         ) : (
           <Table size="small">
-            <caption className="aksel-sr-only">Fullførte NAIS-synker i valgt tidsrom</caption>
+            <caption className="aksel-sr-only">Applikasjoner med NAIS-synker i valgt tidsrom</caption>
             <Table.Header>
               <Table.Row>
                 <Table.HeaderCell scope="col">Applikasjon</Table.HeaderCell>
                 <Table.HeaderCell scope="col">Historikk fullført</Table.HeaderCell>
-                <Table.HeaderCell scope="col">Startet</Table.HeaderCell>
-                <Table.HeaderCell scope="col">Fullført</Table.HeaderCell>
-                <Table.HeaderCell scope="col">Versjon</Table.HeaderCell>
-                <Table.HeaderCell scope="col">Resultat</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Fullførte / feilede</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Leveranser</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Mulige feil</Table.HeaderCell>
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {windowSyncs.map((sync) => (
-                <Table.Row key={`${sync.app_id}-${String(sync.started_at)}`}>
-                  <Table.HeaderCell scope="row">
-                    {sync.team_slug}/{sync.environment_name}/{sync.app_name}
-                  </Table.HeaderCell>
-                  <Table.DataCell>
-                    {sync.initial_nais_history_synced_at ? formatDate(sync.initial_nais_history_synced_at) : 'Venter'}
-                  </Table.DataCell>
-                  <Table.DataCell>{formatDate(sync.started_at)}</Table.DataCell>
-                  <Table.DataCell>{sync.completed_at ? formatDate(sync.completed_at) : '–'}</Table.DataCell>
-                  <Table.DataCell>{sync.app_version ?? 'Ukjent'}</Table.DataCell>
-                  <Table.DataCell>
-                    <code>{sync.result ? JSON.stringify(sync.result) : '–'}</code>
-                  </Table.DataCell>
-                </Table.Row>
-              ))}
+              {windowSyncs.map((app) => {
+                const risks = getNaisSyncWindowRisks(app)
+                return (
+                  <Table.Row key={app.app_id}>
+                    <Table.HeaderCell scope="row">
+                      {app.team_slug}/{app.environment_name}/{app.app_name}
+                    </Table.HeaderCell>
+                    <Table.DataCell>
+                      {app.initial_nais_history_synced_at ? formatDate(app.initial_nais_history_synced_at) : 'Venter'}
+                    </Table.DataCell>
+                    <Table.DataCell>
+                      {app.completed_syncs} / {app.failed_syncs}
+                    </Table.DataCell>
+                    <Table.DataCell>{app.deployment_count}</Table.DataCell>
+                    <Table.DataCell>
+                      {risks.length === 0 ? (
+                        'Ingen funnet'
+                      ) : (
+                        <ul>
+                          {risks.map((risk) => (
+                            <li key={risk}>{risk}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {app.last_error && <BodyShort textColor="subtle">{app.last_error}</BodyShort>}
+                    </Table.DataCell>
+                  </Table.Row>
+                )
+              })}
             </Table.Body>
           </Table>
         ))}
       {windowSyncs?.length === 500 && (
-        <BodyShort textColor="subtle">Viser maksimalt 500 synker. Begrens tidsrommet.</BodyShort>
+        <BodyShort textColor="subtle">Viser maksimalt 500 applikasjoner. Begrens tidsrommet.</BodyShort>
       )}
 
       {candidates.length === 0 ? (

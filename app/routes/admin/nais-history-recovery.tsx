@@ -1,8 +1,8 @@
 import { useActionData, useLoaderData } from 'react-router'
 import { NaisHistoryRecoveryPage } from '~/components/NaisHistoryRecoveryPage'
 import {
-  getCompletedNaisSyncsInWindow,
   getNaisHistoryRecoveryCandidates,
+  getNaisSyncWindowApps,
   resetNaisHistorySyncMarker,
 } from '~/db/monitored-applications.server'
 import { type ActionResult, fail, ok } from '~/lib/action-result'
@@ -29,7 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       : null
   const [candidates, windowSyncs] = await Promise.all([
     getNaisHistoryRecoveryCandidates(search),
-    fromDate && toDate && !windowError ? getCompletedNaisSyncsInWindow(fromDate, toDate) : Promise.resolve(null),
+    fromDate && toDate && !windowError ? getNaisSyncWindowApps(fromDate, toDate) : Promise.resolve(null),
   ])
   return { candidates, search, from, to, windowSyncs, windowError }
 }

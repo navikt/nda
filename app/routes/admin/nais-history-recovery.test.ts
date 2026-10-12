@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireAdmin, mockResetNaisHistorySyncMarker, mockGetCompletedNaisSyncsInWindow } = vi.hoisted(() => ({
+const { mockRequireAdmin, mockResetNaisHistorySyncMarker, mockGetNaisSyncWindowApps } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
-  mockGetCompletedNaisSyncsInWindow: vi.fn(),
+  mockGetNaisSyncWindowApps: vi.fn(),
   mockResetNaisHistorySyncMarker: vi.fn(),
 }))
 const mockInfo = vi.hoisted(() => vi.fn())
@@ -13,7 +13,7 @@ vi.mock('~/lib/auth.server', () => ({
 
 vi.mock('~/db/monitored-applications.server', () => ({
   getNaisHistoryRecoveryCandidates: vi.fn().mockResolvedValue([]),
-  getCompletedNaisSyncsInWindow: mockGetCompletedNaisSyncsInWindow,
+  getNaisSyncWindowApps: mockGetNaisSyncWindowApps,
   resetNaisHistorySyncMarker: mockResetNaisHistorySyncMarker,
 }))
 
@@ -80,7 +80,7 @@ describe('Nais history recovery loader', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequireAdmin.mockResolvedValue({ navIdent: 'Z990001' })
-    mockGetCompletedNaisSyncsInWindow.mockResolvedValue([])
+    mockGetNaisSyncWindowApps.mockResolvedValue([])
   })
 
   function load(query: string) {
@@ -92,7 +92,7 @@ describe('Nais history recovery loader', () => {
   it('queries completed syncs for a valid window', async () => {
     const result = await load('?from=2026-01-14T10:00:00%2B01:00&to=2026-01-14T16:00:00%2B01:00')
 
-    expect(mockGetCompletedNaisSyncsInWindow).toHaveBeenCalledWith(
+    expect(mockGetNaisSyncWindowApps).toHaveBeenCalledWith(
       new Date('2026-01-14T10:00:00+01:00'),
       new Date('2026-01-14T16:00:00+01:00'),
     )
@@ -106,7 +106,7 @@ describe('Nais history recovery loader', () => {
 
     expect(noZone.windowError).not.toBeNull()
     expect(reversed.windowError).not.toBeNull()
-    expect(mockGetCompletedNaisSyncsInWindow).not.toHaveBeenCalled()
+    expect(mockGetNaisSyncWindowApps).not.toHaveBeenCalled()
   })
 
   it('skips the window query when no window is given', async () => {

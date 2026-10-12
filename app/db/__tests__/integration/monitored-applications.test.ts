@@ -5,6 +5,7 @@ import {
   createMonitoredApplication,
   getMonitoredApplicationById,
   getNaisHistoryRecoveryCandidates,
+  getNaisSyncWindowApps,
   markInitialNaisHistorySynced,
   resetNaisHistorySyncMarker,
   updateMonitoredApplication,
@@ -239,5 +240,44 @@ describe('Nais history recovery', () => {
       job.rows[0].id,
     ])
     expect(expiredJob.rows[0].status).toBe('failed')
+  })
+})
+
+describe('getNaisSyncWindowApps', () => {
+  it('flags collisions and markers without a covering completed job within the window', async () => {
+    const collided = await createMonitoredApplication({
+      team_slug: 'team-a',
+      environment_name: 'prod-gcp',
+      app_name: 'collided-app',
+    })
+    const unbacked = await createMonitoredApplication({
+      team_slug: 'team-a',
+      environment_name: 'prod-gcp',
+      app_name: 'unbacked-app',
+    })
+    await pool.query(
+      `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, completed_at, error)
+       VALUES ('nais_sync', $1, 'failed', '2026-01-14T12:00:00Z', '2026-01-14T12:01:00Z',
+               'Nais deployment ID x is already stored for a different monitored application')`,
+      [collided.id],
+    )
+    await pool.query(
+      `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, completed_at)
+       VALUES ('nais_sync', $1, 'completed', '2026-01-14T12:00:00Z', '2026-01-14T12:01:00Z')`,
+      [unbacked.id],
+    )
+    await pool.query(
+      `UPDATE monitored_applications SET initial_nais_history_synced_at = '2026-01-14T13:00:00Z' WHERE id = $1`,
+      [unbacked.id],
+    )
+
+    const apps = await getNaisSyncWindowApps(new Date('2026-01-14T00:00:00Z'), new Date('2026-01-15T00:00:00Z'))
+    const byName = Object.fromEntries(apps.map((app) => [app.app_name, app]))
+
+    expect(byName['collided-app']).toMatchObject({ id_collision: true, failed_syncs: 1, completed_syncs: 0 })
+    expect(byName['unbacked-app']).toMatchObject({ marker_without_completed_job: true, completed_syncs: 1 })
+
+    const outside = await getNaisSyncWindowApps(new Date('2026-02-01T00:00:00Z'), new Date('2026-02-02T00:00:00Z'))
+    expect(outside).toEqual([])
   })
 })
