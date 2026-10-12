@@ -42,15 +42,6 @@ export function NaisHistoryRecoveryPage({
 
       <ActionAlert data={actionData} />
 
-      <Form method="get" role="search">
-        <HStack gap="space-12" align="end">
-          <TextField label="Søk etter team, miljø eller applikasjon" name="q" defaultValue={search} size="small" />
-          <Button type="submit" variant="secondary" size="small">
-            Søk
-          </Button>
-        </HStack>
-      </Form>
-
       {riskApps.length === 0 ? (
         <Alert variant="success">Fant ingen aktive applikasjoner med tegn på manglende historikk.</Alert>
       ) : (
@@ -69,10 +60,29 @@ export function NaisHistoryRecoveryPage({
             emptyText="Ingen applikasjoner har feil som må undersøkes."
             items={investigate}
             reasons={(item) => [...item.needsInvestigation, ...item.needsResync]}
+            canReset
           />
           {riskApps.length === 500 && <BodyShort textColor="subtle">Viser maksimalt 500 applikasjoner.</BodyShort>}
         </>
       )}
+
+      <VStack gap="space-12">
+        <Heading level="2" size="medium">
+          Alle applikasjoner med fullført historikksynk
+        </Heading>
+        <BodyShort>
+          Brukes når du mistenker manglende historikk som uttrekket over ikke fanger opp, for eksempel leveranser som
+          stille gikk tapt tidligere.
+        </BodyShort>
+        <Form method="get" role="search">
+          <HStack gap="space-12" align="end">
+            <TextField label="Søk etter team, miljø eller applikasjon" name="q" defaultValue={search} size="small" />
+            <Button type="submit" variant="secondary" size="small">
+              Søk
+            </Button>
+          </HStack>
+        </Form>
+      </VStack>
 
       {candidates.length === 0 ? (
         <Alert variant="info">
