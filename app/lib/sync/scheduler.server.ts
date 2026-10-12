@@ -3,6 +3,7 @@ import { cleanupOldSnapshots } from '~/db/github-data.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
 import { cleanupOldSyncJobs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { logger } from '~/lib/logger.server'
+import { syncRepositoryCodeDeliveries } from './code-delivery-sync.server'
 import { CHECKS_REVERIFY_LIMIT_PER_APP, reverifyPendingChecks, verifyDeploymentsFourEyes } from './github-verify.server'
 import { cacheCheckLogsWithLock } from './log-cache-job.server'
 import { syncNewDeploymentsFromNais } from './nais-sync.server'
@@ -151,6 +152,12 @@ async function runPeriodicSync(): Promise<void> {
         if (didWork) {
           await new Promise((resolve) => setTimeout(resolve, APP_THROTTLE_MS))
         }
+      }
+
+      try {
+        await syncRepositoryCodeDeliveries()
+      } catch (error) {
+        logger.error('❌ Repository code delivery sync failed:', error)
       }
 
       const cleaned = await cleanupOldSyncJobs(50)

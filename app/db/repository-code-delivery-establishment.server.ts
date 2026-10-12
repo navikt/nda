@@ -150,3 +150,23 @@ export async function getEstablishmentContext(deploymentId: number): Promise<Est
     headHasDelivery: row.head_has_delivery,
   }
 }
+
+export async function getDeploymentIdsAwaitingCodeDelivery(limit: number): Promise<number[]> {
+  const { rows } = await pool.query<{ id: number }>(
+    `SELECT d.id
+     FROM deployments d
+     JOIN repositories r ON r.id = d.repository_id
+     LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
+     WHERE r.code_delivery_tracking = true
+       AND r.code_delivery_tracking_since IS NOT NULL
+       AND d.created_at >= r.code_delivery_tracking_since
+       AND d.repository_code_delivery_id IS NULL
+       AND d.commit_sha ~ '^[0-9a-fA-F]{40}$'
+       AND (u.deployment_id IS NULL
+            OR (u.reason = 'ancestry_unknown' AND u.updated_at < now() - interval '1 hour'))
+     ORDER BY d.repository_id, d.created_at, d.id
+     LIMIT $1`,
+    [limit],
+  )
+  return rows.map((row) => row.id)
+}
