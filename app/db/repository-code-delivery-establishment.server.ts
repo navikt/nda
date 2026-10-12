@@ -9,7 +9,7 @@ import {
 type UnresolvedReason = 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized'
 
 export type EstablishmentGrounds =
-  | { confirmed: true; baseSha: string | null }
+  | { confirmed: true; baseSha: string | null; headSha: string }
   | { confirmed: false; reason: UnresolvedReason }
 
 type SkippedReason = 'tracking_disabled' | 'missing_repository' | 'missing_commit_sha'
@@ -73,6 +73,7 @@ export async function establishCodeDeliveryForDeployment(
     if (!headSha || !isFullCommitSha(headSha)) return { outcome: 'skipped', reason: 'missing_commit_sha' }
 
     if (!grounds.confirmed) return { outcome: 'unresolved', reason: grounds.reason }
+    if (grounds.headSha.toLowerCase() !== headSha.toLowerCase()) return { outcome: 'stale_grounds' }
 
     const existing = await getRepositoryCodeDelivery(repositoryId, headSha, client)
     if (existing) {
