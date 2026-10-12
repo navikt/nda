@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireAdmin, mockResetNaisHistorySyncMarker } = vi.hoisted(() => ({
+const { mockRequireAdmin, mockResetNaisHistorySyncMarker, mockGetNaisHistoryRiskApps } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
+  mockGetNaisHistoryRiskApps: vi.fn(),
   mockResetNaisHistorySyncMarker: vi.fn(),
 }))
 const mockInfo = vi.hoisted(() => vi.fn())
@@ -11,7 +12,8 @@ vi.mock('~/lib/auth.server', () => ({
 }))
 
 vi.mock('~/db/monitored-applications.server', () => ({
-  getNaisHistoryRecoveryCandidates: vi.fn(),
+  getNaisHistoryRecoveryCandidates: vi.fn().mockResolvedValue([]),
+  getNaisHistoryRiskApps: mockGetNaisHistoryRiskApps,
   resetNaisHistorySyncMarker: mockResetNaisHistorySyncMarker,
 }))
 
@@ -19,7 +21,7 @@ vi.mock('~/lib/logger.server', () => ({
   logger: { info: mockInfo, error: vi.fn() },
 }))
 
-import { action } from './nais-history-recovery'
+import { action, loader } from './nais-history-recovery'
 
 function makeRequest(entries: Record<string, string>): Request {
   const formData = new FormData()
@@ -71,5 +73,22 @@ describe('Nais history recovery action', () => {
     expect(result).toEqual({
       success: 'Historikkmarkøren er nullstilt. Den periodiske synkroniseringen vil hente hele historikken på nytt.',
     })
+  })
+})
+
+describe('Nais history recovery loader', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequireAdmin.mockResolvedValue({ navIdent: 'Z990001' })
+    mockGetNaisHistoryRiskApps.mockResolvedValue([])
+  })
+
+  it('returns risk apps covering all stored history', async () => {
+    const result = await loader({
+      request: new Request('http://localhost/admin/nais-history-recovery'),
+    } as Parameters<typeof loader>[0])
+
+    expect(mockGetNaisHistoryRiskApps).toHaveBeenCalledWith()
+    expect(result.riskApps).toEqual([])
   })
 })

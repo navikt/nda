@@ -5,6 +5,7 @@ import {
   createMonitoredApplication,
   getMonitoredApplicationById,
   getNaisHistoryRecoveryCandidates,
+  getNaisHistoryRiskApps,
   markInitialNaisHistorySynced,
   resetNaisHistorySyncMarker,
   updateMonitoredApplication,
@@ -239,5 +240,93 @@ describe('Nais history recovery', () => {
       job.rows[0].id,
     ])
     expect(expiredJob.rows[0].status).toBe('failed')
+  })
+})
+
+describe('getNaisHistoryRiskApps', () => {
+  it('flags collisions and markers without a covering completed job across all history', async () => {
+    const collided = await createMonitoredApplication({
+      team_slug: 'team-a',
+      environment_name: 'prod-gcp',
+      app_name: 'collided-app',
+    })
+    const unbacked = await createMonitoredApplication({
+      team_slug: 'team-a',
+      environment_name: 'prod-gcp',
+      app_name: 'unbacked-app',
+    })
+    await pool.query(
+      `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, completed_at, error)
+       VALUES ('nais_sync', $1, 'failed', '2020-01-14T12:00:00Z', '2020-01-14T12:01:00Z',
+               'Nais deployment ID x could not be inserted or found for monitored application 1')`,
+      [collided.id],
+    )
+    await pool.query(
+      `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, completed_at)
+       VALUES ('nais_sync', $1, 'completed', '2020-01-14T12:00:00Z', '2020-01-14T12:01:00Z')`,
+      [unbacked.id],
+    )
+    await pool.query(
+      `UPDATE monitored_applications SET initial_nais_history_synced_at = '2020-01-14T13:00:00Z' WHERE id = $1`,
+      [unbacked.id],
+    )
+
+    const apps = await getNaisHistoryRiskApps()
+    const byName = Object.fromEntries(apps.map((app) => [app.app_name, app]))
+
+    expect(byName['collided-app']).toMatchObject({
+      id_collision: true,
+      failed_since_last_completed: 1,
+      completed_syncs: 0,
+    })
+    expect(byName['unbacked-app']).toMatchObject({ marker_without_completed_job: true, completed_syncs: 1 })
+  })
+
+  it('does not flag markers whose job history has been pruned', async () => {
+    const pruned = await createMonitoredApplication({
+      team_slug: 'team-a',
+      environment_name: 'prod-gcp',
+      app_name: 'pruned-app',
+    })
+    await pool.query(
+      `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, completed_at)
+       VALUES ('nais_sync', $1, 'completed', '2020-03-01T12:00:00Z', '2020-03-01T12:01:00Z')`,
+      [pruned.id],
+    )
+    await pool.query(
+      `UPDATE monitored_applications SET initial_nais_history_synced_at = '2020-01-14T13:00:00Z' WHERE id = $1`,
+      [pruned.id],
+    )
+
+    const apps = await getNaisHistoryRiskApps()
+
+    expect(apps.find((app) => app.app_name === 'pruned-app')?.marker_without_completed_job ?? false).toBe(false)
+  })
+
+  it('clears the collision flag once the history marker is newer than the collision failure', async () => {
+    const recovered = await createMonitoredApplication({
+      team_slug: 'team-a',
+      environment_name: 'prod-gcp',
+      app_name: 'recovered-app',
+    })
+    await pool.query(
+      `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, completed_at, error)
+       VALUES ('nais_sync', $1, 'failed', '2020-01-14T12:00:00Z', '2020-01-14T12:01:00Z',
+               'Nais deployment ID x is already stored for a different monitored application')`,
+      [recovered.id],
+    )
+    await pool.query(
+      `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, completed_at)
+       VALUES ('nais_sync', $1, 'completed', '2020-01-15T12:00:00Z', '2020-01-15T12:01:00Z')`,
+      [recovered.id],
+    )
+    await pool.query(
+      `UPDATE monitored_applications SET initial_nais_history_synced_at = '2020-01-15T12:00:30Z' WHERE id = $1`,
+      [recovered.id],
+    )
+
+    const apps = await getNaisHistoryRiskApps()
+
+    expect(apps.find((app) => app.app_name === 'recovered-app')?.id_collision ?? false).toBe(false)
   })
 })

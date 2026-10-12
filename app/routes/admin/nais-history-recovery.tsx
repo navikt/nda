@@ -1,6 +1,10 @@
 import { useActionData, useLoaderData } from 'react-router'
 import { NaisHistoryRecoveryPage } from '~/components/NaisHistoryRecoveryPage'
-import { getNaisHistoryRecoveryCandidates, resetNaisHistorySyncMarker } from '~/db/monitored-applications.server'
+import {
+  getNaisHistoryRecoveryCandidates,
+  getNaisHistoryRiskApps,
+  resetNaisHistorySyncMarker,
+} from '~/db/monitored-applications.server'
 import { type ActionResult, fail, ok } from '~/lib/action-result'
 import { requireAdmin } from '~/lib/auth.server'
 import { getFormString } from '~/lib/form-validators'
@@ -14,8 +18,8 @@ export function meta(_args: Route.MetaArgs) {
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
   const search = new URL(request.url).searchParams.get('q')?.trim() ?? ''
-  const candidates = await getNaisHistoryRecoveryCandidates(search)
-  return { candidates, search }
+  const [candidates, riskApps] = await Promise.all([getNaisHistoryRecoveryCandidates(search), getNaisHistoryRiskApps()])
+  return { candidates, search, riskApps }
 }
 
 export async function action({ request }: Route.ActionArgs): Promise<ActionResult> {
@@ -58,7 +62,7 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionResul
 }
 
 export default function NaisHistoryRecoveryRoute() {
-  const { candidates, search } = useLoaderData<typeof loader>()
+  const { candidates, search, riskApps } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
-  return <NaisHistoryRecoveryPage candidates={candidates} search={search} actionData={actionData} />
+  return <NaisHistoryRecoveryPage candidates={candidates} search={search} riskApps={riskApps} actionData={actionData} />
 }
