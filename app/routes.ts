@@ -62,6 +62,7 @@ export default [
     route('admin/users', 'routes/admin/users.tsx'),
     route('admin/users/export', 'routes/admin/users.export.ts'),
     route('admin/sync-jobs', 'routes/admin/sync-jobs.tsx'),
+    route('admin/nais-history-recovery', 'routes/admin/nais-history-recovery.tsx'),
     route('admin/sync-jobs/:jobId', 'routes/admin/sync-jobs.$jobId.tsx'),
     route('admin/audit-reports', 'routes/admin/audit-reports.tsx'),
     route('admin/audit-reports/:id/pdf', 'routes/admin/audit-reports.$id.pdf.ts'),

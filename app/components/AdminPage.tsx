@@ -310,6 +310,28 @@ export function AdminPage() {
           </Box>
         </Link>
 
+        <Link to="/admin/nais-history-recovery" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <ArrowsCirclepathIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Gjenopprett Nais-historikk
+                </Heading>
+                <BodyShort textColor="subtle">Be om ny full historikksynk for én applikasjon om gangen.</BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
+
         <Link to="/admin/validate-monitored-apps" style={{ textDecoration: 'none', height: '100%' }}>
           <Box
             padding="space-24"
