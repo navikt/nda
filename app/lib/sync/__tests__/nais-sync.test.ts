@@ -7,6 +7,7 @@ const {
   fetchApplicationDeployments,
   fetchNewDeployments,
   findRepositoryForApp,
+  getCurrentJobId,
   getDeploymentByNaisId,
   getLatestDeploymentForApp,
   getMonitoredApplicationById,
@@ -23,6 +24,7 @@ const {
   fetchApplicationDeployments: vi.fn(),
   fetchNewDeployments: vi.fn(),
   findRepositoryForApp: vi.fn(),
+  getCurrentJobId: vi.fn(),
   getDeploymentByNaisId: vi.fn(),
   getLatestDeploymentForApp: vi.fn(),
   getMonitoredApplicationById: vi.fn(),
@@ -52,7 +54,7 @@ vi.mock('~/db/monitored-applications.server', () => ({
   markInitialNaisHistorySynced,
   updateMonitoredApplication,
 }))
-vi.mock('~/lib/logger.server', () => ({ logger }))
+vi.mock('~/lib/logger.server', () => ({ getCurrentJobId, logger }))
 vi.mock('~/lib/nais.server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('~/lib/nais.server')>()
   return { ...actual, fetchApplicationDeployments, fetchNewDeployments }
@@ -96,6 +98,8 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     vi.mocked(getMonitoredApplicationByIdentity).mockResolvedValue(monitoredApp)
     vi.mocked(createDeployment).mockResolvedValue(undefined as never)
     vi.mocked(getRepositoriesByAppId).mockResolvedValue([])
+    vi.mocked(getCurrentJobId).mockReturnValue(42)
+    vi.mocked(markInitialNaisHistorySynced).mockResolvedValue(true)
   })
 
   it.each([
@@ -144,10 +148,21 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     })
     expect(createDeployment).toHaveBeenCalledOnce()
     expect(markInitialNaisHistorySynced).toHaveBeenCalledOnce()
-    expect(markInitialNaisHistorySynced).toHaveBeenCalledWith(monitoredApp.id)
+    expect(markInitialNaisHistorySynced).toHaveBeenCalledWith(monitoredApp.id, 42)
     expect(createDeployment.mock.invocationCallOrder[0]).toBeLessThan(
       markInitialNaisHistorySynced.mock.invocationCallOrder[0],
     )
+  })
+
+  it('fails when the sync lease is no longer current at history completion', async () => {
+    vi.mocked(fetchApplicationDeployments).mockResolvedValue([])
+    vi.mocked(markInitialNaisHistorySynced).mockResolvedValue(false)
+
+    await expect(syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)).rejects.toThrow(
+      'Cannot mark initial Nais history sync complete: sync job lease is no longer current',
+    )
+
+    expect(markInitialNaisHistorySynced).toHaveBeenCalledWith(monitoredApp.id, 42)
   })
 
   it('does not record initial history completion when deployment processing fails', async () => {

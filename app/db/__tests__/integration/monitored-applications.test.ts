@@ -22,6 +22,16 @@ afterEach(async () => {
   await truncateAllTables(pool)
 })
 
+async function createActiveNaisSyncJob(monitoredAppId: number): Promise<number> {
+  const result = await pool.query<{ id: number }>(
+    `INSERT INTO sync_jobs (job_type, monitored_app_id, status, started_at, lock_expires_at)
+     VALUES ('nais_sync', $1, 'running', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '10 minutes')
+     RETURNING id`,
+    [monitoredAppId],
+  )
+  return result.rows[0].id
+}
+
 describe('createMonitoredApplication', () => {
   it('bruker oppgitt default_branch', async () => {
     const app = await createMonitoredApplication({
@@ -71,16 +81,17 @@ describe('markInitialNaisHistorySynced', () => {
 
     expect(app.initial_nais_history_synced_at).toBeNull()
 
-    await markInitialNaisHistorySynced(app.id)
+    const jobId = await createActiveNaisSyncJob(app.id)
+    expect(await markInitialNaisHistorySynced(app.id, jobId)).toBe(true)
     const firstCompletion = await getMonitoredApplicationById(app.id)
     expect(firstCompletion?.initial_nais_history_synced_at).toBeInstanceOf(Date)
 
-    await markInitialNaisHistorySynced(app.id)
+    expect(await markInitialNaisHistorySynced(app.id, jobId)).toBe(true)
     const secondCompletion = await getMonitoredApplicationById(app.id)
     expect(secondCompletion?.initial_nais_history_synced_at).toEqual(firstCompletion?.initial_nais_history_synced_at)
   })
 
   it('throws when the monitored application does not exist', async () => {
-    await expect(markInitialNaisHistorySynced(-1)).rejects.toThrow('Monitored application not found: -1')
+    await expect(markInitialNaisHistorySynced(-1, -1)).rejects.toThrow('Monitored application not found: -1')
   })
 })

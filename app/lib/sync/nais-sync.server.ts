@@ -16,7 +16,7 @@ import {
   markInitialNaisHistorySynced,
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
-import { logger } from '~/lib/logger.server'
+import { getCurrentJobId, logger } from '~/lib/logger.server'
 import {
   fetchApplicationDeployments,
   fetchNewDeployments,
@@ -224,7 +224,14 @@ async function syncDeploymentsFromNais(
   })
 
   if (fullHistoryFetched) {
-    await markInitialNaisHistorySynced(monitoredApp.id)
+    const syncJobId = getCurrentJobId()
+    if (syncJobId === undefined) {
+      throw new Error('Cannot mark initial Nais history sync complete without a sync job context')
+    }
+    const markerUpdated = await markInitialNaisHistorySynced(monitoredApp.id, syncJobId)
+    if (!markerUpdated) {
+      throw new Error('Cannot mark initial Nais history sync complete: sync job lease is no longer current')
+    }
   }
 
   await runDefaultBranchSync(monitoredApp.id)

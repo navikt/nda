@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg'
 import { logger } from '~/lib/logger.server'
 import {
+  lockMonitoredAppSync,
   lockRepositoryAdminForWrite,
   lockRepositoryForVerificationJob,
   pool,
@@ -55,6 +56,9 @@ export async function acquireSyncLock(
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    if (jobType === 'nais_sync') {
+      await lockMonitoredAppSync(client, appId)
+    }
 
     const released = await releaseExpiredLocks(client)
     if (released > 0) {
@@ -204,6 +208,38 @@ export async function releaseSyncLock(
     logger.info(`🔒 Skipped releasing lock for job ${jobId} — job is no longer running (already in a terminal state)`)
   }
   return released
+}
+
+export async function completeNaisSyncJob(
+  jobId: number,
+  result: Record<string, unknown>,
+  message: string,
+  details?: Record<string, unknown>,
+): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const updateResult = await client.query(
+      `UPDATE sync_jobs
+       SET status = 'completed',
+           completed_at = NOW(),
+           result = $2,
+           error = NULL
+       WHERE id = $1
+         AND job_type = 'nais_sync'
+         AND status = 'running'
+         AND lock_expires_at > clock_timestamp()`,
+      [jobId, JSON.stringify(result)],
+    )
+    if (updateResult.rowCount !== 1) return false
+
+    await client.query('INSERT INTO sync_job_logs (job_id, level, message, details) VALUES ($1, $2, $3, $4)', [
+      jobId,
+      'info',
+      message,
+      details ? JSON.stringify(details) : null,
+    ])
+    logger.info(`🔓 Completed NAIS sync job ${jobId}`)
+    return true
+  })
 }
 
 export async function isAppBlockedByRunningJob(
@@ -575,6 +611,16 @@ export async function heartbeatSyncJob(jobId: number, extendMinutes: number = 5)
      WHERE id = $1 AND status = 'running'`,
     [jobId, extendMinutes],
   )
+}
+
+export async function heartbeatNaisSyncJob(jobId: number, extendMinutes: number = 5): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE sync_jobs
+     SET lock_expires_at = clock_timestamp() + INTERVAL '1 minute' * $2
+     WHERE id = $1 AND job_type = 'nais_sync' AND status = 'running' AND lock_expires_at > clock_timestamp()`,
+    [jobId, extendMinutes],
+  )
+  return result.rowCount === 1
 }
 
 export async function forceReleaseSyncJob(
