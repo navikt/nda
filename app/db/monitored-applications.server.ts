@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg'
+import type { NaisHistoryRecoveryCandidate } from '~/lib/nais-history-recovery'
 import { lockMonitoredAppSync, pool, withTransaction } from './connection.server'
 
 export interface MonitoredApplication {
@@ -32,6 +33,104 @@ export async function getAllMonitoredApplications(): Promise<MonitoredApplicatio
     'SELECT * FROM monitored_applications WHERE is_active = true ORDER BY team_slug, environment_name, app_name',
   )
   return result.rows
+}
+
+export async function getNaisHistoryRecoveryCandidates(searchTerm?: string): Promise<NaisHistoryRecoveryCandidate[]> {
+  const search = searchTerm?.trim()
+  const searchPattern = search ? `%${search.replace(/[\\%_]/g, '\\$&')}%` : null
+  const result = await pool.query(
+    `SELECT
+       ma.id,
+       ma.team_slug,
+       ma.environment_name,
+       ma.app_name,
+       ma.initial_nais_history_synced_at,
+       latest.status AS latest_sync_status,
+       latest.started_at AS latest_sync_started_at,
+       latest.options->>'version' AS latest_sync_version,
+       COALESCE(
+         latest.status = 'running' AND (latest.lock_expires_at IS NULL OR latest.lock_expires_at > NOW()),
+         FALSE
+       ) AS latest_sync_is_active
+     FROM monitored_applications ma
+     LEFT JOIN LATERAL (
+       SELECT status, started_at, options, lock_expires_at
+       FROM sync_jobs
+       WHERE monitored_app_id = ma.id AND job_type = 'nais_sync'
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1
+     ) latest ON TRUE
+     WHERE ma.is_active = TRUE
+       AND ma.initial_nais_history_synced_at IS NOT NULL
+       AND (
+         $1::text IS NULL
+         OR ma.team_slug ILIKE $1 ESCAPE E'\\\\'
+         OR ma.environment_name ILIKE $1 ESCAPE E'\\\\'
+         OR ma.app_name ILIKE $1 ESCAPE E'\\\\'
+       )
+     ORDER BY ma.team_slug, ma.environment_name, ma.app_name
+     LIMIT 100`,
+    [searchPattern],
+  )
+  return result.rows
+}
+
+export async function resetNaisHistorySyncMarker(
+  monitoredAppId: number,
+): Promise<'reset' | 'already_pending' | 'sync_running' | 'not_found'> {
+  return withTransaction(async (client) => {
+    await lockMonitoredAppSync(client, monitoredAppId)
+
+    await client.query(
+      `UPDATE sync_jobs
+       SET status = 'failed',
+           error = 'Lock timeout - automatically released',
+           completed_at = NOW()
+       WHERE monitored_app_id = $1
+         AND job_type = 'nais_sync'
+         AND status = 'running'
+         AND lock_expires_at <= NOW()`,
+      [monitoredAppId],
+    )
+
+    const result = await client.query(
+      `UPDATE monitored_applications ma
+       SET initial_nais_history_synced_at = NULL,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE ma.id = $1
+         AND ma.is_active = TRUE
+         AND ma.initial_nais_history_synced_at IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1
+           FROM sync_jobs sj
+           WHERE sj.monitored_app_id = ma.id
+             AND sj.job_type = 'nais_sync'
+             AND sj.status = 'running'
+         )
+       RETURNING ma.id`,
+      [monitoredAppId],
+    )
+
+    if (result.rowCount === 1) return 'reset'
+
+    const current = await client.query(
+      `SELECT ma.is_active,
+              EXISTS (
+                SELECT 1
+                FROM sync_jobs sj
+                WHERE sj.monitored_app_id = ma.id
+                  AND sj.job_type = 'nais_sync'
+                  AND sj.status = 'running'
+              ) AS sync_running
+       FROM monitored_applications ma
+       WHERE ma.id = $1`,
+      [monitoredAppId],
+    )
+    const row = current.rows[0]
+    if (!row?.is_active) return 'not_found'
+    if (row.sync_running) return 'sync_running'
+    return 'already_pending'
+  })
 }
 
 export async function getAllAlertCounts(): Promise<Map<number, number>> {
