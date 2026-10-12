@@ -226,7 +226,7 @@ export async function completeNaisSyncJob(
        WHERE id = $1
          AND job_type = 'nais_sync'
          AND status = 'running'
-         AND lock_expires_at > NOW()`,
+         AND lock_expires_at > clock_timestamp()`,
       [jobId, JSON.stringify(result)],
     )
     if (updateResult.rowCount !== 1) return false
@@ -616,8 +616,8 @@ export async function heartbeatSyncJob(jobId: number, extendMinutes: number = 5)
 export async function heartbeatNaisSyncJob(jobId: number, extendMinutes: number = 5): Promise<boolean> {
   const result = await pool.query(
     `UPDATE sync_jobs
-     SET lock_expires_at = NOW() + INTERVAL '1 minute' * $2
-     WHERE id = $1 AND job_type = 'nais_sync' AND status = 'running' AND lock_expires_at > NOW()`,
+     SET lock_expires_at = clock_timestamp() + INTERVAL '1 minute' * $2
+     WHERE id = $1 AND job_type = 'nais_sync' AND status = 'running' AND lock_expires_at > clock_timestamp()`,
     [jobId, extendMinutes],
   )
   return result.rowCount === 1

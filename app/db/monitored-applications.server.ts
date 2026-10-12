@@ -104,7 +104,7 @@ export async function markInitialNaisHistorySynced(monitoredAppId: number, syncJ
              AND sj.monitored_app_id = ma.id
              AND sj.job_type = 'nais_sync'
              AND sj.status = 'running'
-             AND sj.lock_expires_at > NOW()
+             AND sj.lock_expires_at > clock_timestamp()
          )
        RETURNING ma.id`,
       [monitoredAppId, syncJobId],

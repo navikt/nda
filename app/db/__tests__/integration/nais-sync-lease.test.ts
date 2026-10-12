@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { lockMonitoredAppSync } from '~/db/connection.server'
 import {
   createMonitoredApplication,
   getMonitoredApplicationById,
@@ -31,6 +32,24 @@ async function createNaisSyncJob(monitoredAppId: number, expired = false): Promi
     [monitoredAppId],
   )
   return result.rows[0].id
+}
+
+async function waitForBlockedQuery(queryText: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await pool.query(
+      `SELECT 1
+       FROM pg_stat_activity
+       WHERE datname = current_database()
+         AND state = 'active'
+         AND wait_event_type = 'Lock'
+         AND query LIKE $1
+       LIMIT 1`,
+      [`%${queryText}%`],
+    )
+    if (result.rowCount === 1) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`Timed out waiting for blocked query: ${queryText}`)
 }
 
 describe('NAIS sync lease', () => {
@@ -92,5 +111,103 @@ describe('NAIS sync lease', () => {
     await pool.query("UPDATE sync_jobs SET status = 'cancelled' WHERE id = $1", [jobId])
 
     expect(await completeNaisSyncJob(jobId, {}, 'NAIS sync complete')).toBe(false)
+  })
+
+  it('does not mark history complete when the lease expires while waiting for the app lock', async () => {
+    const app = await createMonitoredApplication({
+      team_slug: 'lease-team',
+      environment_name: 'prod-gcp',
+      app_name: 'lease-waiting-app-lock',
+    })
+    const jobId = await createNaisSyncJob(app.id)
+    const client = await pool.connect()
+
+    try {
+      await client.query('BEGIN')
+      await lockMonitoredAppSync(client, app.id)
+
+      const marking = markInitialNaisHistorySynced(app.id, jobId)
+      await waitForBlockedQuery('UPDATE monitored_applications ma')
+      await client.query(
+        "UPDATE sync_jobs SET lock_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE id = $1",
+        [jobId],
+      )
+      await client.query('COMMIT')
+
+      expect(await marking).toBe(false)
+      expect((await getMonitoredApplicationById(app.id))?.initial_nais_history_synced_at).toBeNull()
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  })
+
+  it('does not complete a job when its lease expires while waiting for the job row', async () => {
+    const app = await createMonitoredApplication({
+      team_slug: 'lease-team',
+      environment_name: 'prod-gcp',
+      app_name: 'lease-waiting-job-row',
+    })
+    const jobId = await createNaisSyncJob(app.id)
+    const client = await pool.connect()
+
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT id FROM sync_jobs WHERE id = $1 FOR UPDATE', [jobId])
+
+      const completing = completeNaisSyncJob(jobId, {}, 'NAIS sync complete')
+      await waitForBlockedQuery("SET status = 'completed'")
+      await client.query(
+        "UPDATE sync_jobs SET lock_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE id = $1",
+        [jobId],
+      )
+      await client.query('COMMIT')
+
+      expect(await completing).toBe(false)
+      const job = await pool.query<{ status: string }>('SELECT status FROM sync_jobs WHERE id = $1', [jobId])
+      expect(job.rows[0].status).toBe('running')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  })
+
+  it('does not renew a job when its lease expires while waiting for the job row', async () => {
+    const app = await createMonitoredApplication({
+      team_slug: 'lease-team',
+      environment_name: 'prod-gcp',
+      app_name: 'lease-waiting-heartbeat-row',
+    })
+    const jobId = await createNaisSyncJob(app.id)
+    const client = await pool.connect()
+
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT id FROM sync_jobs WHERE id = $1 FOR UPDATE', [jobId])
+
+      const heartbeat = heartbeatNaisSyncJob(jobId, 10)
+      await waitForBlockedQuery('SET lock_expires_at =')
+      await client.query(
+        "UPDATE sync_jobs SET lock_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE id = $1",
+        [jobId],
+      )
+      await client.query('COMMIT')
+
+      expect(await heartbeat).toBe(false)
+      const job = await pool.query<{ lease_expired: boolean }>(
+        'SELECT lock_expires_at <= clock_timestamp() AS lease_expired FROM sync_jobs WHERE id = $1',
+        [jobId],
+      )
+      expect(job.rows[0].lease_expired).toBe(true)
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
   })
 })
