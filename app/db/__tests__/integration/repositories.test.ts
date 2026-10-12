@@ -572,6 +572,16 @@ describe('getRepositoryByOwnerRepo', () => {
     }
   })
 
+  it('has code delivery tracking disabled by default', async () => {
+    await seedRepository(pool, { githubRepoId: '6061', githubOwner: 'navikt', githubRepoName: 'tracking-default' })
+
+    const result = await getRepositoryByOwnerRepo('navikt', 'tracking-default')
+    expect(result.status).toBe('found')
+    if (result.status === 'found') {
+      expect(result.repository.code_delivery_tracking).toBe(false)
+    }
+  })
+
   it('returns redirect with the current owner/repo when looked up by a historical name', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-hist', appName: 'app-hist', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {

@@ -18,6 +18,7 @@ export interface Repository {
   implicit_approval_mode: ImplicitApprovalMode
   default_branch: string | null
   default_branch_synced_at: Date | null
+  code_delivery_tracking: boolean
 }
 
 export interface AffectedApp {
