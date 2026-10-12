@@ -41,13 +41,15 @@ describe('NAIS sync lease', () => {
       app_name: 'lease-app',
     })
     const currentJobId = await createNaisSyncJob(app.id)
-    const expiredJobId = await createNaisSyncJob(app.id, true)
 
     expect(await markInitialNaisHistorySynced(app.id, currentJobId)).toBe(true)
     const markerAfterCurrentJob = (await getMonitoredApplicationById(app.id))?.initial_nais_history_synced_at
     expect(markerAfterCurrentJob).toBeInstanceOf(Date)
 
     await pool.query('UPDATE monitored_applications SET initial_nais_history_synced_at = NULL WHERE id = $1', [app.id])
+    expect(await completeNaisSyncJob(currentJobId, {}, 'NAIS sync complete')).toBe(true)
+    const expiredJobId = await createNaisSyncJob(app.id, true)
+
     expect(await markInitialNaisHistorySynced(app.id, expiredJobId)).toBe(false)
     expect((await getMonitoredApplicationById(app.id))?.initial_nais_history_synced_at).toBeNull()
   })
@@ -59,14 +61,15 @@ describe('NAIS sync lease', () => {
       app_name: 'lease-completion-app',
     })
     const currentJobId = await createNaisSyncJob(app.id)
-    const expiredJobId = await createNaisSyncJob(app.id, true)
 
     expect(await heartbeatNaisSyncJob(currentJobId, 10)).toBe(true)
-    expect(await heartbeatNaisSyncJob(expiredJobId, 10)).toBe(false)
     expect(
       await completeNaisSyncJob(currentJobId, { initialHistorySyncStatus: 'completed' }, 'NAIS sync complete'),
     ).toBe(true)
     expect(await completeNaisSyncJob(currentJobId, {}, 'NAIS sync complete')).toBe(false)
+
+    const expiredJobId = await createNaisSyncJob(app.id, true)
+    expect(await heartbeatNaisSyncJob(expiredJobId, 10)).toBe(false)
     expect(await completeNaisSyncJob(expiredJobId, {}, 'NAIS sync complete')).toBe(false)
 
     const currentJob = await pool.query<{ status: string; result: Record<string, unknown> }>(
