@@ -618,7 +618,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
   const deployment = updateResult.rows[0]
   if (!deployment) {
     throw new Error(
-      `Nais deployment ID ${data.naisDeploymentId} is already stored for a different monitored application; the database uniqueness migration is pending`,
+      `Nais deployment ID ${data.naisDeploymentId} could not be inserted or found for monitored application ${data.monitoredApplicationId}`,
     )
   }
   return deployment

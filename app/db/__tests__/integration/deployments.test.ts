@@ -34,7 +34,7 @@ describe('deployment queries', () => {
     expect(rows[0].four_eyes_status).toBe('pending')
   })
 
-  it('should enforce unique nais_deployment_id', async () => {
+  it('should enforce unique nais_deployment_id within a monitored app', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod' })
 
     await pool.query(
