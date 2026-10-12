@@ -117,6 +117,12 @@ export async function lockRepositoryForVerificationJob(
   ])
 }
 
+const REPOSITORY_CODE_DELIVERY_LOCK_NAMESPACE = 837_002_220
+
+export async function lockRepositoryCodeDeliveries(client: PoolClient, repositoryId: number): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock($1, $2)', [REPOSITORY_CODE_DELIVERY_LOCK_NAMESPACE, repositoryId])
+}
+
 export function getSyncClient(): PoolClient | undefined {
   return syncClientStore.getStore()
 }
