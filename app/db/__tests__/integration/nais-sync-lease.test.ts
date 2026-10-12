@@ -127,7 +127,7 @@ describe('NAIS sync lease', () => {
       await lockMonitoredAppSync(client, app.id)
 
       const marking = markInitialNaisHistorySynced(app.id, jobId)
-      await waitForBlockedQuery('UPDATE monitored_applications ma')
+      await waitForBlockedQuery('pg_advisory_xact_lock')
       await client.query(
         "UPDATE sync_jobs SET lock_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE id = $1",
         [jobId],
