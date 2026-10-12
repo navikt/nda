@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { linkDeploymentToRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
 import { establishCodeDeliveryForDeployment } from '../../repository-code-delivery-establishment.server'
 import { seedApp, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
@@ -67,12 +68,28 @@ async function establish(deploymentId: number, baseSha: string | null = null) {
   return establishCodeDeliveryForDeployment(deploymentId, await confirmed(deploymentId, baseSha))
 }
 
+async function establishUnresolved(
+  deploymentId: number,
+  reason: 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized',
+) {
+  const { headSha } = await confirmed(deploymentId)
+  return establishCodeDeliveryForDeployment(deploymentId, { confirmed: false, reason, headSha })
+}
+
 async function getDeliveries(repositoryId: number) {
   const { rows } = await pool.query<{ id: number; base_sha: string; head_sha: string }>(
     'SELECT id, base_sha, head_sha FROM repository_code_deliveries WHERE repository_id = $1 ORDER BY id',
     [repositoryId],
   )
   return rows
+}
+
+async function getUnresolved(deploymentId: number) {
+  const { rows } = await pool.query<{ reason: string; resolved_at: Date | null }>(
+    'SELECT reason, resolved_at FROM repository_code_delivery_unresolved WHERE deployment_id = $1',
+    [deploymentId],
+  )
+  return rows[0] ?? null
 }
 
 async function getLinkedDeliveryId(deploymentId: number) {
@@ -197,6 +214,22 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(await getLinkedDeliveryId(deploymentId)).toBeNull()
   })
 
+  it('rejects unresolved grounds evaluated for a different head SHA than the deployment has', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const deploymentId = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    await pool.query('UPDATE deployments SET commit_sha = $1 WHERE id = $2', [SHA_101, deploymentId])
+
+    const result = await establishCodeDeliveryForDeployment(deploymentId, {
+      confirmed: false,
+      reason: 'ancestry_unknown',
+      headSha: SHA_100,
+    })
+
+    expect(result).toEqual({ outcome: 'stale_grounds' })
+    expect(await getUnresolved(deploymentId)).toBeNull()
+  })
+
   it('rejects stale head grounds before linking to an existing delivery', async () => {
     const repositoryId = await createRepository()
     const appId = await createApp('app-a')
@@ -269,12 +302,13 @@ describe('establishCodeDeliveryForDeployment', () => {
       const unresolved = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_101 })
       await establish(established)
 
-      expect(await establishCodeDeliveryForDeployment(unresolved, { confirmed: false, reason })).toEqual({
+      expect(await establishUnresolved(unresolved, reason)).toEqual({
         outcome: 'unresolved',
         reason,
       })
       expect(await getDeliveries(repositoryId)).toHaveLength(1)
       expect(await getLinkedDeliveryId(unresolved)).toBeNull()
+      expect(await getUnresolved(unresolved)).toEqual({ reason, resolved_at: null })
     },
   )
 
@@ -284,12 +318,86 @@ describe('establishCodeDeliveryForDeployment', () => {
     const first = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
     const second = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
 
-    await establishCodeDeliveryForDeployment(first, { confirmed: false, reason: 'source_unauthorized' })
+    await establishUnresolved(first, 'source_unauthorized')
     const result = await establish(second)
 
     expect(result.outcome).toBe('created')
     expect(await getLinkedDeliveryId(first)).toBeNull()
     expect(await getLinkedDeliveryId(second)).not.toBeNull()
+    expect(await getUnresolved(first)).toEqual({ reason: 'source_unauthorized', resolved_at: null })
+    expect(await getUnresolved(second)).toBeNull()
+  })
+
+  it('updates the reason when the same deployment is unresolved again', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const deploymentId = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+
+    await establishUnresolved(deploymentId, 'ancestry_unknown')
+    await establishUnresolved(deploymentId, 'ancestry_diverged')
+
+    expect(await getUnresolved(deploymentId)).toEqual({ reason: 'ancestry_diverged', resolved_at: null })
+  })
+
+  it('marks an unresolved deployment as resolved once it is linked', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const deploymentId = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    await establishUnresolved(deploymentId, 'ancestry_unknown')
+
+    await establish(deploymentId)
+
+    const unresolved = await getUnresolved(deploymentId)
+    expect(unresolved?.reason).toBe('ancestry_unknown')
+    expect(unresolved?.resolved_at).not.toBeNull()
+  })
+
+  it('marks an unresolved deployment as resolved when linked through the public link function', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const first = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    const second = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    const created = await establish(first)
+    await establishUnresolved(second, 'ancestry_unknown')
+
+    await linkDeploymentToRepositoryCodeDelivery(second, (created as { deliveryId: number }).deliveryId)
+
+    expect((await getUnresolved(second))?.resolved_at).not.toBeNull()
+  })
+
+  it('marks an unresolved deployment as resolved when it is already linked', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const deploymentId = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    await establish(deploymentId)
+    await pool.query(
+      `INSERT INTO repository_code_delivery_unresolved (deployment_id, reason) VALUES ($1, 'ancestry_unknown')`,
+      [deploymentId],
+    )
+
+    expect((await establish(deploymentId)).outcome).toBe('already_linked')
+
+    expect((await getUnresolved(deploymentId))?.resolved_at).not.toBeNull()
+  })
+
+  it('does not register unresolved for skipped deployments', async () => {
+    const repositoryId = await createRepository({ tracking: false })
+    const appId = await createApp('app-a')
+    const deploymentId = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+
+    await establishUnresolved(deploymentId, 'ancestry_unknown')
+
+    expect(await getUnresolved(deploymentId)).toBeNull()
+  })
+
+  it('does not register unresolved for stale grounds', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const deploymentId = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+
+    await establishCodeDeliveryForDeployment(deploymentId, { confirmed: true, baseSha: SHA_101, headSha: SHA_100 })
+
+    expect(await getUnresolved(deploymentId)).toBeNull()
   })
 
   it('is idempotent for an already linked deployment', async () => {

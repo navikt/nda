@@ -128,7 +128,10 @@ export async function linkDeploymentToRepositoryCodeDeliveryInTransaction(
   ) {
     throw new Error(`Deployment ${deploymentId} does not have the full head SHA of code delivery ${deliveryId}`)
   }
-  if (deployment.repository_code_delivery_id === deliveryId) return false
+  if (deployment.repository_code_delivery_id === deliveryId) {
+    await resolveUnresolvedDelivery(client, deploymentId)
+    return false
+  }
   if (deployment.repository_code_delivery_id !== null) {
     throw new Error(
       `Deployment ${deploymentId} is already linked to code delivery ${deployment.repository_code_delivery_id}`,
@@ -140,5 +143,14 @@ export async function linkDeploymentToRepositoryCodeDeliveryInTransaction(
     [deliveryId, deploymentId],
   )
   if (result.rowCount !== 1) throw new Error(`Deployment ${deploymentId} code delivery link was not set`)
+  await resolveUnresolvedDelivery(client, deploymentId)
   return true
+}
+
+async function resolveUnresolvedDelivery(client: PoolClient, deploymentId: number): Promise<void> {
+  await client.query(
+    `UPDATE repository_code_delivery_unresolved SET resolved_at = now(), updated_at = now()
+     WHERE deployment_id = $1 AND resolved_at IS NULL`,
+    [deploymentId],
+  )
 }

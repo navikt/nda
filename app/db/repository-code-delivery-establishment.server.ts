@@ -10,7 +10,7 @@ type UnresolvedReason = 'ancestry_unknown' | 'ancestry_diverged' | 'source_unaut
 
 export type EstablishmentGrounds =
   | { confirmed: true; baseSha: string | null; headSha: string }
-  | { confirmed: false; reason: UnresolvedReason }
+  | { confirmed: false; reason: UnresolvedReason; headSha: string }
 
 type SkippedReason = 'tracking_disabled' | 'missing_repository' | 'missing_commit_sha'
 
@@ -72,8 +72,18 @@ export async function establishCodeDeliveryForDeployment(
     const headSha = deployment.commit_sha
     if (!headSha || !isFullCommitSha(headSha)) return { outcome: 'skipped', reason: 'missing_commit_sha' }
 
-    if (!grounds.confirmed) return { outcome: 'unresolved', reason: grounds.reason }
     if (grounds.headSha.toLowerCase() !== headSha.toLowerCase()) return { outcome: 'stale_grounds' }
+
+    if (!grounds.confirmed) {
+      await client.query(
+        `INSERT INTO repository_code_delivery_unresolved (deployment_id, reason)
+         VALUES ($1, $2)
+         ON CONFLICT (deployment_id)
+         DO UPDATE SET reason = EXCLUDED.reason, updated_at = now(), resolved_at = NULL`,
+        [deploymentId, grounds.reason],
+      )
+      return { outcome: 'unresolved', reason: grounds.reason }
+    }
 
     const existing = await getRepositoryCodeDelivery(repositoryId, headSha, client)
     if (existing) {
