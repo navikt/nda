@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS deployments (
   monitored_app_id INTEGER REFERENCES monitored_applications(id) ON DELETE CASCADE,
   
   -- Nais deployment data
-  nais_deployment_id VARCHAR(255) UNIQUE NOT NULL,
+  nais_deployment_id VARCHAR(255) NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL,
   deployer_username VARCHAR(255), -- Nullable: not always provided by Nais API
   commit_sha VARCHAR(40), -- Nullable: not always provided by Nais API
@@ -107,7 +107,9 @@ CREATE TABLE IF NOT EXISTS deployments (
   -- Kubernetes resources (JSONB for flexibility)
   resources JSONB,
   
-  synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE (monitored_app_id, nais_deployment_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_deployments_monitored_app ON deployments(monitored_app_id);
