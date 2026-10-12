@@ -45,6 +45,8 @@ Full historikkhenting fra Nais returnerer først deploymentene når to påfølge
 
 Apper uten fullføringsmarkør får full historikkhenting ved neste periodiske synk, også når deploymentrader allerede finnes. Eksisterende rader hoppes ikke over i denne gjenopptakelsen: repositorystatus og tilhørende alerts behandles på nytt, mens deploymentraden ikke opprettes på nytt. Alertopprettelse ignorerer en alert med samme hendelsesidentitet, også når den historiske raden er manuelt løst; eksisterende alert- og løsningsdata endres ikke. Dette gjør at feil etter lagring av en deployment, men før repositorybehandlingen eller markøren, kan gjenopptas idempotent. Markøren settes først etter at alle deploymentene er behandlet. App-detaljsiden viser en advarsel mens initialsynken venter; synkjobben logger statusen, og feil under behandling registreres som feilet synkjobb.
 
+Nais kan bruke samme deployment-ID for flere overvåkede applikasjoner. Oppslag og idempotent behandling av deploymentrader avgrenses derfor til applikasjonen. Databasen har foreløpig fortsatt en global unikhetsbegrensning på Nais-ID; inntil den erstattes av unikhet på `(monitored_app_id, nais_deployment_id)`, avvises en delt ID eksplisitt i stedet for å endre deploymenten til en annen applikasjon.
+
 SHA-visningen på repositorysiden viser «Intervall fra siste verifiseringskjøring» per deployment. Intervallet hentes i ett samlet oppslag for sidens deployments fra siste kjøring etter `(run_at DESC, id DESC)`. Manglende eller ugyldig intervall vises som «Sammenligningsintervall ikke tilgjengelig», ikke som manglende dokumentasjon eller godkjenning av deploymenten. Det brukes ingen fallback til eldre kjøringer eller cache. Standardlisten er uendret.
 
 | Kilde | Hva hentes | Når |

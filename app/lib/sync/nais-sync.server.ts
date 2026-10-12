@@ -111,16 +111,11 @@ async function syncDeploymentsFromNais(
       logger.info(`ℹ️  Deployment without repository info (likely deployed outside GitHub Actions): ${naisDep.id}`)
     }
 
-    const existingDep = await getDeploymentByNaisId(naisDep.id)
+    const existingDep = await getDeploymentByNaisId(naisDep.id, monitoredApp.id)
 
     if (existingDep) {
       logger.info(`⏭️  Deployment already exists: ${naisDep.id}`)
       skippedCount++
-      if (existingDep.monitored_app_id !== monitoredApp.id) {
-        throw new Error(
-          `Deployment ${naisDep.id} belongs to monitored application ${existingDep.monitored_app_id}, not ${monitoredApp.id}`,
-        )
-      }
     } else {
       logger.info(`➕ Creating new deployment: ${naisDep.id}`)
 
@@ -313,7 +308,7 @@ export async function syncNewDeploymentsFromNais(
   let detectedRepository: { owner: string; repo: string } | null = null
 
   for (const deployment of deployments) {
-    const existing = await getDeploymentByNaisId(deployment.id)
+    const existing = await getDeploymentByNaisId(deployment.id, monitoredAppId)
     if (existing) {
       logger.info(`⏭️  Already exists: ${deployment.id}`)
       continue

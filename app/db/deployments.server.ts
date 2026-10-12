@@ -556,8 +556,14 @@ export async function getDeploymentById(id: number): Promise<DeploymentWithApp |
   return row
 }
 
-export async function getDeploymentByNaisId(naisDeploymentId: string): Promise<Deployment | null> {
-  const result = await pool.query('SELECT * FROM deployments WHERE nais_deployment_id = $1', [naisDeploymentId])
+export async function getDeploymentByNaisId(
+  naisDeploymentId: string,
+  monitoredAppId: number,
+): Promise<Deployment | null> {
+  const result = await pool.query('SELECT * FROM deployments WHERE nais_deployment_id = $1 AND monitored_app_id = $2', [
+    naisDeploymentId,
+    monitoredAppId,
+  ])
   return result.rows[0] || null
 }
 
@@ -579,10 +585,10 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
         AND ar.github_owner = $10 AND ar.github_repo_name = $11
         AND r.github_owner = $10 AND r.github_repo_name = $11
     ))
-    ON CONFLICT (nais_deployment_id) 
-    DO UPDATE SET
+    ON CONFLICT DO UPDATE SET
       resources = EXCLUDED.resources,
       synced_at = CURRENT_TIMESTAMP
+    WHERE deployments.monitored_app_id = EXCLUDED.monitored_app_id
     RETURNING *`,
     [
       data.monitoredApplicationId,
@@ -600,7 +606,13 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
       initialStatus,
     ],
   )
-  return result.rows[0]
+  const deployment = result.rows[0]
+  if (!deployment) {
+    throw new Error(
+      `Nais deployment ID ${data.naisDeploymentId} is already stored for a different monitored application; the database uniqueness migration is pending`,
+    )
+  }
+  return deployment
 }
 
 export async function getLatestDeploymentForApp(
