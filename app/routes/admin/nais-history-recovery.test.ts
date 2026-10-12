@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireAdmin, mockResetNaisHistorySyncMarker } = vi.hoisted(() => ({
+const { mockRequireAdmin, mockResetNaisHistorySyncMarker, mockGetCompletedNaisSyncsInWindow } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
+  mockGetCompletedNaisSyncsInWindow: vi.fn(),
   mockResetNaisHistorySyncMarker: vi.fn(),
 }))
 const mockInfo = vi.hoisted(() => vi.fn())
@@ -11,7 +12,8 @@ vi.mock('~/lib/auth.server', () => ({
 }))
 
 vi.mock('~/db/monitored-applications.server', () => ({
-  getNaisHistoryRecoveryCandidates: vi.fn(),
+  getNaisHistoryRecoveryCandidates: vi.fn().mockResolvedValue([]),
+  getCompletedNaisSyncsInWindow: mockGetCompletedNaisSyncsInWindow,
   resetNaisHistorySyncMarker: mockResetNaisHistorySyncMarker,
 }))
 
@@ -19,7 +21,7 @@ vi.mock('~/lib/logger.server', () => ({
   logger: { info: mockInfo, error: vi.fn() },
 }))
 
-import { action } from './nais-history-recovery'
+import { action, loader } from './nais-history-recovery'
 
 function makeRequest(entries: Record<string, string>): Request {
   const formData = new FormData()
@@ -71,5 +73,46 @@ describe('Nais history recovery action', () => {
     expect(result).toEqual({
       success: 'Historikkmarkøren er nullstilt. Den periodiske synkroniseringen vil hente hele historikken på nytt.',
     })
+  })
+})
+
+describe('Nais history recovery loader', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequireAdmin.mockResolvedValue({ navIdent: 'Z990001' })
+    mockGetCompletedNaisSyncsInWindow.mockResolvedValue([])
+  })
+
+  function load(query: string) {
+    return loader({
+      request: new Request(`http://localhost/admin/nais-history-recovery${query}`),
+    } as Parameters<typeof loader>[0])
+  }
+
+  it('queries completed syncs for a valid window', async () => {
+    const result = await load('?from=2026-01-14T10:00:00%2B01:00&to=2026-01-14T16:00:00%2B01:00')
+
+    expect(mockGetCompletedNaisSyncsInWindow).toHaveBeenCalledWith(
+      new Date('2026-01-14T10:00:00+01:00'),
+      new Date('2026-01-14T16:00:00+01:00'),
+    )
+    expect(result.windowSyncs).toEqual([])
+    expect(result.windowError).toBeNull()
+  })
+
+  it('rejects a window without time zone or with reversed bounds', async () => {
+    const noZone = await load('?from=2026-01-14T10:00:00&to=2026-01-14T16:00:00')
+    const reversed = await load('?from=2026-01-14T16:00:00Z&to=2026-01-14T10:00:00Z')
+
+    expect(noZone.windowError).not.toBeNull()
+    expect(reversed.windowError).not.toBeNull()
+    expect(mockGetCompletedNaisSyncsInWindow).not.toHaveBeenCalled()
+  })
+
+  it('skips the window query when no window is given', async () => {
+    const result = await load('')
+
+    expect(result.windowSyncs).toBeNull()
+    expect(result.windowError).toBeNull()
   })
 })

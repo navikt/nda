@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg'
-import type { NaisHistoryRecoveryCandidate } from '~/lib/nais-history-recovery'
+import type { CompletedNaisSyncInWindow, NaisHistoryRecoveryCandidate } from '~/lib/nais-history-recovery'
 import { lockMonitoredAppSync, pool, withTransaction } from './connection.server'
 
 export interface MonitoredApplication {
@@ -71,6 +71,31 @@ export async function getNaisHistoryRecoveryCandidates(searchTerm?: string): Pro
      ORDER BY ma.team_slug, ma.environment_name, ma.app_name
      LIMIT 100`,
     [searchPattern],
+  )
+  return result.rows
+}
+
+export async function getCompletedNaisSyncsInWindow(from: Date, to: Date): Promise<CompletedNaisSyncInWindow[]> {
+  const result = await pool.query(
+    `SELECT
+       ma.id AS app_id,
+       ma.team_slug,
+       ma.environment_name,
+       ma.app_name,
+       ma.initial_nais_history_synced_at,
+       sj.started_at,
+       sj.completed_at,
+       sj.result,
+       sj.options->>'version' AS app_version
+     FROM sync_jobs sj
+     JOIN monitored_applications ma ON ma.id = sj.monitored_app_id
+     WHERE sj.job_type = 'nais_sync'
+       AND sj.status = 'completed'
+       AND sj.started_at >= $1
+       AND sj.started_at < $2
+     ORDER BY ma.team_slug, ma.environment_name, ma.app_name, sj.started_at
+     LIMIT 500`,
+    [from, to],
   )
   return result.rows
 }

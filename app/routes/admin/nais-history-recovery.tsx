@@ -1,6 +1,10 @@
 import { useActionData, useLoaderData } from 'react-router'
 import { NaisHistoryRecoveryPage } from '~/components/NaisHistoryRecoveryPage'
-import { getNaisHistoryRecoveryCandidates, resetNaisHistorySyncMarker } from '~/db/monitored-applications.server'
+import {
+  getCompletedNaisSyncsInWindow,
+  getNaisHistoryRecoveryCandidates,
+  resetNaisHistorySyncMarker,
+} from '~/db/monitored-applications.server'
 import { type ActionResult, fail, ok } from '~/lib/action-result'
 import { requireAdmin } from '~/lib/auth.server'
 import { getFormString } from '~/lib/form-validators'
@@ -13,9 +17,27 @@ export function meta(_args: Route.MetaArgs) {
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
-  const search = new URL(request.url).searchParams.get('q')?.trim() ?? ''
-  const candidates = await getNaisHistoryRecoveryCandidates(search)
-  return { candidates, search }
+  const params = new URL(request.url).searchParams
+  const search = params.get('q')?.trim() ?? ''
+  const from = params.get('from')?.trim() ?? ''
+  const to = params.get('to')?.trim() ?? ''
+  const fromDate = parseWindowBound(from)
+  const toDate = parseWindowBound(to)
+  const windowError =
+    (from || to) && (!fromDate || !toDate || fromDate >= toDate)
+      ? 'Oppgi gyldig fra- og til-tidspunkt med tidssone (f.eks. 2026-01-14T10:00:00+01:00), der fra er før til.'
+      : null
+  const [candidates, windowSyncs] = await Promise.all([
+    getNaisHistoryRecoveryCandidates(search),
+    fromDate && toDate && !windowError ? getCompletedNaisSyncsInWindow(fromDate, toDate) : Promise.resolve(null),
+  ])
+  return { candidates, search, from, to, windowSyncs, windowError }
+}
+
+function parseWindowBound(value: string): Date | null {
+  if (!/(Z|[+-]\d{2}:\d{2})$/.test(value)) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 export async function action({ request }: Route.ActionArgs): Promise<ActionResult> {
@@ -58,7 +80,17 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionResul
 }
 
 export default function NaisHistoryRecoveryRoute() {
-  const { candidates, search } = useLoaderData<typeof loader>()
+  const { candidates, search, from, to, windowSyncs, windowError } = useLoaderData<typeof loader>()
   const actionData = useActionData<typeof action>()
-  return <NaisHistoryRecoveryPage candidates={candidates} search={search} actionData={actionData} />
+  return (
+    <NaisHistoryRecoveryPage
+      candidates={candidates}
+      search={search}
+      from={from}
+      to={to}
+      windowSyncs={windowSyncs}
+      windowError={windowError}
+      actionData={actionData}
+    />
+  )
 }

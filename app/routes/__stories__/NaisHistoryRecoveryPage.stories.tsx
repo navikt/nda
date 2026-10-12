@@ -27,3 +27,24 @@ export const Default: Story = {
     search: '',
   },
 }
+
+export const WithWindow: Story = {
+  args: {
+    ...Default.args,
+    from: '2026-01-14T10:00:00+01:00',
+    to: '2026-01-14T16:00:00+01:00',
+    windowSyncs: [
+      {
+        app_id: 1,
+        team_slug: 'pensjon',
+        environment_name: 'prod-gcp',
+        app_name: 'pensjon-alde',
+        initial_nais_history_synced_at: new Date('2026-01-14T12:00:00Z'),
+        started_at: new Date('2026-01-14T12:00:00Z'),
+        completed_at: new Date('2026-01-14T12:01:00Z'),
+        result: { deploymentsCreated: 3 },
+        app_version: '2.4.0',
+      },
+    ],
+  },
+}
