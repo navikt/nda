@@ -232,6 +232,7 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     const firstResult = await syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)
     const secondResult = await syncNewDeploymentsFromNais('team-a', 'prod-gcp', 'app-a', monitoredApp.id)
 
+    expect(getDeploymentByNaisId).toHaveBeenCalledWith('deployment-1', monitoredApp.id)
     expect(firstResult.initialHistorySyncStatus).toBe('completed')
     expect(secondResult.initialHistorySyncStatus).toBe('completed')
     expect(createDeployment).not.toHaveBeenCalled()

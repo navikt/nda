@@ -10,7 +10,7 @@ describe('createRepositoryAlert', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     poolQuery.mockResolvedValueOnce({
-      rows: [{ id: 1, monitored_app_id: 7 }],
+      rows: [{ id: 1 }],
       rowCount: 1,
     })
   })
@@ -29,6 +29,10 @@ describe('createRepositoryAlert', () => {
     })
 
     expect(inserted).toBe(true)
+    expect(poolQuery.mock.calls[0][0]).toContain(
+      'SELECT id FROM deployments WHERE nais_deployment_id = $1 AND monitored_app_id = $2',
+    )
+    expect(poolQuery.mock.calls[0][1]).toEqual(['deployment-1', 7])
     const insertQuery = poolQuery.mock.calls[1][0]
     expect(insertQuery).toMatch(/WITH alert_event AS\s*\(\s*SELECT\s+\$1::integer.*\$3::varchar AS alert_type/s)
     expect(insertQuery).not.toMatch(/\$[3-7]::varchar\(\d+\)/)

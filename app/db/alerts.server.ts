@@ -37,21 +37,18 @@ export async function createRepositoryAlert(data: {
   expectedGithubRepoName?: string
   alertType: RepositoryAlertType
 }): Promise<boolean> {
-  const depResult = await pool.query('SELECT id, monitored_app_id FROM deployments WHERE nais_deployment_id = $1', [
-    data.deploymentNaisId,
-  ])
+  const depResult = await pool.query(
+    'SELECT id FROM deployments WHERE nais_deployment_id = $1 AND monitored_app_id = $2',
+    [data.deploymentNaisId, data.monitoredApplicationId],
+  )
 
   if (depResult.rows.length === 0) {
-    throw new Error(`Deployment not found with nais_deployment_id: ${data.deploymentNaisId}`)
+    throw new Error(
+      `Deployment not found with nais_deployment_id ${data.deploymentNaisId} for monitored application ${data.monitoredApplicationId}`,
+    )
   }
 
   const deployment = depResult.rows[0]
-
-  if (deployment.monitored_app_id !== data.monitoredApplicationId) {
-    throw new Error(
-      `monitoredApplicationId mismatch: expected ${data.monitoredApplicationId}, got ${deployment.monitored_app_id} for deployment ${data.deploymentNaisId}`,
-    )
-  }
 
   const expectedOwner = data.expectedGithubOwner || data.detectedGithubOwner
   const expectedRepoName = data.expectedGithubRepoName || data.detectedGithubRepoName
@@ -92,7 +89,7 @@ export async function createRepositoryAlert(data: {
     ON CONFLICT DO NOTHING
     RETURNING id`,
     [
-      deployment.monitored_app_id,
+      data.monitoredApplicationId,
       deployment.id,
       data.alertType,
       expectedOwner,
