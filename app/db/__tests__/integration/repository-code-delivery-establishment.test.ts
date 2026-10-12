@@ -1,7 +1,10 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { linkDeploymentToRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
-import { establishCodeDeliveryForDeployment } from '../../repository-code-delivery-establishment.server'
+import {
+  establishCodeDeliveryForDeployment,
+  getEstablishmentContext,
+} from '../../repository-code-delivery-establishment.server'
 import { seedApp, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 const SHA_100 = '1'.repeat(40)
@@ -440,5 +443,41 @@ describe('establishCodeDeliveryForDeployment', () => {
 
   it('rejects unknown deployments', async () => {
     await expect(establish(999999)).rejects.toThrow('was not found')
+  })
+})
+
+describe('getEstablishmentContext', () => {
+  it('returns repository coordinates, latest delivery head and whether the head has a delivery', async () => {
+    const repositoryId = await createRepository()
+    await pool.query(`UPDATE repositories SET default_branch = 'main' WHERE id = $1`, [repositoryId])
+    const appId = await createApp('app-a')
+    const first = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    const second = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_101 })
+    await establish(first)
+
+    expect(await getEstablishmentContext(second)).toEqual({
+      repositoryId,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo-900',
+      githubRepoId: 900,
+      defaultBranch: 'main',
+      headSha: SHA_101,
+      latestDeliveryHeadSha: SHA_100,
+      headHasDelivery: false,
+    })
+    expect((await getEstablishmentContext(first))?.headHasDelivery).toBe(true)
+  })
+
+  it('returns null when tracking is disabled, repository is missing or the SHA is not full', async () => {
+    const disabled = await createRepository({ tracking: false, githubRepoId: '901' })
+    const enabled = await createRepository({ githubRepoId: '902' })
+    const appId = await createApp('app-a')
+    const trackingOff = await createDeployment({ appId, appName: 'app-a', repositoryId: disabled, commitSha: SHA_100 })
+    const noRepository = await createDeployment({ appId, appName: 'app-a', repositoryId: null, commitSha: SHA_100 })
+    const shortSha = await createDeployment({ appId, appName: 'app-a', repositoryId: enabled, commitSha: 'abc123' })
+
+    expect(await getEstablishmentContext(trackingOff)).toBeNull()
+    expect(await getEstablishmentContext(noRepository)).toBeNull()
+    expect(await getEstablishmentContext(shortSha)).toBeNull()
   })
 })

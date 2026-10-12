@@ -1,5 +1,5 @@
 import { isFullCommitSha } from '~/lib/git-constants'
-import { lockRepositoryCodeDeliveries, withTransaction } from './connection.server'
+import { lockRepositoryCodeDeliveries, pool, withTransaction } from './connection.server'
 import {
   createRepositoryCodeDelivery,
   getRepositoryCodeDelivery,
@@ -103,4 +103,50 @@ export async function establishCodeDeliveryForDeployment(
     await linkDeploymentToRepositoryCodeDeliveryInTransaction(client, deploymentId, created.id)
     return { outcome: 'created', deliveryId: created.id, baseSha: created.base_sha, headSha: created.head_sha }
   })
+}
+
+export interface EstablishmentContext {
+  repositoryId: number
+  githubOwner: string
+  githubRepoName: string
+  githubRepoId: number
+  defaultBranch: string | null
+  headSha: string
+  latestDeliveryHeadSha: string | null
+  headHasDelivery: boolean
+}
+
+export async function getEstablishmentContext(deploymentId: number): Promise<EstablishmentContext | null> {
+  const { rows } = await pool.query<{
+    repository_id: number
+    github_owner: string
+    github_repo_name: string
+    github_repo_id: string
+    default_branch: string | null
+    commit_sha: string
+    latest_delivery_head_sha: string | null
+    head_has_delivery: boolean
+  }>(
+    `SELECT d.repository_id, r.github_owner, r.github_repo_name, r.github_repo_id, r.default_branch, d.commit_sha,
+            (SELECT c.head_sha FROM repository_code_deliveries c
+             WHERE c.repository_id = d.repository_id ORDER BY c.id DESC LIMIT 1) AS latest_delivery_head_sha,
+            EXISTS (SELECT 1 FROM repository_code_deliveries c
+                    WHERE c.repository_id = d.repository_id AND lower(c.head_sha) = lower(d.commit_sha)) AS head_has_delivery
+     FROM deployments d
+     JOIN repositories r ON r.id = d.repository_id
+     WHERE d.id = $1 AND r.code_delivery_tracking = true`,
+    [deploymentId],
+  )
+  const row = rows[0]
+  if (!row || !isFullCommitSha(row.commit_sha)) return null
+  return {
+    repositoryId: row.repository_id,
+    githubOwner: row.github_owner,
+    githubRepoName: row.github_repo_name,
+    githubRepoId: Number(row.github_repo_id),
+    defaultBranch: row.default_branch,
+    headSha: row.commit_sha,
+    latestDeliveryHeadSha: row.latest_delivery_head_sha,
+    headHasDelivery: row.head_has_delivery,
+  }
 }
