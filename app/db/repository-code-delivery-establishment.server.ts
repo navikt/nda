@@ -1,4 +1,3 @@
-import type { PoolClient } from 'pg'
 import { isFullCommitSha } from '~/lib/git-constants'
 import { lockRepositoryCodeDeliveries, withTransaction } from './connection.server'
 import {
@@ -27,14 +26,6 @@ interface DeploymentRow {
   repository_id: number | null
   commit_sha: string | null
   repository_code_delivery_id: number | null
-}
-
-async function resolveUnresolved(client: PoolClient, deploymentId: number): Promise<void> {
-  await client.query(
-    `UPDATE repository_code_delivery_unresolved SET resolved_at = now(), updated_at = now()
-     WHERE deployment_id = $1 AND resolved_at IS NULL`,
-    [deploymentId],
-  )
 }
 
 export async function establishCodeDeliveryForDeployment(
@@ -96,7 +87,6 @@ export async function establishCodeDeliveryForDeployment(
     const existing = await getRepositoryCodeDelivery(repositoryId, headSha, client)
     if (existing) {
       await linkDeploymentToRepositoryCodeDeliveryInTransaction(client, deploymentId, existing.id)
-      await resolveUnresolved(client, deploymentId)
       return { outcome: 'linked', deliveryId: existing.id }
     }
 
@@ -110,7 +100,6 @@ export async function establishCodeDeliveryForDeployment(
     const baseSha = currentHead ?? headSha
     const created = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha }, client)
     await linkDeploymentToRepositoryCodeDeliveryInTransaction(client, deploymentId, created.id)
-    await resolveUnresolved(client, deploymentId)
     return { outcome: 'created', deliveryId: created.id, baseSha: created.base_sha, headSha: created.head_sha }
   })
 }

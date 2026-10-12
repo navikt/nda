@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { linkDeploymentToRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
 import { establishCodeDeliveryForDeployment } from '../../repository-code-delivery-establishment.server'
 import { seedApp, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
@@ -325,6 +326,34 @@ describe('establishCodeDeliveryForDeployment', () => {
     const unresolved = await getUnresolved(deploymentId)
     expect(unresolved?.reason).toBe('ancestry_unknown')
     expect(unresolved?.resolved_at).not.toBeNull()
+  })
+
+  it('marks an unresolved deployment as resolved when linked through the public link function', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const first = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    const second = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    const created = await establish(first)
+    await establishCodeDeliveryForDeployment(second, { confirmed: false, reason: 'ancestry_unknown' })
+
+    await linkDeploymentToRepositoryCodeDelivery(second, (created as { deliveryId: number }).deliveryId)
+
+    expect((await getUnresolved(second))?.resolved_at).not.toBeNull()
+  })
+
+  it('marks an unresolved deployment as resolved when it is already linked', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const deploymentId = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    await establish(deploymentId)
+    await pool.query(
+      `INSERT INTO repository_code_delivery_unresolved (deployment_id, reason) VALUES ($1, 'ancestry_unknown')`,
+      [deploymentId],
+    )
+
+    expect((await establish(deploymentId)).outcome).toBe('already_linked')
+
+    expect((await getUnresolved(deploymentId))?.resolved_at).not.toBeNull()
   })
 
   it('does not register unresolved for skipped deployments', async () => {
