@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg'
-import { pool } from './connection.server'
+import { lockMonitoredAppSync, pool, withTransaction } from './connection.server'
 
 export interface MonitoredApplication {
   id: number
@@ -88,18 +88,36 @@ export async function getMonitoredApplicationByIdentity(
   return result.rows[0] || null
 }
 
-export async function markInitialNaisHistorySynced(monitoredAppId: number): Promise<void> {
-  const result = await pool.query(
-    `UPDATE monitored_applications
-      SET initial_nais_history_synced_at = COALESCE(initial_nais_history_synced_at, CURRENT_TIMESTAMP),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1`,
-    [monitoredAppId],
-  )
+export async function markInitialNaisHistorySynced(monitoredAppId: number, syncJobId: number): Promise<boolean> {
+  return withTransaction(async (client) => {
+    await lockMonitoredAppSync(client, monitoredAppId)
 
-  if (result.rowCount === 0) {
-    throw new Error(`Monitored application not found: ${monitoredAppId}`)
-  }
+    const result = await client.query(
+      `UPDATE monitored_applications ma
+       SET initial_nais_history_synced_at = COALESCE(ma.initial_nais_history_synced_at, CURRENT_TIMESTAMP),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE ma.id = $1
+         AND EXISTS (
+           SELECT 1
+           FROM sync_jobs sj
+           WHERE sj.id = $2
+             AND sj.monitored_app_id = ma.id
+             AND sj.job_type = 'nais_sync'
+             AND sj.status = 'running'
+             AND sj.lock_expires_at > NOW()
+         )
+       RETURNING ma.id`,
+      [monitoredAppId, syncJobId],
+    )
+
+    if (result.rowCount === 1) return true
+
+    const application = await client.query('SELECT 1 FROM monitored_applications WHERE id = $1', [monitoredAppId])
+    if (application.rowCount === 0) {
+      throw new Error(`Monitored application not found: ${monitoredAppId}`)
+    }
+    return false
+  })
 }
 
 export async function createMonitoredApplication(

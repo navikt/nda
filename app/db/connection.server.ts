@@ -93,6 +93,12 @@ const syncClientStore = new AsyncLocalStorage<PoolClient>()
 
 export const SYNC_ADVISORY_LOCK_KEY = 839_201_471
 
+const MONITORED_APP_SYNC_LOCK_NAMESPACE = 839_201_472
+
+export async function lockMonitoredAppSync(client: PoolClient, monitoredAppId: number): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock($1, $2)', [MONITORED_APP_SYNC_LOCK_NAMESPACE, monitoredAppId])
+}
+
 const REPOSITORY_ADMIN_LOCK_KEY = 1_772_500_011
 
 export async function lockRepositoryAdminForWrite(client: PoolClient): Promise<void> {
