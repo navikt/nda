@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireAdmin, mockResetNaisHistorySyncMarker, mockGetNaisSyncWindowApps } = vi.hoisted(() => ({
+const { mockRequireAdmin, mockResetNaisHistorySyncMarker, mockGetNaisHistoryRiskApps } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
-  mockGetNaisSyncWindowApps: vi.fn(),
+  mockGetNaisHistoryRiskApps: vi.fn(),
   mockResetNaisHistorySyncMarker: vi.fn(),
 }))
 const mockInfo = vi.hoisted(() => vi.fn())
@@ -13,7 +13,7 @@ vi.mock('~/lib/auth.server', () => ({
 
 vi.mock('~/db/monitored-applications.server', () => ({
   getNaisHistoryRecoveryCandidates: vi.fn().mockResolvedValue([]),
-  getNaisSyncWindowApps: mockGetNaisSyncWindowApps,
+  getNaisHistoryRiskApps: mockGetNaisHistoryRiskApps,
   resetNaisHistorySyncMarker: mockResetNaisHistorySyncMarker,
 }))
 
@@ -80,39 +80,15 @@ describe('Nais history recovery loader', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequireAdmin.mockResolvedValue({ navIdent: 'Z990001' })
-    mockGetNaisSyncWindowApps.mockResolvedValue([])
+    mockGetNaisHistoryRiskApps.mockResolvedValue([])
   })
 
-  function load(query: string) {
-    return loader({
-      request: new Request(`http://localhost/admin/nais-history-recovery${query}`),
+  it('returns risk apps covering all stored history', async () => {
+    const result = await loader({
+      request: new Request('http://localhost/admin/nais-history-recovery'),
     } as Parameters<typeof loader>[0])
-  }
 
-  it('queries completed syncs for a valid window', async () => {
-    const result = await load('?from=2026-01-14T10:00:00%2B01:00&to=2026-01-14T16:00:00%2B01:00')
-
-    expect(mockGetNaisSyncWindowApps).toHaveBeenCalledWith(
-      new Date('2026-01-14T10:00:00+01:00'),
-      new Date('2026-01-14T16:00:00+01:00'),
-    )
-    expect(result.windowSyncs).toEqual([])
-    expect(result.windowError).toBeNull()
-  })
-
-  it('rejects a window without time zone or with reversed bounds', async () => {
-    const noZone = await load('?from=2026-01-14T10:00:00&to=2026-01-14T16:00:00')
-    const reversed = await load('?from=2026-01-14T16:00:00Z&to=2026-01-14T10:00:00Z')
-
-    expect(noZone.windowError).not.toBeNull()
-    expect(reversed.windowError).not.toBeNull()
-    expect(mockGetNaisSyncWindowApps).not.toHaveBeenCalled()
-  })
-
-  it('skips the window query when no window is given', async () => {
-    const result = await load('')
-
-    expect(result.windowSyncs).toBeNull()
-    expect(result.windowError).toBeNull()
+    expect(mockGetNaisHistoryRiskApps).toHaveBeenCalledWith()
+    expect(result.riskApps).toEqual([])
   })
 })

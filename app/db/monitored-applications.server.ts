@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg'
-import type { NaisHistoryRecoveryCandidate, NaisSyncWindowApp } from '~/lib/nais-history-recovery'
+import type { NaisHistoryRecoveryCandidate, NaisHistoryRiskApp } from '~/lib/nais-history-recovery'
 import { lockMonitoredAppSync, pool, withTransaction } from './connection.server'
 
 export interface MonitoredApplication {
@@ -75,45 +75,58 @@ export async function getNaisHistoryRecoveryCandidates(searchTerm?: string): Pro
   return result.rows
 }
 
-export async function getNaisSyncWindowApps(from: Date, to: Date): Promise<NaisSyncWindowApp[]> {
+export async function getNaisHistoryRiskApps(): Promise<NaisHistoryRiskApp[]> {
   const result = await pool.query(
-    `SELECT
-       ma.id AS app_id,
-       ma.team_slug,
-       ma.environment_name,
-       ma.app_name,
-       ma.initial_nais_history_synced_at,
-       COUNT(*) FILTER (WHERE sj.status = 'completed')::integer AS completed_syncs,
-       COUNT(*) FILTER (WHERE sj.status = 'failed')::integer AS failed_syncs,
-       MAX(sj.completed_at) FILTER (WHERE sj.status = 'completed') AS last_completed_at,
-       (ARRAY_AGG(sj.error ORDER BY sj.started_at DESC) FILTER (WHERE sj.status = 'failed'))[1] AS last_error,
-       COALESCE(BOOL_OR(
-         sj.status = 'failed'
-         AND (sj.error ILIKE '%different monitored application%' OR sj.error ILIKE '%belongs to monitored application%')
-       ), FALSE) AS id_collision,
-       (
-         ma.initial_nais_history_synced_at IS NOT NULL
-         AND NOT EXISTS (
-           SELECT 1
-           FROM sync_jobs c
-           WHERE c.monitored_app_id = ma.id
-             AND c.job_type = 'nais_sync'
-             AND c.status = 'completed'
-             AND ma.initial_nais_history_synced_at BETWEEN c.started_at AND c.completed_at + INTERVAL '1 minute'
-         )
-       ) AS marker_without_completed_job,
-       (SELECT COUNT(*)::integer FROM deployments d WHERE d.monitored_app_id = ma.id) AS deployment_count
-     FROM sync_jobs sj
-     JOIN monitored_applications ma ON ma.id = sj.monitored_app_id
-     WHERE sj.job_type = 'nais_sync'
-       AND sj.status IN ('completed', 'failed')
-       AND sj.started_at >= $1
-       AND sj.started_at < $2
-       AND ma.is_active = TRUE
-     GROUP BY ma.id
-     ORDER BY ma.team_slug, ma.environment_name, ma.app_name
+    `WITH app_state AS (
+       SELECT
+         ma.id AS app_id,
+         ma.team_slug,
+         ma.environment_name,
+         ma.app_name,
+         ma.initial_nais_history_synced_at,
+         (SELECT COUNT(*)::integer FROM sync_jobs sj
+           WHERE sj.monitored_app_id = ma.id AND sj.job_type = 'nais_sync' AND sj.status = 'completed'
+         ) AS completed_syncs,
+         (SELECT COUNT(*)::integer FROM sync_jobs sj
+           WHERE sj.monitored_app_id = ma.id AND sj.job_type = 'nais_sync' AND sj.status = 'failed'
+             AND sj.started_at > COALESCE((
+               SELECT MAX(c.started_at) FROM sync_jobs c
+               WHERE c.monitored_app_id = ma.id AND c.job_type = 'nais_sync' AND c.status = 'completed'
+             ), '-infinity')
+         ) AS failed_since_last_completed,
+         (SELECT MAX(c.completed_at) FROM sync_jobs c
+           WHERE c.monitored_app_id = ma.id AND c.job_type = 'nais_sync' AND c.status = 'completed'
+         ) AS last_completed_at,
+         (SELECT sj.error FROM sync_jobs sj
+           WHERE sj.monitored_app_id = ma.id AND sj.job_type = 'nais_sync' AND sj.status = 'failed'
+           ORDER BY sj.started_at DESC LIMIT 1
+         ) AS last_error,
+         EXISTS (
+           SELECT 1 FROM sync_jobs sj
+           WHERE sj.monitored_app_id = ma.id AND sj.job_type = 'nais_sync' AND sj.status = 'failed'
+             AND (sj.error ILIKE '%different monitored application%' OR sj.error ILIKE '%belongs to monitored application%')
+         ) AS id_collision,
+         (
+           ma.initial_nais_history_synced_at IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM sync_jobs c
+             WHERE c.monitored_app_id = ma.id AND c.job_type = 'nais_sync' AND c.status = 'completed'
+               AND ma.initial_nais_history_synced_at BETWEEN c.started_at AND c.completed_at + INTERVAL '1 minute'
+           )
+         ) AS marker_without_completed_job,
+         (SELECT COUNT(*)::integer FROM deployments d WHERE d.monitored_app_id = ma.id) AS deployment_count
+       FROM monitored_applications ma
+       WHERE ma.is_active = TRUE
+     )
+     SELECT *
+     FROM app_state
+     WHERE marker_without_completed_job
+        OR id_collision
+        OR failed_since_last_completed > 0
+        OR initial_nais_history_synced_at IS NULL
+        OR deployment_count = 0
+     ORDER BY team_slug, environment_name, app_name
      LIMIT 500`,
-    [from, to],
   )
   return result.rows
 }

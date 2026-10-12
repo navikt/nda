@@ -28,12 +28,10 @@ export const Default: Story = {
   },
 }
 
-export const WithWindow: Story = {
+export const WithRisks: Story = {
   args: {
     ...Default.args,
-    from: '2026-01-14T10:00:00+01:00',
-    to: '2026-01-14T16:00:00+01:00',
-    windowSyncs: [
+    riskApps: [
       {
         app_id: 1,
         team_slug: 'pensjon',
@@ -41,7 +39,7 @@ export const WithWindow: Story = {
         app_name: 'pensjon-alde',
         initial_nais_history_synced_at: new Date('2026-01-14T12:00:00Z'),
         completed_syncs: 1,
-        failed_syncs: 1,
+        failed_since_last_completed: 1,
         last_completed_at: new Date('2026-01-14T12:01:00Z'),
         last_error: 'Nais deployment ID abc is already stored for a different monitored application',
         id_collision: true,

@@ -2,29 +2,23 @@ import { Alert, BodyShort, Button, Checkbox, Heading, HStack, Table, TextField, 
 import { Form } from 'react-router'
 import type { ActionResult } from '~/lib/action-result'
 import {
-  getNaisSyncWindowRisks,
+  getNaisHistoryRisks,
   type NaisHistoryRecoveryCandidate,
-  type NaisSyncWindowApp,
+  type NaisHistoryRiskApp,
 } from '~/lib/nais-history-recovery'
 import { ActionAlert } from './ActionAlert'
 
 interface NaisHistoryRecoveryPageProps {
   candidates: NaisHistoryRecoveryCandidate[]
   search: string
-  from?: string
-  to?: string
-  windowSyncs?: NaisSyncWindowApp[] | null
-  windowError?: string | null
+  riskApps?: NaisHistoryRiskApp[]
   actionData?: ActionResult | null
 }
 
 export function NaisHistoryRecoveryPage({
   candidates,
   search,
-  from = '',
-  to = '',
-  windowSyncs = null,
-  windowError = null,
+  riskApps = [],
   actionData,
 }: NaisHistoryRecoveryPageProps) {
   return (
@@ -55,90 +49,54 @@ export function NaisHistoryRecoveryPage({
         </HStack>
       </Form>
 
-      <Form method="get" role="search">
-        <input type="hidden" name="q" value={search} />
-        <VStack gap="space-12">
-          <Heading level="2" size="medium">
-            Mulige feil i tidsrom
-          </Heading>
-          <BodyShort>
-            Viser aktive applikasjoner med fullførte eller feilede NAIS-synkjobber startet i tidsrommet, for eksempel
-            mellom to produksjonssettinger. Risikoer er avledet av synkjobber og lagrede leveranser.
-          </BodyShort>
-          <HStack gap="space-12" align="end">
-            <TextField
-              label="Fra"
-              name="from"
-              description="F.eks. 2026-01-14T10:00:00+01:00"
-              defaultValue={from}
-              size="small"
-            />
-            <TextField
-              label="Til"
-              name="to"
-              description="F.eks. 2026-01-14T16:00:00+01:00"
-              defaultValue={to}
-              size="small"
-            />
-            <Button type="submit" variant="secondary" size="small">
-              Vis applikasjoner
-            </Button>
-          </HStack>
-        </VStack>
-      </Form>
-
-      {windowError && <Alert variant="error">{windowError}</Alert>}
-      {windowSyncs &&
-        (windowSyncs.length === 0 ? (
-          <Alert variant="info">Fant ingen NAIS-synker i tidsrommet.</Alert>
+      <VStack gap="space-12">
+        <Heading level="2" size="medium">
+          Mulige feil i lagret historikk
+        </Heading>
+        <BodyShort>
+          Viser aktive applikasjoner med tegn på manglende eller usikker historikk, avledet av alle lagrede synkjobber
+          og leveranser.
+        </BodyShort>
+        {riskApps.length === 0 ? (
+          <Alert variant="success">Fant ingen aktive applikasjoner med tegn på manglende historikk.</Alert>
         ) : (
           <Table size="small">
-            <caption className="aksel-sr-only">Applikasjoner med NAIS-synker i valgt tidsrom</caption>
+            <caption className="aksel-sr-only">Aktive applikasjoner med mulige feil i Nais-historikken</caption>
             <Table.Header>
               <Table.Row>
                 <Table.HeaderCell scope="col">Applikasjon</Table.HeaderCell>
                 <Table.HeaderCell scope="col">Historikk fullført</Table.HeaderCell>
-                <Table.HeaderCell scope="col">Fullførte / feilede</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Fullførte synker</Table.HeaderCell>
                 <Table.HeaderCell scope="col">Leveranser</Table.HeaderCell>
                 <Table.HeaderCell scope="col">Mulige feil</Table.HeaderCell>
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {windowSyncs.map((app) => {
-                const risks = getNaisSyncWindowRisks(app)
-                return (
-                  <Table.Row key={app.app_id}>
-                    <Table.HeaderCell scope="row">
-                      {app.team_slug}/{app.environment_name}/{app.app_name}
-                    </Table.HeaderCell>
-                    <Table.DataCell>
-                      {app.initial_nais_history_synced_at ? formatDate(app.initial_nais_history_synced_at) : 'Venter'}
-                    </Table.DataCell>
-                    <Table.DataCell>
-                      {app.completed_syncs} / {app.failed_syncs}
-                    </Table.DataCell>
-                    <Table.DataCell>{app.deployment_count}</Table.DataCell>
-                    <Table.DataCell>
-                      {risks.length === 0 ? (
-                        'Ingen funnet'
-                      ) : (
-                        <ul>
-                          {risks.map((risk) => (
-                            <li key={risk}>{risk}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {app.last_error && <BodyShort textColor="subtle">{app.last_error}</BodyShort>}
-                    </Table.DataCell>
-                  </Table.Row>
-                )
-              })}
+              {riskApps.map((app) => (
+                <Table.Row key={app.app_id}>
+                  <Table.HeaderCell scope="row">
+                    {app.team_slug}/{app.environment_name}/{app.app_name}
+                  </Table.HeaderCell>
+                  <Table.DataCell>
+                    {app.initial_nais_history_synced_at ? formatDate(app.initial_nais_history_synced_at) : 'Venter'}
+                  </Table.DataCell>
+                  <Table.DataCell>{app.completed_syncs}</Table.DataCell>
+                  <Table.DataCell>{app.deployment_count}</Table.DataCell>
+                  <Table.DataCell>
+                    <ul>
+                      {getNaisHistoryRisks(app).map((risk) => (
+                        <li key={risk}>{risk}</li>
+                      ))}
+                    </ul>
+                    {app.last_error && <BodyShort textColor="subtle">{app.last_error}</BodyShort>}
+                  </Table.DataCell>
+                </Table.Row>
+              ))}
             </Table.Body>
           </Table>
-        ))}
-      {windowSyncs?.length === 500 && (
-        <BodyShort textColor="subtle">Viser maksimalt 500 applikasjoner. Begrens tidsrommet.</BodyShort>
-      )}
+        )}
+        {riskApps.length === 500 && <BodyShort textColor="subtle">Viser maksimalt 500 applikasjoner.</BodyShort>}
+      </VStack>
 
       {candidates.length === 0 ? (
         <Alert variant="info">
