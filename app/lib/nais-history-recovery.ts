@@ -25,12 +25,31 @@ export interface NaisHistoryRiskApp {
   deployment_count: number
 }
 
-export function getNaisHistoryRisks(app: NaisHistoryRiskApp): string[] {
-  const risks: string[] = []
-  if (app.marker_without_completed_job) risks.push('Markør satt uten fullført synkjobb')
-  if (app.id_collision) risks.push('Kollisjon på deployment-ID mellom applikasjoner')
-  if (app.failed_since_last_completed > 0) risks.push('Synk har feilet siden siste fullførte')
-  if (!app.initial_nais_history_synced_at) risks.push('Venter på full historikksynk')
-  if (app.deployment_count === 0) risks.push('Ingen leveranser lagret')
-  return risks
+export interface NaisHistoryAssessment {
+  app: NaisHistoryRiskApp
+  needsResync: string[]
+  needsInvestigation: string[]
+}
+
+function assessNaisHistory(app: NaisHistoryRiskApp): NaisHistoryAssessment {
+  const needsResync: string[] = []
+  const needsInvestigation: string[] = []
+  if (app.marker_without_completed_job) needsResync.push('Markør satt uten fullført synkjobb')
+  if (app.failed_since_last_completed > 0 && !app.id_collision)
+    needsResync.push('Synk har feilet siden siste fullførte')
+  if (!app.initial_nais_history_synced_at) needsResync.push('Venter på full historikksynk')
+  if (app.id_collision) needsInvestigation.push('Kollisjon på deployment-ID mellom applikasjoner')
+  if (app.deployment_count === 0) needsInvestigation.push('Ingen leveranser lagret')
+  return { app, needsResync, needsInvestigation }
+}
+
+export function partitionNaisHistoryRisks(apps: NaisHistoryRiskApp[]): {
+  resync: NaisHistoryAssessment[]
+  investigate: NaisHistoryAssessment[]
+} {
+  const assessments = apps.map(assessNaisHistory)
+  return {
+    investigate: assessments.filter((a) => a.needsInvestigation.length > 0),
+    resync: assessments.filter((a) => a.needsInvestigation.length === 0 && a.needsResync.length > 0),
+  }
 }
