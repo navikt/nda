@@ -50,19 +50,14 @@ export async function getWorkflowRunRepositoryBackfillCoverage(): Promise<Workfl
            '^https://github[.]com/([^/?#]+)/([^/?#]+)/actions/runs/([0-9]+)(?:[/?#].*)?$',
            'i'
          ) AS run_parts
-       FROM repositories r
-       JOIN deployments d
-         ON d.repository_id IS NULL
-        AND EXISTS (
-          SELECT 1
-          FROM application_repositories ar
-          JOIN repositories linked_repository ON linked_repository.github_repo_id = ar.github_repo_id
-          WHERE linked_repository.id = r.id
-            AND ar.monitored_app_id = d.monitored_app_id
-            AND ar.github_owner = d.detected_github_owner
-            AND ar.github_repo_name = d.detected_github_repo_name
-            AND ar.status IN ('active', 'historical')
-        )
+       FROM deployments d
+       JOIN application_repositories ar
+         ON ar.monitored_app_id = d.monitored_app_id
+        AND ar.github_owner = d.detected_github_owner
+        AND ar.github_repo_name = d.detected_github_repo_name
+        AND ar.status IN ('active', 'historical')
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+       WHERE d.repository_id IS NULL
         AND NOT EXISTS (
           SELECT 1
           FROM repositories other

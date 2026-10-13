@@ -68,6 +68,15 @@ function workflowRun(overrides: Record<string, unknown> = {}) {
 
 describe('getWorkflowRunRepositoryBackfillCoverage', () => {
   it('counts strict workflow-run matches and separates missing or conflicting evidence without writes', async () => {
+    const { rows: indexRows } = await pool.query<{ indexdef: string }>(
+      `SELECT indexdef
+       FROM pg_indexes
+       WHERE schemaname = current_schema()
+         AND indexname = 'idx_deployments_legacy_repository_lookup'`,
+    )
+    expect(indexRows).toHaveLength(1)
+    expect(indexRows[0]?.indexdef).toContain('WHERE (repository_id IS NULL)')
+
     const appId = await seedApp(pool, {
       teamSlug: 'team-repo-backfill',
       appName: 'repo-backfill-app',
