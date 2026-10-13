@@ -394,6 +394,62 @@ describe('updateRepositorySettingsByRepositoryId', () => {
     expect(await getEffectiveDefaultBranch(appB)).toBe('develop')
   })
 
+  it('toggles code delivery tracking, sets the start time once and writes audit log entries', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-track-r', appName: 'app-track-r', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'track-repo',
+      githubRepoId: '4043',
+    })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '4043',
+      githubOwner: 'navikt',
+      githubRepoName: 'track-repo',
+    })
+    const toggle = (codeDeliveryTracking: boolean) =>
+      updateRepositorySettingsByRepositoryId({
+        repositoryId,
+        patch: { codeDeliveryTracking },
+        changedByNavIdent: 'Z990001',
+        actor: adminActor,
+      })
+    const readRepository = async () =>
+      (
+        await pool.query<{ code_delivery_tracking: boolean; code_delivery_tracking_since: Date | null }>(
+          'SELECT code_delivery_tracking, code_delivery_tracking_since FROM repositories WHERE id = $1',
+          [repositoryId],
+        )
+      ).rows[0]
+
+    expect(await readRepository()).toEqual({ code_delivery_tracking: false, code_delivery_tracking_since: null })
+
+    const enabled = await toggle(true)
+    expect(enabled.ok && enabled.changedKeys).toEqual([REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING])
+    const afterEnable = await readRepository()
+    expect(afterEnable.code_delivery_tracking).toBe(true)
+    expect(afterEnable.code_delivery_tracking_since).not.toBeNull()
+
+    const unchanged = await toggle(true)
+    expect(unchanged.ok && unchanged.changedKeys).toEqual([])
+
+    await toggle(false)
+    await toggle(true)
+    const afterReEnable = await readRepository()
+    expect(afterReEnable.code_delivery_tracking).toBe(true)
+    expect(afterReEnable.code_delivery_tracking_since).toEqual(afterEnable.code_delivery_tracking_since)
+
+    const log = await pool.query(
+      'SELECT new_value FROM repo_config_audit_log WHERE repository_id = $1 AND setting_key = $2 ORDER BY id',
+      [repositoryId, REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING],
+    )
+    expect(log.rows.map((row) => row.new_value)).toEqual([
+      { code_delivery_tracking: true },
+      { code_delivery_tracking: false },
+      { code_delivery_tracking: true },
+    ])
+  })
+
   it('rejects the update when the actor has no admin access to any linked app', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-unauth-r', appName: 'app-unauth-r', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {

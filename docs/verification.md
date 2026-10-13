@@ -623,7 +623,7 @@ Som første steg mot repositorysentrisk godkjenning kobles deployments til en **
 
 ### Opt-in
 
-Registreringen er av for alle repoer. Den slås på per repository med `repositories.code_delivery_tracking`. Tidspunktet settes automatisk i `code_delivery_tracking_since`, og bare deployments opprettet fra og med dette tidspunktet vurderes. Eldre deployments innlemmes ikke.
+Registreringen er av for alle repoer. Den slås på per repository med `repositories.code_delivery_tracking`, fra repositoryets adminside (krever administratortilgang til repoet, og endringen skrives til audit-logg). Tidspunktet settes automatisk i `code_delivery_tracking_since`, og bare deployments opprettet fra og med dette tidspunktet vurderes. Eldre deployments innlemmes ikke.
 
 ### Hvordan det kjøres
 

@@ -410,6 +410,7 @@ export interface RepositorySettingsPatch {
   auditStartYear?: number | null
   implicitApprovalMode?: ImplicitApprovalMode
   defaultBranch?: string | null
+  codeDeliveryTracking?: boolean
 }
 
 export type UpdateRepositorySettingsResult =
@@ -592,6 +593,26 @@ async function applyRepositorySettingsPatch(
       [patch.defaultBranch, targetAppIds],
     )
     changedKeys.push(REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH)
+  }
+
+  if (patch.codeDeliveryTracking !== undefined && patch.codeDeliveryTracking !== repository.code_delivery_tracking) {
+    await client.query(`UPDATE repositories SET code_delivery_tracking = $1, updated_at = now() WHERE id = $2`, [
+      patch.codeDeliveryTracking,
+      repository.id,
+    ])
+    await recordRepoConfigAuditLog(
+      {
+        repositoryId: repository.id,
+        settingKey: REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING,
+        oldValue: { code_delivery_tracking: repository.code_delivery_tracking },
+        newValue: { code_delivery_tracking: patch.codeDeliveryTracking },
+        changedByNavIdent,
+        changedByName,
+        changeReason,
+      },
+      client,
+    )
+    changedKeys.push(REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING)
   }
 
   const { rows: affectedApps } = await client.query<AffectedApp>(

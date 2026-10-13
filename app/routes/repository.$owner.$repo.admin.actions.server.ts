@@ -228,6 +228,35 @@ export async function action({ request, params }: Route.ActionArgs) {
     return ok(`Default branch oppdatert!${repoAffectedAppsMessage(result.affectedApps, result.changedKeys)}`)
   }
 
+  if (action === 'update_code_delivery_tracking') {
+    const enabled = getFormString(formData, 'enabled')
+    if (enabled !== 'true' && enabled !== 'false') {
+      return fail('Ugyldig verdi')
+    }
+
+    const result = await updateRepositorySettingsByRepositoryId({
+      repositoryId,
+      patch: { codeDeliveryTracking: enabled === 'true' },
+      changedByNavIdent: user.navIdent,
+      changedByName: user.name || undefined,
+      actor: user,
+    })
+
+    if (!result.ok) {
+      return fail(updateFailureMessage(result.reason))
+    }
+
+    if (result.changedKeys.length === 0) {
+      return ok('Ingen endring — registreringen var allerede satt til denne verdien.')
+    }
+
+    return ok(
+      enabled === 'true'
+        ? 'Registrering av kodeleveranser er slått på. Deployments vurderes fra tidspunktet registreringen først ble slått på.'
+        : 'Registrering av kodeleveranser er slått av.',
+    )
+  }
+
   if (action === 'update_implicit_approval') {
     const modeValue = formData.get('mode')
     if (typeof modeValue !== 'string' || !isImplicitApprovalMode(modeValue)) {
