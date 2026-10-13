@@ -10,7 +10,8 @@ import {
   VStack,
 } from '@navikt/ds-react'
 import { useState } from 'react'
-import { Form, Link } from 'react-router'
+import { Link, useFetcher } from 'react-router'
+import { ActionAlert } from '~/components/ActionAlert'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
 
 type CodeDeliveryTrackingSettingsProps = {
@@ -38,6 +39,8 @@ export function CodeDeliveryTrackingSettings({
 }: CodeDeliveryTrackingSettingsProps) {
   const { enabled, since, earliestDeploymentAt } = codeDeliveryTracking
   const [sinceValue, setSinceValue] = useState('')
+  const toggleFetcher = useFetcher<{ success?: string; error?: string }>()
+  const restartFetcher = useFetcher<{ success?: string; error?: string }>()
   const { datepickerProps, inputProps } = useDatepicker({
     toDate: since ? new Date(since) : new Date(),
     onDateChange: (date) => setSinceValue(date ? formatDateValue(date) : ''),
@@ -65,17 +68,18 @@ export function CodeDeliveryTrackingSettings({
             : ''}
         </BodyShort>
 
-        <Form method="post">
+        <toggleFetcher.Form method="post">
           <input type="hidden" name="action" value="update_code_delivery_tracking" />
           <input type="hidden" name="repository_id" value={repositoryId} />
           <input type="hidden" name="enabled" value={enabled ? 'false' : 'true'} />
           <Button type="submit" size="small" variant="secondary">
             {enabled ? 'Slå av' : 'Slå på'}
           </Button>
-        </Form>
+        </toggleFetcher.Form>
+        <ActionAlert data={toggleFetcher.data} />
 
         {enabled && (
-          <Form method="post">
+          <restartFetcher.Form method="post">
             <input type="hidden" name="action" value="restart_code_delivery_tracking" />
             <input type="hidden" name="repository_id" value={repositoryId} />
             <VStack gap="space-12">
@@ -106,8 +110,9 @@ export function CodeDeliveryTrackingSettings({
                 </Button>
               </div>
             </VStack>
-          </Form>
+          </restartFetcher.Form>
         )}
+        {enabled && <ActionAlert data={restartFetcher.data} />}
 
         <BodyShort size="small">
           <AkselLink
