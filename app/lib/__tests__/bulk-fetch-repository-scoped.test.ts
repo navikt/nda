@@ -5,11 +5,13 @@ const {
   mockFetchVerificationData,
   mockUpdateDeploymentCommitChecks,
   mockFetchWorkflowRunSnapshotIfMissing,
+  mockParseWorkflowRunUrl,
 } = vi.hoisted(() => ({
   mockPoolQuery: vi.fn(),
   mockFetchVerificationData: vi.fn(),
   mockUpdateDeploymentCommitChecks: vi.fn(),
   mockFetchWorkflowRunSnapshotIfMissing: vi.fn(),
+  mockParseWorkflowRunUrl: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -55,6 +57,7 @@ vi.mock('~/lib/verification/fetch-data/workflow-triggers.server', () => ({
 
 vi.mock('~/lib/github/git.server', () => ({
   fetchWorkflowRunSnapshotIfMissing: mockFetchWorkflowRunSnapshotIfMissing,
+  parseWorkflowRunUrl: mockParseWorkflowRunUrl,
 }))
 
 import { fetchVerificationDataForRepository } from '~/lib/verification/fetch-data/bulk-fetch.server'
@@ -87,6 +90,15 @@ describe('fetchVerificationDataForRepository', () => {
     mockFetchVerificationData.mockReset()
     mockUpdateDeploymentCommitChecks.mockReset()
     mockFetchWorkflowRunSnapshotIfMissing.mockReset()
+    mockParseWorkflowRunUrl.mockReset()
+    mockParseWorkflowRunUrl.mockImplementation((url: string | null, owner: string, repo: string) => {
+      const match = url?.match(/^https:\/\/github[.]com\/([^/]+)\/([^/]+)\/actions\/runs\/([0-9]+)$/i)
+      if (!match || match[1].toLowerCase() !== owner.toLowerCase() || match[2].toLowerCase() !== repo.toLowerCase()) {
+        return null
+      }
+      return { owner: match[1], repo: match[2], runId: Number(match[3]) }
+    })
+    mockPoolQuery.mockResolvedValue({ rows: [] })
     mockFetchVerificationData.mockResolvedValue({
       commitChecks: null,
       commitChecksAttempted: false,
@@ -100,7 +112,7 @@ describe('fetchVerificationDataForRepository', () => {
 
     await fetchVerificationDataForRepository(42)
 
-    expect(mockPoolQuery).toHaveBeenCalledTimes(1)
+    expect(mockPoolQuery).toHaveBeenCalledTimes(2)
     const [query, params] = mockPoolQuery.mock.calls[0]
     expect(query).toContain('application_repositories')
     expect(query).toContain("ar.status IN ('active', 'historical')")
@@ -143,22 +155,22 @@ describe('fetchVerificationDataForRepository', () => {
   })
 
   it('fetches a missing workflow-run snapshot once for duplicate runs across deployments', async () => {
-    const sharedTriggerUrl = 'https://github.com/navikt/nda/actions/runs/12345'
-    mockPoolQuery.mockResolvedValueOnce({
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
       rows: [
-        deploymentRow({
-          id: 1,
-          trigger_url: sharedTriggerUrl,
+        {
+          deployment_id: 1,
           detected_github_owner: 'navikt',
           detected_github_repo_name: 'nda',
-        }),
-        deploymentRow({
-          id: 2,
-          monitored_app_id: 20,
-          trigger_url: sharedTriggerUrl,
+          trigger_url: 'https://github.com/navikt/nda/actions/runs/12345',
+          github_repo_id: '987654321',
+        },
+        {
+          deployment_id: 2,
           detected_github_owner: 'navikt',
-          detected_github_repo_name: 'nda',
-        }),
+          detected_github_repo_name: 'old-nda-name',
+          trigger_url: 'https://github.com/navikt/old-nda-name/actions/runs/12345',
+          github_repo_id: '987654321',
+        },
       ],
     })
     mockFetchWorkflowRunSnapshotIfMissing.mockResolvedValueOnce({ status: 'fetched' })
@@ -166,17 +178,26 @@ describe('fetchVerificationDataForRepository', () => {
     const result = await fetchVerificationDataForRepository(42)
 
     expect(mockFetchWorkflowRunSnapshotIfMissing).toHaveBeenCalledOnce()
-    expect(mockFetchWorkflowRunSnapshotIfMissing).toHaveBeenCalledWith('navikt', 'nda', sharedTriggerUrl, 42)
+    expect(mockFetchWorkflowRunSnapshotIfMissing).toHaveBeenCalledWith(
+      'navikt',
+      'nda',
+      'https://github.com/navikt/nda/actions/runs/12345',
+      '987654321',
+    )
     expect(result.workflowRunSnapshotsFetched).toBe(1)
     expect(result.workflowRunSnapshotsAvailable).toBe(1)
   })
 
-  it('tracks GitHub runs that are no longer available without failing other repository data fetches', async () => {
-    mockPoolQuery.mockResolvedValueOnce({
+  it('fetches workflow-run snapshots for valid URLs even when the deployment has no usable commit SHA', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
       rows: [
-        deploymentRow({
+        {
+          deployment_id: 3,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'nda',
           trigger_url: 'https://github.com/navikt/nda/actions/runs/12345',
-        }),
+          github_repo_id: '987654321',
+        },
       ],
     })
     mockFetchWorkflowRunSnapshotIfMissing.mockResolvedValueOnce({ status: 'not_found' })
@@ -185,6 +206,21 @@ describe('fetchVerificationDataForRepository', () => {
 
     expect(result.workflowRunSnapshotsNotFound).toBe(1)
     expect(result.workflowRunSnapshotErrors).toBe(0)
-    expect(result.fetched).toBe(1)
+    expect(result.total).toBe(0)
+  })
+
+  it('uses the established immutable repository deployment scope for both fetch queries', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [] })
+
+    await fetchVerificationDataForRepository(42)
+
+    const verificationQuery = mockPoolQuery.mock.calls[0]?.[0] as string
+    const snapshotsQuery = mockPoolQuery.mock.calls[1]?.[0] as string
+    expect(verificationQuery).toContain('d.repository_id = $1')
+    expect(verificationQuery).toContain('other.github_owner = d.detected_github_owner')
+    expect(snapshotsQuery).toContain('d.repository_id = $1')
+    expect(snapshotsQuery).toContain('other.github_owner = d.detected_github_owner')
+    expect(snapshotsQuery).toContain('r.github_repo_id')
+    expect(snapshotsQuery).not.toContain('d.commit_sha IS NOT NULL')
   })
 })

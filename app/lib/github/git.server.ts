@@ -246,26 +246,59 @@ export type WorkflowRunSnapshotFetchResult =
   | { status: 'not_applicable' | 'already_present' | 'fetched' | 'not_found' }
   | { status: 'failed'; error: string }
 
-export async function fetchWorkflowRunSnapshotIfMissing(
-  owner: string,
-  repo: string,
+export interface ParsedWorkflowRunUrl {
+  owner: string
+  repo: string
+  runId: number
+}
+
+export function parseWorkflowRunUrl(
   triggerUrl: string | null | undefined,
-  githubRepoId: number,
-): Promise<WorkflowRunSnapshotFetchResult> {
+  expectedOwner: string,
+  expectedRepo: string,
+): ParsedWorkflowRunUrl | null {
   const match = triggerUrl?.match(
     /^https:\/\/github[.]com\/([^/?#]+)\/([^/?#]+)\/actions\/runs\/([0-9]+)(?:[/?#].*)?$/i,
   )
-  if (!match || match[1].toLowerCase() !== owner.toLowerCase() || match[2].toLowerCase() !== repo.toLowerCase()) {
-    return { status: 'not_applicable' }
+  if (
+    !match ||
+    match[1].toLowerCase() !== expectedOwner.toLowerCase() ||
+    match[2].toLowerCase() !== expectedRepo.toLowerCase()
+  ) {
+    return null
   }
 
   const runId = Number(match[3])
   if (!Number.isSafeInteger(runId) || runId <= 0) {
+    return null
+  }
+
+  return { owner: match[1], repo: match[2], runId }
+}
+
+export async function fetchWorkflowRunSnapshotIfMissing(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+  githubRepoId: number | string,
+): Promise<WorkflowRunSnapshotFetchResult> {
+  const workflowRun = parseWorkflowRunUrl(triggerUrl, owner, repo)
+  if (!workflowRun) {
     return { status: 'not_applicable' }
   }
 
-  if (await hasWorkflowRunRawSnapshot(githubRepoId, runId)) {
-    return { status: 'already_present' }
+  const runId = workflowRun.runId
+  try {
+    if (await hasWorkflowRunRawSnapshot(githubRepoId, runId)) {
+      return { status: 'already_present' }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error(
+      `Failed to check workflow-run snapshot ${runId} for ${owner}/${repo}`,
+      error instanceof Error ? error : new Error(message),
+    )
+    return { status: 'failed', error: message }
   }
 
   let response: Awaited<ReturnType<ReturnType<typeof getGitHubClient>['actions']['getWorkflowRun']>>
@@ -283,6 +316,12 @@ export async function fetchWorkflowRunSnapshotIfMissing(
   }
 
   try {
+    if (String(response.data.repository?.id) !== String(githubRepoId)) {
+      const error = `Workflow run ${runId} belongs to GitHub repository ${response.data.repository?.id ?? 'unknown'}, not ${githubRepoId}`
+      logger.warn(`⚠️ Refusing to archive workflow run ${runId} for ${owner}/${repo}:`, { error })
+      return { status: 'failed', error }
+    }
+
     const apiVersion = captureApiVersionMetadata(response.headers, null)
     await saveWorkflowRunRawSnapshot(owner, repo, githubRepoId, runId, response.data, apiVersion)
     return { status: 'fetched' }

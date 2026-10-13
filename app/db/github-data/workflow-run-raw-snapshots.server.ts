@@ -5,7 +5,7 @@ import type { WorkflowRunRawSnapshot } from '~/lib/verification/types'
 export async function saveWorkflowRunRawSnapshot(
   owner: string,
   repo: string,
-  githubRepoId: number,
+  githubRepoId: number | string,
   runId: number,
   rawData: unknown,
   apiVersion: ApiVersionMetadata,
@@ -29,7 +29,7 @@ export async function saveWorkflowRunRawSnapshot(
   return result.rows[0].id
 }
 
-export async function hasWorkflowRunRawSnapshot(githubRepoId: number, runId: number): Promise<boolean> {
+export async function hasWorkflowRunRawSnapshot(githubRepoId: number | string, runId: number): Promise<boolean> {
   const result = await pool.query<{ exists: boolean }>(
     `SELECT EXISTS (
        SELECT 1

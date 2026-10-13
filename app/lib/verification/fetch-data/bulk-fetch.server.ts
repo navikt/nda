@@ -1,11 +1,12 @@
 import { pool } from '~/db/connection.server'
+import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
 import {
   fetchWorkflowRunSnapshotIfMissing,
-  type WorkflowRunSnapshotFetchResult,
+  parseWorkflowRunUrl,
   type WorkflowTriggerConfig,
 } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
@@ -35,6 +36,119 @@ export interface BulkFetchProgress {
 export interface BulkFetchResult extends BulkFetchProgress {
   errorDetails: Array<{ deploymentId: number; error: string }>
   rateLimited?: boolean
+}
+
+interface WorkflowRunSnapshotCandidate {
+  deployment_id: number
+  detected_github_owner: string
+  detected_github_repo_name: string
+  trigger_url: string
+  github_repo_id: string
+}
+
+type WorkflowRunSnapshotSummary = Pick<
+  BulkFetchProgress,
+  | 'workflowRunSnapshotsFetched'
+  | 'workflowRunSnapshotsAvailable'
+  | 'workflowRunSnapshotsNotFound'
+  | 'workflowRunSnapshotErrors'
+> & { rateLimited?: boolean }
+
+async function fetchWorkflowRunSnapshotsForRepository(
+  repositoryId: number,
+  jobId?: number,
+): Promise<WorkflowRunSnapshotSummary> {
+  const { rows } = await pool.query<WorkflowRunSnapshotCandidate>(
+    `SELECT
+       d.id AS deployment_id,
+       d.detected_github_owner,
+       d.detected_github_repo_name,
+       d.trigger_url,
+       r.github_repo_id
+     FROM deployments d
+     JOIN repositories r ON r.id = $1
+     WHERE ${repositoryDeploymentSql('$1')}
+       AND d.detected_github_owner IS NOT NULL
+       AND d.detected_github_repo_name IS NOT NULL
+       AND d.trigger_url IS NOT NULL
+     ORDER BY d.created_at DESC, d.id DESC`,
+    [repositoryId],
+  )
+
+  const uniqueRuns = new Map<
+    string,
+    WorkflowRunSnapshotCandidate & { runId: number; urlOwner: string; urlRepo: string }
+  >()
+  for (const row of rows) {
+    const parsed = parseWorkflowRunUrl(row.trigger_url, row.detected_github_owner, row.detected_github_repo_name)
+    if (!parsed) continue
+    const key = `${row.github_repo_id}:${parsed.runId}`
+    if (!uniqueRuns.has(key)) {
+      uniqueRuns.set(key, { ...row, runId: parsed.runId, urlOwner: parsed.owner, urlRepo: parsed.repo })
+    }
+  }
+
+  const summary: WorkflowRunSnapshotSummary = {
+    workflowRunSnapshotsFetched: 0,
+    workflowRunSnapshotsAvailable: 0,
+    workflowRunSnapshotsNotFound: 0,
+    workflowRunSnapshotErrors: 0,
+  }
+  const total = uniqueRuns.size
+  let processed = 0
+
+  for (const candidate of uniqueRuns.values()) {
+    if (jobId && (await isSyncJobCancelled(jobId))) {
+      await logSyncJobMessage(jobId, 'info', `Snapshot-henting avbrutt etter ${processed} av ${total} runs`)
+      break
+    }
+
+    const rateLimitRemaining = getGitHubRateLimitRemaining()
+    if (rateLimitRemaining !== null && rateLimitRemaining < RATE_LIMIT_SAFETY_BUFFER) {
+      summary.rateLimited = true
+      if (jobId) {
+        await logSyncJobMessage(
+          jobId,
+          'warn',
+          `Stoppet snapshot-henting etter ${processed} av ${total} runs — GitHub rate limit nesten oppbrukt (${rateLimitRemaining} igjen)`,
+        )
+      }
+      break
+    }
+
+    const snapshotResult = await fetchWorkflowRunSnapshotIfMissing(
+      candidate.urlOwner,
+      candidate.urlRepo,
+      candidate.trigger_url,
+      candidate.github_repo_id,
+    )
+    if (snapshotResult.status === 'fetched') {
+      summary.workflowRunSnapshotsFetched++
+      summary.workflowRunSnapshotsAvailable++
+    } else if (snapshotResult.status === 'already_present') {
+      summary.workflowRunSnapshotsAvailable++
+    } else if (snapshotResult.status === 'not_found') {
+      summary.workflowRunSnapshotsNotFound++
+    } else if (snapshotResult.status === 'failed') {
+      summary.workflowRunSnapshotErrors++
+      if (jobId) {
+        await logSyncJobMessage(
+          jobId,
+          'warn',
+          `Workflow-run-snapshot feilet for deployment ${candidate.deployment_id}`,
+          { deploymentId: candidate.deployment_id, error: snapshotResult.error },
+        )
+      }
+    }
+
+    processed++
+    if (jobId && (processed === 1 || processed === total || processed % 10 === 0)) {
+      await updateSyncJobProgress(jobId, { total, processed, ...summary })
+      await heartbeatSyncJob(jobId, 30)
+    }
+  }
+
+  return summary
 }
 
 const ORDERED_DEPLOYMENTS_SELECT = (defaultBranchSql: string, repositoryIdSql = 'NULL::int') => `
@@ -101,7 +215,7 @@ async function processDeployments(
   deployments: DeploymentRow[],
   jobId: number | undefined,
   refreshDisplayData: boolean | undefined,
-  fetchMissingWorkflowRunSnapshots: boolean,
+  workflowRunSnapshotSummary: WorkflowRunSnapshotSummary,
   onProgress?: (progress: BulkFetchProgress) => void,
 ): Promise<BulkFetchResult> {
   const result: BulkFetchResult = {
@@ -111,14 +225,10 @@ async function processDeployments(
     fetched: 0,
     derivedFromRaw: 0,
     workflowTriggersFetched: 0,
-    workflowRunSnapshotsFetched: 0,
-    workflowRunSnapshotsAvailable: 0,
-    workflowRunSnapshotsNotFound: 0,
-    workflowRunSnapshotErrors: 0,
+    ...workflowRunSnapshotSummary,
     errors: 0,
     errorDetails: [],
   }
-  const workflowRunSnapshotResults = new Map<string, Promise<WorkflowRunSnapshotFetchResult>>()
 
   if (jobId) {
     await logSyncJobMessage(jobId, 'info', `Starter datahenting for ${deployments.length} deployments`)
@@ -164,44 +274,6 @@ async function processDeployments(
             commitSha: commitSha.substring(0, 7),
             repo: `${owner}/${repo}`,
           })
-        }
-      }
-
-      if (fetchMissingWorkflowRunSnapshots && deployment.matched_repository_id !== null) {
-        const runId = deployment.trigger_url?.match(/\/actions\/runs\/([0-9]+)/)?.[1]
-        if (runId) {
-          const snapshotKey = `${deployment.matched_repository_id}:${owner.toLowerCase()}/${repo.toLowerCase()}:${runId}`
-          let snapshotResultPromise = workflowRunSnapshotResults.get(snapshotKey)
-          const isFirstOccurrence = snapshotResultPromise === undefined
-          if (!snapshotResultPromise) {
-            snapshotResultPromise = fetchWorkflowRunSnapshotIfMissing(
-              owner,
-              repo,
-              deployment.trigger_url,
-              deployment.matched_repository_id,
-            )
-            workflowRunSnapshotResults.set(snapshotKey, snapshotResultPromise)
-          }
-
-          const snapshotResult = await snapshotResultPromise
-          if (isFirstOccurrence) {
-            if (snapshotResult.status === 'fetched') {
-              result.workflowRunSnapshotsFetched++
-              result.workflowRunSnapshotsAvailable++
-            } else if (snapshotResult.status === 'already_present') {
-              result.workflowRunSnapshotsAvailable++
-            } else if (snapshotResult.status === 'not_found') {
-              result.workflowRunSnapshotsNotFound++
-            } else if (snapshotResult.status === 'failed') {
-              result.workflowRunSnapshotErrors++
-              if (jobId) {
-                await logSyncJobMessage(jobId, 'warn', `Workflow-run-snapshot feilet for deployment ${deployment.id}`, {
-                  deploymentId: deployment.id,
-                  error: snapshotResult.error,
-                })
-              }
-            }
-          }
         }
       }
 
@@ -371,7 +443,18 @@ export async function fetchVerificationDataForAllDeployments(
     durationMs: Math.round(performance.now() - queryStart),
   })
 
-  return processDeployments(deployments, jobId, refreshDisplayData, false, onProgress)
+  return processDeployments(
+    deployments,
+    jobId,
+    refreshDisplayData,
+    {
+      workflowRunSnapshotsFetched: 0,
+      workflowRunSnapshotsAvailable: 0,
+      workflowRunSnapshotsNotFound: 0,
+      workflowRunSnapshotErrors: 0,
+    },
+    onProgress,
+  )
 }
 
 export async function fetchVerificationDataForRepository(
@@ -392,25 +475,18 @@ export async function fetchVerificationDataForRepository(
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
         AND ${VALID_COMMIT_SHA_SQL}
-        AND EXISTS (
-          SELECT 1 FROM application_repositories ar
-          JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-          WHERE ar.monitored_app_id = d.monitored_app_id
-            AND ar.github_owner = d.detected_github_owner
-            AND ar.github_repo_name = d.detected_github_repo_name
-            AND ar.status IN ('active', 'historical')
-            AND r.id = $1
-        )
+        AND ${repositoryDeploymentSql('$1')}
     )
     ${SNAPSHOT_JOIN_AND_ORDER}`
 
   const queryStart = performance.now()
   const deploymentsResult = await pool.query(query, [repositoryId])
+  const workflowRunSnapshotSummary = await fetchWorkflowRunSnapshotsForRepository(repositoryId, jobId)
 
   const deployments = deploymentsResult.rows
   logger.debug(`Fant ${deployments.length} deployments å sjekke for repository ${repositoryId}`, {
     durationMs: Math.round(performance.now() - queryStart),
   })
 
-  return processDeployments(deployments, jobId, refreshDisplayData, true, onProgress)
+  return processDeployments(deployments, jobId, refreshDisplayData, workflowRunSnapshotSummary, onProgress)
 }

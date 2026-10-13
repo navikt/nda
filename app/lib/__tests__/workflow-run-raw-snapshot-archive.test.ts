@@ -33,6 +33,7 @@ const mockPoolQuery = pool.query as Mock
 
 const workflowRunData = {
   id: 555,
+  repository: { id: 999 },
   path: '.github/workflows/deploy.yml',
   event: 'push',
   check_suite_id: 42,
@@ -199,6 +200,29 @@ describe('getWorkflowTriggerConfig', () => {
           999,
         ),
       ).resolves.toEqual({ status: 'not_found' })
+    })
+
+    it('refuses to archive a GitHub response that belongs to a different immutable repository', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: false }] })
+      mockGetWorkflowRun.mockResolvedValueOnce({
+        data: { ...workflowRunData, repository: { id: 123 } },
+        headers: { 'x-github-api-version-selected': '2022-11-28' },
+      })
+
+      await expect(
+        fetchWorkflowRunSnapshotIfMissing(
+          'navikt',
+          'archive-repo',
+          'https://github.com/navikt/archive-repo/actions/runs/555',
+          999,
+        ),
+      ).resolves.toMatchObject({ status: 'failed', error: expect.stringContaining('belongs to GitHub repository 123') })
+
+      expect(mockPoolQuery).toHaveBeenCalledOnce()
+      expect(mockPoolQuery).not.toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO github_workflow_runs_raw_snapshots'),
+        expect.anything(),
+      )
     })
   })
 })
