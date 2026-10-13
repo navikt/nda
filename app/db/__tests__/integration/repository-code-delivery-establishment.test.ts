@@ -574,14 +574,16 @@ describe('getDeploymentIdsAwaitingCodeDelivery', () => {
     const unknownStale = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
     const sourceUnknownStale = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
     const unauthorized = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
+    const behind = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
     await pool.query(
       `INSERT INTO repository_code_delivery_unresolved (deployment_id, reason, updated_at) VALUES
         ($1, 'ancestry_diverged', now() - interval '3 hours'),
         ($2, 'ancestry_unknown', now()),
         ($3, 'ancestry_unknown', now() - interval '3 hours'),
         ($4, 'source_unknown', now() - interval '3 hours'),
-        ($5, 'source_unauthorized', now() - interval '3 hours')`,
-      [diverged, unknownFresh, unknownStale, sourceUnknownStale, unauthorized],
+        ($5, 'source_unauthorized', now() - interval '3 hours'),
+        ($6, 'ancestry_behind', now() - interval '3 hours')`,
+      [diverged, unknownFresh, unknownStale, sourceUnknownStale, unauthorized, behind],
     )
 
     expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([unknownStale, sourceUnknownStale])
