@@ -6,7 +6,12 @@ import {
   linkDeploymentToRepositoryCodeDeliveryInTransaction,
 } from './repository-code-deliveries.server'
 
-type UnresolvedReason = 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized' | 'source_unknown'
+type UnresolvedReason =
+  | 'ancestry_unknown'
+  | 'ancestry_diverged'
+  | 'ancestry_behind'
+  | 'source_unauthorized'
+  | 'source_unknown'
 
 export type EstablishmentGrounds =
   | { confirmed: true; baseSha: string | null; headSha: string }

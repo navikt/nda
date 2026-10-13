@@ -76,7 +76,7 @@ async function establish(deploymentId: number, baseSha: string | null = null) {
 
 async function establishUnresolved(
   deploymentId: number,
-  reason: 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized' | 'source_unknown',
+  reason: 'ancestry_unknown' | 'ancestry_diverged' | 'ancestry_behind' | 'source_unauthorized' | 'source_unknown',
 ) {
   const { headSha } = await confirmed(deploymentId)
   return establishCodeDeliveryForDeployment(deploymentId, { confirmed: false, reason, headSha })
@@ -299,24 +299,27 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(await getDeliveries(repositoryId)).toEqual([])
   })
 
-  it.each(['ancestry_unknown', 'ancestry_diverged', 'source_unauthorized', 'source_unknown'] as const)(
-    'does not create or link when grounds are unresolved (%s)',
-    async (reason) => {
-      const repositoryId = await createRepository()
-      const appId = await createApp('app-a')
-      const established = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
-      const unresolved = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_101 })
-      await establish(established)
+  it.each([
+    'ancestry_unknown',
+    'ancestry_diverged',
+    'ancestry_behind',
+    'source_unauthorized',
+    'source_unknown',
+  ] as const)('does not create or link when grounds are unresolved (%s)', async (reason) => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const established = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    const unresolved = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_101 })
+    await establish(established)
 
-      expect(await establishUnresolved(unresolved, reason)).toEqual({
-        outcome: 'unresolved',
-        reason,
-      })
-      expect(await getDeliveries(repositoryId)).toHaveLength(1)
-      expect(await getLinkedDeliveryId(unresolved)).toBeNull()
-      expect(await getUnresolved(unresolved)).toEqual({ reason, resolved_at: null })
-    },
-  )
+    expect(await establishUnresolved(unresolved, reason)).toEqual({
+      outcome: 'unresolved',
+      reason,
+    })
+    expect(await getDeliveries(repositoryId)).toHaveLength(1)
+    expect(await getLinkedDeliveryId(unresolved)).toBeNull()
+    expect(await getUnresolved(unresolved)).toEqual({ reason, resolved_at: null })
+  })
 
   it('does not let an unresolved deployment block a later confirmed deployment of the same SHA', async () => {
     const repositoryId = await createRepository()
