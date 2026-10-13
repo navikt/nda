@@ -39,7 +39,12 @@ export function RepositoryIdBackfillCoverage({
 
       <Form method="get">
         <HStack gap="space-16" align="end" wrap>
-          <Select label="Nais-team" name="team" defaultValue={selectedTeam ?? ''}>
+          <Select
+            key={selectedTeam ?? 'no-team-selected'}
+            label="Nais-team"
+            name="team"
+            defaultValue={selectedTeam ?? ''}
+          >
             <option value="">Velg team</option>
             {teams.map((team) => (
               <option key={team} value={team}>
