@@ -56,6 +56,10 @@ export function FetchVerificationDataSection({
             Henter for hele deployment-historikken, uavhengig av revisjonsstartår, ikke bare det som vises i «GitHub
             data-dekning» under. Dermed er all data allerede tilgjengelig hvis revisjonsstartåret endres senere.
           </BodyShort>
+          <BodyShort textColor="subtle" size="small">
+            For deployments i dette repoet hentes også manglende workflow-run-snapshots fra lenkene til GitHub Actions.
+            Runs som GitHub ikke lenger har tilgjengelig kan ikke arkiveres.
+          </BodyShort>
         </div>
 
         <Box padding="space-16" borderRadius="4" background="neutral-soft">
@@ -191,6 +195,27 @@ export function FetchVerificationDataSection({
                     Workflow-triggere hentet:{' '}
                     {(fetchJobStatus.result as Record<string, number>).workflowTriggersFetched ?? 0}
                   </Detail>
+                  <Detail>
+                    Workflow-run-snapshots hentet:{' '}
+                    {(fetchJobStatus.result as Record<string, number>).workflowRunSnapshotsFetched ?? 0}
+                  </Detail>
+                  <Detail>
+                    Workflow-run-snapshots tilgjengelige:{' '}
+                    {(fetchJobStatus.result as Record<string, number>).workflowRunSnapshotsAvailable ?? 0}
+                  </Detail>
+                  {((fetchJobStatus.result as Record<string, number>).workflowRunSnapshotsNotFound ?? 0) > 0 && (
+                    <Detail>
+                      Runs ikke lenger tilgjengelig:{' '}
+                      {(fetchJobStatus.result as Record<string, number>).workflowRunSnapshotsNotFound}
+                    </Detail>
+                  )}
+                  {((fetchJobStatus.result as Record<string, number>).workflowRunSnapshotErrors ?? 0) > 0 && (
+                    <Detail>
+                      <span style={{ color: 'var(--ax-text-danger)' }}>
+                        Snapshot-feil: {(fetchJobStatus.result as Record<string, number>).workflowRunSnapshotErrors}
+                      </span>
+                    </Detail>
+                  )}
                   {((fetchJobStatus.result as Record<string, number>).errors ?? 0) > 0 && (
                     <Detail>
                       <span style={{ color: 'var(--ax-text-danger)' }}>

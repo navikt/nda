@@ -572,4 +572,7 @@ export {
 } from './github-data/compare-stats.server'
 export { savePrWindowRawSnapshot } from './github-data/pr-window-raw-snapshots.server'
 export { getLatestVerificationRun, saveVerificationRun } from './github-data/verification-runs.server'
-export { saveWorkflowRunRawSnapshot } from './github-data/workflow-run-raw-snapshots.server'
+export {
+  getWorkflowRunRawSnapshotData,
+  saveWorkflowRunRawSnapshot,
+} from './github-data/workflow-run-raw-snapshots.server'

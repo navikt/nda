@@ -3,6 +3,7 @@ import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
+import type { WorkflowRunResolution } from '~/lib/github/git.server'
 import { buildBranchMismatch } from './branch-mismatch'
 import { fetchCommitChecks, getCachedCommitChecks } from './fetch-data/commit-checks.server'
 import { fetchCommitsBetween } from './fetch-data/commits-between.server'
@@ -27,6 +28,7 @@ export async function fetchVerificationData(
   options?: FetchOptions,
   triggerUrl?: string | null,
   repositoryId?: number,
+  resolvedWorkflowRun?: WorkflowRunResolution,
 ): Promise<VerificationInput> {
   const [owner, repo] = repository.split('/')
   if (!owner || !repo) {
@@ -166,9 +168,20 @@ export async function fetchVerificationData(
   }
 
   const detectedBranchName: string | undefined =
-    deployedPr?.metadata.headBranch ?? (await getBranchFromWorkflowRun(owner, repo, triggerUrl)) ?? undefined
+    deployedPr?.metadata.headBranch ??
+    (resolvedWorkflowRun === undefined
+      ? await getBranchFromWorkflowRun(owner, repo, triggerUrl)
+      : resolvedWorkflowRun.branchName) ??
+    undefined
 
-  const workflowTrigger = await fetchWorkflowTriggerConfig(deploymentId, owner, repo, triggerUrl, options)
+  const workflowTrigger = await fetchWorkflowTriggerConfig(
+    deploymentId,
+    owner,
+    repo,
+    triggerUrl,
+    options,
+    resolvedWorkflowRun,
+  )
 
   const rawFirstCommitMessage = await resolveRawCommitMessage({
     deployedPr,

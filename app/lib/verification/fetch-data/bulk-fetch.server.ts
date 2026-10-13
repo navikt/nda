@@ -1,9 +1,15 @@
 import { pool } from '~/db/connection.server'
+import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
-import { getGitHubRateLimitRemaining } from '~/lib/github'
-import type { WorkflowTriggerConfig } from '~/lib/github/git.server'
+import { GITHUB_RATE_LIMIT_SAFETY_BUFFER, getGitHubRateLimitRemaining } from '~/lib/github'
+import {
+  fetchWorkflowRunSnapshotIfMissing,
+  parseWorkflowRunUrl,
+  type WorkflowRunResolution,
+  type WorkflowTriggerConfig,
+} from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { fetchVerificationData } from '../fetch-data.server'
 import { updateDeploymentCommitChecks } from '../store-data.server'
@@ -12,8 +18,6 @@ import { refreshCommitChecksOnly } from './commit-checks.server'
 import { refreshDisplayData as refreshPrDisplayData } from './pr-data.server'
 import { backfillWorkflowTriggerConfig } from './workflow-triggers.server'
 
-const RATE_LIMIT_SAFETY_BUFFER = 200
-
 export interface BulkFetchProgress {
   total: number
   processed: number
@@ -21,6 +25,10 @@ export interface BulkFetchProgress {
   fetched: number
   derivedFromRaw: number
   workflowTriggersFetched: number
+  workflowRunSnapshotsFetched: number
+  workflowRunSnapshotsAvailable: number
+  workflowRunSnapshotsNotFound: number
+  workflowRunSnapshotErrors: number
   errors: number
 }
 
@@ -29,11 +37,150 @@ export interface BulkFetchResult extends BulkFetchProgress {
   rateLimited?: boolean
 }
 
-const ORDERED_DEPLOYMENTS_SELECT = (defaultBranchSql: string, repositoryIdSql = 'NULL::int') => `
+interface WorkflowRunSnapshotCandidate {
+  deployment_id: number
+  detected_github_owner: string
+  detected_github_repo_name: string
+  trigger_url: string
+  github_repo_id: string
+}
+
+interface RepositoryWorkflowRunSnapshots {
+  summary: WorkflowRunSnapshotSummary
+  triggerResolutions: Map<string, WorkflowRunResolution>
+}
+
+function workflowRunKey(githubRepoId: string | number, runId: number): string {
+  return `${githubRepoId}:${runId}`
+}
+
+type WorkflowRunSnapshotSummary = Pick<
+  BulkFetchProgress,
+  | 'workflowRunSnapshotsFetched'
+  | 'workflowRunSnapshotsAvailable'
+  | 'workflowRunSnapshotsNotFound'
+  | 'workflowRunSnapshotErrors'
+> & { rateLimited?: boolean }
+
+async function fetchWorkflowRunSnapshotsForRepository(
+  repositoryId: number,
+  jobId?: number,
+): Promise<RepositoryWorkflowRunSnapshots> {
+  const { rows } = await pool.query<WorkflowRunSnapshotCandidate>(
+    `SELECT
+       d.id AS deployment_id,
+       d.detected_github_owner,
+       d.detected_github_repo_name,
+       d.trigger_url,
+       r.github_repo_id
+     FROM deployments d
+     JOIN repositories r ON r.id = $1
+     WHERE ${repositoryDeploymentSql('$1')}
+       AND d.detected_github_owner IS NOT NULL
+       AND d.detected_github_repo_name IS NOT NULL
+       AND d.trigger_url IS NOT NULL
+     ORDER BY d.created_at DESC, d.id DESC`,
+    [repositoryId],
+  )
+
+  const uniqueRuns = new Map<
+    string,
+    WorkflowRunSnapshotCandidate & { runId: number; urlOwner: string; urlRepo: string }
+  >()
+  for (const row of rows) {
+    const parsed = parseWorkflowRunUrl(row.trigger_url, row.detected_github_owner, row.detected_github_repo_name)
+    if (!parsed) continue
+    const key = `${row.github_repo_id}:${parsed.runId}`
+    if (!uniqueRuns.has(key)) {
+      uniqueRuns.set(key, { ...row, runId: parsed.runId, urlOwner: parsed.owner, urlRepo: parsed.repo })
+    }
+  }
+
+  const summary: WorkflowRunSnapshotSummary = {
+    workflowRunSnapshotsFetched: 0,
+    workflowRunSnapshotsAvailable: 0,
+    workflowRunSnapshotsNotFound: 0,
+    workflowRunSnapshotErrors: 0,
+  }
+  const total = uniqueRuns.size
+  let processed = 0
+  const triggerResolutions = new Map<string, WorkflowRunResolution>()
+
+  for (const candidate of uniqueRuns.values()) {
+    if (jobId && (await isSyncJobCancelled(jobId))) {
+      await logSyncJobMessage(jobId, 'info', `Snapshot-henting avbrutt etter ${processed} av ${total} runs`)
+      break
+    }
+
+    const snapshotResult = await fetchWorkflowRunSnapshotIfMissing(
+      candidate.urlOwner,
+      candidate.urlRepo,
+      candidate.trigger_url,
+      candidate.github_repo_id,
+    )
+    if (snapshotResult.status === 'rate_limited') {
+      summary.rateLimited = true
+      if (jobId) {
+        await logSyncJobMessage(
+          jobId,
+          'warn',
+          `Stoppet snapshot-henting etter ${processed} av ${total} runs — GitHub rate limit nesten oppbrukt (${snapshotResult.remaining} igjen)`,
+        )
+      }
+      break
+    } else if (snapshotResult.status === 'fetched') {
+      triggerResolutions.set(workflowRunKey(candidate.github_repo_id, candidate.runId), {
+        ...snapshotResult.workflowRunResolution,
+      })
+      summary.workflowRunSnapshotsFetched++
+      summary.workflowRunSnapshotsAvailable++
+    } else if (snapshotResult.status === 'already_present') {
+      triggerResolutions.set(workflowRunKey(candidate.github_repo_id, candidate.runId), {
+        ...snapshotResult.workflowRunResolution,
+      })
+      summary.workflowRunSnapshotsAvailable++
+    } else if (snapshotResult.status === 'not_found') {
+      triggerResolutions.set(workflowRunKey(candidate.github_repo_id, candidate.runId), {
+        workflowTriggerConfig: null,
+        branchName: null,
+      })
+      summary.workflowRunSnapshotsNotFound++
+    } else if (snapshotResult.status === 'failed') {
+      triggerResolutions.set(workflowRunKey(candidate.github_repo_id, candidate.runId), {
+        workflowTriggerConfig: null,
+        branchName: null,
+      })
+      summary.workflowRunSnapshotErrors++
+      if (jobId) {
+        await logSyncJobMessage(
+          jobId,
+          'warn',
+          `Workflow-run-snapshot feilet for deployment ${candidate.deployment_id}`,
+          { deploymentId: candidate.deployment_id, error: snapshotResult.error },
+        )
+      }
+    }
+
+    processed++
+    if (jobId && (processed === 1 || processed === total || processed % 10 === 0)) {
+      await updateSyncJobProgress(jobId, { total, processed, ...summary })
+      await heartbeatSyncJob(jobId, 30)
+    }
+  }
+
+  return { summary, triggerResolutions }
+}
+
+const ORDERED_DEPLOYMENTS_SELECT = (
+  defaultBranchSql: string,
+  repositoryIdSql = 'NULL::int',
+  githubRepositoryIdSql = 'NULL::bigint',
+) => `
       SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
              d.environment_name, d.trigger_url, d.workflow_trigger_config, d.commit_checks_data,
              d.commit_checks_checked_at, d.github_pr_number, d.monitored_app_id,
-             ${defaultBranchSql} AS default_branch, ${repositoryIdSql} AS matched_repository_id, d.created_at,
+             ${defaultBranchSql} AS default_branch, ${repositoryIdSql} AS matched_repository_id,
+             ${githubRepositoryIdSql} AS matched_github_repo_id, d.created_at,
              LAG(d.commit_sha) OVER (
                PARTITION BY d.detected_github_owner, d.detected_github_repo_name
                ORDER BY d.created_at ASC, d.id ASC
@@ -82,6 +229,7 @@ interface DeploymentRow {
   monitored_app_id: number
   default_branch: string | null
   matched_repository_id: number | null
+  matched_github_repo_id: string | null
   created_at: string
   prev_commit_sha: string | null
   has_pr_snapshot: boolean
@@ -93,6 +241,8 @@ async function processDeployments(
   deployments: DeploymentRow[],
   jobId: number | undefined,
   refreshDisplayData: boolean | undefined,
+  workflowRunSnapshotSummary: WorkflowRunSnapshotSummary,
+  workflowTriggerResolutions?: Map<string, WorkflowRunResolution>,
   onProgress?: (progress: BulkFetchProgress) => void,
 ): Promise<BulkFetchResult> {
   const result: BulkFetchResult = {
@@ -102,6 +252,7 @@ async function processDeployments(
     fetched: 0,
     derivedFromRaw: 0,
     workflowTriggersFetched: 0,
+    ...workflowRunSnapshotSummary,
     errors: 0,
     errorDetails: [],
   }
@@ -118,13 +269,18 @@ async function processDeployments(
     }
 
     const rateLimitRemaining = getGitHubRateLimitRemaining()
-    if (rateLimitRemaining !== null && rateLimitRemaining < RATE_LIMIT_SAFETY_BUFFER) {
-      logger.warn(`⚠️  GitHub rate limit near exhaustion (${rateLimitRemaining} remaining), stopping bulk fetch`)
+    const snapshotRateLimited = workflowRunSnapshotSummary.rateLimited === true
+    const quotaNearExhaustion = rateLimitRemaining !== null && rateLimitRemaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER
+    if (snapshotRateLimited || quotaNearExhaustion) {
+      const rateLimitMessage = snapshotRateLimited
+        ? 'GitHub rate limit reached during workflow-run snapshot fetching'
+        : `GitHub rate limit near exhaustion (${rateLimitRemaining} remaining)`
+      logger.warn(`⚠️  ${rateLimitMessage}, stopping bulk fetch`)
       if (jobId) {
         await logSyncJobMessage(
           jobId,
           'warn',
-          `Stoppet etter ${result.processed} av ${result.total} deployments — GitHub rate limit nesten oppbrukt (${rateLimitRemaining} igjen)`,
+          `Stoppet etter ${result.processed} av ${result.total} deployments — ${rateLimitMessage}`,
         )
       }
       result.rateLimited = true
@@ -135,6 +291,15 @@ async function processDeployments(
       const owner = deployment.detected_github_owner
       const repo = deployment.detected_github_repo_name
       const commitSha = deployment.commit_sha
+      const parsedWorkflowRun = parseWorkflowRunUrl(deployment.trigger_url, owner, repo)
+      const workflowTriggerResolution =
+        workflowTriggerResolutions === undefined
+          ? undefined
+          : parsedWorkflowRun && deployment.matched_github_repo_id
+            ? (workflowTriggerResolutions.get(
+                workflowRunKey(deployment.matched_github_repo_id, parsedWorkflowRun.runId),
+              ) ?? { workflowTriggerConfig: null, branchName: null })
+            : { workflowTriggerConfig: null, branchName: null }
 
       const workflowTriggerFetched = await backfillWorkflowTriggerConfig(
         deployment.id,
@@ -142,6 +307,7 @@ async function processDeployments(
         repo,
         deployment.trigger_url,
         deployment.workflow_trigger_config,
+        workflowTriggerResolution,
       )
       if (workflowTriggerFetched) {
         result.workflowTriggersFetched++
@@ -193,6 +359,7 @@ async function processDeployments(
           deployment.github_pr_number,
           deployment.trigger_url,
           deployment.workflow_trigger_config,
+          workflowTriggerResolution,
         )
         if (refreshDisplayData && deployment.github_pr_number) {
           await refreshPrDisplayData(owner, repo, deployment.github_pr_number)
@@ -222,6 +389,7 @@ async function processDeployments(
           { forceRefresh: false },
           undefined,
           deployment.matched_repository_id ?? undefined,
+          workflowTriggerResolution,
         )
         await updateDeploymentCommitChecks(deployment.id, input.commitChecks, input.commitChecksAttempted ?? true)
         const fetchDuration = Math.round(performance.now() - fetchStart)
@@ -319,7 +487,19 @@ export async function fetchVerificationDataForAllDeployments(
     durationMs: Math.round(performance.now() - queryStart),
   })
 
-  return processDeployments(deployments, jobId, refreshDisplayData, onProgress)
+  return processDeployments(
+    deployments,
+    jobId,
+    refreshDisplayData,
+    {
+      workflowRunSnapshotsFetched: 0,
+      workflowRunSnapshotsAvailable: 0,
+      workflowRunSnapshotsNotFound: 0,
+      workflowRunSnapshotErrors: 0,
+    },
+    undefined,
+    onProgress,
+  )
 }
 
 export async function fetchVerificationDataForRepository(
@@ -335,30 +515,31 @@ export async function fetchVerificationDataForRepository(
       ${ORDERED_DEPLOYMENTS_SELECT(
         `COALESCE((SELECT r_settings.default_branch FROM repositories r_settings WHERE r_settings.id = $1), ma.default_branch)`,
         '$1::int',
+        `(SELECT r_settings.github_repo_id FROM repositories r_settings WHERE r_settings.id = $1)`,
       )}
       WHERE d.commit_sha IS NOT NULL
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
         AND ${VALID_COMMIT_SHA_SQL}
-        AND EXISTS (
-          SELECT 1 FROM application_repositories ar
-          JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-          WHERE ar.monitored_app_id = d.monitored_app_id
-            AND ar.github_owner = d.detected_github_owner
-            AND ar.github_repo_name = d.detected_github_repo_name
-            AND ar.status IN ('active', 'historical')
-            AND r.id = $1
-        )
+        AND ${repositoryDeploymentSql('$1')}
     )
     ${SNAPSHOT_JOIN_AND_ORDER}`
 
   const queryStart = performance.now()
   const deploymentsResult = await pool.query(query, [repositoryId])
+  const workflowRunSnapshots = await fetchWorkflowRunSnapshotsForRepository(repositoryId, jobId)
 
   const deployments = deploymentsResult.rows
   logger.debug(`Fant ${deployments.length} deployments å sjekke for repository ${repositoryId}`, {
     durationMs: Math.round(performance.now() - queryStart),
   })
 
-  return processDeployments(deployments, jobId, refreshDisplayData, onProgress)
+  return processDeployments(
+    deployments,
+    jobId,
+    refreshDisplayData,
+    workflowRunSnapshots.summary,
+    workflowRunSnapshots.triggerResolutions,
+    onProgress,
+  )
 }

@@ -1,7 +1,17 @@
-import { saveCommitRawSnapshot, saveCompareRawSnapshot, saveWorkflowRunRawSnapshot } from '~/db/github-data.server'
+import {
+  getWorkflowRunRawSnapshotData,
+  saveCommitRawSnapshot,
+  saveCompareRawSnapshot,
+  saveWorkflowRunRawSnapshot,
+} from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
-import { getGitHubClient } from './client.server'
+import {
+  GITHUB_RATE_LIMIT_SAFETY_BUFFER,
+  getGitHubClient,
+  getGitHubRateLimitError,
+  getGitHubRateLimitRemaining,
+} from './client.server'
 import { mapCompareResponse, type RawCompareResponse } from './compare-snapshot'
 import { type ApiVersionMetadata, captureApiVersionMetadata } from './pr-snapshot'
 
@@ -237,6 +247,126 @@ async function resolveWorkflowRun(
   }
 }
 
+export type WorkflowRunSnapshotFetchResult =
+  | { status: 'not_applicable' | 'not_found' }
+  | { status: 'already_present' | 'fetched'; workflowRunResolution: WorkflowRunResolution }
+  | { status: 'rate_limited'; remaining: number }
+  | { status: 'failed'; error: string }
+
+export interface WorkflowRunResolution {
+  workflowTriggerConfig: WorkflowTriggerConfig | null
+  branchName: string | null
+}
+
+export interface ParsedWorkflowRunUrl {
+  owner: string
+  repo: string
+  runId: number
+}
+
+export function parseWorkflowRunUrl(
+  triggerUrl: string | null | undefined,
+  expectedOwner: string,
+  expectedRepo: string,
+): ParsedWorkflowRunUrl | null {
+  const match = triggerUrl?.match(
+    /^https:\/\/github[.]com\/([^/?#]+)\/([^/?#]+)\/actions\/runs\/([0-9]+)(?:[/?#].*)?$/i,
+  )
+  if (
+    !match ||
+    match[1].toLowerCase() !== expectedOwner.toLowerCase() ||
+    match[2].toLowerCase() !== expectedRepo.toLowerCase()
+  ) {
+    return null
+  }
+
+  const runId = Number(match[3])
+  if (!Number.isSafeInteger(runId) || runId <= 0) {
+    return null
+  }
+
+  return { owner: match[1], repo: match[2], runId }
+}
+
+export async function fetchWorkflowRunSnapshotIfMissing(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+  githubRepoId: number | string,
+): Promise<WorkflowRunSnapshotFetchResult> {
+  const workflowRun = parseWorkflowRunUrl(triggerUrl, owner, repo)
+  if (!workflowRun) {
+    return { status: 'not_applicable' }
+  }
+
+  const runId = workflowRun.runId
+  let existingSnapshot: unknown | null
+  try {
+    existingSnapshot = await getWorkflowRunRawSnapshotData(githubRepoId, runId)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error(
+      `Failed to check workflow-run snapshot ${runId} for ${owner}/${repo}`,
+      error instanceof Error ? error : new Error(message),
+    )
+    return { status: 'failed', error: message }
+  }
+  if (existingSnapshot !== null) {
+    return {
+      status: 'already_present',
+      workflowRunResolution: workflowRunResolutionFromRawData(existingSnapshot),
+    }
+  }
+
+  const rateLimitRemaining = getGitHubRateLimitRemaining()
+  if (rateLimitRemaining !== null && rateLimitRemaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER) {
+    return { status: 'rate_limited', remaining: rateLimitRemaining }
+  }
+
+  let response: Awaited<ReturnType<ReturnType<typeof getGitHubClient>['actions']['getWorkflowRun']>>
+  try {
+    response = await getGitHubClient().actions.getWorkflowRun({ owner, repo, run_id: runId })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = (error as { status?: unknown }).status
+    const rateLimitError = getGitHubRateLimitError(error)
+    if (rateLimitError) {
+      logger.warn(`⚠️ GitHub rate limit reached while fetching workflow run ${runId} for ${owner}/${repo}`, {
+        remaining: rateLimitError.remaining,
+      })
+      return { status: 'rate_limited', remaining: rateLimitError.remaining }
+    }
+    if (status === 404) {
+      logger.info(`ℹ️ Workflow run ${runId} not found for ${owner}/${repo} (likely expired or deleted upstream)`)
+      return { status: 'not_found' }
+    }
+    logger.warn(`⚠️ Failed to fetch workflow run ${runId} for ${owner}/${repo}:`, { error: message })
+    return { status: 'failed', error: message }
+  }
+
+  try {
+    if (String(response.data.repository?.id) !== String(githubRepoId)) {
+      const error = `Workflow run ${runId} belongs to GitHub repository ${response.data.repository?.id ?? 'unknown'}, not ${githubRepoId}`
+      logger.warn(`⚠️ Refusing to archive workflow run ${runId} for ${owner}/${repo}:`, { error })
+      return { status: 'failed', error }
+    }
+
+    const apiVersion = captureApiVersionMetadata(response.headers, null)
+    await saveWorkflowRunRawSnapshot(owner, repo, githubRepoId, runId, response.data, apiVersion)
+    return {
+      status: 'fetched',
+      workflowRunResolution: workflowRunResolutionFromRawData(response.data),
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error(
+      `Failed to archive workflow run ${runId} for ${owner}/${repo}`,
+      error instanceof Error ? error : new Error(message),
+    )
+    return { status: 'failed', error: message }
+  }
+}
+
 async function archiveWorkflowRunRawSnapshot(
   owner: string,
   repo: string,
@@ -271,6 +401,26 @@ export type WorkflowTriggerConfig = {
   triggerEvent: string
   checkSuiteId: number | null
   schemaVersion: number
+}
+
+function workflowRunResolutionFromRawData(data: unknown): WorkflowRunResolution {
+  if (!data || typeof data !== 'object') return { workflowTriggerConfig: null, branchName: null }
+  const run = data as Record<string, unknown>
+  const workflowTriggerConfig =
+    typeof run.path === 'string' &&
+    typeof run.event === 'string' &&
+    (run.check_suite_id === undefined || run.check_suite_id === null || typeof run.check_suite_id === 'number')
+      ? {
+          workflowPath: run.path,
+          triggerEvent: run.event,
+          checkSuiteId: typeof run.check_suite_id === 'number' ? run.check_suite_id : null,
+          schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+        }
+      : null
+  return {
+    workflowTriggerConfig,
+    branchName: typeof run.head_branch === 'string' ? run.head_branch : null,
+  }
 }
 
 export async function getWorkflowTriggerConfig(
