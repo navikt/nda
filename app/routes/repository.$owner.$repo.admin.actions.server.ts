@@ -271,7 +271,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       return fail('Datoen må være mellom 2000 og i dag')
     }
     if (getFormString(formData, 'confirm') !== 'true') {
-      return fail('Du må bekrefte at registrerte leveranser slettes')
+      return fail('Du må bekrefte at registreringen nullstilles')
     }
 
     const result = await restartCodeDeliveryTracking({

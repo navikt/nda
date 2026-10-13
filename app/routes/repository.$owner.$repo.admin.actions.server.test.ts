@@ -444,7 +444,7 @@ describe('repository admin actions - authorization', () => {
     ])('requires confirmation (%s)', async (_label, confirm) => {
       const result = await callAction(restartForm({ since: '2024-01-01', confirm }))
 
-      expect(result).toEqual({ error: 'Du må bekrefte at registrerte leveranser slettes' })
+      expect(result).toEqual({ error: 'Du må bekrefte at registreringen nullstilles' })
       expect(mockRestartCodeDeliveryTracking).not.toHaveBeenCalled()
     })
 
