@@ -151,6 +151,7 @@ export interface CommitSnapshot extends SnapshotBase {
 export interface CompareSnapshot extends SnapshotBase {
   owner: string
   repo: string
+  githubRepoId: number | null
   baseSha: string
   headSha: string
   data: CompareData

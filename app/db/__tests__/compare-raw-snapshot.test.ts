@@ -125,7 +125,8 @@ describe('getDerivedCompareDataFromRawSnapshot', () => {
 
     const result = await getDerivedCompareDataFromRawSnapshot('navikt', 'nda', 'base-sha', 'head-sha')
 
-    expect(result?.compare.status).toBe('ahead')
+    expect(result?.data.compare.status).toBe('ahead')
+    expect(result?.githubRepoId).toBe(999)
   })
 
   it('returns null instead of throwing when the stored raw response is malformed', async () => {

@@ -50,19 +50,22 @@ describe('fetchCommitsBetween deriving compare data from raw snapshot', () => {
   it('derives compare data from a raw snapshot without calling GitHub when the transformed snapshot is missing/outdated', async () => {
     mockGetLatestCompareSnapshot.mockResolvedValue(null)
     mockGetDerivedCompareDataFromRawSnapshot.mockResolvedValue({
-      compare: { status: 'ahead', aheadBy: 1, behindBy: 0, totalCommits: 1, changedFiles: 1, noDiffDetected: false },
-      commits: [
-        {
-          sha: 'aaa111',
-          message: 'Fix bug',
-          authorUsername: 'developer-a',
-          authorDate: '2026-02-20T11:00:00Z',
-          committerDate: '2026-02-20T11:05:00Z',
-          htmlUrl: 'https://github.com/commit/aaa111',
-          isMergeCommit: false,
-          parentShas: ['parent0'],
-        },
-      ],
+      data: {
+        compare: { status: 'ahead', aheadBy: 1, behindBy: 0, totalCommits: 1, changedFiles: 1, noDiffDetected: false },
+        commits: [
+          {
+            sha: 'aaa111',
+            message: 'Fix bug',
+            authorUsername: 'developer-a',
+            authorDate: '2026-02-20T11:00:00Z',
+            committerDate: '2026-02-20T11:05:00Z',
+            htmlUrl: 'https://github.com/commit/aaa111',
+            isMergeCommit: false,
+            parentShas: ['parent0'],
+          },
+        ],
+      },
+      githubRepoId: 999,
     })
 
     const result = await fetchCommitsBetween('navikt', 'nda', 'base-sha', 'head-sha', 'main', '2026-01-01')
@@ -74,7 +77,7 @@ describe('fetchCommitsBetween deriving compare data from raw snapshot', () => {
       'base-sha',
       'head-sha',
       expect.objectContaining({ compare: expect.objectContaining({ status: 'ahead' }) }),
-      { source: 'cached' },
+      { source: 'cached', githubRepoId: 999 },
     )
     expect(result?.compareSummary.status).toBe('ahead')
     expect(result?.commitsBetween).toHaveLength(1)
@@ -84,15 +87,18 @@ describe('fetchCommitsBetween deriving compare data from raw snapshot', () => {
   it('recomputes noDiffDetected as true for a derived identical compare', async () => {
     mockGetLatestCompareSnapshot.mockResolvedValue(null)
     mockGetDerivedCompareDataFromRawSnapshot.mockResolvedValue({
-      compare: {
-        status: 'identical',
-        aheadBy: 0,
-        behindBy: 0,
-        totalCommits: 0,
-        changedFiles: 0,
-        noDiffDetected: false,
+      data: {
+        compare: {
+          status: 'identical',
+          aheadBy: 0,
+          behindBy: 0,
+          totalCommits: 0,
+          changedFiles: 0,
+          noDiffDetected: false,
+        },
+        commits: [],
       },
-      commits: [],
+      githubRepoId: 999,
     })
 
     const result = await fetchCommitsBetween('navikt', 'nda', 'base-sha', 'head-sha', 'main', '2026-01-01')
@@ -106,7 +112,7 @@ describe('fetchCommitsBetween deriving compare data from raw snapshot', () => {
       'base-sha',
       'head-sha',
       expect.objectContaining({ compare: expect.objectContaining({ noDiffDetected: true }) }),
-      { source: 'cached' },
+      { source: 'cached', githubRepoId: 999 },
     )
   })
 

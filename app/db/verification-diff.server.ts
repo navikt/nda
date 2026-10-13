@@ -115,23 +115,28 @@ export async function getCompareSnapshotForCommit(
   repo: string,
   commitSha: string,
   expectedBaseSha?: string | null,
+  githubRepoId?: string | number | null,
 ): Promise<{ data: unknown; base_sha: string } | null> {
+  const params: unknown[] = [owner, repo, commitSha]
+  const conditions = [`owner = $1`, `repo = $2`, `head_sha = $3`]
+
   if (expectedBaseSha) {
-    const result = await pool.query(
-      `SELECT data, base_sha FROM github_compare_snapshots
-       WHERE owner = $1 AND repo = $2 AND head_sha = $3 AND base_sha = $4
-       ORDER BY fetched_at DESC LIMIT 1`,
-      [owner, repo, commitSha, expectedBaseSha],
-    )
-    return result.rows[0] || null
+    params.push(expectedBaseSha)
+    conditions.push(`base_sha = $${params.length}`)
+  } else {
+    conditions.push(`base_sha != head_sha`)
+  }
+
+  if (githubRepoId != null) {
+    params.push(githubRepoId)
+    conditions.push(`(github_repo_id = $${params.length} OR github_repo_id IS NULL)`)
   }
 
   const result = await pool.query(
     `SELECT data, base_sha FROM github_compare_snapshots
-     WHERE owner = $1 AND repo = $2 AND head_sha = $3
-       AND base_sha != head_sha
+     WHERE ${conditions.join(' AND ')}
      ORDER BY fetched_at DESC LIMIT 1`,
-    [owner, repo, commitSha],
+    params,
   )
   return result.rows[0] || null
 }

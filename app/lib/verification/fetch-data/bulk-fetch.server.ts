@@ -34,6 +34,13 @@ const ORDERED_DEPLOYMENTS_SELECT = (defaultBranchSql: string, repositoryIdSql = 
              d.environment_name, d.trigger_url, d.workflow_trigger_config, d.commit_checks_data,
              d.commit_checks_checked_at, d.github_pr_number, d.monitored_app_id,
              ${defaultBranchSql} AS default_branch, ${repositoryIdSql} AS matched_repository_id, d.created_at,
+             (
+               SELECT ar.github_repo_id
+               FROM application_repositories ar
+               WHERE ar.monitored_app_id = d.monitored_app_id
+                 AND ar.github_owner = d.detected_github_owner
+                 AND ar.github_repo_name = d.detected_github_repo_name
+             ) AS matched_github_repo_id,
              LAG(d.commit_sha) OVER (
                PARTITION BY d.detected_github_owner, d.detected_github_repo_name
                ORDER BY d.created_at ASC, d.id ASC
@@ -64,6 +71,7 @@ const SNAPSHOT_JOIN_AND_ORDER = `
         AND gcs.head_sha = od.commit_sha
         AND gcs.base_sha != gcs.head_sha
         AND gcs.schema_version = ${CURRENT_SCHEMA_VERSION}
+        AND (od.matched_github_repo_id IS NULL OR gcs.github_repo_id = od.matched_github_repo_id OR gcs.github_repo_id IS NULL)
       ORDER BY gcs.fetched_at DESC LIMIT 1
     ) cmp_snap ON od.prev_commit_sha IS NOT NULL
     ORDER BY od.created_at DESC`
@@ -82,6 +90,7 @@ interface DeploymentRow {
   monitored_app_id: number
   default_branch: string | null
   matched_repository_id: number | null
+  matched_github_repo_id: string | null
   created_at: string
   prev_commit_sha: string | null
   has_pr_snapshot: boolean
