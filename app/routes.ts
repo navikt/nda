@@ -114,6 +114,7 @@ export default [
     ),
     route('repository/:owner/:repo/admin/sync-job/:jobId', 'routes/repository.$owner.$repo.admin.sync-job.$jobId.tsx'),
     route('repository/:owner/:repo/admin/status-history', 'routes/repository.$owner.$repo.admin.status-history.tsx'),
+    route('repository/:owner/:repo/admin/code-deliveries', 'routes/repository.$owner.$repo.admin.code-deliveries.tsx'),
     route('repository/:owner/:repo/admin/sync-jobs', 'routes/repository.$owner.$repo.admin.sync-jobs.tsx'),
     route('repository/:owner/:repo/deployments', 'routes/repository.$owner.$repo.deployments.tsx'),
   ]),
