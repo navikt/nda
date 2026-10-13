@@ -104,6 +104,17 @@ describe('repository code delivery overview', () => {
     })
   })
 
+  it('does not count deployments as awaiting assessment while tracking is disabled', async () => {
+    const repositoryId = await createRepository('1005')
+    const deploymentId = await createDeployment('app-a', repositoryId, SHA_1)
+    await pool.query("UPDATE deployments SET created_at = now() + interval '1 hour' WHERE id = $1", [deploymentId])
+    expect((await getRepositoryCodeDeliveryOverview(repositoryId)).awaitingDeploymentCount).toBe(1)
+
+    await pool.query('UPDATE repositories SET code_delivery_tracking = false WHERE id = $1', [repositoryId])
+
+    expect((await getRepositoryCodeDeliveryOverview(repositoryId)).awaitingDeploymentCount).toBe(0)
+  })
+
   it('lists deliveries newest first with anchor flag, deployment count and distinct apps', async () => {
     const repositoryId = await createRepository('1002')
     const first = await createDeployment('app-a', repositoryId, SHA_1)

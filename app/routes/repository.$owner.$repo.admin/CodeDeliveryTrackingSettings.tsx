@@ -1,4 +1,4 @@
-import { BodyShort, Box, Button, Heading, VStack } from '@navikt/ds-react'
+import { Link as AkselLink, BodyShort, Box, Button, Heading, VStack } from '@navikt/ds-react'
 import { Form, Link } from 'react-router'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
 
@@ -49,9 +49,12 @@ export function CodeDeliveryTrackingSettings({
         </Form>
 
         <BodyShort size="small">
-          <Link to={`/repository/${githubOwner}/${githubRepoName}/admin/code-deliveries?repositoryId=${repositoryId}`}>
-            Se registrerte leveranser
-          </Link>
+          <AkselLink
+            as={Link}
+            to={`/repository/${githubOwner}/${githubRepoName}/admin/code-deliveries?repositoryId=${repositoryId}`}
+          >
+            Se registrerte leveranser →
+          </AkselLink>
         </BodyShort>
       </VStack>
     </Box>

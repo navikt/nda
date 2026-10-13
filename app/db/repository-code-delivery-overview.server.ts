@@ -49,6 +49,7 @@ export async function getRepositoryCodeDeliveryOverview(repositoryId: number): P
        JOIN repositories r ON r.id = d.repository_id
        LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
        WHERE d.repository_id = $1
+         AND r.code_delivery_tracking = true
          AND r.code_delivery_tracking_since IS NOT NULL
          AND d.created_at >= r.code_delivery_tracking_since
          AND d.repository_code_delivery_id IS NULL

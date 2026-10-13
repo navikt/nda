@@ -1,4 +1,4 @@
-import { Alert, BodyShort, Box, Heading, HStack, Table, Tag, VStack } from '@navikt/ds-react'
+import { Link as AkselLink, Alert, BodyShort, Box, Heading, HStack, Table, Tag, VStack } from '@navikt/ds-react'
 import { Link } from 'react-router'
 import type { UnresolvedReason } from '~/db/repository-code-delivery-establishment.server'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
@@ -227,11 +227,12 @@ export function RepositoryCodeDeliveriesPage({
                   {unresolved.map((item) => (
                     <Table.Row key={item.deployment_id}>
                       <Table.DataCell>
-                        <Link
+                        <AkselLink
+                          as={Link}
                           to={`/team/${item.team_slug}/env/${item.environment_name}/app/${item.app_name}/deployments/${item.deployment_id}`}
                         >
                           {item.app_name}
-                        </Link>
+                        </AkselLink>
                       </Table.DataCell>
                       <Table.DataCell>
                         <CommitLink
@@ -260,7 +261,9 @@ export function RepositoryCodeDeliveriesPage({
       </Box>
 
       <BodyShort size="small" textColor="subtle">
-        <Link to={adminUrl}>← Tilbake til admin</Link>
+        <AkselLink as={Link} to={adminUrl}>
+          ← Tilbake til admin
+        </AkselLink>
       </BodyShort>
     </VStack>
   )
