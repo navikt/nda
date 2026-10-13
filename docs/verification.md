@@ -635,7 +635,7 @@ For hvert deployment:
    - GitHubs gjeldende repository-ID må være lik den lagrede, ellers `source_unauthorized`.
    - Committen må ligge på repositoryets standardbranch, ellers `source_unauthorized`. Mangler repositoryet standardbranch, regnes det også som `source_unauthorized`.
    - Mislykket oppslag av repository-ID eller branch (nettverksfeil, rate limit) gir `source_unknown`, ikke `source_unauthorized`.
-   - Forrige leveranses head må være forfedre til deploymentets head (`ahead`). Mislykket oppslag gir `ancestry_unknown`, alt annet enn `ahead` gir `ancestry_diverged`. Sjekken hoppes over for første leveranse og når SHA-en allerede har en leveranse.
+   - Forrige leveranses head må være forfedre til deploymentets head (`ahead`). Mislykket oppslag gir `ancestry_unknown`, `behind` (eldre enn forrige leveranse, f.eks. forsinket innlesing) gir `ancestry_behind`, og `diverged` eller `identical` gir `ancestry_diverged`. Sjekken hoppes over for første leveranse og når SHA-en allerede har en leveranse.
 2. `establishCodeDeliveryForDeployment` ([`repository-code-delivery-establishment.server.ts`](../app/db/repository-code-delivery-establishment.server.ts)) skriver resultatet i én transaksjon, serialisert per repository:
    - Kjent SHA (søsken eller tilbakerulling) kobles til eksisterende leveranse og flytter ikke fremdriften.
    - Ny SHA får forrige leveranses head som base. Første leveranse får base lik head og er et startpunkt, ikke en kodegodkjenning.
@@ -644,7 +644,7 @@ For hvert deployment:
 
 ### Ny vurdering av uavklarte
 
-Uavklarte deployments vurderes ikke på nytt hver kjøring. Unntaket er `ancestry_unknown` og `source_unknown`, som prøves på nytt etter én time, siden de kan skyldes en midlertidig GitHub-feil. `ancestry_diverged` og `source_unauthorized` krever senere avklaring.
+Uavklarte deployments vurderes ikke på nytt hver kjøring. Unntaket er `ancestry_unknown` og `source_unknown`, som prøves på nytt etter én time, siden de kan skyldes en midlertidig GitHub-feil. `ancestry_diverged`, `ancestry_behind` og `source_unauthorized` krever senere avklaring.
 
 ### Ikke med ennå
 

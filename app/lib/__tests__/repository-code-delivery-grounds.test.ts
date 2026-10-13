@@ -90,7 +90,7 @@ describe('decideEstablishmentGrounds', () => {
     ).toEqual({ confirmed: false, reason: 'ancestry_unknown', headSha: HEAD })
   })
 
-  it.each(['diverged', 'behind', 'identical'] as const)('does not confirm ancestry status %s', (ancestry) => {
+  it.each(['diverged', 'identical'] as const)('does not confirm ancestry status %s', (ancestry) => {
     expect(
       decideEstablishmentGrounds({ headSha: HEAD, baseSha: BASE, identity: 'match', onApprovedBranch: true, ancestry }),
     ).toEqual({
@@ -98,6 +98,18 @@ describe('decideEstablishmentGrounds', () => {
       reason: 'ancestry_diverged',
       headSha: HEAD,
     })
+  })
+
+  it('reports ancestry status behind as its own reason', () => {
+    expect(
+      decideEstablishmentGrounds({
+        headSha: HEAD,
+        baseSha: BASE,
+        identity: 'match',
+        onApprovedBranch: true,
+        ancestry: 'behind',
+      }),
+    ).toEqual({ confirmed: false, reason: 'ancestry_behind', headSha: HEAD })
   })
 })
 

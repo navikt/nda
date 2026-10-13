@@ -18,6 +18,7 @@ export function decideEstablishmentGrounds(evidence: GroundsEvidence): Establish
   if (!onApprovedBranch) return { confirmed: false, reason: 'source_unauthorized', headSha }
   if (ancestry === 'not_required') return { confirmed: true, baseSha, headSha }
   if (ancestry === null) return { confirmed: false, reason: 'ancestry_unknown', headSha }
+  if (ancestry === 'behind') return { confirmed: false, reason: 'ancestry_behind', headSha }
   if (ancestry !== 'ahead') return { confirmed: false, reason: 'ancestry_diverged', headSha }
   return { confirmed: true, baseSha, headSha }
 }
