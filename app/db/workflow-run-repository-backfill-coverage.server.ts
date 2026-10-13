@@ -32,7 +32,20 @@ interface CoverageRow {
   head_repository_mismatch: number
 }
 
-export async function getWorkflowRunRepositoryBackfillCoverage(): Promise<WorkflowRunRepositoryBackfillCoverage[]> {
+export async function getWorkflowRunBackfillCoverageTeams(): Promise<string[]> {
+  const { rows } = await pool.query<{ team_slug: string }>(
+    `SELECT DISTINCT team_slug
+     FROM monitored_applications
+     WHERE team_slug IS NOT NULL AND btrim(team_slug) <> ''
+     ORDER BY team_slug`,
+  )
+
+  return rows.map((row) => row.team_slug)
+}
+
+export async function getWorkflowRunRepositoryBackfillCoverage(
+  teamSlug: string,
+): Promise<WorkflowRunRepositoryBackfillCoverage[]> {
   const { rows } = await pool.query<CoverageRow>(
     `WITH legacy_deployments AS (
        SELECT
@@ -50,14 +63,17 @@ export async function getWorkflowRunRepositoryBackfillCoverage(): Promise<Workfl
            '^https://github[.]com/([^/?#]+)/([^/?#]+)/actions/runs/([0-9]+)(?:[/?#].*)?$',
            'i'
          ) AS run_parts
-       FROM deployments d
+       FROM monitored_applications ma
        JOIN application_repositories ar
-         ON ar.monitored_app_id = d.monitored_app_id
-        AND ar.github_owner = d.detected_github_owner
-        AND ar.github_repo_name = d.detected_github_repo_name
+         ON ar.monitored_app_id = ma.id
         AND ar.status IN ('active', 'historical')
+       JOIN deployments d
+         ON d.monitored_app_id = ma.id
+        AND d.detected_github_owner = ar.github_owner
+        AND d.detected_github_repo_name = ar.github_repo_name
+        AND d.repository_id IS NULL
        JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-       WHERE d.repository_id IS NULL
+       WHERE ma.team_slug = $1
         AND NOT EXISTS (
           SELECT 1
           FROM repositories other
@@ -135,6 +151,7 @@ export async function getWorkflowRunRepositoryBackfillCoverage(): Promise<Workfl
      FROM classified
      GROUP BY repository_id, github_owner, github_repo_name
      ORDER BY eligible DESC, total_legacy_deployments DESC, github_owner, github_repo_name`,
+    [teamSlug],
   )
 
   return rows.map((row) => ({
