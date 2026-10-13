@@ -4,6 +4,7 @@ import {
   isCurrentOrHistoricalNameForRepositoryId,
   updateRepositorySettingsByRepositoryId,
 } from '~/db/repositories.server'
+import { restartCodeDeliveryTracking } from '~/db/repository-code-delivery-restart.server'
 import {
   acquireSyncLockForRepository,
   cancelSyncJob,
@@ -254,6 +255,42 @@ export async function action({ request, params }: Route.ActionArgs) {
       enabled === 'true'
         ? 'Registrering av kodeleveranser er slått på. Deployments vurderes fra tidspunktet registreringen først ble slått på.'
         : 'Registrering av kodeleveranser er slått av.',
+    )
+  }
+
+  if (action === 'restart_code_delivery_tracking') {
+    const sinceValue = getFormString(formData, 'since')
+    if (!sinceValue || !/^\d{4}-\d{2}-\d{2}$/.test(sinceValue)) {
+      return fail('Ugyldig dato')
+    }
+    const since = new Date(`${sinceValue}T00:00:00.000Z`)
+    if (Number.isNaN(since.getTime()) || since.toISOString().slice(0, 10) !== sinceValue) {
+      return fail('Ugyldig dato')
+    }
+    if (since.getUTCFullYear() < 2000 || since.getTime() > Date.now()) {
+      return fail('Datoen må være mellom 2000 og i dag')
+    }
+    if (getFormString(formData, 'confirm') !== 'true') {
+      return fail('Du må bekrefte at registrerte leveranser slettes')
+    }
+
+    const result = await restartCodeDeliveryTracking({
+      repositoryId,
+      since,
+      changedByNavIdent: user.navIdent,
+      changedByName: user.name || undefined,
+    })
+
+    if (!result.ok) {
+      return fail(
+        result.reason === 'tracking_disabled'
+          ? 'Registreringen må være på for å starte på nytt'
+          : 'Fant ikke repositoryet',
+      )
+    }
+
+    return ok(
+      `Registreringen starter på nytt fra ${sinceValue}. Slettet ${result.deletedDeliveries} leveranser og ${result.clearedUnresolved} uavklarte, og frigjorde ${result.unlinkedDeployments} deployments.`,
     )
   }
 

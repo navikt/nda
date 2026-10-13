@@ -6,6 +6,7 @@ const REPO_SETTING_LABELS: Record<string, string> = {
   [REPOSITORY_SETTING_KEYS.IMPLICIT_APPROVAL]: 'Implisitt godkjenning',
   [REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH]: 'Default branch',
   [REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING]: 'Registrering av kodeleveranser',
+  [REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING_RESTART]: 'Omstart av registrering av kodeleveranser',
 }
 
 function formatRepoSettingValue(settingKey: string, value: Record<string, unknown> | null | undefined): string {
@@ -32,6 +33,13 @@ function formatRepoSettingValue(settingKey: string, value: Record<string, unknow
   if (settingKey === REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING) {
     const enabled = value.code_delivery_tracking
     return enabled === true ? 'på' : 'av'
+  }
+
+  if (settingKey === REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING_RESTART) {
+    const since = value.since
+    if (typeof since !== 'string') return 'ikke satt'
+    const date = new Date(since)
+    return Number.isNaN(date.getTime()) ? 'ikke satt' : `fra ${date.toLocaleDateString('nb-NO')}`
   }
 
   return 'ikke satt'
