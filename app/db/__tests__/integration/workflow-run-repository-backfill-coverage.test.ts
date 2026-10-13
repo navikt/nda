@@ -33,11 +33,14 @@ async function seedLegacyDeployment(options: {
   runId?: number
   triggerUrl?: string | null
   commitSha?: string
+  appName?: string
+  environment?: string
 }): Promise<number> {
   const deploymentId = await seedDeployment(pool, {
     monitoredAppId: options.monitoredAppId,
     teamSlug: options.teamSlug ?? 'team-repo-backfill',
-    environment: 'prod-gcp',
+    appName: options.appName,
+    environment: options.environment ?? 'prod-gcp',
     commitSha: options.commitSha ?? DEPLOYMENT_SHA,
     githubOwner: options.githubOwner ?? 'navikt',
     githubRepo: options.githubRepo ?? 'repo-backfill',
@@ -102,9 +105,9 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     })
 
     const crossTeamAppId = await seedApp(pool, {
-      teamSlug: 'team-repo-backfill-other',
-      appName: 'repo-backfill-app-other-team',
-      environment: 'prod-gcp',
+      teamSlug: 'team-repo-backfill-current',
+      appName: 'repo-backfill-current-app-name',
+      environment: 'dev-gcp',
     })
     await seedApplicationRepository(pool, {
       monitoredAppId: crossTeamAppId,
@@ -140,6 +143,8 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     const crossTeamDeploymentId = await seedLegacyDeployment({
       monitoredAppId: crossTeamAppId,
       teamSlug: 'team-repo-backfill-other',
+      appName: 'repo-backfill-historical-app-name',
+      environment: 'prod-gcp',
       runId: 10,
     })
     await seedWorkflowRun(10, workflowRun())
@@ -209,6 +214,9 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     expect(preview.filter((deployment) => deployment.teamSlug === 'team-repo-backfill-other')).toEqual([
       expect.objectContaining({
         deploymentId: crossTeamDeploymentId,
+        teamSlug: 'team-repo-backfill-other',
+        appName: 'repo-backfill-historical-app-name',
+        environmentName: 'prod-gcp',
         classification: 'eligible',
         workflowRunId: '10',
       }),
