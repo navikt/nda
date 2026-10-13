@@ -68,7 +68,7 @@ export function CodeDeliveryTrackingSettings({
             : ''}
         </BodyShort>
 
-        <toggleFetcher.Form method="post">
+        <toggleFetcher.Form method="post" onSubmit={() => restartFetcher.reset()}>
           <input type="hidden" name="action" value="update_code_delivery_tracking" />
           <input type="hidden" name="repository_id" value={repositoryId} />
           <input type="hidden" name="enabled" value={enabled ? 'false' : 'true'} />
@@ -79,7 +79,7 @@ export function CodeDeliveryTrackingSettings({
         <ActionAlert data={toggleFetcher.data} />
 
         {enabled && (
-          <restartFetcher.Form method="post">
+          <restartFetcher.Form method="post" onSubmit={() => toggleFetcher.reset()}>
             <input type="hidden" name="action" value="restart_code_delivery_tracking" />
             <input type="hidden" name="repository_id" value={repositoryId} />
             <VStack gap="space-12">
