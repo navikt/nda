@@ -1,7 +1,10 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { closePool } from '~/db/connection.server'
-import { getWorkflowRunRepositoryBackfillCoverage } from '~/db/workflow-run-repository-backfill-coverage.server'
+import {
+  getWorkflowRunRepositoryBackfillCoverage,
+  getWorkflowRunRepositoryBackfillPreview,
+} from '~/db/workflow-run-repository-backfill-coverage.server'
 import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 const REPOSITORY_GITHUB_ID = '987654321'
@@ -30,7 +33,7 @@ async function seedLegacyDeployment(options: {
   runId?: number
   triggerUrl?: string | null
   commitSha?: string
-}): Promise<void> {
+}): Promise<number> {
   const deploymentId = await seedDeployment(pool, {
     monitoredAppId: options.monitoredAppId,
     teamSlug: options.teamSlug ?? 'team-repo-backfill',
@@ -48,6 +51,7 @@ async function seedLegacyDeployment(options: {
       : options.triggerUrl,
     deploymentId,
   ])
+  return deploymentId
 }
 
 async function seedWorkflowRun(runId: number, payload: Record<string, unknown>) {
@@ -96,6 +100,19 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
       githubRepo: 'repo-backfill',
       githubRepoId: REPOSITORY_GITHUB_ID,
     })
+
+    const crossTeamAppId = await seedApp(pool, {
+      teamSlug: 'team-repo-backfill-other',
+      appName: 'repo-backfill-app-other-team',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: crossTeamAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-backfill',
+      githubRepoId: REPOSITORY_GITHUB_ID,
+    })
+
     const seed = (options: Omit<Parameters<typeof seedLegacyDeployment>[0], 'monitoredAppId'>) =>
       seedLegacyDeployment({ ...options, monitoredAppId: appId })
 
@@ -119,6 +136,13 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     await seed({ triggerUrl: 'https://example.com/navikt/repo-backfill/actions/runs/7' })
     await seed({ triggerUrl: `https://github.com/navikt/repo-backfill/actions/runs/${'9'.repeat(40)}` })
     await seed({ triggerUrl: 'https://github.com/navikt/another-repo/actions/runs/8' })
+
+    const crossTeamDeploymentId = await seedLegacyDeployment({
+      monitoredAppId: crossTeamAppId,
+      teamSlug: 'team-repo-backfill-other',
+      runId: 10,
+    })
+    await seedWorkflowRun(10, workflowRun())
 
     const otherAppId = await seedApp(pool, {
       teamSlug: 'team-other',
@@ -179,7 +203,20 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         headRepositoryMismatch: 0,
       },
     ])
+
+    const preview = await getWorkflowRunRepositoryBackfillPreview(repositoryId)
+    expect(preview).toHaveLength(11)
+    expect(preview.filter((deployment) => deployment.teamSlug === 'team-repo-backfill-other')).toEqual([
+      expect.objectContaining({
+        deploymentId: crossTeamDeploymentId,
+        classification: 'eligible',
+        workflowRunId: '10',
+      }),
+    ])
+    expect(preview.filter((deployment) => deployment.classification === 'eligible')).toHaveLength(2)
+    expect(new Set(preview.map((deployment) => deployment.deploymentId)).size).toBe(preview.length)
+
     const { rows } = await pool.query('SELECT count(*)::int AS count FROM deployments WHERE repository_id IS NULL')
-    expect(rows[0].count).toBe(11)
+    expect(rows[0].count).toBe(12)
   })
 })

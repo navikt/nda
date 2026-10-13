@@ -10,7 +10,9 @@ vi.mock('../connection.server', () => ({
 
 import {
   getWorkflowRunBackfillCoverageTeams,
+  getWorkflowRunBackfillPreviewRepository,
   getWorkflowRunRepositoryBackfillCoverage,
+  getWorkflowRunRepositoryBackfillPreview,
 } from '../workflow-run-repository-backfill-coverage.server'
 
 describe('getWorkflowRunRepositoryBackfillCoverage', () => {
@@ -81,5 +83,58 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     expect(query).toContain('SELECT DISTINCT team_slug')
     expect(query).toContain('FROM monitored_applications')
     expect(query).toContain('ORDER BY team_slug')
+  })
+
+  it('loads a repository-wide preview with one row per deployment and the shared classification', async () => {
+    const createdAt = new Date('2026-10-13T12:00:00.000Z')
+    mockPoolQuery.mockResolvedValue({
+      rows: [
+        {
+          deployment_id: 101,
+          team_slug: 'pensjondeployer',
+          app_name: 'alde',
+          environment_name: 'prod-gcp',
+          created_at: createdAt,
+          commit_sha: 'a'.repeat(40),
+          workflow_run_id: '123',
+          classification: 'eligible',
+        },
+      ],
+    })
+
+    await expect(getWorkflowRunRepositoryBackfillPreview(216)).resolves.toEqual([
+      {
+        deploymentId: 101,
+        teamSlug: 'pensjondeployer',
+        appName: 'alde',
+        environmentName: 'prod-gcp',
+        createdAt,
+        commitSha: 'a'.repeat(40),
+        workflowRunId: '123',
+        classification: 'eligible',
+      },
+    ])
+
+    const [query, parameters] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('WHERE r.id = $1')
+    expect(query).toContain('d.repository_id IS NULL')
+    expect(query).toContain('JOIN application_repositories ar')
+    expect(query).toContain('snapshot.github_repo_id = parsed_workflow_runs.github_repo_id')
+    expect(query).toContain('ORDER BY created_at DESC, deployment_id DESC')
+    expect(query).not.toContain('ma.team_slug =')
+    expect(parameters).toEqual([216])
+  })
+
+  it('looks up preview metadata by registered repository ID', async () => {
+    mockPoolQuery.mockResolvedValue({
+      rows: [{ repository_id: 216, github_owner: 'navikt', github_repo_name: 'pensjon-alde' }],
+    })
+
+    await expect(getWorkflowRunBackfillPreviewRepository(216)).resolves.toEqual({
+      repositoryId: 216,
+      githubOwner: 'navikt',
+      githubRepoName: 'pensjon-alde',
+    })
+    expect(mockPoolQuery.mock.calls[0]?.[1]).toEqual([216])
   })
 })

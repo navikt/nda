@@ -1,6 +1,11 @@
 import { Alert, BodyShort, Button, Heading, HStack, Link, Select, Table, VStack } from '@navikt/ds-react'
 import { Form, Link as RouterLink } from 'react-router'
-import type { WorkflowRunRepositoryBackfillCoverage } from '~/db/workflow-run-repository-backfill-coverage.server'
+import type {
+  WorkflowRunBackfillPreviewClassification,
+  WorkflowRunBackfillPreviewDeployment,
+  WorkflowRunBackfillPreviewRepository,
+  WorkflowRunRepositoryBackfillCoverage,
+} from '~/db/workflow-run-repository-backfill-coverage.server'
 
 interface RepositoryIdBackfillCoverageProps {
   teams: string[]
@@ -11,10 +16,26 @@ interface RepositoryIdBackfillCoverageProps {
     legacy: number
     eligible: number
   }
+  previewRepository: WorkflowRunBackfillPreviewRepository | null
+  previewDeployments: WorkflowRunBackfillPreviewDeployment[]
+  invalidRepository: boolean
+  returnToTeam: string | null
 }
 
 function formatPercent(value: number, total: number): string {
   return total === 0 ? '–' : `${Math.round((value / total) * 100)} %`
+}
+
+const classificationLabels: Record<WorkflowRunBackfillPreviewClassification, string> = {
+  eligible: 'Kandidat',
+  no_trigger_url: 'Mangler workflow-run-lenke',
+  invalid_trigger_url: 'Ugyldig workflow-run-lenke eller run-ID',
+  trigger_url_mismatch: 'Workflow-run-lenken viser et annet repository',
+  missing_snapshot: 'Mangler lagret workflow-run-snapshot',
+  repository_mismatch: 'Snapshot har et annet eller manglende repository-ID',
+  sha_mismatch: 'Commit-SHA stemmer ikke',
+  unsupported_event: 'Eventtypen er ikke push',
+  head_repository_mismatch: 'Head repository stemmer ikke',
 }
 
 export function RepositoryIdBackfillCoverage({
@@ -23,7 +44,92 @@ export function RepositoryIdBackfillCoverage({
   invalidTeam,
   repositories,
   totals,
+  previewRepository,
+  previewDeployments,
+  invalidRepository,
+  returnToTeam,
 }: RepositoryIdBackfillCoverageProps) {
+  if (previewRepository) {
+    return (
+      <VStack gap="space-24">
+        <div>
+          <Heading level="1" size="large" spacing>
+            Repository-ID-backfill – forhåndsvisning
+          </Heading>
+          <BodyShort textColor="subtle">
+            Skrivebeskyttet oversikt over konkrete legacy-deployments på tvers av team for{' '}
+            {previewRepository.githubOwner}/{previewRepository.githubRepoName}.
+          </BodyShort>
+        </div>
+        <Link
+          as={RouterLink}
+          to={returnToTeam ? `?team=${encodeURIComponent(returnToTeam)}` : '/admin/repository-id-backfill-coverage'}
+        >
+          Tilbake til teamrapporten
+        </Link>
+        <Alert variant="info">
+          Viser alle legacy-deployments som kan knyttes entydig til dette registrerte repositoryet på tvers av
+          tilknyttede apper og Nais-team. Bare deployments uten repository-ID inngår. Tvetydige repository-navn
+          utelates. Ingen rader endres.
+        </Alert>
+        <BodyShort>
+          <strong>{totals.eligible.toLocaleString('no-NO')}</strong> av{' '}
+          <strong>{totals.legacy.toLocaleString('no-NO')}</strong> deployments er kandidater (
+          {formatPercent(totals.eligible, totals.legacy)}).
+        </BodyShort>
+        {previewDeployments.length === 0 ? (
+          <BodyShort>Ingen entydig tilknyttede legacy-deployments ble funnet for repositoryet.</BodyShort>
+        ) : (
+          <Table
+            aria-label={`Legacy-deployments for ${previewRepository.githubOwner}/${previewRepository.githubRepoName}`}
+          >
+            <Table.Header>
+              <Table.Row>
+                <Table.HeaderCell scope="col">Deployment-ID</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Nais-team og app</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Opprettet</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Commit-SHA</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Workflow-run-ID</Table.HeaderCell>
+                <Table.HeaderCell scope="col">Vurdering</Table.HeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {previewDeployments.map((deployment) => (
+                <Table.Row key={deployment.deploymentId}>
+                  <Table.HeaderCell scope="row">{deployment.deploymentId}</Table.HeaderCell>
+                  <Table.DataCell>
+                    {deployment.teamSlug} / {deployment.appName} ({deployment.environmentName})
+                  </Table.DataCell>
+                  <Table.DataCell>{new Date(deployment.createdAt).toLocaleString('nb-NO')}</Table.DataCell>
+                  <Table.DataCell>{deployment.commitSha ?? '–'}</Table.DataCell>
+                  <Table.DataCell>{deployment.workflowRunId ?? '–'}</Table.DataCell>
+                  <Table.DataCell>{classificationLabels[deployment.classification]}</Table.DataCell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table>
+        )}
+      </VStack>
+    )
+  }
+
+  if (invalidRepository) {
+    return (
+      <VStack gap="space-24">
+        <Heading level="1" size="large">
+          Repository-ID-backfill – forhåndsvisning
+        </Heading>
+        <Alert variant="warning">Ukjent eller ugyldig repository-ID. Velg et repository fra rapporten.</Alert>
+        <Link
+          as={RouterLink}
+          to={returnToTeam ? `?team=${encodeURIComponent(returnToTeam)}` : '/admin/repository-id-backfill-coverage'}
+        >
+          Tilbake til teamrapporten
+        </Link>
+      </VStack>
+    )
+  }
+
   return (
     <VStack gap="space-24">
       <div>
@@ -57,7 +163,6 @@ export function RepositoryIdBackfillCoverage({
       </Form>
 
       {invalidTeam && <Alert variant="warning">Ukjent Nais-team. Velg et team fra listen og prøv igjen.</Alert>}
-
       {selectedTeam ? (
         <>
           <Alert variant="info">
@@ -106,9 +211,9 @@ export function RepositoryIdBackfillCoverage({
                       <Table.HeaderCell scope="row">
                         <Link
                           as={RouterLink}
-                          to={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin?repositoryId=${repository.repositoryId}`}
+                          to={`/admin/repository-id-backfill-coverage?repositoryId=${repository.repositoryId}&team=${encodeURIComponent(selectedTeam)}`}
                         >
-                          {repository.githubOwner}/{repository.githubRepoName}
+                          {repository.githubOwner}/{repository.githubRepoName} – vis alle team
                         </Link>
                       </Table.HeaderCell>
                       <Table.DataCell align="right">

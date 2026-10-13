@@ -15,6 +15,10 @@ function renderCoverage(selectedTeam: string | null) {
             invalidTeam={false}
             repositories={[]}
             totals={{ legacy: selectedTeam ? 12 : 0, eligible: selectedTeam ? 5 : 0 }}
+            previewRepository={null}
+            previewDeployments={[]}
+            invalidRepository={false}
+            returnToTeam={null}
           />
         ),
       },
@@ -40,5 +44,58 @@ describe('RepositoryIdBackfillCoverage', () => {
     expect(markup).toContain('ikke hele repositoryet på tvers av andre team')
     expect(markup).toContain('5')
     expect(markup).toContain('12')
+  })
+
+  it('shows concrete deployments from every team in the repository-wide preview', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '*',
+          element: (
+            <RepositoryIdBackfillCoverage
+              teams={[]}
+              selectedTeam={null}
+              invalidTeam={false}
+              repositories={[]}
+              totals={{ legacy: 2, eligible: 1 }}
+              previewRepository={{ repositoryId: 216, githubOwner: 'navikt', githubRepoName: 'pensjon-alde' }}
+              previewDeployments={[
+                {
+                  deploymentId: 101,
+                  teamSlug: 'pensjondeployer',
+                  appName: 'pensjon-alde',
+                  environmentName: 'prod-gcp',
+                  createdAt: new Date('2026-10-13T12:00:00.000Z'),
+                  commitSha: 'a'.repeat(40),
+                  workflowRunId: '123',
+                  classification: 'eligible',
+                },
+                {
+                  deploymentId: 102,
+                  teamSlug: 'pensjon-saksbehandling',
+                  appName: 'pensjon-alde',
+                  environmentName: 'prod-gcp',
+                  createdAt: new Date('2026-10-13T12:01:00.000Z'),
+                  commitSha: 'b'.repeat(40),
+                  workflowRunId: null,
+                  classification: 'no_trigger_url',
+                },
+              ]}
+              invalidRepository={false}
+              returnToTeam="pensjondeployer"
+            />
+          ),
+        },
+      ],
+      { initialEntries: ['/'] },
+    )
+    const markup = renderToStaticMarkup(<RouterProvider router={router} />)
+
+    expect(markup).toContain('pensjondeployer')
+    expect(markup).toContain('pensjon-saksbehandling')
+    expect(markup).toContain('Deployment-ID')
+    expect(markup).toContain('Mangler workflow-run-lenke')
+    expect(markup).toContain('2')
+    expect(markup).toContain('1')
   })
 })

@@ -16,6 +16,34 @@ export interface WorkflowRunRepositoryBackfillCoverage {
   headRepositoryMismatch: number
 }
 
+export interface WorkflowRunBackfillPreviewRepository {
+  repositoryId: number
+  githubOwner: string
+  githubRepoName: string
+}
+
+export type WorkflowRunBackfillPreviewClassification =
+  | 'eligible'
+  | 'no_trigger_url'
+  | 'invalid_trigger_url'
+  | 'trigger_url_mismatch'
+  | 'missing_snapshot'
+  | 'repository_mismatch'
+  | 'sha_mismatch'
+  | 'unsupported_event'
+  | 'head_repository_mismatch'
+
+export interface WorkflowRunBackfillPreviewDeployment {
+  deploymentId: number
+  teamSlug: string
+  appName: string
+  environmentName: string
+  createdAt: Date
+  commitSha: string | null
+  workflowRunId: string | null
+  classification: WorkflowRunBackfillPreviewClassification
+}
+
 interface CoverageRow {
   repository_id: number
   github_owner: string
@@ -32,28 +60,35 @@ interface CoverageRow {
   head_repository_mismatch: number
 }
 
-export async function getWorkflowRunBackfillCoverageTeams(): Promise<string[]> {
-  const { rows } = await pool.query<{ team_slug: string }>(
-    `SELECT DISTINCT team_slug
-     FROM monitored_applications
-     WHERE team_slug IS NOT NULL AND btrim(team_slug) <> ''
-     ORDER BY team_slug`,
-  )
-
-  return rows.map((row) => row.team_slug)
+interface PreviewRepositoryRow {
+  repository_id: number
+  github_owner: string
+  github_repo_name: string
 }
 
-export async function getWorkflowRunRepositoryBackfillCoverage(
-  teamSlug: string,
-): Promise<WorkflowRunRepositoryBackfillCoverage[]> {
-  const { rows } = await pool.query<CoverageRow>(
-    `WITH legacy_deployments AS (
+interface PreviewDeploymentRow {
+  deployment_id: number
+  team_slug: string
+  app_name: string
+  environment_name: string
+  created_at: Date
+  commit_sha: string | null
+  workflow_run_id: string | null
+  classification: WorkflowRunBackfillPreviewClassification
+}
+
+function classifiedDeploymentsCte(scopeCondition: string): string {
+  return `WITH legacy_deployments AS (
        SELECT
          r.id AS repository_id,
          r.github_owner,
          r.github_repo_name,
          r.github_repo_id,
+         ma.team_slug,
+         ma.app_name,
+         ma.environment_name,
          d.id AS deployment_id,
+         d.created_at,
          d.commit_sha,
          d.detected_github_owner,
          d.detected_github_repo_name,
@@ -73,7 +108,7 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
         AND d.detected_github_repo_name = ar.github_repo_name
         AND d.repository_id IS NULL
        JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-       WHERE ma.team_slug = $1
+       WHERE ${scopeCondition}
         AND NOT EXISTS (
           SELECT 1
           FROM repositories other
@@ -133,7 +168,25 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
            ELSE 'eligible'
          END AS classification
        FROM snapshots
-     )
+     )`
+}
+
+export async function getWorkflowRunBackfillCoverageTeams(): Promise<string[]> {
+  const { rows } = await pool.query<{ team_slug: string }>(
+    `SELECT DISTINCT team_slug
+     FROM monitored_applications
+     WHERE team_slug IS NOT NULL AND btrim(team_slug) <> ''
+     ORDER BY team_slug`,
+  )
+
+  return rows.map((row) => row.team_slug)
+}
+
+export async function getWorkflowRunRepositoryBackfillCoverage(
+  teamSlug: string,
+): Promise<WorkflowRunRepositoryBackfillCoverage[]> {
+  const { rows } = await pool.query<CoverageRow>(
+    `${classifiedDeploymentsCte('ma.team_slug = $1')}
      SELECT
        repository_id,
        github_owner,
@@ -168,5 +221,56 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
     shaMismatch: row.sha_mismatch,
     unsupportedEvent: row.unsupported_event,
     headRepositoryMismatch: row.head_repository_mismatch,
+  }))
+}
+
+export async function getWorkflowRunBackfillPreviewRepository(
+  repositoryId: number,
+): Promise<WorkflowRunBackfillPreviewRepository | null> {
+  const { rows } = await pool.query<PreviewRepositoryRow>(
+    `SELECT id AS repository_id, github_owner, github_repo_name
+     FROM repositories
+     WHERE id = $1`,
+    [repositoryId],
+  )
+  const repository = rows[0]
+
+  return repository
+    ? {
+        repositoryId: repository.repository_id,
+        githubOwner: repository.github_owner,
+        githubRepoName: repository.github_repo_name,
+      }
+    : null
+}
+
+export async function getWorkflowRunRepositoryBackfillPreview(
+  repositoryId: number,
+): Promise<WorkflowRunBackfillPreviewDeployment[]> {
+  const { rows } = await pool.query<PreviewDeploymentRow>(
+    `${classifiedDeploymentsCte('r.id = $1')}
+     SELECT
+       deployment_id,
+       team_slug,
+       app_name,
+       environment_name,
+       created_at,
+       commit_sha,
+       workflow_run_id::text AS workflow_run_id,
+       classification
+     FROM classified
+     ORDER BY created_at DESC, deployment_id DESC`,
+    [repositoryId],
+  )
+
+  return rows.map((row) => ({
+    deploymentId: row.deployment_id,
+    teamSlug: row.team_slug,
+    appName: row.app_name,
+    environmentName: row.environment_name,
+    createdAt: row.created_at,
+    commitSha: row.commit_sha,
+    workflowRunId: row.workflow_run_id,
+    classification: row.classification,
   }))
 }
