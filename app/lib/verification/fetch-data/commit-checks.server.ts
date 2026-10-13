@@ -97,9 +97,7 @@ export async function refreshCommitChecksOnly(
   resolvedWorkflowRun?: WorkflowRunResolution,
 ): Promise<CommitChecksFetchResult> {
   const fallbackSha = await resolvePrHeadShaFallback(owner, repo, githubPrNumber)
-  const checkSuiteId = resolvedWorkflowRun
-    ? (resolvedWorkflowRun.workflowTriggerConfig?.checkSuiteId ?? null)
-    : await resolveCheckSuiteId(owner, repo, triggerUrl, cachedWorkflowTrigger)
+  const checkSuiteId = await resolveCheckSuiteId(owner, repo, triggerUrl, cachedWorkflowTrigger, resolvedWorkflowRun)
   const result = await fetchCommitChecks(owner, repo, commitSha, fallbackSha, checkSuiteId)
   await updateDeploymentCommitChecks(deploymentId, result.commitChecks, result.attempted)
   return result
@@ -110,9 +108,13 @@ async function resolveCheckSuiteId(
   repo: string,
   triggerUrl: string | null | undefined,
   cachedWorkflowTrigger: WorkflowTriggerConfig | null | undefined,
+  resolvedWorkflowRun?: WorkflowRunResolution,
 ): Promise<number | null> {
   if (cachedWorkflowTrigger?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) {
     return cachedWorkflowTrigger.checkSuiteId
+  }
+  if (resolvedWorkflowRun) {
+    return resolvedWorkflowRun.workflowTriggerConfig?.checkSuiteId ?? null
   }
   if (!triggerUrl) return null
   const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
