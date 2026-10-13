@@ -455,6 +455,14 @@ describe('repository admin actions - authorization', () => {
 
       expect(result).toEqual({ error: 'Registreringen må være på for å starte på nytt' })
     })
+
+    it('refuses a date that is not earlier than the current start date', async () => {
+      mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'not_earlier' })
+
+      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+
+      expect(result).toEqual({ error: 'Datoen må være tidligere enn nåværende startdato' })
+    })
   })
 
   it('successfully updates the implicit approval mode', async () => {

@@ -39,7 +39,7 @@ export function CodeDeliveryTrackingSettings({
   const { enabled, since, earliestDeploymentAt } = codeDeliveryTracking
   const [sinceValue, setSinceValue] = useState('')
   const { datepickerProps, inputProps } = useDatepicker({
-    toDate: new Date(),
+    toDate: since ? new Date(since) : new Date(),
     onDateChange: (date) => setSinceValue(date ? formatDateValue(date) : ''),
   })
 

@@ -144,6 +144,21 @@ describe('restartCodeDeliveryTracking', () => {
     expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
   })
 
+  it('refuses a date that is not earlier than the current start date', async () => {
+    const repositoryId = await createRepository('2004')
+    await seedRegisteredState(repositoryId)
+    await pool.query('UPDATE repositories SET code_delivery_tracking_since = $1 WHERE id = $2', [
+      new Date('2023-01-01T00:00:00.000Z'),
+      repositoryId,
+    ])
+
+    expect(await restartCodeDeliveryTracking({ repositoryId, since: SINCE, changedByNavIdent: 'Z990001' })).toEqual({
+      ok: false,
+      reason: 'not_earlier',
+    })
+    expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
+  })
+
   it('reports an unknown repository', async () => {
     expect(
       await restartCodeDeliveryTracking({ repositoryId: 999999, since: SINCE, changedByNavIdent: 'Z990001' }),

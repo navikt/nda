@@ -2,7 +2,7 @@ import { lockRepositoryCodeDeliveries, pool, withTransaction } from './connectio
 import { REPOSITORY_SETTING_KEYS, recordRepoConfigAuditLog } from './repositories.server'
 
 export type RestartCodeDeliveryTrackingResult =
-  | { ok: false; reason: 'repo_not_found' | 'tracking_disabled' }
+  | { ok: false; reason: 'repo_not_found' | 'tracking_disabled' | 'not_earlier' }
   | {
       ok: true
       since: Date
@@ -29,6 +29,13 @@ export async function restartCodeDeliveryTracking(params: {
     const repository = rows[0]
     if (!repository) return { ok: false, reason: 'repo_not_found' }
     if (!repository.code_delivery_tracking) return { ok: false, reason: 'tracking_disabled' }
+
+    if (
+      repository.code_delivery_tracking_since &&
+      since.getTime() >= repository.code_delivery_tracking_since.getTime()
+    ) {
+      return { ok: false, reason: 'not_earlier' }
+    }
 
     const cleared = await client.query(
       `DELETE FROM repository_code_delivery_unresolved
