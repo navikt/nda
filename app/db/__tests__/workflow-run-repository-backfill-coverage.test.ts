@@ -54,6 +54,9 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
       },
     ])
     const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('FROM deployments d')
+    expect(query).toContain('JOIN application_repositories ar')
+    expect(query).toContain('WHERE d.repository_id IS NULL')
     expect(query).toContain('r.github_repo_id,')
     expect(query).toContain('snapshot.github_repo_id = parsed_workflow_runs.github_repo_id')
     expect(query).toContain('snapshot.run_id = parsed_workflow_runs.workflow_run_id')
