@@ -84,4 +84,20 @@ describe('repoConfigChangeDescription', () => {
       ),
     ).toBe('Registrering av kodeleveranser: av → på')
   })
+
+  it('describes a code_delivery_tracking_restart change', () => {
+    const description = repoConfigChangeDescription(
+      REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING_RESTART,
+      { since: '2026-10-13T08:00:00.000Z' },
+      { since: '2024-01-01T00:00:00.000Z', deleted_deliveries: 3 },
+    )
+    expect(description).toContain('Omstart av registrering av kodeleveranser')
+    expect(description).toContain('2024')
+  })
+
+  it('renders "ikke satt" for a restart without a valid date', () => {
+    expect(
+      repoConfigChangeDescription(REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING_RESTART, null, { since: 'x' }),
+    ).toBe('Omstart av registrering av kodeleveranser: ikke satt → ikke satt')
+  })
 })

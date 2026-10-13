@@ -5,6 +5,7 @@ import { useLoaderData, useRevalidator } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { getGitHubDataStatsForRepository } from '~/db/github-data.server'
 import { getRepoConfigAuditLog } from '~/db/repositories.server'
+import { getEarliestDeploymentAtForRepository } from '~/db/repository-code-delivery-restart.server'
 import type { SyncJob } from '~/db/sync-job-types'
 import { getLatestSyncJobForRepository } from '~/db/sync-jobs.server'
 import { requireUser } from '~/lib/auth.server'
@@ -37,12 +38,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
-  const [recentConfigChanges, githubDataStats, latestFetchJob, latestComputeDiffsJob] = await Promise.all([
-    getRepoConfigAuditLog(repository.id, { limit: 10 }),
-    getGitHubDataStatsForRepository(repository.id, repository.audit_start_year),
-    getLatestSyncJobForRepository(repository.id, 'fetch_verification_data'),
-    getLatestSyncJobForRepository(repository.id, 'reverify_app'),
-  ])
+  const [recentConfigChanges, githubDataStats, latestFetchJob, latestComputeDiffsJob, earliestDeploymentAt] =
+    await Promise.all([
+      getRepoConfigAuditLog(repository.id, { limit: 10 }),
+      getGitHubDataStatsForRepository(repository.id, repository.audit_start_year),
+      getLatestSyncJobForRepository(repository.id, 'fetch_verification_data'),
+      getLatestSyncJobForRepository(repository.id, 'reverify_app'),
+      getEarliestDeploymentAtForRepository(repository.id),
+    ])
   const isLinked = affectedApps.length > 0
 
   return {
@@ -59,6 +62,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     codeDeliveryTracking: {
       enabled: repository.code_delivery_tracking,
       since: repository.code_delivery_tracking_since,
+      earliestDeploymentAt,
     },
     recentConfigChanges,
     githubDataStats,

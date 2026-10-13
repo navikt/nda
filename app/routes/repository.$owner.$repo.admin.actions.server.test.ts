@@ -6,6 +6,7 @@ const {
   mockCanAccessRepositoryAdminWithClient,
   mockResolveRepositoryAdminAccessWithClient,
   mockUpdateRepositorySettingsByRepositoryId,
+  mockRestartCodeDeliveryTracking,
   mockIsCurrentOrHistoricalNameForRepositoryId,
   mockGetRepositoryById,
   mockAcquireSyncLockForRepository,
@@ -28,6 +29,7 @@ const {
   mockCanAccessRepositoryAdminWithClient: vi.fn(),
   mockResolveRepositoryAdminAccessWithClient: vi.fn(),
   mockUpdateRepositorySettingsByRepositoryId: vi.fn(),
+  mockRestartCodeDeliveryTracking: vi.fn(),
   mockIsCurrentOrHistoricalNameForRepositoryId: vi.fn(),
   mockGetRepositoryById: vi.fn(),
   mockAcquireSyncLockForRepository: vi.fn(),
@@ -68,6 +70,10 @@ vi.mock('~/db/repositories.server', () => ({
   updateRepositorySettingsByRepositoryId: mockUpdateRepositorySettingsByRepositoryId,
   isCurrentOrHistoricalNameForRepositoryId: mockIsCurrentOrHistoricalNameForRepositoryId,
   getRepositoryById: mockGetRepositoryById,
+}))
+
+vi.mock('~/db/repository-code-delivery-restart.server', () => ({
+  restartCodeDeliveryTracking: mockRestartCodeDeliveryTracking,
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
@@ -381,6 +387,90 @@ describe('repository admin actions - authorization', () => {
     const result = await callAction(formData)
 
     expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
+  })
+
+  describe('restart_code_delivery_tracking', () => {
+    function restartForm(values: { since?: string; confirm?: string }) {
+      const formData = new FormData()
+      formData.set('action', 'restart_code_delivery_tracking')
+      formData.set('repository_id', '5')
+      if (values.since !== undefined) formData.set('since', values.since)
+      if (values.confirm !== undefined) formData.set('confirm', values.confirm)
+      return formData
+    }
+
+    it('restarts tracking from the given date and reports what was cleared', async () => {
+      mockRestartCodeDeliveryTracking.mockResolvedValue({
+        ok: true,
+        since: new Date('2024-01-01T00:00:00.000Z'),
+        deletedDeliveries: 3,
+        unlinkedDeployments: 7,
+        clearedUnresolved: 2,
+      })
+
+      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+
+      expect(mockRestartCodeDeliveryTracking).toHaveBeenCalledWith(
+        expect.objectContaining({ repositoryId: 5, since: new Date('2024-01-01T00:00:00.000Z') }),
+      )
+      expect(result).toEqual({ success: expect.stringContaining('Slettet 3 leveranser og 2 uavklarte') })
+    })
+
+    it.each([
+      ['missing', undefined],
+      ['empty', ''],
+      ['wrong format', '01.01.2024'],
+      ['impossible date', '2024-02-31'],
+    ])('rejects an invalid date (%s)', async (_label, since) => {
+      const result = await callAction(restartForm({ since, confirm: 'true' }))
+
+      expect(result).toEqual({ error: 'Ugyldig dato' })
+      expect(mockRestartCodeDeliveryTracking).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['before 2000', '1999-12-31'],
+      ['in the future', '2999-01-01'],
+    ])('rejects a date out of range (%s)', async (_label, since) => {
+      const result = await callAction(restartForm({ since, confirm: 'true' }))
+
+      expect(result).toEqual({ error: 'Datoen må være mellom 2000 og i dag' })
+      expect(mockRestartCodeDeliveryTracking).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['missing', undefined],
+      ['false', 'false'],
+    ])('requires confirmation (%s)', async (_label, confirm) => {
+      const result = await callAction(restartForm({ since: '2024-01-01', confirm }))
+
+      expect(result).toEqual({ error: 'Du må bekrefte at registrerte leveranser slettes' })
+      expect(mockRestartCodeDeliveryTracking).not.toHaveBeenCalled()
+    })
+
+    it('refuses to restart when tracking is disabled', async () => {
+      mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'tracking_disabled' })
+
+      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+
+      expect(result).toEqual({ error: 'Registreringen må være på for å starte på nytt' })
+    })
+
+    it('refuses when the actor lacks admin access', async () => {
+      mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'unauthorized' })
+
+      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+
+      expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
+    })
+
+    it('refuses a date that is not earlier than the current start date', async () => {
+      mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'not_earlier' })
+
+      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+
+      expect(result).toEqual({ error: 'Datoen må være tidligere enn nåværende startdato' })
+    })
   })
 
   it('successfully updates the implicit approval mode', async () => {

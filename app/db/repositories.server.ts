@@ -298,7 +298,7 @@ export async function getRepositoryIdForApp(monitoredAppId: number, client?: Poo
   return rows[0]?.id ?? null
 }
 
-async function getAppIdsForGithubRepoId(queryable: Queryable, githubRepoId: string): Promise<number[]> {
+export async function getAppIdsForGithubRepoId(queryable: Queryable, githubRepoId: string): Promise<number[]> {
   const { rows } = await queryable.query<{ id: number }>(
     `SELECT ma.id
      FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) latest

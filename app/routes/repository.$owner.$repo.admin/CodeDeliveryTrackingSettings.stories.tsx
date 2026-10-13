@@ -14,7 +14,7 @@ export const Av: Story = {
     repositoryId: 5,
     githubOwner: 'navikt',
     githubRepoName: 'glad-fjord',
-    codeDeliveryTracking: { enabled: false, since: null },
+    codeDeliveryTracking: { enabled: false, since: null, earliestDeploymentAt: '2024-03-01T10:00:00.000Z' },
   },
 }
 
@@ -24,7 +24,11 @@ export const Paa: Story = {
     repositoryId: 5,
     githubOwner: 'navikt',
     githubRepoName: 'glad-fjord',
-    codeDeliveryTracking: { enabled: true, since: '2026-10-13T08:00:00.000Z' },
+    codeDeliveryTracking: {
+      enabled: true,
+      since: '2026-10-13T08:00:00.000Z',
+      earliestDeploymentAt: '2024-03-01T10:00:00.000Z',
+    },
   },
 }
 
@@ -34,6 +38,10 @@ export const AvIgjen: Story = {
     repositoryId: 5,
     githubOwner: 'navikt',
     githubRepoName: 'glad-fjord',
-    codeDeliveryTracking: { enabled: false, since: '2026-10-13T08:00:00.000Z' },
+    codeDeliveryTracking: {
+      enabled: false,
+      since: '2026-10-13T08:00:00.000Z',
+      earliestDeploymentAt: '2024-03-01T10:00:00.000Z',
+    },
   },
 }
