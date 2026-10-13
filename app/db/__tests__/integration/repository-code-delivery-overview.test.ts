@@ -137,10 +137,20 @@ describe('repository code delivery overview', () => {
     await markUnresolved(resolved, 'source_unknown', true)
     await markUnresolved(other, 'ancestry_diverged')
 
+    await pool.query(
+      'UPDATE deployments SET detected_github_owner = $1, detected_github_repo_name = $2 WHERE id = $3',
+      ['navikt', 'old-name', open],
+    )
+
     const unresolved = await listOpenUnresolvedCodeDeployments(repositoryId, 10)
-    expect(unresolved.map((item) => ({ id: item.deployment_id, reason: item.reason }))).toEqual([
-      { id: open, reason: 'ancestry_diverged' },
-    ])
+    expect(
+      unresolved.map((item) => ({
+        id: item.deployment_id,
+        reason: item.reason,
+        owner: item.detected_github_owner,
+        repo: item.detected_github_repo_name,
+      })),
+    ).toEqual([{ id: open, reason: 'ancestry_diverged', owner: 'navikt', repo: 'old-name' }])
     expect(await getRepositoryCodeDeliveryOverview(otherRepositoryId)).toMatchObject({
       unresolvedByReason: { ancestry_diverged: 1 },
     })

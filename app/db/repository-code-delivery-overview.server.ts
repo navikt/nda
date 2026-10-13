@@ -24,6 +24,8 @@ export interface UnresolvedCodeDeployment {
   environment_name: string
   app_name: string
   commit_sha: string
+  detected_github_owner: string | null
+  detected_github_repo_name: string | null
   deployed_at: Date
   reason: UnresolvedReason
   first_seen_at: Date
@@ -103,7 +105,7 @@ export async function listOpenUnresolvedCodeDeployments(
 ): Promise<UnresolvedCodeDeployment[]> {
   const { rows } = await pool.query<UnresolvedCodeDeployment>(
     `SELECT d.id AS deployment_id, d.team_slug, d.environment_name, d.app_name, d.commit_sha,
-            d.created_at AS deployed_at, u.reason, u.created_at AS first_seen_at, u.updated_at AS last_attempt_at
+            d.detected_github_owner, d.detected_github_repo_name, d.created_at AS deployed_at, u.reason, u.created_at AS first_seen_at, u.updated_at AS last_attempt_at
      FROM repository_code_delivery_unresolved u
      JOIN deployments d ON d.id = u.deployment_id
      WHERE d.repository_id = $1 AND u.resolved_at IS NULL

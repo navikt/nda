@@ -35,6 +35,8 @@ export interface RepositoryCodeDeliveriesPageProps {
     environment_name: string
     app_name: string
     commit_sha: string
+    detected_github_owner: string | null
+    detected_github_repo_name: string | null
     deployed_at: DateValue
     reason: UnresolvedReason
     first_seen_at: DateValue
@@ -45,7 +47,16 @@ export interface RepositoryCodeDeliveriesPageProps {
   onPageChange: (page: number) => void
 }
 
-function CommitLink({ repository, sha }: { repository: { githubOwner: string; githubRepoName: string }; sha: string }) {
+function CommitLink({
+  repository,
+  sha,
+}: {
+  repository: { githubOwner: string | null; githubRepoName: string | null }
+  sha: string
+}) {
+  if (!repository.githubOwner || !repository.githubRepoName) {
+    return <code>{sha.slice(0, 7)}</code>
+  }
   return (
     <ExternalLink href={`https://github.com/${repository.githubOwner}/${repository.githubRepoName}/commit/${sha}`}>
       <code>{sha.slice(0, 7)}</code>
@@ -85,8 +96,8 @@ export function RepositoryCodeDeliveriesPage({
       {!tracking.enabled && (
         <Alert variant="info" size="small">
           Registreringen er av for dette repositoryet.
-          {tracking.since ? ` Den var sist på fra ${formatAuditLogTimestamp(tracking.since)}.` : ''} Slå den på under
-          admin for å begynne å registrere.
+          {tracking.since ? ` Den ble første gang slått på ${formatAuditLogTimestamp(tracking.since)}.` : ''} Slå den på
+          under admin for å {tracking.since ? 'fortsette' : 'begynne'} å registrere.
         </Alert>
       )}
 
@@ -100,33 +111,33 @@ export function RepositoryCodeDeliveriesPage({
               <BodyShort size="small" textColor="subtle">
                 Leveranser
               </BodyShort>
-              <Heading size="medium" level="3">
+              <BodyShort weight="semibold" size="large">
                 {overview.deliveryCount}
-              </Heading>
+              </BodyShort>
             </div>
             <div>
               <BodyShort size="small" textColor="subtle">
                 Koblede deployments
               </BodyShort>
-              <Heading size="medium" level="3">
+              <BodyShort weight="semibold" size="large">
                 {overview.linkedDeploymentCount}
-              </Heading>
+              </BodyShort>
             </div>
             <div>
               <BodyShort size="small" textColor="subtle">
                 Venter på vurdering
               </BodyShort>
-              <Heading size="medium" level="3">
+              <BodyShort weight="semibold" size="large">
                 {overview.awaitingDeploymentCount}
-              </Heading>
+              </BodyShort>
             </div>
             <div>
               <BodyShort size="small" textColor="subtle">
                 Uavklarte
               </BodyShort>
-              <Heading size="medium" level="3">
+              <BodyShort weight="semibold" size="large">
                 {unresolvedTotal}
-              </Heading>
+              </BodyShort>
             </div>
           </HStack>
           {reasons.length > 0 && (
@@ -223,7 +234,13 @@ export function RepositoryCodeDeliveriesPage({
                         </Link>
                       </Table.DataCell>
                       <Table.DataCell>
-                        <CommitLink repository={repository} sha={item.commit_sha} />
+                        <CommitLink
+                          repository={{
+                            githubOwner: item.detected_github_owner,
+                            githubRepoName: item.detected_github_repo_name,
+                          }}
+                          sha={item.commit_sha}
+                        />
                       </Table.DataCell>
                       <Table.DataCell>
                         <BodyShort size="small">{UNRESOLVED_REASON_LABELS[item.reason]}</BodyShort>
