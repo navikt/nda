@@ -150,6 +150,7 @@ export function RepositoryCodeDeliveriesPage({
             <BodyShort textColor="subtle">Ingen leveranser er registrert ennå.</BodyShort>
           ) : (
             <Table size="small">
+              <caption className="aksel-sr-only">Registrerte kodeleveranser for repositoryet</caption>
               <Table.Header>
                 <Table.Row>
                   <Table.HeaderCell>Opprettet</Table.HeaderCell>
@@ -201,6 +202,7 @@ export function RepositoryCodeDeliveriesPage({
                 </BodyShort>
               )}
               <Table size="small">
+                <caption className="aksel-sr-only">Åpne uavklarte deployments for repositoryet</caption>
                 <Table.Header>
                   <Table.Row>
                     <Table.HeaderCell>App</Table.HeaderCell>
@@ -223,8 +225,11 @@ export function RepositoryCodeDeliveriesPage({
                       <Table.DataCell>
                         <CommitLink repository={repository} sha={item.commit_sha} />
                       </Table.DataCell>
-                      <Table.DataCell title={UNRESOLVED_REASON_DESCRIPTIONS[item.reason]}>
-                        {UNRESOLVED_REASON_LABELS[item.reason]}
+                      <Table.DataCell>
+                        <BodyShort size="small">{UNRESOLVED_REASON_LABELS[item.reason]}</BodyShort>
+                        <BodyShort size="small" textColor="subtle">
+                          {UNRESOLVED_REASON_DESCRIPTIONS[item.reason]}
+                        </BodyShort>
                       </Table.DataCell>
                       <Table.DataCell>{formatAuditLogTimestamp(item.first_seen_at)}</Table.DataCell>
                       <Table.DataCell>{formatAuditLogTimestamp(item.last_attempt_at)}</Table.DataCell>

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import { RepositoryCodeDeliveriesPage } from './RepositoryCodeDeliveriesPage'
+import { RepositoryCodeDeliveriesPage } from '~/components/RepositoryCodeDeliveriesPage'
 
 const meta: Meta<typeof RepositoryCodeDeliveriesPage> = {
   title: 'Features/RepositoryAdmin/RepositoryCodeDeliveriesPage',

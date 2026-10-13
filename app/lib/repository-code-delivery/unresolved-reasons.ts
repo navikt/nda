@@ -1,8 +1,8 @@
 import type { UnresolvedReason } from '~/db/repository-code-delivery-establishment.server'
 
 export const UNRESOLVED_REASON_LABELS: Record<UnresolvedReason, string> = {
-  ancestry_unknown: 'Ancestry ukjent',
-  ancestry_diverged: 'Ancestry avviker',
+  ancestry_unknown: 'Historikk ukjent',
+  ancestry_diverged: 'Historikk avviker',
   ancestry_behind: 'Eldre enn forrige leveranse',
   source_unauthorized: 'Ikke godkjent kilde',
   source_unknown: 'Kilde ukjent',

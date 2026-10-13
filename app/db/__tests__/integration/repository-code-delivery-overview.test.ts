@@ -27,6 +27,7 @@ afterAll(async () => {
 })
 
 afterEach(async () => {
+  appIds.clear()
   await truncateAllTables(pool)
 })
 
@@ -40,8 +41,14 @@ async function createRepository(githubRepoId: string, tracking = true) {
   return repositoryId
 }
 
+const appIds = new Map<string, number>()
+
 async function createDeployment(appName: string, repositoryId: number, commitSha: string) {
-  const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName, environment: 'prod-gcp' })
+  let appId = appIds.get(appName)
+  if (appId === undefined) {
+    appId = await seedApp(pool, { teamSlug: 'team-fjord', appName, environment: 'prod-gcp' })
+    appIds.set(appName, appId)
+  }
   const deploymentId = await seedDeployment(pool, {
     monitoredAppId: appId,
     teamSlug: 'team-fjord',
