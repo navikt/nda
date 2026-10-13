@@ -252,7 +252,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     return ok(
       enabled === 'true'
-        ? 'Registrering av kodeleveranser er slått på. Bare deployments fra nå av vurderes.'
+        ? 'Registrering av kodeleveranser er slått på. Deployments vurderes fra tidspunktet registreringen først ble slått på.'
         : 'Registrering av kodeleveranser er slått av.',
     )
   }

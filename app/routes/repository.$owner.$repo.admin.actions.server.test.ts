@@ -307,6 +307,82 @@ describe('repository admin actions - authorization', () => {
     expect(mockUpdateRepositorySettingsByRepositoryId).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['true', true],
+    ['false', false],
+  ])('maps update_code_delivery_tracking enabled=%s to the settings patch', async (value, expected) => {
+    mockUpdateRepositorySettingsByRepositoryId.mockResolvedValue({
+      ok: true,
+      repositoryId: 5,
+      affectedApps: [],
+      changedKeys: ['code_delivery_tracking'],
+    })
+
+    const formData = new FormData()
+    formData.set('action', 'update_code_delivery_tracking')
+    formData.set('repository_id', '5')
+    formData.set('enabled', value)
+
+    const result = await callAction(formData)
+
+    expect(mockUpdateRepositorySettingsByRepositoryId).toHaveBeenCalledWith(
+      expect.objectContaining({ repositoryId: 5, patch: { codeDeliveryTracking: expected } }),
+    )
+    expect(result).toEqual({
+      success: expected
+        ? 'Registrering av kodeleveranser er slått på. Deployments vurderes fra tidspunktet registreringen først ble slått på.'
+        : 'Registrering av kodeleveranser er slått av.',
+    })
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['yes', 'yes'],
+    ['True', 'True'],
+  ])('rejects an invalid code delivery tracking value (%s)', async (_label, value) => {
+    const formData = new FormData()
+    formData.set('action', 'update_code_delivery_tracking')
+    formData.set('repository_id', '5')
+    if (value !== undefined) formData.set('enabled', value)
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Ugyldig verdi' })
+    expect(mockUpdateRepositorySettingsByRepositoryId).not.toHaveBeenCalled()
+  })
+
+  it('reports no change when code delivery tracking already has the requested value', async () => {
+    mockUpdateRepositorySettingsByRepositoryId.mockResolvedValue({
+      ok: true,
+      repositoryId: 5,
+      affectedApps: [],
+      changedKeys: [],
+    })
+
+    const formData = new FormData()
+    formData.set('action', 'update_code_delivery_tracking')
+    formData.set('repository_id', '5')
+    formData.set('enabled', 'true')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ success: 'Ingen endring — registreringen var allerede satt til denne verdien.' })
+  })
+
+  it('returns the failure message when updating code delivery tracking is rejected', async () => {
+    mockUpdateRepositorySettingsByRepositoryId.mockResolvedValue({ ok: false, reason: 'unauthorized' })
+
+    const formData = new FormData()
+    formData.set('action', 'update_code_delivery_tracking')
+    formData.set('repository_id', '5')
+    formData.set('enabled', 'true')
+
+    const result = await callAction(formData)
+
+    expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
+  })
+
   it('successfully updates the implicit approval mode', async () => {
     mockUpdateRepositorySettingsByRepositoryId.mockResolvedValue({
       ok: true,

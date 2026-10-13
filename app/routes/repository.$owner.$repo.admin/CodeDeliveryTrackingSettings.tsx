@@ -22,13 +22,17 @@ export function CodeDeliveryTrackingSettings({
           </Heading>
           <BodyShort textColor="subtle" size="small">
             Registrerer leveranser for hele repoet i bakgrunnen. Dette påvirker ikke godkjenning av deployments. Bare
-            deployments opprettet etter at registreringen ble slått på vurderes.
+            deployments opprettet fra og med første gang registreringen ble slått på vurderes.
           </BodyShort>
         </div>
 
         <BodyShort size="small">
           {enabled ? 'På' : 'Av'}
-          {since ? ` — vurderer deployments fra ${formatAuditLogTimestamp(since)}` : ''}
+          {since
+            ? enabled
+              ? ` — vurderer deployments fra ${formatAuditLogTimestamp(since)}`
+              : ` — tidligere slått på ${formatAuditLogTimestamp(since)}`
+            : ''}
         </BodyShort>
 
         <Form method="post">
