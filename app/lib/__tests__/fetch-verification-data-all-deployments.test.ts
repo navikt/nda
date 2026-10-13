@@ -37,6 +37,7 @@ vi.mock('~/lib/github', () => ({
   getCommitsBetween: vi.fn(),
   getDetailedPullRequestInfo: vi.fn(),
   getDisplayDataFromGitHub: mockGetDisplayDataFromGitHub,
+  GITHUB_RATE_LIMIT_SAFETY_BUFFER: 200,
   getGitHubRateLimitRemaining: mockGetGitHubRateLimitRemaining,
   getMutablePrDataFromGitHub: vi.fn(),
   getPullRequestForCommit: vi.fn(),

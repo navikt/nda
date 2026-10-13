@@ -6,7 +6,7 @@ import {
 } from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
-import { getGitHubClient } from './client.server'
+import { GITHUB_RATE_LIMIT_SAFETY_BUFFER, getGitHubClient, getGitHubRateLimitRemaining } from './client.server'
 import { mapCompareResponse, type RawCompareResponse } from './compare-snapshot'
 import { type ApiVersionMetadata, captureApiVersionMetadata } from './pr-snapshot'
 
@@ -244,6 +244,7 @@ async function resolveWorkflowRun(
 
 export type WorkflowRunSnapshotFetchResult =
   | { status: 'not_applicable' | 'already_present' | 'fetched' | 'not_found' }
+  | { status: 'rate_limited'; remaining: number }
   | { status: 'failed'; error: string }
 
 export interface ParsedWorkflowRunUrl {
@@ -299,6 +300,11 @@ export async function fetchWorkflowRunSnapshotIfMissing(
       error instanceof Error ? error : new Error(message),
     )
     return { status: 'failed', error: message }
+  }
+
+  const rateLimitRemaining = getGitHubRateLimitRemaining()
+  if (rateLimitRemaining !== null && rateLimitRemaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER) {
+    return { status: 'rate_limited', remaining: rateLimitRemaining }
   }
 
   let response: Awaited<ReturnType<ReturnType<typeof getGitHubClient>['actions']['getWorkflowRun']>>

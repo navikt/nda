@@ -15,6 +15,8 @@ let requestCount = 0
 let lastKnownRateLimitRemaining: number | null = null
 let lastKnownRateLimitStatus: GitHubRateLimitStatus | null = null
 
+export const GITHUB_RATE_LIMIT_SAFETY_BUFFER = 200
+
 export function getGitHubRateLimitRemaining(): number | null {
   if (lastKnownRateLimitStatus?.resetAt && lastKnownRateLimitStatus.resetAt.getTime() <= Date.now()) {
     return null

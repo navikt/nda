@@ -3,7 +3,7 @@ import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
-import { getGitHubRateLimitRemaining } from '~/lib/github'
+import { GITHUB_RATE_LIMIT_SAFETY_BUFFER, getGitHubRateLimitRemaining } from '~/lib/github'
 import {
   fetchWorkflowRunSnapshotIfMissing,
   parseWorkflowRunUrl,
@@ -16,8 +16,6 @@ import { CURRENT_SCHEMA_VERSION } from '../types'
 import { refreshCommitChecksOnly } from './commit-checks.server'
 import { refreshDisplayData as refreshPrDisplayData } from './pr-data.server'
 import { backfillWorkflowTriggerConfig } from './workflow-triggers.server'
-
-const RATE_LIMIT_SAFETY_BUFFER = 200
 
 export interface BulkFetchProgress {
   total: number
@@ -103,26 +101,23 @@ async function fetchWorkflowRunSnapshotsForRepository(
       break
     }
 
-    const rateLimitRemaining = getGitHubRateLimitRemaining()
-    if (rateLimitRemaining !== null && rateLimitRemaining < RATE_LIMIT_SAFETY_BUFFER) {
-      summary.rateLimited = true
-      if (jobId) {
-        await logSyncJobMessage(
-          jobId,
-          'warn',
-          `Stoppet snapshot-henting etter ${processed} av ${total} runs — GitHub rate limit nesten oppbrukt (${rateLimitRemaining} igjen)`,
-        )
-      }
-      break
-    }
-
     const snapshotResult = await fetchWorkflowRunSnapshotIfMissing(
       candidate.urlOwner,
       candidate.urlRepo,
       candidate.trigger_url,
       candidate.github_repo_id,
     )
-    if (snapshotResult.status === 'fetched') {
+    if (snapshotResult.status === 'rate_limited') {
+      summary.rateLimited = true
+      if (jobId) {
+        await logSyncJobMessage(
+          jobId,
+          'warn',
+          `Stoppet snapshot-henting etter ${processed} av ${total} runs — GitHub rate limit nesten oppbrukt (${snapshotResult.remaining} igjen)`,
+        )
+      }
+      break
+    } else if (snapshotResult.status === 'fetched') {
       summary.workflowRunSnapshotsFetched++
       summary.workflowRunSnapshotsAvailable++
     } else if (snapshotResult.status === 'already_present') {
@@ -242,7 +237,7 @@ async function processDeployments(
     }
 
     const rateLimitRemaining = getGitHubRateLimitRemaining()
-    if (rateLimitRemaining !== null && rateLimitRemaining < RATE_LIMIT_SAFETY_BUFFER) {
+    if (rateLimitRemaining !== null && rateLimitRemaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER) {
       logger.warn(`⚠️  GitHub rate limit near exhaustion (${rateLimitRemaining} remaining), stopping bulk fetch`)
       if (jobId) {
         await logSyncJobMessage(

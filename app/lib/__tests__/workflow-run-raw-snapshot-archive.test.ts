@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 const mockReposGet = vi.fn()
 const mockGetWorkflowRun = vi.fn()
+const mockGetGitHubRateLimitRemaining = vi.fn()
 
 vi.mock('~/lib/github/client.server', () => ({
   getGitHubClient: () => ({
@@ -12,6 +13,8 @@ vi.mock('~/lib/github/client.server', () => ({
       getWorkflowRun: mockGetWorkflowRun,
     },
   }),
+  getGitHubRateLimitRemaining: () => mockGetGitHubRateLimitRemaining(),
+  GITHUB_RATE_LIMIT_SAFETY_BUFFER: 200,
 }))
 
 vi.mock('~/lib/logger.server', () => ({
@@ -45,6 +48,8 @@ describe('getWorkflowTriggerConfig', () => {
   beforeEach(() => {
     mockReposGet.mockReset()
     mockGetWorkflowRun.mockReset()
+    mockGetGitHubRateLimitRemaining.mockReset()
+    mockGetGitHubRateLimitRemaining.mockReturnValue(null)
     mockPoolQuery.mockReset()
     mockPoolQuery.mockResolvedValue({ rows: [{ id: 1 }] })
   })
@@ -129,6 +134,8 @@ describe('getWorkflowTriggerConfig', () => {
     beforeEach(() => {
       mockReposGet.mockReset()
       mockGetWorkflowRun.mockReset()
+      mockGetGitHubRateLimitRemaining.mockReset()
+      mockGetGitHubRateLimitRemaining.mockReturnValue(null)
       mockPoolQuery.mockReset()
     })
 
@@ -163,6 +170,7 @@ describe('getWorkflowTriggerConfig', () => {
 
     it('does not fetch a snapshot that is already archived for this repository ID', async () => {
       mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: true }] })
+      mockGetGitHubRateLimitRemaining.mockReturnValue(10)
 
       await expect(
         fetchWorkflowRunSnapshotIfMissing(
@@ -173,6 +181,23 @@ describe('getWorkflowTriggerConfig', () => {
         ),
       ).resolves.toEqual({ status: 'already_present' })
       expect(mockGetWorkflowRun).not.toHaveBeenCalled()
+    })
+
+    it('does not fetch a missing snapshot when the GitHub rate limit is low', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: false }] })
+      mockGetGitHubRateLimitRemaining.mockReturnValue(10)
+
+      await expect(
+        fetchWorkflowRunSnapshotIfMissing(
+          'navikt',
+          'archive-repo',
+          'https://github.com/navikt/archive-repo/actions/runs/555',
+          999,
+        ),
+      ).resolves.toEqual({ status: 'rate_limited', remaining: 10 })
+
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled()
+      expect(mockPoolQuery).toHaveBeenCalledOnce()
     })
 
     it('does not fetch a run when the trigger URL points to a different repository', async () => {
