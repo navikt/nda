@@ -612,3 +612,40 @@ En app regnes som eligible hvis **minst én** av følgende er sann:
 2. Appen deler et aktivt `github_repo_id` med minst én annen app som selv er `is_active = true` (et ekte monorepo-søsken)
 
 Gaten avgjøres av den delte helperen `pendingBaselineAutoVerifyEligibleSql`/`getPendingBaselineAutoVerifyEligibleAppIds` i [`application-repositories.server.ts`](../app/db/application-repositories.server.ts). Samme sjekk brukes av `getPendingVerificationCount` (admin-side-statistikk) i [`stats.server.ts`](../app/db/deployments/stats.server.ts), slik at en ikke-eligible `pending_baseline` heller ikke telles som «venter på handling» i UI.
+
+---
+
+## Repositorykodeleveranser (skyggeregistrering)
+
+> **Status**: Registrering uten effekt på godkjenning. Ingen fire-øyne-status, rapport, API eller varsel leser denne modellen. `verify.ts` er uendret.
+
+Som første steg mot repositorysentrisk godkjenning kobles deployments til en **kodeleveranse**: en rad i `repository_code_deliveries` med repository, base-SHA og head-SHA. Flere deployments av samme SHA, på tvers av apper og miljøer, peker til samme leveranse.
+
+### Opt-in
+
+Registreringen er av for alle repoer. Den slås på per repository med `repositories.code_delivery_tracking`. Tidspunktet settes automatisk i `code_delivery_tracking_since`, og bare deployments opprettet fra og med dette tidspunktet vurderes. Eldre deployments innlemmes ikke.
+
+### Hvordan det kjøres
+
+Etter hver periodiske synkronisering kjører `syncRepositoryCodeDeliveries` ([`code-delivery-sync.server.ts`](../app/lib/sync/code-delivery-sync.server.ts)) for opptil 100 deployments uten leveranse, sortert per repository etter opprettelsestidspunkt. Feil logges og stopper ikke synkroniseringen.
+
+For hvert deployment:
+
+1. `evaluateEstablishmentGrounds` ([`grounds.server.ts`](../app/lib/repository-code-delivery/grounds.server.ts)) avgjør grunnlaget mot GitHub:
+   - GitHubs gjeldende repository-ID må være lik den lagrede, ellers `source_unauthorized`.
+   - Committen må ligge på repositoryets standardbranch, ellers `source_unauthorized`. Mangler repositoryet standardbranch, regnes det også som `source_unauthorized`.
+   - Mislykket oppslag av repository-ID eller branch (nettverksfeil, rate limit) gir `source_unknown`, ikke `source_unauthorized`.
+   - Forrige leveranses head må være forfedre til deploymentets head (`ahead`). Mislykket oppslag gir `ancestry_unknown`, alt annet enn `ahead` gir `ancestry_diverged`. Sjekken hoppes over for første leveranse og når SHA-en allerede har en leveranse.
+2. `establishCodeDeliveryForDeployment` ([`repository-code-delivery-establishment.server.ts`](../app/db/repository-code-delivery-establishment.server.ts)) skriver resultatet i én transaksjon, serialisert per repository:
+   - Kjent SHA (søsken eller tilbakerulling) kobles til eksisterende leveranse og flytter ikke fremdriften.
+   - Ny SHA får forrige leveranses head som base. Første leveranse får base lik head og er et startpunkt, ikke en kodegodkjenning.
+   - Grunnlag som ikke lenger stemmer under låsen (annen base eller annen deployment-SHA) gir `stale_grounds` og prøves på nytt i neste kjøring.
+   - Uavklart grunnlag lagres i `repository_code_delivery_unresolved` og flytter ikke fremdriften. Raden lukkes (`resolved_at`) når deploymentet senere kobles til en leveranse.
+
+### Ny vurdering av uavklarte
+
+Uavklarte deployments vurderes ikke på nytt hver kjøring. Unntaket er `ancestry_unknown` og `source_unknown`, som prøves på nytt etter én time, siden de kan skyldes en midlertidig GitHub-feil. `ancestry_diverged` og `source_unauthorized` krever senere avklaring.
+
+### Ikke med ennå
+
+Visning, vurdering av kodegjennomgang, beslutninger og tilbakekalling, gjenbruk av gamle godkjenninger, innlemming av historiske deployments og endringer i statusmodellen.

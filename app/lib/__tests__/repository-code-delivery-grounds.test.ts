@@ -23,32 +23,77 @@ const BASE = 'a'.repeat(40)
 describe('decideEstablishmentGrounds', () => {
   it('confirms a forward continuation on the approved branch', () => {
     expect(
-      decideEstablishmentGrounds({ headSha: HEAD, baseSha: BASE, onApprovedBranch: true, ancestry: 'ahead' }),
+      decideEstablishmentGrounds({
+        headSha: HEAD,
+        baseSha: BASE,
+        identity: 'match',
+        onApprovedBranch: true,
+        ancestry: 'ahead',
+      }),
     ).toEqual({ confirmed: true, baseSha: BASE, headSha: HEAD })
   })
 
   it('confirms the first delivery without a base when the source is approved', () => {
     expect(
-      decideEstablishmentGrounds({ headSha: HEAD, baseSha: null, onApprovedBranch: true, ancestry: 'not_required' }),
+      decideEstablishmentGrounds({
+        headSha: HEAD,
+        baseSha: null,
+        identity: 'match',
+        onApprovedBranch: true,
+        ancestry: 'not_required',
+      }),
     ).toEqual({ confirmed: true, baseSha: null, headSha: HEAD })
   })
 
-  it.each([false, null])('reports an unauthorized source when branch membership is %s', (onApprovedBranch) => {
-    expect(decideEstablishmentGrounds({ headSha: HEAD, baseSha: BASE, onApprovedBranch, ancestry: 'ahead' })).toEqual({
-      confirmed: false,
-      reason: 'source_unauthorized',
-      headSha: HEAD,
-    })
+  it('reports an unauthorized source when the commit is not on the approved branch', () => {
+    expect(
+      decideEstablishmentGrounds({
+        headSha: HEAD,
+        baseSha: BASE,
+        identity: 'match',
+        onApprovedBranch: false,
+        ancestry: 'ahead',
+      }),
+    ).toEqual({ confirmed: false, reason: 'source_unauthorized', headSha: HEAD })
+  })
+
+  it('reports an unknown source, not an unauthorized one, when branch membership could not be determined', () => {
+    expect(
+      decideEstablishmentGrounds({
+        headSha: HEAD,
+        baseSha: BASE,
+        identity: 'match',
+        onApprovedBranch: null,
+        ancestry: 'ahead',
+      }),
+    ).toEqual({ confirmed: false, reason: 'source_unknown', headSha: HEAD })
+  })
+
+  it.each([
+    ['mismatch', 'source_unauthorized'],
+    ['unknown', 'source_unknown'],
+  ] as const)('maps repository identity %s to %s', (identity, reason) => {
+    expect(
+      decideEstablishmentGrounds({ headSha: HEAD, baseSha: BASE, identity, onApprovedBranch: true, ancestry: 'ahead' }),
+    ).toEqual({ confirmed: false, reason, headSha: HEAD })
   })
 
   it('reports unknown ancestry when the comparison failed', () => {
     expect(
-      decideEstablishmentGrounds({ headSha: HEAD, baseSha: BASE, onApprovedBranch: true, ancestry: null }),
+      decideEstablishmentGrounds({
+        headSha: HEAD,
+        baseSha: BASE,
+        identity: 'match',
+        onApprovedBranch: true,
+        ancestry: null,
+      }),
     ).toEqual({ confirmed: false, reason: 'ancestry_unknown', headSha: HEAD })
   })
 
   it.each(['diverged', 'behind', 'identical'] as const)('does not confirm ancestry status %s', (ancestry) => {
-    expect(decideEstablishmentGrounds({ headSha: HEAD, baseSha: BASE, onApprovedBranch: true, ancestry })).toEqual({
+    expect(
+      decideEstablishmentGrounds({ headSha: HEAD, baseSha: BASE, identity: 'match', onApprovedBranch: true, ancestry }),
+    ).toEqual({
       confirmed: false,
       reason: 'ancestry_diverged',
       headSha: HEAD,
@@ -74,15 +119,15 @@ describe('evaluateEstablishmentGrounds', () => {
   })
 
   it.each([
-    ['a different repository id', 78],
-    ['a failed lookup', null],
-  ])('reports an unauthorized source and makes no further calls for %s', async (_label, resolvedId) => {
+    ['a different repository id', 78, 'source_unauthorized'],
+    ['a failed lookup', null, 'source_unknown'],
+  ])('reports %s as %s and makes no further calls', async (_label, resolvedId, reason) => {
     getEstablishmentContext.mockResolvedValue(context)
     getRepositoryId.mockResolvedValue(resolvedId)
 
     expect(await evaluateEstablishmentGrounds(1)).toEqual({
       confirmed: false,
-      reason: 'source_unauthorized',
+      reason,
       headSha: HEAD,
     })
     expect(getRepositoryId).toHaveBeenCalledWith('navikt', 'repo-fjord')
@@ -120,6 +165,18 @@ describe('evaluateEstablishmentGrounds', () => {
     isCommitOnBranch.mockResolvedValue(true)
 
     expect((await evaluateEstablishmentGrounds(1))?.confirmed).toBe(true)
+    expect(getCommitAncestryStatus).not.toHaveBeenCalled()
+  })
+
+  it('reports an unknown source and skips ancestry when the branch check fails', async () => {
+    getEstablishmentContext.mockResolvedValue(context)
+    isCommitOnBranch.mockResolvedValue(null)
+
+    expect(await evaluateEstablishmentGrounds(1)).toEqual({
+      confirmed: false,
+      reason: 'source_unknown',
+      headSha: HEAD,
+    })
     expect(getCommitAncestryStatus).not.toHaveBeenCalled()
   })
 

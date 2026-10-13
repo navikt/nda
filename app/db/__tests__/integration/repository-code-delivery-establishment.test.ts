@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { linkDeploymentToRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
 import {
   establishCodeDeliveryForDeployment,
+  getDeploymentIdsAwaitingCodeDelivery,
   getEstablishmentContext,
 } from '../../repository-code-delivery-establishment.server'
 import { seedApp, seedDeployment, seedRepository, truncateAllTables } from './helpers'
@@ -48,6 +49,7 @@ async function createDeployment(options: {
   appName: string
   repositoryId: number | null
   commitSha: string | null
+  createdAt?: Date
 }) {
   const deploymentId = await seedDeployment(pool, {
     monitoredAppId: options.appId,
@@ -55,6 +57,7 @@ async function createDeployment(options: {
     appName: options.appName,
     environment: 'prod-gcp',
     commitSha: options.commitSha,
+    createdAt: options.createdAt,
   })
   await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [options.repositoryId, deploymentId])
   return deploymentId
@@ -73,7 +76,7 @@ async function establish(deploymentId: number, baseSha: string | null = null) {
 
 async function establishUnresolved(
   deploymentId: number,
-  reason: 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized',
+  reason: 'ancestry_unknown' | 'ancestry_diverged' | 'source_unauthorized' | 'source_unknown',
 ) {
   const { headSha } = await confirmed(deploymentId)
   return establishCodeDeliveryForDeployment(deploymentId, { confirmed: false, reason, headSha })
@@ -296,7 +299,7 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(await getDeliveries(repositoryId)).toEqual([])
   })
 
-  it.each(['ancestry_unknown', 'ancestry_diverged', 'source_unauthorized'] as const)(
+  it.each(['ancestry_unknown', 'ancestry_diverged', 'source_unauthorized', 'source_unknown'] as const)(
     'does not create or link when grounds are unresolved (%s)',
     async (reason) => {
       const repositoryId = await createRepository()
@@ -479,5 +482,105 @@ describe('getEstablishmentContext', () => {
     expect(await getEstablishmentContext(trackingOff)).toBeNull()
     expect(await getEstablishmentContext(noRepository)).toBeNull()
     expect(await getEstablishmentContext(shortSha)).toBeNull()
+  })
+})
+
+describe('code delivery tracking start', () => {
+  it('records when tracking was enabled', async () => {
+    const repositoryId = await createRepository({ tracking: false })
+    const before = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+      repositoryId,
+    ])
+    expect(before.rows[0].code_delivery_tracking_since).toBeNull()
+
+    await pool.query('UPDATE repositories SET code_delivery_tracking = true WHERE id = $1', [repositoryId])
+
+    const after = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+      repositoryId,
+    ])
+    expect(after.rows[0].code_delivery_tracking_since).not.toBeNull()
+  })
+})
+
+describe('getDeploymentIdsAwaitingCodeDelivery', () => {
+  const DAY = 24 * 60 * 60 * 1000
+
+  it('returns only newer, unlinked, full-SHA deployments of tracked repositories in creation order', async () => {
+    const repositoryId = await createRepository()
+    const untracked = await createRepository({ tracking: false, githubRepoId: '901' })
+    const appId = await createApp('app-a')
+    const old = await createDeployment({
+      appId,
+      appName: 'app-a',
+      repositoryId,
+      commitSha: SHA_100,
+      createdAt: new Date(Date.now() - 2 * DAY),
+    })
+    const later = await createDeployment({
+      appId,
+      appName: 'app-a',
+      repositoryId,
+      commitSha: SHA_102,
+      createdAt: new Date(Date.now() + 2000),
+    })
+    const earlier = await createDeployment({
+      appId,
+      appName: 'app-a',
+      repositoryId,
+      commitSha: SHA_101,
+      createdAt: new Date(Date.now() + 1000),
+    })
+    const linked = await createDeployment({
+      appId,
+      appName: 'app-a',
+      repositoryId,
+      commitSha: SHA_101,
+      createdAt: new Date(Date.now() + 3000),
+    })
+    await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: 'abc123' })
+    await createDeployment({ appId, appName: 'app-a', repositoryId: untracked, commitSha: SHA_100 })
+    await establish(linked)
+
+    const ids = await getDeploymentIdsAwaitingCodeDelivery(100)
+
+    expect(ids).toEqual([earlier, later])
+    expect(ids).not.toContain(old)
+  })
+
+  it('respects the limit', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    for (const [index, sha] of [SHA_100, SHA_101, SHA_102].entries()) {
+      await createDeployment({
+        appId,
+        appName: 'app-a',
+        repositoryId,
+        commitSha: sha,
+        createdAt: new Date(Date.now() + index * 1000),
+      })
+    }
+
+    expect(await getDeploymentIdsAwaitingCodeDelivery(2)).toHaveLength(2)
+  })
+
+  it('excludes open unresolved deployments but retries stale unknown ones', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('app-a')
+    const diverged = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_100 })
+    const unknownFresh = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_101 })
+    const unknownStale = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
+    const sourceUnknownStale = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
+    const unauthorized = await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: SHA_102 })
+    await pool.query(
+      `INSERT INTO repository_code_delivery_unresolved (deployment_id, reason, updated_at) VALUES
+        ($1, 'ancestry_diverged', now() - interval '3 hours'),
+        ($2, 'ancestry_unknown', now()),
+        ($3, 'ancestry_unknown', now() - interval '3 hours'),
+        ($4, 'source_unknown', now() - interval '3 hours'),
+        ($5, 'source_unauthorized', now() - interval '3 hours')`,
+      [diverged, unknownFresh, unknownStale, sourceUnknownStale, unauthorized],
+    )
+
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([unknownStale, sourceUnknownStale])
   })
 })
