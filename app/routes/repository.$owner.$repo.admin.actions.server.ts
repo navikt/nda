@@ -279,17 +279,17 @@ export async function action({ request, params }: Route.ActionArgs) {
       since,
       changedByNavIdent: user.navIdent,
       changedByName: user.name || undefined,
+      actor: user,
     })
 
     if (!result.ok) {
       if (result.reason === 'not_earlier') {
         return fail('Datoen må være tidligere enn nåværende startdato')
       }
-      return fail(
-        result.reason === 'tracking_disabled'
-          ? 'Registreringen må være på for å starte på nytt'
-          : 'Fant ikke repositoryet',
-      )
+      if (result.reason === 'tracking_disabled') {
+        return fail('Registreringen må være på for å starte på nytt')
+      }
+      return fail(updateFailureMessage(result.reason))
     }
 
     return ok(

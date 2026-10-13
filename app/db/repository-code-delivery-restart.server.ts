@@ -1,8 +1,10 @@
-import { lockRepositoryCodeDeliveries, pool, withTransaction } from './connection.server'
-import { REPOSITORY_SETTING_KEYS, recordRepoConfigAuditLog } from './repositories.server'
+import type { UserIdentity } from '~/lib/auth.server'
+import { canAccessAppsAdmin } from '~/lib/authorization.server'
+import { lockRepositoryAdminForWrite, lockRepositoryCodeDeliveries, pool, withTransaction } from './connection.server'
+import { getAppIdsForGithubRepoId, REPOSITORY_SETTING_KEYS, recordRepoConfigAuditLog } from './repositories.server'
 
 export type RestartCodeDeliveryTrackingResult =
-  | { ok: false; reason: 'repo_not_found' | 'tracking_disabled' | 'not_earlier' }
+  | { ok: false; reason: 'repo_not_found' | 'repo_not_linked' | 'unauthorized' | 'tracking_disabled' | 'not_earlier' }
   | {
       ok: true
       since: Date
@@ -16,18 +18,27 @@ export async function restartCodeDeliveryTracking(params: {
   since: Date
   changedByNavIdent: string
   changedByName?: string
+  actor: UserIdentity
 }): Promise<RestartCodeDeliveryTrackingResult> {
-  const { repositoryId, since, changedByNavIdent, changedByName } = params
+  const { repositoryId, since, changedByNavIdent, changedByName, actor } = params
 
   return withTransaction(async (client) => {
+    await lockRepositoryAdminForWrite(client)
     await lockRepositoryCodeDeliveries(client, repositoryId)
 
-    const { rows } = await client.query<{ code_delivery_tracking: boolean; code_delivery_tracking_since: Date | null }>(
-      `SELECT code_delivery_tracking, code_delivery_tracking_since FROM repositories WHERE id = $1 FOR UPDATE`,
+    const { rows } = await client.query<{
+      github_repo_id: string
+      code_delivery_tracking: boolean
+      code_delivery_tracking_since: Date | null
+    }>(
+      `SELECT github_repo_id, code_delivery_tracking, code_delivery_tracking_since FROM repositories WHERE id = $1 FOR UPDATE`,
       [repositoryId],
     )
     const repository = rows[0]
     if (!repository) return { ok: false, reason: 'repo_not_found' }
+    const targetAppIds = await getAppIdsForGithubRepoId(client, repository.github_repo_id)
+    if (targetAppIds.length === 0) return { ok: false, reason: 'repo_not_linked' }
+    if (!(await canAccessAppsAdmin(actor, targetAppIds, client))) return { ok: false, reason: 'unauthorized' }
     if (!repository.code_delivery_tracking) return { ok: false, reason: 'tracking_disabled' }
 
     if (

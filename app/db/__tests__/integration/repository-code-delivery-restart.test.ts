@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { UserIdentity } from '~/lib/auth.server'
 import {
   createRepositoryCodeDelivery,
   linkDeploymentToRepositoryCodeDelivery,
@@ -8,11 +9,20 @@ import {
   getEarliestDeploymentAtForRepository,
   restartCodeDeliveryTracking,
 } from '../../repository-code-delivery-restart.server'
-import { seedApp, seedDeployment, seedRepository, truncateAllTables } from './helpers'
+import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 const SHA_1 = '1'.repeat(40)
 const SHA_2 = '2'.repeat(40)
 const SINCE = new Date('2024-01-01T00:00:00.000Z')
+
+const adminActor: UserIdentity = {
+  navIdent: 'Z990001',
+  name: 'Glad Fjord',
+  role: 'admin',
+  isActualAdmin: true,
+  adminSuppressed: false,
+  entraGroups: [],
+}
 
 let pool: Pool
 
@@ -52,6 +62,16 @@ async function createDeployment(appId: number, appName: string, repositoryId: nu
 
 async function seedRegisteredState(repositoryId: number) {
   const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: `app-${repositoryId}`, environment: 'prod-gcp' })
+  const { rows: repoRows } = await pool.query<{ github_repo_id: string; github_repo_name: string }>(
+    'SELECT github_repo_id, github_repo_name FROM repositories WHERE id = $1',
+    [repositoryId],
+  )
+  await seedApplicationRepository(pool, {
+    monitoredAppId: appId,
+    githubOwner: 'navikt',
+    githubRepo: repoRows[0].github_repo_name,
+    githubRepoId: repoRows[0].github_repo_id,
+  })
   const linked = await createDeployment(appId, `app-${repositoryId}`, repositoryId, SHA_1)
   const unresolved = await createDeployment(appId, `app-${repositoryId}`, repositoryId, SHA_2)
   const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_1 })
@@ -89,6 +109,7 @@ describe('restartCodeDeliveryTracking', () => {
       since: SINCE,
       changedByNavIdent: 'Z990001',
       changedByName: 'Glad Fjord',
+      actor: adminActor,
     })
 
     expect(result).toEqual({
@@ -128,7 +149,7 @@ describe('restartCodeDeliveryTracking', () => {
     await seedRegisteredState(repositoryId)
     await seedRegisteredState(otherRepositoryId)
 
-    await restartCodeDeliveryTracking({ repositoryId, since: SINCE, changedByNavIdent: 'Z990001' })
+    await restartCodeDeliveryTracking({ repositoryId, since: SINCE, changedByNavIdent: 'Z990001', actor: adminActor })
 
     expect(await counts(otherRepositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
   })
@@ -137,7 +158,14 @@ describe('restartCodeDeliveryTracking', () => {
     const repositoryId = await createRepository('2003', false)
     await seedRegisteredState(repositoryId)
 
-    expect(await restartCodeDeliveryTracking({ repositoryId, since: SINCE, changedByNavIdent: 'Z990001' })).toEqual({
+    expect(
+      await restartCodeDeliveryTracking({
+        repositoryId,
+        since: SINCE,
+        changedByNavIdent: 'Z990001',
+        actor: adminActor,
+      }),
+    ).toEqual({
       ok: false,
       reason: 'tracking_disabled',
     })
@@ -152,16 +180,67 @@ describe('restartCodeDeliveryTracking', () => {
       repositoryId,
     ])
 
-    expect(await restartCodeDeliveryTracking({ repositoryId, since: SINCE, changedByNavIdent: 'Z990001' })).toEqual({
+    expect(
+      await restartCodeDeliveryTracking({
+        repositoryId,
+        since: SINCE,
+        changedByNavIdent: 'Z990001',
+        actor: adminActor,
+      }),
+    ).toEqual({
       ok: false,
       reason: 'not_earlier',
     })
     expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
   })
 
+  it('refuses an actor without admin access to the linked apps', async () => {
+    const repositoryId = await createRepository('2005')
+    await seedRegisteredState(repositoryId)
+    const outsider: UserIdentity = {
+      navIdent: 'Z999999',
+      name: 'Utenforstaende Actor',
+      role: 'user',
+      isActualAdmin: false,
+      adminSuppressed: false,
+      entraGroups: [],
+    }
+
+    expect(
+      await restartCodeDeliveryTracking({
+        repositoryId,
+        since: SINCE,
+        changedByNavIdent: outsider.navIdent,
+        actor: outsider,
+      }),
+    ).toEqual({ ok: false, reason: 'unauthorized' })
+    expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
+  })
+
+  it('refuses when the repository is not linked to an active app', async () => {
+    const repositoryId = await createRepository('2006')
+
+    expect(
+      await restartCodeDeliveryTracking({
+        repositoryId,
+        since: SINCE,
+        changedByNavIdent: 'Z990001',
+        actor: adminActor,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: 'repo_not_linked',
+    })
+  })
+
   it('reports an unknown repository', async () => {
     expect(
-      await restartCodeDeliveryTracking({ repositoryId: 999999, since: SINCE, changedByNavIdent: 'Z990001' }),
+      await restartCodeDeliveryTracking({
+        repositoryId: 999999,
+        since: SINCE,
+        changedByNavIdent: 'Z990001',
+        actor: adminActor,
+      }),
     ).toEqual({ ok: false, reason: 'repo_not_found' })
   })
 
