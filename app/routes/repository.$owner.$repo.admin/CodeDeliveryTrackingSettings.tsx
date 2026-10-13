@@ -1,14 +1,18 @@
 import { BodyShort, Box, Button, Heading, VStack } from '@navikt/ds-react'
-import { Form } from 'react-router'
+import { Form, Link } from 'react-router'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
 
 type CodeDeliveryTrackingSettingsProps = {
   repositoryId: number
+  githubOwner: string
+  githubRepoName: string
   codeDeliveryTracking: { enabled: boolean; since: Date | string | null }
 }
 
 export function CodeDeliveryTrackingSettings({
   repositoryId,
+  githubOwner,
+  githubRepoName,
   codeDeliveryTracking,
 }: CodeDeliveryTrackingSettingsProps) {
   const { enabled, since } = codeDeliveryTracking
@@ -43,6 +47,12 @@ export function CodeDeliveryTrackingSettings({
             {enabled ? 'Slå av' : 'Slå på'}
           </Button>
         </Form>
+
+        <BodyShort size="small">
+          <Link to={`/repository/${githubOwner}/${githubRepoName}/admin/code-deliveries?repositoryId=${repositoryId}`}>
+            Se registrerte leveranser
+          </Link>
+        </BodyShort>
       </VStack>
     </Box>
   )

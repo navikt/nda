@@ -12,6 +12,8 @@ export const Av: Story = {
   name: 'Registrering av kodeleveranser - av',
   args: {
     repositoryId: 5,
+    githubOwner: 'navikt',
+    githubRepoName: 'glad-fjord',
     codeDeliveryTracking: { enabled: false, since: null },
   },
 }
@@ -20,6 +22,8 @@ export const Paa: Story = {
   name: 'Registrering av kodeleveranser - på',
   args: {
     repositoryId: 5,
+    githubOwner: 'navikt',
+    githubRepoName: 'glad-fjord',
     codeDeliveryTracking: { enabled: true, since: '2026-10-13T08:00:00.000Z' },
   },
 }
@@ -28,6 +32,8 @@ export const AvIgjen: Story = {
   name: 'Registrering av kodeleveranser - av etter tidligere bruk',
   args: {
     repositoryId: 5,
+    githubOwner: 'navikt',
+    githubRepoName: 'glad-fjord',
     codeDeliveryTracking: { enabled: false, since: '2026-10-13T08:00:00.000Z' },
   },
 }

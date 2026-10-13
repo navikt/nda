@@ -6,7 +6,7 @@ import {
   linkDeploymentToRepositoryCodeDeliveryInTransaction,
 } from './repository-code-deliveries.server'
 
-type UnresolvedReason =
+export type UnresolvedReason =
   | 'ancestry_unknown'
   | 'ancestry_diverged'
   | 'ancestry_behind'

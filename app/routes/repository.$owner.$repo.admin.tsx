@@ -168,7 +168,12 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
 
           <ImplicitApprovalSettings repositoryId={repository.id} implicitApprovalSettings={implicitApprovalSettings} />
 
-          <CodeDeliveryTrackingSettings repositoryId={repository.id} codeDeliveryTracking={codeDeliveryTracking} />
+          <CodeDeliveryTrackingSettings
+            repositoryId={repository.id}
+            githubOwner={repository.github_owner}
+            githubRepoName={repository.github_repo_name}
+            codeDeliveryTracking={codeDeliveryTracking}
+          />
 
           <FetchVerificationDataSection
             repositoryId={repository.id}
