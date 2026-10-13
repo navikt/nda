@@ -161,11 +161,14 @@ describe('getWorkflowTriggerConfig', () => {
         ),
       ).resolves.toEqual({
         status: 'fetched',
-        workflowTriggerConfig: {
-          workflowPath: '.github/workflows/deploy.yml',
-          triggerEvent: 'push',
-          checkSuiteId: 42,
-          schemaVersion: 3,
+        workflowRunResolution: {
+          workflowTriggerConfig: {
+            workflowPath: '.github/workflows/deploy.yml',
+            triggerEvent: 'push',
+            checkSuiteId: 42,
+            schemaVersion: 3,
+          },
+          branchName: 'main',
         },
       })
 
@@ -205,11 +208,14 @@ describe('getWorkflowTriggerConfig', () => {
         ),
       ).resolves.toEqual({
         status: 'already_present',
-        workflowTriggerConfig: {
-          workflowPath: '.github/workflows/deploy.yml',
-          triggerEvent: 'push',
-          checkSuiteId: 42,
-          schemaVersion: 3,
+        workflowRunResolution: {
+          workflowTriggerConfig: {
+            workflowPath: '.github/workflows/deploy.yml',
+            triggerEvent: 'push',
+            checkSuiteId: 42,
+            schemaVersion: 3,
+          },
+          branchName: null,
         },
       })
       expect(mockGetWorkflowRun).not.toHaveBeenCalled()

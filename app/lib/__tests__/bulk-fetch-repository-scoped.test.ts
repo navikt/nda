@@ -5,6 +5,7 @@ const {
   mockFetchVerificationData,
   mockUpdateDeploymentCommitChecks,
   mockBackfillWorkflowTriggerConfig,
+  mockRefreshCommitChecksOnly,
   mockFetchWorkflowRunSnapshotIfMissing,
   mockParseWorkflowRunUrl,
 } = vi.hoisted(() => ({
@@ -12,6 +13,7 @@ const {
   mockFetchVerificationData: vi.fn(),
   mockUpdateDeploymentCommitChecks: vi.fn(),
   mockBackfillWorkflowTriggerConfig: vi.fn(),
+  mockRefreshCommitChecksOnly: vi.fn(),
   mockFetchWorkflowRunSnapshotIfMissing: vi.fn(),
   mockParseWorkflowRunUrl: vi.fn(),
 }))
@@ -46,7 +48,7 @@ vi.mock('~/lib/verification/store-data.server', () => ({
 }))
 
 vi.mock('~/lib/verification/fetch-data/commit-checks.server', () => ({
-  refreshCommitChecksOnly: vi.fn(),
+  refreshCommitChecksOnly: mockRefreshCommitChecksOnly,
 }))
 
 vi.mock('~/lib/verification/fetch-data/pr-data.server', () => ({
@@ -93,6 +95,7 @@ describe('fetchVerificationDataForRepository', () => {
     mockFetchVerificationData.mockReset()
     mockUpdateDeploymentCommitChecks.mockReset()
     mockBackfillWorkflowTriggerConfig.mockReset().mockResolvedValue(false)
+    mockRefreshCommitChecksOnly.mockReset().mockResolvedValue({})
     mockFetchWorkflowRunSnapshotIfMissing.mockReset()
     mockParseWorkflowRunUrl.mockReset()
     mockParseWorkflowRunUrl.mockImplementation((url: string | null, owner: string, repo: string) => {
@@ -155,7 +158,8 @@ describe('fetchVerificationDataForRepository', () => {
 
     expect(mockFetchVerificationData).toHaveBeenCalledTimes(1)
     const call = mockFetchVerificationData.mock.calls[0]
-    expect(call[call.length - 1]).toBe(42)
+    expect(call[8]).toBe(42)
+    expect(call[9]).toEqual({ workflowTriggerConfig: null, branchName: null })
   })
 
   it('fetches a missing workflow-run snapshot once for duplicate runs across deployments', async () => {
@@ -220,7 +224,7 @@ describe('fetchVerificationDataForRepository', () => {
       })
     mockFetchWorkflowRunSnapshotIfMissing.mockResolvedValueOnce({
       status: 'fetched',
-      workflowTriggerConfig,
+      workflowRunResolution: { workflowTriggerConfig, branchName: 'main' },
     })
 
     await fetchVerificationDataForRepository(42)
@@ -228,8 +232,81 @@ describe('fetchVerificationDataForRepository', () => {
     expect(mockFetchWorkflowRunSnapshotIfMissing).toHaveBeenCalledOnce()
     expect(mockBackfillWorkflowTriggerConfig).toHaveBeenCalledTimes(2)
     for (const call of mockBackfillWorkflowTriggerConfig.mock.calls) {
-      expect(call[5]).toEqual({ workflowTriggerConfig })
+      expect(call[5]).toEqual({ workflowTriggerConfig, branchName: 'main' })
     }
+  })
+
+  it('reuses workflow-run data for both commit-check and full verification paths', async () => {
+    const triggerUrl = 'https://github.com/navikt/nda/actions/runs/12345'
+    const workflowRunResolution = {
+      workflowTriggerConfig: {
+        workflowPath: '.github/workflows/deploy.yml',
+        triggerEvent: 'push',
+        checkSuiteId: 42,
+        schemaVersion: 3,
+      },
+      branchName: 'release',
+    }
+    mockPoolQuery
+      .mockResolvedValueOnce({
+        rows: [
+          deploymentRow({
+            id: 1,
+            trigger_url: triggerUrl,
+            workflow_trigger_config: null,
+            has_pr_snapshot: true,
+            has_compare_snapshot: true,
+          }),
+          deploymentRow({
+            id: 2,
+            trigger_url: triggerUrl,
+            workflow_trigger_config: null,
+          }),
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            deployment_id: 1,
+            detected_github_owner: 'navikt',
+            detected_github_repo_name: 'nda',
+            trigger_url: triggerUrl,
+            github_repo_id: '987654321',
+          },
+        ],
+      })
+    mockFetchWorkflowRunSnapshotIfMissing.mockResolvedValueOnce({
+      status: 'fetched',
+      workflowRunResolution,
+    })
+
+    await fetchVerificationDataForRepository(42)
+
+    expect(mockRefreshCommitChecksOnly.mock.calls[0]?.[7]).toEqual(workflowRunResolution)
+    expect(mockFetchVerificationData.mock.calls[0]?.[9]).toEqual(workflowRunResolution)
+    expect(mockFetchWorkflowRunSnapshotIfMissing).toHaveBeenCalledOnce()
+  })
+
+  it('stops deployment processing after the snapshot phase detects a secondary rate limit', async () => {
+    const triggerUrl = 'https://github.com/navikt/nda/actions/runs/12345'
+    mockPoolQuery.mockResolvedValueOnce({ rows: [deploymentRow({ trigger_url: triggerUrl })] }).mockResolvedValueOnce({
+      rows: [
+        {
+          deployment_id: 1,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'nda',
+          trigger_url: triggerUrl,
+          github_repo_id: '987654321',
+        },
+      ],
+    })
+    mockFetchWorkflowRunSnapshotIfMissing.mockResolvedValueOnce({ status: 'rate_limited', remaining: 900 })
+
+    const result = await fetchVerificationDataForRepository(42)
+
+    expect(result.rateLimited).toBe(true)
+    expect(result.processed).toBe(0)
+    expect(mockFetchVerificationData).not.toHaveBeenCalled()
   })
 
   it('fetches workflow-run snapshots for valid URLs even when the deployment has no usable commit SHA', async () => {

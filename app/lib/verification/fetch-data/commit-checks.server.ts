@@ -7,6 +7,7 @@ import {
   WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
   type WorkflowTriggerConfig,
 } from '~/lib/github'
+import type { WorkflowRunResolution } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { updateDeploymentCommitChecks } from '../store-data.server'
 import type { VerificationInput } from '../types'
@@ -93,9 +94,12 @@ export async function refreshCommitChecksOnly(
   githubPrNumber: number | null,
   triggerUrl?: string | null,
   cachedWorkflowTrigger?: WorkflowTriggerConfig | null,
+  resolvedWorkflowRun?: WorkflowRunResolution,
 ): Promise<CommitChecksFetchResult> {
   const fallbackSha = await resolvePrHeadShaFallback(owner, repo, githubPrNumber)
-  const checkSuiteId = await resolveCheckSuiteId(owner, repo, triggerUrl, cachedWorkflowTrigger)
+  const checkSuiteId = resolvedWorkflowRun
+    ? (resolvedWorkflowRun.workflowTriggerConfig?.checkSuiteId ?? null)
+    : await resolveCheckSuiteId(owner, repo, triggerUrl, cachedWorkflowTrigger)
   const result = await fetchCommitChecks(owner, repo, commitSha, fallbackSha, checkSuiteId)
   await updateDeploymentCommitChecks(deploymentId, result.commitChecks, result.attempted)
   return result

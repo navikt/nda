@@ -7,6 +7,7 @@ import { GITHUB_RATE_LIMIT_SAFETY_BUFFER, getGitHubRateLimitRemaining } from '~/
 import {
   fetchWorkflowRunSnapshotIfMissing,
   parseWorkflowRunUrl,
+  type WorkflowRunResolution,
   type WorkflowTriggerConfig,
 } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
@@ -46,7 +47,7 @@ interface WorkflowRunSnapshotCandidate {
 
 interface RepositoryWorkflowRunSnapshots {
   summary: WorkflowRunSnapshotSummary
-  triggerResolutions: Map<string, { workflowTriggerConfig: WorkflowTriggerConfig | null }>
+  triggerResolutions: Map<string, WorkflowRunResolution>
 }
 
 function workflowRunKey(githubRepoId: string | number, runId: number): string {
@@ -103,7 +104,7 @@ async function fetchWorkflowRunSnapshotsForRepository(
   }
   const total = uniqueRuns.size
   let processed = 0
-  const triggerResolutions = new Map<string, { workflowTriggerConfig: WorkflowTriggerConfig | null }>()
+  const triggerResolutions = new Map<string, WorkflowRunResolution>()
 
   for (const candidate of uniqueRuns.values()) {
     if (jobId && (await isSyncJobCancelled(jobId))) {
@@ -129,23 +130,25 @@ async function fetchWorkflowRunSnapshotsForRepository(
       break
     } else if (snapshotResult.status === 'fetched') {
       triggerResolutions.set(workflowRunKey(candidate.github_repo_id, candidate.runId), {
-        workflowTriggerConfig: snapshotResult.workflowTriggerConfig,
+        ...snapshotResult.workflowRunResolution,
       })
       summary.workflowRunSnapshotsFetched++
       summary.workflowRunSnapshotsAvailable++
     } else if (snapshotResult.status === 'already_present') {
       triggerResolutions.set(workflowRunKey(candidate.github_repo_id, candidate.runId), {
-        workflowTriggerConfig: snapshotResult.workflowTriggerConfig,
+        ...snapshotResult.workflowRunResolution,
       })
       summary.workflowRunSnapshotsAvailable++
     } else if (snapshotResult.status === 'not_found') {
       triggerResolutions.set(workflowRunKey(candidate.github_repo_id, candidate.runId), {
         workflowTriggerConfig: null,
+        branchName: null,
       })
       summary.workflowRunSnapshotsNotFound++
     } else if (snapshotResult.status === 'failed') {
       triggerResolutions.set(workflowRunKey(candidate.github_repo_id, candidate.runId), {
         workflowTriggerConfig: null,
+        branchName: null,
       })
       summary.workflowRunSnapshotErrors++
       if (jobId) {
@@ -239,7 +242,7 @@ async function processDeployments(
   jobId: number | undefined,
   refreshDisplayData: boolean | undefined,
   workflowRunSnapshotSummary: WorkflowRunSnapshotSummary,
-  workflowTriggerResolutions?: Map<string, { workflowTriggerConfig: WorkflowTriggerConfig | null }>,
+  workflowTriggerResolutions?: Map<string, WorkflowRunResolution>,
   onProgress?: (progress: BulkFetchProgress) => void,
 ): Promise<BulkFetchResult> {
   const result: BulkFetchResult = {
@@ -266,13 +269,18 @@ async function processDeployments(
     }
 
     const rateLimitRemaining = getGitHubRateLimitRemaining()
-    if (rateLimitRemaining !== null && rateLimitRemaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER) {
-      logger.warn(`⚠️  GitHub rate limit near exhaustion (${rateLimitRemaining} remaining), stopping bulk fetch`)
+    const snapshotRateLimited = workflowRunSnapshotSummary.rateLimited === true
+    const quotaNearExhaustion = rateLimitRemaining !== null && rateLimitRemaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER
+    if (snapshotRateLimited || quotaNearExhaustion) {
+      const rateLimitMessage = snapshotRateLimited
+        ? 'GitHub rate limit reached during workflow-run snapshot fetching'
+        : `GitHub rate limit near exhaustion (${rateLimitRemaining} remaining)`
+      logger.warn(`⚠️  ${rateLimitMessage}, stopping bulk fetch`)
       if (jobId) {
         await logSyncJobMessage(
           jobId,
           'warn',
-          `Stoppet etter ${result.processed} av ${result.total} deployments — GitHub rate limit nesten oppbrukt (${rateLimitRemaining} igjen)`,
+          `Stoppet etter ${result.processed} av ${result.total} deployments — ${rateLimitMessage}`,
         )
       }
       result.rateLimited = true
@@ -290,8 +298,8 @@ async function processDeployments(
           : parsedWorkflowRun && deployment.matched_github_repo_id
             ? (workflowTriggerResolutions.get(
                 workflowRunKey(deployment.matched_github_repo_id, parsedWorkflowRun.runId),
-              ) ?? { workflowTriggerConfig: null })
-            : { workflowTriggerConfig: null }
+              ) ?? { workflowTriggerConfig: null, branchName: null })
+            : { workflowTriggerConfig: null, branchName: null }
 
       const workflowTriggerFetched = await backfillWorkflowTriggerConfig(
         deployment.id,
@@ -351,6 +359,7 @@ async function processDeployments(
           deployment.github_pr_number,
           deployment.trigger_url,
           deployment.workflow_trigger_config,
+          workflowTriggerResolution,
         )
         if (refreshDisplayData && deployment.github_pr_number) {
           await refreshPrDisplayData(owner, repo, deployment.github_pr_number)
@@ -380,6 +389,7 @@ async function processDeployments(
           { forceRefresh: false },
           undefined,
           deployment.matched_repository_id ?? undefined,
+          workflowTriggerResolution,
         )
         await updateDeploymentCommitChecks(deployment.id, input.commitChecks, input.commitChecksAttempted ?? true)
         const fetchDuration = Math.round(performance.now() - fetchStart)

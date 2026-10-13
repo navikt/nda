@@ -14,6 +14,7 @@ let octokit: Octokit | null = null
 let requestCount = 0
 let lastKnownRateLimitRemaining: number | null = null
 let lastKnownRateLimitStatus: GitHubRateLimitStatus | null = null
+let lastGitHubRateLimitBlockedUntil: number | null = null
 
 export const GITHUB_RATE_LIMIT_SAFETY_BUFFER = 200
 
@@ -72,10 +73,23 @@ export function getGitHubRateLimitError(error: unknown): { remaining: number } |
     /api rate limit exceeded|secondary rate limit/i.test(message)
 
   if (!rateLimited) return null
+  const retryAfterSeconds = typeof retryAfter === 'string' ? Number.parseInt(retryAfter, 10) : NaN
+  const retryAfterDate = typeof retryAfter === 'string' ? Date.parse(retryAfter) : NaN
+  lastGitHubRateLimitBlockedUntil = Number.isFinite(retryAfterSeconds)
+    ? Date.now() + retryAfterSeconds * 1000
+    : Number.isFinite(retryAfterDate)
+      ? retryAfterDate
+      : remaining === 0 && lastKnownRateLimitStatus?.resetAt
+        ? lastKnownRateLimitStatus.resetAt.getTime()
+        : Date.now() + 60_000
   return { remaining: Number.isFinite(remaining) ? remaining : 0 }
 }
 
 export function getGitHubRateLimitRemaining(): number | null {
+  if (lastGitHubRateLimitBlockedUntil !== null) {
+    if (lastGitHubRateLimitBlockedUntil > Date.now()) return 0
+    lastGitHubRateLimitBlockedUntil = null
+  }
   if (lastKnownRateLimitStatus?.resetAt && lastKnownRateLimitStatus.resetAt.getTime() <= Date.now()) {
     return null
   }
@@ -205,6 +219,7 @@ export function getGitHubClient(): Octokit {
         if (response && typeof response === 'object' && 'headers' in response && response.headers) {
           updateGitHubRateLimitStatus(response.headers as Record<string, unknown>)
         }
+        getGitHubRateLimitError(error)
         logOutgoingHttp({
           area: 'github',
           method,

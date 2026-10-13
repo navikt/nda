@@ -36,38 +36,47 @@ vi.mock('~/lib/tracing.server', () => ({
 import { getGitHubRateLimitError, getGitHubRateLimitRemaining } from '~/lib/github/client.server'
 
 describe('GitHub rate-limit error handling', () => {
-  it('updates quota state from rejected responses and identifies rate-limit errors', () => {
-    expect(
-      getGitHubRateLimitError({
-        status: 403,
-        message: 'API rate limit exceeded',
-        response: {
-          status: 403,
-          headers: {
-            'x-ratelimit-limit': '5000',
-            'x-ratelimit-remaining': '0',
-            'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 60),
-          },
-          data: { message: 'API rate limit exceeded' },
-        },
-      }),
-    ).toEqual({ remaining: 0 })
-    expect(getGitHubRateLimitRemaining()).toBe(0)
+  it('updates quota from rejected responses and blocks requests after secondary rate limits', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-13T22:00:00Z'))
 
-    expect(
-      getGitHubRateLimitError({
-        status: 404,
-        response: {
-          status: 404,
-          headers: {
-            'x-ratelimit-limit': '5000',
-            'x-ratelimit-remaining': '123',
-            'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 60),
+    try {
+      expect(
+        getGitHubRateLimitError({
+          status: 403,
+          message: 'You have exceeded a secondary rate limit',
+          response: {
+            status: 403,
+            headers: {
+              'x-ratelimit-limit': '5000',
+              'x-ratelimit-remaining': '900',
+              'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 3600),
+              'retry-after': '60',
+            },
+            data: { message: 'You have exceeded a secondary rate limit' },
           },
-          data: { message: 'Not Found' },
-        },
-      }),
-    ).toBeNull()
-    expect(getGitHubRateLimitRemaining()).toBe(123)
+        }),
+      ).toEqual({ remaining: 900 })
+      expect(getGitHubRateLimitRemaining()).toBe(0)
+
+      vi.advanceTimersByTime(60_001)
+      expect(
+        getGitHubRateLimitError({
+          status: 404,
+          response: {
+            status: 404,
+            headers: {
+              'x-ratelimit-limit': '5000',
+              'x-ratelimit-remaining': '123',
+              'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 3600),
+            },
+            data: { message: 'Not Found' },
+          },
+        }),
+      ).toBeNull()
+      expect(getGitHubRateLimitRemaining()).toBe(123)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

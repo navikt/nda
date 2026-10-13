@@ -249,9 +249,14 @@ async function resolveWorkflowRun(
 
 export type WorkflowRunSnapshotFetchResult =
   | { status: 'not_applicable' | 'not_found' }
-  | { status: 'already_present' | 'fetched'; workflowTriggerConfig: WorkflowTriggerConfig | null }
+  | { status: 'already_present' | 'fetched'; workflowRunResolution: WorkflowRunResolution }
   | { status: 'rate_limited'; remaining: number }
   | { status: 'failed'; error: string }
+
+export interface WorkflowRunResolution {
+  workflowTriggerConfig: WorkflowTriggerConfig | null
+  branchName: string | null
+}
 
 export interface ParsedWorkflowRunUrl {
   owner: string
@@ -309,7 +314,7 @@ export async function fetchWorkflowRunSnapshotIfMissing(
   if (existingSnapshot !== null) {
     return {
       status: 'already_present',
-      workflowTriggerConfig: workflowTriggerConfigFromRawData(existingSnapshot),
+      workflowRunResolution: workflowRunResolutionFromRawData(existingSnapshot),
     }
   }
 
@@ -350,7 +355,7 @@ export async function fetchWorkflowRunSnapshotIfMissing(
     await saveWorkflowRunRawSnapshot(owner, repo, githubRepoId, runId, response.data, apiVersion)
     return {
       status: 'fetched',
-      workflowTriggerConfig: workflowTriggerConfigFromRawData(response.data),
+      workflowRunResolution: workflowRunResolutionFromRawData(response.data),
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -398,18 +403,23 @@ export type WorkflowTriggerConfig = {
   schemaVersion: number
 }
 
-function workflowTriggerConfigFromRawData(data: unknown): WorkflowTriggerConfig | null {
-  if (!data || typeof data !== 'object') return null
+function workflowRunResolutionFromRawData(data: unknown): WorkflowRunResolution {
+  if (!data || typeof data !== 'object') return { workflowTriggerConfig: null, branchName: null }
   const run = data as Record<string, unknown>
-  if (typeof run.path !== 'string' || typeof run.event !== 'string') return null
-  if (run.check_suite_id !== undefined && run.check_suite_id !== null && typeof run.check_suite_id !== 'number') {
-    return null
-  }
+  const workflowTriggerConfig =
+    typeof run.path === 'string' &&
+    typeof run.event === 'string' &&
+    (run.check_suite_id === undefined || run.check_suite_id === null || typeof run.check_suite_id === 'number')
+      ? {
+          workflowPath: run.path,
+          triggerEvent: run.event,
+          checkSuiteId: typeof run.check_suite_id === 'number' ? run.check_suite_id : null,
+          schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+        }
+      : null
   return {
-    workflowPath: run.path,
-    triggerEvent: run.event,
-    checkSuiteId: typeof run.check_suite_id === 'number' ? run.check_suite_id : null,
-    schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+    workflowTriggerConfig,
+    branchName: typeof run.head_branch === 'string' ? run.head_branch : null,
   }
 }
 
