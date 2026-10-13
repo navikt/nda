@@ -78,24 +78,35 @@ export async function getWorkflowRunRepositoryBackfillCoverage(): Promise<Workfl
             AND other.repository_id != r.id
         )
      ),
-     snapshots AS (
+     parsed_workflow_runs AS (
        SELECT legacy_deployments.*,
-              workflow_run.data AS workflow_run_data
+              CASE
+                WHEN run_parts IS NULL THEN NULL
+                WHEN length((run_parts)[3]) > 19 THEN NULL
+                WHEN (run_parts)[3]::numeric BETWEEN 1 AND 9223372036854775807
+                  THEN (run_parts)[3]::bigint
+                ELSE NULL
+              END AS workflow_run_id
        FROM legacy_deployments
+     ),
+     snapshots AS (
+       SELECT parsed_workflow_runs.*,
+              workflow_run.data AS workflow_run_data
+       FROM parsed_workflow_runs
        LEFT JOIN LATERAL (
          SELECT snapshot.data
          FROM github_workflow_runs_raw_snapshots snapshot
-         WHERE snapshot.github_repo_id::text = legacy_deployments.github_repo_id
-           AND snapshot.run_id::text = (legacy_deployments.run_parts)[3]
+         WHERE snapshot.github_repo_id = parsed_workflow_runs.github_repo_id
+           AND snapshot.run_id = parsed_workflow_runs.workflow_run_id
          ORDER BY snapshot.fetched_at DESC, snapshot.id DESC
          LIMIT 1
-       ) workflow_run ON legacy_deployments.run_parts IS NOT NULL
+       ) workflow_run ON parsed_workflow_runs.workflow_run_id IS NOT NULL
      ),
      classified AS (
        SELECT *,
          CASE
            WHEN trigger_url IS NULL OR btrim(trigger_url) = '' THEN 'no_trigger_url'
-           WHEN run_parts IS NULL THEN 'invalid_trigger_url'
+           WHEN run_parts IS NULL OR workflow_run_id IS NULL THEN 'invalid_trigger_url'
            WHEN lower((run_parts)[1]) != lower(detected_github_owner)
              OR lower((run_parts)[2]) != lower(detected_github_repo_name) THEN 'trigger_url_mismatch'
            WHEN workflow_run_data IS NULL THEN 'missing_snapshot'

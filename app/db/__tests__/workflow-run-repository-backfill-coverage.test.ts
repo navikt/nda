@@ -53,5 +53,9 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         headRepositoryMismatch: 0,
       },
     ])
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('snapshot.github_repo_id = parsed_workflow_runs.github_repo_id')
+    expect(query).toContain('snapshot.run_id = parsed_workflow_runs.workflow_run_id')
+    expect(query).not.toContain('snapshot.github_repo_id::text')
   })
 })

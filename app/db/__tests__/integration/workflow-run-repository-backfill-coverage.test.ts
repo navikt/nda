@@ -105,6 +105,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
 
     await seed({ triggerUrl: null })
     await seed({ triggerUrl: 'https://example.com/navikt/repo-backfill/actions/runs/7' })
+    await seed({ triggerUrl: `https://github.com/navikt/repo-backfill/actions/runs/${'9'.repeat(40)}` })
     await seed({ triggerUrl: 'https://github.com/navikt/another-repo/actions/runs/8' })
 
     const result = await getWorkflowRunRepositoryBackfillCoverage()
@@ -114,10 +115,10 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         repositoryId,
         githubOwner: 'navikt',
         githubRepoName: 'repo-backfill',
-        totalLegacyDeployments: 9,
+        totalLegacyDeployments: 10,
         eligible: 1,
         noTriggerUrl: 1,
-        invalidTriggerUrl: 1,
+        invalidTriggerUrl: 2,
         triggerUrlMismatch: 1,
         missingSnapshot: 1,
         repositoryMismatch: 1,
@@ -127,6 +128,6 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
       },
     ])
     const { rows } = await pool.query('SELECT count(*)::int AS count FROM deployments WHERE repository_id IS NULL')
-    expect(rows[0].count).toBe(9)
+    expect(rows[0].count).toBe(10)
   })
 })
