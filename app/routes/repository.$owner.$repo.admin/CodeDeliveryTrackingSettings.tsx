@@ -84,9 +84,9 @@ export function CodeDeliveryTrackingSettings({
                   Start på nytt fra tidligere dato
                 </Heading>
                 <BodyShort textColor="subtle" size="small">
-                  Bruk dette for å ta med eldre deployments. Alle registrerte leveranser og uavklarte deployments for
-                  repoet slettes, og registreringen bygges opp på nytt fra datoen, eldste først. Godkjenning av
-                  deployments berøres ikke.
+                  Bruk dette for å ta med eldre deployments. Registreringen av kodeleveranser for repoet nullstilles og
+                  bygges opp på nytt fra datoen, eldste først. Dette gjelder bare denne registreringen. Godkjenning,
+                  status og rapporter for deployments berøres ikke.
                   {earliestDeploymentAt
                     ? ` Eldste deployment i repoet er fra ${formatAuditLogTimestamp(earliestDeploymentAt)}.`
                     : ''}
@@ -97,7 +97,8 @@ export function CodeDeliveryTrackingSettings({
                 <DatePicker.Input {...inputProps} label="Vurder deployments fra og med" size="small" />
               </DatePicker>
               <Checkbox name="confirm" value="true" size="small" required>
-                Jeg forstår at registrerte leveranser for dette repoet slettes
+                Jeg forstår at registreringen av kodeleveranser nullstilles og bygges opp på nytt. Godkjenning berøres
+                ikke.
               </Checkbox>
               <div>
                 <Button type="submit" size="small" variant="secondary" disabled={!sinceValue}>
