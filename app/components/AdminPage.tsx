@@ -426,6 +426,30 @@ export function AdminPage() {
             </VStack>
           </Box>
         </Link>
+
+        <Link to="/admin/repository-id-backfill-coverage" style={{ textDecoration: 'none', height: '100%' }}>
+          <Box
+            padding="space-24"
+            borderRadius="8"
+            background="raised"
+            borderColor="neutral-subtle"
+            borderWidth="1"
+            className="admin-card"
+            style={{ height: '100%' }}
+          >
+            <VStack gap="space-12">
+              <MagnifyingGlassIcon fontSize="2rem" aria-hidden />
+              <div>
+                <Heading level="2" size="small" spacing>
+                  Repository-ID-dekning
+                </Heading>
+                <BodyShort textColor="subtle">
+                  Kartlegg eldre deployments som kan kobles til repository ved hjelp av lagrede workflow runs.
+                </BodyShort>
+              </div>
+            </VStack>
+          </Box>
+        </Link>
       </HGrid>
     </VStack>
   )

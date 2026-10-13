@@ -76,6 +76,7 @@ export default [
     route('admin/snapshot-cleanup', 'routes/admin/snapshot-cleanup.tsx'),
     route('admin/verification-diffs', 'routes/admin/verification-diffs.tsx'),
     route('admin/workflow-triggers', 'routes/admin/workflow-triggers.tsx'),
+    route('admin/repository-id-backfill-coverage', 'routes/admin/repository-id-backfill-coverage.tsx'),
     route('admin/workflow-patterns', 'routes/admin/workflow-patterns.tsx'),
     route('admin/validate-monitored-apps', 'routes/admin/validate-monitored-apps.tsx'),
     route('admin/title-mismatches', 'routes/admin/title-mismatches-redirect.ts'),
