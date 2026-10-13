@@ -39,7 +39,7 @@ export async function getWorkflowRunRepositoryBackfillCoverage(): Promise<Workfl
          r.id AS repository_id,
          r.github_owner,
          r.github_repo_name,
-         r.github_repo_id::text AS github_repo_id,
+         r.github_repo_id,
          d.id AS deployment_id,
          d.commit_sha,
          d.detected_github_owner,
@@ -111,13 +111,13 @@ export async function getWorkflowRunRepositoryBackfillCoverage(): Promise<Workfl
              OR lower((run_parts)[2]) != lower(detected_github_repo_name) THEN 'trigger_url_mismatch'
            WHEN workflow_run_data IS NULL THEN 'missing_snapshot'
            WHEN github_repo_id IS NULL
-             OR workflow_run_data->'repository'->>'id' IS DISTINCT FROM github_repo_id
+             OR workflow_run_data->'repository'->>'id' IS DISTINCT FROM github_repo_id::text
              THEN 'repository_mismatch'
            WHEN commit_sha IS NULL
              OR lower(workflow_run_data->>'head_sha') IS DISTINCT FROM lower(commit_sha)
              THEN 'sha_mismatch'
            WHEN workflow_run_data->>'event' IS DISTINCT FROM 'push' THEN 'unsupported_event'
-           WHEN workflow_run_data->'head_repository'->>'id' IS DISTINCT FROM github_repo_id
+           WHEN workflow_run_data->'head_repository'->>'id' IS DISTINCT FROM github_repo_id::text
              THEN 'head_repository_mismatch'
            ELSE 'eligible'
          END AS classification

@@ -54,8 +54,11 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
       },
     ])
     const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('r.github_repo_id,')
     expect(query).toContain('snapshot.github_repo_id = parsed_workflow_runs.github_repo_id')
     expect(query).toContain('snapshot.run_id = parsed_workflow_runs.workflow_run_id')
     expect(query).not.toContain('snapshot.github_repo_id::text')
+    expect(query).toContain("workflow_run_data->'repository'->>'id' IS DISTINCT FROM github_repo_id::text")
+    expect(query).toContain("workflow_run_data->'head_repository'->>'id' IS DISTINCT FROM github_repo_id::text")
   })
 })
