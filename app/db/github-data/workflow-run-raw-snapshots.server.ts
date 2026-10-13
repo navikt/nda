@@ -41,6 +41,21 @@ export async function hasWorkflowRunRawSnapshot(githubRepoId: number | string, r
   return result.rows[0].exists
 }
 
+export async function getWorkflowRunRawSnapshotData(
+  githubRepoId: number | string,
+  runId: number,
+): Promise<unknown | null> {
+  const result = await pool.query<{ data: unknown }>(
+    `SELECT data
+     FROM github_workflow_runs_raw_snapshots
+     WHERE github_repo_id = $1 AND run_id = $2
+     ORDER BY fetched_at DESC
+     LIMIT 1`,
+    [githubRepoId, runId],
+  )
+  return result.rows[0]?.data ?? null
+}
+
 export async function getLatestWorkflowRunRawSnapshot(
   owner: string,
   repo: string,

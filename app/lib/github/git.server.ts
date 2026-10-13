@@ -1,12 +1,17 @@
 import {
-  hasWorkflowRunRawSnapshot,
+  getWorkflowRunRawSnapshotData,
   saveCommitRawSnapshot,
   saveCompareRawSnapshot,
   saveWorkflowRunRawSnapshot,
 } from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
-import { GITHUB_RATE_LIMIT_SAFETY_BUFFER, getGitHubClient, getGitHubRateLimitRemaining } from './client.server'
+import {
+  GITHUB_RATE_LIMIT_SAFETY_BUFFER,
+  getGitHubClient,
+  getGitHubRateLimitError,
+  getGitHubRateLimitRemaining,
+} from './client.server'
 import { mapCompareResponse, type RawCompareResponse } from './compare-snapshot'
 import { type ApiVersionMetadata, captureApiVersionMetadata } from './pr-snapshot'
 
@@ -243,7 +248,8 @@ async function resolveWorkflowRun(
 }
 
 export type WorkflowRunSnapshotFetchResult =
-  | { status: 'not_applicable' | 'already_present' | 'fetched' | 'not_found' }
+  | { status: 'not_applicable' | 'not_found' }
+  | { status: 'already_present' | 'fetched'; workflowTriggerConfig: WorkflowTriggerConfig | null }
   | { status: 'rate_limited'; remaining: number }
   | { status: 'failed'; error: string }
 
@@ -289,10 +295,9 @@ export async function fetchWorkflowRunSnapshotIfMissing(
   }
 
   const runId = workflowRun.runId
+  let existingSnapshot: unknown | null
   try {
-    if (await hasWorkflowRunRawSnapshot(githubRepoId, runId)) {
-      return { status: 'already_present' }
-    }
+    existingSnapshot = await getWorkflowRunRawSnapshotData(githubRepoId, runId)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(
@@ -300,6 +305,12 @@ export async function fetchWorkflowRunSnapshotIfMissing(
       error instanceof Error ? error : new Error(message),
     )
     return { status: 'failed', error: message }
+  }
+  if (existingSnapshot !== null) {
+    return {
+      status: 'already_present',
+      workflowTriggerConfig: workflowTriggerConfigFromRawData(existingSnapshot),
+    }
   }
 
   const rateLimitRemaining = getGitHubRateLimitRemaining()
@@ -313,6 +324,13 @@ export async function fetchWorkflowRunSnapshotIfMissing(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const status = (error as { status?: unknown }).status
+    const rateLimitError = getGitHubRateLimitError(error)
+    if (rateLimitError) {
+      logger.warn(`⚠️ GitHub rate limit reached while fetching workflow run ${runId} for ${owner}/${repo}`, {
+        remaining: rateLimitError.remaining,
+      })
+      return { status: 'rate_limited', remaining: rateLimitError.remaining }
+    }
     if (status === 404) {
       logger.info(`ℹ️ Workflow run ${runId} not found for ${owner}/${repo} (likely expired or deleted upstream)`)
       return { status: 'not_found' }
@@ -330,7 +348,10 @@ export async function fetchWorkflowRunSnapshotIfMissing(
 
     const apiVersion = captureApiVersionMetadata(response.headers, null)
     await saveWorkflowRunRawSnapshot(owner, repo, githubRepoId, runId, response.data, apiVersion)
-    return { status: 'fetched' }
+    return {
+      status: 'fetched',
+      workflowTriggerConfig: workflowTriggerConfigFromRawData(response.data),
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(
@@ -375,6 +396,21 @@ export type WorkflowTriggerConfig = {
   triggerEvent: string
   checkSuiteId: number | null
   schemaVersion: number
+}
+
+function workflowTriggerConfigFromRawData(data: unknown): WorkflowTriggerConfig | null {
+  if (!data || typeof data !== 'object') return null
+  const run = data as Record<string, unknown>
+  if (typeof run.path !== 'string' || typeof run.event !== 'string') return null
+  if (run.check_suite_id !== undefined && run.check_suite_id !== null && typeof run.check_suite_id !== 'number') {
+    return null
+  }
+  return {
+    workflowPath: run.path,
+    triggerEvent: run.event,
+    checkSuiteId: typeof run.check_suite_id === 'number' ? run.check_suite_id : null,
+    schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+  }
 }
 
 export async function getWorkflowTriggerConfig(

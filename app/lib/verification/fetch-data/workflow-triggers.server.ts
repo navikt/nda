@@ -47,11 +47,15 @@ export async function backfillWorkflowTriggerConfig(
   repo: string,
   triggerUrl: string | null | undefined,
   currentConfig?: VerificationInput['workflowTrigger'] | null,
+  resolvedWorkflowTrigger?: { workflowTriggerConfig: VerificationInput['workflowTrigger'] | null },
 ): Promise<boolean> {
   if (!triggerUrl) return false
   if (currentConfig?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) return false
 
-  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+  const workflowTrigger =
+    resolvedWorkflowTrigger === undefined
+      ? await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+      : resolvedWorkflowTrigger.workflowTriggerConfig
   if (!workflowTrigger) return false
 
   await pool.query(`UPDATE deployments SET workflow_trigger_config = $1::jsonb WHERE id = $2`, [

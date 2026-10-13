@@ -17,6 +17,64 @@ let lastKnownRateLimitStatus: GitHubRateLimitStatus | null = null
 
 export const GITHUB_RATE_LIMIT_SAFETY_BUFFER = 200
 
+function updateGitHubRateLimitStatus(headers: Record<string, unknown>): void {
+  const remainingHeader = headers['x-ratelimit-remaining']
+  const limitHeader = headers['x-ratelimit-limit']
+  const resetHeader = headers['x-ratelimit-reset']
+
+  const remaining = remainingHeader !== undefined ? Number.parseInt(String(remainingHeader), 10) : NaN
+  if (!Number.isFinite(remaining)) return
+
+  const limit = limitHeader !== undefined ? Number.parseInt(String(limitHeader), 10) : NaN
+  const resetEpochSeconds = resetHeader !== undefined ? Number.parseInt(String(resetHeader), 10) : NaN
+
+  lastKnownRateLimitRemaining = remaining
+  lastKnownRateLimitStatus = {
+    remaining,
+    limit: Number.isFinite(limit) ? limit : null,
+    resetAt: Number.isFinite(resetEpochSeconds) ? new Date(resetEpochSeconds * 1000) : null,
+  }
+
+  if (remaining < 100) {
+    logger.warn('GitHub rate limit low', {
+      rate_limit_remaining: remaining,
+      rate_limit_total: Number.parseInt(String(limitHeader ?? '0'), 10),
+    })
+  }
+}
+
+export function getGitHubRateLimitError(error: unknown): { remaining: number } | null {
+  if (!error || typeof error !== 'object') return null
+  const errorRecord = error as Record<string, unknown>
+  const response =
+    errorRecord.response && typeof errorRecord.response === 'object'
+      ? (errorRecord.response as Record<string, unknown>)
+      : null
+  const headers =
+    response?.headers && typeof response.headers === 'object' ? (response.headers as Record<string, unknown>) : null
+  if (headers) updateGitHubRateLimitStatus(headers)
+
+  const status = typeof response?.status === 'number' ? response.status : errorRecord.status
+  if (typeof status !== 'number' || (status !== 403 && status !== 429)) return null
+
+  const remainingHeader = headers?.['x-ratelimit-remaining']
+  const remaining = remainingHeader === undefined ? NaN : Number.parseInt(String(remainingHeader), 10)
+  const retryAfter = headers?.['retry-after']
+  const responseData =
+    response?.data && typeof response.data === 'object' ? (response.data as Record<string, unknown>) : null
+  const message = [errorRecord.message, responseData?.message]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+  const rateLimited =
+    status === 429 ||
+    remaining === 0 ||
+    retryAfter !== undefined ||
+    /api rate limit exceeded|secondary rate limit/i.test(message)
+
+  if (!rateLimited) return null
+  return { remaining: Number.isFinite(remaining) ? remaining : 0 }
+}
+
 export function getGitHubRateLimitRemaining(): number | null {
   if (lastKnownRateLimitStatus?.resetAt && lastKnownRateLimitStatus.resetAt.getTime() <= Date.now()) {
     return null
@@ -108,29 +166,7 @@ export function getGitHubClient(): Octokit {
     })
 
     octokit.hook.after('request', (response, _options) => {
-      const remainingHeader = response.headers['x-ratelimit-remaining']
-      const limitHeader = response.headers['x-ratelimit-limit']
-      const resetHeader = response.headers['x-ratelimit-reset']
-
-      const remaining = remainingHeader !== undefined ? Number.parseInt(String(remainingHeader), 10) : NaN
-      if (!Number.isFinite(remaining)) return
-
-      const limit = limitHeader !== undefined ? Number.parseInt(String(limitHeader), 10) : NaN
-      const resetEpochSeconds = resetHeader !== undefined ? Number.parseInt(String(resetHeader), 10) : NaN
-
-      lastKnownRateLimitRemaining = remaining
-      lastKnownRateLimitStatus = {
-        remaining,
-        limit: Number.isFinite(limit) ? limit : null,
-        resetAt: Number.isFinite(resetEpochSeconds) ? new Date(resetEpochSeconds * 1000) : null,
-      }
-
-      if (remaining < 100) {
-        logger.warn('GitHub rate limit low', {
-          rate_limit_remaining: remaining,
-          rate_limit_total: Number.parseInt(String(limitHeader ?? '0'), 10),
-        })
-      }
+      updateGitHubRateLimitStatus(response.headers)
     })
 
     octokit.hook.wrap('request', async (request, options) => {
@@ -165,6 +201,10 @@ export function getGitHubClient(): Octokit {
         })
         return response
       } catch (error) {
+        const response = error && typeof error === 'object' && 'response' in error ? error.response : undefined
+        if (response && typeof response === 'object' && 'headers' in response && response.headers) {
+          updateGitHubRateLimitStatus(response.headers as Record<string, unknown>)
+        }
         logOutgoingHttp({
           area: 'github',
           method,

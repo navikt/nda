@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 const mockReposGet = vi.fn()
 const mockGetWorkflowRun = vi.fn()
 const mockGetGitHubRateLimitRemaining = vi.fn()
+const mockGetGitHubRateLimitError = vi.fn()
 
 vi.mock('~/lib/github/client.server', () => ({
   getGitHubClient: () => ({
@@ -14,6 +15,7 @@ vi.mock('~/lib/github/client.server', () => ({
     },
   }),
   getGitHubRateLimitRemaining: () => mockGetGitHubRateLimitRemaining(),
+  getGitHubRateLimitError: (error: unknown) => mockGetGitHubRateLimitError(error),
   GITHUB_RATE_LIMIT_SAFETY_BUFFER: 200,
 }))
 
@@ -50,6 +52,8 @@ describe('getWorkflowTriggerConfig', () => {
     mockGetWorkflowRun.mockReset()
     mockGetGitHubRateLimitRemaining.mockReset()
     mockGetGitHubRateLimitRemaining.mockReturnValue(null)
+    mockGetGitHubRateLimitError.mockReset()
+    mockGetGitHubRateLimitError.mockReturnValue(null)
     mockPoolQuery.mockReset()
     mockPoolQuery.mockResolvedValue({ rows: [{ id: 1 }] })
   })
@@ -136,11 +140,13 @@ describe('getWorkflowTriggerConfig', () => {
       mockGetWorkflowRun.mockReset()
       mockGetGitHubRateLimitRemaining.mockReset()
       mockGetGitHubRateLimitRemaining.mockReturnValue(null)
+      mockGetGitHubRateLimitError.mockReset()
+      mockGetGitHubRateLimitError.mockReturnValue(null)
       mockPoolQuery.mockReset()
     })
 
     it('archives a missing snapshot using the registered immutable repository ID', async () => {
-      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: false }] }).mockResolvedValueOnce({ rows: [{ id: 8 }] })
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ id: 8 }] })
       mockGetWorkflowRun.mockResolvedValueOnce({
         data: workflowRunData,
         headers: { 'x-github-api-version-selected': '2022-11-28' },
@@ -153,7 +159,15 @@ describe('getWorkflowTriggerConfig', () => {
           'https://github.com/navikt/archive-repo/actions/runs/555',
           999,
         ),
-      ).resolves.toEqual({ status: 'fetched' })
+      ).resolves.toEqual({
+        status: 'fetched',
+        workflowTriggerConfig: {
+          workflowPath: '.github/workflows/deploy.yml',
+          triggerEvent: 'push',
+          checkSuiteId: 42,
+          schemaVersion: 3,
+        },
+      })
 
       expect(mockGetWorkflowRun).toHaveBeenCalledWith({ owner: 'navikt', repo: 'archive-repo', run_id: 555 })
       expect(mockPoolQuery).toHaveBeenLastCalledWith(expect.stringContaining('github_workflow_runs_raw_snapshots'), [
@@ -169,7 +183,17 @@ describe('getWorkflowTriggerConfig', () => {
     })
 
     it('does not fetch a snapshot that is already archived for this repository ID', async () => {
-      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: true }] })
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            data: {
+              path: '.github/workflows/deploy.yml',
+              event: 'push',
+              check_suite_id: 42,
+            },
+          },
+        ],
+      })
       mockGetGitHubRateLimitRemaining.mockReturnValue(10)
 
       await expect(
@@ -179,12 +203,20 @@ describe('getWorkflowTriggerConfig', () => {
           'https://github.com/navikt/archive-repo/actions/runs/555',
           999,
         ),
-      ).resolves.toEqual({ status: 'already_present' })
+      ).resolves.toEqual({
+        status: 'already_present',
+        workflowTriggerConfig: {
+          workflowPath: '.github/workflows/deploy.yml',
+          triggerEvent: 'push',
+          checkSuiteId: 42,
+          schemaVersion: 3,
+        },
+      })
       expect(mockGetWorkflowRun).not.toHaveBeenCalled()
     })
 
     it('does not fetch a missing snapshot when the GitHub rate limit is low', async () => {
-      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: false }] })
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] })
       mockGetGitHubRateLimitRemaining.mockReturnValue(10)
 
       await expect(
@@ -198,6 +230,24 @@ describe('getWorkflowTriggerConfig', () => {
 
       expect(mockGetWorkflowRun).not.toHaveBeenCalled()
       expect(mockPoolQuery).toHaveBeenCalledOnce()
+    })
+
+    it('returns rate-limited when GitHub rejects the request for quota exhaustion', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] })
+      mockGetWorkflowRun.mockRejectedValueOnce({
+        status: 403,
+        message: 'API rate limit exceeded',
+      })
+      mockGetGitHubRateLimitError.mockReturnValueOnce({ remaining: 0 })
+
+      await expect(
+        fetchWorkflowRunSnapshotIfMissing(
+          'navikt',
+          'archive-repo',
+          'https://github.com/navikt/archive-repo/actions/runs/555',
+          999,
+        ),
+      ).resolves.toEqual({ status: 'rate_limited', remaining: 0 })
     })
 
     it('does not fetch a run when the trigger URL points to a different repository', async () => {
@@ -228,7 +278,7 @@ describe('getWorkflowTriggerConfig', () => {
     })
 
     it('refuses to archive a GitHub response that belongs to a different immutable repository', async () => {
-      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: false }] })
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] })
       mockGetWorkflowRun.mockResolvedValueOnce({
         data: { ...workflowRunData, repository: { id: 123 } },
         headers: { 'x-github-api-version-selected': '2022-11-28' },

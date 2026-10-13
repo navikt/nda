@@ -4,12 +4,14 @@ const {
   mockPoolQuery,
   mockFetchVerificationData,
   mockUpdateDeploymentCommitChecks,
+  mockBackfillWorkflowTriggerConfig,
   mockFetchWorkflowRunSnapshotIfMissing,
   mockParseWorkflowRunUrl,
 } = vi.hoisted(() => ({
   mockPoolQuery: vi.fn(),
   mockFetchVerificationData: vi.fn(),
   mockUpdateDeploymentCommitChecks: vi.fn(),
+  mockBackfillWorkflowTriggerConfig: vi.fn(),
   mockFetchWorkflowRunSnapshotIfMissing: vi.fn(),
   mockParseWorkflowRunUrl: vi.fn(),
 }))
@@ -52,7 +54,7 @@ vi.mock('~/lib/verification/fetch-data/pr-data.server', () => ({
 }))
 
 vi.mock('~/lib/verification/fetch-data/workflow-triggers.server', () => ({
-  backfillWorkflowTriggerConfig: vi.fn().mockResolvedValue(false),
+  backfillWorkflowTriggerConfig: mockBackfillWorkflowTriggerConfig,
 }))
 
 vi.mock('~/lib/github/git.server', () => ({
@@ -75,6 +77,7 @@ function deploymentRow(overrides: Record<string, unknown> = {}) {
     monitored_app_id: 10,
     default_branch: 'main',
     matched_repository_id: 42,
+    matched_github_repo_id: '987654321',
     created_at: new Date(),
     prev_commit_sha: null,
     has_pr_snapshot: false,
@@ -89,6 +92,7 @@ describe('fetchVerificationDataForRepository', () => {
     mockPoolQuery.mockReset()
     mockFetchVerificationData.mockReset()
     mockUpdateDeploymentCommitChecks.mockReset()
+    mockBackfillWorkflowTriggerConfig.mockReset().mockResolvedValue(false)
     mockFetchWorkflowRunSnapshotIfMissing.mockReset()
     mockParseWorkflowRunUrl.mockReset()
     mockParseWorkflowRunUrl.mockImplementation((url: string | null, owner: string, repo: string) => {
@@ -186,6 +190,46 @@ describe('fetchVerificationDataForRepository', () => {
     )
     expect(result.workflowRunSnapshotsFetched).toBe(1)
     expect(result.workflowRunSnapshotsAvailable).toBe(1)
+  })
+
+  it('reuses snapshot workflow-trigger data for deployments sharing a workflow run', async () => {
+    const triggerUrl = 'https://github.com/navikt/nda/actions/runs/12345'
+    const workflowTriggerConfig = {
+      workflowPath: '.github/workflows/deploy.yml',
+      triggerEvent: 'push',
+      checkSuiteId: 42,
+      schemaVersion: 3,
+    }
+    mockPoolQuery
+      .mockResolvedValueOnce({
+        rows: [
+          deploymentRow({ id: 1, trigger_url: triggerUrl, workflow_trigger_config: null }),
+          deploymentRow({ id: 2, trigger_url: triggerUrl, workflow_trigger_config: null }),
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            deployment_id: 1,
+            detected_github_owner: 'navikt',
+            detected_github_repo_name: 'nda',
+            trigger_url: triggerUrl,
+            github_repo_id: '987654321',
+          },
+        ],
+      })
+    mockFetchWorkflowRunSnapshotIfMissing.mockResolvedValueOnce({
+      status: 'fetched',
+      workflowTriggerConfig,
+    })
+
+    await fetchVerificationDataForRepository(42)
+
+    expect(mockFetchWorkflowRunSnapshotIfMissing).toHaveBeenCalledOnce()
+    expect(mockBackfillWorkflowTriggerConfig).toHaveBeenCalledTimes(2)
+    for (const call of mockBackfillWorkflowTriggerConfig.mock.calls) {
+      expect(call[5]).toEqual({ workflowTriggerConfig })
+    }
   })
 
   it('fetches workflow-run snapshots for valid URLs even when the deployment has no usable commit SHA', async () => {
