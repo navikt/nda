@@ -34,6 +34,7 @@ describe('Admin story baseline characterization', () => {
     expect(html).toContain('/sections')
     expect(html).toContain('/admin/section-roles')
     expect(html).toContain('/admin/validate-monitored-apps')
+    expect(html).toContain('/admin/repository-id-backfill-coverage')
     expect(html).toContain('Verifiser deployments mot GitHub.')
     expect(html).toContain('Sjekk verifiseringsavvik på tvers av alle applikasjoner.')
     expect(html).toContain('Tittel-avvik, baseline uten godkjenner og andre datakvalitetsproblemer.')
