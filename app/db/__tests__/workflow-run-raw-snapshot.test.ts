@@ -7,12 +7,29 @@ vi.mock('~/db/connection.server', () => ({
 import { pool } from '~/db/connection.server'
 import {
   getLatestWorkflowRunRawSnapshot,
+  hasWorkflowRunRawSnapshot,
   saveWorkflowRunRawSnapshot,
 } from '~/db/github-data/workflow-run-raw-snapshots.server'
 
 const mockPoolQuery = pool.query as Mock
 
 const rawWorkflowRun = { id: 555, path: '.github/workflows/deploy.yml', event: 'push', check_suite_id: 42 }
+
+describe('hasWorkflowRunRawSnapshot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('checks for a run snapshot using the immutable repository ID and run ID', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ exists: true }] })
+
+    await expect(hasWorkflowRunRawSnapshot(999, 555)).resolves.toBe(true)
+    expect(mockPoolQuery).toHaveBeenCalledWith(
+      expect.stringContaining('github_repo_id = $1 AND run_id = $2'),
+      [999, 555],
+    )
+  })
+})
 
 describe('saveWorkflowRunRawSnapshot', () => {
   beforeEach(() => {

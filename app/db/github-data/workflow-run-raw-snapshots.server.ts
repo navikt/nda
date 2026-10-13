@@ -29,6 +29,18 @@ export async function saveWorkflowRunRawSnapshot(
   return result.rows[0].id
 }
 
+export async function hasWorkflowRunRawSnapshot(githubRepoId: number, runId: number): Promise<boolean> {
+  const result = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM github_workflow_runs_raw_snapshots
+       WHERE github_repo_id = $1 AND run_id = $2
+     ) AS exists`,
+    [githubRepoId, runId],
+  )
+  return result.rows[0].exists
+}
+
 export async function getLatestWorkflowRunRawSnapshot(
   owner: string,
   repo: string,

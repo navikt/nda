@@ -3,7 +3,11 @@ import { effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { heartbeatSyncJob, isSyncJobCancelled, logSyncJobMessage, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
-import type { WorkflowTriggerConfig } from '~/lib/github/git.server'
+import {
+  fetchWorkflowRunSnapshotIfMissing,
+  type WorkflowRunSnapshotFetchResult,
+  type WorkflowTriggerConfig,
+} from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { fetchVerificationData } from '../fetch-data.server'
 import { updateDeploymentCommitChecks } from '../store-data.server'
@@ -21,6 +25,10 @@ export interface BulkFetchProgress {
   fetched: number
   derivedFromRaw: number
   workflowTriggersFetched: number
+  workflowRunSnapshotsFetched: number
+  workflowRunSnapshotsAvailable: number
+  workflowRunSnapshotsNotFound: number
+  workflowRunSnapshotErrors: number
   errors: number
 }
 
@@ -93,6 +101,7 @@ async function processDeployments(
   deployments: DeploymentRow[],
   jobId: number | undefined,
   refreshDisplayData: boolean | undefined,
+  fetchMissingWorkflowRunSnapshots: boolean,
   onProgress?: (progress: BulkFetchProgress) => void,
 ): Promise<BulkFetchResult> {
   const result: BulkFetchResult = {
@@ -102,9 +111,14 @@ async function processDeployments(
     fetched: 0,
     derivedFromRaw: 0,
     workflowTriggersFetched: 0,
+    workflowRunSnapshotsFetched: 0,
+    workflowRunSnapshotsAvailable: 0,
+    workflowRunSnapshotsNotFound: 0,
+    workflowRunSnapshotErrors: 0,
     errors: 0,
     errorDetails: [],
   }
+  const workflowRunSnapshotResults = new Map<string, Promise<WorkflowRunSnapshotFetchResult>>()
 
   if (jobId) {
     await logSyncJobMessage(jobId, 'info', `Starter datahenting for ${deployments.length} deployments`)
@@ -150,6 +164,44 @@ async function processDeployments(
             commitSha: commitSha.substring(0, 7),
             repo: `${owner}/${repo}`,
           })
+        }
+      }
+
+      if (fetchMissingWorkflowRunSnapshots && deployment.matched_repository_id !== null) {
+        const runId = deployment.trigger_url?.match(/\/actions\/runs\/([0-9]+)/)?.[1]
+        if (runId) {
+          const snapshotKey = `${deployment.matched_repository_id}:${owner.toLowerCase()}/${repo.toLowerCase()}:${runId}`
+          let snapshotResultPromise = workflowRunSnapshotResults.get(snapshotKey)
+          const isFirstOccurrence = snapshotResultPromise === undefined
+          if (!snapshotResultPromise) {
+            snapshotResultPromise = fetchWorkflowRunSnapshotIfMissing(
+              owner,
+              repo,
+              deployment.trigger_url,
+              deployment.matched_repository_id,
+            )
+            workflowRunSnapshotResults.set(snapshotKey, snapshotResultPromise)
+          }
+
+          const snapshotResult = await snapshotResultPromise
+          if (isFirstOccurrence) {
+            if (snapshotResult.status === 'fetched') {
+              result.workflowRunSnapshotsFetched++
+              result.workflowRunSnapshotsAvailable++
+            } else if (snapshotResult.status === 'already_present') {
+              result.workflowRunSnapshotsAvailable++
+            } else if (snapshotResult.status === 'not_found') {
+              result.workflowRunSnapshotsNotFound++
+            } else if (snapshotResult.status === 'failed') {
+              result.workflowRunSnapshotErrors++
+              if (jobId) {
+                await logSyncJobMessage(jobId, 'warn', `Workflow-run-snapshot feilet for deployment ${deployment.id}`, {
+                  deploymentId: deployment.id,
+                  error: snapshotResult.error,
+                })
+              }
+            }
+          }
         }
       }
 
@@ -319,7 +371,7 @@ export async function fetchVerificationDataForAllDeployments(
     durationMs: Math.round(performance.now() - queryStart),
   })
 
-  return processDeployments(deployments, jobId, refreshDisplayData, onProgress)
+  return processDeployments(deployments, jobId, refreshDisplayData, false, onProgress)
 }
 
 export async function fetchVerificationDataForRepository(
@@ -360,5 +412,5 @@ export async function fetchVerificationDataForRepository(
     durationMs: Math.round(performance.now() - queryStart),
   })
 
-  return processDeployments(deployments, jobId, refreshDisplayData, onProgress)
+  return processDeployments(deployments, jobId, refreshDisplayData, true, onProgress)
 }

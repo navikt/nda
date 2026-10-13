@@ -27,7 +27,7 @@ vi.mock('~/db/connection.server', () => ({
 }))
 
 import { pool } from '~/db/connection.server'
-import { getWorkflowTriggerConfig } from '~/lib/github/git.server'
+import { fetchWorkflowRunSnapshotIfMissing, getWorkflowTriggerConfig } from '~/lib/github/git.server'
 
 const mockPoolQuery = pool.query as Mock
 
@@ -121,6 +121,84 @@ describe('getWorkflowTriggerConfig', () => {
       triggerEvent: 'push',
       checkSuiteId: 42,
       schemaVersion: 3,
+    })
+  })
+
+  describe('fetchWorkflowRunSnapshotIfMissing', () => {
+    beforeEach(() => {
+      mockReposGet.mockReset()
+      mockGetWorkflowRun.mockReset()
+      mockPoolQuery.mockReset()
+    })
+
+    it('archives a missing snapshot using the registered immutable repository ID', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: false }] }).mockResolvedValueOnce({ rows: [{ id: 8 }] })
+      mockGetWorkflowRun.mockResolvedValueOnce({
+        data: workflowRunData,
+        headers: { 'x-github-api-version-selected': '2022-11-28' },
+      })
+
+      await expect(
+        fetchWorkflowRunSnapshotIfMissing(
+          'navikt',
+          'archive-repo',
+          'https://github.com/navikt/archive-repo/actions/runs/555',
+          999,
+        ),
+      ).resolves.toEqual({ status: 'fetched' })
+
+      expect(mockGetWorkflowRun).toHaveBeenCalledWith({ owner: 'navikt', repo: 'archive-repo', run_id: 555 })
+      expect(mockPoolQuery).toHaveBeenLastCalledWith(expect.stringContaining('github_workflow_runs_raw_snapshots'), [
+        999,
+        'navikt',
+        'archive-repo',
+        555,
+        '2022-11-28',
+        null,
+        null,
+        JSON.stringify(workflowRunData),
+      ])
+    })
+
+    it('does not fetch a snapshot that is already archived for this repository ID', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: true }] })
+
+      await expect(
+        fetchWorkflowRunSnapshotIfMissing(
+          'navikt',
+          'archive-repo',
+          'https://github.com/navikt/archive-repo/actions/runs/555',
+          999,
+        ),
+      ).resolves.toEqual({ status: 'already_present' })
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled()
+    })
+
+    it('does not fetch a run when the trigger URL points to a different repository', async () => {
+      await expect(
+        fetchWorkflowRunSnapshotIfMissing(
+          'navikt',
+          'archive-repo',
+          'https://github.com/another/repo/actions/runs/555',
+          999,
+        ),
+      ).resolves.toEqual({ status: 'not_applicable' })
+      expect(mockPoolQuery).not.toHaveBeenCalled()
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled()
+    })
+
+    it('reports a run that is no longer available from GitHub', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ exists: false }] })
+      mockGetWorkflowRun.mockRejectedValueOnce({ status: 404, message: 'Not Found' })
+
+      await expect(
+        fetchWorkflowRunSnapshotIfMissing(
+          'navikt',
+          'archive-repo',
+          'https://github.com/navikt/archive-repo/actions/runs/555',
+          999,
+        ),
+      ).resolves.toEqual({ status: 'not_found' })
     })
   })
 })

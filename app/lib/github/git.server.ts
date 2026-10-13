@@ -1,4 +1,9 @@
-import { saveCommitRawSnapshot, saveCompareRawSnapshot, saveWorkflowRunRawSnapshot } from '~/db/github-data.server'
+import {
+  hasWorkflowRunRawSnapshot,
+  saveCommitRawSnapshot,
+  saveCompareRawSnapshot,
+  saveWorkflowRunRawSnapshot,
+} from '~/db/github-data.server'
 import { logger } from '~/lib/logger.server'
 import type { CompareData } from '~/lib/verification/types'
 import { getGitHubClient } from './client.server'
@@ -234,6 +239,60 @@ async function resolveWorkflowRun(
     const stack = error instanceof Error ? error.stack : undefined
     logger.warn(`⚠️ Failed to get workflow run ${runId} for ${owner}/${repo}:`, { error: message, stack_trace: stack })
     return null
+  }
+}
+
+export type WorkflowRunSnapshotFetchResult =
+  | { status: 'not_applicable' | 'already_present' | 'fetched' | 'not_found' }
+  | { status: 'failed'; error: string }
+
+export async function fetchWorkflowRunSnapshotIfMissing(
+  owner: string,
+  repo: string,
+  triggerUrl: string | null | undefined,
+  githubRepoId: number,
+): Promise<WorkflowRunSnapshotFetchResult> {
+  const match = triggerUrl?.match(
+    /^https:\/\/github[.]com\/([^/?#]+)\/([^/?#]+)\/actions\/runs\/([0-9]+)(?:[/?#].*)?$/i,
+  )
+  if (!match || match[1].toLowerCase() !== owner.toLowerCase() || match[2].toLowerCase() !== repo.toLowerCase()) {
+    return { status: 'not_applicable' }
+  }
+
+  const runId = Number(match[3])
+  if (!Number.isSafeInteger(runId) || runId <= 0) {
+    return { status: 'not_applicable' }
+  }
+
+  if (await hasWorkflowRunRawSnapshot(githubRepoId, runId)) {
+    return { status: 'already_present' }
+  }
+
+  let response: Awaited<ReturnType<ReturnType<typeof getGitHubClient>['actions']['getWorkflowRun']>>
+  try {
+    response = await getGitHubClient().actions.getWorkflowRun({ owner, repo, run_id: runId })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = (error as { status?: unknown }).status
+    if (status === 404) {
+      logger.info(`ℹ️ Workflow run ${runId} not found for ${owner}/${repo} (likely expired or deleted upstream)`)
+      return { status: 'not_found' }
+    }
+    logger.warn(`⚠️ Failed to fetch workflow run ${runId} for ${owner}/${repo}:`, { error: message })
+    return { status: 'failed', error: message }
+  }
+
+  try {
+    const apiVersion = captureApiVersionMetadata(response.headers, null)
+    await saveWorkflowRunRawSnapshot(owner, repo, githubRepoId, runId, response.data, apiVersion)
+    return { status: 'fetched' }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error(
+      `Failed to archive workflow run ${runId} for ${owner}/${repo}`,
+      error instanceof Error ? error : new Error(message),
+    )
+    return { status: 'failed', error: message }
   }
 }
 
