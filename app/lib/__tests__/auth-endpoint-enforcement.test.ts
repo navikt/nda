@@ -89,6 +89,7 @@ const ALL_ROUTES: { path: string; description: string }[] = [
   { path: '/admin/audit-reports/1/xlsx', description: 'Audit report XLSX' },
   { path: '/admin/global-settings', description: 'Global settings' },
   { path: '/admin/monorepos', description: 'Monorepos' },
+  { path: '/admin/repository-id-backfill-coverage', description: 'Repository-ID backfill coverage' },
   { path: '/admin/verification-diffs', description: 'Verification diffs' },
   { path: '/sections', description: 'Sections' },
   { path: '/sections/my-section/edit', description: 'Section edit' },
