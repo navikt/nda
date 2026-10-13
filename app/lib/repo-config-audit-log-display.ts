@@ -5,6 +5,7 @@ const REPO_SETTING_LABELS: Record<string, string> = {
   [REPOSITORY_SETTING_KEYS.AUDIT_START_YEAR]: 'Startår for revisjon',
   [REPOSITORY_SETTING_KEYS.IMPLICIT_APPROVAL]: 'Implisitt godkjenning',
   [REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH]: 'Default branch',
+  [REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING]: 'Registrering av kodeleveranser',
 }
 
 function formatRepoSettingValue(settingKey: string, value: Record<string, unknown> | null | undefined): string {
@@ -26,6 +27,11 @@ function formatRepoSettingValue(settingKey: string, value: Record<string, unknow
   if (settingKey === REPOSITORY_SETTING_KEYS.DEFAULT_BRANCH) {
     const branch = value.default_branch
     return branch == null ? 'ikke satt' : String(branch)
+  }
+
+  if (settingKey === REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING) {
+    const enabled = value.code_delivery_tracking
+    return enabled === true ? 'på' : 'av'
   }
 
   return 'ikke satt'

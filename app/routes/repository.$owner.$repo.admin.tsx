@@ -13,6 +13,7 @@ import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
 import { requireParams } from '~/lib/route-params.server'
 import type { Route } from './+types/repository.$owner.$repo.admin'
 import { AuditStartYearSettings } from './repository.$owner.$repo.admin/AuditStartYearSettings'
+import { CodeDeliveryTrackingSettings } from './repository.$owner.$repo.admin/CodeDeliveryTrackingSettings'
 import { DefaultBranchSettings } from './repository.$owner.$repo.admin/DefaultBranchSettings'
 import { FetchVerificationDataSection } from './repository.$owner.$repo.admin/FetchVerificationDataSection'
 import { ImplicitApprovalSettings } from './repository.$owner.$repo.admin/ImplicitApprovalSettings'
@@ -55,6 +56,10 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     auditStartYear: repository.audit_start_year,
     implicitApprovalSettings: { mode: repository.implicit_approval_mode },
     defaultBranch: repository.default_branch,
+    codeDeliveryTracking: {
+      enabled: repository.code_delivery_tracking,
+      since: repository.code_delivery_tracking_since,
+    },
     recentConfigChanges,
     githubDataStats,
     latestFetchJob,
@@ -70,6 +75,7 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
     auditStartYear,
     implicitApprovalSettings,
     defaultBranch,
+    codeDeliveryTracking,
     recentConfigChanges,
     githubDataStats,
     latestFetchJob,
@@ -161,6 +167,8 @@ export default function RepositoryAdminRoute({ actionData }: Route.ComponentProp
           <AuditStartYearSettings repositoryId={repository.id} auditStartYear={auditStartYear} />
 
           <ImplicitApprovalSettings repositoryId={repository.id} implicitApprovalSettings={implicitApprovalSettings} />
+
+          <CodeDeliveryTrackingSettings repositoryId={repository.id} codeDeliveryTracking={codeDeliveryTracking} />
 
           <FetchVerificationDataSection
             repositoryId={repository.id}

@@ -74,4 +74,14 @@ describe('repoConfigChangeDescription', () => {
       'some_future_setting: ikke satt → ikke satt',
     )
   })
+
+  it('describes a code_delivery_tracking change', () => {
+    expect(
+      repoConfigChangeDescription(
+        REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING,
+        { code_delivery_tracking: false },
+        { code_delivery_tracking: true },
+      ),
+    ).toBe('Registrering av kodeleveranser: av → på')
+  })
 })
