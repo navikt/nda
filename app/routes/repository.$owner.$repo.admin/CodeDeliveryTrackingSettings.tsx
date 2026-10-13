@@ -84,9 +84,9 @@ export function CodeDeliveryTrackingSettings({
                   Start på nytt fra tidligere dato
                 </Heading>
                 <BodyShort textColor="subtle" size="small">
-                  Bruk dette for å ta med eldre deployments. Registreringen av kodeleveranser for repoet nullstilles og
-                  bygges opp på nytt fra datoen, eldste først. Dette gjelder bare denne registreringen. Godkjenning,
-                  status og rapporter for deployments berøres ikke.
+                  Bruk dette for å ta med eldre deployments. De registrerte kodeleveransene for repoet slettes og bygges
+                  opp på nytt fra datoen, eldste først. Godkjenning, status og rapporter for deployments slettes eller
+                  endres ikke.
                   {earliestDeploymentAt
                     ? ` Eldste deployment i repoet er fra ${formatAuditLogTimestamp(earliestDeploymentAt)}.`
                     : ''}
