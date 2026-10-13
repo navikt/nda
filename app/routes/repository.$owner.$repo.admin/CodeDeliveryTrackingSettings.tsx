@@ -72,11 +72,11 @@ export function CodeDeliveryTrackingSettings({
           <input type="hidden" name="action" value="update_code_delivery_tracking" />
           <input type="hidden" name="repository_id" value={repositoryId} />
           <input type="hidden" name="enabled" value={enabled ? 'false' : 'true'} />
-          <Button type="submit" size="small" variant="secondary">
+          <Button type="submit" size="small" variant="secondary" loading={toggleFetcher.state !== 'idle'}>
             {enabled ? 'Slå av' : 'Slå på'}
           </Button>
         </toggleFetcher.Form>
-        <ActionAlert data={toggleFetcher.data} />
+        <ActionAlert data={toggleFetcher.state === 'idle' ? toggleFetcher.data : null} />
 
         {enabled && (
           <restartFetcher.Form method="post" onSubmit={() => toggleFetcher.reset()}>
@@ -105,14 +105,20 @@ export function CodeDeliveryTrackingSettings({
                 ikke.
               </Checkbox>
               <div>
-                <Button type="submit" size="small" variant="secondary" disabled={!sinceValue}>
+                <Button
+                  type="submit"
+                  size="small"
+                  variant="secondary"
+                  disabled={!sinceValue}
+                  loading={restartFetcher.state !== 'idle'}
+                >
                   Start på nytt
                 </Button>
               </div>
             </VStack>
           </restartFetcher.Form>
         )}
-        {enabled && <ActionAlert data={restartFetcher.data} />}
+        {enabled && <ActionAlert data={restartFetcher.state === 'idle' ? restartFetcher.data : null} />}
 
         <BodyShort size="small">
           <AkselLink
