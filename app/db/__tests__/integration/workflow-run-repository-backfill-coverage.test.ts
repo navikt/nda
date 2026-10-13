@@ -87,7 +87,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     const seed = (options: Omit<Parameters<typeof seedLegacyDeployment>[0], 'monitoredAppId'>) =>
       seedLegacyDeployment({ ...options, monitoredAppId: appId })
 
-    await seed({ runId: 1 })
+    await seed({ runId: 1, triggerUrl: 'https://github.com/NAVIKT/REPO-BACKFILL/actions/runs/1' })
     await seedWorkflowRun(1, workflowRun())
 
     await seed({ runId: 2 })

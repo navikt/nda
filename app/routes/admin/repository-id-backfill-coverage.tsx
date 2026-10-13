@@ -81,14 +81,14 @@ export default function RepositoryIdBackfillCoveragePage() {
               ]
               return (
                 <Table.Row key={repository.repositoryId}>
-                  <Table.DataCell>
+                  <Table.HeaderCell scope="row">
                     <Link
                       as={RouterLink}
                       to={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin?repositoryId=${repository.repositoryId}`}
                     >
                       {repository.githubOwner}/{repository.githubRepoName}
                     </Link>
-                  </Table.DataCell>
+                  </Table.HeaderCell>
                   <Table.DataCell align="right">
                     {repository.totalLegacyDeployments.toLocaleString('no-NO')}
                   </Table.DataCell>

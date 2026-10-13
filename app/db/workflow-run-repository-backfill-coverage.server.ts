@@ -85,8 +85,7 @@ export async function getWorkflowRunRepositoryBackfillCoverage(): Promise<Workfl
        LEFT JOIN LATERAL (
          SELECT snapshot.data
          FROM github_workflow_runs_raw_snapshots snapshot
-         WHERE snapshot.owner = (legacy_deployments.run_parts)[1]
-           AND snapshot.repo = (legacy_deployments.run_parts)[2]
+         WHERE snapshot.github_repo_id::text = legacy_deployments.github_repo_id
            AND snapshot.run_id::text = (legacy_deployments.run_parts)[3]
          ORDER BY snapshot.fetched_at DESC, snapshot.id DESC
          LIMIT 1
