@@ -1,6 +1,9 @@
 import { useLoaderData } from 'react-router'
 import { RepositoryIdBackfillCoverage } from '~/components/RepositoryIdBackfillCoverage'
-import { getWorkflowRunRepositoryBackfillCoverage } from '~/db/workflow-run-repository-backfill-coverage.server'
+import {
+  getWorkflowRunBackfillCoverageTeams,
+  getWorkflowRunRepositoryBackfillCoverage,
+} from '~/db/workflow-run-repository-backfill-coverage.server'
 import { requireAdmin } from '~/lib/auth.server'
 import type { Route } from './+types/repository-id-backfill-coverage'
 
@@ -10,7 +13,11 @@ export function meta(_args: Route.MetaArgs) {
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
-  const repositories = await getWorkflowRunRepositoryBackfillCoverage()
+  const teams = await getWorkflowRunBackfillCoverageTeams()
+  const requestedTeam = new URL(request.url).searchParams.get('team')
+  const selectedTeam = requestedTeam && teams.includes(requestedTeam) ? requestedTeam : null
+  const invalidTeam = Boolean(requestedTeam && !selectedTeam)
+  const repositories = selectedTeam ? await getWorkflowRunRepositoryBackfillCoverage(selectedTeam) : []
   const totals = repositories.reduce(
     (result, repository) => ({
       legacy: result.legacy + repository.totalLegacyDeployments,
@@ -19,10 +26,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     { legacy: 0, eligible: 0 },
   )
 
-  return { repositories, totals }
+  return { teams, selectedTeam, invalidTeam, repositories, totals }
 }
 
 export default function RepositoryIdBackfillCoveragePage() {
-  const { repositories, totals } = useLoaderData<typeof loader>()
-  return <RepositoryIdBackfillCoverage repositories={repositories} totals={totals} />
+  const { teams, selectedTeam, invalidTeam, repositories, totals } = useLoaderData<typeof loader>()
+  return (
+    <RepositoryIdBackfillCoverage
+      teams={teams}
+      selectedTeam={selectedTeam}
+      invalidTeam={invalidTeam}
+      repositories={repositories}
+      totals={totals}
+    />
+  )
 }

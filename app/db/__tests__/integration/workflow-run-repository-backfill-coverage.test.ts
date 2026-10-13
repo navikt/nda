@@ -24,17 +24,20 @@ afterEach(async () => {
 
 async function seedLegacyDeployment(options: {
   monitoredAppId: number
+  teamSlug?: string
+  githubOwner?: string
+  githubRepo?: string
   runId?: number
   triggerUrl?: string | null
   commitSha?: string
 }): Promise<void> {
   const deploymentId = await seedDeployment(pool, {
     monitoredAppId: options.monitoredAppId,
-    teamSlug: 'team-repo-backfill',
+    teamSlug: options.teamSlug ?? 'team-repo-backfill',
     environment: 'prod-gcp',
     commitSha: options.commitSha ?? DEPLOYMENT_SHA,
-    githubOwner: 'navikt',
-    githubRepo: 'repo-backfill',
+    githubOwner: options.githubOwner ?? 'navikt',
+    githubRepo: options.githubRepo ?? 'repo-backfill',
     createdAt: new Date('2026-03-27T11:00:00.000Z'),
   })
   await pool.query('UPDATE deployments SET trigger_url = $1 WHERE id = $2', [
@@ -117,7 +120,30 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     await seed({ triggerUrl: `https://github.com/navikt/repo-backfill/actions/runs/${'9'.repeat(40)}` })
     await seed({ triggerUrl: 'https://github.com/navikt/another-repo/actions/runs/8' })
 
-    const result = await getWorkflowRunRepositoryBackfillCoverage()
+    const otherAppId = await seedApp(pool, {
+      teamSlug: 'team-other',
+      appName: 'other-app',
+      environment: 'prod-gcp',
+    })
+    const otherRepositoryId = await seedRepository(pool, {
+      githubRepoId: '123456789',
+      githubOwner: 'navikt',
+      githubRepoName: 'other-repo',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: otherAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'other-repo',
+      githubRepoId: '123456789',
+    })
+    await seedLegacyDeployment({
+      monitoredAppId: otherAppId,
+      teamSlug: 'team-other',
+      githubOwner: 'navikt',
+      githubRepo: 'other-repo',
+    })
+
+    const result = await getWorkflowRunRepositoryBackfillCoverage('team-repo-backfill')
 
     expect(result).toEqual([
       {
@@ -136,7 +162,24 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         headRepositoryMismatch: 1,
       },
     ])
+    await expect(getWorkflowRunRepositoryBackfillCoverage('team-other')).resolves.toEqual([
+      {
+        repositoryId: otherRepositoryId,
+        githubOwner: 'navikt',
+        githubRepoName: 'other-repo',
+        totalLegacyDeployments: 1,
+        eligible: 0,
+        noTriggerUrl: 1,
+        invalidTriggerUrl: 0,
+        triggerUrlMismatch: 0,
+        missingSnapshot: 0,
+        repositoryMismatch: 0,
+        shaMismatch: 0,
+        unsupportedEvent: 0,
+        headRepositoryMismatch: 0,
+      },
+    ])
     const { rows } = await pool.query('SELECT count(*)::int AS count FROM deployments WHERE repository_id IS NULL')
-    expect(rows[0].count).toBe(10)
+    expect(rows[0].count).toBe(11)
   })
 })

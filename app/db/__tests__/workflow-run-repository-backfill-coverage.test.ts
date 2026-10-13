@@ -8,7 +8,10 @@ vi.mock('../connection.server', () => ({
   pool: { query: mockPoolQuery },
 }))
 
-import { getWorkflowRunRepositoryBackfillCoverage } from '../workflow-run-repository-backfill-coverage.server'
+import {
+  getWorkflowRunBackfillCoverageTeams,
+  getWorkflowRunRepositoryBackfillCoverage,
+} from '../workflow-run-repository-backfill-coverage.server'
 
 describe('getWorkflowRunRepositoryBackfillCoverage', () => {
   beforeEach(() => {
@@ -36,7 +39,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
       ],
     })
 
-    await expect(getWorkflowRunRepositoryBackfillCoverage()).resolves.toEqual([
+    await expect(getWorkflowRunRepositoryBackfillCoverage('team-a')).resolves.toEqual([
       {
         repositoryId: 216,
         githubOwner: 'navikt',
@@ -54,14 +57,29 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
       },
     ])
     const [query] = mockPoolQuery.mock.calls[0]
-    expect(query).toContain('FROM deployments d')
+    expect(query).toContain('FROM monitored_applications ma')
     expect(query).toContain('JOIN application_repositories ar')
-    expect(query).toContain('WHERE d.repository_id IS NULL')
+    expect(query).toContain('JOIN deployments d')
+    expect(query).toContain('WHERE ma.team_slug = $1')
+    expect(query).toContain('d.repository_id IS NULL')
     expect(query).toContain('r.github_repo_id,')
     expect(query).toContain('snapshot.github_repo_id = parsed_workflow_runs.github_repo_id')
     expect(query).toContain('snapshot.run_id = parsed_workflow_runs.workflow_run_id')
     expect(query).not.toContain('snapshot.github_repo_id::text')
     expect(query).toContain("workflow_run_data->'repository'->>'id' IS DISTINCT FROM github_repo_id::text")
     expect(query).toContain("workflow_run_data->'head_repository'->>'id' IS DISTINCT FROM github_repo_id::text")
+    expect(mockPoolQuery.mock.calls[0]?.[1]).toEqual(['team-a'])
+  })
+
+  it('returns a lightweight sorted list of monitored application teams', async () => {
+    mockPoolQuery.mockResolvedValue({
+      rows: [{ team_slug: 'team-a' }, { team_slug: 'team-b' }],
+    })
+
+    await expect(getWorkflowRunBackfillCoverageTeams()).resolves.toEqual(['team-a', 'team-b'])
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('SELECT DISTINCT team_slug')
+    expect(query).toContain('FROM monitored_applications')
+    expect(query).toContain('ORDER BY team_slug')
   })
 })

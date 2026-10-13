@@ -19,6 +19,9 @@ type Story = StoryObj<typeof RepositoryIdBackfillCoverage>
 
 export const Default: Story = {
   args: {
+    teams: ['pensjondeployer', 'team-a'],
+    selectedTeam: 'pensjondeployer',
+    invalidTeam: false,
     repositories: [
       {
         repositoryId: 216,
@@ -40,9 +43,23 @@ export const Default: Story = {
   },
 }
 
+export const SelectTeam: Story = {
+  name: 'Velg team før rapport',
+  args: {
+    teams: ['pensjondeployer', 'team-a'],
+    selectedTeam: null,
+    invalidTeam: false,
+    repositories: [],
+    totals: { legacy: 0, eligible: 0 },
+  },
+}
+
 export const Empty: Story = {
   name: 'Ingen eldre deployments',
   args: {
+    teams: ['pensjondeployer', 'team-a'],
+    selectedTeam: 'pensjondeployer',
+    invalidTeam: false,
     repositories: [],
     totals: { legacy: 0, eligible: 0 },
   },
