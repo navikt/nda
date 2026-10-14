@@ -302,6 +302,7 @@ export function RepositoryCodeDeliveriesPage({
                   <Table.ColumnHeader sortKey="app_names" sortable>
                     Apper
                   </Table.ColumnHeader>
+                  <Table.HeaderCell>Review-grunnlag</Table.HeaderCell>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -327,6 +328,14 @@ export function RepositoryCodeDeliveriesPage({
                     </Table.DataCell>
                     <Table.DataCell>{delivery.deployment_count}</Table.DataCell>
                     <Table.DataCell>{delivery.app_names.join(', ') || '—'}</Table.DataCell>
+                    <Table.DataCell>
+                      <AkselLink
+                        as={Link}
+                        to={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin/code-deliveries/${delivery.id}?repositoryId=${repository.id}`}
+                      >
+                        Vis lagrede reviews
+                      </AkselLink>
+                    </Table.DataCell>
                   </Table.Row>
                 ))}
               </Table.Body>

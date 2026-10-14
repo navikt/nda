@@ -1,4 +1,10 @@
 import type { PoolClient } from 'pg'
+import {
+  parseRepositoryDeliveryComparisonRange,
+  parseRepositoryDeliveryReviews,
+  type RepositoryDeliveryComparisonRange,
+  type RepositoryDeliveryReviewEvidence,
+} from '~/lib/repository-code-delivery/evidence'
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool, withTransaction } from './connection.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
@@ -194,6 +200,48 @@ export interface RepositoryCodeDeliverySummary {
   deployment_count: number
   app_names: string[]
 }
+
+interface RepositoryCodeDeliveryReviewSnapshot {
+  id: number
+  pr_number: number
+  schema_version: number
+  fetched_at: Date
+  source: string
+  github_available: boolean
+  reviews: RepositoryDeliveryReviewEvidence[] | null
+}
+
+interface RepositoryCodeDeliveryVerificationEvidence {
+  id: number
+  run_at: Date
+  schema_version: number
+  status: string
+  comparison_range: RepositoryDeliveryComparisonRange | null
+  comparison_range_invalid: boolean
+  review_snapshots: RepositoryCodeDeliveryReviewSnapshot[]
+}
+
+interface RepositoryCodeDeliveryDeploymentEvidence {
+  id: number
+  deployed_at: Date
+  team_slug: string
+  environment_name: string
+  app_name: string
+  verification_runs: RepositoryCodeDeliveryVerificationEvidence[]
+}
+
+export interface RepositoryCodeDeliveryEvidence {
+  id: number
+  base_sha: string
+  head_sha: string
+  created_at: Date
+  page: number
+  totalPages: number
+  totalEvidenceEntries: number
+  deployments: RepositoryCodeDeliveryDeploymentEvidence[]
+}
+
+const REPOSITORY_CODE_DELIVERY_EVIDENCE_PAGE_SIZE = 25
 
 export type RepositoryCodeDeliverySortKey =
   | 'first_deployed_at'
@@ -818,6 +866,140 @@ export async function listRepositoryCodeDeliveries(
     [repositoryId, options.limit, options.offset],
   )
   return rows
+}
+
+export async function getRepositoryCodeDeliveryEvidence(
+  repositoryId: number,
+  deliveryId: number,
+  requestedPage = 1,
+): Promise<RepositoryCodeDeliveryEvidence | null> {
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    const { rows: deliveryRows } = await client.query<
+      Omit<RepositoryCodeDeliveryEvidence, 'deployments' | 'page' | 'totalPages' | 'totalEvidenceEntries'>
+    >(
+      `SELECT id, base_sha, head_sha, created_at
+       FROM repository_code_deliveries
+       WHERE repository_id = $1 AND id = $2`,
+      [repositoryId, deliveryId],
+    )
+    const delivery = deliveryRows[0]
+    if (!delivery) return null
+
+    const { rows: countRows } = await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count
+       FROM deployments d
+       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
+       WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2`,
+      [repositoryId, deliveryId],
+    )
+    const totalEvidenceEntries = countRows[0].count
+    const totalPages = Math.max(1, Math.ceil(totalEvidenceEntries / REPOSITORY_CODE_DELIVERY_EVIDENCE_PAGE_SIZE))
+    const page = Math.min(Math.max(requestedPage, 1), totalPages)
+
+    const { rows: evidenceRows } = await client.query<{
+      deployment_id: number
+      deployed_at: Date
+      team_slug: string
+      environment_name: string
+      app_name: string
+      verification_run_id: number | null
+      run_at: Date | null
+      schema_version: number | null
+      status: string | null
+      comparison_range: unknown
+      pr_snapshot_ids: number[] | null
+    }>(
+      `SELECT d.id AS deployment_id, d.created_at AS deployed_at,
+              d.team_slug, d.environment_name, d.app_name,
+              vr.id AS verification_run_id, vr.run_at, vr.schema_version, vr.status,
+              vr.result->'comparisonRange' AS comparison_range, vr.pr_snapshot_ids
+       FROM deployments d
+       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
+       WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
+       ORDER BY d.created_at, d.id, vr.run_at, vr.id
+       LIMIT $3 OFFSET $4`,
+      [
+        repositoryId,
+        deliveryId,
+        REPOSITORY_CODE_DELIVERY_EVIDENCE_PAGE_SIZE,
+        (page - 1) * REPOSITORY_CODE_DELIVERY_EVIDENCE_PAGE_SIZE,
+      ],
+    )
+    const verificationRunIds = evidenceRows.flatMap((row) =>
+      row.verification_run_id === null ? [] : [row.verification_run_id],
+    )
+    const snapshotIds = [...new Set(evidenceRows.flatMap((row) => row.pr_snapshot_ids ?? []))]
+    const { rows: snapshotRows } =
+      verificationRunIds.length > 0 && snapshotIds.length > 0
+        ? await client.query<{
+            verification_run_id: number
+            id: number
+            pr_number: number
+            schema_version: number
+            fetched_at: Date
+            source: string
+            github_available: boolean
+            data: unknown
+          }>(
+            `SELECT vr.id AS verification_run_id, snapshot.id, snapshot.pr_number,
+                    snapshot.schema_version, snapshot.fetched_at, snapshot.source,
+                    snapshot.github_available, snapshot.data
+             FROM verification_runs vr
+             CROSS JOIN LATERAL unnest(vr.pr_snapshot_ids) AS referenced(snapshot_id)
+             JOIN github_pr_snapshots snapshot ON snapshot.id = referenced.snapshot_id
+             WHERE vr.id = ANY($1::int[])
+               AND snapshot.id = ANY($2::int[])
+               AND snapshot.data_type = 'reviews'
+             ORDER BY vr.id, snapshot.pr_number, snapshot.fetched_at, snapshot.id`,
+            [verificationRunIds, snapshotIds],
+          )
+        : { rows: [] }
+    const snapshotsByRunId = new Map<number, RepositoryCodeDeliveryReviewSnapshot[]>()
+    for (const snapshot of snapshotRows) {
+      const snapshots = snapshotsByRunId.get(snapshot.verification_run_id) ?? []
+      snapshots.push({
+        id: snapshot.id,
+        pr_number: snapshot.pr_number,
+        schema_version: snapshot.schema_version,
+        fetched_at: snapshot.fetched_at,
+        source: snapshot.source,
+        github_available: snapshot.github_available,
+        reviews: snapshot.github_available ? parseRepositoryDeliveryReviews(snapshot.data) : null,
+      })
+      snapshotsByRunId.set(snapshot.verification_run_id, snapshots)
+    }
+
+    const deployments = new Map<number, RepositoryCodeDeliveryDeploymentEvidence>()
+    for (const row of evidenceRows) {
+      let deployment = deployments.get(row.deployment_id)
+      if (!deployment) {
+        deployment = {
+          id: row.deployment_id,
+          deployed_at: row.deployed_at,
+          team_slug: row.team_slug,
+          environment_name: row.environment_name,
+          app_name: row.app_name,
+          verification_runs: [],
+        }
+        deployments.set(row.deployment_id, deployment)
+      }
+      if (row.verification_run_id !== null && row.run_at !== null && row.status !== null) {
+        const comparisonRange = parseRepositoryDeliveryComparisonRange(row.comparison_range)
+        deployment.verification_runs.push({
+          id: row.verification_run_id,
+          run_at: row.run_at,
+          schema_version: row.schema_version ?? 0,
+          status: row.status,
+          comparison_range: comparisonRange,
+          comparison_range_invalid: row.comparison_range !== null && comparisonRange === null,
+          review_snapshots: snapshotsByRunId.get(row.verification_run_id) ?? [],
+        })
+      }
+    }
+
+    return { ...delivery, page, totalPages, totalEvidenceEntries, deployments: [...deployments.values()] }
+  })
 }
 
 export async function listOpenUnresolvedCodeDeployments(

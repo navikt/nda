@@ -5,6 +5,7 @@ import {
   linkDeploymentToRepositoryCodeDelivery,
 } from '../../repository-code-deliveries.server'
 import {
+  getRepositoryCodeDeliveryEvidence,
   getRepositoryCodeDeliveryExportData,
   getRepositoryCodeDeliveryOverview,
   getRepositoryHistoryReadiness,
@@ -73,6 +74,116 @@ async function markUnresolved(deploymentId: number, reason: string, resolved = f
 }
 
 describe('repository code delivery overview', () => {
+  it('returns linked deployments with their exact stored review evidence and comparison range', async () => {
+    const repositoryId = await createRepository('1015')
+    const otherRepositoryId = await createRepository('1016')
+    const deploymentId = await createDeployment('evidence-app', repositoryId, SHA_2)
+    const otherDeploymentId = await createDeployment('other-evidence-app', otherRepositoryId, SHA_3)
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+    const otherDelivery = await createRepositoryCodeDelivery({
+      repositoryId: otherRepositoryId,
+      baseSha: SHA_2,
+      headSha: SHA_3,
+    })
+    await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
+    await linkDeploymentToRepositoryCodeDelivery(otherDeploymentId, otherDelivery.id)
+    const { rows: snapshots } = await pool.query<{ id: number }>(
+      `INSERT INTO github_pr_snapshots
+         (owner, repo, pr_number, data_type, schema_version, source, github_available, data)
+       VALUES ('navikt', 'repo-1015', 82, 'reviews', 5, 'cached', true, $1::jsonb)
+       RETURNING id`,
+      [
+        JSON.stringify([
+          {
+            id: 1,
+            username: 'rask-elv',
+            state: 'APPROVED',
+            submittedAt: '2026-10-03T11:00:00Z',
+            commitId: SHA_2,
+            body: 'Review body is not exposed',
+          },
+        ]),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO verification_runs
+         (deployment_id, schema_version, pr_snapshot_ids, result, status, run_at)
+       VALUES ($1, 5, $2, $3::jsonb, 'approved', '2026-10-03T12:00:00Z')`,
+      [deploymentId, [snapshots[0].id], JSON.stringify({ comparisonRange: { baseSha: SHA_1, headSha: SHA_2 } })],
+    )
+
+    expect(await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)).toMatchObject({
+      id: delivery.id,
+      base_sha: SHA_1,
+      head_sha: SHA_2,
+      deployments: [
+        {
+          id: deploymentId,
+          app_name: 'evidence-app',
+          verification_runs: [
+            {
+              status: 'approved',
+              comparison_range: { baseSha: SHA_1, headSha: SHA_2 },
+              review_snapshots: [
+                {
+                  id: snapshots[0].id,
+                  pr_number: 82,
+                  source: 'cached',
+                  github_available: true,
+                  reviews: [
+                    {
+                      username: 'rask-elv',
+                      state: 'APPROVED',
+                      submittedAt: '2026-10-03T11:00:00Z',
+                      commitSha: SHA_2,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    expect(await getRepositoryCodeDeliveryEvidence(otherRepositoryId, otherDelivery.id)).toMatchObject({
+      id: otherDelivery.id,
+      deployments: [expect.objectContaining({ id: otherDeploymentId, verification_runs: [] })],
+    })
+    expect(await getRepositoryCodeDeliveryEvidence(otherRepositoryId, delivery.id)).toBeNull()
+  })
+
+  it('paginates linked deployment verification evidence', async () => {
+    const repositoryId = await createRepository('1017')
+    const deploymentId = await createDeployment('paginated-evidence-app', repositoryId, SHA_2)
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+    await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
+    await pool.query(
+      `INSERT INTO verification_runs
+         (deployment_id, schema_version, pr_snapshot_ids, result, status, run_at)
+       SELECT $1, 5, '{}', '{}'::jsonb, 'approved',
+              '2026-10-04T00:00:00Z'::timestamptz + make_interval(mins => run_number)
+       FROM generate_series(1, 26) AS runs(run_number)`,
+      [deploymentId],
+    )
+
+    const firstPage = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id, 1)
+    const secondPage = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id, 2)
+
+    expect(firstPage).toMatchObject({ page: 1, totalPages: 2, totalEvidenceEntries: 26 })
+    expect(firstPage?.deployments[0].verification_runs).toHaveLength(25)
+    expect(secondPage).toMatchObject({ page: 2, totalPages: 2, totalEvidenceEntries: 26 })
+    expect(secondPage?.deployments).toHaveLength(1)
+    expect(secondPage?.deployments[0].verification_runs).toHaveLength(1)
+  })
+
   it('returns an empty overview for a repository without deliveries', async () => {
     const repositoryId = await createRepository('1000')
 
