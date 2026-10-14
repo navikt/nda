@@ -1,10 +1,12 @@
-import { Alert, BodyShort, Button, Heading, HStack, Link, Select, Table, VStack } from '@navikt/ds-react'
-import { Form, Link as RouterLink } from 'react-router'
+import { Alert, BodyShort, Button, Dialog, Heading, HStack, Link, Select, Table, VStack } from '@navikt/ds-react'
+import { useEffect, useState } from 'react'
+import { Form, Link as RouterLink, useFetcher, useRevalidator } from 'react-router'
 import type {
   WorkflowRunBackfillPreviewClassification,
   WorkflowRunBackfillPreviewDeployment,
   WorkflowRunBackfillPreviewRepository,
   WorkflowRunRepositoryBackfillCoverage,
+  WorkflowRunRepositoryIdBackfillJob,
 } from '~/db/workflow-run-repository-backfill-coverage.server'
 
 interface RepositoryIdBackfillCoverageProps {
@@ -24,6 +26,82 @@ interface RepositoryIdBackfillCoverageProps {
 
 function formatPercent(value: number, total: number): string {
   return total === 0 ? '–' : `${Math.round((value / total) * 100)} %`
+}
+
+function RepositoryBackfillAction({
+  repository,
+  job,
+}: {
+  repository: WorkflowRunRepositoryBackfillCoverage
+  job: WorkflowRunRepositoryIdBackfillJob | null
+}) {
+  const fetcher = useFetcher()
+  const fetcherData = fetcher.data as { backfillJobStarted?: number; error?: string } | undefined
+  const isRunning = job?.status === 'running'
+  const [open, setOpen] = useState(false)
+  const formId = `repository-id-backfill-${repository.repositoryId}`
+
+  useEffect(() => {
+    if (fetcherData?.backfillJobStarted) {
+      setOpen(false)
+    }
+  }, [fetcherData?.backfillJobStarted])
+
+  return (
+    <VStack gap="space-8" align="start">
+      <Dialog open={open} onOpenChange={setOpen}>
+        {!isRunning && fetcher.state === 'idle' && (
+          <Dialog.Trigger>
+            <Button type="button" size="small" variant="secondary">
+              Backfill ID
+            </Button>
+          </Dialog.Trigger>
+        )}
+        <Dialog.Popup>
+          <Dialog.Header>
+            <Dialog.Title>Backfill repository-ID?</Dialog.Title>
+            <Dialog.Description>
+              {repository.githubOwner}/{repository.githubRepoName}
+            </Dialog.Description>
+          </Dialog.Header>
+          <Dialog.Body>
+            <VStack gap="space-12">
+              <Alert variant="warning">
+                Kjøringen gjelder alle kvalifiserte legacy-deployments for repositoryet på tvers av alle team og apper.
+                Teamfilteret begrenser bare tabellvisningen, ikke hva som blir oppdatert. Kandidatkriteriene
+                kontrolleres på nytt når jobben kjører.
+              </Alert>
+              {fetcherData?.error && <Alert variant="error">{fetcherData.error}</Alert>}
+              <fetcher.Form id={formId} method="post">
+                <input type="hidden" name="action" value="backfill_repository" />
+                <input type="hidden" name="repository_id" value={repository.repositoryId} />
+                <input type="hidden" name="confirm_repository_scope" value="true" />
+              </fetcher.Form>
+            </VStack>
+          </Dialog.Body>
+          <Dialog.Footer>
+            <Dialog.CloseTrigger>
+              <Button type="button" variant="secondary">
+                Avbryt
+              </Button>
+            </Dialog.CloseTrigger>
+            <Button type="submit" form={formId} loading={fetcher.state !== 'idle'}>
+              Start backfill
+            </Button>
+          </Dialog.Footer>
+        </Dialog.Popup>
+      </Dialog>
+      {job?.status === 'running' && <BodyShort size="small">Backfill kjører …</BodyShort>}
+      {job?.status === 'completed' && (
+        <BodyShort size="small">
+          Fullført: {Number(job.result?.updated ?? 0).toLocaleString('no-NO')} oppdatert
+        </BodyShort>
+      )}
+      {job?.status === 'failed' && <BodyShort size="small">Feilet: {job.error ?? 'Ukjent feil'}</BodyShort>}
+      {job?.status === 'partial' && <BodyShort size="small">Delvis fullført</BodyShort>}
+      {job?.status === 'cancelled' && <BodyShort size="small">Avbrutt</BodyShort>}
+    </VStack>
+  )
 }
 
 const classificationLabels: Record<WorkflowRunBackfillPreviewClassification, string> = {
@@ -49,6 +127,15 @@ export function RepositoryIdBackfillCoverage({
   invalidRepository,
   returnToTeam,
 }: RepositoryIdBackfillCoverageProps) {
+  const revalidator = useRevalidator()
+  const hasRunningBackfill = repositories.some((repository) => repository.backfillJob?.status === 'running')
+
+  useEffect(() => {
+    if (!hasRunningBackfill) return
+    const interval = setInterval(() => revalidator.revalidate(), 3000)
+    return () => clearInterval(interval)
+  }, [hasRunningBackfill, revalidator])
+
   if (previewRepository) {
     return (
       <VStack gap="space-24">
@@ -137,9 +224,9 @@ export function RepositoryIdBackfillCoverage({
           Dekning for repository-ID fra workflow runs
         </Heading>
         <BodyShort textColor="subtle">
-          Skrivebeskyttet kartlegging av deployments uten repository-ID. Rapporten bruker bare lagrede workflow-run
-          snapshots og gjør ingen GitHub-kall eller databaseendringer. Velg et Nais-team for å kjøre rapporten bare for
-          teamets apper. Tallene gjelder dette teamet, ikke hele repositoryet på tvers av andre team.
+          Rapporten viser deployments uten repository-ID ved å bruke lagrede workflow-run-snapshots. Velg et Nais-team
+          for å avgrense hvilke repositories som vises. Backfill-handlingen per repository gjelder alltid alle
+          kvalifiserte deployments på tvers av team og apper.
         </BodyShort>
       </div>
 
@@ -166,10 +253,10 @@ export function RepositoryIdBackfillCoverage({
       {selectedTeam ? (
         <>
           <Alert variant="info">
-            Viser bare deployments for apper knyttet til Nais-teamet <strong>{selectedTeam}</strong>. Et deployment
-            regnes som kandidat bare når workflow-run-snapshotet har samme repository-ID og head repository-ID som
-            repositoryet, samme commit-SHA som deploymentet, og eventtypen er push. Kandidater blir ikke endret av denne
-            rapporten.
+            Rapporttallene gjelder bare deployments for apper knyttet til Nais-teamet <strong>{selectedTeam}</strong>.
+            Et deployment regnes som kandidat bare når workflow-run-snapshotet har samme repository-ID og head
+            repository-ID som repositoryet, samme commit-SHA som deploymentet, og eventtypen er push. Handlingene i
+            tabellen kjører repositoryomfattende og er ikke begrenset til dette teamet.
           </Alert>
 
           <BodyShort>
@@ -193,6 +280,7 @@ export function RepositoryIdBackfillCoverage({
                   <Table.HeaderCell align="right">Dekning</Table.HeaderCell>
                   <Table.HeaderCell align="right">Mangler snapshot</Table.HeaderCell>
                   <Table.HeaderCell>Andre årsaker</Table.HeaderCell>
+                  <Table.HeaderCell>Handling</Table.HeaderCell>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -228,6 +316,9 @@ export function RepositoryIdBackfillCoverage({
                       </Table.DataCell>
                       <Table.DataCell>
                         <BodyShort size="small">{reasons.join('; ')}</BodyShort>
+                      </Table.DataCell>
+                      <Table.DataCell>
+                        <RepositoryBackfillAction repository={repository} job={repository.backfillJob} />
                       </Table.DataCell>
                     </Table.Row>
                   )

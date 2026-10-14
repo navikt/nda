@@ -7,10 +7,46 @@ import {
   getWorkflowRunRepositoryBackfillPreview,
 } from '~/db/workflow-run-repository-backfill-coverage.server'
 import { requireAdmin } from '~/lib/auth.server'
+import { getFormString } from '~/lib/form-validators'
+import { logger } from '~/lib/logger.server'
+import { queueRepositoryIdBackfill, startRepositoryIdBackfillJob } from '~/lib/repository-id-backfill.server'
 import type { Route } from './+types/repository-id-backfill-coverage'
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: 'Repository-ID backfill – admin' }]
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const admin = await requireAdmin(request)
+  const formData = await request.formData()
+  if (getFormString(formData, 'action') !== 'backfill_repository') {
+    return { error: 'Ukjent handling' }
+  }
+
+  const repositoryIdValue = getFormString(formData, 'repository_id')
+  const repositoryId = repositoryIdValue && /^\d+$/.test(repositoryIdValue) ? Number(repositoryIdValue) : Number.NaN
+  if (!Number.isSafeInteger(repositoryId) || repositoryId <= 0 || repositoryId > 2_147_483_647) {
+    return { error: 'Ugyldig repository-ID' }
+  }
+  if (getFormString(formData, 'confirm_repository_scope') !== 'true') {
+    return { error: 'Bekreft at backfillen gjelder alle team og apper for repositoryet' }
+  }
+
+  const repository = await getWorkflowRunBackfillPreviewRepository(repositoryId)
+  if (!repository) {
+    return { error: 'Fant ikke repositoryet' }
+  }
+
+  const queued = await queueRepositoryIdBackfill(repositoryId, admin.navIdent)
+  if (!queued) {
+    return { error: 'Fant ikke en aktiv jobb etter at en annen kjøring startet. Prøv igjen.' }
+  }
+  if (queued.started) {
+    startRepositoryIdBackfillJob(queued.jobId, repositoryId)
+    logger.info(`Started repository-ID backfill job ${queued.jobId} for repository ${repositoryId}`)
+  }
+
+  return { backfillJobStarted: queued.jobId }
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

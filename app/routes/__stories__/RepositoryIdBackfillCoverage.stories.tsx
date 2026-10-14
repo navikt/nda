@@ -37,6 +37,7 @@ export const Default: Story = {
         shaMismatch: 1,
         unsupportedEvent: 1,
         headRepositoryMismatch: 0,
+        backfillJob: null,
       },
     ],
     totals: { legacy: 12, eligible: 5 },

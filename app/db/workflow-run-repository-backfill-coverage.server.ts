@@ -1,4 +1,12 @@
 import { pool } from './connection.server'
+import type { SyncJobStatus } from './sync-job-types'
+
+export interface WorkflowRunRepositoryIdBackfillJob {
+  id: number
+  status: SyncJobStatus
+  result: Record<string, unknown> | null
+  error: string | null
+}
 
 export interface WorkflowRunRepositoryBackfillCoverage {
   repositoryId: number
@@ -14,6 +22,7 @@ export interface WorkflowRunRepositoryBackfillCoverage {
   shaMismatch: number
   unsupportedEvent: number
   headRepositoryMismatch: number
+  backfillJob: WorkflowRunRepositoryIdBackfillJob | null
 }
 
 export interface WorkflowRunBackfillPreviewRepository {
@@ -58,6 +67,10 @@ interface CoverageRow {
   sha_mismatch: number
   unsupported_event: number
   head_repository_mismatch: number
+  backfill_job_id: number | null
+  backfill_job_status: SyncJobStatus | null
+  backfill_job_result: Record<string, unknown> | null
+  backfill_job_error: string | null
 }
 
 interface PreviewRepositoryRow {
@@ -187,23 +200,70 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
 ): Promise<WorkflowRunRepositoryBackfillCoverage[]> {
   const { rows } = await pool.query<CoverageRow>(
     `${classifiedDeploymentsCte('ma.team_slug = $1')}
-     SELECT
-       repository_id,
-       github_owner,
-       github_repo_name,
-       count(*)::int AS total_legacy_deployments,
-       count(*) FILTER (WHERE classification = 'eligible')::int AS eligible,
-       count(*) FILTER (WHERE classification = 'no_trigger_url')::int AS no_trigger_url,
-       count(*) FILTER (WHERE classification = 'invalid_trigger_url')::int AS invalid_trigger_url,
-       count(*) FILTER (WHERE classification = 'trigger_url_mismatch')::int AS trigger_url_mismatch,
-       count(*) FILTER (WHERE classification = 'missing_snapshot')::int AS missing_snapshot,
-       count(*) FILTER (WHERE classification = 'repository_mismatch')::int AS repository_mismatch,
-       count(*) FILTER (WHERE classification = 'sha_mismatch')::int AS sha_mismatch,
-       count(*) FILTER (WHERE classification = 'unsupported_event')::int AS unsupported_event,
-       count(*) FILTER (WHERE classification = 'head_repository_mismatch')::int AS head_repository_mismatch
-     FROM classified
-     GROUP BY repository_id, github_owner, github_repo_name
-     ORDER BY eligible DESC, total_legacy_deployments DESC, github_owner, github_repo_name`,
+     , coverage AS (
+       SELECT repository_id, github_owner, github_repo_name,
+         count(*)::int AS total_legacy_deployments,
+         count(*) FILTER (WHERE classification = 'eligible')::int AS eligible,
+         count(*) FILTER (WHERE classification = 'no_trigger_url')::int AS no_trigger_url,
+         count(*) FILTER (WHERE classification = 'invalid_trigger_url')::int AS invalid_trigger_url,
+         count(*) FILTER (WHERE classification = 'trigger_url_mismatch')::int AS trigger_url_mismatch,
+         count(*) FILTER (WHERE classification = 'missing_snapshot')::int AS missing_snapshot,
+         count(*) FILTER (WHERE classification = 'repository_mismatch')::int AS repository_mismatch,
+         count(*) FILTER (WHERE classification = 'sha_mismatch')::int AS sha_mismatch,
+         count(*) FILTER (WHERE classification = 'unsupported_event')::int AS unsupported_event,
+         count(*) FILTER (WHERE classification = 'head_repository_mismatch')::int AS head_repository_mismatch
+       FROM classified
+       GROUP BY repository_id, github_owner, github_repo_name
+     ),
+     repositories_with_backfill_jobs AS (
+       SELECT r.id AS repository_id, r.github_owner, r.github_repo_name
+       FROM repositories r
+       WHERE EXISTS (
+         SELECT 1
+         FROM sync_jobs sj
+         WHERE sj.repository_id = r.id AND sj.job_type = 'backfill_github_repo_ids'
+       )
+         AND EXISTS (
+           SELECT 1
+           FROM monitored_applications ma
+           JOIN application_repositories ar
+             ON ar.monitored_app_id = ma.id
+            AND ar.status IN ('active', 'historical')
+           WHERE ma.team_slug = $1 AND ar.github_repo_id = r.github_repo_id
+         )
+     ),
+     visible_repositories AS (
+       SELECT repository_id, github_owner, github_repo_name FROM coverage
+       UNION
+       SELECT repository_id, github_owner, github_repo_name FROM repositories_with_backfill_jobs
+     )
+     SELECT visible.repository_id, visible.github_owner, visible.github_repo_name,
+       COALESCE(coverage.total_legacy_deployments, 0)::int AS total_legacy_deployments,
+       COALESCE(coverage.eligible, 0)::int AS eligible,
+       COALESCE(coverage.no_trigger_url, 0)::int AS no_trigger_url,
+       COALESCE(coverage.invalid_trigger_url, 0)::int AS invalid_trigger_url,
+       COALESCE(coverage.trigger_url_mismatch, 0)::int AS trigger_url_mismatch,
+       COALESCE(coverage.missing_snapshot, 0)::int AS missing_snapshot,
+       COALESCE(coverage.repository_mismatch, 0)::int AS repository_mismatch,
+       COALESCE(coverage.sha_mismatch, 0)::int AS sha_mismatch,
+       COALESCE(coverage.unsupported_event, 0)::int AS unsupported_event,
+       COALESCE(coverage.head_repository_mismatch, 0)::int AS head_repository_mismatch,
+       backfill_job.id AS backfill_job_id,
+       backfill_job.status AS backfill_job_status,
+       backfill_job.result AS backfill_job_result,
+       backfill_job.error AS backfill_job_error
+     FROM visible_repositories visible
+     LEFT JOIN coverage
+       ON coverage.repository_id = visible.repository_id
+     LEFT JOIN LATERAL (
+       SELECT id, status, result, error
+       FROM sync_jobs
+       WHERE repository_id = visible.repository_id
+         AND job_type = 'backfill_github_repo_ids'
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1
+     ) backfill_job ON true
+     ORDER BY eligible DESC, total_legacy_deployments DESC, visible.github_owner, visible.github_repo_name`,
     [teamSlug],
   )
 
@@ -221,6 +281,15 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
     shaMismatch: row.sha_mismatch,
     unsupportedEvent: row.unsupported_event,
     headRepositoryMismatch: row.head_repository_mismatch,
+    backfillJob:
+      row.backfill_job_id === null || row.backfill_job_id === undefined
+        ? null
+        : {
+            id: row.backfill_job_id,
+            status: row.backfill_job_status ?? 'failed',
+            result: row.backfill_job_result,
+            error: row.backfill_job_error,
+          },
   }))
 }
 
@@ -273,4 +342,23 @@ export async function getWorkflowRunRepositoryBackfillPreview(
     workflowRunId: row.workflow_run_id,
     classification: row.classification,
   }))
+}
+
+export async function backfillEligibleWorkflowRunRepositoryIds(repositoryId: number): Promise<number> {
+  const { rows } = await pool.query<{ updated: number }>(
+    `${classifiedDeploymentsCte('r.id = $1')},
+     updated_deployments AS (
+       UPDATE deployments d
+       SET repository_id = $1
+       FROM classified c
+       WHERE d.id = c.deployment_id
+         AND d.repository_id IS NULL
+         AND c.classification = 'eligible'
+       RETURNING d.id
+     )
+     SELECT count(*)::int AS updated FROM updated_deployments`,
+    [repositoryId],
+  )
+
+  return rows[0]?.updated ?? 0
 }

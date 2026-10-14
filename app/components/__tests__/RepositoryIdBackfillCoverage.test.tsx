@@ -13,7 +13,28 @@ function renderCoverage(selectedTeam: string | null) {
             teams={['team-a', 'team-b']}
             selectedTeam={selectedTeam}
             invalidTeam={false}
-            repositories={[]}
+            repositories={
+              selectedTeam
+                ? [
+                    {
+                      repositoryId: 216,
+                      githubOwner: 'navikt',
+                      githubRepoName: 'pensjon-alde',
+                      totalLegacyDeployments: 12,
+                      eligible: 5,
+                      noTriggerUrl: 0,
+                      invalidTriggerUrl: 0,
+                      triggerUrlMismatch: 0,
+                      missingSnapshot: 0,
+                      repositoryMismatch: 0,
+                      shaMismatch: 0,
+                      unsupportedEvent: 0,
+                      headRepositoryMismatch: 0,
+                      backfillJob: null,
+                    },
+                  ]
+                : []
+            }
             totals={{ legacy: selectedTeam ? 12 : 0, eligible: selectedTeam ? 5 : 0 }}
             previewRepository={null}
             previewDeployments={[]}
@@ -41,9 +62,12 @@ describe('RepositoryIdBackfillCoverage', () => {
     const markup = renderCoverage('team-a')
 
     expect(markup).toContain('team-a')
-    expect(markup).toContain('ikke hele repositoryet på tvers av andre team')
+    expect(markup).toContain('Rapporttallene gjelder bare deployments')
     expect(markup).toContain('5')
     expect(markup).toContain('12')
+    expect(markup).toContain('Backfill ID')
+    expect(markup).toContain('Handlingene i tabellen kjører repositoryomfattende')
+    expect(markup).toContain('Handlingene i tabellen kjører repositoryomfattende og er ikke begrenset til dette teamet')
   })
 
   it('shows concrete deployments from every team in the repository-wide preview', () => {
