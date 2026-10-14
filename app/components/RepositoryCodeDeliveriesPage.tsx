@@ -31,6 +31,23 @@ export interface RepositoryCodeDeliveriesPageProps {
     awaitingDeploymentCount: number
     unresolvedByReason: Partial<Record<UnresolvedReason, number>>
   }
+  historyReadiness: {
+    applications: {
+      team_slug: string
+      environment_name: string
+      app_name: string
+      is_active: boolean
+      initial_nais_history_synced_at: DateValue | null
+      deployment_count: number
+      repository_deployment_count: number
+      unassigned_deployment_count: number
+      other_repository_deployment_count: number
+      repository_deployments_missing_sha: number
+    }[]
+    repositoryDeploymentCount: number
+    repositoryDeploymentsMissingShaCount: number
+    repositoryDeploymentsWithoutKnownAppLinkCount: number
+  }
   deliveries: {
     id: number
     base_sha: string
@@ -82,6 +99,7 @@ export function RepositoryCodeDeliveriesPage({
   repository,
   tracking,
   overview,
+  historyReadiness,
   deliveries,
   unresolved,
   page,
@@ -164,6 +182,77 @@ export function RepositoryCodeDeliveriesPage({
                 </Tag>
               ))}
             </HStack>
+          )}
+        </VStack>
+      </Box>
+
+      <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
+        <VStack gap="space-16">
+          <div>
+            <Heading size="small" level="2">
+              Grunnlag for historisk innlesing
+            </Heading>
+            <BodyShort size="small" textColor="subtle">
+              Viser apper med aktiv eller historisk kobling via stabil GitHub repository-ID. Manglende repository-ID på
+              en app-deployment betyr ikke i seg selv at den tilhører dette repositoryet. Navnebaserte historiske
+              koblinger uten stabil ID vises ikke og må avklares separat.
+            </BodyShort>
+          </div>
+          <BodyShort size="small">
+            {historyReadiness.applications.filter((app) => app.initial_nais_history_synced_at !== null).length} av{' '}
+            {historyReadiness.applications.length} kjente apper har markert fullført initial Nais-historikksynk. Dette
+            bekrefter ikke alene at repositorykoblinger og Git-ancestry er komplette eller entydige.
+          </BodyShort>
+          <BodyShort size="small">
+            {historyReadiness.repositoryDeploymentCount} deployments har stabil repository-ID;{' '}
+            {historyReadiness.repositoryDeploymentsMissingShaCount} av disse mangler full commit-SHA, og{' '}
+            {historyReadiness.repositoryDeploymentsWithoutKnownAppLinkCount} kommer fra apper uten en kjent aktiv eller
+            historisk kobling med denne repository-ID-en.
+          </BodyShort>
+          {historyReadiness.applications.length === 0 ? (
+            <BodyShort textColor="subtle">Ingen apper med stabil repository-ID-kobling er funnet.</BodyShort>
+          ) : (
+            <Table size="small">
+              <caption className="aksel-sr-only">Historikksynk og deploymentdekning per repositorykoblet app</caption>
+              <Table.Header>
+                <Table.Row>
+                  <Table.HeaderCell>App</Table.HeaderCell>
+                  <Table.HeaderCell>Initial Nais-historikksynk</Table.HeaderCell>
+                  <Table.HeaderCell>Alle deployments</Table.HeaderCell>
+                  <Table.HeaderCell>Med repository-ID</Table.HeaderCell>
+                  <Table.HeaderCell>Uten repository-ID</Table.HeaderCell>
+                  <Table.HeaderCell>Andre repository-ID-er</Table.HeaderCell>
+                  <Table.HeaderCell>Repo-deployments uten full SHA</Table.HeaderCell>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {historyReadiness.applications.map((app) => (
+                  <Table.Row key={`${app.team_slug}/${app.environment_name}/${app.app_name}`}>
+                    <Table.HeaderCell scope="row">
+                      {app.app_name}
+                      {!app.is_active && (
+                        <BodyShort size="small" textColor="subtle">
+                          Inaktiv
+                        </BodyShort>
+                      )}
+                      <BodyShort size="small" textColor="subtle">
+                        {app.team_slug} · {app.environment_name}
+                      </BodyShort>
+                    </Table.HeaderCell>
+                    <Table.DataCell>
+                      {app.initial_nais_history_synced_at
+                        ? formatAuditLogTimestamp(app.initial_nais_history_synced_at)
+                        : 'Ikke markert fullført'}
+                    </Table.DataCell>
+                    <Table.DataCell>{app.deployment_count}</Table.DataCell>
+                    <Table.DataCell>{app.repository_deployment_count}</Table.DataCell>
+                    <Table.DataCell>{app.unassigned_deployment_count}</Table.DataCell>
+                    <Table.DataCell>{app.other_repository_deployment_count}</Table.DataCell>
+                    <Table.DataCell>{app.repository_deployments_missing_sha}</Table.DataCell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table>
           )}
         </VStack>
       </Box>

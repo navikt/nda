@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router'
 import { RepositoryCodeDeliveriesPage } from '~/components/RepositoryCodeDeliveriesPage'
 import {
   getRepositoryCodeDeliveryOverview,
+  getRepositoryHistoryReadiness,
   listOpenUnresolvedCodeDeployments,
   listRepositoryCodeDeliveries,
   type RepositoryCodeDeliverySortDirection,
@@ -90,9 +91,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         }
       : undefined
 
-  const [overview, unresolved] = await Promise.all([
+  const [overview, unresolved, historyReadiness] = await Promise.all([
     getRepositoryCodeDeliveryOverview(repository.id),
     listOpenUnresolvedCodeDeployments(repository.id, UNRESOLVED_LIMIT),
+    getRepositoryHistoryReadiness(repository.id),
   ])
   const totalPages = Math.max(1, Math.ceil(overview.deliveryCount / PAGE_SIZE))
   const page = Math.min(requestedPage, totalPages)
@@ -113,6 +115,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       since: repository.code_delivery_tracking_since,
     },
     overview,
+    historyReadiness,
     deliveries,
     unresolved,
     page,
