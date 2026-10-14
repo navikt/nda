@@ -32,6 +32,14 @@ export function selectLatestBackfillJob(
   return !job || polledJob.id >= job.id ? polledJob : job
 }
 
+export function BackfillStatus({ message }: { message: string | null }) {
+  return (
+    <div role="status" aria-live="polite" aria-atomic="true">
+      {message && <BodyShort size="small">{message}</BodyShort>}
+    </div>
+  )
+}
+
 function formatPercent(value: number, total: number): string {
   return total === 0 ? '–' : `${Math.round((value / total) * 100)} %`
 }
@@ -50,6 +58,7 @@ function RepositoryBackfillAction({
   const currentJob = selectLatestBackfillJob(job, polledJob?.backfillJobStatus ?? null)
   const isRunning = currentJob?.status === 'running' && !currentJob.lockExpired
   const [open, setOpen] = useState(false)
+  const [showingStatus, setShowingStatus] = useState(false)
   const formId = `repository-id-backfill-${repository.repositoryId}`
   const triggerRef = useRef<HTMLButtonElement>(null)
   const refreshedJobId = useRef<number | null>(null)
@@ -87,12 +96,38 @@ function RepositoryBackfillAction({
 
   const displayedJob = currentJob
   const retryExpiredJob = displayedJob?.status === 'running' && displayedJob.lockExpired
+  const statusText = isRunning
+    ? 'Backfill kjører …'
+    : retryExpiredJob
+      ? 'Backfill-jobben har utløpt og kan startes på nytt.'
+      : displayedJob?.status === 'completed'
+        ? `Fullført: ${Number(displayedJob.result?.updated ?? 0).toLocaleString('no-NO')} oppdatert`
+        : displayedJob?.status === 'failed'
+          ? `Feilet: ${displayedJob.error ?? 'Ukjent feil'}`
+          : displayedJob?.status === 'partial'
+            ? 'Delvis fullført'
+            : displayedJob?.status === 'cancelled'
+              ? 'Avbrutt'
+              : null
+  const isStatusDialog = showingStatus || isRunning
 
   return (
     <VStack gap="space-8" align="start">
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen)
+          if (!nextOpen) setShowingStatus(false)
+        }}
+      >
         <Dialog.Trigger>
-          <Button ref={triggerRef} type="button" size="small" variant="secondary">
+          <Button
+            ref={triggerRef}
+            type="button"
+            size="small"
+            variant="secondary"
+            onClick={() => setShowingStatus(isRunning)}
+          >
             {isRunning
               ? 'Vis backfillstatus'
               : fetcher.state !== 'idle'
@@ -104,57 +139,53 @@ function RepositoryBackfillAction({
         </Dialog.Trigger>
         <Dialog.Popup returnFocusTo={() => triggerRef.current}>
           <Dialog.Header>
-            <Dialog.Title>Backfill repository-ID?</Dialog.Title>
+            <Dialog.Title>{isStatusDialog ? 'Backfillstatus' : 'Backfill repository-ID?'}</Dialog.Title>
             <Dialog.Description>
               {repository.githubOwner}/{repository.githubRepoName}
             </Dialog.Description>
           </Dialog.Header>
           <Dialog.Body>
-            <VStack gap="space-12">
-              <Alert variant="warning">
-                Kjøringen gjelder alle kvalifiserte legacy-deployments for repositoryet på tvers av alle team og apper.
-                Teamfilteret begrenser bare tabellvisningen, ikke hva som blir oppdatert. Kandidatkriteriene
-                kontrolleres på nytt når jobben kjører.
-              </Alert>
-              {fetcherData?.error && <Alert variant="error">{fetcherData.error}</Alert>}
-              <fetcher.Form id={formId} method="post">
-                <input type="hidden" name="action" value="backfill_repository" />
-                <input type="hidden" name="repository_id" value={repository.repositoryId} />
-                <input type="hidden" name="confirm_repository_scope" value="true" />
-              </fetcher.Form>
-            </VStack>
+            {isStatusDialog ? (
+              <BackfillStatus message={statusText} />
+            ) : (
+              <VStack gap="space-12">
+                <Alert variant="warning">
+                  Kjøringen gjelder alle kvalifiserte legacy-deployments for repositoryet på tvers av alle team og
+                  apper. Teamfilteret begrenser bare tabellvisningen, ikke hva som blir oppdatert. Kandidatkriteriene
+                  kontrolleres på nytt når jobben kjører.
+                </Alert>
+                {fetcherData?.error && <Alert variant="error">{fetcherData.error}</Alert>}
+                <fetcher.Form id={formId} method="post">
+                  <input type="hidden" name="action" value="backfill_repository" />
+                  <input type="hidden" name="repository_id" value={repository.repositoryId} />
+                  <input type="hidden" name="confirm_repository_scope" value="true" />
+                </fetcher.Form>
+              </VStack>
+            )}
           </Dialog.Body>
           <Dialog.Footer>
-            <Dialog.CloseTrigger>
-              <Button type="button" variant="secondary">
-                Avbryt
-              </Button>
-            </Dialog.CloseTrigger>
-            <Button
-              type="submit"
-              form={formId}
-              loading={fetcher.state !== 'idle'}
-              disabled={isRunning || fetcher.state !== 'idle'}
-            >
-              Start backfill
-            </Button>
+            {isStatusDialog ? (
+              <Dialog.CloseTrigger>
+                <Button type="button" variant="secondary">
+                  Lukk
+                </Button>
+              </Dialog.CloseTrigger>
+            ) : (
+              <>
+                <Dialog.CloseTrigger>
+                  <Button type="button" variant="secondary">
+                    Avbryt
+                  </Button>
+                </Dialog.CloseTrigger>
+                <Button type="submit" form={formId} loading={fetcher.state !== 'idle'}>
+                  Start backfill
+                </Button>
+              </>
+            )}
           </Dialog.Footer>
         </Dialog.Popup>
       </Dialog>
-      <div role="status" aria-live="polite" aria-atomic="true">
-        {isRunning && <BodyShort size="small">Backfill kjører …</BodyShort>}
-        {retryExpiredJob && <BodyShort size="small">Backfill-jobben har utløpt og kan startes på nytt.</BodyShort>}
-        {displayedJob?.status === 'completed' && (
-          <BodyShort size="small">
-            Fullført: {Number(displayedJob.result?.updated ?? 0).toLocaleString('no-NO')} oppdatert
-          </BodyShort>
-        )}
-        {displayedJob?.status === 'failed' && (
-          <BodyShort size="small">Feilet: {displayedJob.error ?? 'Ukjent feil'}</BodyShort>
-        )}
-        {displayedJob?.status === 'partial' && <BodyShort size="small">Delvis fullført</BodyShort>}
-        {displayedJob?.status === 'cancelled' && <BodyShort size="small">Avbrutt</BodyShort>}
-      </div>
+      {!open && <BackfillStatus message={statusText} />}
     </VStack>
   )
 }

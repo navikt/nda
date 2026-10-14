@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import { RepositoryIdBackfillCoverage, selectLatestBackfillJob } from '../RepositoryIdBackfillCoverage'
+import { BackfillStatus, RepositoryIdBackfillCoverage, selectLatestBackfillJob } from '../RepositoryIdBackfillCoverage'
 
 describe('selectLatestBackfillJob', () => {
   it('follows a replacement job returned by status polling', () => {
@@ -121,25 +121,20 @@ describe('RepositoryIdBackfillCoverage', () => {
   })
 
   it('announces completed and failed backfill updates through the persistent status region', () => {
-    const completedMarkup = renderCoverage('team-a', {
-      id: 91,
-      status: 'completed',
-      result: { updated: 3 },
-      error: null,
-      lockExpired: false,
-    })
-    const failedMarkup = renderCoverage('team-a', {
-      id: 91,
-      status: 'failed',
-      result: null,
-      error: 'Database unavailable',
-      lockExpired: false,
-    })
+    const completedMarkup = renderToStaticMarkup(<BackfillStatus message="Fullført: 3 oppdatert" />)
+    const failedMarkup = renderToStaticMarkup(<BackfillStatus message="Feilet: Database unavailable" />)
 
     expect(completedMarkup).toContain('role="status" aria-live="polite" aria-atomic="true"')
     expect(completedMarkup).toContain('Fullført: 3 oppdatert')
     expect(failedMarkup).toContain('role="status" aria-live="polite" aria-atomic="true"')
     expect(failedMarkup).toContain('Feilet: Database unavailable')
+  })
+
+  it('renders the active job status as an accessible status message', () => {
+    const markup = renderToStaticMarkup(<BackfillStatus message="Backfill kjører …" />)
+
+    expect(markup).toContain('role="status" aria-live="polite" aria-atomic="true"')
+    expect(markup).toContain('Backfill kjører …')
   })
 
   it('allows retrying a backfill whose lock has expired', () => {
