@@ -113,6 +113,10 @@ export default [
       'repository/:owner/:repo/admin/verification-diff',
       'routes/repository.$owner.$repo.admin.verification-diff.tsx',
     ),
+    route(
+      'repository/:owner/:repo/admin/code-deliveries/export',
+      'routes/repository.$owner.$repo.admin.code-deliveries.export.ts',
+    ),
     route('repository/:owner/:repo/admin/sync-job/:jobId', 'routes/repository.$owner.$repo.admin.sync-job.$jobId.tsx'),
     route('repository/:owner/:repo/admin/status-history', 'routes/repository.$owner.$repo.admin.status-history.tsx'),
     route('repository/:owner/:repo/admin/code-deliveries', 'routes/repository.$owner.$repo.admin.code-deliveries.tsx'),
