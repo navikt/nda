@@ -27,6 +27,7 @@ export const Default: Story = {
         repositoryId: 216,
         githubOwner: 'navikt',
         githubRepoName: 'pensjon-alde',
+        deploymentsWithRepositoryId: 183,
         totalLegacyDeployments: 12,
         eligible: 5,
         noTriggerUrl: 1,

@@ -330,9 +330,11 @@ export function RepositoryIdBackfillCoverage({
       {selectedTeam ? (
         <>
           <Alert variant="info">
-            Rapporttallene gjelder bare deployments for apper knyttet til Nais-teamet <strong>{selectedTeam}</strong>.
-            Et deployment regnes som kandidat bare når workflow-run-snapshotet har samme repository-ID og head
-            repository-ID som repositoryet, samme commit-SHA som deploymentet, og eventtypen er push. Handlingene i
+            Tallene for deployments uten repository-ID gjelder bare apper knyttet til Nais-teamet{' '}
+            <strong>{selectedTeam}</strong>. Antall med repository-ID gjelder alle deployments for repositoryet på tvers
+            av team. Et deployment regnes som kandidat bare når workflow-run-snapshotet har samme repository-ID og head
+            repository-ID som repositoryet, samme commit-SHA som deploymentet, og eventtypen er push. Kandidatandelen
+            viser hvor mange av teamets deployments uten repository-ID som oppfyller disse kriteriene. Handlingene i
             tabellen kjører repositoryomfattende og er ikke begrenset til dette teamet.
           </Alert>
 
@@ -352,9 +354,9 @@ export function RepositoryIdBackfillCoverage({
               <Table.Header>
                 <Table.Row>
                   <Table.HeaderCell>Repository</Table.HeaderCell>
+                  <Table.HeaderCell align="right">Med repository-ID (alle team)</Table.HeaderCell>
                   <Table.HeaderCell align="right">Uten ID i rapportens scope</Table.HeaderCell>
-                  <Table.HeaderCell align="right">Kandidater</Table.HeaderCell>
-                  <Table.HeaderCell align="right">Dekning</Table.HeaderCell>
+                  <Table.HeaderCell align="right">Kandidater av deployments uten ID</Table.HeaderCell>
                   <Table.HeaderCell align="right">Mangler snapshot</Table.HeaderCell>
                   <Table.HeaderCell>Andre årsaker</Table.HeaderCell>
                   <Table.HeaderCell>Handling</Table.HeaderCell>
@@ -382,11 +384,15 @@ export function RepositoryIdBackfillCoverage({
                         </Link>
                       </Table.HeaderCell>
                       <Table.DataCell align="right">
+                        {repository.deploymentsWithRepositoryId.toLocaleString('no-NO')}
+                      </Table.DataCell>
+                      <Table.DataCell align="right">
                         {repository.totalLegacyDeployments.toLocaleString('no-NO')}
                       </Table.DataCell>
-                      <Table.DataCell align="right">{repository.eligible.toLocaleString('no-NO')}</Table.DataCell>
                       <Table.DataCell align="right">
-                        {formatPercent(repository.eligible, repository.totalLegacyDeployments)}
+                        {repository.eligible.toLocaleString('no-NO')} av{' '}
+                        {repository.totalLegacyDeployments.toLocaleString('no-NO')} (
+                        {formatPercent(repository.eligible, repository.totalLegacyDeployments)})
                       </Table.DataCell>
                       <Table.DataCell align="right">
                         {repository.missingSnapshot.toLocaleString('no-NO')}

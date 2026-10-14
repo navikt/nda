@@ -69,6 +69,7 @@ function renderCoverage(
                       repositoryId: 216,
                       githubOwner: 'navikt',
                       githubRepoName: 'pensjon-alde',
+                      deploymentsWithRepositoryId: 183,
                       totalLegacyDeployments: 12,
                       eligible: 5,
                       noTriggerUrl: 0,
@@ -111,7 +112,12 @@ describe('RepositoryIdBackfillCoverage', () => {
     const markup = renderCoverage('team-a')
 
     expect(markup).toContain('team-a')
-    expect(markup).toContain('Rapporttallene gjelder bare deployments')
+    expect(markup).toContain('Tallene for deployments uten repository-ID gjelder bare apper knyttet til Nais-teamet')
+    expect(markup).toContain('Med repository-ID (alle team)')
+    expect(markup).toContain('Antall med repository-ID gjelder alle deployments for repositoryet på tvers av team.')
+    expect(markup).toContain('Kandidater av deployments uten ID')
+    expect(markup).toContain('Kandidatandelen viser hvor mange')
+    expect(markup).toContain('5 av 12 (42 %)')
     expect(markup).toContain('5')
     expect(markup).toContain('12')
     expect(markup).toContain('Backfill ID')

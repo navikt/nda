@@ -194,6 +194,7 @@ describe('repository ID backfill coverage loader', () => {
         repositoryId: 216,
         githubOwner: 'navikt',
         githubRepoName: 'pensjon-alde',
+        deploymentsWithRepositoryId: 183,
         totalLegacyDeployments: 8,
         eligible: 3,
         noTriggerUrl: 1,
