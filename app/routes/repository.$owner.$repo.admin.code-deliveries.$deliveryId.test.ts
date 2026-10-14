@@ -35,6 +35,9 @@ const evidence = {
   base_sha: '1'.repeat(40),
   head_sha: '2'.repeat(40),
   created_at: new Date('2026-10-03T10:00:00Z'),
+  page: 1,
+  totalPages: 1,
+  totalEvidenceEntries: 1,
   deployments: [
     {
       id: 23,
@@ -112,13 +115,25 @@ describe('repository code delivery evidence loader', () => {
   it('returns evidence and mapped reviewer names for the repository delivery', async () => {
     const result = await loader({ params, request: makeRequest() } as never)
 
-    expect(mockGetEvidence).toHaveBeenCalledWith(5, 17)
+    expect(mockResolveRepositoryFromParams).toHaveBeenCalledWith(
+      'navikt',
+      'glad-fjord',
+      expect.any(URL),
+      '/admin/code-deliveries/17',
+    )
+    expect(mockGetEvidence).toHaveBeenCalledWith(5, 17, 1)
     expect(mockGetGithubUserLookups).toHaveBeenCalledWith(['rask-elv'])
     expect(result).toMatchObject({
       repository: { id: 5, githubOwner: 'navikt', githubRepoName: 'glad-fjord' },
       delivery: evidence,
       userMappings: { 'rask-elv': { display_name: 'Rask Elv', nav_ident: 'Z990010' } },
     })
+  })
+
+  it('loads the requested evidence page', async () => {
+    await loader({ params, request: makeRequest('?repositoryId=5&page=3') } as never)
+
+    expect(mockGetEvidence).toHaveBeenCalledWith(5, 17, 3)
   })
 
   it('returns not found if the delivery does not belong to the repository', async () => {

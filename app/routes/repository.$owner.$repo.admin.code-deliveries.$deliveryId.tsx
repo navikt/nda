@@ -32,13 +32,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const user = await requireUser(request)
   const url = new URL(request.url)
-  const repository = await resolveRepositoryFromParams(owner, repo, url, '/admin/code-deliveries')
+  const repository = await resolveRepositoryFromParams(owner, repo, url, `/admin/code-deliveries/${deliveryId}`)
   const { authorized } = await resolveRepositoryAdminAccess(user, repository.id)
   if (!authorized) {
     throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
-  const delivery = await getRepositoryCodeDeliveryEvidence(repository.id, deliveryId)
+  const requestedPage = Number.parseInt(url.searchParams.get('page') ?? '1', 10)
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
+  const delivery = await getRepositoryCodeDeliveryEvidence(repository.id, deliveryId, page)
   if (!delivery) throw new Response('Code delivery not found', { status: 404 })
 
   const reviewerUsernames = [

@@ -149,11 +149,39 @@ describe('repository code delivery overview', () => {
         },
       ],
     })
-    expect(await getRepositoryCodeDeliveryEvidence(repositoryId, otherDelivery.id)).toMatchObject({
+    expect(await getRepositoryCodeDeliveryEvidence(otherRepositoryId, otherDelivery.id)).toMatchObject({
       id: otherDelivery.id,
       deployments: [expect.objectContaining({ id: otherDeploymentId, verification_runs: [] })],
     })
     expect(await getRepositoryCodeDeliveryEvidence(otherRepositoryId, delivery.id)).toBeNull()
+  })
+
+  it('paginates linked deployment verification evidence', async () => {
+    const repositoryId = await createRepository('1017')
+    const deploymentId = await createDeployment('paginated-evidence-app', repositoryId, SHA_2)
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+    await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
+    await pool.query(
+      `INSERT INTO verification_runs
+         (deployment_id, schema_version, pr_snapshot_ids, result, status, run_at)
+       SELECT $1, 5, '{}', '{}'::jsonb, 'approved',
+              '2026-10-04T00:00:00Z'::timestamptz + make_interval(mins => run_number)
+       FROM generate_series(1, 25) AS runs(run_number)`,
+      [deploymentId],
+    )
+
+    const firstPage = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id, 1)
+    const secondPage = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id, 2)
+
+    expect(firstPage).toMatchObject({ page: 1, totalPages: 2, totalEvidenceEntries: 26 })
+    expect(firstPage?.deployments[0].verification_runs).toHaveLength(25)
+    expect(secondPage).toMatchObject({ page: 2, totalPages: 2, totalEvidenceEntries: 26 })
+    expect(secondPage?.deployments).toHaveLength(1)
+    expect(secondPage?.deployments[0].verification_runs).toHaveLength(1)
   })
 
   it('returns an empty overview for a repository without deliveries', async () => {

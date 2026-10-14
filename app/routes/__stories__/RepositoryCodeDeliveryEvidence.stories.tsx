@@ -17,6 +17,9 @@ export const WithStoredReviews: Story = {
       base_sha: '1'.repeat(40),
       head_sha: '2'.repeat(40),
       created_at: new Date('2026-10-03T10:00:00.000Z'),
+      page: 1,
+      totalPages: 1,
+      totalEvidenceEntries: 1,
       deployments: [
         {
           id: 17,
@@ -68,6 +71,9 @@ export const MissingStoredEvidence: Story = {
       base_sha: '3'.repeat(40),
       head_sha: '4'.repeat(40),
       created_at: new Date('2026-10-04T10:00:00.000Z'),
+      page: 1,
+      totalPages: 1,
+      totalEvidenceEntries: 1,
       deployments: [
         {
           id: 18,

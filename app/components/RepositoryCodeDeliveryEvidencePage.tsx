@@ -10,7 +10,8 @@ import {
   Tag,
   VStack,
 } from '@navikt/ds-react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
+import { PaginationControls } from '~/components/deployments/PaginationControls'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
 import type { RepositoryCodeDeliveryEvidence } from '~/db/repository-code-delivery-overview.server'
@@ -110,8 +111,14 @@ export function RepositoryCodeDeliveryEvidencePage({
   delivery,
   userMappings,
 }: RepositoryCodeDeliveryEvidencePageProps) {
+  const [searchParams, setSearchParams] = useSearchParams()
   const deliveriesUrl = `/repository/${repository.githubOwner}/${repository.githubRepoName}/admin/code-deliveries?repositoryId=${repository.id}`
   const anchor = delivery.base_sha.toLowerCase() === delivery.head_sha.toLowerCase()
+  const goToPage = (page: number) => {
+    const updatedSearchParams = new URLSearchParams(searchParams)
+    updatedSearchParams.set('page', String(page))
+    setSearchParams(updatedSearchParams)
+  }
 
   return (
     <VStack gap="space-24">
@@ -252,6 +259,7 @@ export function RepositoryCodeDeliveryEvidencePage({
                 </VStack>
               </Box>
             ))}
+            <PaginationControls page={delivery.page} totalPages={delivery.totalPages} onPageChange={goToPage} />
           </VStack>
         )}
       </div>

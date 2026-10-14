@@ -235,8 +235,13 @@ export interface RepositoryCodeDeliveryEvidence {
   base_sha: string
   head_sha: string
   created_at: Date
+  page: number
+  totalPages: number
+  totalEvidenceEntries: number
   deployments: RepositoryCodeDeliveryDeploymentEvidence[]
 }
+
+const REPOSITORY_CODE_DELIVERY_EVIDENCE_PAGE_SIZE = 25
 
 export type RepositoryCodeDeliverySortKey =
   | 'first_deployed_at'
@@ -866,10 +871,13 @@ export async function listRepositoryCodeDeliveries(
 export async function getRepositoryCodeDeliveryEvidence(
   repositoryId: number,
   deliveryId: number,
+  requestedPage = 1,
 ): Promise<RepositoryCodeDeliveryEvidence | null> {
   return withTransaction(async (client) => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-    const { rows: deliveryRows } = await client.query<Omit<RepositoryCodeDeliveryEvidence, 'deployments'>>(
+    const { rows: deliveryRows } = await client.query<
+      Omit<RepositoryCodeDeliveryEvidence, 'deployments' | 'page' | 'totalPages' | 'totalEvidenceEntries'>
+    >(
       `SELECT id, base_sha, head_sha, created_at
        FROM repository_code_deliveries
        WHERE repository_id = $1 AND id = $2`,
@@ -877,6 +885,17 @@ export async function getRepositoryCodeDeliveryEvidence(
     )
     const delivery = deliveryRows[0]
     if (!delivery) return null
+
+    const { rows: countRows } = await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count
+       FROM deployments d
+       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
+       WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2`,
+      [repositoryId, deliveryId],
+    )
+    const totalEvidenceEntries = countRows[0].count
+    const totalPages = Math.max(1, Math.ceil(totalEvidenceEntries / REPOSITORY_CODE_DELIVERY_EVIDENCE_PAGE_SIZE))
+    const page = Math.min(Math.max(requestedPage, 1), totalPages)
 
     const { rows: evidenceRows } = await client.query<{
       deployment_id: number
@@ -898,8 +917,14 @@ export async function getRepositoryCodeDeliveryEvidence(
        FROM deployments d
        LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
        WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
-       ORDER BY d.created_at, d.id, vr.run_at, vr.id`,
-      [repositoryId, deliveryId],
+       ORDER BY d.created_at, d.id, vr.run_at, vr.id
+       LIMIT $3 OFFSET $4`,
+      [
+        repositoryId,
+        deliveryId,
+        REPOSITORY_CODE_DELIVERY_EVIDENCE_PAGE_SIZE,
+        (page - 1) * REPOSITORY_CODE_DELIVERY_EVIDENCE_PAGE_SIZE,
+      ],
     )
     const verificationRunIds = evidenceRows.flatMap((row) =>
       row.verification_run_id === null ? [] : [row.verification_run_id],
@@ -973,7 +998,7 @@ export async function getRepositoryCodeDeliveryEvidence(
       }
     }
 
-    return { ...delivery, deployments: [...deployments.values()] }
+    return { ...delivery, page, totalPages, totalEvidenceEntries, deployments: [...deployments.values()] }
   })
 }
 
