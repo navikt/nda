@@ -53,7 +53,7 @@ export async function queueRepositoryIdBackfill(
   return existingJob ? { jobId: existingJob.id, started: false } : null
 }
 
-async function processRepositoryIdBackfillJobAsync(jobId: number, repositoryId: number): Promise<void> {
+export async function processRepositoryIdBackfillJobAsync(jobId: number, repositoryId: number): Promise<void> {
   await runWithJobContext(jobId, 'backfill_github_repo_ids', { repositoryId }, false, async () => {
     if (await isSyncJobCancelled(jobId)) return
 

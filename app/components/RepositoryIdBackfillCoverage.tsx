@@ -1,5 +1,5 @@
 import { Alert, BodyShort, Button, Dialog, Heading, HStack, Link, Select, Table, VStack } from '@navikt/ds-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Form, Link as RouterLink, useFetcher, useRevalidator } from 'react-router'
 import type {
   WorkflowRunBackfillPreviewClassification,
@@ -40,6 +40,7 @@ function RepositoryBackfillAction({
   const isRunning = job?.status === 'running'
   const [open, setOpen] = useState(false)
   const formId = `repository-id-backfill-${repository.repositoryId}`
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (fetcherData?.backfillJobStarted) {
@@ -50,14 +51,12 @@ function RepositoryBackfillAction({
   return (
     <VStack gap="space-8" align="start">
       <Dialog open={open} onOpenChange={setOpen}>
-        {!isRunning && fetcher.state === 'idle' && (
-          <Dialog.Trigger>
-            <Button type="button" size="small" variant="secondary">
-              Backfill ID
-            </Button>
-          </Dialog.Trigger>
-        )}
-        <Dialog.Popup>
+        <Dialog.Trigger>
+          <Button ref={triggerRef} type="button" size="small" variant="secondary">
+            {isRunning ? 'Vis backfillstatus' : fetcher.state !== 'idle' ? 'Starter backfill …' : 'Backfill ID'}
+          </Button>
+        </Dialog.Trigger>
+        <Dialog.Popup returnFocusTo={() => triggerRef.current}>
           <Dialog.Header>
             <Dialog.Title>Backfill repository-ID?</Dialog.Title>
             <Dialog.Description>
@@ -85,7 +84,12 @@ function RepositoryBackfillAction({
                 Avbryt
               </Button>
             </Dialog.CloseTrigger>
-            <Button type="submit" form={formId} loading={fetcher.state !== 'idle'}>
+            <Button
+              type="submit"
+              form={formId}
+              loading={fetcher.state !== 'idle'}
+              disabled={isRunning || fetcher.state !== 'idle'}
+            >
               Start backfill
             </Button>
           </Dialog.Footer>

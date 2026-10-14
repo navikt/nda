@@ -1,8 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockPoolQuery, mockLoggerWarn } = vi.hoisted(() => ({
+const {
+  mockPoolQuery,
+  mockLoggerWarn,
+  mockBackfillEligibleWorkflowRunRepositoryIds,
+  mockGetSyncJobById,
+  mockIsSyncJobCancelled,
+  mockReleaseSyncLock,
+  mockLoggerError,
+} = vi.hoisted(() => ({
   mockPoolQuery: vi.fn(),
   mockLoggerWarn: vi.fn(),
+  mockBackfillEligibleWorkflowRunRepositoryIds: vi.fn(),
+  mockGetSyncJobById: vi.fn(),
+  mockIsSyncJobCancelled: vi.fn(),
+  mockReleaseSyncLock: vi.fn(),
+  mockLoggerError: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -10,21 +23,21 @@ vi.mock('~/db/connection.server', () => ({
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
-  getSyncJobById: vi.fn(),
-  isSyncJobCancelled: vi.fn(),
-  releaseSyncLock: vi.fn(),
+  getSyncJobById: mockGetSyncJobById,
+  isSyncJobCancelled: mockIsSyncJobCancelled,
+  releaseSyncLock: mockReleaseSyncLock,
 }))
 
 vi.mock('~/db/workflow-run-repository-backfill-coverage.server', () => ({
-  backfillEligibleWorkflowRunRepositoryIds: vi.fn(),
+  backfillEligibleWorkflowRunRepositoryIds: mockBackfillEligibleWorkflowRunRepositoryIds,
 }))
 
 vi.mock('~/lib/logger.server', () => ({
-  logger: { error: vi.fn(), info: vi.fn(), warn: mockLoggerWarn },
+  logger: { error: mockLoggerError, info: vi.fn(), warn: mockLoggerWarn },
   runWithJobContext: vi.fn((_jobId, _jobType, _target, _debug, callback) => callback()),
 }))
 
-import { queueRepositoryIdBackfill } from '~/lib/repository-id-backfill.server'
+import { processRepositoryIdBackfillJobAsync, queueRepositoryIdBackfill } from '~/lib/repository-id-backfill.server'
 
 describe('queueRepositoryIdBackfill', () => {
   beforeEach(() => {
@@ -65,5 +78,63 @@ describe('queueRepositoryIdBackfill', () => {
       .mockResolvedValueOnce({ rows: [] })
 
     await expect(queueRepositoryIdBackfill(216, 'Z990001')).resolves.toBeNull()
+  })
+})
+
+describe('processRepositoryIdBackfillJobAsync', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockIsSyncJobCancelled.mockResolvedValue(false)
+  })
+
+  it('backfills eligible deployments and completes a still-running job', async () => {
+    mockBackfillEligibleWorkflowRunRepositoryIds.mockResolvedValue(3)
+    mockGetSyncJobById.mockResolvedValue({ status: 'running' })
+    mockReleaseSyncLock.mockResolvedValue(true)
+
+    await processRepositoryIdBackfillJobAsync(91, 216)
+
+    expect(mockBackfillEligibleWorkflowRunRepositoryIds).toHaveBeenCalledWith(216)
+    expect(mockGetSyncJobById).toHaveBeenCalledWith(91)
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(91, 'completed', { updated: 3, repositoryId: 216 })
+  })
+
+  it('marks a still-running job failed and rethrows when backfill fails', async () => {
+    const error = new Error('Database unavailable')
+    mockBackfillEligibleWorkflowRunRepositoryIds.mockRejectedValue(error)
+    mockGetSyncJobById.mockResolvedValue({ status: 'running' })
+
+    await expect(processRepositoryIdBackfillJobAsync(91, 216)).rejects.toBe(error)
+
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(91, 'failed', undefined, 'Database unavailable')
+  })
+
+  it('does not process or release a job that was cancelled before the worker started', async () => {
+    mockIsSyncJobCancelled.mockResolvedValue(true)
+
+    await processRepositoryIdBackfillJobAsync(91, 216)
+
+    expect(mockBackfillEligibleWorkflowRunRepositoryIds).not.toHaveBeenCalled()
+    expect(mockGetSyncJobById).not.toHaveBeenCalled()
+    expect(mockReleaseSyncLock).not.toHaveBeenCalled()
+  })
+
+  it('does not release a job that reached a terminal state while the backfill ran', async () => {
+    mockBackfillEligibleWorkflowRunRepositoryIds.mockResolvedValue(3)
+    mockGetSyncJobById.mockResolvedValue({ status: 'cancelled' })
+
+    await processRepositoryIdBackfillJobAsync(91, 216)
+
+    expect(mockBackfillEligibleWorkflowRunRepositoryIds).toHaveBeenCalledWith(216)
+    expect(mockReleaseSyncLock).not.toHaveBeenCalled()
+  })
+
+  it('does not overwrite a terminal state when backfill throws after the job stopped running', async () => {
+    mockBackfillEligibleWorkflowRunRepositoryIds.mockRejectedValue(new Error('Database unavailable'))
+    mockGetSyncJobById.mockResolvedValue({ status: 'cancelled' })
+
+    await expect(processRepositoryIdBackfillJobAsync(91, 216)).rejects.toThrow('Database unavailable')
+
+    expect(mockReleaseSyncLock).not.toHaveBeenCalled()
   })
 })
