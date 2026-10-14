@@ -206,7 +206,9 @@ export function RepositoryCodeDeliveriesPage({
           </BodyShort>
           <BodyShort size="small" textColor="subtle">
             Hent analysegrunnlag per uavklart deployment fra listen under. Eksporten inkluderer to registrerte
-            kodeleveranser på hver side når de finnes, tilknyttede deployments og deres lagrede GitHub-bevis.
+            kodeleveranser på hver side når de finnes, tilknyttede deployments og deres lagrede GitHub-bevis. Ved
+            nedlasting hentes også PR-reviewer og Actions-jobber fra GitHub; status i JSON viser hvis data ikke kunne
+            hentes.
           </BodyShort>
           <Button
             as="a"

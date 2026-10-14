@@ -227,6 +227,7 @@ describe('repository code delivery overview', () => {
     const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_1 })
     await linkDeploymentToRepositoryCodeDelivery(linkedDeployment, delivery.id)
     await markUnresolved(unresolvedDeployment, 'ancestry_behind')
+    await pool.query('UPDATE deployments SET github_pr_number = 82 WHERE id = $1', [unresolvedDeployment])
     await pool.query(
       `UPDATE deployments SET created_at = CASE id
          WHEN $1 THEN '2026-10-13T10:00:00Z'::timestamptz
@@ -250,6 +251,7 @@ describe('repository code delivery overview', () => {
     expect(rows[1]).toMatchObject({
       deployment_id: unresolvedDeployment,
       deployed_sha: SHA_2,
+      github_pr_number: 82,
       unresolved_reason: 'ancestry_behind',
       unresolved_resolved_at: null,
     })
@@ -365,6 +367,7 @@ describe('repository code delivery overview', () => {
       code_delivery_tracking_since: new Date('2026-09-15T00:00:00Z'),
       audit_start_year: 2025,
     })
+    expect(exportData.repositoryAliases).toEqual([{ owner: 'old-navikt', repo: 'old-repo-1012' }])
     expect(exportData.diagnosticTargets).toMatchObject([
       {
         unresolvedDeploymentId,

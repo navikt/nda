@@ -1,6 +1,7 @@
 import { getRepositoryCodeDeliveryExportData } from '~/db/repository-code-delivery-overview.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
+import { fetchRepositoryDiagnosticGitHubEvidence } from '~/lib/github/repository-diagnostic-evidence.server'
 import { createRepositoryCodeDeliveryJson } from '~/lib/repository-code-delivery-json'
 import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
 import { requireParams } from '~/lib/route-params.server'
@@ -37,6 +38,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const filename = unresolvedDeploymentId
     ? `repository-${repository.id}-deployment-${unresolvedDeploymentId}-diagnostic.json`
     : `repository-${repository.id}-unresolved-deployments-diagnostic.json`
+  const liveGitHubEvidence = await fetchRepositoryDiagnosticGitHubEvidence({
+    owner: exportData.repositoryMetadata.github_owner,
+    repo: exportData.repositoryMetadata.github_repo_name,
+    repositoryAliases: exportData.repositoryAliases,
+    deployments: exportData.deployments,
+    verificationRuns: exportData.verificationRuns,
+    prSnapshots: exportData.prSnapshots,
+    workflowRunSnapshots: exportData.workflowRunSnapshots,
+  })
   const json = createRepositoryCodeDeliveryJson({
     repository: {
       id: repository.id,
@@ -62,6 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     prSnapshots: exportData.prSnapshots,
     commitSnapshots: exportData.commitSnapshots,
     workflowRunSnapshots: exportData.workflowRunSnapshots,
+    liveGitHubEvidence,
   })
   return new Response(json, {
     headers: {
