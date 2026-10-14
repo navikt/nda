@@ -5,6 +5,7 @@ const {
   mockResolveRepositoryFromParams,
   mockResolveRepositoryAdminAccess,
   mockGetOverview,
+  mockGetHistoryReadiness,
   mockListDeliveries,
   mockListUnresolved,
 } = vi.hoisted(() => ({
@@ -12,6 +13,7 @@ const {
   mockResolveRepositoryFromParams: vi.fn(),
   mockResolveRepositoryAdminAccess: vi.fn(),
   mockGetOverview: vi.fn(),
+  mockGetHistoryReadiness: vi.fn(),
   mockListDeliveries: vi.fn(),
   mockListUnresolved: vi.fn(),
 }))
@@ -30,6 +32,7 @@ vi.mock('~/lib/authorization.server', () => ({
 
 vi.mock('~/db/repository-code-delivery-overview.server', () => ({
   getRepositoryCodeDeliveryOverview: mockGetOverview,
+  getRepositoryHistoryReadiness: mockGetHistoryReadiness,
   listRepositoryCodeDeliveries: mockListDeliveries,
   listOpenUnresolvedCodeDeployments: mockListUnresolved,
 }))
@@ -105,6 +108,12 @@ describe('repository code deliveries loader', () => {
     mockResolveRepositoryFromParams.mockResolvedValue(repository)
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [{ id: 1 }] })
     mockGetOverview.mockResolvedValue(overviewWith(45))
+    mockGetHistoryReadiness.mockResolvedValue({
+      applications: [],
+      repositoryDeploymentCount: 0,
+      repositoryDeploymentsMissingShaCount: 0,
+      repositoryDeploymentsWithoutKnownAppLinkCount: 0,
+    })
     mockListDeliveries.mockResolvedValue([])
     mockListUnresolved.mockResolvedValue([])
   })
@@ -124,6 +133,7 @@ describe('repository code deliveries loader', () => {
 
     expect(mockListDeliveries).toHaveBeenCalledWith(5, { limit: 20, offset: 20, sort: undefined })
     expect(mockListUnresolved).toHaveBeenCalledWith(5, 100)
+    expect(mockGetHistoryReadiness).toHaveBeenCalledWith(5)
     expect(result).toMatchObject({
       repository: { id: 5, githubOwner: 'navikt', githubRepoName: 'glad-fjord' },
       tracking: { enabled: true, since },

@@ -1,4 +1,4 @@
-import { pool } from './connection.server'
+import { pool, withTransaction } from './connection.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
 
 export interface RepositoryCodeDeliveryOverview {
@@ -6,6 +6,26 @@ export interface RepositoryCodeDeliveryOverview {
   linkedDeploymentCount: number
   awaitingDeploymentCount: number
   unresolvedByReason: Partial<Record<UnresolvedReason, number>>
+}
+
+export interface RepositoryHistoryApplicationReadiness {
+  team_slug: string
+  environment_name: string
+  app_name: string
+  is_active: boolean
+  initial_nais_history_synced_at: Date | null
+  deployment_count: number
+  repository_deployment_count: number
+  unassigned_deployment_count: number
+  other_repository_deployment_count: number
+  repository_deployments_missing_sha: number
+}
+
+export interface RepositoryHistoryReadiness {
+  applications: RepositoryHistoryApplicationReadiness[]
+  repositoryDeploymentCount: number
+  repositoryDeploymentsMissingShaCount: number
+  repositoryDeploymentsWithoutKnownAppLinkCount: number
 }
 
 export interface RepositoryCodeDeliverySummary {
@@ -28,6 +48,66 @@ export type RepositoryCodeDeliverySortKey =
   | 'app_names'
 
 export type RepositoryCodeDeliverySortDirection = 'ascending' | 'descending'
+
+export async function getRepositoryHistoryReadiness(repositoryId: number): Promise<RepositoryHistoryReadiness> {
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    const applications = await client.query<RepositoryHistoryApplicationReadiness>(
+      `WITH repository_apps AS (
+         SELECT DISTINCT ar.monitored_app_id
+         FROM application_repositories ar
+         JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+         WHERE r.id = $1 AND ar.status IN ('active', 'historical')
+       )
+       SELECT ma.team_slug, ma.environment_name, ma.app_name, ma.is_active,
+              ma.initial_nais_history_synced_at,
+              count(d.id)::int AS deployment_count,
+              count(d.id) FILTER (WHERE d.repository_id = $1)::int AS repository_deployment_count,
+              count(d.id) FILTER (WHERE d.repository_id IS NULL)::int AS unassigned_deployment_count,
+              count(d.id) FILTER (WHERE d.repository_id IS NOT NULL AND d.repository_id <> $1)::int
+                AS other_repository_deployment_count,
+              count(d.id) FILTER (
+                WHERE d.repository_id = $1 AND (d.commit_sha IS NULL OR d.commit_sha !~ '^[0-9a-fA-F]{40}$')
+              )::int AS repository_deployments_missing_sha
+       FROM repository_apps ra
+       JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
+       LEFT JOIN deployments d ON d.monitored_app_id = ma.id
+       GROUP BY ma.id
+       ORDER BY ma.is_active DESC, ma.environment_name, ma.team_slug, ma.app_name`,
+      [repositoryId],
+    )
+    const repositoryDeployments = await client.query<{
+      deployment_count: number
+      deployments_missing_sha: number
+      deployments_without_known_app_link: number
+    }>(
+      `SELECT count(*)::int AS deployment_count,
+              count(*) FILTER (
+                WHERE d.commit_sha IS NULL OR d.commit_sha !~ '^[0-9a-fA-F]{40}$'
+              )::int AS deployments_missing_sha,
+              count(*) FILTER (
+                WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM application_repositories ar
+                  WHERE ar.monitored_app_id = d.monitored_app_id
+                    AND ar.github_repo_id = r.github_repo_id
+                    AND ar.status IN ('active', 'historical')
+                )
+              )::int AS deployments_without_known_app_link
+       FROM deployments d
+       JOIN repositories r ON r.id = d.repository_id
+       WHERE r.id = $1`,
+      [repositoryId],
+    )
+
+    return {
+      applications: applications.rows,
+      repositoryDeploymentCount: repositoryDeployments.rows[0].deployment_count,
+      repositoryDeploymentsMissingShaCount: repositoryDeployments.rows[0].deployments_missing_sha,
+      repositoryDeploymentsWithoutKnownAppLinkCount: repositoryDeployments.rows[0].deployments_without_known_app_link,
+    }
+  })
+}
 
 export interface UnresolvedCodeDeployment {
   deployment_id: number

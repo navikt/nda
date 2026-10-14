@@ -6,10 +6,11 @@ import {
 } from '../../repository-code-deliveries.server'
 import {
   getRepositoryCodeDeliveryOverview,
+  getRepositoryHistoryReadiness,
   listOpenUnresolvedCodeDeployments,
   listRepositoryCodeDeliveries,
 } from '../../repository-code-delivery-overview.server'
-import { seedApp, seedDeployment, seedRepository, truncateAllTables } from './helpers'
+import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 const SHA_1 = '1'.repeat(40)
 const SHA_2 = '2'.repeat(40)
@@ -80,6 +81,140 @@ describe('repository code delivery overview', () => {
     })
     expect(await listRepositoryCodeDeliveries(repositoryId, { limit: 10, offset: 0 })).toEqual([])
     expect(await listOpenUnresolvedCodeDeployments(repositoryId, 10)).toEqual([])
+  })
+
+  it('reports history sync and deployment identity coverage for active and historical app links', async () => {
+    const repositoryId = await createRepository('1006')
+    const otherRepositoryId = await createRepository('1007')
+    const currentApp = await seedApp(pool, {
+      teamSlug: 'team-fjord',
+      appName: 'current-app',
+      environment: 'prod-gcp',
+    })
+    const historicalApp = await seedApp(pool, {
+      teamSlug: 'team-fjord',
+      appName: 'historical-app',
+      environment: 'prod-gcp',
+      isActive: false,
+    })
+    const pendingApp = await seedApp(pool, {
+      teamSlug: 'team-fjord',
+      appName: 'pending-app',
+      environment: 'prod-gcp',
+    })
+    const unlinkedApp = await seedApp(pool, {
+      teamSlug: 'team-fjord',
+      appName: 'unlinked-app',
+      environment: 'prod-gcp',
+    })
+
+    await seedApplicationRepository(pool, {
+      monitoredAppId: currentApp,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-1006',
+      githubRepoId: '1006',
+      status: 'active',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: historicalApp,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-1006',
+      githubRepoId: '1006',
+      status: 'historical',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: pendingApp,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-1006',
+      githubRepoId: '1006',
+      status: 'pending_approval',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: unlinkedApp,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-1007',
+      githubRepoId: '1007',
+      status: 'active',
+    })
+
+    await pool.query('UPDATE monitored_applications SET initial_nais_history_synced_at = $1 WHERE id = $2', [
+      new Date('2026-10-01T08:00:00Z'),
+      currentApp,
+    ])
+
+    const currentLinked = await seedDeployment(pool, {
+      monitoredAppId: currentApp,
+      teamSlug: 'team-fjord',
+      appName: 'current-app',
+      environment: 'prod-gcp',
+      commitSha: SHA_1,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryId, currentLinked])
+    const linkedToOtherRepository = await seedDeployment(pool, {
+      monitoredAppId: currentApp,
+      teamSlug: 'team-fjord',
+      appName: 'current-app',
+      environment: 'prod-gcp',
+      commitSha: SHA_4,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [
+      otherRepositoryId,
+      linkedToOtherRepository,
+    ])
+    await seedDeployment(pool, {
+      monitoredAppId: currentApp,
+      teamSlug: 'team-fjord',
+      appName: 'current-app',
+      environment: 'prod-gcp',
+      commitSha: SHA_2,
+    })
+    const historicalLinked = await seedDeployment(pool, {
+      monitoredAppId: historicalApp,
+      teamSlug: 'team-fjord',
+      appName: 'historical-app',
+      environment: 'prod-gcp',
+      commitSha: 'short-sha',
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryId, historicalLinked])
+    const unlinkedRepositoryDeployment = await seedDeployment(pool, {
+      monitoredAppId: unlinkedApp,
+      teamSlug: 'team-fjord',
+      appName: 'unlinked-app',
+      environment: 'prod-gcp',
+      commitSha: SHA_3,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [
+      repositoryId,
+      unlinkedRepositoryDeployment,
+    ])
+
+    expect(await getRepositoryHistoryReadiness(repositoryId)).toEqual({
+      applications: [
+        expect.objectContaining({
+          app_name: 'current-app',
+          is_active: true,
+          initial_nais_history_synced_at: new Date('2026-10-01T08:00:00Z'),
+          deployment_count: 3,
+          repository_deployment_count: 1,
+          unassigned_deployment_count: 1,
+          other_repository_deployment_count: 1,
+          repository_deployments_missing_sha: 0,
+        }),
+        expect.objectContaining({
+          app_name: 'historical-app',
+          is_active: false,
+          initial_nais_history_synced_at: null,
+          deployment_count: 1,
+          repository_deployment_count: 1,
+          unassigned_deployment_count: 0,
+          other_repository_deployment_count: 0,
+          repository_deployments_missing_sha: 1,
+        }),
+      ],
+      repositoryDeploymentCount: 3,
+      repositoryDeploymentsMissingShaCount: 1,
+      repositoryDeploymentsWithoutKnownAppLinkCount: 1,
+    })
   })
 
   it('summarises deliveries, linked, awaiting and open unresolved deployments', async () => {
