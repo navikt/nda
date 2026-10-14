@@ -1,9 +1,58 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import { RepositoryIdBackfillCoverage } from '../RepositoryIdBackfillCoverage'
+import { BackfillStatus, RepositoryIdBackfillCoverage, selectLatestBackfillJob } from '../RepositoryIdBackfillCoverage'
 
-function renderCoverage(selectedTeam: string | null) {
+describe('selectLatestBackfillJob', () => {
+  it('follows a replacement job returned by status polling', () => {
+    const currentJob = {
+      id: 91,
+      status: 'running' as const,
+      result: null,
+      error: null,
+      lockExpired: true,
+    }
+    const replacementJob = {
+      id: 92,
+      status: 'running' as const,
+      result: null,
+      error: null,
+      lockExpired: false,
+    }
+
+    expect(selectLatestBackfillJob(currentJob, replacementJob)).toBe(replacementJob)
+  })
+
+  it('does not replace newer loader data with stale polling data', () => {
+    const newerJob = {
+      id: 92,
+      status: 'running' as const,
+      result: null,
+      error: null,
+      lockExpired: false,
+    }
+    const staleJob = {
+      id: 91,
+      status: 'running' as const,
+      result: null,
+      error: null,
+      lockExpired: true,
+    }
+
+    expect(selectLatestBackfillJob(newerJob, staleJob)).toBe(newerJob)
+  })
+})
+
+function renderCoverage(
+  selectedTeam: string | null,
+  backfillJob: {
+    id: number
+    status: 'running' | 'completed' | 'failed' | 'partial' | 'cancelled'
+    result: Record<string, unknown> | null
+    error: string | null
+    lockExpired: boolean
+  } | null = null,
+) {
   const router = createMemoryRouter(
     [
       {
@@ -13,7 +62,28 @@ function renderCoverage(selectedTeam: string | null) {
             teams={['team-a', 'team-b']}
             selectedTeam={selectedTeam}
             invalidTeam={false}
-            repositories={[]}
+            repositories={
+              selectedTeam
+                ? [
+                    {
+                      repositoryId: 216,
+                      githubOwner: 'navikt',
+                      githubRepoName: 'pensjon-alde',
+                      totalLegacyDeployments: 12,
+                      eligible: 5,
+                      noTriggerUrl: 0,
+                      invalidTriggerUrl: 0,
+                      triggerUrlMismatch: 0,
+                      missingSnapshot: 0,
+                      repositoryMismatch: 0,
+                      shaMismatch: 0,
+                      unsupportedEvent: 0,
+                      headRepositoryMismatch: 0,
+                      backfillJob,
+                    },
+                  ]
+                : []
+            }
             totals={{ legacy: selectedTeam ? 12 : 0, eligible: selectedTeam ? 5 : 0 }}
             previewRepository={null}
             previewDeployments={[]}
@@ -41,9 +111,44 @@ describe('RepositoryIdBackfillCoverage', () => {
     const markup = renderCoverage('team-a')
 
     expect(markup).toContain('team-a')
-    expect(markup).toContain('ikke hele repositoryet på tvers av andre team')
+    expect(markup).toContain('Rapporttallene gjelder bare deployments')
     expect(markup).toContain('5')
     expect(markup).toContain('12')
+    expect(markup).toContain('Backfill ID')
+    expect(markup).toContain('role="status" aria-live="polite" aria-atomic="true"')
+    expect(markup).toContain('Handlingene i tabellen kjører repositoryomfattende')
+    expect(markup).toContain('Handlingene i tabellen kjører repositoryomfattende og er ikke begrenset til dette teamet')
+  })
+
+  it('announces completed and failed backfill updates through the persistent status region', () => {
+    const completedMarkup = renderToStaticMarkup(<BackfillStatus message="Fullført: 3 oppdatert" />)
+    const failedMarkup = renderToStaticMarkup(<BackfillStatus message="Feilet: Database unavailable" />)
+
+    expect(completedMarkup).toContain('role="status" aria-live="polite" aria-atomic="true"')
+    expect(completedMarkup).toContain('Fullført: 3 oppdatert')
+    expect(failedMarkup).toContain('role="status" aria-live="polite" aria-atomic="true"')
+    expect(failedMarkup).toContain('Feilet: Database unavailable')
+  })
+
+  it('renders the active job status as an accessible status message', () => {
+    const markup = renderToStaticMarkup(<BackfillStatus message="Backfill kjører …" />)
+
+    expect(markup).toContain('role="status" aria-live="polite" aria-atomic="true"')
+    expect(markup).toContain('Backfill kjører …')
+  })
+
+  it('allows retrying a backfill whose lock has expired', () => {
+    const markup = renderCoverage('team-a', {
+      id: 91,
+      status: 'running',
+      result: null,
+      error: null,
+      lockExpired: true,
+    })
+
+    expect(markup).toContain('Prøv backfill på nytt')
+    expect(markup).toContain('Backfill-jobben har utløpt og kan startes på nytt.')
+    expect(markup).not.toContain('Backfill kjører')
   })
 
   it('shows concrete deployments from every team in the repository-wide preview', () => {

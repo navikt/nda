@@ -9,9 +9,11 @@ vi.mock('../connection.server', () => ({
 }))
 
 import {
+  backfillEligibleWorkflowRunRepositoryIds,
   getWorkflowRunBackfillCoverageTeams,
   getWorkflowRunBackfillPreviewRepository,
   getWorkflowRunRepositoryBackfillCoverage,
+  getWorkflowRunRepositoryBackfillJobStatus,
   getWorkflowRunRepositoryBackfillPreview,
 } from '../workflow-run-repository-backfill-coverage.server'
 
@@ -37,6 +39,11 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
           sha_mismatch: 1,
           unsupported_event: 1,
           head_repository_mismatch: 0,
+          backfill_job_id: null,
+          backfill_job_status: null,
+          backfill_job_result: null,
+          backfill_job_error: null,
+          backfill_job_lock_expired: false,
         },
       ],
     })
@@ -56,6 +63,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         shaMismatch: 1,
         unsupportedEvent: 1,
         headRepositoryMismatch: 0,
+        backfillJob: null,
       },
     ])
     const [query] = mockPoolQuery.mock.calls[0]
@@ -70,7 +78,90 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     expect(query).not.toContain('snapshot.github_repo_id::text')
     expect(query).toContain("workflow_run_data->'repository'->>'id' IS DISTINCT FROM github_repo_id::text")
     expect(query).toContain("workflow_run_data->'head_repository'->>'id' IS DISTINCT FROM github_repo_id::text")
+    expect(query).toContain("job_type = 'backfill_github_repo_ids'")
     expect(mockPoolQuery.mock.calls[0]?.[1]).toEqual(['team-a'])
+  })
+
+  it('keeps a completed repository visible after its legacy deployments have been backfilled', async () => {
+    mockPoolQuery.mockResolvedValue({
+      rows: [
+        {
+          repository_id: 216,
+          github_owner: 'navikt',
+          github_repo_name: 'pensjon-alde',
+          total_legacy_deployments: 0,
+          eligible: 0,
+          no_trigger_url: 0,
+          invalid_trigger_url: 0,
+          trigger_url_mismatch: 0,
+          missing_snapshot: 0,
+          repository_mismatch: 0,
+          sha_mismatch: 0,
+          unsupported_event: 0,
+          head_repository_mismatch: 0,
+          backfill_job_id: 91,
+          backfill_job_status: 'completed',
+          backfill_job_result: { updated: 183 },
+          backfill_job_error: null,
+          backfill_job_lock_expired: false,
+        },
+      ],
+    })
+
+    await expect(getWorkflowRunRepositoryBackfillCoverage('team-a')).resolves.toEqual([
+      {
+        repositoryId: 216,
+        githubOwner: 'navikt',
+        githubRepoName: 'pensjon-alde',
+        totalLegacyDeployments: 0,
+        eligible: 0,
+        noTriggerUrl: 0,
+        invalidTriggerUrl: 0,
+        triggerUrlMismatch: 0,
+        missingSnapshot: 0,
+        repositoryMismatch: 0,
+        shaMismatch: 0,
+        unsupportedEvent: 0,
+        headRepositoryMismatch: 0,
+        backfillJob: {
+          id: 91,
+          status: 'completed',
+          result: { updated: 183 },
+          error: null,
+          lockExpired: false,
+        },
+      },
+    ])
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain('repositories_with_backfill_jobs')
+    expect(query).toContain("sj.job_type = 'backfill_github_repo_ids'")
+  })
+
+  it('loads only the latest job and reports when its lock has expired', async () => {
+    mockPoolQuery.mockResolvedValue({
+      rows: [
+        {
+          id: 91,
+          status: 'running',
+          result: null,
+          error: null,
+          lock_expired: true,
+        },
+      ],
+    })
+
+    await expect(getWorkflowRunRepositoryBackfillJobStatus(216)).resolves.toEqual({
+      id: 91,
+      status: 'running',
+      result: null,
+      error: null,
+      lockExpired: true,
+    })
+    expect(mockPoolQuery.mock.calls[0]?.[1]).toEqual([216])
+    expect(mockPoolQuery.mock.calls[0]?.[0]).toContain(
+      "status = 'running' AND (lock_expires_at IS NULL OR lock_expires_at <= NOW()) AS lock_expired",
+    )
+    expect(mockPoolQuery.mock.calls[0]?.[0]).toContain('ORDER BY created_at DESC, id DESC')
   })
 
   it('returns a lightweight sorted list of monitored application teams', async () => {
@@ -139,5 +230,21 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
       githubRepoName: 'pensjon-alde',
     })
     expect(mockPoolQuery.mock.calls[0]?.[1]).toEqual([216])
+  })
+
+  it('rechecks strict snapshot eligibility while filling only missing repository IDs', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ updated: 2 }] })
+
+    await expect(backfillEligibleWorkflowRunRepositoryIds(216)).resolves.toBe(2)
+
+    const [query, parameters] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain("workflow_run_data->'repository'->>'id' IS DISTINCT FROM github_repo_id::text")
+    expect(query).toContain("workflow_run_data->'head_repository'->>'id' IS DISTINCT FROM github_repo_id::text")
+    expect(query).toContain("workflow_run_data->>'event' IS DISTINCT FROM 'push'")
+    expect(query).toContain("lower(workflow_run_data->>'head_sha') IS DISTINCT FROM lower(commit_sha)")
+    expect(query).toContain("c.classification = 'eligible'")
+    expect(query).toContain('d.repository_id IS NULL')
+    expect(query).toContain('SET repository_id = $1')
+    expect(parameters).toEqual([216])
   })
 })
