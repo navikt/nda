@@ -191,7 +191,7 @@ export async function listRepositoryCodeDeliveryAncestryEvidence(
         (lower(s.base_sha) = lower(c.head_sha) AND lower(s.head_sha) = lower(d.commit_sha))
         OR (lower(s.base_sha) = lower(d.commit_sha) AND lower(s.head_sha) = lower(c.head_sha))
       )
-     WHERE r.id = $1 AND u.reason = 'ancestry_behind'
+     WHERE r.id = $1 AND u.reason IN ('ancestry_unknown', 'ancestry_diverged', 'ancestry_behind')
      ORDER BY d.created_at, d.id, s.fetched_at`,
     [repositoryId],
   )
