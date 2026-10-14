@@ -4,6 +4,8 @@ import {
   getRepositoryCodeDeliveryOverview,
   listOpenUnresolvedCodeDeployments,
   listRepositoryCodeDeliveries,
+  type RepositoryCodeDeliverySortDirection,
+  type RepositoryCodeDeliverySortKey,
 } from '~/db/repository-code-delivery-overview.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
@@ -13,6 +15,47 @@ import type { Route } from './+types/repository.$owner.$repo.admin.code-deliveri
 
 const PAGE_SIZE = 20
 const UNRESOLVED_LIMIT = 100
+const DELIVERY_SORT_KEYS = new Set<string>([
+  'first_deployed_at',
+  'created_at',
+  'base_sha',
+  'head_sha',
+  'deployment_count',
+  'app_names',
+])
+
+function isDeliverySortKey(value: string | null): value is RepositoryCodeDeliverySortKey {
+  return value !== null && DELIVERY_SORT_KEYS.has(value)
+}
+
+function isDeliverySortDirection(value: string | null): value is RepositoryCodeDeliverySortDirection {
+  return value === 'ascending' || value === 'descending'
+}
+
+export function getNextDeliverySort(
+  currentSort: { orderBy: RepositoryCodeDeliverySortKey; direction: RepositoryCodeDeliverySortDirection } | undefined,
+  sortKey: string,
+): { orderBy: RepositoryCodeDeliverySortKey; direction: RepositoryCodeDeliverySortDirection } | undefined {
+  if (!isDeliverySortKey(sortKey)) return currentSort
+  if (currentSort?.orderBy === sortKey && currentSort.direction === 'descending') return undefined
+  return {
+    orderBy: sortKey,
+    direction: currentSort?.orderBy === sortKey ? 'descending' : 'ascending',
+  }
+}
+
+export function createDeliverySearchParams(
+  repositoryId: number,
+  page: number,
+  sort: { orderBy: RepositoryCodeDeliverySortKey; direction: RepositoryCodeDeliverySortDirection } | undefined,
+): URLSearchParams {
+  const searchParams = new URLSearchParams({ repositoryId: String(repositoryId), page: String(page) })
+  if (sort) {
+    searchParams.set('sort', sort.orderBy)
+    searchParams.set('direction', sort.direction)
+  }
+  return searchParams
+}
 
 export function meta({ loaderData: data }: Route.MetaArgs) {
   return [
@@ -37,6 +80,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const parsedPage = parseInt(url.searchParams.get('page') || '1', 10)
   const requestedPage = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1
+  const requestedSortKey = url.searchParams.get('sort')
+  const requestedSortDirection = url.searchParams.get('direction')
+  const sort =
+    isDeliverySortKey(requestedSortKey) && isDeliverySortDirection(requestedSortDirection)
+      ? {
+          orderBy: requestedSortKey,
+          direction: requestedSortDirection,
+        }
+      : undefined
 
   const [overview, unresolved] = await Promise.all([
     getRepositoryCodeDeliveryOverview(repository.id),
@@ -47,6 +99,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const deliveries = await listRepositoryCodeDeliveries(repository.id, {
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
+    sort,
   })
 
   return {
@@ -64,17 +117,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     unresolved,
     page,
     totalPages,
+    sort,
   }
 }
 
 export default function RepositoryCodeDeliveriesRoute({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate()
-  const { repository } = loaderData
+  const { repository, sort } = loaderData
+
+  const updateSearchParams = (
+    page: number,
+    nextSort: { orderBy: RepositoryCodeDeliverySortKey; direction: RepositoryCodeDeliverySortDirection } | undefined,
+  ) => {
+    const searchParams = createDeliverySearchParams(repository.id, page, nextSort)
+    navigate(`?${searchParams}`)
+  }
 
   return (
     <RepositoryCodeDeliveriesPage
       {...loaderData}
-      onPageChange={(page) => navigate(`?repositoryId=${repository.id}&page=${page}`)}
+      onPageChange={(page) => updateSearchParams(page, sort)}
+      onSortChange={(sortKey) => {
+        updateSearchParams(1, getNextDeliverySort(sort, sortKey))
+      }}
     />
   )
 }

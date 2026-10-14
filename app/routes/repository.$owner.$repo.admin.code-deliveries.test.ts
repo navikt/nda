@@ -34,7 +34,11 @@ vi.mock('~/db/repository-code-delivery-overview.server', () => ({
   listOpenUnresolvedCodeDeployments: mockListUnresolved,
 }))
 
-import { loader } from './repository.$owner.$repo.admin.code-deliveries'
+import {
+  createDeliverySearchParams,
+  getNextDeliverySort,
+  loader,
+} from './repository.$owner.$repo.admin.code-deliveries'
 
 const params = { owner: 'navikt', repo: 'glad-fjord' }
 
@@ -50,6 +54,45 @@ const repository = {
   code_delivery_tracking: true,
   code_delivery_tracking_since: since,
 }
+
+describe('getNextDeliverySort', () => {
+  it('sorts ascending, then descending, then restores the default order', () => {
+    expect(getNextDeliverySort(undefined, 'first_deployed_at')).toEqual({
+      orderBy: 'first_deployed_at',
+      direction: 'ascending',
+    })
+    expect(getNextDeliverySort({ orderBy: 'first_deployed_at', direction: 'ascending' }, 'first_deployed_at')).toEqual({
+      orderBy: 'first_deployed_at',
+      direction: 'descending',
+    })
+    expect(getNextDeliverySort({ orderBy: 'first_deployed_at', direction: 'descending' }, 'first_deployed_at')).toBe(
+      undefined,
+    )
+  })
+
+  it('starts a new column sort in ascending order and ignores unknown keys', () => {
+    expect(getNextDeliverySort({ orderBy: 'first_deployed_at', direction: 'descending' }, 'deployment_count')).toEqual({
+      orderBy: 'deployment_count',
+      direction: 'ascending',
+    })
+    expect(getNextDeliverySort(undefined, 'unknown')).toBeUndefined()
+  })
+
+  it('removes sorting from the URL when sort is explicitly cleared', () => {
+    const searchParams = createDeliverySearchParams(5, 1, undefined)
+
+    expect(searchParams.toString()).toBe('repositoryId=5&page=1')
+  })
+
+  it('preserves sorting parameters when navigating between pages', () => {
+    const searchParams = createDeliverySearchParams(5, 2, {
+      orderBy: 'first_deployed_at',
+      direction: 'descending',
+    })
+
+    expect(searchParams.toString()).toBe('repositoryId=5&page=2&sort=first_deployed_at&direction=descending')
+  })
+})
 
 function overviewWith(deliveryCount: number) {
   return { deliveryCount, linkedDeploymentCount: 0, awaitingDeploymentCount: 0, unresolvedByReason: {} }
@@ -79,7 +122,7 @@ describe('repository code deliveries loader', () => {
   it('returns repository, tracking state and the requested page', async () => {
     const result = await loader({ params, request: makeRequest('?page=2') } as never)
 
-    expect(mockListDeliveries).toHaveBeenCalledWith(5, { limit: 20, offset: 20 })
+    expect(mockListDeliveries).toHaveBeenCalledWith(5, { limit: 20, offset: 20, sort: undefined })
     expect(mockListUnresolved).toHaveBeenCalledWith(5, 100)
     expect(result).toMatchObject({
       repository: { id: 5, githubOwner: 'navikt', githubRepoName: 'glad-fjord' },
@@ -99,7 +142,11 @@ describe('repository code deliveries loader', () => {
     const result = await loader({ params, request: makeRequest(search) } as never)
 
     expect(result.page).toBe(expectedPage)
-    expect(mockListDeliveries).toHaveBeenCalledWith(5, { limit: 20, offset: (expectedPage - 1) * 20 })
+    expect(mockListDeliveries).toHaveBeenCalledWith(5, {
+      limit: 20,
+      offset: (expectedPage - 1) * 20,
+      sort: undefined,
+    })
   })
 
   it('reports a single page when there are no deliveries', async () => {
@@ -108,6 +155,32 @@ describe('repository code deliveries loader', () => {
     const result = await loader({ params, request: makeRequest('?page=4') } as never)
 
     expect(result).toMatchObject({ page: 1, totalPages: 1 })
-    expect(mockListDeliveries).toHaveBeenCalledWith(5, { limit: 20, offset: 0 })
+    expect(mockListDeliveries).toHaveBeenCalledWith(5, { limit: 20, offset: 0, sort: undefined })
+  })
+
+  it('validates and forwards delivery sorting from the URL', async () => {
+    const result = await loader({
+      params,
+      request: makeRequest('?page=2&sort=first_deployed_at&direction=ascending'),
+    } as never)
+
+    expect(mockListDeliveries).toHaveBeenCalledWith(5, {
+      limit: 20,
+      offset: 20,
+      sort: { orderBy: 'first_deployed_at', direction: 'ascending' },
+    })
+    expect(result).toMatchObject({
+      page: 2,
+      sort: { orderBy: 'first_deployed_at', direction: 'ascending' },
+    })
+  })
+
+  it('ignores invalid delivery sorting parameters', async () => {
+    await loader({
+      params,
+      request: makeRequest('?sort=id;DROP%20TABLE%20deployments&direction=sideways'),
+    } as never)
+
+    expect(mockListDeliveries).toHaveBeenCalledWith(5, { limit: 20, offset: 0, sort: undefined })
   })
 })

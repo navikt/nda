@@ -13,10 +13,21 @@ export interface RepositoryCodeDeliverySummary {
   base_sha: string
   head_sha: string
   created_at: Date
+  first_deployed_at: Date | null
   is_anchor: boolean
   deployment_count: number
   app_names: string[]
 }
+
+export type RepositoryCodeDeliverySortKey =
+  | 'first_deployed_at'
+  | 'created_at'
+  | 'base_sha'
+  | 'head_sha'
+  | 'deployment_count'
+  | 'app_names'
+
+export type RepositoryCodeDeliverySortDirection = 'ascending' | 'descending'
 
 export interface UnresolvedCodeDeployment {
   deployment_id: number
@@ -82,10 +93,26 @@ export async function getRepositoryCodeDeliveryOverview(repositoryId: number): P
 
 export async function listRepositoryCodeDeliveries(
   repositoryId: number,
-  options: { limit: number; offset: number },
+  options: {
+    limit: number
+    offset: number
+    sort?: { orderBy: RepositoryCodeDeliverySortKey; direction: RepositoryCodeDeliverySortDirection }
+  },
 ): Promise<RepositoryCodeDeliverySummary[]> {
+  const sortColumns: Record<RepositoryCodeDeliverySortKey, string> = {
+    first_deployed_at: 'first_deployed_at',
+    created_at: 'c.created_at',
+    base_sha: 'c.base_sha',
+    head_sha: 'c.head_sha',
+    deployment_count: 'deployment_count',
+    app_names: 'app_names',
+  }
+  const orderBy = options.sort
+    ? `${sortColumns[options.sort.orderBy]} ${options.sort.direction === 'ascending' ? 'ASC' : 'DESC'} NULLS LAST, c.id DESC`
+    : 'c.id DESC'
   const { rows } = await pool.query<RepositoryCodeDeliverySummary>(
     `SELECT c.id, c.base_sha, c.head_sha, c.created_at,
+            min(d.created_at) AS first_deployed_at,
             lower(c.base_sha) = lower(c.head_sha) AS is_anchor,
             count(d.id)::int AS deployment_count,
             COALESCE(array_agg(DISTINCT d.app_name ORDER BY d.app_name) FILTER (WHERE d.id IS NOT NULL), '{}') AS app_names
@@ -93,7 +120,7 @@ export async function listRepositoryCodeDeliveries(
      LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id
      WHERE c.repository_id = $1
      GROUP BY c.id
-     ORDER BY c.id DESC
+     ORDER BY ${orderBy}
      LIMIT $2 OFFSET $3`,
     [repositoryId, options.limit, options.offset],
   )
