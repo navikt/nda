@@ -88,6 +88,15 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     expect(indexRows).toHaveLength(1)
     expect(indexRows[0]?.indexdef).toContain('WHERE (repository_id IS NULL)')
 
+    const { rows: repositoryIdIndexRows } = await pool.query<{ indexdef: string }>(
+      `SELECT indexdef
+       FROM pg_indexes
+       WHERE schemaname = current_schema()
+         AND indexname = 'idx_deployments_repository_id'`,
+    )
+    expect(repositoryIdIndexRows).toHaveLength(1)
+    expect(repositoryIdIndexRows[0]?.indexdef).toContain('WHERE (repository_id IS NOT NULL)')
+
     const appId = await seedApp(pool, {
       teamSlug: 'team-repo-backfill',
       appName: 'repo-backfill-app',
@@ -180,6 +189,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         repositoryId,
         githubOwner: 'navikt',
         githubRepoName: 'repo-backfill',
+        deploymentsWithRepositoryId: 0,
         totalLegacyDeployments: 10,
         eligible: 1,
         noTriggerUrl: 1,
@@ -198,6 +208,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         repositoryId: otherRepositoryId,
         githubOwner: 'navikt',
         githubRepoName: 'other-repo',
+        deploymentsWithRepositoryId: 0,
         totalLegacyDeployments: 1,
         eligible: 0,
         noTriggerUrl: 1,
@@ -269,6 +280,14 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
 
     await expect(backfillEligibleWorkflowRunRepositoryIds(repositoryId)).resolves.toBe(2)
     await expect(backfillEligibleWorkflowRunRepositoryIds(repositoryId)).resolves.toBe(0)
+
+    await pool.query(
+      `INSERT INTO sync_jobs (job_type, repository_id, status, started_at, completed_at)
+       VALUES ('backfill_github_repo_ids', $1, 'completed', NOW(), NOW())`,
+      [repositoryId],
+    )
+    const coverage = await getWorkflowRunRepositoryBackfillCoverage('team-repo-backfill-a')
+    expect(coverage[0]?.deploymentsWithRepositoryId).toBe(2)
 
     const { rows } = await pool.query<{ id: number; repository_id: number | null }>(
       `SELECT id, repository_id

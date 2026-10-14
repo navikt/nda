@@ -29,6 +29,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
           repository_id: 216,
           github_owner: 'navikt',
           github_repo_name: 'pensjon-alde',
+          deployments_with_repository_id: 183,
           total_legacy_deployments: 12,
           eligible: 5,
           no_trigger_url: 1,
@@ -53,6 +54,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         repositoryId: 216,
         githubOwner: 'navikt',
         githubRepoName: 'pensjon-alde',
+        deploymentsWithRepositoryId: 183,
         totalLegacyDeployments: 12,
         eligible: 5,
         noTriggerUrl: 1,
@@ -70,6 +72,11 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     expect(query).toContain('FROM monitored_applications ma')
     expect(query).toContain('JOIN application_repositories ar')
     expect(query).toContain('JOIN deployments d')
+    expect(query).toContain('SELECT count(*)::int AS deployments_with_repository_id')
+    expect(query).toContain('WHERE repository_id = visible.repository_id')
+    expect(query).not.toContain(
+      'FROM deployments\n       WHERE repository_id IS NOT NULL\n       GROUP BY repository_id',
+    )
     expect(query).toContain('WHERE ma.team_slug = $1')
     expect(query).toContain('d.repository_id IS NULL')
     expect(query).toContain('r.github_repo_id,')
@@ -89,6 +96,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
           repository_id: 216,
           github_owner: 'navikt',
           github_repo_name: 'pensjon-alde',
+          deployments_with_repository_id: 183,
           total_legacy_deployments: 0,
           eligible: 0,
           no_trigger_url: 0,
@@ -113,6 +121,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         repositoryId: 216,
         githubOwner: 'navikt',
         githubRepoName: 'pensjon-alde',
+        deploymentsWithRepositoryId: 183,
         totalLegacyDeployments: 0,
         eligible: 0,
         noTriggerUrl: 0,

@@ -13,6 +13,7 @@ export interface WorkflowRunRepositoryBackfillCoverage {
   repositoryId: number
   githubOwner: string
   githubRepoName: string
+  deploymentsWithRepositoryId: number
   totalLegacyDeployments: number
   eligible: number
   noTriggerUrl: number
@@ -58,6 +59,7 @@ interface CoverageRow {
   repository_id: number
   github_owner: string
   github_repo_name: string
+  deployments_with_repository_id: number
   total_legacy_deployments: number
   eligible: number
   no_trigger_url: number
@@ -240,6 +242,7 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
        SELECT repository_id, github_owner, github_repo_name FROM repositories_with_backfill_jobs
      )
      SELECT visible.repository_id, visible.github_owner, visible.github_repo_name,
+       COALESCE(deployment_count.deployments_with_repository_id, 0)::int AS deployments_with_repository_id,
        COALESCE(coverage.total_legacy_deployments, 0)::int AS total_legacy_deployments,
        COALESCE(coverage.eligible, 0)::int AS eligible,
        COALESCE(coverage.no_trigger_url, 0)::int AS no_trigger_url,
@@ -260,6 +263,11 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
      LEFT JOIN coverage
        ON coverage.repository_id = visible.repository_id
      LEFT JOIN LATERAL (
+       SELECT count(*)::int AS deployments_with_repository_id
+       FROM deployments
+       WHERE repository_id = visible.repository_id
+     ) deployment_count ON true
+     LEFT JOIN LATERAL (
        SELECT id, status, result, error, lock_expires_at
        FROM sync_jobs
        WHERE repository_id = visible.repository_id
@@ -275,6 +283,7 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
     repositoryId: row.repository_id,
     githubOwner: row.github_owner,
     githubRepoName: row.github_repo_name,
+    deploymentsWithRepositoryId: row.deployments_with_repository_id,
     totalLegacyDeployments: row.total_legacy_deployments,
     eligible: row.eligible,
     noTriggerUrl: row.no_trigger_url,
