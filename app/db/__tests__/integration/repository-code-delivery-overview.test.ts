@@ -170,7 +170,7 @@ describe('repository code delivery overview', () => {
          (deployment_id, schema_version, pr_snapshot_ids, result, status, run_at)
        SELECT $1, 5, '{}', '{}'::jsonb, 'approved',
               '2026-10-04T00:00:00Z'::timestamptz + make_interval(mins => run_number)
-       FROM generate_series(1, 25) AS runs(run_number)`,
+       FROM generate_series(1, 26) AS runs(run_number)`,
       [deploymentId],
     )
 
