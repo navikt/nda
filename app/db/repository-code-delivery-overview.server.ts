@@ -40,6 +40,7 @@ export interface RepositoryCodeDeliveryExportRow {
   deployed_sha: string | null
   branch_name: string | null
   trigger_url: string | null
+  github_pr_number: number | null
   delivery_id: number | null
   delivery_base_sha: string | null
   delivery_head_sha: string | null
@@ -132,6 +133,11 @@ export interface RepositoryCodeDeliveryDiagnosticTarget {
   includedDeploymentIds: number[]
 }
 
+export interface RepositoryCodeDeliveryRepositoryAlias {
+  owner: string
+  repo: string
+}
+
 export interface RepositoryCodeDeliveryExportData {
   repositoryMetadata: {
     github_repo_id: string
@@ -141,6 +147,7 @@ export interface RepositoryCodeDeliveryExportData {
     code_delivery_tracking_since: Date | null
     audit_start_year: number | null
   }
+  repositoryAliases: RepositoryCodeDeliveryRepositoryAlias[]
   deployments: RepositoryCodeDeliveryExportRow[]
   deliveries: RepositoryCodeDeliveryExportDelivery[]
   ancestryEvidence: RepositoryCodeDeliveryAncestryEvidence[]
@@ -206,6 +213,7 @@ export async function listRepositoryCodeDeliveryExportRows(
   const { rows } = await executor.query<RepositoryCodeDeliveryExportRow>(
     `SELECT d.id AS deployment_id, d.nais_deployment_id, d.created_at AS deployed_at,
             d.team_slug, d.app_name, d.environment_name, d.commit_sha AS deployed_sha, d.branch_name, d.trigger_url,
+            d.github_pr_number,
             c.id AS delivery_id, c.base_sha AS delivery_base_sha, c.head_sha AS delivery_head_sha,
             c.created_at AS delivery_registered_at, delivery_first.first_deployed_at AS delivery_first_deployed_at,
             u.reason AS unresolved_reason, u.created_at AS unresolved_first_seen_at,
@@ -527,10 +535,19 @@ export async function getRepositoryCodeDeliveryExportData(
        FROM repositories WHERE id = $1`,
       [repositoryId],
     )
-    const [nearby, repositoryConfigAuditLog, historyReadiness] = await Promise.all([
+    const [nearby, repositoryConfigAuditLog, historyReadiness, repositoryAliases] = await Promise.all([
       listNearbyCodeDeliveries(repositoryId, unresolvedDeploymentId, client),
       listRepositoryConfigAuditLog(repositoryId, client),
       getRepositoryHistoryReadinessFromClient(repositoryId, client),
+      client
+        .query<RepositoryCodeDeliveryRepositoryAlias>(
+          `SELECT github_owner AS owner, github_repo_name AS repo
+           FROM repository_name_history
+           WHERE repository_id = $1
+           ORDER BY github_owner, github_repo_name`,
+          [repositoryId],
+        )
+        .then(({ rows }) => rows),
     ])
     const {
       github_repo_id,
@@ -622,6 +639,7 @@ export async function getRepositoryCodeDeliveryExportData(
         code_delivery_tracking_since,
         audit_start_year,
       },
+      repositoryAliases,
       deployments,
       deliveries,
       ancestryEvidence,

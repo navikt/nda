@@ -1,12 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireUser, mockResolveRepositoryFromParams, mockResolveRepositoryAdminAccess, mockGetExportData } =
-  vi.hoisted(() => ({
-    mockRequireUser: vi.fn(),
-    mockResolveRepositoryFromParams: vi.fn(),
-    mockResolveRepositoryAdminAccess: vi.fn(),
-    mockGetExportData: vi.fn(),
-  }))
+const {
+  mockRequireUser,
+  mockResolveRepositoryFromParams,
+  mockResolveRepositoryAdminAccess,
+  mockGetExportData,
+  mockFetchDiagnosticEvidence,
+} = vi.hoisted(() => ({
+  mockRequireUser: vi.fn(),
+  mockResolveRepositoryFromParams: vi.fn(),
+  mockResolveRepositoryAdminAccess: vi.fn(),
+  mockGetExportData: vi.fn(),
+  mockFetchDiagnosticEvidence: vi.fn(),
+}))
 
 vi.mock('~/lib/auth.server', () => ({
   requireUser: mockRequireUser,
@@ -22,6 +28,10 @@ vi.mock('~/lib/authorization.server', () => ({
 
 vi.mock('~/db/repository-code-delivery-overview.server', () => ({
   getRepositoryCodeDeliveryExportData: mockGetExportData,
+}))
+
+vi.mock('~/lib/github/repository-diagnostic-evidence.server', () => ({
+  fetchRepositoryDiagnosticGitHubEvidence: mockFetchDiagnosticEvidence,
 }))
 
 import { loader } from './repository.$owner.$repo.admin.code-deliveries.export'
@@ -42,6 +52,7 @@ function makeExportData() {
       code_delivery_tracking_since: new Date('2026-09-15T00:00:00Z'),
       audit_start_year: 2025,
     },
+    repositoryAliases: [{ owner: 'old-navikt', repo: 'old-snapshot-repo' }],
     historyReadiness: {
       applications: [],
       repositoryDeploymentCount: 0,
@@ -66,6 +77,14 @@ function makeExportData() {
     prSnapshots: [],
     commitSnapshots: [],
     workflowRunSnapshots: [],
+    liveGitHubEvidence: {
+      fetchedAt: '2026-10-14T10:59:00.000Z',
+      status: 'not_needed',
+      requestLimit: 100,
+      requestsAttempted: 0,
+      pullRequests: [],
+      workflowRuns: [],
+    },
   }
 }
 
@@ -85,6 +104,14 @@ describe('repository code delivery export loader', () => {
     })
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true })
     mockGetExportData.mockResolvedValue(makeExportData())
+    mockFetchDiagnosticEvidence.mockResolvedValue({
+      fetchedAt: '2026-10-14T10:59:00.000Z',
+      status: 'not_needed',
+      requestLimit: 100,
+      requestsAttempted: 0,
+      pullRequests: [],
+      workflowRuns: [],
+    })
   })
 
   it('returns a JSON attachment for the authorized repository', async () => {
@@ -100,7 +127,7 @@ describe('repository code delivery export loader', () => {
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(JSON.parse(await response.text())).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       repository: {
         id: 5,
         githubRepositoryId: '67890',
@@ -119,9 +146,19 @@ describe('repository code delivery export loader', () => {
       prSnapshots: [],
       commitSnapshots: [],
       workflowRunSnapshots: [],
+      liveGitHubEvidence: { status: 'not_needed' },
       ancestryEvidence: { matchingCompareSnapshots: [] },
     })
     expect(mockGetExportData).toHaveBeenCalledWith(5, undefined)
+    expect(mockFetchDiagnosticEvidence).toHaveBeenCalledWith({
+      owner: 'snapshot-owner',
+      repo: 'snapshot-repo',
+      repositoryAliases: [{ owner: 'old-navikt', repo: 'old-snapshot-repo' }],
+      deployments: [],
+      verificationRuns: [],
+      prSnapshots: [],
+      workflowRunSnapshots: [],
+    })
     expect(mockResolveRepositoryFromParams).toHaveBeenCalledWith(
       'navikt',
       'glad-fjord',
@@ -141,6 +178,7 @@ describe('repository code delivery export loader', () => {
     ).rejects.toMatchObject({ status: 403 })
 
     expect(mockGetExportData).not.toHaveBeenCalled()
+    expect(mockFetchDiagnosticEvidence).not.toHaveBeenCalled()
   })
 
   it('automatically exports all open unresolved deployments when deploymentId is omitted', async () => {

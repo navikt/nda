@@ -32,6 +32,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
             deployed_sha: 'a'.repeat(40),
             branch_name: 'main',
             trigger_url: null,
+            github_pr_number: null,
             delivery_id: null,
             delivery_base_sha: null,
             delivery_head_sha: null,
@@ -158,12 +159,20 @@ describe('createRepositoryCodeDeliveryJson', () => {
             data: { event: 'push' },
           },
         ],
+        liveGitHubEvidence: {
+          fetchedAt: '2026-10-14T10:59:00.000Z',
+          status: 'complete',
+          requestLimit: 100,
+          requestsAttempted: 0,
+          pullRequests: [],
+          workflowRuns: [],
+        },
       },
       new Date('2026-10-14T11:00:00.000Z'),
     )
     const parsed = JSON.parse(json)
 
-    expect(parsed.schemaVersion).toBe(3)
+    expect(parsed.schemaVersion).toBe(4)
     expect(parsed.exportedAt).toBe('2026-10-14T11:00:00.000Z')
     expect(parsed.repository.githubRepositoryId).toBe('12345')
     expect(parsed.implicitApprovalMode).toBe('dependabot_only')
@@ -208,8 +217,9 @@ describe('createRepositoryCodeDeliveryJson', () => {
     expect(parsed.interpretationNotes).toContain(
       'Repository configuration audit entries include recorded changes only. An absent entry does not establish the setting value at a historical time, especially before repository-level audit logging or for settings initialized during repository backfill.',
     )
+    expect(parsed.liveGitHubEvidence.status).toBe('complete')
     expect(parsed.interpretationNotes).toContain(
-      'PR and commit snapshots include only snapshot IDs referenced by included verification runs. Workflow-run snapshots include archived versions referenced by trigger URLs on included deployments. Missing snapshots mean the source data was not archived or is no longer available; this export does not fetch live GitHub data.',
+      'liveGitHubEvidence is fetched from GitHub when the export is generated and includes current PR metadata, review records, and workflow job/step outcomes for PRs and workflow runs referenced by the bounded diagnostic. It is not the verification decision stored at deployment time. Each item records its fetch status; missing or failed live evidence must not be interpreted as an empty review or job history.',
     )
     expect(parsed.interpretationNotes).toContain(
       'implicitApprovalMode is read within the same repeatable-read database snapshot as the audit entries and exported evidence.',
@@ -247,6 +257,14 @@ describe('createRepositoryCodeDeliveryJson', () => {
         prSnapshots: [],
         commitSnapshots: [],
         workflowRunSnapshots: [],
+        liveGitHubEvidence: {
+          fetchedAt: '2026-10-14T10:59:00.000Z',
+          status: 'not_needed',
+          requestLimit: 100,
+          requestsAttempted: 0,
+          pullRequests: [],
+          workflowRuns: [],
+        },
       }),
     )
 
