@@ -19,6 +19,7 @@ const SNAPSHOT_TABLE_NAMES = [
   'github_compare_raw_snapshots',
   'github_checks_raw_snapshots',
   'github_workflow_runs_raw_snapshots',
+  'github_workflow_jobs_raw_snapshots',
   'github_commit_raw_snapshots',
   'github_commit_associated_prs_raw_snapshots',
   'github_pr_window_raw_snapshots',

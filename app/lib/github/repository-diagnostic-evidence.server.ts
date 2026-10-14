@@ -264,11 +264,12 @@ function discoverPullRequestReferences(
 async function fetchPullRequestEvidence(
   owner: string,
   repo: string,
+  githubRepoId: number | string,
   number: number,
   references: PullRequestReference[],
   requestBudget: RequestBudget,
 ): Promise<RepositoryDiagnosticPullRequestEvidence> {
-  const evidence = await getOrFetchPullRequestSnapshotEvidence(owner, repo, number, requestBudget)
+  const evidence = await getOrFetchPullRequestSnapshotEvidence(owner, repo, githubRepoId, number, requestBudget)
   const pullRequest = evidence.pullRequest
   return {
     number,
@@ -428,7 +429,14 @@ export async function fetchRepositoryDiagnosticGitHubEvidence(
   let requestLimited = false
 
   for (const [number, references] of prReferences) {
-    const evidence = await fetchPullRequestEvidence(input.owner, input.repo, number, references, requestBudget)
+    const evidence = await fetchPullRequestEvidence(
+      input.owner,
+      input.repo,
+      input.githubRepoId,
+      number,
+      references,
+      requestBudget,
+    )
     pullRequests.push(evidence)
     if (evidence.status === 'skipped_rate_limit' || evidence.stoppedBy === 'rate_limit') rateLimited = true
     if (evidence.status === 'skipped_request_limit' || evidence.stoppedBy === 'request_limit') requestLimited = true

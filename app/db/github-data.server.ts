@@ -232,6 +232,20 @@ export async function savePrRawSnapshotsBatch(
   return result.rows.map((row: { id: number }) => row.id)
 }
 
+type PrRawSnapshotRow = {
+  id: number
+  owner: string
+  repo: string
+  github_repo_id: number | string
+  pr_number: number
+  data_type: PrRawDataType
+  api_version: string
+  api_deprecated_at: Date | string | null
+  api_sunset_at: Date | string | null
+  fetched_at: Date
+  data: unknown
+}
+
 export async function getAllLatestPrRawSnapshots(
   owner: string,
   repo: string,
@@ -254,9 +268,30 @@ export async function getAllLatestPrRawSnapshots(
     [owner, repo, prNumber],
   )
 
+  return mapPrRawSnapshots(result.rows)
+}
+
+export async function getAllLatestPrRawSnapshotsByRepositoryId(
+  githubRepoId: number | string,
+  prNumber: number,
+): Promise<Map<PrRawDataType, PrRawSnapshot>> {
+  const result = await pool.query(
+    `SELECT DISTINCT ON (data_type)
+            id, owner, repo, github_repo_id, pr_number, data_type,
+            api_version, api_deprecated_at, api_sunset_at, fetched_at, data
+     FROM github_pr_raw_snapshots
+     WHERE github_repo_id = $1 AND pr_number = $2
+     ORDER BY data_type, fetched_at DESC`,
+    [githubRepoId, prNumber],
+  )
+
+  return mapPrRawSnapshots(result.rows)
+}
+
+function mapPrRawSnapshots(rows: PrRawSnapshotRow[]): Map<PrRawDataType, PrRawSnapshot> {
   const snapshots = new Map<PrRawDataType, PrRawSnapshot>()
-  for (const row of result.rows) {
-    snapshots.set(row.data_type as PrRawDataType, {
+  for (const row of rows) {
+    snapshots.set(row.data_type, {
       id: row.id,
       owner: row.owner,
       repo: row.repo,

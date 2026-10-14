@@ -1,6 +1,6 @@
 import type { RestEndpointMethodTypes } from '@octokit/rest'
 import {
-  getAllLatestPrRawSnapshots,
+  getAllLatestPrRawSnapshotsByRepositoryId,
   getLatestWorkflowJobsRawSnapshot,
   savePrRawSnapshotsBatch,
   saveWorkflowJobsRawSnapshot,
@@ -24,6 +24,8 @@ export type SnapshotEvidenceStatus =
 
 export type SnapshotEvidenceSource = 'snapshot' | 'github' | 'mixed'
 export type SnapshotRetrievalStopReason = 'rate_limit' | 'request_limit' | 'not_found' | 'error'
+
+const WORKFLOW_JOBS_SNAPSHOT_MAX_AGE_MS = 5 * 60 * 1000
 
 export interface SnapshotRequestBudget {
   limit: number
@@ -127,6 +129,10 @@ function snapshotDate(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
 }
 
+function snapshotContainsAttempt(jobs: NonNullable<WorkflowJobsSnapshotEvidence['jobs']>, runAttempt: number): boolean {
+  return jobs.some((job) => job.run_attempt === runAttempt)
+}
+
 function sourceFor(cached: boolean, fetched: boolean): SnapshotEvidenceSource | null {
   if (cached && fetched) return 'mixed'
   if (fetched) return 'github'
@@ -189,15 +195,32 @@ function stopMessage(stopReason: SnapshotRetrievalStopReason): string {
   return 'GitHub failed before complete evidence retrieval'
 }
 
+function repositoryIdentityMismatch(
+  number: number,
+  githubRepoId: number | string,
+  actualRepoId: number,
+): PullRequestSnapshotEvidence {
+  return {
+    status: 'error',
+    source: null,
+    stoppedBy: 'error',
+    error: `Pull request ${number} belongs to GitHub repository ${actualRepoId}, not ${githubRepoId}`,
+    fetchedAt: new Date().toISOString(),
+    pullRequest: null,
+    reviews: null,
+  }
+}
+
 export async function getOrFetchPullRequestSnapshotEvidence(
   owner: string,
   repo: string,
+  githubRepoId: number | string,
   number: number,
   requestBudget: SnapshotRequestBudget,
 ): Promise<PullRequestSnapshotEvidence> {
-  let snapshots: Awaited<ReturnType<typeof getAllLatestPrRawSnapshots>>
+  let snapshots: Awaited<ReturnType<typeof getAllLatestPrRawSnapshotsByRepositoryId>>
   try {
-    snapshots = await getAllLatestPrRawSnapshots(owner, repo, number)
+    snapshots = await getAllLatestPrRawSnapshotsByRepositoryId(githubRepoId, number)
   } catch (error) {
     const message = errorMessage(error)
     logger.error('Could not read repository diagnostic pull request snapshots', {
@@ -229,6 +252,18 @@ export async function getOrFetchPullRequestSnapshotEvidence(
   let persistenceError: string | null = null
   const now = new Date().toISOString()
 
+  if (pullRequest && String(pullRequest.base.repo.id) !== String(githubRepoId)) {
+    const evidence = repositoryIdentityMismatch(number, githubRepoId, pullRequest.base.repo.id)
+    logger.warn('Refusing repository diagnostic pull request from a different GitHub repository', {
+      owner,
+      repo,
+      pull_request_number: number,
+      expected_github_repo_id: String(githubRepoId),
+      actual_github_repo_id: String(pullRequest.base.repo.id),
+    })
+    return evidence
+  }
+
   if (pullRequest === null) {
     if (requestBudget.attempted >= requestBudget.limit || rateLimitReached()) {
       const stopReason = requestBudget.attempted >= requestBudget.limit ? 'request_limit' : 'rate_limit'
@@ -246,6 +281,16 @@ export async function getOrFetchPullRequestSnapshotEvidence(
       requestBudget.attempted++
       const response = await getGitHubClient().pulls.get({ owner, repo, pull_number: number })
       apiVersion = captureApiVersionMetadata(response.headers ?? {}, apiVersion)
+      if (String(response.data.base.repo.id) !== String(githubRepoId)) {
+        logger.warn('Refusing repository diagnostic pull request from a different GitHub repository', {
+          owner,
+          repo,
+          pull_request_number: number,
+          expected_github_repo_id: String(githubRepoId),
+          actual_github_repo_id: String(response.data.base.repo.id),
+        })
+        return repositoryIdentityMismatch(number, githubRepoId, response.data.base.repo.id)
+      }
       pullRequest = response.data
       fetchedFromGitHub = true
       try {
@@ -295,6 +340,7 @@ export async function getOrFetchPullRequestSnapshotEvidence(
         apiVersion = captureApiVersionMetadata(headers, apiVersion)
       },
     )
+    if (reviewResult.pagesSucceeded > 0) fetchedFromGitHub = true
     if (reviewResult.stopReason === null) {
       reviews = reviewResult.items
       fetchedFromGitHub = true
@@ -334,7 +380,12 @@ export async function getOrFetchPullRequestSnapshotEvidence(
         source: sourceFor(hasCachedPullRequest || hasCachedReviews, fetchedFromGitHub),
         stoppedBy: reviewResult.stopReason,
         error: reviewResult.error ?? stopMessage(reviewResult.stopReason),
-        fetchedAt: prSnapshot ? snapshotDate(prSnapshot.fetchedAt) : now,
+        fetchedAt:
+          reviewResult.pagesSucceeded > 0 || fetchedFromGitHub
+            ? now
+            : prSnapshot
+              ? snapshotDate(prSnapshot.fetchedAt)
+              : now,
         pullRequest,
         reviews: reviewResult.pagesSucceeded === 0 ? [] : reviewResult.items,
       }
@@ -394,13 +445,46 @@ export async function getOrFetchWorkflowJobsSnapshotEvidence(
     }
   }
 
-  if (reuseSnapshot && isWorkflowJobs(snapshot?.data)) {
+  const snapshotAgeMs = snapshot ? Date.now() - new Date(snapshot.fetchedAt).getTime() : Number.POSITIVE_INFINITY
+  const workflowJobs = isWorkflowJobs(snapshot?.data) ? snapshot.data : null
+  let canReuseSnapshot =
+    reuseSnapshot && snapshotAgeMs >= 0 && snapshotAgeMs < WORKFLOW_JOBS_SNAPSHOT_MAX_AGE_MS && workflowJobs !== null
+  if (canReuseSnapshot && workflowJobs !== null && snapshot && attemptNumber === null) {
+    if (requestBudget.attempted >= requestBudget.limit || rateLimitReached()) {
+      canReuseSnapshot = false
+    } else {
+      requestBudget.attempted++
+      try {
+        const currentRun = await getGitHubClient().actions.getWorkflowRun({
+          owner,
+          repo,
+          run_id: runId,
+        })
+        canReuseSnapshot =
+          currentRun.data.status === 'completed' &&
+          String(currentRun.data.repository?.id) === String(githubRepoId) &&
+          typeof currentRun.data.run_attempt === 'number' &&
+          Number.isSafeInteger(currentRun.data.run_attempt) &&
+          currentRun.data.run_attempt > 0 &&
+          snapshotContainsAttempt(workflowJobs, currentRun.data.run_attempt)
+      } catch (error) {
+        logger.warn('Could not validate repository diagnostic workflow run before snapshot reuse', {
+          owner,
+          repo,
+          workflow_run_id: runId,
+          error: errorMessage(error),
+        })
+        canReuseSnapshot = false
+      }
+    }
+  }
+  if (canReuseSnapshot && workflowJobs !== null && snapshot) {
     return {
       status: 'available',
       source: 'snapshot',
       error: null,
       fetchedAt: snapshotDate(snapshot.fetchedAt),
-      jobs: snapshot.data,
+      jobs: workflowJobs,
     }
   }
 
@@ -448,6 +532,7 @@ export async function getOrFetchWorkflowJobsSnapshotEvidence(
     })
     return {
       ...base,
+      source: jobResult.pagesSucceeded > 0 ? 'github' : null,
       status: jobResult.pagesSucceeded > 0 ? 'partial' : failureStatus(jobResult.stopReason),
       stoppedBy: jobResult.stopReason,
       error: jobResult.error ?? (jobResult.pagesSucceeded === 0 ? null : stopMessage(jobResult.stopReason)),

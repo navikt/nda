@@ -7,7 +7,8 @@ const {
   mockListReviews,
   mockListJobs,
   mockListJobsForAttempt,
-  mockGetPrRawSnapshots,
+  mockGetWorkflowRun,
+  mockGetPrRawSnapshotsByRepoId,
   mockSavePrRawSnapshots,
   mockGetWorkflowJobsSnapshot,
   mockSaveWorkflowJobsSnapshot,
@@ -18,7 +19,8 @@ const {
   mockListReviews: vi.fn(),
   mockListJobs: vi.fn(),
   mockListJobsForAttempt: vi.fn(),
-  mockGetPrRawSnapshots: vi.fn(),
+  mockGetWorkflowRun: vi.fn(),
+  mockGetPrRawSnapshotsByRepoId: vi.fn(),
   mockSavePrRawSnapshots: vi.fn(),
   mockGetWorkflowJobsSnapshot: vi.fn(),
   mockSaveWorkflowJobsSnapshot: vi.fn(),
@@ -32,7 +34,7 @@ vi.mock('~/lib/github/client.server', () => ({
 }))
 
 vi.mock('~/db/github-data.server', () => ({
-  getAllLatestPrRawSnapshots: mockGetPrRawSnapshots,
+  getAllLatestPrRawSnapshotsByRepositoryId: mockGetPrRawSnapshotsByRepoId,
   savePrRawSnapshotsBatch: mockSavePrRawSnapshots,
   getLatestWorkflowJobsRawSnapshot: mockGetWorkflowJobsSnapshot,
   saveWorkflowJobsRawSnapshot: mockSaveWorkflowJobsSnapshot,
@@ -139,10 +141,14 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     vi.clearAllMocks()
     mockGetRateLimitRemaining.mockReturnValue(null)
     mockGetRateLimitError.mockReturnValue(null)
-    mockGetPrRawSnapshots.mockResolvedValue(new Map())
+    mockGetPrRawSnapshotsByRepoId.mockResolvedValue(new Map())
     mockSavePrRawSnapshots.mockResolvedValue([1])
     mockGetWorkflowJobsSnapshot.mockResolvedValue(null)
     mockSaveWorkflowJobsSnapshot.mockResolvedValue(1)
+    mockGetWorkflowRun.mockResolvedValue({
+      data: { status: 'completed', run_attempt: 1, repository: { id: 67890 } },
+      headers: {},
+    })
     mockListReviews.mockResolvedValue({
       data: [
         {
@@ -220,6 +226,7 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
         listReviews: mockListReviews,
       },
       actions: {
+        getWorkflowRun: mockGetWorkflowRun,
         listJobsForWorkflowRun: mockListJobs,
         listJobsForWorkflowRunAttempt: mockListJobsForAttempt,
       },
@@ -276,6 +283,7 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
       }),
     )
     expect(mockSavePrRawSnapshots).toHaveBeenCalled()
+    expect(mockGetPrRawSnapshotsByRepoId).toHaveBeenCalledWith('67890', 100)
     expect(mockSaveWorkflowJobsSnapshot).toHaveBeenCalledWith(
       'navikt',
       'glad-fjord',
@@ -288,10 +296,10 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
   })
 
   it('reuses PR and workflow-job snapshots without making GitHub requests', async () => {
-    const fetchedAt = new Date('2026-10-14T10:00:00Z')
+    const fetchedAt = new Date()
     const input = makeInput()
     input.workflowRunSnapshots[0].data = { status: 'completed' }
-    mockGetPrRawSnapshots.mockResolvedValue(
+    mockGetPrRawSnapshotsByRepoId.mockResolvedValue(
       new Map([
         [
           'pr',
@@ -350,7 +358,7 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     const result = await fetchRepositoryDiagnosticGitHubEvidence(input)
 
     expect(result.status).toBe('complete')
-    expect(result.requestsAttempted).toBe(0)
+    expect(result.requestsAttempted).toBe(1)
     expect(result.pullRequests[0]).toMatchObject({
       source: 'snapshot',
       fetchedAt: fetchedAt.toISOString(),
@@ -362,7 +370,8 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
       fetchedAt: fetchedAt.toISOString(),
       jobs: [{ name: 'cached deploy' }],
     })
-    expect(mockGetGitHubClient).not.toHaveBeenCalled()
+    expect(mockGetWorkflowRun).toHaveBeenCalledWith({ owner: 'navikt', repo: 'glad-fjord', run_id: 12345 })
+    expect(mockListJobs).not.toHaveBeenCalled()
     expect(mockSavePrRawSnapshots).not.toHaveBeenCalled()
     expect(mockSaveWorkflowJobsSnapshot).not.toHaveBeenCalled()
   })
@@ -373,7 +382,7 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     input.verificationRuns = []
     input.prSnapshots = []
     input.workflowRunSnapshots = []
-    mockGetPrRawSnapshots.mockResolvedValue(
+    mockGetPrRawSnapshotsByRepoId.mockResolvedValue(
       new Map([
         [
           'pr',
@@ -411,6 +420,39 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     ])
   })
 
+  it('rejects live PR metadata from a different repository before fetching reviews or saving snapshots', async () => {
+    const input = makeInput()
+    input.deployments = [makeDeployment(10, 82)]
+    input.verificationRuns = []
+    input.prSnapshots = []
+    input.workflowRunSnapshots = []
+    const client = mockGetGitHubClient()
+    client.pulls.get.mockResolvedValueOnce({
+      data: {
+        html_url: 'https://github.com/navikt/reused-name/pull/82',
+        title: 'Different repository PR',
+        state: 'closed',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+        head: { sha: 'b'.repeat(40) },
+        base: { sha: 'c'.repeat(40), repo: { id: 99999 } },
+      },
+      headers: {},
+    })
+
+    const result = await fetchRepositoryDiagnosticGitHubEvidence(input)
+
+    expect(result.pullRequests[0]).toMatchObject({
+      status: 'error',
+      source: null,
+      error: 'Pull request 82 belongs to GitHub repository 99999, not 67890',
+      pullRequest: null,
+      reviews: null,
+    })
+    expect(client.pulls.listReviews).not.toHaveBeenCalled()
+    expect(mockSavePrRawSnapshots).not.toHaveBeenCalled()
+  })
+
   it('refreshes workflow jobs while the run is not known to be complete', async () => {
     const input = makeInput()
     input.deployments = [
@@ -431,6 +473,103 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
 
     expect(result.workflowRuns[0]).toMatchObject({ source: 'github', status: 'available' })
     expect(result.workflowRuns[0].jobs?.[0]?.name).toBe('deploy (prod)')
+    expect(mockListJobs).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes completed workflow jobs when the cached snapshot is older than five minutes', async () => {
+    const input = makeInput()
+    input.deployments = [
+      {
+        ...makeDeployment(10, null),
+        trigger_url: 'https://github.com/navikt/glad-fjord/actions/runs/12345',
+      },
+    ]
+    input.verificationRuns = []
+    input.prSnapshots = []
+    input.workflowRunSnapshots[0].data = { status: 'completed' }
+    mockGetWorkflowJobsSnapshot.mockResolvedValue({
+      fetchedAt: new Date(Date.now() - 6 * 60 * 1000),
+      data: [{ id: 1, name: 'old job', status: 'completed', steps: [] }],
+    })
+
+    const result = await fetchRepositoryDiagnosticGitHubEvidence(input)
+
+    expect(result.workflowRuns[0]).toMatchObject({ source: 'github', status: 'available' })
+    expect(result.workflowRuns[0].jobs?.[0]?.name).toBe('deploy (prod)')
+    expect(mockListJobs).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes a recent all-attempt snapshot when the current workflow run is active', async () => {
+    const input = makeInput()
+    input.deployments = [
+      {
+        ...makeDeployment(10, null),
+        trigger_url: 'https://github.com/navikt/glad-fjord/actions/runs/12345',
+      },
+    ]
+    input.verificationRuns = []
+    input.prSnapshots = []
+    input.workflowRunSnapshots[0].data = { status: 'completed' }
+    mockGetWorkflowJobsSnapshot.mockResolvedValue({
+      fetchedAt: new Date(),
+      data: [{ id: 1, name: 'old job', run_attempt: 1, status: 'completed', steps: [] }],
+    })
+    mockGetWorkflowRun.mockResolvedValue({
+      data: { status: 'in_progress', run_attempt: 2, repository: { id: 67890 } },
+      headers: {},
+    })
+    mockListJobs.mockResolvedValue({
+      data: {
+        total_count: 1,
+        jobs: [{ id: 2, name: 'new attempt job', run_attempt: 2, status: 'in_progress', steps: [] }],
+      },
+    })
+
+    const result = await fetchRepositoryDiagnosticGitHubEvidence(input)
+
+    expect(result.workflowRuns[0]).toMatchObject({
+      source: 'github',
+      status: 'available',
+      jobs: [{ id: 2, name: 'new attempt job', runAttempt: 2 }],
+    })
+    expect(result.requestsAttempted).toBe(2)
+    expect(mockListJobs).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes a completed run snapshot when GitHub reports a newer attempt', async () => {
+    const input = makeInput()
+    input.deployments = [
+      {
+        ...makeDeployment(10, null),
+        trigger_url: 'https://github.com/navikt/glad-fjord/actions/runs/12345',
+      },
+    ]
+    input.verificationRuns = []
+    input.prSnapshots = []
+    input.workflowRunSnapshots[0].data = { status: 'completed' }
+    mockGetWorkflowJobsSnapshot.mockResolvedValue({
+      fetchedAt: new Date(),
+      data: [{ id: 1, name: 'old attempt job', run_attempt: 1, status: 'completed', steps: [] }],
+    })
+    mockGetWorkflowRun.mockResolvedValue({
+      data: { status: 'completed', run_attempt: 2, repository: { id: 67890 } },
+      headers: {},
+    })
+    mockListJobs.mockResolvedValue({
+      data: {
+        total_count: 1,
+        jobs: [{ id: 2, name: 'latest attempt job', run_attempt: 2, status: 'completed', steps: [] }],
+      },
+    })
+
+    const result = await fetchRepositoryDiagnosticGitHubEvidence(input)
+
+    expect(result.workflowRuns[0]).toMatchObject({
+      source: 'github',
+      status: 'available',
+      jobs: [{ id: 2, name: 'latest attempt job', runAttempt: 2 }],
+    })
+    expect(result.requestsAttempted).toBe(2)
     expect(mockListJobs).toHaveBeenCalledTimes(1)
   })
 
@@ -787,6 +926,7 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     expect(result.status).toBe('partial')
     expect(result.workflowRuns[0]).toMatchObject({
       status: 'partial',
+      source: 'github',
       stoppedBy: 'error',
       error: 'Internal Server Error',
     })
@@ -799,6 +939,29 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     input.verificationRuns = []
     input.prSnapshots = []
     input.workflowRunSnapshots = []
+    mockGetPrRawSnapshotsByRepoId.mockResolvedValue(
+      new Map([
+        [
+          'pr',
+          {
+            fetchedAt: new Date('2026-10-14T10:00:00Z'),
+            data: {
+              html_url: 'https://github.com/navikt/glad-fjord/pull/82',
+              title: 'Cached PR 82',
+              state: 'closed',
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-02T00:00:00Z',
+              closed_at: '2026-01-02T00:00:00Z',
+              merged_at: '2026-01-02T00:00:00Z',
+              merge_commit_sha: 'a'.repeat(40),
+              merged_by: { login: 'reviewer' },
+              head: { sha: 'b'.repeat(40) },
+              base: { sha: 'c'.repeat(40), repo: { id: 67890 } },
+            },
+          },
+        ],
+      ]),
+    )
     mockListReviews.mockImplementation(async ({ page }: { page: number }) => {
       if (page === 1) {
         return {
@@ -821,10 +984,12 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     expect(result.pullRequests[0]).toMatchObject({
       number: 82,
       status: 'partial',
+      source: 'mixed',
       stoppedBy: 'error',
       error: 'Internal Server Error',
     })
     expect(result.pullRequests[0].reviews).toHaveLength(100)
+    expect(result.pullRequests[0].fetchedAt).not.toBe('2026-10-14T10:00:00.000Z')
   })
 
   it('marks request-limited jobs partial only when an earlier page was retrieved', async () => {
