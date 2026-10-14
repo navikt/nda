@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockRequireUser, mockResolveRepositoryFromParams, mockResolveRepositoryAdminAccess, mockListExportRows } =
+const { mockRequireUser, mockResolveRepositoryFromParams, mockResolveRepositoryAdminAccess, mockGetExportData } =
   vi.hoisted(() => ({
     mockRequireUser: vi.fn(),
     mockResolveRepositoryFromParams: vi.fn(),
     mockResolveRepositoryAdminAccess: vi.fn(),
-    mockListExportRows: vi.fn(),
+    mockGetExportData: vi.fn(),
   }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -21,14 +21,7 @@ vi.mock('~/lib/authorization.server', () => ({
 }))
 
 vi.mock('~/db/repository-code-delivery-overview.server', () => ({
-  getRepositoryHistoryReadiness: vi.fn().mockResolvedValue({
-    applications: [],
-    repositoryDeploymentCount: 0,
-    repositoryDeploymentsMissingShaCount: 0,
-    repositoryDeploymentsWithoutKnownAppLinkCount: 0,
-  }),
-  listRepositoryCodeDeliveryAncestryEvidence: vi.fn().mockResolvedValue([]),
-  listRepositoryCodeDeliveryExportRows: mockListExportRows,
+  getRepositoryCodeDeliveryExportData: mockGetExportData,
 }))
 
 import { loader } from './repository.$owner.$repo.admin.code-deliveries.export'
@@ -53,7 +46,17 @@ describe('repository code delivery export loader', () => {
       audit_start_year: 2026,
     })
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true })
-    mockListExportRows.mockResolvedValue([])
+    mockGetExportData.mockResolvedValue({
+      historyReadiness: {
+        applications: [],
+        repositoryDeploymentCount: 0,
+        repositoryDeploymentsMissingShaCount: 0,
+        repositoryDeploymentsWithoutKnownAppLinkCount: 0,
+      },
+      deployments: [],
+      deliveries: [],
+      ancestryEvidence: [],
+    })
   })
 
   it('returns a JSON attachment for the authorized repository', async () => {
@@ -72,9 +75,10 @@ describe('repository code delivery export loader', () => {
       schemaVersion: 1,
       repository: { id: 5 },
       deployments: [],
+      deliveries: [],
       ancestryEvidence: { matchingCompareSnapshots: [] },
     })
-    expect(mockListExportRows).toHaveBeenCalledWith(5)
+    expect(mockGetExportData).toHaveBeenCalledWith(5)
     expect(mockResolveRepositoryFromParams).toHaveBeenCalledWith(
       'navikt',
       'glad-fjord',
@@ -83,7 +87,7 @@ describe('repository code delivery export loader', () => {
     )
   })
 
-  it('rejects unauthorized users without loading export rows', async () => {
+  it('rejects unauthorized users without loading export data', async () => {
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: false })
 
     await expect(
@@ -93,6 +97,6 @@ describe('repository code delivery export loader', () => {
       } as never),
     ).rejects.toMatchObject({ status: 403 })
 
-    expect(mockListExportRows).not.toHaveBeenCalled()
+    expect(mockGetExportData).not.toHaveBeenCalled()
   })
 })

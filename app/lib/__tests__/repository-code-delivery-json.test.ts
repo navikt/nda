@@ -43,6 +43,16 @@ describe('createRepositoryCodeDeliveryJson', () => {
             default_branch: 'main',
           },
         ],
+        deliveries: [
+          {
+            id: 9,
+            base_sha: 'b'.repeat(40),
+            head_sha: 'b'.repeat(40),
+            registered_at: new Date('2026-10-14T09:00:00.000Z'),
+            first_deployed_at: null,
+            deployment_count: 0,
+          },
+        ],
         ancestryEvidence: {
           matchingCompareSnapshots: [
             {
@@ -79,6 +89,8 @@ describe('createRepositoryCodeDeliveryJson', () => {
     expect(parsed.exportedAt).toBe('2026-10-14T11:00:00.000Z')
     expect(parsed.repository.githubRepositoryId).toBe('12345')
     expect(parsed.deployments[0].deployed_at).toBe('2026-10-14T10:00:00.000Z')
+    expect(parsed.deliveries[0].first_deployed_at).toBeNull()
+    expect(parsed.deliveries[0].deployment_count).toBe(0)
     expect(parsed.ancestryEvidence.matchingCompareSnapshots[0].compare_status).toBe('behind')
     expect(parsed.ancestryEvidence.matchingCompareSnapshots[0].compare_commit_shas).toEqual([
       'c'.repeat(40),
@@ -108,11 +120,13 @@ describe('createRepositoryCodeDeliveryJson', () => {
           repositoryDeploymentsWithoutKnownAppLinkCount: 0,
         },
         deployments: [],
+        deliveries: [],
         ancestryEvidence: { matchingCompareSnapshots: [], linkageNote: 'No matching evidence.' },
       }),
     )
 
     expect(parsed.deployments).toEqual([])
+    expect(parsed.deliveries).toEqual([])
     expect(parsed.ancestryEvidence.matchingCompareSnapshots).toEqual([])
   })
 })

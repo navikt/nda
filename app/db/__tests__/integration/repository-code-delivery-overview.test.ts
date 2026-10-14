@@ -5,6 +5,7 @@ import {
   linkDeploymentToRepositoryCodeDelivery,
 } from '../../repository-code-deliveries.server'
 import {
+  getRepositoryCodeDeliveryExportData,
   getRepositoryCodeDeliveryOverview,
   getRepositoryHistoryReadiness,
   listOpenUnresolvedCodeDeployments,
@@ -253,6 +254,35 @@ describe('repository code delivery overview', () => {
       unresolved_resolved_at: null,
     })
     expect(rows[1].deployed_at).toEqual(new Date('2026-10-14T10:00:00Z'))
+  })
+
+  it('includes registered deliveries without linked deployments in the consistent export snapshot', async () => {
+    const repositoryId = await createRepository('1012')
+    const deployedDelivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_1 })
+    const unlinkedDelivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_2 })
+    const deployment = await createDeployment('delivery-only-export-app', repositoryId, SHA_1)
+    await linkDeploymentToRepositoryCodeDelivery(deployment, deployedDelivery.id)
+
+    const exportData = await getRepositoryCodeDeliveryExportData(repositoryId)
+
+    expect(exportData.deliveries).toHaveLength(2)
+    expect(exportData.deliveries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: deployedDelivery.id,
+          base_sha: SHA_1,
+          head_sha: SHA_1,
+          deployment_count: 1,
+        }),
+        expect.objectContaining({
+          id: unlinkedDelivery.id,
+          base_sha: SHA_1,
+          head_sha: SHA_2,
+          first_deployed_at: null,
+          deployment_count: 0,
+        }),
+      ]),
+    )
   })
 
   it('includes matching compare snapshots as candidate ancestry evidence without asserting retry linkage', async () => {

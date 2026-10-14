@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { pool, withTransaction } from './connection.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
 
@@ -50,6 +51,22 @@ export interface RepositoryCodeDeliveryExportRow {
   default_branch: string | null
 }
 
+export interface RepositoryCodeDeliveryExportDelivery {
+  id: number
+  base_sha: string
+  head_sha: string
+  registered_at: Date
+  first_deployed_at: Date | null
+  deployment_count: number
+}
+
+export interface RepositoryCodeDeliveryExportData {
+  deployments: RepositoryCodeDeliveryExportRow[]
+  deliveries: RepositoryCodeDeliveryExportDelivery[]
+  ancestryEvidence: RepositoryCodeDeliveryAncestryEvidence[]
+  historyReadiness: RepositoryHistoryReadiness
+}
+
 export interface RepositoryCodeDeliveryAncestryEvidence {
   unresolved_deployment_id: number
   unresolved_deployed_sha: string
@@ -96,8 +113,9 @@ export type RepositoryCodeDeliverySortDirection = 'ascending' | 'descending'
 
 export async function listRepositoryCodeDeliveryExportRows(
   repositoryId: number,
+  executor: Pick<PoolClient, 'query'> = pool,
 ): Promise<RepositoryCodeDeliveryExportRow[]> {
-  const { rows } = await pool.query<RepositoryCodeDeliveryExportRow>(
+  const { rows } = await executor.query<RepositoryCodeDeliveryExportRow>(
     `SELECT d.id AS deployment_id, d.nais_deployment_id, d.created_at AS deployed_at,
             d.team_slug, d.app_name, d.environment_name, d.commit_sha AS deployed_sha, d.branch_name,
             c.id AS delivery_id, c.base_sha AS delivery_base_sha, c.head_sha AS delivery_head_sha,
@@ -121,10 +139,31 @@ export async function listRepositoryCodeDeliveryExportRows(
   return rows
 }
 
+async function listRepositoryCodeDeliveryExportDeliveries(
+  repositoryId: number,
+  executor: Pick<PoolClient, 'query'> = pool,
+): Promise<RepositoryCodeDeliveryExportDelivery[]> {
+  const { rows } = await executor.query<RepositoryCodeDeliveryExportDelivery>(
+    `SELECT c.id, c.base_sha, c.head_sha, c.created_at AS registered_at,
+            deployment_stats.first_deployed_at, deployment_stats.deployment_count
+     FROM repository_code_deliveries c
+     LEFT JOIN LATERAL (
+       SELECT min(d.created_at) AS first_deployed_at, count(d.id)::int AS deployment_count
+       FROM deployments d
+       WHERE d.repository_code_delivery_id = c.id
+     ) deployment_stats ON true
+     WHERE c.repository_id = $1
+     ORDER BY c.created_at ASC, c.id ASC`,
+    [repositoryId],
+  )
+  return rows
+}
+
 export async function listRepositoryCodeDeliveryAncestryEvidence(
   repositoryId: number,
+  executor: Pick<PoolClient, 'query'> = pool,
 ): Promise<RepositoryCodeDeliveryAncestryEvidence[]> {
-  const { rows } = await pool.query<RepositoryCodeDeliveryAncestryEvidence>(
+  const { rows } = await executor.query<RepositoryCodeDeliveryAncestryEvidence>(
     `SELECT d.id AS unresolved_deployment_id, d.commit_sha AS unresolved_deployed_sha,
             d.created_at AS unresolved_deployed_at, u.reason AS unresolved_reason,
             u.created_at AS unresolved_first_seen_at, u.updated_at AS unresolved_last_attempt_at,
@@ -159,11 +198,34 @@ export async function listRepositoryCodeDeliveryAncestryEvidence(
   return rows
 }
 
+export async function getRepositoryCodeDeliveryExportData(
+  repositoryId: number,
+): Promise<RepositoryCodeDeliveryExportData> {
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    const [deployments, deliveries, ancestryEvidence, historyReadiness] = await Promise.all([
+      listRepositoryCodeDeliveryExportRows(repositoryId, client),
+      listRepositoryCodeDeliveryExportDeliveries(repositoryId, client),
+      listRepositoryCodeDeliveryAncestryEvidence(repositoryId, client),
+      getRepositoryHistoryReadinessFromClient(repositoryId, client),
+    ])
+    return { deployments, deliveries, ancestryEvidence, historyReadiness }
+  })
+}
+
 export async function getRepositoryHistoryReadiness(repositoryId: number): Promise<RepositoryHistoryReadiness> {
   return withTransaction(async (client) => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-    const applications = await client.query<RepositoryHistoryApplicationReadiness>(
-      `WITH repository_apps AS (
+    return getRepositoryHistoryReadinessFromClient(repositoryId, client)
+  })
+}
+
+async function getRepositoryHistoryReadinessFromClient(
+  repositoryId: number,
+  client: Pick<PoolClient, 'query'>,
+): Promise<RepositoryHistoryReadiness> {
+  const applications = await client.query<RepositoryHistoryApplicationReadiness>(
+    `WITH repository_apps AS (
          SELECT DISTINCT ar.monitored_app_id
          FROM application_repositories ar
          JOIN repositories r ON r.github_repo_id = ar.github_repo_id
@@ -184,14 +246,14 @@ export async function getRepositoryHistoryReadiness(repositoryId: number): Promi
        LEFT JOIN deployments d ON d.monitored_app_id = ma.id
        GROUP BY ma.id
        ORDER BY ma.is_active DESC, ma.environment_name, ma.team_slug, ma.app_name`,
-      [repositoryId],
-    )
-    const repositoryDeployments = await client.query<{
-      deployment_count: number
-      deployments_missing_sha: number
-      deployments_without_known_app_link: number
-    }>(
-      `SELECT count(*)::int AS deployment_count,
+    [repositoryId],
+  )
+  const repositoryDeployments = await client.query<{
+    deployment_count: number
+    deployments_missing_sha: number
+    deployments_without_known_app_link: number
+  }>(
+    `SELECT count(*)::int AS deployment_count,
               count(*) FILTER (
                 WHERE d.commit_sha IS NULL OR d.commit_sha !~ '^[0-9a-fA-F]{40}$'
               )::int AS deployments_missing_sha,
@@ -207,16 +269,15 @@ export async function getRepositoryHistoryReadiness(repositoryId: number): Promi
        FROM deployments d
        JOIN repositories r ON r.id = d.repository_id
        WHERE r.id = $1`,
-      [repositoryId],
-    )
+    [repositoryId],
+  )
 
-    return {
-      applications: applications.rows,
-      repositoryDeploymentCount: repositoryDeployments.rows[0].deployment_count,
-      repositoryDeploymentsMissingShaCount: repositoryDeployments.rows[0].deployments_missing_sha,
-      repositoryDeploymentsWithoutKnownAppLinkCount: repositoryDeployments.rows[0].deployments_without_known_app_link,
-    }
-  })
+  return {
+    applications: applications.rows,
+    repositoryDeploymentCount: repositoryDeployments.rows[0].deployment_count,
+    repositoryDeploymentsMissingShaCount: repositoryDeployments.rows[0].deployments_missing_sha,
+    repositoryDeploymentsWithoutKnownAppLinkCount: repositoryDeployments.rows[0].deployments_without_known_app_link,
+  }
 }
 
 export interface UnresolvedCodeDeployment {

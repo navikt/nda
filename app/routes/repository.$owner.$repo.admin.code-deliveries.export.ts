@@ -1,8 +1,4 @@
-import {
-  getRepositoryHistoryReadiness,
-  listRepositoryCodeDeliveryAncestryEvidence,
-  listRepositoryCodeDeliveryExportRows,
-} from '~/db/repository-code-delivery-overview.server'
+import { getRepositoryCodeDeliveryExportData } from '~/db/repository-code-delivery-overview.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
 import { createRepositoryCodeDeliveryJson } from '~/lib/repository-code-delivery-json'
@@ -20,11 +16,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
-  const [deployments, ancestryEvidence, historyReadiness] = await Promise.all([
-    listRepositoryCodeDeliveryExportRows(repository.id),
-    listRepositoryCodeDeliveryAncestryEvidence(repository.id),
-    getRepositoryHistoryReadiness(repository.id),
-  ])
+  const { deployments, deliveries, ancestryEvidence, historyReadiness } = await getRepositoryCodeDeliveryExportData(
+    repository.id,
+  )
   const json = createRepositoryCodeDeliveryJson({
     repository: {
       id: repository.id,
@@ -37,6 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     historyReadiness,
     deployments,
+    deliveries,
     ancestryEvidence: {
       matchingCompareSnapshots: ancestryEvidence,
       linkageNote:
