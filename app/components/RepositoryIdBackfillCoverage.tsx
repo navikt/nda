@@ -24,6 +24,14 @@ interface RepositoryIdBackfillCoverageProps {
   returnToTeam: string | null
 }
 
+export function selectLatestBackfillJob(
+  job: WorkflowRunRepositoryIdBackfillJob | null,
+  polledJob: WorkflowRunRepositoryIdBackfillJob | null,
+): WorkflowRunRepositoryIdBackfillJob | null {
+  if (!polledJob) return job
+  return !job || polledJob.id >= job.id ? polledJob : job
+}
+
 function formatPercent(value: number, total: number): string {
   return total === 0 ? '–' : `${Math.round((value / total) * 100)} %`
 }
@@ -39,7 +47,7 @@ function RepositoryBackfillAction({
   const statusFetcher = useFetcher()
   const fetcherData = fetcher.data as { backfillJobStarted?: number; error?: string } | undefined
   const polledJob = statusFetcher.data as { backfillJobStatus?: WorkflowRunRepositoryIdBackfillJob | null } | undefined
-  const currentJob = job && polledJob?.backfillJobStatus?.id === job.id ? polledJob.backfillJobStatus : job
+  const currentJob = selectLatestBackfillJob(job, polledJob?.backfillJobStatus ?? null)
   const isRunning = currentJob?.status === 'running' && !currentJob.lockExpired
   const [open, setOpen] = useState(false)
   const formId = `repository-id-backfill-${repository.repositoryId}`
@@ -66,13 +74,14 @@ function RepositoryBackfillAction({
   useEffect(() => {
     if (
       job?.status !== 'running' ||
-      currentJob?.status === 'running' ||
+      !currentJob ||
+      currentJob.status === 'running' ||
       currentJob?.lockExpired ||
-      refreshedJobId.current === job.id
+      refreshedJobId.current === currentJob.id
     ) {
       return
     }
-    refreshedJobId.current = job.id
+    refreshedJobId.current = currentJob.id
     revalidator.revalidate()
   }, [currentJob, job, revalidator])
 

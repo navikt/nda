@@ -55,9 +55,9 @@ export async function queueRepositoryIdBackfill(
 
 export async function processRepositoryIdBackfillJobAsync(jobId: number, repositoryId: number): Promise<void> {
   await runWithJobContext(jobId, 'backfill_github_repo_ids', { repositoryId }, false, async () => {
-    if (await isSyncJobCancelled(jobId)) return
-
     try {
+      if (await isSyncJobCancelled(jobId)) return
+
       const updated = await backfillEligibleWorkflowRunRepositoryIds(repositoryId)
       const job = await getSyncJobById(jobId)
       if (job?.status !== 'running') return

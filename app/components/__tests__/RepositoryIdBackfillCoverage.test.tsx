@@ -1,7 +1,47 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import { RepositoryIdBackfillCoverage } from '../RepositoryIdBackfillCoverage'
+import { RepositoryIdBackfillCoverage, selectLatestBackfillJob } from '../RepositoryIdBackfillCoverage'
+
+describe('selectLatestBackfillJob', () => {
+  it('follows a replacement job returned by status polling', () => {
+    const currentJob = {
+      id: 91,
+      status: 'running' as const,
+      result: null,
+      error: null,
+      lockExpired: true,
+    }
+    const replacementJob = {
+      id: 92,
+      status: 'running' as const,
+      result: null,
+      error: null,
+      lockExpired: false,
+    }
+
+    expect(selectLatestBackfillJob(currentJob, replacementJob)).toBe(replacementJob)
+  })
+
+  it('does not replace newer loader data with stale polling data', () => {
+    const newerJob = {
+      id: 92,
+      status: 'running' as const,
+      result: null,
+      error: null,
+      lockExpired: false,
+    }
+    const staleJob = {
+      id: 91,
+      status: 'running' as const,
+      result: null,
+      error: null,
+      lockExpired: true,
+    }
+
+    expect(selectLatestBackfillJob(newerJob, staleJob)).toBe(newerJob)
+  })
+})
 
 function renderCoverage(
   selectedTeam: string | null,

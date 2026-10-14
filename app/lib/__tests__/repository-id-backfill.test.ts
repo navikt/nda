@@ -119,6 +119,17 @@ describe('processRepositoryIdBackfillJobAsync', () => {
     expect(mockReleaseSyncLock).not.toHaveBeenCalled()
   })
 
+  it('marks a still-running job failed and rethrows when the initial cancellation check fails', async () => {
+    const error = new Error('Cancellation lookup unavailable')
+    mockIsSyncJobCancelled.mockRejectedValue(error)
+    mockGetSyncJobById.mockResolvedValue({ status: 'running' })
+
+    await expect(processRepositoryIdBackfillJobAsync(91, 216)).rejects.toBe(error)
+
+    expect(mockBackfillEligibleWorkflowRunRepositoryIds).not.toHaveBeenCalled()
+    expect(mockReleaseSyncLock).toHaveBeenCalledWith(91, 'failed', undefined, 'Cancellation lookup unavailable')
+  })
+
   it('does not release a job that reached a terminal state while the backfill ran', async () => {
     mockBackfillEligibleWorkflowRunRepositoryIds.mockResolvedValue(3)
     mockGetSyncJobById.mockResolvedValue({ status: 'cancelled' })
