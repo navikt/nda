@@ -199,19 +199,23 @@ export function RepositoryCodeDeliveriesPage({
               koblinger uten stabil ID vises ikke og må avklares separat.
             </BodyShort>
           </div>
+          <BodyShort size="small">
+            {historyReadiness.applications.filter((app) => app.initial_nais_history_synced_at !== null).length} av{' '}
+            {historyReadiness.applications.length} kjente apper har markert fullført initial Nais-historikksynk. Dette
+            bekrefter ikke alene at repositorykoblinger og Git-ancestry er komplette eller entydige.
+          </BodyShort>
+          <BodyShort size="small" textColor="subtle">
+            Hent analysegrunnlag per uavklart deployment fra listen under. Eksporten inkluderer to registrerte
+            kodeleveranser på hver side når de finnes, tilknyttede deployments og deres lagrede GitHub-bevis.
+          </BodyShort>
           <Button
             as="a"
             href={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin/code-deliveries/export?repositoryId=${repository.id}`}
             size="small"
             variant="secondary"
           >
-            Last ned diagnostikk (JSON)
+            Last ned analysegrunnlag for alle uavklarte
           </Button>
-          <BodyShort size="small">
-            {historyReadiness.applications.filter((app) => app.initial_nais_history_synced_at !== null).length} av{' '}
-            {historyReadiness.applications.length} kjente apper har markert fullført initial Nais-historikksynk. Dette
-            bekrefter ikke alene at repositorykoblinger og Git-ancestry er komplette eller entydige.
-          </BodyShort>
           <BodyShort size="small">
             {historyReadiness.repositoryDeploymentCount} deployments har stabil repository-ID;{' '}
             {historyReadiness.repositoryDeploymentsMissingShaCount} av disse mangler full commit-SHA, og{' '}
@@ -353,6 +357,7 @@ export function RepositoryCodeDeliveriesPage({
                     <Table.HeaderCell>Årsak</Table.HeaderCell>
                     <Table.HeaderCell>Første registrert</Table.HeaderCell>
                     <Table.HeaderCell>Siste forsøk</Table.HeaderCell>
+                    <Table.HeaderCell>Analysegrunnlag</Table.HeaderCell>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
@@ -383,6 +388,14 @@ export function RepositoryCodeDeliveriesPage({
                       </Table.DataCell>
                       <Table.DataCell>{formatAuditLogTimestamp(item.first_seen_at)}</Table.DataCell>
                       <Table.DataCell>{formatAuditLogTimestamp(item.last_attempt_at)}</Table.DataCell>
+                      <Table.DataCell>
+                        <AkselLink
+                          as="a"
+                          href={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin/code-deliveries/export?repositoryId=${repository.id}&deploymentId=${item.deployment_id}`}
+                        >
+                          Last ned JSON
+                        </AkselLink>
+                      </Table.DataCell>
                     </Table.Row>
                   ))}
                 </Table.Body>

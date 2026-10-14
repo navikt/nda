@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg'
+import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool, withTransaction } from './connection.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
 
@@ -38,6 +39,7 @@ export interface RepositoryCodeDeliveryExportRow {
   environment_name: string
   deployed_sha: string | null
   branch_name: string | null
+  trigger_url: string | null
   delivery_id: number | null
   delivery_base_sha: string | null
   delivery_head_sha: string | null
@@ -58,13 +60,98 @@ export interface RepositoryCodeDeliveryExportDelivery {
   registered_at: Date
   first_deployed_at: Date | null
   deployment_count: number
+  contexts: Array<{ unresolvedDeploymentId: number; relativePosition: 'before' | 'after' }>
+}
+
+export interface RepositoryVerificationRunExportRow {
+  id: number
+  deployment_id: number
+  run_at: Date
+  schema_version: number
+  pr_snapshot_ids: number[]
+  commit_snapshot_ids: number[]
+  result: unknown
+  status: string
+}
+
+export interface RepositoryConfigAuditExportRow {
+  id: number
+  setting_key: string
+  old_value: Record<string, unknown> | null
+  new_value: Record<string, unknown>
+  changed_by_nav_ident: string
+  changed_by_name: string | null
+  change_reason: string | null
+  created_at: Date
+}
+
+export interface RepositoryGitHubPrSnapshotExportRow {
+  id: number
+  owner: string
+  repo: string
+  pr_number: number
+  schema_version: number
+  fetched_at: Date
+  data_type: string
+  source: string
+  github_available: boolean
+  data: unknown
+}
+
+export interface RepositoryGitHubCommitSnapshotExportRow {
+  id: number
+  owner: string
+  repo: string
+  sha: string
+  schema_version: number
+  fetched_at: Date
+  data_type: string
+  source: string
+  github_available: boolean
+  data: unknown
+}
+
+export interface RepositoryWorkflowRunSnapshotExportRow {
+  id: number
+  run_id: string
+  github_repo_id: string
+  owner: string
+  repo: string
+  api_version: string
+  api_deprecated_at: Date | null
+  api_sunset_at: Date | null
+  fetched_at: Date
+  data: unknown
+}
+
+export interface RepositoryCodeDeliveryDiagnosticTarget {
+  unresolvedDeploymentId: number
+  unresolvedDeployedAt: Date
+  nearbyDeliveryCountPerSide: number
+  includedDeliveryIds: number[]
+  includedDeploymentIds: number[]
 }
 
 export interface RepositoryCodeDeliveryExportData {
+  repositoryMetadata: {
+    github_repo_id: string
+    github_owner: string
+    github_repo_name: string
+    default_branch: string | null
+    code_delivery_tracking_since: Date | null
+    audit_start_year: number | null
+  }
   deployments: RepositoryCodeDeliveryExportRow[]
   deliveries: RepositoryCodeDeliveryExportDelivery[]
   ancestryEvidence: RepositoryCodeDeliveryAncestryEvidence[]
   historyReadiness: RepositoryHistoryReadiness
+  verificationRuns: RepositoryVerificationRunExportRow[]
+  repositoryConfigAuditLog: RepositoryConfigAuditExportRow[]
+  diagnosticTargets: RepositoryCodeDeliveryDiagnosticTarget[]
+  implicitApprovalMode: ImplicitApprovalMode
+  prSnapshots: RepositoryGitHubPrSnapshotExportRow[]
+  commitSnapshots: RepositoryGitHubCommitSnapshotExportRow[]
+  workflowRunSnapshots: RepositoryWorkflowRunSnapshotExportRow[]
 }
 
 export interface RepositoryCodeDeliveryAncestryEvidence {
@@ -114,10 +201,11 @@ export type RepositoryCodeDeliverySortDirection = 'ascending' | 'descending'
 export async function listRepositoryCodeDeliveryExportRows(
   repositoryId: number,
   executor: Pick<PoolClient, 'query'> = pool,
+  deploymentIds?: number[],
 ): Promise<RepositoryCodeDeliveryExportRow[]> {
   const { rows } = await executor.query<RepositoryCodeDeliveryExportRow>(
     `SELECT d.id AS deployment_id, d.nais_deployment_id, d.created_at AS deployed_at,
-            d.team_slug, d.app_name, d.environment_name, d.commit_sha AS deployed_sha, d.branch_name,
+            d.team_slug, d.app_name, d.environment_name, d.commit_sha AS deployed_sha, d.branch_name, d.trigger_url,
             c.id AS delivery_id, c.base_sha AS delivery_base_sha, c.head_sha AS delivery_head_sha,
             c.created_at AS delivery_registered_at, delivery_first.first_deployed_at AS delivery_first_deployed_at,
             u.reason AS unresolved_reason, u.created_at AS unresolved_first_seen_at,
@@ -132,29 +220,9 @@ export async function listRepositoryCodeDeliveryExportRows(
        WHERE linked.repository_code_delivery_id = c.id
      ) delivery_first ON true
      LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
-     WHERE d.repository_id = $1
+     WHERE d.repository_id = $1 AND ($2::int[] IS NULL OR d.id = ANY($2::int[]))
      ORDER BY d.created_at ASC, d.id ASC`,
-    [repositoryId],
-  )
-  return rows
-}
-
-async function listRepositoryCodeDeliveryExportDeliveries(
-  repositoryId: number,
-  executor: Pick<PoolClient, 'query'> = pool,
-): Promise<RepositoryCodeDeliveryExportDelivery[]> {
-  const { rows } = await executor.query<RepositoryCodeDeliveryExportDelivery>(
-    `SELECT c.id, c.base_sha, c.head_sha, c.created_at AS registered_at,
-            deployment_stats.first_deployed_at, deployment_stats.deployment_count
-     FROM repository_code_deliveries c
-     LEFT JOIN LATERAL (
-       SELECT min(d.created_at) AS first_deployed_at, count(d.id)::int AS deployment_count
-       FROM deployments d
-       WHERE d.repository_code_delivery_id = c.id
-     ) deployment_stats ON true
-     WHERE c.repository_id = $1
-     ORDER BY c.created_at ASC, c.id ASC`,
-    [repositoryId],
+    [repositoryId, deploymentIds ?? null],
   )
   return rows
 }
@@ -162,6 +230,9 @@ async function listRepositoryCodeDeliveryExportDeliveries(
 export async function listRepositoryCodeDeliveryAncestryEvidence(
   repositoryId: number,
   executor: Pick<PoolClient, 'query'> = pool,
+  unresolvedDeploymentIds?: number[],
+  candidateDeliveryIds?: number[],
+  candidatePairs?: Array<{ unresolvedDeploymentId: number; deliveryId: number }>,
 ): Promise<RepositoryCodeDeliveryAncestryEvidence[]> {
   const { rows } = await executor.query<RepositoryCodeDeliveryAncestryEvidence>(
     `SELECT d.id AS unresolved_deployment_id, d.commit_sha AS unresolved_deployed_sha,
@@ -192,24 +263,377 @@ export async function listRepositoryCodeDeliveryAncestryEvidence(
         OR (lower(s.base_sha) = lower(d.commit_sha) AND lower(s.head_sha) = lower(c.head_sha))
       )
      WHERE r.id = $1 AND u.reason IN ('ancestry_unknown', 'ancestry_diverged', 'ancestry_behind')
+       AND ($2::int[] IS NULL OR d.id = ANY($2::int[]))
+       AND ($3::int[] IS NULL OR c.id = ANY($3::int[]))
+       AND (
+         $4::int[] IS NULL
+         OR EXISTS (
+           SELECT 1
+           FROM unnest($4::int[], $5::int[]) AS allowed_pairs(unresolved_deployment_id, delivery_id)
+           WHERE allowed_pairs.unresolved_deployment_id = d.id
+             AND allowed_pairs.delivery_id = c.id
+         )
+       )
      ORDER BY d.created_at, d.id, s.fetched_at`,
+    [
+      repositoryId,
+      unresolvedDeploymentIds ?? null,
+      candidateDeliveryIds ?? null,
+      candidatePairs?.map((pair) => pair.unresolvedDeploymentId) ?? null,
+      candidatePairs?.map((pair) => pair.deliveryId) ?? null,
+    ],
+  )
+  return rows
+}
+
+async function listRepositoryVerificationRuns(
+  deploymentIds: number[],
+  executor: Pick<PoolClient, 'query'>,
+): Promise<RepositoryVerificationRunExportRow[]> {
+  const { rows } = await executor.query<RepositoryVerificationRunExportRow>(
+    `SELECT vr.id, vr.deployment_id, vr.run_at, vr.schema_version,
+            vr.pr_snapshot_ids, vr.commit_snapshot_ids, vr.result, vr.status
+     FROM verification_runs vr
+     JOIN deployments d ON d.id = vr.deployment_id
+     WHERE d.id = ANY($1::int[])
+     ORDER BY d.created_at ASC, d.id ASC, vr.run_at ASC, vr.id ASC`,
+    [deploymentIds],
+  )
+  return rows
+}
+
+async function listRepositoryConfigAuditLog(
+  repositoryId: number,
+  executor: Pick<PoolClient, 'query'>,
+): Promise<RepositoryConfigAuditExportRow[]> {
+  const { rows } = await executor.query<RepositoryConfigAuditExportRow>(
+    `SELECT id, setting_key, old_value, new_value, changed_by_nav_ident,
+            changed_by_name, change_reason, created_at
+     FROM repo_config_audit_log
+     WHERE repository_id = $1
+     ORDER BY created_at ASC, id ASC`,
     [repositoryId],
+  )
+  return rows
+}
+
+async function listReferencedRepositorySnapshots(
+  verificationRuns: RepositoryVerificationRunExportRow[],
+  executor: Pick<PoolClient, 'query'>,
+): Promise<{
+  prSnapshots: RepositoryGitHubPrSnapshotExportRow[]
+  commitSnapshots: RepositoryGitHubCommitSnapshotExportRow[]
+}> {
+  const prSnapshotIds = [...new Set(verificationRuns.flatMap((run) => run.pr_snapshot_ids))]
+  const commitSnapshotIds = [...new Set(verificationRuns.flatMap((run) => run.commit_snapshot_ids))]
+  const [prResult, commitResult] = await Promise.all([
+    prSnapshotIds.length > 0
+      ? executor.query<RepositoryGitHubPrSnapshotExportRow>(
+          `SELECT id, owner, repo, pr_number, schema_version, fetched_at,
+                  data_type, source, github_available, data
+           FROM github_pr_snapshots
+           WHERE id = ANY($1::int[])
+           ORDER BY id`,
+          [prSnapshotIds],
+        )
+      : Promise.resolve({ rows: [] as RepositoryGitHubPrSnapshotExportRow[] }),
+    commitSnapshotIds.length > 0
+      ? executor.query<RepositoryGitHubCommitSnapshotExportRow>(
+          `SELECT id, owner, repo, sha, schema_version, fetched_at,
+                  data_type, source, github_available, data
+           FROM github_commit_snapshots
+           WHERE id = ANY($1::int[])
+           ORDER BY id`,
+          [commitSnapshotIds],
+        )
+      : Promise.resolve({ rows: [] as RepositoryGitHubCommitSnapshotExportRow[] }),
+  ])
+  return { prSnapshots: prResult.rows, commitSnapshots: commitResult.rows }
+}
+
+async function listNearbyCodeDeliveries(
+  repositoryId: number,
+  unresolvedDeploymentId: number | undefined,
+  executor: Pick<PoolClient, 'query'>,
+): Promise<{
+  targets: Array<{ unresolved_deployment_id: number; unresolved_deployed_at: Date }>
+  deliveries: Array<
+    Omit<RepositoryCodeDeliveryExportDelivery, 'contexts'> & {
+      unresolved_deployment_id: number
+      relative_position: 'before' | 'after'
+    }
+  >
+}> {
+  const { rows } = await executor.query<
+    Omit<RepositoryCodeDeliveryExportDelivery, 'contexts'> & {
+      unresolved_deployment_id: number | null
+      unresolved_deployed_at: Date | null
+      first_deployment_id: number | null
+      relative_position: 'before' | 'after' | null
+    }
+  >(
+    `WITH targets AS (
+       SELECT d.id AS unresolved_deployment_id, d.created_at AS unresolved_deployed_at
+       FROM deployments d
+       JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
+       WHERE d.repository_id = $1 AND u.resolved_at IS NULL
+         AND ($2::int IS NULL OR d.id = $2)
+     ),
+     delivery_timeline AS (
+       SELECT c.id, c.base_sha, c.head_sha, c.created_at AS registered_at,
+              first_deployment.first_deployment_id, first_deployment.first_deployed_at,
+              count(d.id)::int AS deployment_count
+       FROM repository_code_deliveries c
+       LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id
+       LEFT JOIN LATERAL (
+         SELECT deployment.id AS first_deployment_id, deployment.created_at AS first_deployed_at
+         FROM deployments deployment
+         WHERE deployment.repository_code_delivery_id = c.id
+         ORDER BY deployment.created_at, deployment.id
+         LIMIT 1
+       ) first_deployment ON true
+       WHERE c.repository_id = $1
+       GROUP BY c.id, first_deployment.first_deployment_id, first_deployment.first_deployed_at
+     ),
+     adjacent_deliveries AS (
+       SELECT targets.unresolved_deployment_id, targets.unresolved_deployed_at, adjacent.*
+       FROM targets
+       CROSS JOIN LATERAL (
+         (SELECT delivery_timeline.*, 'before'::text AS relative_position
+          FROM delivery_timeline
+          WHERE (first_deployed_at, first_deployment_id) <=
+                (targets.unresolved_deployed_at, targets.unresolved_deployment_id)
+          ORDER BY first_deployed_at DESC, first_deployment_id DESC, id DESC
+          LIMIT 2)
+         UNION ALL
+         (SELECT delivery_timeline.*, 'after'::text AS relative_position
+          FROM delivery_timeline
+          WHERE (first_deployed_at, first_deployment_id) >
+                (targets.unresolved_deployed_at, targets.unresolved_deployment_id)
+          ORDER BY first_deployed_at ASC, first_deployment_id ASC, id ASC
+          LIMIT 2)
+       ) adjacent
+     )
+     SELECT targets.unresolved_deployment_id, targets.unresolved_deployed_at,
+            adjacent_deliveries.id, adjacent_deliveries.base_sha, adjacent_deliveries.head_sha,
+            adjacent_deliveries.registered_at, adjacent_deliveries.first_deployed_at,
+            adjacent_deliveries.first_deployment_id,
+            adjacent_deliveries.deployment_count, adjacent_deliveries.relative_position
+     FROM targets
+     LEFT JOIN adjacent_deliveries USING (unresolved_deployment_id, unresolved_deployed_at)
+     ORDER BY targets.unresolved_deployed_at, targets.unresolved_deployment_id,
+              adjacent_deliveries.first_deployed_at, adjacent_deliveries.first_deployment_id,
+              adjacent_deliveries.id`,
+    [repositoryId, unresolvedDeploymentId ?? null],
+  )
+  const targetMap = new Map<number, Date>()
+  const deliveries: Array<
+    Omit<RepositoryCodeDeliveryExportDelivery, 'contexts'> & {
+      unresolved_deployment_id: number
+      relative_position: 'before' | 'after'
+    }
+  > = []
+  for (const row of rows) {
+    if (row.unresolved_deployment_id !== null && row.unresolved_deployed_at !== null) {
+      targetMap.set(row.unresolved_deployment_id, row.unresolved_deployed_at)
+    }
+    if (row.unresolved_deployment_id !== null && row.id !== null && row.relative_position !== null) {
+      deliveries.push({
+        id: row.id,
+        base_sha: row.base_sha,
+        head_sha: row.head_sha,
+        registered_at: row.registered_at,
+        first_deployed_at: row.first_deployed_at,
+        deployment_count: row.deployment_count,
+        unresolved_deployment_id: row.unresolved_deployment_id,
+        relative_position: row.relative_position,
+      })
+    }
+  }
+  return {
+    targets: [...targetMap].map(([unresolved_deployment_id, unresolved_deployed_at]) => ({
+      unresolved_deployment_id,
+      unresolved_deployed_at,
+    })),
+    deliveries,
+  }
+}
+
+async function listWorkflowRunSnapshots(
+  repositoryId: number,
+  deploymentIds: number[],
+  executor: Pick<PoolClient, 'query'>,
+): Promise<RepositoryWorkflowRunSnapshotExportRow[]> {
+  if (deploymentIds.length === 0) return []
+  const { rows } = await executor.query<RepositoryWorkflowRunSnapshotExportRow>(
+    `WITH selected_deployments AS (
+       SELECT d.id, parsed.run_parts
+       FROM deployments d
+       JOIN repositories r ON r.id = d.repository_id
+       CROSS JOIN LATERAL regexp_match(
+         d.trigger_url,
+         '^https://github[.]com/([^/?#]+)/([^/?#]+)/actions/runs/([0-9]+)(?:[/?#].*)?$',
+         'i'
+       ) AS parsed(run_parts)
+       WHERE d.repository_id = $1 AND d.id = ANY($2::int[])
+         AND (
+           (
+             lower(parsed.run_parts[1]) = lower(r.github_owner)
+             AND lower(parsed.run_parts[2]) = lower(r.github_repo_name)
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM repository_name_history name_history
+             WHERE name_history.repository_id = r.id
+               AND lower(parsed.run_parts[1]) = lower(name_history.github_owner)
+               AND lower(parsed.run_parts[2]) = lower(name_history.github_repo_name)
+           )
+         )
+     )
+     SELECT DISTINCT snapshot.id, snapshot.run_id::text, snapshot.github_repo_id::text,
+            snapshot.owner, snapshot.repo,
+            snapshot.api_version, snapshot.api_deprecated_at, snapshot.api_sunset_at,
+            snapshot.fetched_at, snapshot.data
+     FROM selected_deployments d
+     JOIN repositories r ON r.id = $1
+     JOIN github_workflow_runs_raw_snapshots snapshot
+       ON snapshot.github_repo_id = r.github_repo_id
+       AND snapshot.run_id::text = d.run_parts[3]
+     ORDER BY run_id, fetched_at, id`,
+    [repositoryId, deploymentIds],
   )
   return rows
 }
 
 export async function getRepositoryCodeDeliveryExportData(
   repositoryId: number,
+  unresolvedDeploymentId?: number,
 ): Promise<RepositoryCodeDeliveryExportData> {
   return withTransaction(async (client) => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-    const [deployments, deliveries, ancestryEvidence, historyReadiness] = await Promise.all([
-      listRepositoryCodeDeliveryExportRows(repositoryId, client),
-      listRepositoryCodeDeliveryExportDeliveries(repositoryId, client),
-      listRepositoryCodeDeliveryAncestryEvidence(repositoryId, client),
+    const {
+      rows: [repository],
+    } = await client.query<{
+      github_repo_id: string
+      github_owner: string
+      github_repo_name: string
+      default_branch: string | null
+      code_delivery_tracking_since: Date | null
+      audit_start_year: number | null
+      implicit_approval_mode: ImplicitApprovalMode
+    }>(
+      `SELECT github_repo_id, github_owner, github_repo_name, default_branch,
+              code_delivery_tracking_since, audit_start_year, implicit_approval_mode
+       FROM repositories WHERE id = $1`,
+      [repositoryId],
+    )
+    const [nearby, repositoryConfigAuditLog, historyReadiness] = await Promise.all([
+      listNearbyCodeDeliveries(repositoryId, unresolvedDeploymentId, client),
+      listRepositoryConfigAuditLog(repositoryId, client),
       getRepositoryHistoryReadinessFromClient(repositoryId, client),
     ])
-    return { deployments, deliveries, ancestryEvidence, historyReadiness }
+    const {
+      github_repo_id,
+      github_owner,
+      github_repo_name,
+      default_branch,
+      code_delivery_tracking_since,
+      audit_start_year,
+    } = repository
+    const includedDeliveryIds = [...new Set(nearby.deliveries.map((delivery) => delivery.id))]
+    const unresolvedDeploymentIds = nearby.targets.map((target) => target.unresolved_deployment_id)
+    const { rows: includedDeploymentRows } = await client.query<{
+      id: number
+      repository_code_delivery_id: number | null
+    }>(
+      `SELECT id, repository_code_delivery_id
+       FROM deployments
+       WHERE repository_id = $1
+         AND (id = ANY($2::int[]) OR repository_code_delivery_id = ANY($3::int[]))
+       ORDER BY created_at, id`,
+      [repositoryId, unresolvedDeploymentIds, includedDeliveryIds],
+    )
+    const includedDeploymentIds = includedDeploymentRows.map((row) => row.id)
+    const deploymentsByDelivery = new Map<number, number[]>()
+    for (const row of includedDeploymentRows) {
+      if (row.repository_code_delivery_id === null) continue
+      const deploymentIds = deploymentsByDelivery.get(row.repository_code_delivery_id) ?? []
+      deploymentIds.push(row.id)
+      deploymentsByDelivery.set(row.repository_code_delivery_id, deploymentIds)
+    }
+    const diagnosticTargets = nearby.targets.map((target) => {
+      const targetDeliveries = nearby.deliveries.filter(
+        (delivery) => delivery.unresolved_deployment_id === target.unresolved_deployment_id,
+      )
+      const includedDeliveryIdsForTarget = targetDeliveries.map((delivery) => delivery.id)
+      const targetIncludedDeploymentIds = new Set([
+        target.unresolved_deployment_id,
+        ...includedDeliveryIdsForTarget.flatMap((deliveryId) => deploymentsByDelivery.get(deliveryId) ?? []),
+      ])
+      return {
+        unresolvedDeploymentId: target.unresolved_deployment_id,
+        unresolvedDeployedAt: target.unresolved_deployed_at,
+        nearbyDeliveryCountPerSide: 2,
+        includedDeliveryIds: includedDeliveryIdsForTarget,
+        includedDeploymentIds: includedDeploymentIds.filter((id) => targetIncludedDeploymentIds.has(id)),
+      }
+    })
+    const includedDeliveryContexts = new Map<
+      number,
+      Array<{ unresolvedDeploymentId: number; relativePosition: 'before' | 'after' }>
+    >()
+    for (const delivery of nearby.deliveries) {
+      const contexts = includedDeliveryContexts.get(delivery.id) ?? []
+      contexts.push({
+        unresolvedDeploymentId: delivery.unresolved_deployment_id,
+        relativePosition: delivery.relative_position,
+      })
+      includedDeliveryContexts.set(delivery.id, contexts)
+    }
+    const deliveries = [...new Map(nearby.deliveries.map((delivery) => [delivery.id, delivery])).values()].map(
+      ({ unresolved_deployment_id, relative_position, ...delivery }) => ({
+        ...delivery,
+        contexts: includedDeliveryContexts.get(delivery.id) ?? [],
+      }),
+    )
+    const [deployments, ancestryEvidence, verificationRuns, workflowRunSnapshots] = await Promise.all([
+      listRepositoryCodeDeliveryExportRows(repositoryId, client, includedDeploymentIds),
+      listRepositoryCodeDeliveryAncestryEvidence(
+        repositoryId,
+        client,
+        unresolvedDeploymentIds,
+        includedDeliveryIds,
+        nearby.deliveries.map((delivery) => ({
+          unresolvedDeploymentId: delivery.unresolved_deployment_id,
+          deliveryId: delivery.id,
+        })),
+      ),
+      listRepositoryVerificationRuns(includedDeploymentIds, client),
+      listWorkflowRunSnapshots(repositoryId, includedDeploymentIds, client),
+    ])
+    const { prSnapshots, commitSnapshots } = await listReferencedRepositorySnapshots(verificationRuns, client)
+
+    return {
+      repositoryMetadata: {
+        github_repo_id,
+        github_owner,
+        github_repo_name,
+        default_branch,
+        code_delivery_tracking_since,
+        audit_start_year,
+      },
+      deployments,
+      deliveries,
+      ancestryEvidence,
+      historyReadiness,
+      verificationRuns,
+      repositoryConfigAuditLog,
+      diagnosticTargets,
+      implicitApprovalMode: repository.implicit_approval_mode,
+      prSnapshots,
+      commitSnapshots,
+      workflowRunSnapshots,
+    }
   })
 }
 

@@ -256,42 +256,252 @@ describe('repository code delivery overview', () => {
     expect(rows[1].deployed_at).toEqual(new Date('2026-10-14T10:00:00Z'))
   })
 
-  it('includes registered deliveries without linked deployments in the consistent export snapshot', async () => {
+  it('exports a bounded unresolved-deployment window with referenced GitHub snapshots', async () => {
     const repositoryId = await createRepository('1012')
-    const deployedDelivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_1 })
-    const unlinkedDelivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_2 })
-    const deployment = await createDeployment('delivery-only-export-app', repositoryId, SHA_1)
-    await linkDeploymentToRepositoryCodeDelivery(deployment, deployedDelivery.id)
-
-    const exportData = await getRepositoryCodeDeliveryExportData(repositoryId)
-
-    expect(exportData.deliveries).toHaveLength(2)
-    expect(exportData.deliveries).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: deployedDelivery.id,
-          base_sha: SHA_1,
-          head_sha: SHA_1,
-          deployment_count: 1,
-        }),
-        expect.objectContaining({
-          id: unlinkedDelivery.id,
-          base_sha: SHA_1,
-          head_sha: SHA_2,
-          first_deployed_at: null,
-          deployment_count: 0,
-        }),
-      ]),
+    await pool.query(
+      `UPDATE repositories
+       SET default_branch = 'release', audit_start_year = 2025,
+           code_delivery_tracking_since = '2026-09-15T00:00:00Z'
+       WHERE id = $1`,
+      [repositoryId],
     )
+    const neighborDates = [
+      '2026-10-14T09:00:00Z',
+      '2026-10-14T10:00:00Z',
+      '2026-10-14T11:00:00Z',
+      '2026-10-14T13:00:00Z',
+      '2026-10-14T14:00:00Z',
+      '2026-10-14T15:00:00Z',
+      '2026-10-14T16:00:00Z',
+    ]
+    const neighbors: Array<{ deliveryId: number; deploymentId: number }> = []
+
+    for (const [index, deployedAt] of neighborDates.entries()) {
+      const sha = String(index + 1).repeat(40)
+      const deploymentId = await createDeployment('window-export-app', repositoryId, sha)
+      const delivery = await createRepositoryCodeDelivery({
+        repositoryId,
+        baseSha: String(index + 1).repeat(40),
+        headSha: String(index + 1).repeat(40),
+      })
+      await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
+      await pool.query('UPDATE deployments SET created_at = $1 WHERE id = $2', [deployedAt, deploymentId])
+      neighbors.push({ deliveryId: delivery.id, deploymentId })
+    }
+
+    const unresolvedDeploymentId = await createDeployment('window-export-app', repositoryId, SHA_4)
+    await markUnresolved(unresolvedDeploymentId, 'ancestry_behind')
+    await pool.query(`UPDATE deployments SET created_at = '2026-10-14T13:00:00Z', trigger_url = $1 WHERE id = $2`, [
+      'https://github.com/navikt/repo-1012/actions/runs/12345?check_suite_focus=true#summary',
+      unresolvedDeploymentId,
+    ])
+    const sameTimestampDeploymentId = await createDeployment('window-export-app', repositoryId, '8'.repeat(40))
+    const sameTimestampDelivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: '8'.repeat(40),
+      headSha: '8'.repeat(40),
+    })
+    await linkDeploymentToRepositoryCodeDelivery(sameTimestampDeploymentId, sameTimestampDelivery.id)
+    await pool.query(`UPDATE deployments SET created_at = '2026-10-14T13:00:00Z', trigger_url = $1 WHERE id = $2`, [
+      'https://github.com/else/repo-1012/actions/runs/12345',
+      sameTimestampDeploymentId,
+    ])
+    await pool.query(`UPDATE deployments SET trigger_url = $1 WHERE id = $2`, [
+      'https://malicious.example/navikt/repo-1012/actions/runs/12345',
+      neighbors[2].deploymentId,
+    ])
+    await pool.query(`UPDATE deployments SET trigger_url = $1 WHERE id = $2`, [
+      'https://github.com/old-navikt/old-repo-1012/actions/runs/54321',
+      neighbors[4].deploymentId,
+    ])
+    await pool.query(
+      `INSERT INTO repository_name_history (repository_id, github_owner, github_repo_name)
+       VALUES ($1, 'old-navikt', 'old-repo-1012')`,
+      [repositoryId],
+    )
+    await pool.query(`UPDATE deployments SET trigger_url = $1 WHERE id = $2`, [
+      'https://github.com/navikt/another-repo/actions/runs/12345',
+      neighbors[3].deploymentId,
+    ])
+    await pool.query(
+      `INSERT INTO verification_runs
+         (deployment_id, schema_version, pr_snapshot_ids, commit_snapshot_ids, result, status, run_at)
+       VALUES ($1, 3, ARRAY[1001], ARRAY[2001], '{"status":"approved"}', 'approved', '2026-10-14T13:01:00Z')`,
+      [unresolvedDeploymentId],
+    )
+    await pool.query(
+      `INSERT INTO github_pr_snapshots
+         (id, owner, repo, pr_number, data_type, data)
+       VALUES (1001, 'navikt', 'repo-1012', 82, 'reviews', '{"reviews":[{"state":"APPROVED"}]}')`,
+    )
+    await pool.query(
+      `INSERT INTO github_commit_snapshots
+         (id, owner, repo, sha, data_type, data)
+       VALUES (2001, 'navikt', 'repo-1012', $1, 'prs', '{"pull_requests":[{"number":82}]}')`,
+      [SHA_4],
+    )
+    await pool.query(
+      `INSERT INTO github_workflow_runs_raw_snapshots
+         (github_repo_id, owner, repo, run_id, api_version, data)
+       VALUES
+         ('1012', 'navikt', 'repo-1012', 12345, '2022-11-28', '{"event":"push","head_sha":"${SHA_4}"}'),
+         ('1012', 'old-navikt', 'old-repo-1012', 54321, '2022-11-28', '{"event":"push","head_sha":"${SHA_3}"}')`,
+    )
+    await pool.query(
+      `INSERT INTO repo_config_audit_log
+         (repository_id, changed_by_nav_ident, setting_key, old_value, new_value)
+       VALUES ($1, 'Z990001', 'implicit_approval_mode', '{"implicit_approval_mode":"off"}',
+               '{"implicit_approval_mode":"dependabot_only"}')`,
+      [repositoryId],
+    )
+
+    const exportData = await getRepositoryCodeDeliveryExportData(repositoryId, unresolvedDeploymentId)
+
+    expect(exportData.repositoryMetadata).toEqual({
+      github_repo_id: '1012',
+      github_owner: 'navikt',
+      github_repo_name: 'repo-1012',
+      default_branch: 'release',
+      code_delivery_tracking_since: new Date('2026-09-15T00:00:00Z'),
+      audit_start_year: 2025,
+    })
+    expect(exportData.diagnosticTargets).toMatchObject([
+      {
+        unresolvedDeploymentId,
+        nearbyDeliveryCountPerSide: 2,
+        includedDeliveryIds: [
+          neighbors[2].deliveryId,
+          neighbors[3].deliveryId,
+          sameTimestampDelivery.id,
+          neighbors[4].deliveryId,
+        ],
+        includedDeploymentIds: [
+          neighbors[2].deploymentId,
+          neighbors[3].deploymentId,
+          unresolvedDeploymentId,
+          sameTimestampDeploymentId,
+          neighbors[4].deploymentId,
+        ],
+      },
+    ])
+    expect(exportData.deliveries).toHaveLength(4)
+    expect(exportData.deliveries.find((delivery) => delivery.id === neighbors[2].deliveryId)?.contexts).toEqual([
+      { unresolvedDeploymentId, relativePosition: 'before' },
+    ])
+    expect(exportData.deliveries.find((delivery) => delivery.id === neighbors[3].deliveryId)?.contexts).toEqual([
+      { unresolvedDeploymentId, relativePosition: 'before' },
+    ])
+    expect(exportData.deliveries.find((delivery) => delivery.id === sameTimestampDelivery.id)?.contexts).toEqual([
+      { unresolvedDeploymentId, relativePosition: 'after' },
+    ])
+    expect(exportData.deployments).toHaveLength(5)
+    expect(exportData.verificationRuns).toHaveLength(1)
+    expect(exportData.prSnapshots).toEqual([expect.objectContaining({ id: 1001, data_type: 'reviews' })])
+    expect(exportData.commitSnapshots).toEqual([expect.objectContaining({ id: 2001, sha: SHA_4 })])
+    expect(exportData.workflowRunSnapshots).toEqual([
+      expect.objectContaining({
+        run_id: '12345',
+        github_repo_id: '1012',
+        data: { event: 'push', head_sha: SHA_4 },
+      }),
+      expect.objectContaining({
+        run_id: '54321',
+        github_repo_id: '1012',
+        owner: 'old-navikt',
+        repo: 'old-repo-1012',
+        data: { event: 'push', head_sha: SHA_3 },
+      }),
+    ])
+    expect(exportData.repositoryConfigAuditLog).toHaveLength(1)
+
+    const automaticExportData = await getRepositoryCodeDeliveryExportData(repositoryId)
+    expect(automaticExportData.diagnosticTargets).toEqual(exportData.diagnosticTargets)
+    expect(automaticExportData.verificationRuns).toHaveLength(1)
+    expect(
+      (await getRepositoryCodeDeliveryExportData(repositoryId, neighbors[0].deploymentId)).diagnosticTargets,
+    ).toEqual([])
+  })
+
+  it('exports all verification runs and repository configuration changes for only this repository', async () => {
+    const repositoryId = await createRepository('1013')
+    const otherRepositoryId = await createRepository('1014')
+    const deploymentId = await createDeployment('audit-evidence-app', repositoryId, SHA_1)
+    const otherDeploymentId = await createDeployment('other-audit-app', otherRepositoryId, SHA_2)
+    await markUnresolved(deploymentId, 'ancestry_behind')
+    await pool.query(`UPDATE repositories SET implicit_approval_mode = 'all' WHERE id = $1`, [repositoryId])
+    await pool.query(
+      `INSERT INTO verification_runs
+         (deployment_id, schema_version, pr_snapshot_ids, commit_snapshot_ids, result, status, run_at)
+       VALUES
+         ($1, 3, ARRAY[11], ARRAY[21, 22], $2::jsonb, 'unverified_commits', '2026-10-13T10:00:00Z'),
+         ($1, 3, ARRAY[12], ARRAY[23], $3::jsonb, 'approved', '2026-10-14T10:00:00Z'),
+         ($4, 3, '{}', '{}', $5::jsonb, 'approved', '2026-10-14T11:00:00Z')`,
+      [
+        deploymentId,
+        JSON.stringify({ status: 'unverified_commits', unverifiedCommits: [{ prNumber: 82 }] }),
+        JSON.stringify({ status: 'approved', unverifiedCommits: [] }),
+        otherDeploymentId,
+        JSON.stringify({ status: 'approved' }),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO repo_config_audit_log
+         (repository_id, changed_by_nav_ident, changed_by_name, setting_key, old_value, new_value, change_reason, created_at)
+       VALUES
+         ($1, 'Z990001', 'Glad Fjord', 'implicit_approval_mode', '{"implicit_approval_mode":"off"}',
+          '{"implicit_approval_mode":"dependabot_only"}', 'Initial configuration', '2026-10-13T09:00:00Z'),
+         ($1, 'Z990002', 'Rask Elv', 'implicit_approval_mode', '{"implicit_approval_mode":"dependabot_only"}',
+          '{"implicit_approval_mode":"all"}', 'Changed mode', '2026-10-14T09:00:00Z'),
+         ($2, 'Z990003', 'Trygg Dal', 'implicit_approval_mode', '{"implicit_approval_mode":"off"}',
+          '{"implicit_approval_mode":"all"}', 'Other repository', '2026-10-14T12:00:00Z')`,
+      [repositoryId, otherRepositoryId],
+    )
+
+    const exportData = await getRepositoryCodeDeliveryExportData(repositoryId, deploymentId)
+
+    expect(exportData?.verificationRuns).toHaveLength(2)
+    expect(exportData?.verificationRuns).toEqual([
+      expect.objectContaining({
+        deployment_id: deploymentId,
+        status: 'unverified_commits',
+        pr_snapshot_ids: [11],
+        commit_snapshot_ids: [21, 22],
+      }),
+      expect.objectContaining({
+        deployment_id: deploymentId,
+        status: 'approved',
+        pr_snapshot_ids: [12],
+        commit_snapshot_ids: [23],
+      }),
+    ])
+    expect(exportData?.repositoryConfigAuditLog).toHaveLength(2)
+    expect(exportData?.repositoryConfigAuditLog).toEqual([
+      expect.objectContaining({
+        setting_key: 'implicit_approval_mode',
+        old_value: { implicit_approval_mode: 'off' },
+        new_value: { implicit_approval_mode: 'dependabot_only' },
+        changed_by_nav_ident: 'Z990001',
+      }),
+      expect.objectContaining({
+        setting_key: 'implicit_approval_mode',
+        old_value: { implicit_approval_mode: 'dependabot_only' },
+        new_value: { implicit_approval_mode: 'all' },
+        changed_by_nav_ident: 'Z990002',
+      }),
+    ])
+    expect(exportData?.implicitApprovalMode).toBe('all')
   })
 
   it('includes matching compare snapshots as candidate ancestry evidence without asserting retry linkage', async () => {
     const repositoryId = await createRepository('1011')
     const deliveryDeployment = await createDeployment('compare-evidence-app', repositoryId, SHA_1)
     const unresolvedDeployment = await createDeployment('compare-evidence-app', repositoryId, SHA_2)
-    const divergedDeployment = await createDeployment('compare-evidence-app', repositoryId, SHA_3)
+    const divergedDeployment = await createDeployment('compare-evidence-app', repositoryId, SHA_2)
     const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_1 })
+    const otherDelivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_2, headSha: SHA_3 })
     await linkDeploymentToRepositoryCodeDelivery(deliveryDeployment, delivery.id)
+    const otherDeliveryDeployment = await createDeployment('compare-evidence-app', repositoryId, SHA_3)
+    await linkDeploymentToRepositoryCodeDelivery(otherDeliveryDeployment, otherDelivery.id)
     await markUnresolved(unresolvedDeployment, 'ancestry_behind')
     await markUnresolved(divergedDeployment, 'ancestry_diverged')
     await pool.query(
@@ -333,8 +543,8 @@ describe('repository code delivery overview', () => {
          $3::jsonb, '2026-10-14T10:08:00Z'::timestamptz
        )`,
       [
-        SHA_1,
         SHA_3,
+        SHA_2,
         JSON.stringify({
           status: 'diverged',
           ahead_by: 1,
@@ -347,7 +557,24 @@ describe('repository code delivery overview', () => {
 
     const evidence = await listRepositoryCodeDeliveryAncestryEvidence(repositoryId)
 
-    expect(evidence).toHaveLength(2)
+    expect(evidence).toHaveLength(4)
+    const pairedEvidence = await listRepositoryCodeDeliveryAncestryEvidence(
+      repositoryId,
+      pool,
+      [unresolvedDeployment, divergedDeployment],
+      [delivery.id, otherDelivery.id],
+      [
+        { unresolvedDeploymentId: unresolvedDeployment, deliveryId: delivery.id },
+        { unresolvedDeploymentId: divergedDeployment, deliveryId: otherDelivery.id },
+      ],
+    )
+    expect(pairedEvidence).toHaveLength(2)
+    expect(
+      pairedEvidence.map(({ unresolved_deployment_id, delivery_id }) => [unresolved_deployment_id, delivery_id]),
+    ).toEqual([
+      [unresolvedDeployment, delivery.id],
+      [divergedDeployment, otherDelivery.id],
+    ])
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -367,10 +594,10 @@ describe('repository code delivery overview', () => {
         }),
         expect.objectContaining({
           unresolved_deployment_id: divergedDeployment,
-          unresolved_deployed_sha: SHA_3,
+          unresolved_deployed_sha: SHA_2,
           unresolved_reason: 'ancestry_diverged',
-          delivery_id: delivery.id,
-          delivery_head_sha: SHA_1,
+          delivery_id: otherDelivery.id,
+          delivery_head_sha: SHA_3,
           compare_status: 'diverged',
           compare_ahead_by: 1,
           compare_behind_by: 1,
