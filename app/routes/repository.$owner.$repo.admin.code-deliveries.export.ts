@@ -16,32 +16,57 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
-  const { deployments, deliveries, ancestryEvidence, historyReadiness } = await getRepositoryCodeDeliveryExportData(
-    repository.id,
-  )
+  const requestedDeploymentId = url.searchParams.get('deploymentId')
+  const unresolvedDeploymentId = requestedDeploymentId === null ? undefined : Number(requestedDeploymentId)
+  if (
+    unresolvedDeploymentId !== undefined &&
+    (!Number.isSafeInteger(unresolvedDeploymentId) ||
+      unresolvedDeploymentId <= 0 ||
+      unresolvedDeploymentId > 2_147_483_647)
+  ) {
+    throw new Response('A valid unresolved deploymentId is required when provided', { status: 400 })
+  }
+
+  const exportData = await getRepositoryCodeDeliveryExportData(repository.id, unresolvedDeploymentId)
+  if (
+    unresolvedDeploymentId !== undefined &&
+    !exportData.diagnosticTargets.some((target) => target.unresolvedDeploymentId === unresolvedDeploymentId)
+  ) {
+    throw new Response('Open unresolved deployment not found for this repository', { status: 404 })
+  }
+  const filename = unresolvedDeploymentId
+    ? `repository-${repository.id}-deployment-${unresolvedDeploymentId}-diagnostic.json`
+    : `repository-${repository.id}-unresolved-deployments-diagnostic.json`
   const json = createRepositoryCodeDeliveryJson({
     repository: {
       id: repository.id,
-      githubRepositoryId: repository.github_repo_id,
-      owner: repository.github_owner,
-      name: repository.github_repo_name,
-      defaultBranch: repository.default_branch,
-      trackingSince: repository.code_delivery_tracking_since,
-      auditStartYear: repository.audit_start_year,
+      githubRepositoryId: exportData.repositoryMetadata.github_repo_id,
+      owner: exportData.repositoryMetadata.github_owner,
+      name: exportData.repositoryMetadata.github_repo_name,
+      defaultBranch: exportData.repositoryMetadata.default_branch,
+      trackingSince: exportData.repositoryMetadata.code_delivery_tracking_since,
+      auditStartYear: exportData.repositoryMetadata.audit_start_year,
     },
-    historyReadiness,
-    deployments,
-    deliveries,
+    historyReadiness: exportData.historyReadiness,
+    implicitApprovalMode: exportData.implicitApprovalMode,
+    deployments: exportData.deployments,
+    deliveries: exportData.deliveries,
     ancestryEvidence: {
-      matchingCompareSnapshots: ancestryEvidence,
+      matchingCompareSnapshots: exportData.ancestryEvidence,
       linkageNote:
         'Snapshots are matched by repository ID and the unordered pair of a deployment SHA and a registered delivery head SHA. They are not directly linked to the unresolved record or retry that triggered the GitHub call.',
     },
+    verificationRuns: exportData.verificationRuns,
+    repositoryConfigAuditLog: exportData.repositoryConfigAuditLog,
+    diagnosticTargets: exportData.diagnosticTargets,
+    prSnapshots: exportData.prSnapshots,
+    commitSnapshots: exportData.commitSnapshots,
+    workflowRunSnapshots: exportData.workflowRunSnapshots,
   })
   return new Response(json, {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Content-Disposition': `attachment; filename="repository-${repository.id}-deployment-history.json"`,
+      'Content-Disposition': `attachment; filename="${filename}"`,
       'Cache-Control': 'no-store',
     },
   })
