@@ -125,17 +125,59 @@ describe('repository code delivery overview', () => {
     await linkDeploymentToRepositoryCodeDelivery(first, anchor.id)
     await linkDeploymentToRepositoryCodeDelivery(second, next.id)
     await linkDeploymentToRepositoryCodeDelivery(third, next.id)
+    await pool.query(
+      `UPDATE deployments
+       SET created_at = CASE id
+         WHEN $1 THEN '2026-10-01T10:00:00Z'::timestamptz
+         WHEN $2 THEN '2026-10-02T10:00:00Z'::timestamptz
+         WHEN $3 THEN '2026-10-03T10:00:00Z'::timestamptz
+       END
+       WHERE id = ANY($4::int[])`,
+      [first, second, third, [first, second, third]],
+    )
 
     const deliveries = await listRepositoryCodeDeliveries(repositoryId, { limit: 10, offset: 0 })
     expect(
-      deliveries.map((d) => ({ id: d.id, anchor: d.is_anchor, count: d.deployment_count, apps: d.app_names })),
+      deliveries.map((d) => ({
+        id: d.id,
+        anchor: d.is_anchor,
+        firstDeployedAt: d.first_deployed_at?.toISOString(),
+        count: d.deployment_count,
+        apps: d.app_names,
+      })),
     ).toEqual([
-      { id: next.id, anchor: false, count: 2, apps: ['app-a', 'app-b'] },
-      { id: anchor.id, anchor: true, count: 1, apps: ['app-a'] },
+      {
+        id: next.id,
+        anchor: false,
+        firstDeployedAt: '2026-10-02T10:00:00.000Z',
+        count: 2,
+        apps: ['app-a', 'app-b'],
+      },
+      {
+        id: anchor.id,
+        anchor: true,
+        firstDeployedAt: '2026-10-01T10:00:00.000Z',
+        count: 1,
+        apps: ['app-a'],
+      },
     ])
 
     const page = await listRepositoryCodeDeliveries(repositoryId, { limit: 1, offset: 1 })
     expect(page.map((d) => d.id)).toEqual([anchor.id])
+
+    const firstDeployedAscending = await listRepositoryCodeDeliveries(repositoryId, {
+      limit: 10,
+      offset: 0,
+      sort: { orderBy: 'first_deployed_at', direction: 'ascending' },
+    })
+    expect(firstDeployedAscending.map((delivery) => delivery.id)).toEqual([anchor.id, next.id])
+
+    const firstDeployedDescending = await listRepositoryCodeDeliveries(repositoryId, {
+      limit: 10,
+      offset: 0,
+      sort: { orderBy: 'first_deployed_at', direction: 'descending' },
+    })
+    expect(firstDeployedDescending.map((delivery) => delivery.id)).toEqual([next.id, anchor.id])
   })
 
   it('lists only open unresolved deployments for the requested repository', async () => {

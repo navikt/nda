@@ -26,6 +26,7 @@ export const MedData: Story = {
         base_sha: '2'.repeat(40),
         head_sha: '3'.repeat(40),
         created_at: '2026-10-03T10:00:00.000Z',
+        first_deployed_at: '2026-10-03T10:00:00.000Z',
         is_anchor: false,
         deployment_count: 2,
         app_names: ['glad-fjord-api', 'glad-fjord-web'],
@@ -35,6 +36,7 @@ export const MedData: Story = {
         base_sha: '1'.repeat(40),
         head_sha: '1'.repeat(40),
         created_at: '2026-10-01T10:00:00.000Z',
+        first_deployed_at: '2026-10-01T10:00:00.000Z',
         is_anchor: true,
         deployment_count: 1,
         app_names: ['glad-fjord-api'],
@@ -70,6 +72,7 @@ export const MedData: Story = {
     ],
     page: 1,
     totalPages: 1,
+    onSortChange: () => {},
     onPageChange: () => {},
   },
 }
@@ -83,6 +86,7 @@ export const Av: Story = {
     unresolved: [],
     page: 1,
     totalPages: 1,
+    onSortChange: () => {},
     onPageChange: () => {},
   },
 }
