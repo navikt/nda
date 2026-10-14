@@ -3,6 +3,7 @@ import {
   Alert,
   BodyShort,
   Box,
+  Button,
   Heading,
   HStack,
   type SortState,
@@ -198,6 +199,14 @@ export function RepositoryCodeDeliveriesPage({
               koblinger uten stabil ID vises ikke og må avklares separat.
             </BodyShort>
           </div>
+          <Button
+            as="a"
+            href={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin/code-deliveries/export?repositoryId=${repository.id}`}
+            size="small"
+            variant="secondary"
+          >
+            Last ned diagnostikk (JSON)
+          </Button>
           <BodyShort size="small">
             {historyReadiness.applications.filter((app) => app.initial_nais_history_synced_at !== null).length} av{' '}
             {historyReadiness.applications.length} kjente apper har markert fullført initial Nais-historikksynk. Dette

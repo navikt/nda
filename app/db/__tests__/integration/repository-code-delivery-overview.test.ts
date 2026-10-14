@@ -5,10 +5,13 @@ import {
   linkDeploymentToRepositoryCodeDelivery,
 } from '../../repository-code-deliveries.server'
 import {
+  getRepositoryCodeDeliveryExportData,
   getRepositoryCodeDeliveryOverview,
   getRepositoryHistoryReadiness,
   listOpenUnresolvedCodeDeployments,
   listRepositoryCodeDeliveries,
+  listRepositoryCodeDeliveryAncestryEvidence,
+  listRepositoryCodeDeliveryExportRows,
 } from '../../repository-code-delivery-overview.server'
 import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
@@ -215,6 +218,170 @@ describe('repository code delivery overview', () => {
       repositoryDeploymentsMissingShaCount: 1,
       repositoryDeploymentsWithoutKnownAppLinkCount: 1,
     })
+  })
+
+  it('exports all repository deployments in deployment order with delivery and unresolved evidence', async () => {
+    const repositoryId = await createRepository('1010')
+    const linkedDeployment = await createDeployment('export-app', repositoryId, SHA_1)
+    const unresolvedDeployment = await createDeployment('export-app', repositoryId, SHA_2)
+    const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_1 })
+    await linkDeploymentToRepositoryCodeDelivery(linkedDeployment, delivery.id)
+    await markUnresolved(unresolvedDeployment, 'ancestry_behind')
+    await pool.query(
+      `UPDATE deployments SET created_at = CASE id
+         WHEN $1 THEN '2026-10-13T10:00:00Z'::timestamptz
+         WHEN $2 THEN '2026-10-14T10:00:00Z'::timestamptz
+       END
+       WHERE id = ANY($3::int[])`,
+      [linkedDeployment, unresolvedDeployment, [linkedDeployment, unresolvedDeployment]],
+    )
+
+    const rows = await listRepositoryCodeDeliveryExportRows(repositoryId)
+
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({
+      deployment_id: linkedDeployment,
+      deployed_sha: SHA_1,
+      delivery_id: delivery.id,
+      delivery_base_sha: SHA_1,
+      delivery_head_sha: SHA_1,
+    })
+    expect(rows[0].delivery_first_deployed_at).toEqual(new Date('2026-10-13T10:00:00Z'))
+    expect(rows[1]).toMatchObject({
+      deployment_id: unresolvedDeployment,
+      deployed_sha: SHA_2,
+      unresolved_reason: 'ancestry_behind',
+      unresolved_resolved_at: null,
+    })
+    expect(rows[1].deployed_at).toEqual(new Date('2026-10-14T10:00:00Z'))
+  })
+
+  it('includes registered deliveries without linked deployments in the consistent export snapshot', async () => {
+    const repositoryId = await createRepository('1012')
+    const deployedDelivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_1 })
+    const unlinkedDelivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_2 })
+    const deployment = await createDeployment('delivery-only-export-app', repositoryId, SHA_1)
+    await linkDeploymentToRepositoryCodeDelivery(deployment, deployedDelivery.id)
+
+    const exportData = await getRepositoryCodeDeliveryExportData(repositoryId)
+
+    expect(exportData.deliveries).toHaveLength(2)
+    expect(exportData.deliveries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: deployedDelivery.id,
+          base_sha: SHA_1,
+          head_sha: SHA_1,
+          deployment_count: 1,
+        }),
+        expect.objectContaining({
+          id: unlinkedDelivery.id,
+          base_sha: SHA_1,
+          head_sha: SHA_2,
+          first_deployed_at: null,
+          deployment_count: 0,
+        }),
+      ]),
+    )
+  })
+
+  it('includes matching compare snapshots as candidate ancestry evidence without asserting retry linkage', async () => {
+    const repositoryId = await createRepository('1011')
+    const deliveryDeployment = await createDeployment('compare-evidence-app', repositoryId, SHA_1)
+    const unresolvedDeployment = await createDeployment('compare-evidence-app', repositoryId, SHA_2)
+    const divergedDeployment = await createDeployment('compare-evidence-app', repositoryId, SHA_3)
+    const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_1 })
+    await linkDeploymentToRepositoryCodeDelivery(deliveryDeployment, delivery.id)
+    await markUnresolved(unresolvedDeployment, 'ancestry_behind')
+    await markUnresolved(divergedDeployment, 'ancestry_diverged')
+    await pool.query(
+      `UPDATE deployments SET created_at = '2026-10-14T10:00:00Z'::timestamptz
+       WHERE id = ANY($1::int[])`,
+      [[unresolvedDeployment, divergedDeployment]],
+    )
+    await pool.query(
+      `UPDATE repository_code_delivery_unresolved
+       SET created_at = '2026-10-14T10:05:00Z'::timestamptz,
+           updated_at = '2026-10-14T10:10:00Z'::timestamptz
+       WHERE deployment_id = ANY($1::int[])`,
+      [[unresolvedDeployment, divergedDeployment]],
+    )
+    await pool.query(
+      `INSERT INTO github_compare_raw_snapshots (
+         github_repo_id, owner, repo, base_sha, head_sha, api_version, data, fetched_at
+       ) VALUES (
+         '1011', 'navikt', 'repo-1011', $1, $2, '2022-11-28',
+         $3::jsonb, '2026-10-14T10:07:00Z'::timestamptz
+       )`,
+      [
+        SHA_1,
+        SHA_2,
+        JSON.stringify({
+          status: 'behind',
+          ahead_by: 0,
+          behind_by: 2,
+          total_commits: 2,
+          commits: [{ sha: SHA_3 }, { sha: SHA_4 }],
+        }),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO github_compare_raw_snapshots (
+         github_repo_id, owner, repo, base_sha, head_sha, api_version, data, fetched_at
+       ) VALUES (
+         '1011', 'navikt', 'repo-1011', $1, $2, '2022-11-28',
+         $3::jsonb, '2026-10-14T10:08:00Z'::timestamptz
+       )`,
+      [
+        SHA_1,
+        SHA_3,
+        JSON.stringify({
+          status: 'diverged',
+          ahead_by: 1,
+          behind_by: 1,
+          total_commits: 2,
+          commits: [{ sha: SHA_3 }, { sha: SHA_4 }],
+        }),
+      ],
+    )
+
+    const evidence = await listRepositoryCodeDeliveryAncestryEvidence(repositoryId)
+
+    expect(evidence).toHaveLength(2)
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          unresolved_deployment_id: unresolvedDeployment,
+          unresolved_deployed_sha: SHA_2,
+          unresolved_reason: 'ancestry_behind',
+          delivery_id: delivery.id,
+          delivery_head_sha: SHA_1,
+          compare_status: 'behind',
+          compare_ahead_by: 0,
+          compare_behind_by: 2,
+          compare_total_commits: 2,
+          compare_commit_shas: [SHA_3, SHA_4],
+          compare_api_version: '2022-11-28',
+          fetched_between_observations: true,
+          compare_fetched_at: new Date('2026-10-14T10:07:00Z'),
+        }),
+        expect.objectContaining({
+          unresolved_deployment_id: divergedDeployment,
+          unresolved_deployed_sha: SHA_3,
+          unresolved_reason: 'ancestry_diverged',
+          delivery_id: delivery.id,
+          delivery_head_sha: SHA_1,
+          compare_status: 'diverged',
+          compare_ahead_by: 1,
+          compare_behind_by: 1,
+          compare_total_commits: 2,
+          compare_commit_shas: [SHA_3, SHA_4],
+          compare_api_version: '2022-11-28',
+          fetched_between_observations: true,
+          compare_fetched_at: new Date('2026-10-14T10:08:00Z'),
+        }),
+      ]),
+    )
   })
 
   it('summarises deliveries, linked, awaiting and open unresolved deployments', async () => {
