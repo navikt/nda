@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockRequireAdmin,
   mockGetWorkflowRunBackfillCoverageTeams,
+  mockGetWorkflowRunRepositoryBackfillJobStatus,
   mockGetWorkflowRunRepositoryBackfillCoverage,
   mockGetWorkflowRunBackfillPreviewRepository,
   mockGetWorkflowRunRepositoryBackfillPreview,
@@ -11,6 +12,7 @@ const {
 } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
   mockGetWorkflowRunBackfillCoverageTeams: vi.fn(),
+  mockGetWorkflowRunRepositoryBackfillJobStatus: vi.fn(),
   mockGetWorkflowRunRepositoryBackfillCoverage: vi.fn(),
   mockGetWorkflowRunBackfillPreviewRepository: vi.fn(),
   mockGetWorkflowRunRepositoryBackfillPreview: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock('~/lib/auth.server', () => ({
 
 vi.mock('~/db/workflow-run-repository-backfill-coverage.server', () => ({
   getWorkflowRunBackfillCoverageTeams: mockGetWorkflowRunBackfillCoverageTeams,
+  getWorkflowRunRepositoryBackfillJobStatus: mockGetWorkflowRunRepositoryBackfillJobStatus,
   getWorkflowRunRepositoryBackfillCoverage: mockGetWorkflowRunRepositoryBackfillCoverage,
   getWorkflowRunBackfillPreviewRepository: mockGetWorkflowRunBackfillPreviewRepository,
   getWorkflowRunRepositoryBackfillPreview: mockGetWorkflowRunRepositoryBackfillPreview,
@@ -41,6 +44,7 @@ describe('repository ID backfill coverage loader', () => {
     vi.clearAllMocks()
     mockRequireAdmin.mockResolvedValue({ navIdent: 'Z990001' })
     mockGetWorkflowRunBackfillCoverageTeams.mockResolvedValue([])
+    mockGetWorkflowRunRepositoryBackfillJobStatus.mockResolvedValue(null)
     mockGetWorkflowRunRepositoryBackfillCoverage.mockResolvedValue([])
     mockGetWorkflowRunBackfillPreviewRepository.mockResolvedValue(null)
     mockGetWorkflowRunRepositoryBackfillPreview.mockResolvedValue([])
@@ -143,6 +147,44 @@ describe('repository ID backfill coverage loader', () => {
       previewDeployments: [],
       invalidRepository: false,
     })
+  })
+
+  it('loads job status without running the repository coverage report', async () => {
+    mockGetWorkflowRunRepositoryBackfillJobStatus.mockResolvedValue({
+      id: 91,
+      status: 'running',
+      result: null,
+      error: null,
+      lockExpired: false,
+    })
+
+    const result = await loader({
+      request: new Request('http://localhost/admin/repository-id-backfill-coverage?backfillJobStatus=216'),
+    } as never)
+
+    expect(result).toMatchObject({
+      backfillJobStatus: {
+        id: 91,
+        status: 'running',
+        result: null,
+        error: null,
+        lockExpired: false,
+      },
+    })
+    expect(mockGetWorkflowRunRepositoryBackfillJobStatus).toHaveBeenCalledWith(216)
+    expect(mockGetWorkflowRunBackfillCoverageTeams).not.toHaveBeenCalled()
+    expect(mockGetWorkflowRunRepositoryBackfillCoverage).not.toHaveBeenCalled()
+    expect(mockGetWorkflowRunRepositoryBackfillPreview).not.toHaveBeenCalled()
+  })
+
+  it('does not query job status for an invalid repository ID', async () => {
+    const result = await loader({
+      request: new Request('http://localhost/admin/repository-id-backfill-coverage?backfillJobStatus=216x'),
+    } as never)
+
+    expect(result).toMatchObject({ backfillJobStatus: null })
+    expect(mockGetWorkflowRunRepositoryBackfillJobStatus).not.toHaveBeenCalled()
+    expect(mockGetWorkflowRunRepositoryBackfillCoverage).not.toHaveBeenCalled()
   })
 
   it('runs the coverage report only for a recognized selected team', async () => {

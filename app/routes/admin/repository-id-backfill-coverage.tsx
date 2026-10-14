@@ -4,6 +4,7 @@ import {
   getWorkflowRunBackfillCoverageTeams,
   getWorkflowRunBackfillPreviewRepository,
   getWorkflowRunRepositoryBackfillCoverage,
+  getWorkflowRunRepositoryBackfillJobStatus,
   getWorkflowRunRepositoryBackfillPreview,
 } from '~/db/workflow-run-repository-backfill-coverage.server'
 import { requireAdmin } from '~/lib/auth.server'
@@ -52,6 +53,29 @@ export async function action({ request }: Route.ActionArgs) {
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
   const searchParams = new URL(request.url).searchParams
+  const requestedJobStatusRepositoryId = searchParams.get('backfillJobStatus')
+
+  if (requestedJobStatusRepositoryId !== null) {
+    const parsedRepositoryId = /^\d+$/.test(requestedJobStatusRepositoryId)
+      ? Number(requestedJobStatusRepositoryId)
+      : Number.NaN
+    const validRepositoryId =
+      Number.isSafeInteger(parsedRepositoryId) && parsedRepositoryId > 0 && parsedRepositoryId <= 2_147_483_647
+
+    return {
+      teams: [],
+      selectedTeam: null,
+      invalidTeam: false,
+      repositories: [],
+      totals: { legacy: 0, eligible: 0 },
+      previewRepository: null,
+      previewDeployments: [],
+      invalidRepository: false,
+      returnToTeam: null,
+      backfillJobStatus: validRepositoryId ? await getWorkflowRunRepositoryBackfillJobStatus(parsedRepositoryId) : null,
+    }
+  }
+
   const requestedRepositoryId = searchParams.get('repositoryId')
 
   if (requestedRepositoryId !== null) {

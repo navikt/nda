@@ -36,11 +36,16 @@ function RepositoryBackfillAction({
   job: WorkflowRunRepositoryIdBackfillJob | null
 }) {
   const fetcher = useFetcher()
+  const statusFetcher = useFetcher()
   const fetcherData = fetcher.data as { backfillJobStarted?: number; error?: string } | undefined
-  const isRunning = job?.status === 'running'
+  const polledJob = statusFetcher.data as { backfillJobStatus?: WorkflowRunRepositoryIdBackfillJob | null } | undefined
+  const currentJob = job && polledJob?.backfillJobStatus?.id === job.id ? polledJob.backfillJobStatus : job
+  const isRunning = currentJob?.status === 'running' && !currentJob.lockExpired
   const [open, setOpen] = useState(false)
   const formId = `repository-id-backfill-${repository.repositoryId}`
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const refreshedJobId = useRef<number | null>(null)
+  const revalidator = useRevalidator()
 
   useEffect(() => {
     if (fetcherData?.backfillJobStarted) {
@@ -48,12 +53,44 @@ function RepositoryBackfillAction({
     }
   }, [fetcherData?.backfillJobStarted])
 
+  useEffect(() => {
+    if (!isRunning || !job) return
+    const timeout = setTimeout(() => {
+      if (statusFetcher.state === 'idle') {
+        statusFetcher.load(`?backfillJobStatus=${repository.repositoryId}`)
+      }
+    }, 3000)
+    return () => clearTimeout(timeout)
+  }, [isRunning, job, repository.repositoryId, statusFetcher, statusFetcher.state])
+
+  useEffect(() => {
+    if (
+      job?.status !== 'running' ||
+      currentJob?.status === 'running' ||
+      currentJob?.lockExpired ||
+      refreshedJobId.current === job.id
+    ) {
+      return
+    }
+    refreshedJobId.current = job.id
+    revalidator.revalidate()
+  }, [currentJob, job, revalidator])
+
+  const displayedJob = currentJob
+  const retryExpiredJob = displayedJob?.status === 'running' && displayedJob.lockExpired
+
   return (
     <VStack gap="space-8" align="start">
       <Dialog open={open} onOpenChange={setOpen}>
         <Dialog.Trigger>
           <Button ref={triggerRef} type="button" size="small" variant="secondary">
-            {isRunning ? 'Vis backfillstatus' : fetcher.state !== 'idle' ? 'Starter backfill …' : 'Backfill ID'}
+            {isRunning
+              ? 'Vis backfillstatus'
+              : fetcher.state !== 'idle'
+                ? 'Starter backfill …'
+                : retryExpiredJob
+                  ? 'Prøv backfill på nytt'
+                  : 'Backfill ID'}
           </Button>
         </Dialog.Trigger>
         <Dialog.Popup returnFocusTo={() => triggerRef.current}>
@@ -95,15 +132,18 @@ function RepositoryBackfillAction({
           </Dialog.Footer>
         </Dialog.Popup>
       </Dialog>
-      {job?.status === 'running' && <BodyShort size="small">Backfill kjører …</BodyShort>}
-      {job?.status === 'completed' && (
+      {isRunning && <BodyShort size="small">Backfill kjører …</BodyShort>}
+      {retryExpiredJob && <BodyShort size="small">Backfill-jobben har utløpt og kan startes på nytt.</BodyShort>}
+      {displayedJob?.status === 'completed' && (
         <BodyShort size="small">
-          Fullført: {Number(job.result?.updated ?? 0).toLocaleString('no-NO')} oppdatert
+          Fullført: {Number(displayedJob.result?.updated ?? 0).toLocaleString('no-NO')} oppdatert
         </BodyShort>
       )}
-      {job?.status === 'failed' && <BodyShort size="small">Feilet: {job.error ?? 'Ukjent feil'}</BodyShort>}
-      {job?.status === 'partial' && <BodyShort size="small">Delvis fullført</BodyShort>}
-      {job?.status === 'cancelled' && <BodyShort size="small">Avbrutt</BodyShort>}
+      {displayedJob?.status === 'failed' && (
+        <BodyShort size="small">Feilet: {displayedJob.error ?? 'Ukjent feil'}</BodyShort>
+      )}
+      {displayedJob?.status === 'partial' && <BodyShort size="small">Delvis fullført</BodyShort>}
+      {displayedJob?.status === 'cancelled' && <BodyShort size="small">Avbrutt</BodyShort>}
     </VStack>
   )
 }
@@ -131,15 +171,6 @@ export function RepositoryIdBackfillCoverage({
   invalidRepository,
   returnToTeam,
 }: RepositoryIdBackfillCoverageProps) {
-  const revalidator = useRevalidator()
-  const hasRunningBackfill = repositories.some((repository) => repository.backfillJob?.status === 'running')
-
-  useEffect(() => {
-    if (!hasRunningBackfill) return
-    const interval = setInterval(() => revalidator.revalidate(), 3000)
-    return () => clearInterval(interval)
-  }, [hasRunningBackfill, revalidator])
-
   if (previewRepository) {
     return (
       <VStack gap="space-24">

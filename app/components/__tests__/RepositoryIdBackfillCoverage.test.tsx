@@ -3,7 +3,16 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import { RepositoryIdBackfillCoverage } from '../RepositoryIdBackfillCoverage'
 
-function renderCoverage(selectedTeam: string | null) {
+function renderCoverage(
+  selectedTeam: string | null,
+  backfillJob: {
+    id: number
+    status: 'running'
+    result: Record<string, unknown> | null
+    error: string | null
+    lockExpired: boolean
+  } | null = null,
+) {
   const router = createMemoryRouter(
     [
       {
@@ -30,7 +39,7 @@ function renderCoverage(selectedTeam: string | null) {
                       shaMismatch: 0,
                       unsupportedEvent: 0,
                       headRepositoryMismatch: 0,
-                      backfillJob: null,
+                      backfillJob,
                     },
                   ]
                 : []
@@ -68,6 +77,20 @@ describe('RepositoryIdBackfillCoverage', () => {
     expect(markup).toContain('Backfill ID')
     expect(markup).toContain('Handlingene i tabellen kjører repositoryomfattende')
     expect(markup).toContain('Handlingene i tabellen kjører repositoryomfattende og er ikke begrenset til dette teamet')
+  })
+
+  it('allows retrying a backfill whose lock has expired', () => {
+    const markup = renderCoverage('team-a', {
+      id: 91,
+      status: 'running',
+      result: null,
+      error: null,
+      lockExpired: true,
+    })
+
+    expect(markup).toContain('Prøv backfill på nytt')
+    expect(markup).toContain('Backfill-jobben har utløpt og kan startes på nytt.')
+    expect(markup).not.toContain('Backfill kjører')
   })
 
   it('shows concrete deployments from every team in the repository-wide preview', () => {

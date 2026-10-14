@@ -13,6 +13,7 @@ import {
   getWorkflowRunBackfillCoverageTeams,
   getWorkflowRunBackfillPreviewRepository,
   getWorkflowRunRepositoryBackfillCoverage,
+  getWorkflowRunRepositoryBackfillJobStatus,
   getWorkflowRunRepositoryBackfillPreview,
 } from '../workflow-run-repository-backfill-coverage.server'
 
@@ -42,6 +43,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
           backfill_job_status: null,
           backfill_job_result: null,
           backfill_job_error: null,
+          backfill_job_lock_expired: false,
         },
       ],
     })
@@ -101,6 +103,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
           backfill_job_status: 'completed',
           backfill_job_result: { updated: 183 },
           backfill_job_error: null,
+          backfill_job_lock_expired: false,
         },
       ],
     })
@@ -125,12 +128,40 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
           status: 'completed',
           result: { updated: 183 },
           error: null,
+          lockExpired: false,
         },
       },
     ])
     const [query] = mockPoolQuery.mock.calls[0]
     expect(query).toContain('repositories_with_backfill_jobs')
     expect(query).toContain("sj.job_type = 'backfill_github_repo_ids'")
+  })
+
+  it('loads only the latest job and reports when its lock has expired', async () => {
+    mockPoolQuery.mockResolvedValue({
+      rows: [
+        {
+          id: 91,
+          status: 'running',
+          result: null,
+          error: null,
+          lock_expired: true,
+        },
+      ],
+    })
+
+    await expect(getWorkflowRunRepositoryBackfillJobStatus(216)).resolves.toEqual({
+      id: 91,
+      status: 'running',
+      result: null,
+      error: null,
+      lockExpired: true,
+    })
+    expect(mockPoolQuery.mock.calls[0]?.[1]).toEqual([216])
+    expect(mockPoolQuery.mock.calls[0]?.[0]).toContain(
+      "status = 'running' AND (lock_expires_at IS NULL OR lock_expires_at <= NOW()) AS lock_expired",
+    )
+    expect(mockPoolQuery.mock.calls[0]?.[0]).toContain('ORDER BY created_at DESC, id DESC')
   })
 
   it('returns a lightweight sorted list of monitored application teams', async () => {

@@ -6,6 +6,7 @@ export interface WorkflowRunRepositoryIdBackfillJob {
   status: SyncJobStatus
   result: Record<string, unknown> | null
   error: string | null
+  lockExpired: boolean
 }
 
 export interface WorkflowRunRepositoryBackfillCoverage {
@@ -71,6 +72,7 @@ interface CoverageRow {
   backfill_job_status: SyncJobStatus | null
   backfill_job_result: Record<string, unknown> | null
   backfill_job_error: string | null
+  backfill_job_lock_expired: boolean
 }
 
 interface PreviewRepositoryRow {
@@ -251,12 +253,14 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
        backfill_job.id AS backfill_job_id,
        backfill_job.status AS backfill_job_status,
        backfill_job.result AS backfill_job_result,
-       backfill_job.error AS backfill_job_error
+       backfill_job.error AS backfill_job_error,
+       backfill_job.status = 'running'
+         AND (backfill_job.lock_expires_at IS NULL OR backfill_job.lock_expires_at <= NOW()) AS backfill_job_lock_expired
      FROM visible_repositories visible
      LEFT JOIN coverage
        ON coverage.repository_id = visible.repository_id
      LEFT JOIN LATERAL (
-       SELECT id, status, result, error
+       SELECT id, status, result, error, lock_expires_at
        FROM sync_jobs
        WHERE repository_id = visible.repository_id
          AND job_type = 'backfill_github_repo_ids'
@@ -289,8 +293,40 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
             status: row.backfill_job_status ?? 'failed',
             result: row.backfill_job_result,
             error: row.backfill_job_error,
+            lockExpired: row.backfill_job_lock_expired,
           },
   }))
+}
+
+export async function getWorkflowRunRepositoryBackfillJobStatus(
+  repositoryId: number,
+): Promise<WorkflowRunRepositoryIdBackfillJob | null> {
+  const { rows } = await pool.query<{
+    id: number
+    status: SyncJobStatus
+    result: Record<string, unknown> | null
+    error: string | null
+    lock_expired: boolean
+  }>(
+    `SELECT id, status, result, error,
+       status = 'running' AND (lock_expires_at IS NULL OR lock_expires_at <= NOW()) AS lock_expired
+     FROM sync_jobs
+     WHERE repository_id = $1 AND job_type = 'backfill_github_repo_ids'
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [repositoryId],
+  )
+  const job = rows[0]
+
+  return job
+    ? {
+        id: job.id,
+        status: job.status,
+        result: job.result,
+        error: job.error,
+        lockExpired: job.lock_expired,
+      }
+    : null
 }
 
 export async function getWorkflowRunBackfillPreviewRepository(
