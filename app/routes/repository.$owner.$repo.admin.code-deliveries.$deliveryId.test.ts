@@ -102,15 +102,18 @@ describe('repository code delivery evidence loader', () => {
     expect(mockGetEvidence).not.toHaveBeenCalled()
   })
 
-  it.each(['0', '-1', 'abc', '17extra', '9007199254740992'])('rejects invalid delivery id %s', async (deliveryId) => {
-    await expect(
-      loader({
-        params: { ...params, deliveryId },
-        request: makeRequest(),
-      } as never),
-    ).rejects.toMatchObject({ status: 400 })
-    expect(mockRequireUser).not.toHaveBeenCalled()
-  })
+  it.each(['0', '-1', 'abc', '17extra', '2147483648', '9007199254740992'])(
+    'rejects invalid delivery id %s',
+    async (deliveryId) => {
+      await expect(
+        loader({
+          params: { ...params, deliveryId },
+          request: makeRequest(),
+        } as never),
+      ).rejects.toMatchObject({ status: 400 })
+      expect(mockRequireUser).not.toHaveBeenCalled()
+    },
+  )
 
   it('returns evidence and mapped reviewer names for the repository delivery', async () => {
     const result = await loader({ params, request: makeRequest() } as never)

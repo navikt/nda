@@ -25,7 +25,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     !/^\d+$/.test(rawDeliveryId) ||
     !Number.isFinite(deliveryId) ||
     !Number.isSafeInteger(deliveryId) ||
-    deliveryId <= 0
+    deliveryId <= 0 ||
+    deliveryId > 2_147_483_647
   ) {
     throw new Response('Invalid delivery ID', { status: 400 })
   }
