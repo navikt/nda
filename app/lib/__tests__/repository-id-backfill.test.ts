@@ -5,6 +5,7 @@ const {
   mockLoggerWarn,
   mockBackfillEligibleWorkflowRunRepositoryIds,
   mockGetSyncJobById,
+  mockHeartbeatRepositoryIdBackfillJob,
   mockIsSyncJobCancelled,
   mockReleaseSyncLock,
   mockLoggerError,
@@ -13,6 +14,7 @@ const {
   mockLoggerWarn: vi.fn(),
   mockBackfillEligibleWorkflowRunRepositoryIds: vi.fn(),
   mockGetSyncJobById: vi.fn(),
+  mockHeartbeatRepositoryIdBackfillJob: vi.fn(),
   mockIsSyncJobCancelled: vi.fn(),
   mockReleaseSyncLock: vi.fn(),
   mockLoggerError: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock('~/db/connection.server', () => ({
 
 vi.mock('~/db/sync-jobs.server', () => ({
   getSyncJobById: mockGetSyncJobById,
+  heartbeatRepositoryIdBackfillJob: mockHeartbeatRepositoryIdBackfillJob,
   isSyncJobCancelled: mockIsSyncJobCancelled,
   releaseSyncLock: mockReleaseSyncLock,
 }))
@@ -97,6 +100,33 @@ describe('processRepositoryIdBackfillJobAsync', () => {
     expect(mockBackfillEligibleWorkflowRunRepositoryIds).toHaveBeenCalledWith(216)
     expect(mockGetSyncJobById).toHaveBeenCalledWith(91)
     expect(mockReleaseSyncLock).toHaveBeenCalledWith(91, 'completed', { updated: 3, repositoryId: 216 })
+  })
+
+  it('renews the lease while a repository backfill is still running', async () => {
+    vi.useFakeTimers()
+    mockBackfillEligibleWorkflowRunRepositoryIds.mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          setTimeout(() => resolve(3), 6 * 60 * 1000)
+        }),
+    )
+    mockGetSyncJobById.mockResolvedValue({ status: 'running' })
+    mockReleaseSyncLock.mockResolvedValue(true)
+    mockHeartbeatRepositoryIdBackfillJob.mockResolvedValue(true)
+
+    try {
+      const processing = processRepositoryIdBackfillJobAsync(91, 216)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+
+      expect(mockHeartbeatRepositoryIdBackfillJob).toHaveBeenCalledWith(91, 30)
+
+      await vi.advanceTimersByTimeAsync(60 * 1000)
+      await processing
+
+      expect(mockReleaseSyncLock).toHaveBeenCalledWith(91, 'completed', { updated: 3, repositoryId: 216 })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('marks a still-running job failed and rethrows when backfill fails', async () => {

@@ -1,7 +1,15 @@
 import { pool } from '~/db/connection.server'
-import { getSyncJobById, isSyncJobCancelled, releaseSyncLock } from '~/db/sync-jobs.server'
+import {
+  getSyncJobById,
+  heartbeatRepositoryIdBackfillJob,
+  isSyncJobCancelled,
+  releaseSyncLock,
+} from '~/db/sync-jobs.server'
 import { backfillEligibleWorkflowRunRepositoryIds } from '~/db/workflow-run-repository-backfill-coverage.server'
 import { logger, runWithJobContext } from '~/lib/logger.server'
+
+const BACKFILL_HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000
+const BACKFILL_HEARTBEAT_EXTENSION_MINUTES = 30
 
 export async function queueRepositoryIdBackfill(
   repositoryId: number,
@@ -55,10 +63,38 @@ export async function queueRepositoryIdBackfill(
 
 export async function processRepositoryIdBackfillJobAsync(jobId: number, repositoryId: number): Promise<void> {
   await runWithJobContext(jobId, 'backfill_github_repo_ids', { repositoryId }, false, async () => {
+    let heartbeatInProgress: Promise<void> | undefined
+    let heartbeatError: unknown
+    let leaseLost = false
+    const heartbeat = setInterval(() => {
+      if (heartbeatInProgress) return
+      heartbeatInProgress = heartbeatRepositoryIdBackfillJob(jobId, BACKFILL_HEARTBEAT_EXTENSION_MINUTES)
+        .then((leaseExtended) => {
+          if (!leaseExtended) {
+            leaseLost = true
+            logger.warn(`Repository-ID backfill lease is no longer current for job ${jobId}`)
+            clearInterval(heartbeat)
+          } else {
+            heartbeatError = undefined
+          }
+        })
+        .catch((error: unknown) => {
+          heartbeatError = error
+          logger.error(`Failed to extend repository-ID backfill lease for job ${jobId}`, error)
+        })
+        .finally(() => {
+          heartbeatInProgress = undefined
+        })
+    }, BACKFILL_HEARTBEAT_INTERVAL_MS)
+
     try {
       if (await isSyncJobCancelled(jobId)) return
 
       const updated = await backfillEligibleWorkflowRunRepositoryIds(repositoryId)
+      await heartbeatInProgress
+      if (leaseLost) throw new Error(`Repository-ID backfill lease was lost for job ${jobId}`)
+      if (heartbeatError) throw heartbeatError
+
       const job = await getSyncJobById(jobId)
       if (job?.status !== 'running') return
 
@@ -71,6 +107,9 @@ export async function processRepositoryIdBackfillJobAsync(jobId: number, reposit
         await releaseSyncLock(jobId, 'failed', undefined, message)
       }
       throw error
+    } finally {
+      clearInterval(heartbeat)
+      await heartbeatInProgress
     }
   })
 }

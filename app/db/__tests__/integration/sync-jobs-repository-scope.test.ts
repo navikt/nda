@@ -9,6 +9,7 @@ import {
   getAllSyncJobs,
   getFailedSyncJobsGrouped,
   getSyncJobRepositories,
+  heartbeatRepositoryIdBackfillJob,
   isAppBlockedByRunningJob,
 } from '~/db/sync-jobs.server'
 import {
@@ -509,6 +510,31 @@ describe('forceReleaseSyncJob', () => {
 
     const { rows } = await pool.query<{ status: string }>(`SELECT status FROM sync_jobs WHERE id = $1`, [jobId])
     expect(rows[0].status).toBe('running')
+  })
+})
+
+describe('heartbeatRepositoryIdBackfillJob', () => {
+  it('extends only a current running repository-ID backfill lease', async () => {
+    const jobId = await insertRunningJob({
+      jobType: 'backfill_github_repo_ids',
+      lockExpiresInMinutes: 10,
+    })
+
+    await expect(heartbeatRepositoryIdBackfillJob(jobId, 30)).resolves.toBe(true)
+    const { rows } = await pool.query<{ remaining_seconds: number }>(
+      'SELECT EXTRACT(EPOCH FROM (lock_expires_at - clock_timestamp()))::int AS remaining_seconds FROM sync_jobs WHERE id = $1',
+      [jobId],
+    )
+    expect(rows[0].remaining_seconds).toBeGreaterThan(29 * 60)
+  })
+
+  it('does not renew an expired lease', async () => {
+    const jobId = await insertRunningJob({
+      jobType: 'backfill_github_repo_ids',
+      lockExpiresInMinutes: -1,
+    })
+
+    await expect(heartbeatRepositoryIdBackfillJob(jobId, 30)).resolves.toBe(false)
   })
 })
 

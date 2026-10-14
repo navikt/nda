@@ -613,6 +613,19 @@ export async function heartbeatSyncJob(jobId: number, extendMinutes: number = 5)
   )
 }
 
+export async function heartbeatRepositoryIdBackfillJob(jobId: number, extendMinutes: number = 30): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE sync_jobs
+     SET lock_expires_at = clock_timestamp() + INTERVAL '1 minute' * $2
+     WHERE id = $1
+       AND job_type = 'backfill_github_repo_ids'
+       AND status = 'running'
+       AND lock_expires_at > clock_timestamp()`,
+    [jobId, extendMinutes],
+  )
+  return result.rowCount === 1
+}
+
 export async function heartbeatNaisSyncJob(jobId: number, extendMinutes: number = 5): Promise<boolean> {
   const result = await pool.query(
     `UPDATE sync_jobs
