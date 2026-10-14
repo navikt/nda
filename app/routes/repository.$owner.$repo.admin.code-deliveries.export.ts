@@ -41,6 +41,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const liveGitHubEvidence = await fetchRepositoryDiagnosticGitHubEvidence({
     owner: exportData.repositoryMetadata.github_owner,
     repo: exportData.repositoryMetadata.github_repo_name,
+    githubRepoId: exportData.repositoryMetadata.github_repo_id,
     repositoryAliases: exportData.repositoryAliases,
     deployments: exportData.deployments,
     verificationRuns: exportData.verificationRuns,

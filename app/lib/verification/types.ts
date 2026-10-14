@@ -198,6 +198,20 @@ export interface WorkflowRunRawSnapshot {
   data: unknown
 }
 
+export interface WorkflowJobsRawSnapshot {
+  id: number
+  owner: string
+  repo: string
+  githubRepoId: number
+  runId: number
+  attemptNumber: number | null
+  apiVersion: string
+  apiDeprecatedAt: string | null
+  apiSunsetAt: string | null
+  fetchedAt: Date
+  data: unknown
+}
+
 export interface CommitRawSnapshot {
   id: number
   owner: string

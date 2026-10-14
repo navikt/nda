@@ -313,6 +313,11 @@ const SNAPSHOT_TABLE_SPECS: SnapshotTableSpec[] = [
     resultKey: 'workflowRunsRawSnapshotsDeleted',
   },
   {
+    tableName: 'github_workflow_jobs_raw_snapshots',
+    partitionColumns: 'github_repo_id, run_id, attempt_number',
+    resultKey: 'workflowJobsRawSnapshotsDeleted',
+  },
+  {
     tableName: 'github_commit_raw_snapshots',
     partitionColumns: 'github_repo_id, sha',
     resultKey: 'commitRawSnapshotsDeleted',
@@ -572,6 +577,10 @@ export {
 } from './github-data/compare-stats.server'
 export { savePrWindowRawSnapshot } from './github-data/pr-window-raw-snapshots.server'
 export { getLatestVerificationRun, saveVerificationRun } from './github-data/verification-runs.server'
+export {
+  getLatestWorkflowJobsRawSnapshot,
+  saveWorkflowJobsRawSnapshot,
+} from './github-data/workflow-jobs-raw-snapshots.server'
 export {
   getWorkflowRunRawSnapshotData,
   saveWorkflowRunRawSnapshot,

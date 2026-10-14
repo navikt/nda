@@ -172,7 +172,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
     )
     const parsed = JSON.parse(json)
 
-    expect(parsed.schemaVersion).toBe(4)
+    expect(parsed.schemaVersion).toBe(5)
     expect(parsed.exportedAt).toBe('2026-10-14T11:00:00.000Z')
     expect(parsed.repository.githubRepositoryId).toBe('12345')
     expect(parsed.implicitApprovalMode).toBe('dependabot_only')
@@ -219,7 +219,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
     )
     expect(parsed.liveGitHubEvidence.status).toBe('complete')
     expect(parsed.interpretationNotes).toContain(
-      'liveGitHubEvidence is fetched from GitHub when the export is generated and includes current PR metadata, review records, and workflow job/step outcomes for PRs and workflow runs referenced by the bounded diagnostic. It is not the verification decision stored at deployment time. Each item records its fetch status; missing or failed live evidence must not be interpreted as an empty review or job history.',
+      'liveGitHubEvidence includes PR metadata, review records, and workflow job/step outcomes for PRs and workflow runs referenced by the bounded diagnostic. It reuses available raw GitHub snapshots before calling GitHub, and stores complete live responses as snapshots for later exports. Each item records its source and retrieval status; missing or failed evidence must not be interpreted as an empty review or job history. It is not the verification decision stored at deployment time.',
     )
     expect(parsed.interpretationNotes).toContain(
       'implicitApprovalMode is read within the same repeatable-read database snapshot as the audit entries and exported evidence.',

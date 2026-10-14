@@ -127,7 +127,7 @@ describe('repository code delivery export loader', () => {
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(JSON.parse(await response.text())).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       repository: {
         id: 5,
         githubRepositoryId: '67890',
@@ -153,6 +153,7 @@ describe('repository code delivery export loader', () => {
     expect(mockFetchDiagnosticEvidence).toHaveBeenCalledWith({
       owner: 'snapshot-owner',
       repo: 'snapshot-repo',
+      githubRepoId: '67890',
       repositoryAliases: [{ owner: 'old-navikt', repo: 'old-snapshot-repo' }],
       deployments: [],
       verificationRuns: [],

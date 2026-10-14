@@ -121,6 +121,7 @@ const RESULT_KEY_LABELS: Record<string, string> = {
   compareRawSnapshotsDeleted: 'github_compare_raw_snapshots',
   checksRawSnapshotsDeleted: 'github_checks_raw_snapshots',
   workflowRunsRawSnapshotsDeleted: 'github_workflow_runs_raw_snapshots',
+  workflowJobsRawSnapshotsDeleted: 'github_workflow_jobs_raw_snapshots',
   commitRawSnapshotsDeleted: 'github_commit_raw_snapshots',
   commitAssociatedPrsRawSnapshotsDeleted: 'github_commit_associated_prs_raw_snapshots',
   prWindowRawSnapshotsDeleted: 'github_pr_window_raw_snapshots',

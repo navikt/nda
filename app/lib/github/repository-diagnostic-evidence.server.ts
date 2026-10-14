@@ -5,17 +5,18 @@ import type {
   RepositoryVerificationRunExportRow,
   RepositoryWorkflowRunSnapshotExportRow,
 } from '~/db/repository-code-delivery-overview.server'
-import { logger } from '~/lib/logger.server'
 import {
-  GITHUB_RATE_LIMIT_SAFETY_BUFFER,
-  getGitHubClient,
-  getGitHubRateLimitError,
-  getGitHubRateLimitRemaining,
-} from './client.server'
+  getOrFetchPullRequestSnapshotEvidence,
+  getOrFetchWorkflowJobsSnapshotEvidence,
+  type SnapshotEvidenceSource,
+  type SnapshotEvidenceStatus,
+  type SnapshotRequestBudget,
+  type SnapshotRetrievalStopReason,
+} from './diagnostic-evidence-snapshots.server'
 import { parseWorkflowRunUrl } from './git.server'
 
-type EvidenceStatus = 'available' | 'partial' | 'not_found' | 'error' | 'skipped_rate_limit' | 'skipped_request_limit'
-type RetrievalStopReason = 'rate_limit' | 'request_limit' | 'not_found' | 'error'
+type EvidenceStatus = SnapshotEvidenceStatus
+type RetrievalStopReason = SnapshotRetrievalStopReason
 
 type PullRequestReference = {
   type: string
@@ -28,6 +29,7 @@ interface RepositoryDiagnosticPullRequestEvidence {
   number: number
   references: PullRequestReference[]
   status: EvidenceStatus
+  source: SnapshotEvidenceSource | null
   stoppedBy?: RetrievalStopReason
   error: string | null
   fetchedAt: string | null
@@ -62,6 +64,7 @@ interface RepositoryDiagnosticWorkflowEvidence {
   snapshotIds: number[]
   deploymentIds: number[]
   status: EvidenceStatus
+  source: SnapshotEvidenceSource | null
   stoppedBy?: RetrievalStopReason
   error: string | null
   fetchedAt: string | null
@@ -97,6 +100,7 @@ export interface RepositoryDiagnosticGitHubEvidence {
 type EvidenceInputs = {
   owner: string
   repo: string
+  githubRepoId: number | string
   repositoryAliases: RepositoryCodeDeliveryRepositoryAlias[]
   deployments: RepositoryCodeDeliveryExportRow[]
   verificationRuns: RepositoryVerificationRunExportRow[]
@@ -104,16 +108,15 @@ type EvidenceInputs = {
   workflowRunSnapshots: RepositoryWorkflowRunSnapshotExportRow[]
 }
 
-type RequestBudget = {
-  limit: number
-  attempted: number
-}
+type RequestBudget = SnapshotRequestBudget
 
 type WorkflowRunGroup = {
   runId: string
   owner: string
   repo: string
   attemptNumber: number | null
+  githubRepoId: number | string
+  workflowRunStatus: string | null
   snapshotIds: number[]
   deploymentIds: number[]
 }
@@ -258,64 +261,6 @@ function discoverPullRequestReferences(
   return references
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  const message = asRecord(error)?.message
-  return typeof message === 'string' ? message : 'GitHub request failed'
-}
-
-function errorStatus(error: unknown): number | null {
-  if (error === null || typeof error !== 'object') return null
-  const directStatus = 'status' in error ? error.status : null
-  if (typeof directStatus === 'number') return directStatus
-  const response = 'response' in error ? asRecord(error.response) : null
-  return typeof response?.status === 'number' ? response.status : null
-}
-
-function rateLimitReached(): boolean {
-  const remaining = getGitHubRateLimitRemaining()
-  return remaining !== null && remaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER
-}
-
-async function fetchAllPages<T, TResponse>(
-  fetchPage: (page: number) => Promise<{ data: TResponse }>,
-  getItems: (data: TResponse) => T[],
-  requestBudget: RequestBudget,
-  isComplete?: (data: TResponse, itemCount: number) => boolean,
-): Promise<{ items: T[]; pagesSucceeded: number; stopReason: RetrievalStopReason | null; error: string | null }> {
-  const items: T[] = []
-  let pagesSucceeded = 0
-  let page = 1
-  while (true) {
-    if (requestBudget.attempted >= requestBudget.limit) {
-      return { items, pagesSucceeded, stopReason: 'request_limit', error: null }
-    }
-    if (rateLimitReached()) {
-      return { items, pagesSucceeded, stopReason: 'rate_limit', error: null }
-    }
-    requestBudget.attempted++
-    try {
-      const response = await fetchPage(page)
-      const pageItems = getItems(response.data)
-      pagesSucceeded++
-      items.push(...pageItems)
-      if (isComplete?.(response.data, items.length) ?? pageItems.length < 100) {
-        return { items, pagesSucceeded, stopReason: null, error: null }
-      }
-      page++
-    } catch (error) {
-      const limited = getGitHubRateLimitError(error) !== null
-      const status = errorStatus(error)
-      return {
-        items,
-        pagesSucceeded,
-        stopReason: limited ? 'rate_limit' : status === 404 || status === 410 ? 'not_found' : 'error',
-        error: limited || status === 404 || status === 410 ? null : errorMessage(error),
-      }
-    }
-  }
-}
-
 async function fetchPullRequestEvidence(
   owner: string,
   repo: string,
@@ -323,136 +268,40 @@ async function fetchPullRequestEvidence(
   references: PullRequestReference[],
   requestBudget: RequestBudget,
 ): Promise<RepositoryDiagnosticPullRequestEvidence> {
-  const base = {
+  const evidence = await getOrFetchPullRequestSnapshotEvidence(owner, repo, number, requestBudget)
+  const pullRequest = evidence.pullRequest
+  return {
     number,
     references,
-    fetchedAt: null,
-    pullRequest: null,
-    reviews: null,
-  }
-  if (requestBudget.attempted >= requestBudget.limit) {
-    return { ...base, status: 'skipped_request_limit', stoppedBy: 'request_limit', error: null }
-  }
-  if (rateLimitReached()) {
-    return { ...base, status: 'skipped_rate_limit', stoppedBy: 'rate_limit', error: null }
-  }
-
-  const fetchedAt = new Date().toISOString()
-  let client: ReturnType<typeof getGitHubClient>
-  let pullRequest: RepositoryDiagnosticPullRequestEvidence['pullRequest']
-  try {
-    requestBudget.attempted++
-    client = getGitHubClient()
-    const response = await client.pulls.get({ owner, repo, pull_number: number })
-    pullRequest = {
-      htmlUrl: response.data.html_url,
-      title: response.data.title,
-      state: response.data.state,
-      createdAt: response.data.created_at,
-      updatedAt: response.data.updated_at,
-      closedAt: response.data.closed_at,
-      mergedAt: response.data.merged_at,
-      mergeCommitSha: response.data.merge_commit_sha,
-      mergedBy: response.data.merged_by?.login ?? null,
-      headSha: response.data.head.sha,
-      baseSha: response.data.base.sha,
-    }
-  } catch (error) {
-    const limited = getGitHubRateLimitError(error) !== null
-    logger.warn('Could not fetch repository diagnostic pull request', {
-      owner,
-      repo,
-      pull_request_number: number,
-      error: errorMessage(error),
-    })
-    return {
-      ...base,
-      fetchedAt,
-      status: limited
-        ? 'skipped_rate_limit'
-        : errorStatus(error) === 404 || errorStatus(error) === 410
-          ? 'not_found'
-          : 'error',
-      stoppedBy: limited
-        ? 'rate_limit'
-        : errorStatus(error) === 404 || errorStatus(error) === 410
-          ? 'not_found'
-          : 'error',
-      error: limited || errorStatus(error) === 404 || errorStatus(error) === 410 ? null : errorMessage(error),
-    }
-  }
-
-  const reviewResult = await fetchAllPages(
-    (page) => client.pulls.listReviews({ owner, repo, pull_number: number, per_page: 100, page }),
-    (data) => data,
-    requestBudget,
-  )
-  if (reviewResult.stopReason === null) {
-    return {
-      ...base,
-      fetchedAt,
-      pullRequest,
-      status: 'available',
-      error: null,
-      reviews: reviewResult.items.map((review) => ({
+    status: evidence.status,
+    source: evidence.source,
+    ...(evidence.stoppedBy && { stoppedBy: evidence.stoppedBy }),
+    error: evidence.error,
+    fetchedAt: evidence.fetchedAt,
+    pullRequest: pullRequest
+      ? {
+          htmlUrl: pullRequest.html_url,
+          title: pullRequest.title,
+          state: pullRequest.state,
+          createdAt: pullRequest.created_at,
+          updatedAt: pullRequest.updated_at,
+          closedAt: pullRequest.closed_at,
+          mergedAt: pullRequest.merged_at,
+          mergeCommitSha: pullRequest.merge_commit_sha,
+          mergedBy: pullRequest.merged_by?.login ?? null,
+          headSha: pullRequest.head.sha,
+          baseSha: pullRequest.base.sha,
+        }
+      : null,
+    reviews:
+      evidence.reviews?.map((review) => ({
         id: review.id,
         reviewer: review.user?.login ?? null,
         state: review.state,
         submittedAt: review.submitted_at ?? null,
         commitSha: review.commit_id,
         htmlUrl: review.html_url,
-      })),
-    }
-  } else if (reviewResult.pagesSucceeded > 0) {
-    logger.warn('Could not fetch repository diagnostic pull request reviews', {
-      owner,
-      repo,
-      pull_request_number: number,
-      ...(reviewResult.error && { error: reviewResult.error }),
-      stop_reason: reviewResult.stopReason,
-    })
-    return {
-      ...base,
-      fetchedAt,
-      pullRequest,
-      status: 'partial',
-      stoppedBy: reviewResult.stopReason,
-      error:
-        reviewResult.error ??
-        (reviewResult.stopReason === 'rate_limit'
-          ? 'Rate limit prevented review retrieval'
-          : reviewResult.stopReason === 'request_limit'
-            ? 'Diagnostic request limit prevented complete review retrieval'
-            : reviewResult.stopReason === 'not_found'
-              ? 'GitHub no longer provides the complete review history'
-              : 'GitHub failed before complete review retrieval'),
-      reviews: reviewResult.items.map((review) => ({
-        id: review.id,
-        reviewer: review.user?.login ?? null,
-        state: review.state,
-        submittedAt: review.submitted_at ?? null,
-        commitSha: review.commit_id,
-        htmlUrl: review.html_url,
-      })),
-    }
-  } else {
-    return {
-      ...base,
-      fetchedAt,
-      pullRequest,
-      status: 'partial',
-      stoppedBy: reviewResult.stopReason,
-      error:
-        reviewResult.error ??
-        (reviewResult.stopReason === 'rate_limit'
-          ? 'Rate limit prevented review retrieval'
-          : reviewResult.stopReason === 'request_limit'
-            ? 'Diagnostic request limit prevented review retrieval'
-            : reviewResult.stopReason === 'not_found'
-              ? 'GitHub no longer provides this review history'
-              : 'GitHub failed before review history was retrieved'),
-      reviews: [],
-    }
+      })) ?? null,
   }
 }
 
@@ -460,99 +309,30 @@ async function fetchWorkflowEvidence(
   snapshotGroup: WorkflowRunGroup,
   requestBudget: RequestBudget,
 ): Promise<RepositoryDiagnosticWorkflowEvidence> {
-  const { runId, owner, repo, attemptNumber, snapshotIds, deploymentIds } = snapshotGroup
-  const base = { runId, owner, repo, attemptNumber, snapshotIds, deploymentIds, fetchedAt: null, jobs: null }
-  if (requestBudget.attempted >= requestBudget.limit) {
-    return { ...base, status: 'skipped_request_limit', stoppedBy: 'request_limit', error: null }
-  }
-  if (rateLimitReached()) {
-    return { ...base, status: 'skipped_rate_limit', stoppedBy: 'rate_limit', error: null }
-  }
-
-  const fetchedAt = new Date().toISOString()
-  try {
-    const client = getGitHubClient()
-    const jobResult = await fetchAllPages(
-      (page) => {
-        const request = {
-          owner,
-          repo,
-          run_id: Number(runId),
-          per_page: 100 as const,
-          page,
-        }
-        return attemptNumber === null
-          ? client.actions.listJobsForWorkflowRun({ ...request, filter: 'all' })
-          : client.actions.listJobsForWorkflowRunAttempt({
-              ...request,
-              attempt_number: attemptNumber,
-            })
-      },
-      (data) => data.jobs,
-      requestBudget,
-      (data, itemCount) => itemCount >= data.total_count,
-    )
-    if (jobResult.stopReason !== null) {
-      logger.warn('Could not fetch complete repository diagnostic workflow jobs', {
-        owner,
-        repo,
-        workflow_run_id: runId,
-        ...(jobResult.error && { error: jobResult.error }),
-        stop_reason: jobResult.stopReason,
-      })
-      return {
-        ...base,
-        fetchedAt,
-        status:
-          jobResult.pagesSucceeded > 0
-            ? 'partial'
-            : jobResult.stopReason === 'rate_limit'
-              ? 'skipped_rate_limit'
-              : jobResult.stopReason === 'request_limit'
-                ? 'skipped_request_limit'
-                : jobResult.stopReason,
-        stoppedBy: jobResult.stopReason,
-        error:
-          jobResult.error ??
-          (jobResult.pagesSucceeded === 0 && jobResult.stopReason !== 'error'
-            ? null
-            : jobResult.stopReason === 'rate_limit'
-              ? 'Rate limit prevented workflow job retrieval'
-              : jobResult.stopReason === 'request_limit'
-                ? 'Diagnostic request limit prevented complete workflow job retrieval'
-                : jobResult.stopReason === 'not_found'
-                  ? 'GitHub no longer provides this workflow run'
-                  : 'GitHub failed before workflow job retrieval'),
-        jobs:
-          jobResult.pagesSucceeded === 0
-            ? null
-            : jobResult.items.map((job) => ({
-                id: job.id,
-                name: job.name,
-                runAttempt: job.run_attempt ?? null,
-                status: job.status,
-                conclusion: job.conclusion,
-                startedAt: job.started_at ?? null,
-                completedAt: job.completed_at,
-                htmlUrl: job.html_url,
-                steps: (job.steps ?? []).map((step) => ({
-                  name: step.name,
-                  status: step.status,
-                  conclusion: step.conclusion,
-                  number: step.number,
-                  startedAt: step.started_at ?? null,
-                  completedAt: step.completed_at ?? null,
-                })),
-              })),
-      }
-    }
-    const jobs = jobResult.items
-    return {
-      ...base,
-      fetchedAt,
-      status: 'available',
-      error: null,
-      jobs: jobs.map((job) => ({
+  const { runId, owner, repo, attemptNumber, snapshotIds, deploymentIds, githubRepoId } = snapshotGroup
+  const evidence = await getOrFetchWorkflowJobsSnapshotEvidence(
+    owner,
+    repo,
+    githubRepoId,
+    Number(runId),
+    attemptNumber,
+    snapshotGroup.workflowRunStatus === 'completed',
+    requestBudget,
+  )
+  return {
+    runId,
+    owner,
+    repo,
+    attemptNumber,
+    snapshotIds,
+    deploymentIds,
+    status: evidence.status,
+    source: evidence.source,
+    ...(evidence.stoppedBy && { stoppedBy: evidence.stoppedBy }),
+    error: evidence.error,
+    fetchedAt: evidence.fetchedAt,
+    jobs:
+      evidence.jobs?.map((job) => ({
         id: job.id,
         name: job.name,
         runAttempt: job.run_attempt ?? null,
@@ -569,31 +349,7 @@ async function fetchWorkflowEvidence(
           startedAt: step.started_at ?? null,
           completedAt: step.completed_at ?? null,
         })),
-      })),
-    }
-  } catch (error) {
-    const limited = getGitHubRateLimitError(error) !== null
-    logger.warn('Could not fetch repository diagnostic workflow jobs', {
-      owner,
-      repo,
-      workflow_run_id: runId,
-      error: errorMessage(error),
-    })
-    return {
-      ...base,
-      fetchedAt,
-      status: limited
-        ? 'skipped_rate_limit'
-        : errorStatus(error) === 404 || errorStatus(error) === 410
-          ? 'not_found'
-          : 'error',
-      stoppedBy: limited
-        ? 'rate_limit'
-        : errorStatus(error) === 404 || errorStatus(error) === 410
-          ? 'not_found'
-          : 'error',
-      error: limited || errorStatus(error) === 404 || errorStatus(error) === 410 ? null : errorMessage(error),
-    }
+      })) ?? null,
   }
 }
 
@@ -624,6 +380,8 @@ export async function fetchRepositoryDiagnosticGitHubEvidence(
         owner: input.owner,
         repo: input.repo,
         attemptNumber: workflowRun.attemptNumber,
+        githubRepoId: input.githubRepoId,
+        workflowRunStatus: null,
         snapshotIds: [],
         deploymentIds: [],
       }
@@ -649,6 +407,8 @@ export async function fetchRepositoryDiagnosticGitHubEvidence(
                 owner: input.owner,
                 repo: input.repo,
                 attemptNumber: null,
+                githubRepoId: input.githubRepoId,
+                workflowRunStatus: null,
                 snapshotIds: [],
                 deploymentIds: [],
               },
@@ -656,6 +416,8 @@ export async function fetchRepositoryDiagnosticGitHubEvidence(
           ]
     for (const [key, group] of groupsToUpdate) {
       if (!group.snapshotIds.includes(snapshot.id)) group.snapshotIds.push(snapshot.id)
+      const snapshotData = asRecord(snapshot.data)
+      group.workflowRunStatus = typeof snapshotData?.status === 'string' ? snapshotData.status : null
       workflowGroups.set(key, group)
     }
   }
@@ -666,37 +428,17 @@ export async function fetchRepositoryDiagnosticGitHubEvidence(
   let requestLimited = false
 
   for (const [number, references] of prReferences) {
-    const evidence =
-      rateLimited || requestLimited
-        ? {
-            number,
-            references,
-            status: rateLimited ? ('skipped_rate_limit' as const) : ('skipped_request_limit' as const),
-            error: null,
-            fetchedAt: null,
-            pullRequest: null,
-            reviews: null,
-          }
-        : await fetchPullRequestEvidence(input.owner, input.repo, number, references, requestBudget)
+    const evidence = await fetchPullRequestEvidence(input.owner, input.repo, number, references, requestBudget)
     pullRequests.push(evidence)
-    if (evidence.stoppedBy === 'rate_limit') rateLimited = true
-    if (evidence.stoppedBy === 'request_limit') requestLimited = true
+    if (evidence.status === 'skipped_rate_limit' || evidence.stoppedBy === 'rate_limit') rateLimited = true
+    if (evidence.status === 'skipped_request_limit' || evidence.stoppedBy === 'request_limit') requestLimited = true
   }
 
   for (const group of workflowGroups.values()) {
-    const evidence =
-      rateLimited || requestLimited
-        ? {
-            ...group,
-            status: rateLimited ? ('skipped_rate_limit' as const) : ('skipped_request_limit' as const),
-            error: null,
-            fetchedAt: null,
-            jobs: null,
-          }
-        : await fetchWorkflowEvidence(group, requestBudget)
+    const evidence = await fetchWorkflowEvidence(group, requestBudget)
     workflowRuns.push(evidence)
-    if (evidence.stoppedBy === 'rate_limit') rateLimited = true
-    if (evidence.stoppedBy === 'request_limit') requestLimited = true
+    if (evidence.status === 'skipped_rate_limit' || evidence.stoppedBy === 'rate_limit') rateLimited = true
+    if (evidence.status === 'skipped_request_limit' || evidence.stoppedBy === 'request_limit') requestLimited = true
   }
 
   const failed = [...pullRequests, ...workflowRuns].some(

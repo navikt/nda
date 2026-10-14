@@ -7,6 +7,10 @@ const {
   mockListReviews,
   mockListJobs,
   mockListJobsForAttempt,
+  mockGetPrRawSnapshots,
+  mockSavePrRawSnapshots,
+  mockGetWorkflowJobsSnapshot,
+  mockSaveWorkflowJobsSnapshot,
 } = vi.hoisted(() => ({
   mockGetGitHubClient: vi.fn(),
   mockGetRateLimitRemaining: vi.fn(),
@@ -14,6 +18,10 @@ const {
   mockListReviews: vi.fn(),
   mockListJobs: vi.fn(),
   mockListJobsForAttempt: vi.fn(),
+  mockGetPrRawSnapshots: vi.fn(),
+  mockSavePrRawSnapshots: vi.fn(),
+  mockGetWorkflowJobsSnapshot: vi.fn(),
+  mockSaveWorkflowJobsSnapshot: vi.fn(),
 }))
 
 vi.mock('~/lib/github/client.server', () => ({
@@ -21,6 +29,13 @@ vi.mock('~/lib/github/client.server', () => ({
   getGitHubClient: mockGetGitHubClient,
   getGitHubRateLimitError: mockGetRateLimitError,
   getGitHubRateLimitRemaining: mockGetRateLimitRemaining,
+}))
+
+vi.mock('~/db/github-data.server', () => ({
+  getAllLatestPrRawSnapshots: mockGetPrRawSnapshots,
+  savePrRawSnapshotsBatch: mockSavePrRawSnapshots,
+  getLatestWorkflowJobsRawSnapshot: mockGetWorkflowJobsSnapshot,
+  saveWorkflowJobsRawSnapshot: mockSaveWorkflowJobsSnapshot,
 }))
 
 import type {
@@ -60,6 +75,7 @@ function makeDeployment(deploymentId: number, githubPrNumber: number | null): Re
 function makeInput(): {
   owner: string
   repo: string
+  githubRepoId: string
   repositoryAliases: Array<{ owner: string; repo: string }>
   deployments: RepositoryCodeDeliveryExportRow[]
   verificationRuns: RepositoryVerificationRunExportRow[]
@@ -69,6 +85,7 @@ function makeInput(): {
   return {
     owner: 'navikt',
     repo: 'glad-fjord',
+    githubRepoId: '67890',
     repositoryAliases: [],
     deployments: [makeDeployment(10, 100)],
     verificationRuns: [
@@ -122,6 +139,10 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     vi.clearAllMocks()
     mockGetRateLimitRemaining.mockReturnValue(null)
     mockGetRateLimitError.mockReturnValue(null)
+    mockGetPrRawSnapshots.mockResolvedValue(new Map())
+    mockSavePrRawSnapshots.mockResolvedValue([1])
+    mockGetWorkflowJobsSnapshot.mockResolvedValue(null)
+    mockSaveWorkflowJobsSnapshot.mockResolvedValue(1)
     mockListReviews.mockResolvedValue({
       data: [
         {
@@ -193,7 +214,7 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
             merge_commit_sha: 'a'.repeat(40),
             merged_by: { login: 'reviewer' },
             head: { sha: 'b'.repeat(40) },
-            base: { sha: 'c'.repeat(40) },
+            base: { sha: 'c'.repeat(40), repo: { id: 67890 } },
           },
         })),
         listReviews: mockListReviews,
@@ -254,6 +275,163 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
         filter: 'all',
       }),
     )
+    expect(mockSavePrRawSnapshots).toHaveBeenCalled()
+    expect(mockSaveWorkflowJobsSnapshot).toHaveBeenCalledWith(
+      'navikt',
+      'glad-fjord',
+      '67890',
+      12345,
+      null,
+      expect.any(Array),
+      expect.any(Object),
+    )
+  })
+
+  it('reuses PR and workflow-job snapshots without making GitHub requests', async () => {
+    const fetchedAt = new Date('2026-10-14T10:00:00Z')
+    const input = makeInput()
+    input.workflowRunSnapshots[0].data = { status: 'completed' }
+    mockGetPrRawSnapshots.mockResolvedValue(
+      new Map([
+        [
+          'pr',
+          {
+            fetchedAt,
+            data: {
+              html_url: 'https://github.com/navikt/glad-fjord/pull/100',
+              title: 'Cached PR',
+              state: 'closed',
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-02T00:00:00Z',
+              closed_at: '2026-01-02T00:00:00Z',
+              merged_at: '2026-01-02T00:00:00Z',
+              merge_commit_sha: 'a'.repeat(40),
+              merged_by: { login: 'reviewer' },
+              head: { sha: 'b'.repeat(40) },
+              base: { sha: 'c'.repeat(40), repo: { id: 67890 } },
+            },
+          },
+        ],
+        [
+          'reviews',
+          {
+            fetchedAt,
+            data: [
+              {
+                id: 9,
+                user: { login: 'CachedReviewer' },
+                state: 'APPROVED',
+                submitted_at: '2026-01-01T00:00:00Z',
+                commit_id: 'b'.repeat(40),
+                html_url: 'https://github.com/review/9',
+              },
+            ],
+          },
+        ],
+      ]),
+    )
+    mockGetWorkflowJobsSnapshot.mockResolvedValue({
+      fetchedAt,
+      data: [
+        {
+          id: 50,
+          name: 'cached deploy',
+          run_attempt: 1,
+          status: 'completed',
+          conclusion: 'success',
+          started_at: null,
+          completed_at: null,
+          html_url: 'https://github.com/job/50',
+          steps: [],
+        },
+      ],
+    })
+
+    const result = await fetchRepositoryDiagnosticGitHubEvidence(input)
+
+    expect(result.status).toBe('complete')
+    expect(result.requestsAttempted).toBe(0)
+    expect(result.pullRequests[0]).toMatchObject({
+      source: 'snapshot',
+      fetchedAt: fetchedAt.toISOString(),
+      pullRequest: { title: 'Cached PR' },
+      reviews: [{ reviewer: 'CachedReviewer' }],
+    })
+    expect(result.workflowRuns[0]).toMatchObject({
+      source: 'snapshot',
+      fetchedAt: fetchedAt.toISOString(),
+      jobs: [{ name: 'cached deploy' }],
+    })
+    expect(mockGetGitHubClient).not.toHaveBeenCalled()
+    expect(mockSavePrRawSnapshots).not.toHaveBeenCalled()
+    expect(mockSaveWorkflowJobsSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('uses a cached PR snapshot and fetches only missing review data', async () => {
+    const input = makeInput()
+    input.deployments = [makeDeployment(10, 82)]
+    input.verificationRuns = []
+    input.prSnapshots = []
+    input.workflowRunSnapshots = []
+    mockGetPrRawSnapshots.mockResolvedValue(
+      new Map([
+        [
+          'pr',
+          {
+            fetchedAt: new Date('2026-10-14T10:00:00Z'),
+            data: {
+              html_url: 'https://github.com/navikt/glad-fjord/pull/82',
+              title: 'Cached PR 82',
+              state: 'closed',
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-02T00:00:00Z',
+              closed_at: '2026-01-02T00:00:00Z',
+              merged_at: '2026-01-02T00:00:00Z',
+              merge_commit_sha: 'a'.repeat(40),
+              merged_by: { login: 'reviewer' },
+              head: { sha: 'b'.repeat(40) },
+              base: { sha: 'c'.repeat(40), repo: { id: 67890 } },
+            },
+          },
+        ],
+      ]),
+    )
+    const result = await fetchRepositoryDiagnosticGitHubEvidence(input)
+    const client = mockGetGitHubClient.mock.results[0]?.value
+
+    expect(result.pullRequests[0]).toMatchObject({
+      source: 'mixed',
+      pullRequest: { title: 'Cached PR 82' },
+      reviews: [{ reviewer: 'RaskElv' }],
+    })
+    expect(result.requestsAttempted).toBe(1)
+    expect(client.pulls.get).not.toHaveBeenCalled()
+    expect(mockSavePrRawSnapshots).toHaveBeenCalledWith('navikt', 'glad-fjord', 82, 67890, expect.any(Object), [
+      { dataType: 'reviews', data: expect.any(Array) },
+    ])
+  })
+
+  it('refreshes workflow jobs while the run is not known to be complete', async () => {
+    const input = makeInput()
+    input.deployments = [
+      {
+        ...makeDeployment(10, null),
+        trigger_url: 'https://github.com/navikt/glad-fjord/actions/runs/12345',
+      },
+    ]
+    input.verificationRuns = []
+    input.prSnapshots = []
+    input.workflowRunSnapshots[0].data = { status: 'in_progress' }
+    mockGetWorkflowJobsSnapshot.mockResolvedValue({
+      fetchedAt: new Date('2026-10-14T10:00:00Z'),
+      data: [{ id: 1, name: 'old job', status: 'completed', steps: [] }],
+    })
+
+    const result = await fetchRepositoryDiagnosticGitHubEvidence(input)
+
+    expect(result.workflowRuns[0]).toMatchObject({ source: 'github', status: 'available' })
+    expect(result.workflowRuns[0].jobs?.[0]?.name).toBe('deploy (prod)')
+    expect(mockListJobs).toHaveBeenCalledTimes(1)
   })
 
   it('records a missing PR as unavailable instead of treating it as an empty review history', async () => {
@@ -333,7 +511,7 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
         merge_commit_sha: 'a'.repeat(40),
         merged_by: { login: 'reviewer' },
         head: { sha: 'b'.repeat(40) },
-        base: { sha: 'c'.repeat(40) },
+        base: { sha: 'c'.repeat(40), repo: { id: 67890 } },
       },
     }))
 
@@ -494,6 +672,15 @@ describe('fetchRepositoryDiagnosticGitHubEvidence', () => {
     ])
     expect(mockListJobsForAttempt).toHaveBeenCalledWith(
       expect.objectContaining({ owner: 'navikt', repo: 'glad-fjord', run_id: 54321, attempt_number: 2 }),
+    )
+    expect(mockSaveWorkflowJobsSnapshot).toHaveBeenCalledWith(
+      'navikt',
+      'glad-fjord',
+      '67890',
+      54321,
+      2,
+      expect.any(Array),
+      expect.any(Object),
     )
   })
 
