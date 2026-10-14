@@ -132,18 +132,20 @@ function RepositoryBackfillAction({
           </Dialog.Footer>
         </Dialog.Popup>
       </Dialog>
-      {isRunning && <BodyShort size="small">Backfill kjører …</BodyShort>}
-      {retryExpiredJob && <BodyShort size="small">Backfill-jobben har utløpt og kan startes på nytt.</BodyShort>}
-      {displayedJob?.status === 'completed' && (
-        <BodyShort size="small">
-          Fullført: {Number(displayedJob.result?.updated ?? 0).toLocaleString('no-NO')} oppdatert
-        </BodyShort>
-      )}
-      {displayedJob?.status === 'failed' && (
-        <BodyShort size="small">Feilet: {displayedJob.error ?? 'Ukjent feil'}</BodyShort>
-      )}
-      {displayedJob?.status === 'partial' && <BodyShort size="small">Delvis fullført</BodyShort>}
-      {displayedJob?.status === 'cancelled' && <BodyShort size="small">Avbrutt</BodyShort>}
+      <div role="status" aria-live="polite" aria-atomic="true">
+        {isRunning && <BodyShort size="small">Backfill kjører …</BodyShort>}
+        {retryExpiredJob && <BodyShort size="small">Backfill-jobben har utløpt og kan startes på nytt.</BodyShort>}
+        {displayedJob?.status === 'completed' && (
+          <BodyShort size="small">
+            Fullført: {Number(displayedJob.result?.updated ?? 0).toLocaleString('no-NO')} oppdatert
+          </BodyShort>
+        )}
+        {displayedJob?.status === 'failed' && (
+          <BodyShort size="small">Feilet: {displayedJob.error ?? 'Ukjent feil'}</BodyShort>
+        )}
+        {displayedJob?.status === 'partial' && <BodyShort size="small">Delvis fullført</BodyShort>}
+        {displayedJob?.status === 'cancelled' && <BodyShort size="small">Avbrutt</BodyShort>}
+      </div>
     </VStack>
   )
 }

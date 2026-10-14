@@ -7,7 +7,7 @@ function renderCoverage(
   selectedTeam: string | null,
   backfillJob: {
     id: number
-    status: 'running'
+    status: 'running' | 'completed' | 'failed' | 'partial' | 'cancelled'
     result: Record<string, unknown> | null
     error: string | null
     lockExpired: boolean
@@ -75,8 +75,31 @@ describe('RepositoryIdBackfillCoverage', () => {
     expect(markup).toContain('5')
     expect(markup).toContain('12')
     expect(markup).toContain('Backfill ID')
+    expect(markup).toContain('role="status" aria-live="polite" aria-atomic="true"')
     expect(markup).toContain('Handlingene i tabellen kjører repositoryomfattende')
     expect(markup).toContain('Handlingene i tabellen kjører repositoryomfattende og er ikke begrenset til dette teamet')
+  })
+
+  it('announces completed and failed backfill updates through the persistent status region', () => {
+    const completedMarkup = renderCoverage('team-a', {
+      id: 91,
+      status: 'completed',
+      result: { updated: 3 },
+      error: null,
+      lockExpired: false,
+    })
+    const failedMarkup = renderCoverage('team-a', {
+      id: 91,
+      status: 'failed',
+      result: null,
+      error: 'Database unavailable',
+      lockExpired: false,
+    })
+
+    expect(completedMarkup).toContain('role="status" aria-live="polite" aria-atomic="true"')
+    expect(completedMarkup).toContain('Fullført: 3 oppdatert')
+    expect(failedMarkup).toContain('role="status" aria-live="polite" aria-atomic="true"')
+    expect(failedMarkup).toContain('Feilet: Database unavailable')
   })
 
   it('allows retrying a backfill whose lock has expired', () => {
