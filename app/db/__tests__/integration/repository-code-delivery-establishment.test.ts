@@ -143,6 +143,16 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(first102.outcome).toBe('created')
     expect(second102.outcome).toBe('linked')
     expect(await getLinkedDeliveryId(a102)).toBe(await getLinkedDeliveryId(b102))
+    const { rows: queuedDeliveries } = await pool.query<{ delivery_id: number }>(
+      `SELECT delivery_id
+       FROM repository_code_delivery_assessment_sync
+       ORDER BY delivery_id`,
+    )
+    const expectedDeliveryIds = (await Promise.all([a100, b101, a102].map(getLinkedDeliveryId)))
+      .filter((id): id is number => id !== null)
+      .sort((a, b) => a - b)
+    expect(expectedDeliveryIds).toHaveLength(3)
+    expect(queuedDeliveries.map((row) => row.delivery_id)).toEqual(expectedDeliveryIds)
   })
 
   it('does not move progress back on rollback to a known SHA', async () => {
