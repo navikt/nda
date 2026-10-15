@@ -775,12 +775,10 @@ describe('repository code delivery overview', () => {
       baseSha: SHA_1,
       headSha: SHA_2,
     })
-    const deployments = await Promise.all([
-      createDeployment('diagnostic-app-a', repositoryId, SHA_2),
-      createDeployment('diagnostic-app-a', repositoryId, SHA_2),
-      createDeployment('diagnostic-app-b', repositoryId, SHA_2),
-      createDeployment('diagnostic-app-b', repositoryId, SHA_2),
-    ])
+    const deployments: number[] = []
+    for (const appName of ['diagnostic-app-a', 'diagnostic-app-a', 'diagnostic-app-b', 'diagnostic-app-b']) {
+      deployments.push(await createDeployment(appName, repositoryId, SHA_2))
+    }
     for (const deploymentId of deployments) {
       await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
     }
