@@ -156,6 +156,9 @@ describe('materializeNaisApplyDeployments', () => {
         status: 'active',
       }),
     )
+    expect(syncRepositoryDefaultBranch).toHaveBeenCalledWith(
+      expect.objectContaining({ monitoredAppId: monitoredApp.id, onlyIfMissing: true }),
+    )
   })
 
   it('creates a pending repository link and alert for an unrecognized claimed repository', async () => {

@@ -183,6 +183,7 @@ async function ensureApplyRepositoryLink(
         monitoredAppId,
         defaultBranch: app.default_branch,
         syncedAt,
+        onlyIfMissing: true,
       })
       await syncDefaultBranchForApp({
         monitoredAppId,

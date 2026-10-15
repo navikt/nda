@@ -188,8 +188,9 @@ const ORDERED_DEPLOYMENTS_SELECT = (
                ORDER BY d.created_at ASC, d.id ASC
              ) AS prev_commit_sha
       FROM deployments d
-      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-      WHERE (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`
+      JOIN monitored_applications ma
+        ON d.monitored_app_id = ma.id
+        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`
 
 const SNAPSHOT_JOIN_AND_ORDER = `
     SELECT od.*,

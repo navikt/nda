@@ -15,7 +15,7 @@ export const VERIFY_LIMIT_PER_APP = 50
 
 const APP_THROTTLE_MS = 250
 
-async function syncNewDeploymentsWithLock(
+export async function syncNewDeploymentsWithLock(
   monitoredAppId: number,
   teamSlug: string,
   environmentName: string,
@@ -42,22 +42,26 @@ async function syncNewDeploymentsWithLock(
       }),
     },
     async () => {
-      const [legacySync, applyActivitySync] = await Promise.allSettled([
-        syncNewDeploymentsFromNais(teamSlug, environmentName, appName, monitoredAppId),
-        syncNaisApplyActivityFromNais(monitoredAppId),
-      ])
+      const legacySync = await syncNewDeploymentsFromNais(teamSlug, environmentName, appName, monitoredAppId).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason) => ({ status: 'rejected' as const, reason }),
+      )
+      const applyActivitySync = await syncNaisApplyActivityFromNais(monitoredAppId).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason) => ({ status: 'rejected' as const, reason }),
+      )
 
-      if (legacySync.status === 'rejected') {
-        if (applyActivitySync.status === 'rejected') {
-          throw new AggregateError([legacySync.reason, applyActivitySync.reason], 'Nais source synchronization failed')
-        }
-        throw legacySync.reason
-      }
       if (applyActivitySync.status === 'rejected') {
         logger.error(
           `❌ Nais Apply activity sync failed for app ${appName} (${teamSlug}/${environmentName}); continuing with legacy deployments:`,
           applyActivitySync.reason,
         )
+      }
+      if (legacySync.status === 'rejected') {
+        if (applyActivitySync.status === 'rejected') {
+          throw new AggregateError([legacySync.reason, applyActivitySync.reason], 'Nais source synchronization failed')
+        }
+        throw legacySync.reason
       }
 
       return {

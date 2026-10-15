@@ -636,8 +636,9 @@ export async function syncRepositoryDefaultBranch(params: {
   monitoredAppId: number
   defaultBranch: string | null
   syncedAt: Date
+  onlyIfMissing?: boolean
 }): Promise<boolean> {
-  const { monitoredAppId, defaultBranch, syncedAt } = params
+  const { monitoredAppId, defaultBranch, syncedAt, onlyIfMissing = false } = params
 
   return withTransaction(async (client) => {
     await lockRepositoryAdminForWrite(client)
@@ -652,8 +653,9 @@ export async function syncRepositoryDefaultBranch(params: {
        SET default_branch = COALESCE($1, default_branch),
            default_branch_synced_at = $2,
            updated_at = now()
-       WHERE id = $3`,
-      [defaultBranch, syncedAt, repository.id],
+       WHERE id = $3
+         AND ($4::boolean = false OR (default_branch IS NULL AND $1 IS NOT NULL))`,
+      [defaultBranch, syncedAt, repository.id, onlyIfMissing],
     )
     return (rowCount ?? 0) > 0
   })
