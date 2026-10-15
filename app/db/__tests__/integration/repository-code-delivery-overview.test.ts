@@ -232,7 +232,13 @@ describe('repository code delivery overview', () => {
       `INSERT INTO github_commit_associated_prs_raw_snapshots
          (github_repo_id, owner, repo, sha, api_version, data)
        VALUES ('1018', 'navikt', 'repo-1018', $1, '2022-11-28', $2::jsonb)`,
-      [SHA_2, JSON.stringify([{ number: 42, base: { ref: 'main' } }])],
+      [
+        SHA_2,
+        JSON.stringify([
+          { number: 41, base: { ref: 'main' } },
+          { number: 42, base: { ref: 'main' } },
+        ]),
+      ],
     )
     await pool.query(
       `INSERT INTO github_pr_raw_snapshots
@@ -306,7 +312,7 @@ describe('repository code delivery overview', () => {
           state: 'complete',
           summary: { covered: 1, notCovered: 0, unknown: 0 },
         },
-        pullRequestNumbers: [42],
+        pullRequestNumbers: [41, 42],
       },
       {
         deliveryId: deliveryWithoutCompare.id,
@@ -318,6 +324,12 @@ describe('repository code delivery overview', () => {
       },
     ])
 
+    await pool.query(
+      `UPDATE github_commit_associated_prs_raw_snapshots
+       SET data = $1::jsonb
+       WHERE github_repo_id = '1018' AND sha = $2`,
+      [JSON.stringify([{ number: 42, base: { ref: 'main' } }]), SHA_2],
+    )
     await pool.query(
       `UPDATE github_pr_raw_snapshots
        SET data = jsonb_set(data, '{head,sha}', to_jsonb($1::text))

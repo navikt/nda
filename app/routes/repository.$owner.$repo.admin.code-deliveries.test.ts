@@ -6,6 +6,7 @@ const {
   mockResolveRepositoryAdminAccess,
   mockGetOverview,
   mockGetHistoryReadiness,
+  mockGetAssessments,
   mockListDeliveries,
   mockListUnresolved,
 } = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const {
   mockResolveRepositoryAdminAccess: vi.fn(),
   mockGetOverview: vi.fn(),
   mockGetHistoryReadiness: vi.fn(),
+  mockGetAssessments: vi.fn(),
   mockListDeliveries: vi.fn(),
   mockListUnresolved: vi.fn(),
 }))
@@ -35,6 +37,10 @@ vi.mock('~/db/repository-code-delivery-overview.server', () => ({
   getRepositoryHistoryReadiness: mockGetHistoryReadiness,
   listRepositoryCodeDeliveries: mockListDeliveries,
   listOpenUnresolvedCodeDeployments: mockListUnresolved,
+}))
+
+vi.mock('~/db/repository-code-delivery-interval-assessment.server', () => ({
+  getRepositoryCodeDeliveryIntervalAssessments: mockGetAssessments,
 }))
 
 import {
@@ -115,6 +121,7 @@ describe('repository code deliveries loader', () => {
       repositoryDeploymentsWithoutKnownAppLinkCount: 0,
     })
     mockListDeliveries.mockResolvedValue([])
+    mockGetAssessments.mockResolvedValue([])
     mockListUnresolved.mockResolvedValue([])
   })
 
@@ -140,6 +147,51 @@ describe('repository code deliveries loader', () => {
       page: 2,
       totalPages: 3,
     })
+  })
+
+  it('returns only list assessment summaries without commit-level evidence', async () => {
+    const delivery = {
+      id: 12,
+      base_sha: 'a'.repeat(40),
+      head_sha: 'b'.repeat(40),
+      created_at: since,
+      first_deployed_at: since,
+      is_anchor: false,
+      deployment_count: 1,
+      app_names: ['glad-fjord'],
+    }
+    mockListDeliveries.mockResolvedValue([delivery])
+    mockGetAssessments.mockResolvedValue([
+      {
+        deliveryId: delivery.id,
+        assessment: {
+          state: 'complete',
+          defaultBranch: 'main',
+          totalCommits: 1,
+          listedCommits: 1,
+          omittedCommits: 0,
+          summary: { covered: 1, notCovered: 0, unknown: 0 },
+          commits: [{ sha: 'b'.repeat(40), message: 'Commit title', authorUsername: 'glad-fjord' }],
+        },
+        pullRequestNumbers: [42],
+      },
+    ])
+
+    const result = await loader({ params, request: makeRequest() } as never)
+
+    expect(mockGetAssessments).toHaveBeenCalledWith(5, [delivery])
+    expect(result.deliveries).toEqual([
+      {
+        ...delivery,
+        assessment: {
+          state: 'complete',
+          totalCommits: 1,
+          listedCommits: 1,
+          summary: { covered: 1, notCovered: 0, unknown: 0 },
+        },
+        pullRequestNumbers: [42],
+      },
+    ])
   })
 
   it.each([

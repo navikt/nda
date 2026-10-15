@@ -9,7 +9,7 @@ import type { RepositoryDeliveryIntervalAssessment } from '~/lib/repository-code
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool, withTransaction } from './connection.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
-import { getRepositoryCodeDeliveryIntervalAssessment } from './repository-code-delivery-interval-assessment.server'
+import { getRepositoryCodeDeliveryIntervalAssessments } from './repository-code-delivery-interval-assessment.server'
 
 export interface RepositoryCodeDeliveryOverview {
   deliveryCount: number
@@ -1001,16 +1001,12 @@ export async function getRepositoryCodeDeliveryEvidence(
       }
     }
 
-    const intervalAssessment = await getRepositoryCodeDeliveryIntervalAssessment(
-      client,
-      repositoryId,
-      delivery.base_sha,
-      delivery.head_sha,
-    )
+    const [intervalAssessment] = await getRepositoryCodeDeliveryIntervalAssessments(repositoryId, [delivery], client)
+    if (!intervalAssessment) throw new Error(`Missing interval assessment for delivery ${deliveryId}`)
 
     return {
       ...delivery,
-      interval_assessment: intervalAssessment,
+      interval_assessment: intervalAssessment.assessment,
       page,
       totalPages,
       totalEvidenceEntries,

@@ -109,7 +109,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const deliveriesWithAssessment = deliveries.map((delivery) => {
     const assessment = assessmentsByDeliveryId.get(delivery.id)
     if (!assessment) throw new Error(`Missing interval assessment for delivery ${delivery.id}`)
-    return { ...delivery, assessment: assessment.assessment, pullRequestNumbers: assessment.pullRequestNumbers }
+    const { state, totalCommits, listedCommits, summary } = assessment.assessment
+    return {
+      ...delivery,
+      assessment: { state, totalCommits, listedCommits, summary },
+      pullRequestNumbers: assessment.pullRequestNumbers,
+    }
   })
 
   return {

@@ -226,12 +226,15 @@ function parsePullRequestEvidence(
   }
 }
 
-export async function getRepositoryCodeDeliveryIntervalAssessment(
+async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   client: Pick<PoolClient, 'query'>,
   repositoryId: number,
-  baseSha: string,
-  headSha: string,
-): Promise<RepositoryDeliveryIntervalAssessment> {
+  deliveries: Array<{ id: number; base_sha: string; head_sha: string }>,
+): Promise<
+  Array<{ deliveryId: number; assessment: RepositoryDeliveryIntervalAssessment; pullRequestNumbers: number[] }>
+> {
+  if (deliveries.length === 0) return []
+
   const { rows: repositoryRows } = await client.query<{
     github_repo_id: string
     default_branch: string | null
@@ -246,30 +249,32 @@ export async function getRepositoryCodeDeliveryIntervalAssessment(
   if (!repository || !isImplicitApprovalMode(repository.implicit_approval_mode)) {
     throw new Error(`Repository ${repositoryId} is missing or has an invalid implicit approval mode`)
   }
+  const implicitApprovalMode = repository.implicit_approval_mode
 
-  const { rows: compareRows } = await client.query<{ data: unknown }>(
-    `SELECT data
-     FROM github_compare_raw_snapshots
-     WHERE github_repo_id = $1
-       AND lower(base_sha) = lower($2)
-       AND lower(head_sha) = lower($3)
-     ORDER BY fetched_at DESC, id DESC
-     LIMIT 1`,
-    [repository.github_repo_id, baseSha, headSha],
+  const deliveryIds = deliveries.map((delivery) => delivery.id)
+  const { rows: compareRows } = await client.query<{ delivery_id: number; data: unknown }>(
+    `SELECT delivery.id AS delivery_id, snapshot.data
+     FROM repository_code_deliveries delivery
+     LEFT JOIN LATERAL (
+       SELECT data
+       FROM github_compare_raw_snapshots
+       WHERE github_repo_id = $1
+         AND lower(base_sha) = lower(delivery.base_sha)
+         AND lower(head_sha) = lower(delivery.head_sha)
+       ORDER BY fetched_at DESC, id DESC
+       LIMIT 1
+     ) snapshot ON true
+     WHERE delivery.repository_id = $2
+       AND delivery.id = ANY($3::int[])`,
+    [repository.github_repo_id, repositoryId, deliveryIds],
   )
-  const compare = parseCompareData(compareRows[0]?.data)
-  if (!compare) {
-    return assessRepositoryDeliveryInterval({
-      compare: null,
-      defaultBranch: repository.default_branch,
-      implicitApprovalMode: repository.implicit_approval_mode,
-      associatedPullRequestsByCommit: {},
-      pullRequestsByNumber: {},
-    })
-  }
-
-  const commitShas = compare.commits.map((commit) => commit.sha)
-  const associatedRows =
+  const compareByDeliveryId = new Map(compareRows.map((row) => [row.delivery_id, parseCompareData(row.data)]))
+  const commitShas = [
+    ...new Set(
+      [...compareByDeliveryId.values()].flatMap((compare) => compare?.commits.map((commit) => commit.sha) ?? []),
+    ),
+  ]
+  const { rows: associatedRows } =
     commitShas.length === 0
       ? { rows: [] }
       : await client.query<{ sha: string; data: unknown; pagination_complete: boolean }>(
@@ -280,20 +285,19 @@ export async function getRepositoryCodeDeliveryIntervalAssessment(
            ORDER BY sha, fetched_at DESC, id DESC`,
           [repository.github_repo_id, commitShas],
         )
-  const associatedPullRequestsByCommit = Object.fromEntries(
-    associatedRows.rows.map((row) => [row.sha, parseAssociatedPullRequests(row.data, row.pagination_complete)]),
+  const associatedPullRequestsBySha = new Map(
+    associatedRows.map((row) => [row.sha, parseAssociatedPullRequests(row.data, row.pagination_complete)]),
   )
   const pullRequestNumbers = [
     ...new Set(
-      Object.values(associatedPullRequestsByCommit).flatMap(
-        (snapshot) =>
-          snapshot?.pullRequests
-            .filter((pullRequest) => pullRequest.baseBranch === repository.default_branch)
-            .map((pullRequest) => pullRequest.number) ?? [],
+      [...associatedPullRequestsBySha.values()].flatMap((snapshot) =>
+        snapshot.pullRequests
+          .filter((pullRequest) => pullRequest.baseBranch === repository.default_branch)
+          .map((pullRequest) => pullRequest.number),
       ),
     ),
   ]
-  const pullRequestRows =
+  const { rows: pullRequestRows } =
     pullRequestNumbers.length === 0
       ? { rows: [] }
       : await client.query<{ pr_number: number; data_type: 'pr' | 'reviews' | 'commits'; data: unknown }>(
@@ -307,7 +311,7 @@ export async function getRepositoryCodeDeliveryIntervalAssessment(
         )
 
   const rawPullRequests = new Map<number, Partial<Record<'pr' | 'reviews' | 'commits', unknown>>>()
-  for (const row of pullRequestRows.rows) {
+  for (const row of pullRequestRows) {
     const snapshots = rawPullRequests.get(row.pr_number) ?? {}
     snapshots[row.data_type] = row.data
     rawPullRequests.set(row.pr_number, snapshots)
@@ -319,140 +323,49 @@ export async function getRepositoryCodeDeliveryIntervalAssessment(
     ]),
   )
 
-  return assessRepositoryDeliveryInterval({
-    compare,
-    defaultBranch: repository.default_branch,
-    implicitApprovalMode: repository.implicit_approval_mode,
-    associatedPullRequestsByCommit,
-    pullRequestsByNumber,
+  return deliveries.map((delivery) => {
+    const compare = compareByDeliveryId.get(delivery.id) ?? null
+    const pullRequestNumbers = [
+      ...new Set(
+        (compare?.commits ?? []).flatMap(
+          (commit) =>
+            associatedPullRequestsBySha
+              .get(commit.sha)
+              ?.pullRequests.filter((pullRequest) => pullRequest.baseBranch === repository.default_branch)
+              .map((pullRequest) => pullRequest.number) ?? [],
+        ),
+      ),
+    ]
+    const associatedPullRequestsByCommit = Object.fromEntries(
+      (compare?.commits ?? []).map((commit) => [commit.sha, associatedPullRequestsBySha.get(commit.sha)]),
+    )
+    const assessment = assessRepositoryDeliveryInterval({
+      compare,
+      defaultBranch: repository.default_branch,
+      implicitApprovalMode,
+      associatedPullRequestsByCommit,
+      pullRequestsByNumber,
+    })
+    return {
+      deliveryId: delivery.id,
+      assessment,
+      pullRequestNumbers,
+    }
   })
 }
 
 export async function getRepositoryCodeDeliveryIntervalAssessments(
   repositoryId: number,
   deliveries: Array<{ id: number; base_sha: string; head_sha: string }>,
+  client?: Pick<PoolClient, 'query'>,
 ): Promise<
-  Array<{
-    deliveryId: number
-    assessment: RepositoryDeliveryIntervalAssessment
-    pullRequestNumbers: number[]
-  }>
+  Array<{ deliveryId: number; assessment: RepositoryDeliveryIntervalAssessment; pullRequestNumbers: number[] }>
 > {
   if (deliveries.length === 0) return []
+  if (client) return getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(client, repositoryId, deliveries)
 
-  return withTransaction(async (client) => {
-    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-    const { rows: repositoryRows } = await client.query<{
-      github_repo_id: string
-      default_branch: string | null
-      implicit_approval_mode: string
-    }>(
-      `SELECT github_repo_id, default_branch, implicit_approval_mode
-       FROM repositories
-       WHERE id = $1`,
-      [repositoryId],
-    )
-    const repository = repositoryRows[0]
-    if (!repository || !isImplicitApprovalMode(repository.implicit_approval_mode)) {
-      throw new Error(`Repository ${repositoryId} is missing or has an invalid implicit approval mode`)
-    }
-    const implicitApprovalMode = repository.implicit_approval_mode
-
-    const deliveryIds = deliveries.map((delivery) => delivery.id)
-    const { rows: compareRows } = await client.query<{ delivery_id: number; data: unknown }>(
-      `SELECT delivery.id AS delivery_id, snapshot.data
-       FROM repository_code_deliveries delivery
-       LEFT JOIN LATERAL (
-         SELECT data
-         FROM github_compare_raw_snapshots
-         WHERE github_repo_id = $1
-           AND lower(base_sha) = lower(delivery.base_sha)
-           AND lower(head_sha) = lower(delivery.head_sha)
-         ORDER BY fetched_at DESC, id DESC
-         LIMIT 1
-       ) snapshot ON true
-       WHERE delivery.repository_id = $2
-         AND delivery.id = ANY($3::int[])`,
-      [repository.github_repo_id, repositoryId, deliveryIds],
-    )
-    const compareByDeliveryId = new Map(compareRows.map((row) => [row.delivery_id, parseCompareData(row.data)]))
-    const commitShas = [
-      ...new Set(
-        [...compareByDeliveryId.values()].flatMap((compare) => compare?.commits.map((commit) => commit.sha) ?? []),
-      ),
-    ]
-    const { rows: associatedRows } =
-      commitShas.length === 0
-        ? { rows: [] }
-        : await client.query<{ sha: string; data: unknown; pagination_complete: boolean }>(
-            `SELECT DISTINCT ON (sha) sha, data, pagination_complete
-             FROM github_commit_associated_prs_raw_snapshots
-             WHERE github_repo_id = $1
-               AND sha = ANY($2::text[])
-             ORDER BY sha, fetched_at DESC, id DESC`,
-            [repository.github_repo_id, commitShas],
-          )
-    const associatedPullRequestsBySha = new Map(
-      associatedRows.map((row) => [row.sha, parseAssociatedPullRequests(row.data, row.pagination_complete)]),
-    )
-    const pullRequestNumbers = [
-      ...new Set(
-        [...associatedPullRequestsBySha.values()].flatMap((snapshot) =>
-          snapshot.pullRequests
-            .filter((pullRequest) => pullRequest.baseBranch === repository.default_branch)
-            .map((pullRequest) => pullRequest.number),
-        ),
-      ),
-    ]
-    const { rows: pullRequestRows } =
-      pullRequestNumbers.length === 0
-        ? { rows: [] }
-        : await client.query<{ pr_number: number; data_type: 'pr' | 'reviews' | 'commits'; data: unknown }>(
-            `SELECT DISTINCT ON (pr_number, data_type) pr_number, data_type, data
-             FROM github_pr_raw_snapshots
-             WHERE github_repo_id = $1
-               AND pr_number = ANY($2::int[])
-               AND data_type = ANY($3::text[])
-             ORDER BY pr_number, data_type, fetched_at DESC, id DESC`,
-            [repository.github_repo_id, pullRequestNumbers, ['pr', 'reviews', 'commits']],
-          )
-
-    const rawPullRequests = new Map<number, Partial<Record<'pr' | 'reviews' | 'commits', unknown>>>()
-    for (const row of pullRequestRows) {
-      const snapshots = rawPullRequests.get(row.pr_number) ?? {}
-      snapshots[row.data_type] = row.data
-      rawPullRequests.set(row.pr_number, snapshots)
-    }
-    const pullRequestsByNumber = Object.fromEntries(
-      pullRequestNumbers.map((prNumber) => [
-        prNumber,
-        parsePullRequestEvidence(prNumber, rawPullRequests.get(prNumber) ?? {}),
-      ]),
-    )
-
-    return deliveries.map((delivery) => {
-      const compare = compareByDeliveryId.get(delivery.id) ?? null
-      const associatedPullRequestsByCommit = Object.fromEntries(
-        (compare?.commits ?? []).map((commit) => [commit.sha, associatedPullRequestsBySha.get(commit.sha)]),
-      )
-      const assessment = assessRepositoryDeliveryInterval({
-        compare,
-        defaultBranch: repository.default_branch,
-        implicitApprovalMode,
-        associatedPullRequestsByCommit,
-        pullRequestsByNumber,
-      })
-      return {
-        deliveryId: delivery.id,
-        assessment,
-        pullRequestNumbers: [
-          ...new Set(
-            assessment.commits.flatMap((commit) =>
-              commit.pullRequestNumber === null ? [] : [commit.pullRequestNumber],
-            ),
-          ),
-        ],
-      }
-    })
+  return withTransaction(async (transactionClient) => {
+    await transactionClient.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    return getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(transactionClient, repositoryId, deliveries)
   })
 }
