@@ -184,6 +184,126 @@ describe('repository code delivery overview', () => {
     expect(secondPage?.deployments[0].verification_runs).toHaveLength(1)
   })
 
+  it('assesses a delivery interval from complete stored compare, association, and PR snapshots', async () => {
+    const repositoryId = await createRepository('1018')
+    await pool.query(`UPDATE repositories SET default_branch = 'main' WHERE id = $1`, [repositoryId])
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+    const commitDate = '2026-10-05T10:00:00Z'
+    await pool.query(
+      `INSERT INTO github_compare_raw_snapshots
+         (github_repo_id, owner, repo, base_sha, head_sha, api_version, data)
+       VALUES
+         ('1018', 'navikt', 'repo-1018', $1, $2, '2022-11-28', $3::jsonb)`,
+      [
+        SHA_1,
+        SHA_2,
+        JSON.stringify({
+          status: 'ahead',
+          ahead_by: 1,
+          behind_by: 0,
+          total_commits: 1,
+          commits: [
+            {
+              sha: SHA_2,
+              commit: {
+                message: 'Add feature',
+                author: { name: 'Glad Fjord', date: commitDate },
+                committer: { date: commitDate },
+              },
+              author: { login: 'glad-fjord' },
+              html_url: `https://github.com/navikt/repo-1018/commit/${SHA_2}`,
+              parents: [{ sha: SHA_1 }],
+            },
+          ],
+        }),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO github_commit_associated_prs_raw_snapshots
+         (github_repo_id, owner, repo, sha, api_version, data)
+       VALUES ('1018', 'navikt', 'repo-1018', $1, '2022-11-28', $2::jsonb)`,
+      [SHA_2, JSON.stringify([{ number: 42, base: { ref: 'main' } }])],
+    )
+    await pool.query(
+      `INSERT INTO github_pr_raw_snapshots
+         (github_repo_id, owner, repo, pr_number, data_type, api_version, data)
+       VALUES
+         ('1018', 'navikt', 'repo-1018', 42, 'pr', '2022-11-28', $1::jsonb),
+         ('1018', 'navikt', 'repo-1018', 42, 'reviews', '2022-11-28', $2::jsonb),
+         ('1018', 'navikt', 'repo-1018', 42, 'commits', '2022-11-28', $3::jsonb)`,
+      [
+        JSON.stringify({
+          number: 42,
+          base: { ref: 'main' },
+          head: { sha: SHA_2 },
+          commits: 1,
+          user: { login: 'glad-fjord' },
+          merged_by: { login: 'rask-elv' },
+          merge_commit_sha: null,
+        }),
+        JSON.stringify([
+          {
+            id: 1,
+            user: { login: 'rask-elv' },
+            state: 'APPROVED',
+            submitted_at: '2026-10-05T11:00:00Z',
+            commit_id: SHA_2,
+          },
+        ]),
+        JSON.stringify([
+          {
+            sha: SHA_2,
+            commit: {
+              message: 'Add feature',
+              author: { name: 'Glad Fjord', date: commitDate },
+              committer: { date: commitDate },
+            },
+            author: { login: 'glad-fjord' },
+            parents: [{ sha: SHA_1 }],
+          },
+        ]),
+      ],
+    )
+
+    const evidence = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)
+    expect(evidence?.interval_assessment).toMatchObject({
+      state: 'incomplete',
+      summary: { covered: 0, notCovered: 0, unknown: 1 },
+      commits: [{ sha: SHA_2, status: 'unknown', reason: 'missing_associated_pull_request_snapshot' }],
+    })
+
+    await pool.query(
+      `UPDATE github_commit_associated_prs_raw_snapshots
+       SET pagination_complete = true
+       WHERE github_repo_id = '1018' AND sha = $1`,
+      [SHA_2],
+    )
+    const completeEvidence = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)
+    expect(completeEvidence?.interval_assessment).toMatchObject({
+      state: 'complete',
+      totalCommits: 1,
+      summary: { covered: 1, notCovered: 0, unknown: 0 },
+      commits: [{ sha: SHA_2, pullRequestNumber: 42, status: 'covered', reason: 'approved_review' }],
+    })
+
+    await pool.query(
+      `UPDATE github_pr_raw_snapshots
+       SET data = jsonb_set(data, '{head,sha}', to_jsonb($1::text))
+       WHERE github_repo_id = '1018' AND pr_number = 42 AND data_type = 'pr'`,
+      [SHA_3],
+    )
+    const staleEvidence = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)
+    expect(staleEvidence?.interval_assessment).toMatchObject({
+      state: 'incomplete',
+      summary: { covered: 0, notCovered: 0, unknown: 1 },
+      commits: [{ sha: SHA_2, status: 'unknown', reason: 'pull_request_head_mismatch' }],
+    })
+  })
+
   it('returns an empty overview for a repository without deliveries', async () => {
     const repositoryId = await createRepository('1000')
 

@@ -5,9 +5,11 @@ import {
   type RepositoryDeliveryComparisonRange,
   type RepositoryDeliveryReviewEvidence,
 } from '~/lib/repository-code-delivery/evidence'
+import type { RepositoryDeliveryIntervalAssessment } from '~/lib/repository-code-delivery/interval-assessment'
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool, withTransaction } from './connection.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
+import { getRepositoryCodeDeliveryIntervalAssessment } from './repository-code-delivery-interval-assessment.server'
 
 export interface RepositoryCodeDeliveryOverview {
   deliveryCount: number
@@ -235,6 +237,7 @@ export interface RepositoryCodeDeliveryEvidence {
   base_sha: string
   head_sha: string
   created_at: Date
+  interval_assessment: RepositoryDeliveryIntervalAssessment
   page: number
   totalPages: number
   totalEvidenceEntries: number
@@ -998,7 +1001,21 @@ export async function getRepositoryCodeDeliveryEvidence(
       }
     }
 
-    return { ...delivery, page, totalPages, totalEvidenceEntries, deployments: [...deployments.values()] }
+    const intervalAssessment = await getRepositoryCodeDeliveryIntervalAssessment(
+      client,
+      repositoryId,
+      delivery.base_sha,
+      delivery.head_sha,
+    )
+
+    return {
+      ...delivery,
+      interval_assessment: intervalAssessment,
+      page,
+      totalPages,
+      totalEvidenceEntries,
+      deployments: [...deployments.values()],
+    }
   })
 }
 

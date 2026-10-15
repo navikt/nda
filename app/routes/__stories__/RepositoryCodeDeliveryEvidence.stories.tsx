@@ -20,6 +20,25 @@ export const WithStoredReviews: Story = {
       page: 1,
       totalPages: 1,
       totalEvidenceEntries: 1,
+      interval_assessment: {
+        state: 'complete',
+        defaultBranch: 'main',
+        totalCommits: 1,
+        listedCommits: 1,
+        omittedCommits: 0,
+        summary: { covered: 1, notCovered: 0, unknown: 0 },
+        commits: [
+          {
+            sha: '2'.repeat(40),
+            message: 'Add delivery evidence',
+            authorUsername: 'rask-elv',
+            htmlUrl: `https://github.com/navikt/glad-fjord/commit/${'2'.repeat(40)}`,
+            pullRequestNumber: 42,
+            status: 'covered',
+            reason: 'approved_review',
+          },
+        ],
+      },
       deployments: [
         {
           id: 17,
@@ -74,6 +93,15 @@ export const MissingStoredEvidence: Story = {
       page: 1,
       totalPages: 1,
       totalEvidenceEntries: 1,
+      interval_assessment: {
+        state: 'unavailable',
+        defaultBranch: 'main',
+        totalCommits: null,
+        listedCommits: 0,
+        omittedCommits: 0,
+        summary: { covered: 0, notCovered: 0, unknown: 0 },
+        commits: [],
+      },
       deployments: [
         {
           id: 18,

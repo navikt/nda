@@ -23,7 +23,15 @@ describe('saveCommitAssociatedPrsRawSnapshot', () => {
     mockPoolQuery.mockResolvedValue({ rows: [{ id: 11 }] })
 
     const apiVersion = { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null }
-    const id = await saveCommitAssociatedPrsRawSnapshot('navikt', 'nda', 999, 'abc123', rawAssociatedPrs, apiVersion)
+    const id = await saveCommitAssociatedPrsRawSnapshot(
+      'navikt',
+      'nda',
+      999,
+      'abc123',
+      rawAssociatedPrs,
+      apiVersion,
+      true,
+    )
 
     expect(id).toBe(11)
     expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_commit_associated_prs_raw_snapshots'), [
@@ -35,6 +43,7 @@ describe('saveCommitAssociatedPrsRawSnapshot', () => {
       apiVersion.apiDeprecatedAt,
       apiVersion.apiSunsetAt,
       JSON.stringify(rawAssociatedPrs),
+      true,
     ])
   })
 })
@@ -67,6 +76,7 @@ describe('getLatestCommitAssociatedPrsRawSnapshot', () => {
           api_sunset_at: null,
           fetched_at: fetchedAt,
           data: rawAssociatedPrs,
+          pagination_complete: false,
         },
       ],
     })
@@ -83,6 +93,7 @@ describe('getLatestCommitAssociatedPrsRawSnapshot', () => {
       apiDeprecatedAt: null,
       apiSunsetAt: null,
       fetchedAt,
+      paginationComplete: false,
       data: rawAssociatedPrs,
     })
   })

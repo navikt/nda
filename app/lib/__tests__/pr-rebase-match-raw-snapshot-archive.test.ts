@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 const mockReposGet = vi.fn()
 const mockListPullRequestsAssociatedWithCommit = vi.fn()
+const mockPaginate = vi.fn()
 const mockPullsListCommits = vi.fn()
 const mockReposGetCommit = vi.fn()
 
 vi.mock('~/lib/github/client.server', () => ({
   getGitHubClient: () => ({
+    paginate: mockPaginate,
     repos: {
       get: mockReposGet,
       listPullRequestsAssociatedWithCommit: mockListPullRequestsAssociatedWithCommit,
@@ -39,6 +41,10 @@ describe('getPullRequestForCommit rebase-matching archival', () => {
   beforeEach(() => {
     mockReposGet.mockReset()
     mockListPullRequestsAssociatedWithCommit.mockReset()
+    mockPaginate.mockReset()
+    mockPaginate.mockImplementation(async (endpoint, params, mapResponse) =>
+      mapResponse(await endpoint({ ...params, page: 1 })),
+    )
     mockPullsListCommits.mockReset()
     mockReposGetCommit.mockReset()
     mockPoolQuery.mockReset()
