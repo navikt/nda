@@ -61,6 +61,13 @@ export const MedData: Story = {
         is_anchor: false,
         deployment_count: 2,
         app_names: ['glad-fjord-api', 'glad-fjord-web'],
+        assessment: {
+          state: 'complete',
+          totalCommits: 2,
+          listedCommits: 2,
+          summary: { covered: 2, notCovered: 0, unknown: 0 },
+        },
+        pullRequestNumbers: [42],
       },
       {
         id: 1,
@@ -71,6 +78,13 @@ export const MedData: Story = {
         is_anchor: true,
         deployment_count: 1,
         app_names: ['glad-fjord-api'],
+        assessment: {
+          state: 'unavailable',
+          totalCommits: null,
+          listedCommits: 0,
+          summary: { covered: 0, notCovered: 0, unknown: 0 },
+        },
+        pullRequestNumbers: [],
       },
     ],
     unresolved: [
