@@ -45,10 +45,10 @@ export async function getLatestCommitAssociatedPrsRawSnapshot(
          SELECT github_repo_id
          FROM github_commit_associated_prs_raw_snapshots
          WHERE owner = $1 AND repo = $2 AND sha = $3
-         ORDER BY fetched_at DESC
+         ORDER BY fetched_at DESC, id DESC
          LIMIT 1
        )
-     ORDER BY fetched_at DESC
+     ORDER BY fetched_at DESC, id DESC
      LIMIT 1`,
     [owner, repo, sha],
   )
