@@ -3,12 +3,13 @@ import { createRepositoryAlertForDeployment } from '~/db/alerts.server'
 import {
   findRepositoryForApp,
   getRepositoriesByAppId,
+  isNaisApplyRepositoryRejected,
   upsertApplicationRepository,
 } from '~/db/application-repositories.server'
 import { upsertNaisApplyDeployment } from '~/db/deployments.server'
 import { getMonitoredApplicationById, type MonitoredApplication } from '~/db/monitored-applications.server'
 import { getNaisApplyActivityEvents } from '~/db/nais-apply-activity.server'
-import { syncRepositoryDefaultBranch } from '~/db/repositories.server'
+import { ensureRepositoryRowForGithubRepo, syncRepositoryDefaultBranch } from '~/db/repositories.server'
 import { fetchWorkflowRunHeadSha, getRepositoryId } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import type { NaisApplicationUpdatedActivity } from '~/lib/nais.server'
@@ -124,6 +125,8 @@ async function ensureApplyRepositoryLink(
     return null
   }
 
+  if (await isNaisApplyRepositoryRejected(monitoredAppId, claims.repositoryId)) return null
+
   const repoCheck = await findRepositoryForApp(monitoredAppId, claims.owner, claims.repo)
   let repository = repoCheck.repository
 
@@ -177,29 +180,35 @@ async function ensureApplyRepositoryLink(
   }
 
   if (repository.status === 'active') {
-    try {
-      const syncedAt = new Date()
-      await syncRepositoryDefaultBranch({
-        monitoredAppId,
-        defaultBranch: app.default_branch,
-        syncedAt,
-        onlyIfMissing: true,
-      })
-      await syncDefaultBranchForApp({
-        monitoredAppId,
-        appName: app.app_name,
-        currentDefaultBranch: app.default_branch,
-        defaultBranchSyncedAt: app.default_branch_synced_at,
-        owner: claims.owner,
-        repo: claims.repo,
-      })
-    } catch (error) {
-      logger.warn('Nais Apply repository default-branch sync failed', {
-        monitoredAppId,
-        owner: claims.owner,
-        repo: claims.repo,
-        error: error instanceof Error ? error.message : String(error),
-      })
+    const activeRepositories = await getRepositoriesByAppId(monitoredAppId)
+    const latestActiveRepository = activeRepositories.find((linkedRepository) => linkedRepository.status === 'active')
+    if (latestActiveRepository?.github_repo_id === claims.repositoryId) {
+      try {
+        const syncedAt = new Date()
+        await syncRepositoryDefaultBranch({
+          monitoredAppId,
+          defaultBranch: app.default_branch,
+          syncedAt,
+          onlyIfMissing: true,
+          expectedGithubRepoId: claims.repositoryId,
+        })
+        await syncDefaultBranchForApp({
+          monitoredAppId,
+          appName: app.app_name,
+          currentDefaultBranch: app.default_branch,
+          defaultBranchSyncedAt: app.default_branch_synced_at,
+          owner: claims.owner,
+          repo: claims.repo,
+          expectedGithubRepoId: claims.repositoryId,
+        })
+      } catch (error) {
+        logger.warn('Nais Apply repository default-branch sync failed', {
+          monitoredAppId,
+          owner: claims.owner,
+          repo: claims.repo,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
   }
 
@@ -227,6 +236,7 @@ export async function materializeNaisApplyDeployments(
   const groups = groupImageChanges(eligibleEvents.flatMap(getImageChanges))
   const resolvedRuns = new Map<string, Promise<string | null>>()
   const repositoryLinks = new Map<string, Promise<ApplyRepositoryLink | null>>()
+  const ensuredRepositoryRows = new Set<string>()
 
   for (const group of groups) {
     const representative = group[0]
@@ -258,6 +268,20 @@ export async function materializeNaisApplyDeployments(
         repositoryLinks.set(repositoryKey, link)
       }
       repositoryLink = await link
+    }
+
+    if (
+      repositoryLink &&
+      (repositoryLink.status === 'active' || repositoryLink.status === 'historical') &&
+      claims &&
+      !ensuredRepositoryRows.has(claims.repositoryId)
+    ) {
+      await ensureRepositoryRowForGithubRepo({
+        githubRepoId: claims.repositoryId,
+        githubOwner: claims.owner,
+        githubRepoName: claims.repo,
+      })
+      ensuredRepositoryRows.add(claims.repositoryId)
     }
 
     const firstChange = group.reduce((earliest, change) => (change.createdAt < earliest.createdAt ? change : earliest))

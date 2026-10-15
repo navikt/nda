@@ -135,6 +135,7 @@ export async function getUnapprovedDeployments(monitoredAppId: number): Promise<
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.monitored_app_id = $1
        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+       AND d.slack_notifications_suppressed_at IS NULL
        AND d.four_eyes_status = ANY($2)
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY d.created_at DESC`,

@@ -109,6 +109,29 @@ describe('syncDefaultBranchForApp', () => {
     })
   })
 
+  test('does not update app metadata when the active repository changed during sync', async () => {
+    vi.mocked(getRepositoryDefaultBranch).mockResolvedValue('master')
+    vi.mocked(syncRepositoryDefaultBranch).mockResolvedValue(false)
+
+    await syncDefaultBranchForApp({
+      monitoredAppId: 42,
+      appName: 'legacy-app',
+      currentDefaultBranch: 'main',
+      defaultBranchSyncedAt: null,
+      owner: 'navikt',
+      repo: 'legacy-app',
+      expectedGithubRepoId: '12345',
+    })
+
+    expect(syncRepositoryDefaultBranch).toHaveBeenCalledWith({
+      monitoredAppId: 42,
+      defaultBranch: 'master',
+      syncedAt: expect.any(Date),
+      expectedGithubRepoId: '12345',
+    })
+    expect(updateMonitoredApplication).not.toHaveBeenCalled()
+  })
+
   test('only updates synced_at when default_branch already correct', async () => {
     vi.mocked(getRepositoryDefaultBranch).mockResolvedValue('main')
 

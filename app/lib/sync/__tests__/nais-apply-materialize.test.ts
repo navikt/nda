@@ -10,8 +10,10 @@ const {
   getRepositoryId,
   findRepositoryForApp,
   getRepositoriesByAppId,
+  isNaisApplyRepositoryRejected,
   upsertApplicationRepository,
   createRepositoryAlertForDeployment,
+  ensureRepositoryRowForGithubRepo,
   syncRepositoryDefaultBranch,
   syncDefaultBranchForApp,
 } = vi.hoisted(() => ({
@@ -22,8 +24,10 @@ const {
   getRepositoryId: vi.fn(),
   findRepositoryForApp: vi.fn(),
   getRepositoriesByAppId: vi.fn(),
+  isNaisApplyRepositoryRejected: vi.fn(),
   upsertApplicationRepository: vi.fn(),
   createRepositoryAlertForDeployment: vi.fn(),
+  ensureRepositoryRowForGithubRepo: vi.fn(),
   syncRepositoryDefaultBranch: vi.fn(),
   syncDefaultBranchForApp: vi.fn(),
 }))
@@ -34,10 +38,11 @@ vi.mock('~/db/monitored-applications.server', () => ({ getMonitoredApplicationBy
 vi.mock('~/db/application-repositories.server', () => ({
   findRepositoryForApp,
   getRepositoriesByAppId,
+  isNaisApplyRepositoryRejected,
   upsertApplicationRepository,
 }))
 vi.mock('~/db/alerts.server', () => ({ createRepositoryAlertForDeployment }))
-vi.mock('~/db/repositories.server', () => ({ syncRepositoryDefaultBranch }))
+vi.mock('~/db/repositories.server', () => ({ ensureRepositoryRowForGithubRepo, syncRepositoryDefaultBranch }))
 vi.mock('~/lib/github/git.server', () => ({ fetchWorkflowRunHeadSha, getRepositoryId }))
 vi.mock('../default-branch-sync.server', () => ({ syncDefaultBranchForApp }))
 vi.mock('~/lib/logger.server', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
@@ -117,6 +122,7 @@ describe('materializeNaisApplyDeployments', () => {
       isRedirected: false,
     })
     vi.mocked(getRepositoriesByAppId).mockResolvedValue([])
+    vi.mocked(isNaisApplyRepositoryRejected).mockResolvedValue(false)
     vi.mocked(upsertApplicationRepository).mockResolvedValue({
       github_owner: 'navikt',
       github_repo_name: 'app-a',
@@ -124,10 +130,80 @@ describe('materializeNaisApplyDeployments', () => {
       status: 'active',
     } as never)
     vi.mocked(syncRepositoryDefaultBranch).mockResolvedValue(true)
+    vi.mocked(ensureRepositoryRowForGithubRepo).mockResolvedValue({} as never)
     vi.mocked(syncDefaultBranchForApp).mockResolvedValue(undefined)
   })
 
+  it('does not rediscover a repository rejected by an administrator', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:sha1')])
+    vi.mocked(isNaisApplyRepositoryRejected).mockResolvedValue(true)
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(upsertApplicationRepository).not.toHaveBeenCalled()
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ detectedGithubRepositoryId: null }),
+    )
+  })
+
+  it('ensures canonical repository metadata for approved historical links without syncing their branch', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:sha1')])
+    vi.mocked(findRepositoryForApp).mockResolvedValue({
+      repository: {
+        github_owner: 'navikt',
+        github_repo_name: 'app-a',
+        github_repo_id: '12345',
+        status: 'historical',
+      } as never,
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'app-a',
+      isRedirected: false,
+    })
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(ensureRepositoryRowForGithubRepo).toHaveBeenCalledWith({
+      githubRepoId: '12345',
+      githubOwner: 'navikt',
+      githubRepoName: 'app-a',
+    })
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ detectedGithubRepositoryId: '12345' }),
+    )
+    expect(syncRepositoryDefaultBranch).not.toHaveBeenCalled()
+  })
+
+  it('does not sync default branch for an older active repository link', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:sha1')])
+    vi.mocked(findRepositoryForApp).mockResolvedValue({
+      repository: {
+        github_owner: 'navikt',
+        github_repo_name: 'app-a',
+        github_repo_id: '12345',
+        status: 'active',
+      } as never,
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'app-a',
+      isRedirected: false,
+    })
+    vi.mocked(getRepositoriesByAppId).mockResolvedValue([
+      { github_owner: 'navikt', github_repo_name: 'new-app', github_repo_id: '99999', status: 'active' } as never,
+      { github_owner: 'navikt', github_repo_name: 'app-a', github_repo_id: '12345', status: 'active' } as never,
+    ])
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ detectedGithubRepositoryId: '12345' }),
+    )
+    expect(syncRepositoryDefaultBranch).not.toHaveBeenCalled()
+    expect(syncDefaultBranchForApp).not.toHaveBeenCalled()
+  })
+
   it('groups image updates by GitHub check run and uses its verified run head SHA', async () => {
+    vi.mocked(getRepositoriesByAppId)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ github_repo_id: '12345', status: 'active' } as never])
     vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([
       makeActivity('activity-1', 'registry/image:sha1', { createdAt: '2026-10-15T10:01:00.000Z' }),
       makeActivity('activity-2', 'registry/image:sha1', { createdAt: '2026-10-15T10:02:00.000Z' }),
@@ -157,8 +233,17 @@ describe('materializeNaisApplyDeployments', () => {
       }),
     )
     expect(syncRepositoryDefaultBranch).toHaveBeenCalledWith(
-      expect.objectContaining({ monitoredAppId: monitoredApp.id, onlyIfMissing: true }),
+      expect.objectContaining({
+        monitoredAppId: monitoredApp.id,
+        onlyIfMissing: true,
+        expectedGithubRepoId: '12345',
+      }),
     )
+    expect(ensureRepositoryRowForGithubRepo).toHaveBeenCalledWith({
+      githubRepoId: '12345',
+      githubOwner: 'navikt',
+      githubRepoName: 'app-a',
+    })
   })
 
   it('creates a pending repository link and alert for an unrecognized claimed repository', async () => {

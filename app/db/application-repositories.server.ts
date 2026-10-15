@@ -242,8 +242,39 @@ export async function approveRepository(
 export async function rejectRepository(repoId: number): Promise<void> {
   await withTransaction(async (client) => {
     await lockRepositoryAdminForWrite(client)
+    const pendingRepository = await client.query<{
+      monitored_app_id: number
+      github_repo_id: string | null
+    }>(
+      `SELECT monitored_app_id, github_repo_id
+       FROM application_repositories
+       WHERE id = $1 AND status = 'pending_approval'
+       FOR UPDATE`,
+      [repoId],
+    )
+    const repository = pendingRepository.rows[0]
+    if (repository?.github_repo_id) {
+      await client.query(
+        `INSERT INTO nais_apply_rejected_repositories (monitored_app_id, github_repo_id)
+         VALUES ($1, $2)
+         ON CONFLICT (monitored_app_id, github_repo_id) DO NOTHING`,
+        [repository.monitored_app_id, repository.github_repo_id],
+      )
+    }
     await client.query(`DELETE FROM application_repositories WHERE id = $1 AND status = 'pending_approval'`, [repoId])
   })
+}
+
+export async function isNaisApplyRepositoryRejected(monitoredAppId: number, githubRepoId: string): Promise<boolean> {
+  const result = await pool.query<{ rejected: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM nais_apply_rejected_repositories
+       WHERE monitored_app_id = $1 AND github_repo_id = $2::bigint
+     ) AS rejected`,
+    [monitoredAppId, githubRepoId],
+  )
+  return result.rows[0]?.rejected === true
 }
 
 export async function setRepositoryAsActive(repoId: number): Promise<ApplicationRepository> {

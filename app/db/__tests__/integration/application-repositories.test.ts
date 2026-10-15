@@ -17,6 +17,8 @@ import {
   approveRepository,
   getAppIdsSharingRepo,
   getMonitoredAppIdsForRepository,
+  isNaisApplyRepositoryRejected,
+  rejectRepository,
   upsertApplicationRepository,
 } from '../../application-repositories.server'
 import { lockRepositoryForVerificationJob, VERIFICATION_JOB_LOCK_NAMESPACE } from '../../connection.server'
@@ -150,6 +152,25 @@ describe('application-repositories', () => {
     ])
 
     const { rows } = await pool.query('SELECT * FROM application_repositories WHERE id = $1', [created[0].id])
+    expect(rows).toHaveLength(0)
+  })
+
+  it('keeps rejected Apply repositories from being rediscovered', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const { rows: created } = await pool.query(
+      `INSERT INTO application_repositories (
+         monitored_app_id, github_owner, github_repo_name, github_repo_id, status
+       ) VALUES ($1, 'navikt', 'repo', '12345', 'pending_approval') RETURNING id`,
+      [appId],
+    )
+
+    await rejectRepository(created[0].id)
+
+    expect(await isNaisApplyRepositoryRejected(appId, '12345')).toBe(true)
+    const { rows } = await pool.query(
+      'SELECT id FROM application_repositories WHERE monitored_app_id = $1 AND github_repo_id = $2',
+      [appId, '12345'],
+    )
     expect(rows).toHaveLength(0)
   })
 

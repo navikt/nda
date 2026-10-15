@@ -58,6 +58,7 @@ export async function getSectionOverallStats(
        AND ($2::timestamptz IS NULL OR d.created_at >= $2)
        AND ($3::timestamptz IS NULL OR d.created_at < $3)
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${AUDIT_START_YEAR_FILTER}
      LEFT JOIN deployment_goal_links dgl ON dgl.deployment_id = d.id AND dgl.is_active = true
          AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
@@ -114,6 +115,7 @@ export async function getSectionDashboardStats(
            d.team_slug = ANY(ta.nais_team_slugs)
            OR d.monitored_app_id = ANY(COALESCE(ta.direct_app_ids, '{}'::int[]))
          )
+           AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
            AND ($2::timestamptz IS NULL OR d.created_at >= $2)
            AND ($3::timestamptz IS NULL OR d.created_at < $3)
            AND ${AUDIT_START_YEAR_FILTER}
@@ -231,12 +233,17 @@ export async function getDevTeamSummaryStats(
                 )) AS linked_to_goal
          FROM team_deployments td
          JOIN deployments d ON d.id = td.deployment_id
+         JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+           AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          GROUP BY d.monitored_app_id
        ),
        app_alerts AS (
          SELECT ra.monitored_app_id, COUNT(*) AS alert_count
          FROM team_apps ta
          JOIN repository_alerts ra ON ra.monitored_app_id = ta.id AND ra.resolved_at IS NULL
+         JOIN deployments d ON d.id = ra.deployment_id
+         JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+           AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          GROUP BY ra.monitored_app_id
        )
        SELECT
@@ -291,6 +298,8 @@ export async function getDevTeamSummaryStats(
               COUNT(DISTINCT dgl.deployment_id) AS linked_to_goal
        FROM team_apps ta
        JOIN deployments d ON d.monitored_app_id = ta.id
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND ($3::timestamptz IS NULL OR d.created_at >= $3)
          AND (ta.audit_start_year IS NULL OR d.created_at >= make_date(ta.audit_start_year, 1, 1))${deployerFilterClause}
        LEFT JOIN deployment_goal_links dgl ON dgl.deployment_id = d.id AND dgl.is_active = true
@@ -301,6 +310,9 @@ export async function getDevTeamSummaryStats(
        SELECT ra.monitored_app_id, COUNT(*) AS alert_count
        FROM team_apps ta
        JOIN repository_alerts ra ON ra.monitored_app_id = ta.id AND ra.resolved_at IS NULL
+       JOIN deployments d ON d.id = ra.deployment_id
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        GROUP BY ra.monitored_app_id
      )
      SELECT

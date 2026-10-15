@@ -106,6 +106,7 @@ export async function getAuditReportData(
                AND prev.environment_name = ma.environment_name
                AND prev.created_at < d.created_at
                AND prev.commit_sha IS NOT NULL
+               AND (prev.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
                AND prev.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
                AND prev.commit_sha !~ '^refs/'
              ORDER BY prev.created_at DESC
