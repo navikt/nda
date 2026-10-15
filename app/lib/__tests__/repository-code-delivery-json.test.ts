@@ -25,6 +25,8 @@ describe('createRepositoryCodeDeliveryJson', () => {
           {
             deployment_id: 10,
             nais_deployment_id: 'deploy-10',
+            deployment_source: 'nais_deployment',
+            deployment_source_id: 'deploy-10',
             deployed_at: new Date('2026-10-14T10:00:00.000Z'),
             team_slug: 'team-fjord',
             app_name: 'glad-fjord',

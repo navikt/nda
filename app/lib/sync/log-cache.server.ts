@@ -65,6 +65,7 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
     LEFT JOIN application_repositories ar ON ar.monitored_app_id = ma.id
     WHERE d.monitored_app_id = $1
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.created_at >= NOW() - INTERVAL '7 days'
       AND ma.is_active = true
     `,
@@ -108,6 +109,7 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
     LEFT JOIN application_repositories ar ON ar.monitored_app_id = ma.id
     WHERE d.monitored_app_id = $1
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.created_at >= NOW() - INTERVAL '7 days'
       AND (d.github_pr_data->'checks' IS NOT NULL OR d.commit_checks_data->'checks' IS NOT NULL)
       AND ma.is_active = true

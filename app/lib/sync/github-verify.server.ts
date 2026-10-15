@@ -57,7 +57,9 @@ export async function reverifyPendingChecks(
     `SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name, d.github_pr_number,
             d.trigger_url, d.workflow_trigger_config
      FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE d.monitored_app_id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.commit_checks_checked_at IS NULL
        AND d.detected_github_owner IS NOT NULL
        AND d.detected_github_repo_name IS NOT NULL

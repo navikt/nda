@@ -54,10 +54,16 @@ async function syncNewDeploymentsWithLock(
         throw legacySync.reason
       }
       if (applyActivitySync.status === 'rejected') {
-        throw applyActivitySync.reason
+        logger.error(
+          `❌ Nais Apply activity sync failed for app ${appName} (${teamSlug}/${environmentName}); continuing with legacy deployments:`,
+          applyActivitySync.reason,
+        )
       }
 
-      return { ...legacySync.value, naisApplyActivityCount: applyActivitySync.value }
+      return {
+        ...legacySync.value,
+        naisApplyActivityCount: applyActivitySync.status === 'fulfilled' ? applyActivitySync.value : 0,
+      }
     },
   )
 }

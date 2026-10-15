@@ -33,6 +33,7 @@ vi.mock('~/lib/logger.server', () => ({ logger: { info: vi.fn(), warn: vi.fn(), 
 import { fetchWorkflowRunHeadSha } from '../github/git.server'
 
 const headSha = 'a'.repeat(40)
+const getWorkflowRunAttempt = vi.fn()
 const run = {
   repository: { id: 12345 },
   run_attempt: 2,
@@ -41,8 +42,6 @@ const run = {
 }
 
 describe('fetchWorkflowRunHeadSha', () => {
-  const getWorkflowRunAttempt = vi.fn()
-
   beforeEach(() => {
     vi.clearAllMocks()
     getWorkflowRunClientSetup()

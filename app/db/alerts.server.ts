@@ -50,8 +50,26 @@ export async function createRepositoryAlert(data: {
     )
   }
 
-  const deployment = depResult.rows[0]
+  return createRepositoryAlertForDeployment({
+    monitoredApplicationId: data.monitoredApplicationId,
+    deploymentId: depResult.rows[0].id,
+    detectedGithubOwner: data.detectedGithubOwner,
+    detectedGithubRepoName: data.detectedGithubRepoName,
+    expectedGithubOwner: data.expectedGithubOwner,
+    expectedGithubRepoName: data.expectedGithubRepoName,
+    alertType: data.alertType,
+  })
+}
 
+export async function createRepositoryAlertForDeployment(data: {
+  monitoredApplicationId: number
+  deploymentId: number
+  detectedGithubOwner: string
+  detectedGithubRepoName: string
+  expectedGithubOwner?: string
+  expectedGithubRepoName?: string
+  alertType: RepositoryAlertType
+}): Promise<boolean> {
   const expectedOwner = data.expectedGithubOwner || data.detectedGithubOwner
   const expectedRepoName = data.expectedGithubRepoName || data.detectedGithubRepoName
 
@@ -92,7 +110,7 @@ export async function createRepositoryAlert(data: {
     RETURNING id`,
     [
       data.monitoredApplicationId,
-      deployment.id,
+      data.deploymentId,
       data.alertType,
       expectedOwner,
       expectedRepoName,

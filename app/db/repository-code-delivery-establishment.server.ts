@@ -161,8 +161,10 @@ export async function getDeploymentIdsAwaitingCodeDelivery(limit: number): Promi
     `SELECT d.id
      FROM deployments d
      JOIN repositories r ON r.id = d.repository_id
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
      WHERE r.code_delivery_tracking = true
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND r.code_delivery_tracking_since IS NOT NULL
        AND d.created_at >= r.code_delivery_tracking_since
        AND d.repository_code_delivery_id IS NULL

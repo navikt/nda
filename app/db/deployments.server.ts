@@ -270,7 +270,7 @@ export async function getDeploymentAppsForRepository(
 }
 
 export async function getDeploymentsPaginated(filters?: DeploymentFilters): Promise<PaginatedDeployments> {
-  let whereSql = ' WHERE 1=1'
+  let whereSql = " WHERE (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)"
   const params: any[] = []
   let paramIndex = 1
 
@@ -548,7 +548,8 @@ export async function getDeploymentById(id: number): Promise<DeploymentWithApp |
     LEFT JOIN commits c ON c.sha = d.commit_sha
       AND c.repo_owner = d.detected_github_owner
       AND c.repo_name = d.detected_github_repo_name
-    WHERE d.id = $1`,
+    WHERE d.id = $1
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
     [id],
   )
   const row = result.rows[0] || null
@@ -642,30 +643,40 @@ export interface CreateNaisApplyDeploymentParams {
   triggerUrl: string | null
   detectedGithubOwner: string | null
   detectedGithubRepoName: string | null
+  detectedGithubRepositoryId?: string | null
   resources?: unknown
 }
 
 export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentParams): Promise<Deployment> {
   const hasRepository = Boolean(data.detectedGithubOwner && data.detectedGithubRepoName)
-  const initialStatus = hasRepository && data.commitSha ? 'pending' : 'unverifiable'
+  const hasVerifiedRepository = hasRepository && data.detectedGithubRepositoryId != null
+  const initialStatus = hasVerifiedRepository && data.commitSha ? 'pending' : 'unverifiable'
   const result = await pool.query(
-    `INSERT INTO deployments (
+    `WITH verified_repository AS (
+       SELECT r.id
+       FROM application_repositories ar
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+       WHERE ar.monitored_app_id = $1
+         AND ar.github_owner = $11 AND ar.github_repo_name = $12
+         AND ar.github_repo_id = $13::bigint
+         AND ar.status IN ('active', 'historical')
+         AND r.github_repo_id = $13::bigint
+         AND r.github_owner = $11 AND r.github_repo_name = $12
+       LIMIT 1
+     )
+     INSERT INTO deployments (
        monitored_app_id, nais_deployment_id, deployment_source, deployment_source_id,
        created_at, team_slug, environment_name, app_name, title, deployer_username, commit_sha,
        trigger_url, detected_github_owner, detected_github_repo_name, resources, four_eyes_status,
        slack_notifications_suppressed_at, repository_id
      )
-     VALUES (
+     SELECT
        $1, NULL, 'nais_apply', $2, $3, $4, $5, $6, $7, $8, $9, $10,
-       $11::varchar, $12::varchar, $13, $14, CASE WHEN $15 THEN CURRENT_TIMESTAMP END, (
-         SELECT r.id
-         FROM application_repositories ar
-         JOIN repositories r ON r.github_repo_id = ar.github_repo_id
-         WHERE ar.monitored_app_id = $1
-           AND ar.github_owner = $11 AND ar.github_repo_name = $12
-           AND r.github_owner = $11 AND r.github_repo_name = $12
-       )
-     )
+       $11::varchar, $12::varchar, $14,
+       CASE WHEN $15 = 'pending' AND EXISTS (SELECT 1 FROM verified_repository)
+         THEN 'pending' ELSE 'unverifiable' END,
+       CASE WHEN $16 THEN CURRENT_TIMESTAMP END,
+       (SELECT id FROM verified_repository)
      ON CONFLICT (monitored_app_id, deployment_source, deployment_source_id)
      DO UPDATE SET
        created_at = LEAST(deployments.created_at, EXCLUDED.created_at),
@@ -675,6 +686,7 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
        trigger_url = COALESCE(deployments.trigger_url, EXCLUDED.trigger_url),
        detected_github_owner = COALESCE(deployments.detected_github_owner, EXCLUDED.detected_github_owner),
        detected_github_repo_name = COALESCE(deployments.detected_github_repo_name, EXCLUDED.detected_github_repo_name),
+       repository_id = COALESCE(deployments.repository_id, EXCLUDED.repository_id),
        resources = EXCLUDED.resources,
        slack_notifications_suppressed_at = COALESCE(
          deployments.slack_notifications_suppressed_at,
@@ -682,17 +694,25 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
        ),
        four_eyes_status = CASE
          WHEN deployments.four_eyes_status = 'unverifiable'
-           AND deployments.commit_sha IS NULL
            AND EXCLUDED.commit_sha IS NOT NULL
            AND EXCLUDED.detected_github_owner IS NOT NULL
            AND EXCLUDED.detected_github_repo_name IS NOT NULL
+           AND EXCLUDED.repository_id IS NOT NULL
            THEN 'pending'
          ELSE deployments.four_eyes_status
        END,
        synced_at = CURRENT_TIMESTAMP
-     WHERE deployments.commit_sha IS NULL
-        OR EXCLUDED.commit_sha IS NULL
-        OR deployments.commit_sha = EXCLUDED.commit_sha
+     WHERE (
+       deployments.commit_sha IS NULL
+       OR EXCLUDED.commit_sha IS NULL
+       OR deployments.commit_sha = EXCLUDED.commit_sha
+     )
+       AND (
+       EXCLUDED.repository_id IS NULL
+       OR
+       deployments.repository_id IS NULL
+       OR deployments.repository_id = EXCLUDED.repository_id
+     )
      RETURNING *`,
     [
       data.monitoredApplicationId,
@@ -707,6 +727,7 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
       data.triggerUrl,
       data.detectedGithubOwner,
       data.detectedGithubRepoName,
+      data.detectedGithubRepositoryId ?? null,
       data.resources ? JSON.stringify(data.resources) : null,
       initialStatus,
       data.suppressNotifications ?? false,
@@ -715,7 +736,7 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
 
   if (result.rows[0]) return result.rows[0]
 
-  const existing = await pool.query<Deployment>(
+  const existing = await pool.query<Deployment & { repository_id: number | null }>(
     `SELECT * FROM deployments
      WHERE monitored_app_id = $1 AND deployment_source = 'nais_apply' AND deployment_source_id = $2`,
     [data.monitoredApplicationId, data.sourceId],
@@ -724,6 +745,18 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
   if (!deployment) {
     throw new Error(
       `Nais Apply source ${data.sourceId} could not be inserted or found for application ${data.monitoredApplicationId}`,
+    )
+  }
+  if (
+    deployment.repository_id !== null &&
+    data.detectedGithubRepositoryId != null &&
+    String(deployment.repository_id) !== data.detectedGithubRepositoryId
+  ) {
+    throw new Error(`Nais Apply source ${data.sourceId} is already associated with a different GitHub repository`)
+  }
+  if (deployment.commit_sha !== data.commitSha && deployment.commit_sha !== null && data.commitSha !== null) {
+    throw new Error(
+      `Conflicting commit SHAs for Nais Apply source ${data.sourceId}: ${deployment.commit_sha} and ${data.commitSha}`,
     )
   }
   throw new Error(

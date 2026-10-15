@@ -74,8 +74,10 @@ async function fetchWorkflowRunSnapshotsForRepository(
        d.trigger_url,
        r.github_repo_id
      FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      JOIN repositories r ON r.id = $1
      WHERE ${repositoryDeploymentSql('$1')}
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.detected_github_owner IS NOT NULL
        AND d.detected_github_repo_name IS NOT NULL
        AND d.trigger_url IS NOT NULL
@@ -186,7 +188,8 @@ const ORDERED_DEPLOYMENTS_SELECT = (
                ORDER BY d.created_at ASC, d.id ASC
              ) AS prev_commit_sha
       FROM deployments d
-      JOIN monitored_applications ma ON d.monitored_app_id = ma.id`
+      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+      WHERE (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`
 
 const SNAPSHOT_JOIN_AND_ORDER = `
     SELECT od.*,

@@ -124,9 +124,17 @@ export async function upsertApplicationRepository(data: {
   redirectsToRepo?: string | null
   notes?: string | null
   approvedBy?: string | null
+  approvedAt?: Date | null
+  expectedGithubRepoId?: string
 }): Promise<ApplicationRepository> {
-  const approvedAt = data.status !== 'pending_approval' ? new Date() : null
+  const approvedAt =
+    data.approvedAt !== undefined ? data.approvedAt : data.status !== 'pending_approval' ? new Date() : null
   const githubRepoId = await getRepositoryId(data.githubOwner, data.githubRepoName)
+  if (data.expectedGithubRepoId && String(githubRepoId) !== data.expectedGithubRepoId) {
+    throw new Error(
+      `GitHub repository identity changed while linking ${data.githubOwner}/${data.githubRepoName}: expected ${data.expectedGithubRepoId}, received ${githubRepoId}`,
+    )
+  }
 
   return withTransaction(async (client) => {
     await lockRepositoryAdminForWrite(client)

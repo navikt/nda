@@ -2,19 +2,45 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MonitoredApplication } from '~/db/monitored-applications.server'
 import type { NaisApplicationUpdatedActivity } from '~/lib/nais.server'
 
-const { getNaisApplyActivityEvents, getMonitoredApplicationById, upsertNaisApplyDeployment, fetchWorkflowRunHeadSha } =
-  vi.hoisted(() => ({
-    getNaisApplyActivityEvents: vi.fn(),
-    getMonitoredApplicationById: vi.fn(),
-    upsertNaisApplyDeployment: vi.fn(),
-    fetchWorkflowRunHeadSha: vi.fn(),
-  }))
+const {
+  getNaisApplyActivityEvents,
+  getMonitoredApplicationById,
+  upsertNaisApplyDeployment,
+  fetchWorkflowRunHeadSha,
+  getRepositoryId,
+  findRepositoryForApp,
+  getRepositoriesByAppId,
+  upsertApplicationRepository,
+  createRepositoryAlertForDeployment,
+  syncRepositoryDefaultBranch,
+  syncDefaultBranchForApp,
+} = vi.hoisted(() => ({
+  getNaisApplyActivityEvents: vi.fn(),
+  getMonitoredApplicationById: vi.fn(),
+  upsertNaisApplyDeployment: vi.fn(),
+  fetchWorkflowRunHeadSha: vi.fn(),
+  getRepositoryId: vi.fn(),
+  findRepositoryForApp: vi.fn(),
+  getRepositoriesByAppId: vi.fn(),
+  upsertApplicationRepository: vi.fn(),
+  createRepositoryAlertForDeployment: vi.fn(),
+  syncRepositoryDefaultBranch: vi.fn(),
+  syncDefaultBranchForApp: vi.fn(),
+}))
 
 vi.mock('~/db/nais-apply-activity.server', () => ({ getNaisApplyActivityEvents }))
 vi.mock('~/db/deployments.server', () => ({ upsertNaisApplyDeployment }))
 vi.mock('~/db/monitored-applications.server', () => ({ getMonitoredApplicationById }))
-vi.mock('~/lib/github/git.server', () => ({ fetchWorkflowRunHeadSha }))
-vi.mock('~/lib/logger.server', () => ({ logger: { warn: vi.fn() } }))
+vi.mock('~/db/application-repositories.server', () => ({
+  findRepositoryForApp,
+  getRepositoriesByAppId,
+  upsertApplicationRepository,
+}))
+vi.mock('~/db/alerts.server', () => ({ createRepositoryAlertForDeployment }))
+vi.mock('~/db/repositories.server', () => ({ syncRepositoryDefaultBranch }))
+vi.mock('~/lib/github/git.server', () => ({ fetchWorkflowRunHeadSha, getRepositoryId }))
+vi.mock('../default-branch-sync.server', () => ({ syncDefaultBranchForApp }))
+vi.mock('~/lib/logger.server', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 import { materializeNaisApplyDeployments } from '../nais-apply-materialize.server'
 
@@ -81,8 +107,24 @@ describe('materializeNaisApplyDeployments', () => {
     vi.clearAllMocks()
     vi.mocked(getMonitoredApplicationById).mockResolvedValue(monitoredApp)
     vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([])
-    vi.mocked(upsertNaisApplyDeployment).mockResolvedValue(undefined as never)
+    vi.mocked(upsertNaisApplyDeployment).mockResolvedValue({ id: 100 } as never)
     vi.mocked(fetchWorkflowRunHeadSha).mockResolvedValue('a'.repeat(40))
+    vi.mocked(getRepositoryId).mockResolvedValue(12345)
+    vi.mocked(findRepositoryForApp).mockResolvedValue({
+      repository: null,
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'app-a',
+      isRedirected: false,
+    })
+    vi.mocked(getRepositoriesByAppId).mockResolvedValue([])
+    vi.mocked(upsertApplicationRepository).mockResolvedValue({
+      github_owner: 'navikt',
+      github_repo_name: 'app-a',
+      github_repo_id: '12345',
+      status: 'active',
+    } as never)
+    vi.mocked(syncRepositoryDefaultBranch).mockResolvedValue(true)
+    vi.mocked(syncDefaultBranchForApp).mockResolvedValue(undefined)
   })
 
   it('groups image updates by GitHub check run and uses its verified run head SHA', async () => {
@@ -102,7 +144,69 @@ describe('materializeNaisApplyDeployments', () => {
         detectedGithubOwner: 'navikt',
         detectedGithubRepoName: 'app-a',
         triggerUrl: 'https://github.com/navikt/app-a/actions/runs/98765',
-        resources: { nodes: [{ id: expect.any(String), kind: 'Image', name: 'registry/image:sha1' }] },
+        detectedGithubRepositoryId: '12345',
+        resources: [{ id: expect.any(String), kind: 'Image', name: 'registry/image:sha1' }],
+      }),
+    )
+    expect(upsertApplicationRepository).toHaveBeenCalledWith(
+      expect.objectContaining({
+        monitoredAppId: monitoredApp.id,
+        githubOwner: 'navikt',
+        githubRepoName: 'app-a',
+        status: 'active',
+      }),
+    )
+  })
+
+  it('creates a pending repository link and alert for an unrecognized claimed repository', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:sha1')])
+    vi.mocked(getRepositoriesByAppId).mockResolvedValue([
+      { github_owner: 'navikt', github_repo_name: 'old-app', github_repo_id: '54321' } as never,
+    ])
+    vi.mocked(upsertApplicationRepository).mockResolvedValue({
+      github_owner: 'navikt',
+      github_repo_name: 'app-a',
+      github_repo_id: '12345',
+      status: 'pending_approval',
+    } as never)
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(upsertApplicationRepository).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending_approval' }))
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ detectedGithubRepositoryId: null }),
+    )
+    expect(createRepositoryAlertForDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deploymentId: 100,
+        alertType: 'pending_approval',
+        detectedGithubOwner: 'navikt',
+        detectedGithubRepoName: 'app-a',
+      }),
+    )
+  })
+
+  it('does not associate a deployment with a linked repository whose immutable ID differs from the claim', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:sha1')])
+    vi.mocked(findRepositoryForApp).mockResolvedValue({
+      repository: {
+        github_owner: 'navikt',
+        github_repo_name: 'app-a',
+        github_repo_id: '54321',
+        status: 'active',
+      } as never,
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'app-a',
+      isRedirected: false,
+    })
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(upsertApplicationRepository).not.toHaveBeenCalled()
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detectedGithubRepositoryId: null,
+        commitSha: 'a'.repeat(40),
       }),
     )
   })
