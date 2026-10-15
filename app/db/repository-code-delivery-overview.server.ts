@@ -141,6 +141,11 @@ export interface RepositoryCodeDeliveryDiagnosticTarget {
   includedDeploymentIds: number[]
 }
 
+export interface RepositoryCodeDeliveryDiagnosticDeliveryTarget {
+  deliveryId: number
+  includedDeploymentIds: number[]
+}
+
 export interface RepositoryCodeDeliveryRepositoryAlias {
   owner: string
   repo: string
@@ -163,6 +168,7 @@ export interface RepositoryCodeDeliveryExportData {
   verificationRuns: RepositoryVerificationRunExportRow[]
   repositoryConfigAuditLog: RepositoryConfigAuditExportRow[]
   diagnosticTargets: RepositoryCodeDeliveryDiagnosticTarget[]
+  deliveryTarget: RepositoryCodeDeliveryDiagnosticDeliveryTarget | null
   implicitApprovalMode: ImplicitApprovalMode
   prSnapshots: RepositoryGitHubPrSnapshotExportRow[]
   commitSnapshots: RepositoryGitHubCommitSnapshotExportRow[]
@@ -568,6 +574,20 @@ export async function getRepositoryCodeDeliveryExportData(
   repositoryId: number,
   unresolvedDeploymentId?: number,
 ): Promise<RepositoryCodeDeliveryExportData> {
+  return getRepositoryCodeDeliveryExportDataForTarget(repositoryId, { unresolvedDeploymentId })
+}
+
+export async function getRepositoryCodeDeliveryDiagnosticForDelivery(
+  repositoryId: number,
+  deliveryId: number,
+): Promise<RepositoryCodeDeliveryExportData> {
+  return getRepositoryCodeDeliveryExportDataForTarget(repositoryId, { deliveryId })
+}
+
+async function getRepositoryCodeDeliveryExportDataForTarget(
+  repositoryId: number,
+  target: { unresolvedDeploymentId?: number; deliveryId?: number },
+): Promise<RepositoryCodeDeliveryExportData> {
   return withTransaction(async (client) => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
     const {
@@ -586,8 +606,24 @@ export async function getRepositoryCodeDeliveryExportData(
        FROM repositories WHERE id = $1`,
       [repositoryId],
     )
-    const [nearby, repositoryConfigAuditLog, historyReadiness, repositoryAliases] = await Promise.all([
-      listNearbyCodeDeliveries(repositoryId, unresolvedDeploymentId, client),
+    const deliveryTargetResult =
+      target.deliveryId === undefined
+        ? null
+        : await client.query<Omit<RepositoryCodeDeliveryExportDelivery, 'contexts'>>(
+            `SELECT c.id, c.base_sha, c.head_sha, c.created_at AS registered_at,
+                    min(d.created_at) AS first_deployed_at, count(d.id)::int AS deployment_count
+             FROM repository_code_deliveries c
+             LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id
+             WHERE c.repository_id = $1 AND c.id = $2
+             GROUP BY c.id`,
+            [repositoryId, target.deliveryId],
+          )
+    const deliveryTarget = deliveryTargetResult?.rows[0] ?? null
+    const nearby =
+      target.deliveryId === undefined
+        ? await listNearbyCodeDeliveries(repositoryId, target.unresolvedDeploymentId, client)
+        : { targets: [], deliveries: [] }
+    const [repositoryConfigAuditLog, historyReadiness, repositoryAliases] = await Promise.all([
       listRepositoryConfigAuditLog(repositoryId, client),
       getRepositoryHistoryReadinessFromClient(repositoryId, client),
       client
@@ -608,7 +644,9 @@ export async function getRepositoryCodeDeliveryExportData(
       code_delivery_tracking_since,
       audit_start_year,
     } = repository
-    const includedDeliveryIds = [...new Set(nearby.deliveries.map((delivery) => delivery.id))]
+    const includedDeliveryIds = deliveryTarget
+      ? [deliveryTarget.id]
+      : [...new Set(nearby.deliveries.map((delivery) => delivery.id))]
     const unresolvedDeploymentIds = nearby.targets.map((target) => target.unresolved_deployment_id)
     const { rows: includedDeploymentRows } = await client.query<{
       id: number
@@ -658,12 +696,14 @@ export async function getRepositoryCodeDeliveryExportData(
       })
       includedDeliveryContexts.set(delivery.id, contexts)
     }
-    const deliveries = [...new Map(nearby.deliveries.map((delivery) => [delivery.id, delivery])).values()].map(
-      ({ unresolved_deployment_id, relative_position, ...delivery }) => ({
-        ...delivery,
-        contexts: includedDeliveryContexts.get(delivery.id) ?? [],
-      }),
-    )
+    const deliveries = deliveryTarget
+      ? [{ ...deliveryTarget, contexts: [] }]
+      : [...new Map(nearby.deliveries.map((delivery) => [delivery.id, delivery])).values()].map(
+          ({ unresolved_deployment_id, relative_position, ...delivery }) => ({
+            ...delivery,
+            contexts: includedDeliveryContexts.get(delivery.id) ?? [],
+          }),
+        )
     const [deployments, ancestryEvidence, verificationRuns, workflowRunSnapshots] = await Promise.all([
       listRepositoryCodeDeliveryExportRows(repositoryId, client, includedDeploymentIds),
       listRepositoryCodeDeliveryAncestryEvidence(
@@ -698,6 +738,7 @@ export async function getRepositoryCodeDeliveryExportData(
       verificationRuns,
       repositoryConfigAuditLog,
       diagnosticTargets,
+      deliveryTarget: deliveryTarget ? { deliveryId: deliveryTarget.id, includedDeploymentIds } : null,
       implicitApprovalMode: repository.implicit_approval_mode,
       prSnapshots,
       commitSnapshots,
