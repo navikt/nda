@@ -654,7 +654,7 @@ export async function syncRepositoryDefaultBranch(params: {
            default_branch_synced_at = $2,
            updated_at = now()
        WHERE id = $3
-         AND ($4::boolean = false OR (default_branch IS NULL AND $1 IS NOT NULL))`,
+         AND ($4::boolean = false OR (default_branch IS NULL AND $1::varchar IS NOT NULL))`,
       [defaultBranch, syncedAt, repository.id, onlyIfMissing],
     )
     return (rowCount ?? 0) > 0
