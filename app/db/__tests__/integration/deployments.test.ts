@@ -1,5 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { getDeploymentsNeedingDeployNotify } from '~/db/deployments/notifications.server'
+import { getLatestDeploymentForApp, upsertNaisApplyDeployment } from '~/db/deployments.server'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
@@ -50,6 +52,83 @@ describe('deployment queries', () => {
         [appId],
       ),
     ).rejects.toThrow(/unique|duplicate/)
+  })
+
+  it('keeps Apply rows out of the legacy Nais deployment cursor', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod-gcp',
+      naisDeploymentId: 'legacy-deployment',
+      createdAt: new Date('2026-10-10T10:00:00Z'),
+    })
+    await upsertNaisApplyDeployment({
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:activity:test',
+      createdAt: new Date('2026-10-10T11:00:00Z'),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: null,
+      triggerUrl: null,
+      detectedGithubOwner: null,
+      detectedGithubRepoName: null,
+    })
+
+    await expect(getLatestDeploymentForApp(appId)).resolves.toMatchObject({
+      nais_deployment_id: 'legacy-deployment',
+    })
+  })
+
+  it('stores an Apply deployment without a Nais ID as unverifiable and idempotently', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    await pool.query(
+      `UPDATE monitored_applications
+       SET slack_deploy_notify_enabled = TRUE,
+           slack_deploy_channel_id = 'C123',
+           slack_deploy_notify_enabled_at = CURRENT_TIMESTAMP - INTERVAL '1 day'
+       WHERE id = $1`,
+      [appId],
+    )
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:activity:test',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: null,
+      triggerUrl: null,
+      detectedGithubOwner: null,
+      detectedGithubRepoName: null,
+      suppressNotifications: true,
+    }
+
+    await upsertNaisApplyDeployment(params)
+    await upsertNaisApplyDeployment(params)
+
+    const { rows } = await pool.query(
+      `SELECT nais_deployment_id, deployment_source, deployment_source_id, four_eyes_status,
+              slack_notifications_suppressed_at IS NOT NULL AS notifications_suppressed
+       FROM deployments
+       WHERE monitored_app_id = $1 AND deployment_source_id = $2`,
+      [appId, params.sourceId],
+    )
+    expect(rows).toEqual([
+      {
+        nais_deployment_id: null,
+        deployment_source: 'nais_apply',
+        deployment_source_id: params.sourceId,
+        four_eyes_status: 'unverifiable',
+        notifications_suppressed: true,
+      },
+    ])
+    await expect(getDeploymentsNeedingDeployNotify()).resolves.toEqual([])
   })
 
   it('should update title with COALESCE (preserving existing value)', async () => {

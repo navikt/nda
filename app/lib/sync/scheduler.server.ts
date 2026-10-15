@@ -6,7 +6,7 @@ import { logger } from '~/lib/logger.server'
 import { syncRepositoryCodeDeliveries } from './code-delivery-sync.server'
 import { CHECKS_REVERIFY_LIMIT_PER_APP, reverifyPendingChecks, verifyDeploymentsFourEyes } from './github-verify.server'
 import { cacheCheckLogsWithLock } from './log-cache-job.server'
-import { syncNewDeploymentsFromNais } from './nais-sync.server'
+import { syncNaisApplyActivityFromNais, syncNewDeploymentsFromNais } from './nais-sync.server'
 import { withSyncLock } from './with-sync-lock.server'
 
 let periodicSyncStarted = false
@@ -32,6 +32,7 @@ async function syncNewDeploymentsWithLock(
         newCount: r.newCount,
         alertsCreated: r.alertsCreated,
         stoppedEarly: r.stoppedEarly,
+        naisApplyActivityCount: r.naisApplyActivityCount,
         ...(r.initialHistorySyncStatus
           ? {
               initialHistorySyncStatus: r.initialHistorySyncStatus,
@@ -40,7 +41,24 @@ async function syncNewDeploymentsWithLock(
           : {}),
       }),
     },
-    () => syncNewDeploymentsFromNais(teamSlug, environmentName, appName, monitoredAppId),
+    async () => {
+      const [legacySync, applyActivitySync] = await Promise.allSettled([
+        syncNewDeploymentsFromNais(teamSlug, environmentName, appName, monitoredAppId),
+        syncNaisApplyActivityFromNais(monitoredAppId),
+      ])
+
+      if (legacySync.status === 'rejected') {
+        if (applyActivitySync.status === 'rejected') {
+          throw new AggregateError([legacySync.reason, applyActivitySync.reason], 'Nais source synchronization failed')
+        }
+        throw legacySync.reason
+      }
+      if (applyActivitySync.status === 'rejected') {
+        throw applyActivitySync.reason
+      }
+
+      return { ...legacySync.value, naisApplyActivityCount: applyActivitySync.value }
+    },
   )
 }
 

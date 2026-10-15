@@ -222,6 +222,93 @@ describe('admin actions - Slack config toggles', () => {
     )
   })
 
+  it('records an audit log entry when Nais Apply is enabled for an app', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({ nais_apply_enabled: false })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_nais_apply_setting',
+        app_id: '42',
+        nais_apply_enabled: 'true',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ success: 'Nais Apply-innstilling oppdatert!' })
+    expect(mockUpdateMonitoredApplication).toHaveBeenCalledWith(42, { nais_apply_enabled: true }, expect.anything())
+    expect(mockRecordAppConfigAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        monitoredAppId: 42,
+        settingKey: 'nais_apply_enabled',
+        oldValue: { enabled: false },
+        newValue: { enabled: true },
+        changedByNavIdent: 'Z990001',
+        changedByName: 'Glad Fjord',
+      }),
+      expect.anything(),
+    )
+  })
+
+  it('turns Nais Apply off when the switch is unchecked', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({ nais_apply_enabled: true })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_nais_apply_setting',
+        app_id: '42',
+        nais_apply_enabled: 'false',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ success: 'Nais Apply-innstilling oppdatert!' })
+    expect(mockUpdateMonitoredApplication).toHaveBeenCalledWith(42, { nais_apply_enabled: false }, expect.anything())
+    expect(mockRecordAppConfigAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settingKey: 'nais_apply_enabled',
+        oldValue: { enabled: true },
+        newValue: { enabled: false },
+      }),
+      expect.anything(),
+    )
+  })
+
+  it('does not audit the Nais Apply setting when it is unchanged', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({ nais_apply_enabled: false })
+    const action = await getAction()
+
+    await action({
+      request: buildRequest({
+        action: 'update_nais_apply_setting',
+        app_id: '42',
+        nais_apply_enabled: 'false',
+      }),
+      params: {},
+    })
+
+    expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('returns an error and does not update or log when the app is not found (Nais Apply)', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue(null)
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_nais_apply_setting',
+        app_id: '42',
+        nais_apply_enabled: 'true',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Fant ikke applikasjonen' })
+    expect(mockUpdateMonitoredApplication).not.toHaveBeenCalled()
+    expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
+  })
+
   it('returns an error and does not update or log when the app is not found (approval config)', async () => {
     mockGetMonitoredApplicationById.mockResolvedValue(null)
     const action = await getAction()

@@ -22,6 +22,7 @@ export interface MonitoredApplication {
   slack_deploy_channel_id: string | null
   slack_deploy_notify_enabled: boolean
   slack_deploy_notify_enabled_at: Date | null
+  nais_apply_enabled: boolean
   not_found_in_nais_at: Date | null
   initial_nais_history_synced_at: Date | null
   created_at: Date
@@ -321,6 +322,7 @@ export async function updateMonitoredApplication(
     slack_notifications_enabled?: boolean
     slack_deploy_channel_id?: string | null
     slack_deploy_notify_enabled?: boolean
+    nais_apply_enabled?: boolean
     reminder_enabled?: boolean
     reminder_time?: string
     reminder_days?: string[]
@@ -382,6 +384,11 @@ export async function updateMonitoredApplication(
     } else {
       updates.push(`slack_deploy_notify_enabled_at = NULL`)
     }
+  }
+
+  if (data.nais_apply_enabled !== undefined) {
+    updates.push(`nais_apply_enabled = $${paramCount++}`)
+    values.push(data.nais_apply_enabled)
   }
 
   if (data.reminder_enabled !== undefined) {

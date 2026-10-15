@@ -21,7 +21,9 @@ export interface UnverifiedCommit {
 export interface Deployment {
   id: number
   monitored_app_id: number
-  nais_deployment_id: string
+  nais_deployment_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   created_at: Date
   deployer_username: string | null
   commit_sha: string | null
@@ -560,10 +562,11 @@ export async function getDeploymentByNaisId(
   naisDeploymentId: string,
   monitoredAppId: number,
 ): Promise<Deployment | null> {
-  const result = await pool.query('SELECT * FROM deployments WHERE nais_deployment_id = $1 AND monitored_app_id = $2', [
-    naisDeploymentId,
-    monitoredAppId,
-  ])
+  const result = await pool.query(
+    `SELECT * FROM deployments
+     WHERE nais_deployment_id = $1 AND monitored_app_id = $2 AND deployment_source = 'nais_deployment'`,
+    [naisDeploymentId, monitoredAppId],
+  )
   return result.rows[0] || null
 }
 
@@ -576,7 +579,8 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
     `INSERT INTO deployments 
       (monitored_app_id, nais_deployment_id, created_at, team_slug, environment_name, app_name,
        deployer_username, commit_sha, trigger_url,
-       detected_github_owner, detected_github_repo_name, resources, four_eyes_status, repository_id)
+       detected_github_owner, detected_github_repo_name, resources, four_eyes_status, repository_id,
+       deployment_source, deployment_source_id)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::varchar, $11::varchar, $12, $13, (
       SELECT r.id
       FROM application_repositories ar
@@ -584,7 +588,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
       WHERE ar.monitored_app_id = $1
         AND ar.github_owner = $10 AND ar.github_repo_name = $11
         AND r.github_owner = $10 AND r.github_repo_name = $11
-    ))
+    ), 'nais_deployment', $2)
     ON CONFLICT DO NOTHING
     RETURNING *`,
     [
@@ -611,7 +615,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
     `UPDATE deployments SET
       resources = $3,
       synced_at = CURRENT_TIMESTAMP
-    WHERE nais_deployment_id = $1 AND monitored_app_id = $2
+    WHERE nais_deployment_id = $1 AND monitored_app_id = $2 AND deployment_source = 'nais_deployment'
     RETURNING *`,
     [data.naisDeploymentId, data.monitoredApplicationId, data.resources ? JSON.stringify(data.resources) : null],
   )
@@ -624,13 +628,116 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
   return deployment
 }
 
+export interface CreateNaisApplyDeploymentParams {
+  monitoredApplicationId: number
+  sourceId: string
+  createdAt: Date
+  teamSlug: string
+  environmentName: string
+  appName: string
+  title: string
+  suppressNotifications?: boolean
+  deployerUsername: string | null
+  commitSha: string | null
+  triggerUrl: string | null
+  detectedGithubOwner: string | null
+  detectedGithubRepoName: string | null
+  resources?: unknown
+}
+
+export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentParams): Promise<Deployment> {
+  const hasRepository = Boolean(data.detectedGithubOwner && data.detectedGithubRepoName)
+  const initialStatus = hasRepository && data.commitSha ? 'pending' : 'unverifiable'
+  const result = await pool.query(
+    `INSERT INTO deployments (
+       monitored_app_id, nais_deployment_id, deployment_source, deployment_source_id,
+       created_at, team_slug, environment_name, app_name, title, deployer_username, commit_sha,
+       trigger_url, detected_github_owner, detected_github_repo_name, resources, four_eyes_status,
+       slack_notifications_suppressed_at, repository_id
+     )
+     VALUES (
+       $1, NULL, 'nais_apply', $2, $3, $4, $5, $6, $7, $8, $9, $10,
+       $11::varchar, $12::varchar, $13, $14, CASE WHEN $15 THEN CURRENT_TIMESTAMP END, (
+         SELECT r.id
+         FROM application_repositories ar
+         JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+         WHERE ar.monitored_app_id = $1
+           AND ar.github_owner = $11 AND ar.github_repo_name = $12
+           AND r.github_owner = $11 AND r.github_repo_name = $12
+       )
+     )
+     ON CONFLICT (monitored_app_id, deployment_source, deployment_source_id)
+     DO UPDATE SET
+       created_at = LEAST(deployments.created_at, EXCLUDED.created_at),
+       title = COALESCE(deployments.title, EXCLUDED.title),
+       deployer_username = COALESCE(deployments.deployer_username, EXCLUDED.deployer_username),
+       commit_sha = COALESCE(deployments.commit_sha, EXCLUDED.commit_sha),
+       trigger_url = COALESCE(deployments.trigger_url, EXCLUDED.trigger_url),
+       detected_github_owner = COALESCE(deployments.detected_github_owner, EXCLUDED.detected_github_owner),
+       detected_github_repo_name = COALESCE(deployments.detected_github_repo_name, EXCLUDED.detected_github_repo_name),
+       resources = EXCLUDED.resources,
+       slack_notifications_suppressed_at = COALESCE(
+         deployments.slack_notifications_suppressed_at,
+         EXCLUDED.slack_notifications_suppressed_at
+       ),
+       four_eyes_status = CASE
+         WHEN deployments.four_eyes_status = 'unverifiable'
+           AND deployments.commit_sha IS NULL
+           AND EXCLUDED.commit_sha IS NOT NULL
+           AND EXCLUDED.detected_github_owner IS NOT NULL
+           AND EXCLUDED.detected_github_repo_name IS NOT NULL
+           THEN 'pending'
+         ELSE deployments.four_eyes_status
+       END,
+       synced_at = CURRENT_TIMESTAMP
+     WHERE deployments.commit_sha IS NULL
+        OR EXCLUDED.commit_sha IS NULL
+        OR deployments.commit_sha = EXCLUDED.commit_sha
+     RETURNING *`,
+    [
+      data.monitoredApplicationId,
+      data.sourceId,
+      data.createdAt,
+      data.teamSlug,
+      data.environmentName,
+      data.appName,
+      data.title,
+      data.deployerUsername,
+      data.commitSha,
+      data.triggerUrl,
+      data.detectedGithubOwner,
+      data.detectedGithubRepoName,
+      data.resources ? JSON.stringify(data.resources) : null,
+      initialStatus,
+      data.suppressNotifications ?? false,
+    ],
+  )
+
+  if (result.rows[0]) return result.rows[0]
+
+  const existing = await pool.query<Deployment>(
+    `SELECT * FROM deployments
+     WHERE monitored_app_id = $1 AND deployment_source = 'nais_apply' AND deployment_source_id = $2`,
+    [data.monitoredApplicationId, data.sourceId],
+  )
+  const deployment = existing.rows[0]
+  if (!deployment) {
+    throw new Error(
+      `Nais Apply source ${data.sourceId} could not be inserted or found for application ${data.monitoredApplicationId}`,
+    )
+  }
+  throw new Error(
+    `Conflicting commit SHAs for Nais Apply source ${data.sourceId}: ${deployment.commit_sha} and ${data.commitSha}`,
+  )
+}
+
 export async function getLatestDeploymentForApp(
   monitoredAppId: number,
 ): Promise<{ nais_deployment_id: string; created_at: string } | null> {
   const result = await pool.query(
     `SELECT nais_deployment_id, created_at 
      FROM deployments 
-     WHERE monitored_app_id = $1 
+     WHERE monitored_app_id = $1 AND deployment_source = 'nais_deployment'
      ORDER BY created_at DESC 
      LIMIT 1`,
     [monitoredAppId],

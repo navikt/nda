@@ -38,7 +38,9 @@ export interface RepositoryHistoryReadiness {
 
 export interface RepositoryCodeDeliveryExportRow {
   deployment_id: number
-  nais_deployment_id: string
+  nais_deployment_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   deployed_at: Date
   team_slug: string
   app_name: string
@@ -259,7 +261,8 @@ export async function listRepositoryCodeDeliveryExportRows(
   deploymentIds?: number[],
 ): Promise<RepositoryCodeDeliveryExportRow[]> {
   const { rows } = await executor.query<RepositoryCodeDeliveryExportRow>(
-    `SELECT d.id AS deployment_id, d.nais_deployment_id, d.created_at AS deployed_at,
+    `SELECT d.id AS deployment_id, d.nais_deployment_id, d.deployment_source, d.deployment_source_id,
+            d.created_at AS deployed_at,
             d.team_slug, d.app_name, d.environment_name, d.commit_sha AS deployed_sha, d.branch_name, d.trigger_url,
             d.github_pr_number,
             c.id AS delivery_id, c.base_sha AS delivery_base_sha, c.head_sha AS delivery_head_sha,

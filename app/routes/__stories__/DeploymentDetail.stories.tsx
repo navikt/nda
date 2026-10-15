@@ -110,6 +110,8 @@ const baseDeployment: DeploymentDetailLoaderData['deployment'] = {
   deployer_username: 'john-doe',
   commit_sha: 'abc123def456789012345678901234567890abcd',
   nais_deployment_id: 'nais-depl-123',
+  deployment_source: 'nais_deployment',
+  deployment_source_id: 'nais-depl-123',
   branch_name: 'main',
   default_branch: 'main',
   trigger_url: 'https://github.com/navikt/pensjon-pen/actions/runs/123456789',

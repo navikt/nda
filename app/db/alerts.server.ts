@@ -22,7 +22,9 @@ interface RepositoryAlertWithContext extends RepositoryAlert {
   team_slug: string
   environment_name: string
   app_name: string
-  deployment_nais_id: string
+  deployment_nais_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   deployment_created_at: Date
   deployer_username: string
   commit_sha: string
@@ -139,6 +141,8 @@ export async function getUnresolvedAlertsByApp(monitoredAppId: number): Promise<
       ma.environment_name,
       ma.app_name,
       d.nais_deployment_id as deployment_nais_id,
+      d.deployment_source,
+      d.deployment_source_id,
       d.created_at as deployment_created_at,
       d.deployer_username,
       d.commit_sha

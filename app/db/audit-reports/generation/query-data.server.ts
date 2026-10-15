@@ -68,6 +68,8 @@ export async function getAuditReportData(
     `SELECT 
        d.id,
        d.nais_deployment_id,
+       d.deployment_source,
+       d.deployment_source_id,
        d.title,
        d.created_at,
        d.commit_sha,
