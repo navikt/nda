@@ -36,13 +36,13 @@ async function archiveCommitAssociatedPrsRawSnapshot(
   repo: string,
   sha: string,
   data: unknown,
-  headers: Record<string, unknown>,
+  apiVersion: ApiVersionMetadata,
+  paginationComplete: boolean,
 ): Promise<void> {
   try {
     const githubRepoId = await getRepositoryId(owner, repo)
     if (githubRepoId === null) return
-    const apiVersion = captureApiVersionMetadata(headers, null)
-    await saveCommitAssociatedPrsRawSnapshot(owner, repo, githubRepoId, sha, data, apiVersion)
+    await saveCommitAssociatedPrsRawSnapshot(owner, repo, githubRepoId, sha, data, apiVersion, paginationComplete)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.warn(`⚠️ Failed to archive commit-associated PRs for ${sha.substring(0, 7)} in ${owner}/${repo}:`, {
@@ -82,26 +82,39 @@ export async function getPullRequestForCommit(
       `🔎 Searching for PRs associated with commit ${sha} in ${owner}/${repo}${baseBranch ? ` (base: ${baseBranch})` : ''}`,
     )
 
-    const response = await client.repos.listPullRequestsAssociatedWithCommit({
+    let apiVersion: ApiVersionMetadata | null = null
+    const associatedPullRequests = await client.paginate(
+      client.repos.listPullRequestsAssociatedWithCommit,
+      { owner, repo, commit_sha: sha, per_page: 100 },
+      (response) => {
+        apiVersion = captureApiVersionMetadata(response.headers, apiVersion)
+        return response.data
+      },
+    )
+
+    await archiveCommitAssociatedPrsRawSnapshot(
       owner,
       repo,
-      commit_sha: sha,
-    })
+      sha,
+      associatedPullRequests,
+      apiVersion ?? { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null },
+      true,
+    )
 
-    await archiveCommitAssociatedPrsRawSnapshot(owner, repo, sha, response.data, response.headers)
+    logger.info(`📊 Found ${associatedPullRequests.length} PR(s) associated with commit ${sha}`)
 
-    logger.info(`📊 Found ${response.data.length} PR(s) associated with commit ${sha}`)
+    const allAssociatedPrs = associatedPullRequests.map((pr) => ({ number: pr.number, baseBranch: pr.base.ref }))
 
-    const allAssociatedPrs = response.data.map((pr) => ({ number: pr.number, baseBranch: pr.base.ref }))
-
-    if (response.data.length === 0) {
+    if (associatedPullRequests.length === 0) {
       logger.info(`❌ No PRs found for commit ${sha}`)
       return { pr: null, allAssociatedPrs }
     }
 
-    const filteredPRs = baseBranch ? response.data.filter((pr) => pr.base.ref === baseBranch) : response.data
+    const filteredPRs = baseBranch
+      ? associatedPullRequests.filter((pr) => pr.base.ref === baseBranch)
+      : associatedPullRequests
 
-    if (baseBranch && filteredPRs.length !== response.data.length) {
+    if (baseBranch && filteredPRs.length !== associatedPullRequests.length) {
       logger.info(`   🔍 Filtered to ${filteredPRs.length} PR(s) targeting ${baseBranch}`)
     }
 
