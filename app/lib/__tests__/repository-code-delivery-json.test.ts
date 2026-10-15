@@ -117,6 +117,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
             includedDeploymentIds: [10],
           },
         ],
+        deliveryTarget: null,
         prSnapshots: [
           {
             id: 11,
@@ -172,7 +173,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
     )
     const parsed = JSON.parse(json)
 
-    expect(parsed.schemaVersion).toBe(4)
+    expect(parsed.schemaVersion).toBe(5)
     expect(parsed.exportedAt).toBe('2026-10-14T11:00:00.000Z')
     expect(parsed.repository.githubRepositoryId).toBe('12345')
     expect(parsed.implicitApprovalMode).toBe('dependabot_only')
@@ -254,6 +255,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
         verificationRuns: [],
         repositoryConfigAuditLog: [],
         diagnosticTargets: [],
+        deliveryTarget: { deliveryId: 9, includedDeploymentIds: [10, 11] },
         prSnapshots: [],
         commitSnapshots: [],
         workflowRunSnapshots: [],
@@ -269,6 +271,19 @@ describe('createRepositoryCodeDeliveryJson', () => {
     )
 
     expect(parsed.deployments).toEqual([])
+    expect(parsed.deliveryTarget).toEqual({ deliveryId: 9, includedDeploymentIds: [10, 11] })
+    expect(parsed.interpretationNotes).toContain(
+      'This export is scoped to the selected registered delivery and includes every deployment linked to it. It does not include neighboring deliveries or unlinked deployments.',
+    )
+    expect(parsed.interpretationNotes).toContain(
+      'Ancestry compare snapshots are not included because this export has no unresolved deployment target to compare against the selected delivery.',
+    )
+    expect(parsed.interpretationNotes).not.toContain(
+      'The unresolved row stores only its first and most recent observation timestamps; it does not store every retry.',
+    )
+    expect(parsed.interpretationNotes).not.toContain(
+      'Only registered deliveries nearest to an included open unresolved deployment are included; registered but undeployed deliveries are not part of this diagnostic window.',
+    )
     expect(parsed.deliveries).toEqual([])
     expect(parsed.ancestryEvidence.matchingCompareSnapshots).toEqual([])
     expect(parsed.verificationRuns).toEqual([])

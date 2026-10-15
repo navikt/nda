@@ -6,6 +6,7 @@ import {
 } from '../../repository-code-deliveries.server'
 import { getRepositoryCodeDeliveryIntervalAssessments } from '../../repository-code-delivery-interval-assessment.server'
 import {
+  getRepositoryCodeDeliveryDiagnosticForDelivery,
   getRepositoryCodeDeliveryEvidence,
   getRepositoryCodeDeliveryExportData,
   getRepositoryCodeDeliveryOverview,
@@ -764,6 +765,77 @@ describe('repository code delivery overview', () => {
       }),
     ])
     expect(exportData?.implicitApprovalMode).toBe('all')
+  })
+
+  it('exports exactly one delivery and every deployment linked to it', async () => {
+    const repositoryId = await createRepository('1020')
+    const otherRepositoryId = await createRepository('1021')
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+    const deployments = await Promise.all([
+      createDeployment('diagnostic-app-a', repositoryId, SHA_2),
+      createDeployment('diagnostic-app-a', repositoryId, SHA_2),
+      createDeployment('diagnostic-app-b', repositoryId, SHA_2),
+      createDeployment('diagnostic-app-b', repositoryId, SHA_2),
+    ])
+    for (const deploymentId of deployments) {
+      await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
+    }
+    const separateDelivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_2,
+      headSha: SHA_3,
+    })
+    const separateDeployment = await createDeployment('diagnostic-separate-app', repositoryId, SHA_3)
+    await linkDeploymentToRepositoryCodeDelivery(separateDeployment, separateDelivery.id)
+    const otherDelivery = await createRepositoryCodeDelivery({
+      repositoryId: otherRepositoryId,
+      baseSha: SHA_3,
+      headSha: SHA_4,
+    })
+    const otherDeployment = await createDeployment('diagnostic-other-app', otherRepositoryId, SHA_4)
+    await linkDeploymentToRepositoryCodeDelivery(otherDeployment, otherDelivery.id)
+    await pool.query(
+      `INSERT INTO verification_runs
+         (deployment_id, schema_version, pr_snapshot_ids, result, status, run_at)
+       VALUES ($1, 3, '{}', '{"status":"approved"}', 'approved', '2026-10-14T10:00:00Z')`,
+      [deployments[0]],
+    )
+
+    const exportData = await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, delivery.id)
+
+    expect(exportData.deliveryTarget).toEqual({
+      deliveryId: delivery.id,
+      includedDeploymentIds: expect.arrayContaining(deployments),
+    })
+    expect(exportData.deliveryTarget?.includedDeploymentIds).toHaveLength(4)
+    expect(exportData.deliveries).toMatchObject([
+      {
+        id: delivery.id,
+        base_sha: SHA_1,
+        head_sha: SHA_2,
+        deployment_count: 4,
+        contexts: [],
+      },
+    ])
+    expect(exportData.deployments.map((row) => row.deployment_id)).toEqual(expect.arrayContaining(deployments))
+    expect(exportData.deployments).toHaveLength(4)
+    expect(exportData.deployments.map((row) => row.app_name).sort()).toEqual([
+      'diagnostic-app-a',
+      'diagnostic-app-a',
+      'diagnostic-app-b',
+      'diagnostic-app-b',
+    ])
+    expect(exportData.verificationRuns).toMatchObject([{ deployment_id: deployments[0], status: 'approved' }])
+    expect(exportData.diagnosticTargets).toEqual([])
+    expect(await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, otherDelivery.id)).toMatchObject({
+      deliveryTarget: null,
+      deployments: [],
+      deliveries: [],
+    })
   })
 
   it('includes matching compare snapshots as candidate ancestry evidence without asserting retry linkage', async () => {

@@ -363,6 +363,12 @@ export function RepositoryCodeDeliveriesPage({
                       >
                         Vis detaljer
                       </AkselLink>
+                      <AkselLink
+                        as="a"
+                        href={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin/code-deliveries/export?repositoryId=${repository.id}&deliveryId=${delivery.id}`}
+                      >
+                        Last ned analysegrunnlag
+                      </AkselLink>
                     </Table.DataCell>
                     <Table.DataCell>
                       {delivery.pullRequestNumbers.length > 0 ? (
