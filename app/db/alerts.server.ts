@@ -139,13 +139,13 @@ export async function resolveRepositoryAlert(id: number, resolutionNote: string)
 
 export async function getAlertCountsByApp(): Promise<Map<number, number>> {
   const result = await pool.query(`
-    SELECT repository_alerts.monitored_app_id, COUNT(*) as count
-    FROM repository_alerts
-    JOIN deployments d ON d.id = repository_alerts.deployment_id
-    JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-    WHERE repository_alerts.resolved_at IS NULL
-      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
-    GROUP BY repository_alerts.monitored_app_id
+    SELECT ra.monitored_app_id, COUNT(*) as count
+    FROM repository_alerts ra
+    LEFT JOIN deployments d ON d.id = ra.deployment_id
+    JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
+    WHERE ra.resolved_at IS NULL
+      AND (d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+    GROUP BY ra.monitored_app_id
   `)
   const map = new Map<number, number>()
   for (const row of result.rows) {

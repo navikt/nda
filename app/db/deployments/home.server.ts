@@ -141,10 +141,10 @@ export async function getDevTeamAppsWithIssues(
     LEFT JOIN LATERAL (
       SELECT COUNT(*) as count
       FROM repository_alerts ra
-      JOIN deployments d ON d.id = ra.deployment_id
+      LEFT JOIN deployments d ON d.id = ra.deployment_id
       WHERE ra.monitored_app_id = ma.id
         AND ra.resolved_at IS NULL
-        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+        AND (d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
     ) alerts ON true
     WHERE ma.is_active = true
       AND (ma.team_slug = ANY($3::text[]) OR ma.id = ANY($4::int[]))

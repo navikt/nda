@@ -23,8 +23,9 @@ describe('Nais Apply opt-out reads', () => {
     await getDevTeamAppsWithIssues(['team-a'])
 
     expect(poolQuery).toHaveBeenCalledTimes(2)
-    expect(poolQuery.mock.calls[0][0]).toContain(applyVisibilityPredicate)
-    expect(poolQuery.mock.calls[1][0]).toContain(applyVisibilityPredicate)
+    for (const [query] of poolQuery.mock.calls) {
+      expect(query).toContain("d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true")
+    }
   })
 
   it('excludes opted-out Apply deliveries from audit readiness and scheduled reminders', async () => {

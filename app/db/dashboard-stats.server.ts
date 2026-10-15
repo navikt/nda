@@ -241,9 +241,9 @@ export async function getDevTeamSummaryStats(
          SELECT ra.monitored_app_id, COUNT(*) AS alert_count
          FROM team_apps ta
          JOIN repository_alerts ra ON ra.monitored_app_id = ta.id AND ra.resolved_at IS NULL
-         JOIN deployments d ON d.id = ra.deployment_id
-         JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-           AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+         LEFT JOIN deployments d ON d.id = ra.deployment_id
+         JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
+         WHERE d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true
          GROUP BY ra.monitored_app_id
        )
        SELECT
@@ -310,9 +310,9 @@ export async function getDevTeamSummaryStats(
        SELECT ra.monitored_app_id, COUNT(*) AS alert_count
        FROM team_apps ta
        JOIN repository_alerts ra ON ra.monitored_app_id = ta.id AND ra.resolved_at IS NULL
-       JOIN deployments d ON d.id = ra.deployment_id
-       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+       LEFT JOIN deployments d ON d.id = ra.deployment_id
+       JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
+       WHERE d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true
        GROUP BY ra.monitored_app_id
      )
      SELECT

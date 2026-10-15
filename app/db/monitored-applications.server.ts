@@ -204,10 +204,10 @@ export async function getAllAlertCounts(): Promise<Map<number, number>> {
   const result = await pool.query(`
     SELECT ra.monitored_app_id, COUNT(*)::integer as count
     FROM repository_alerts ra
-    JOIN deployments d ON d.id = ra.deployment_id
-    JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+    LEFT JOIN deployments d ON d.id = ra.deployment_id
+    JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
     WHERE ra.resolved_at IS NULL
-      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+      AND (d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
     GROUP BY ra.monitored_app_id
   `)
   const map = new Map<number, number>()
