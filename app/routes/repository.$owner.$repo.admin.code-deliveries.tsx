@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router'
 import { RepositoryCodeDeliveriesPage } from '~/components/RepositoryCodeDeliveriesPage'
+import { getRepositoryCodeDeliveryIntervalAssessments } from '~/db/repository-code-delivery-interval-assessment.server'
 import {
   getRepositoryCodeDeliveryOverview,
   getRepositoryHistoryReadiness,
@@ -103,6 +104,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     offset: (page - 1) * PAGE_SIZE,
     sort,
   })
+  const deliveryAssessments = await getRepositoryCodeDeliveryIntervalAssessments(repository.id, deliveries)
+  const assessmentsByDeliveryId = new Map(deliveryAssessments.map((item) => [item.deliveryId, item]))
+  const deliveriesWithAssessment = deliveries.map((delivery) => {
+    const assessment = assessmentsByDeliveryId.get(delivery.id)
+    if (!assessment) throw new Error(`Missing interval assessment for delivery ${delivery.id}`)
+    const { state, totalCommits, listedCommits, summary } = assessment.assessment
+    return {
+      ...delivery,
+      assessment: { state, totalCommits, listedCommits, summary },
+      pullRequestNumbers: assessment.pullRequestNumbers,
+    }
+  })
 
   return {
     repository: {
@@ -116,7 +129,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     overview,
     historyReadiness,
-    deliveries,
+    deliveries: deliveriesWithAssessment,
     unresolved,
     page,
     totalPages,

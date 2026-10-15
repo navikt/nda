@@ -4,6 +4,7 @@ import {
   createRepositoryCodeDelivery,
   linkDeploymentToRepositoryCodeDelivery,
 } from '../../repository-code-deliveries.server'
+import { getRepositoryCodeDeliveryIntervalAssessments } from '../../repository-code-delivery-interval-assessment.server'
 import {
   getRepositoryCodeDeliveryEvidence,
   getRepositoryCodeDeliveryExportData,
@@ -192,6 +193,11 @@ describe('repository code delivery overview', () => {
       baseSha: SHA_1,
       headSha: SHA_2,
     })
+    const deliveryWithoutCompare = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_3,
+      headSha: SHA_4,
+    })
     const commitDate = '2026-10-05T10:00:00Z'
     await pool.query(
       `INSERT INTO github_compare_raw_snapshots
@@ -226,7 +232,13 @@ describe('repository code delivery overview', () => {
       `INSERT INTO github_commit_associated_prs_raw_snapshots
          (github_repo_id, owner, repo, sha, api_version, data)
        VALUES ('1018', 'navikt', 'repo-1018', $1, '2022-11-28', $2::jsonb)`,
-      [SHA_2, JSON.stringify([{ number: 42, base: { ref: 'main' } }])],
+      [
+        SHA_2,
+        JSON.stringify([
+          { number: 41, base: { ref: 'main' } },
+          { number: 42, base: { ref: 'main' } },
+        ]),
+      ],
     )
     await pool.query(
       `INSERT INTO github_pr_raw_snapshots
@@ -289,7 +301,35 @@ describe('repository code delivery overview', () => {
       summary: { covered: 1, notCovered: 0, unknown: 0 },
       commits: [{ sha: SHA_2, pullRequestNumber: 42, status: 'covered', reason: 'approved_review' }],
     })
+    const summaries = await getRepositoryCodeDeliveryIntervalAssessments(repositoryId, [
+      delivery,
+      deliveryWithoutCompare,
+    ])
+    expect(summaries).toMatchObject([
+      {
+        deliveryId: delivery.id,
+        assessment: {
+          state: 'complete',
+          summary: { covered: 1, notCovered: 0, unknown: 0 },
+        },
+        pullRequestNumbers: [41, 42],
+      },
+      {
+        deliveryId: deliveryWithoutCompare.id,
+        assessment: {
+          state: 'unavailable',
+          summary: { covered: 0, notCovered: 0, unknown: 0 },
+        },
+        pullRequestNumbers: [],
+      },
+    ])
 
+    await pool.query(
+      `UPDATE github_commit_associated_prs_raw_snapshots
+       SET data = $1::jsonb
+       WHERE github_repo_id = '1018' AND sha = $2`,
+      [JSON.stringify([{ number: 42, base: { ref: 'main' } }]), SHA_2],
+    )
     await pool.query(
       `UPDATE github_pr_raw_snapshots
        SET data = jsonb_set(data, '{head,sha}', to_jsonb($1::text))

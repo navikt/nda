@@ -58,6 +58,13 @@ export interface RepositoryCodeDeliveriesPageProps {
     is_anchor: boolean
     deployment_count: number
     app_names: string[]
+    assessment: {
+      state: 'complete' | 'incomplete' | 'unavailable'
+      totalCommits: number | null
+      listedCommits: number
+      summary: { covered: number; notCovered: number; unknown: number }
+    }
+    pullRequestNumbers: number[]
   }[]
   unresolved: {
     deployment_id: number
@@ -277,6 +284,9 @@ export function RepositoryCodeDeliveriesPage({
           <Heading size="small" level="2">
             Leveranser
           </Heading>
+          <BodyShort size="small" textColor="subtle">
+            Lagret evidens viser PR-review-dekning fra snapshots, ikke en repositorygodkjenning.
+          </BodyShort>
           {deliveries.length === 0 ? (
             <BodyShort textColor="subtle">Ingen leveranser er registrert ennå.</BodyShort>
           ) : (
@@ -302,7 +312,8 @@ export function RepositoryCodeDeliveriesPage({
                   <Table.ColumnHeader sortKey="app_names" sortable>
                     Apper
                   </Table.ColumnHeader>
-                  <Table.HeaderCell>Review-grunnlag</Table.HeaderCell>
+                  <Table.HeaderCell>Lagret evidens</Table.HeaderCell>
+                  <Table.HeaderCell>PR</Table.HeaderCell>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -329,12 +340,45 @@ export function RepositoryCodeDeliveriesPage({
                     <Table.DataCell>{delivery.deployment_count}</Table.DataCell>
                     <Table.DataCell>{delivery.app_names.join(', ') || '—'}</Table.DataCell>
                     <Table.DataCell>
+                      {delivery.assessment ? (
+                        <>
+                          <BodyShort size="small">
+                            Dekket {delivery.assessment.summary.covered} · Ikke dekket{' '}
+                            {delivery.assessment.summary.notCovered} · Ukjent {delivery.assessment.summary.unknown}
+                          </BodyShort>
+                          <BodyShort size="small" textColor="subtle">
+                            {delivery.assessment.state === 'unavailable'
+                              ? 'Sammenligningsgrunnlag mangler'
+                              : `${delivery.assessment.listedCommits} av ${delivery.assessment.totalCommits ?? 'ukjent'} commits vist`}
+                          </BodyShort>
+                        </>
+                      ) : (
+                        <BodyShort size="small" textColor="subtle">
+                          Ikke tilgjengelig
+                        </BodyShort>
+                      )}
                       <AkselLink
                         as={Link}
                         to={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin/code-deliveries/${delivery.id}?repositoryId=${repository.id}`}
                       >
-                        Vis lagrede reviews
+                        Vis detaljer
                       </AkselLink>
+                    </Table.DataCell>
+                    <Table.DataCell>
+                      {delivery.pullRequestNumbers.length > 0 ? (
+                        <HStack gap="space-8" wrap>
+                          {delivery.pullRequestNumbers.map((number) => (
+                            <ExternalLink
+                              key={number}
+                              href={`https://github.com/${repository.githubOwner}/${repository.githubRepoName}/pull/${number}`}
+                            >
+                              PR #{number}
+                            </ExternalLink>
+                          ))}
+                        </HStack>
+                      ) : (
+                        '–'
+                      )}
                     </Table.DataCell>
                   </Table.Row>
                 ))}
