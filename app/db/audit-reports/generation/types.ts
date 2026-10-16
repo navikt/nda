@@ -1,6 +1,8 @@
 export interface AuditDeploymentRow {
   id: number
-  nais_deployment_id: string
+  nais_deployment_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   title: string | null
   created_at: Date
   commit_sha: string | null
@@ -65,7 +67,9 @@ export interface AuditGoalLinkEntry {
 
 export interface AuditDeploymentEntry {
   id: number
-  nais_deployment_id: string
+  nais_deployment_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   title: string
   date: string
   commit_sha: string
@@ -85,7 +89,9 @@ export interface AuditDeploymentEntry {
 
 export interface ManualApprovalEntry {
   deployment_id: number
-  nais_deployment_id: string
+  nais_deployment_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   title: string
   date: string
   commit_sha: string

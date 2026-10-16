@@ -124,12 +124,22 @@ export function DeploymentDetailsGrid({
         )}
 
         <VStack gap="space-4">
-          <Detail>Nais Deployment ID</Detail>
+          <Detail>
+            {deployment.deployment_source === 'nais_apply' ? 'Nais Apply-kilde-ID' : 'Nais Deployment ID'}
+          </Detail>
           <HStack gap="space-8" align="center">
             <BodyShort>
-              <code style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{deployment.nais_deployment_id}</code>
+              <code style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                {deployment.deployment_source_id ?? deployment.nais_deployment_id ?? '(ukjent)'}
+              </code>
             </BodyShort>
-            <CopyButton copyText={deployment.nais_deployment_id} size="small" title="Kopier deployment ID" />
+            {(deployment.deployment_source_id ?? deployment.nais_deployment_id) && (
+              <CopyButton
+                copyText={deployment.deployment_source_id ?? deployment.nais_deployment_id ?? ''}
+                size="small"
+                title="Kopier kilde-ID"
+              />
+            )}
           </HStack>
         </VStack>
 

@@ -88,6 +88,42 @@ interface NaisDeployment {
   }
 }
 
+export interface NaisApplicationUpdatedActivity {
+  id: string
+  createdAt: string
+  actor: string
+  message: string
+  resourceName: string
+  teamSlug: string
+  environmentName: string | null
+  gitHubActorClaims: {
+    actor: string
+    repository: string
+    repositoryID: string
+    workflow: string
+    runID: string
+    runAttempt: string
+    checkRunID: string | null
+    workflowSha: string | null
+    workflowRef: string | null
+    ref: string
+    eventName: string
+  } | null
+  changedFields: Array<{
+    field: string
+    oldValue: string | null
+    newValue: string | null
+  }>
+}
+
+export interface NaisApplicationUpdatedActivityPage {
+  nodes: NaisApplicationUpdatedActivity[]
+  pageInfo: {
+    hasNextPage: boolean
+    endCursor: string | null
+  }
+}
+
 interface NaisApplication {
   name: string
   team: {
@@ -194,6 +230,68 @@ const APP_DEPLOYMENTS_QUERY = `
   }
 `
 
+const APP_UPDATED_ACTIVITY_QUERY = `
+  query AppUpdatedActivity(
+    $team: Slug!
+    $env: String!
+    $app: String!
+    $first: Int!
+    $after: Cursor
+    $from: Time
+  ) {
+    team(slug: $team) {
+      environment(name: $env) {
+        application(name: $app) {
+          activityLog(
+            first: $first
+            after: $after
+            filter: {
+              activityTypes: [APPLICATION_UPDATED]
+              from: $from
+            }
+          ) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              ... on ApplicationUpdatedActivityLogEntry {
+                id
+                createdAt
+                actor
+                message
+                resourceName
+                teamSlug
+                environmentName
+                gitHubActorClaims {
+                  actor
+                  repository
+                  repositoryID
+                  workflow
+                  runID
+                  runAttempt
+                  checkRunID
+                  workflowSha
+                  workflowRef
+                  ref
+                  eventName
+                }
+                data {
+                  changedFields {
+                    field
+                    oldValue
+                    newValue
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
 const TEAM_ENVIRONMENTS_QUERY = `
   query TeamEnvironments($team: Slug!, $first: Int!) {
     team(slug: $team) {
@@ -217,6 +315,63 @@ const TEAM_ENVIRONMENTS_QUERY = `
 
 const MAX_NAIS_DEPLOYMENT_ENUMERATIONS = 3
 const NAIS_DEPLOYMENT_ENUMERATION_RETRY_DELAY_MS = 1000
+const NAIS_ACTIVITY_PAGE_SIZE = 100
+
+export async function fetchApplicationUpdatedActivityPage(
+  teamSlug: string,
+  environmentName: string,
+  appName: string,
+  after: string | null,
+  from: string | null,
+): Promise<NaisApplicationUpdatedActivityPage> {
+  const client = getNaisClient()
+
+  try {
+    const response = await client.request<{
+      team: {
+        environment: {
+          application: {
+            activityLog: {
+              nodes: Array<
+                Omit<NaisApplicationUpdatedActivity, 'changedFields'> & {
+                  data: { changedFields: NaisApplicationUpdatedActivity['changedFields'] }
+                }
+              >
+              pageInfo: NaisApplicationUpdatedActivityPage['pageInfo']
+            }
+          } | null
+        } | null
+      } | null
+    }>(APP_UPDATED_ACTIVITY_QUERY, {
+      team: teamSlug,
+      env: environmentName,
+      app: appName,
+      first: NAIS_ACTIVITY_PAGE_SIZE,
+      after,
+      from,
+    })
+
+    const application = response.team?.environment?.application
+    if (!application) {
+      throw new NaisResourceNotFoundError(`Application not found in Nais: ${teamSlug}/${environmentName}/${appName}`)
+    }
+
+    const activityLog = application.activityLog
+    return {
+      pageInfo: activityLog.pageInfo,
+      nodes: activityLog.nodes.map(({ data, ...activity }) => ({
+        ...activity,
+        changedFields: data.changedFields,
+      })),
+    }
+  } catch (error) {
+    if (error instanceof NaisResourceNotFoundError) {
+      throw error
+    }
+    logger.error('❌ Error fetching Nais application activity:', error)
+    throw error
+  }
+}
 
 async function fetchApplicationDeploymentsOnce(
   teamSlug: string,

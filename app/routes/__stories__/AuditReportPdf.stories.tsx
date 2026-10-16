@@ -32,6 +32,8 @@ const prDeployments: AuditDeploymentEntry[] = [
   {
     id: 1,
     nais_deployment_id: 'deploy-001',
+    deployment_source: 'nais_deployment',
+    deployment_source_id: 'deploy-001',
     title: 'feat: ny beregningslogikk for dagpenger',
     date: '2025-02-14T10:30:00Z',
     commit_sha: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
@@ -48,6 +50,8 @@ const prDeployments: AuditDeploymentEntry[] = [
   {
     id: 2,
     nais_deployment_id: 'deploy-002',
+    deployment_source: 'nais_deployment',
+    deployment_source_id: 'deploy-002',
     title: 'fix: korriger avrunding i utbetalingsberegning',
     date: '2025-03-05T14:15:00Z',
     commit_sha: 'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3',
@@ -64,6 +68,8 @@ const prDeployments: AuditDeploymentEntry[] = [
   {
     id: 3,
     nais_deployment_id: 'deploy-003',
+    deployment_source: 'nais_deployment',
+    deployment_source_id: 'deploy-003',
     title: 'chore: oppdater avhengigheter',
     date: '2025-04-20T09:00:00Z',
     commit_sha: 'c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
@@ -82,6 +88,8 @@ const prDeployments: AuditDeploymentEntry[] = [
 const baselineDeployment: AuditDeploymentEntry = {
   id: 10,
   nais_deployment_id: 'deploy-baseline',
+  deployment_source: 'nais_deployment',
+  deployment_source_id: 'deploy-baseline',
   title: 'Baseline — versjon ved oppstart av NDA-overvåking',
   date: '2025-01-01T00:00:00Z',
   commit_sha: 'd4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5',
@@ -94,6 +102,8 @@ const baselineDeployment: AuditDeploymentEntry = {
 const manualDeployment: AuditDeploymentEntry = {
   id: 20,
   nais_deployment_id: 'deploy-manual',
+  deployment_source: 'nais_deployment',
+  deployment_source_id: 'deploy-manual',
   title: 'hotfix: kritisk feil i personregister-oppslag',
   date: '2025-06-10T22:00:00Z',
   commit_sha: 'e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6',
@@ -108,6 +118,8 @@ const manualApprovals: ManualApprovalEntry[] = [
   {
     deployment_id: 20,
     nais_deployment_id: 'deploy-manual',
+    deployment_source: 'nais_deployment',
+    deployment_source_id: 'deploy-manual',
     title: 'hotfix: kritisk feil i personregister-oppslag',
     date: '2025-06-10T22:00:00Z',
     commit_sha: 'e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6',

@@ -109,7 +109,9 @@ export async function fetchVerificationData(
     const nearbyResult = await pool.query(
       `SELECT d.id, d.four_eyes_status
        FROM deployments d
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND d.detected_github_owner = $3
          AND d.detected_github_repo_name = $4
          AND d.id != $1
@@ -144,7 +146,9 @@ export async function fetchVerificationData(
     const nearbyAnyResult = await pool.query(
       `SELECT d.id, d.commit_sha, d.four_eyes_status
        FROM deployments d
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND d.detected_github_owner = $2
          AND d.detected_github_repo_name = $3
          AND d.id != $1

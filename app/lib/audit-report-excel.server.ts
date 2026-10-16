@@ -156,7 +156,7 @@ function addDeploymentsSheet(
     { header: 'PR-forfatter', width: 18 },
     { header: 'Deployer', width: 18 },
     { header: 'Godkjenner', width: 18 },
-    { header: 'Nais ID', width: 20 },
+    { header: 'Kilde-ID', width: 44 },
     { header: 'Endringsopphav', width: 40 },
   ]
 
@@ -197,7 +197,7 @@ function addDeploymentsSheet(
       d.pr_author_display_name || d.pr_author || '-',
       d.deployer_display_name || d.deployer,
       d.approver ? d.approver_display_name || d.approver : '-',
-      d.nais_deployment_id || '',
+      d.deployment_source_id ?? d.nais_deployment_id ?? '',
       goalLinks,
     ])
     applyDataRow(row)

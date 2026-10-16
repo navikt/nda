@@ -8,7 +8,7 @@ vi.mock('~/db/connection.server', () => ({
   pool: { query: mockPoolQuery },
 }))
 
-const { findRootApprovedSiblingForCommit, preferRootApprovedSibling } = await import(
+const { findRootApprovedSiblingForCommit, getPreviousDeployment, preferRootApprovedSibling } = await import(
   '../verification/fetch-data/previous-deployment.server'
 )
 
@@ -25,6 +25,7 @@ describe('findRootApprovedSiblingForCommit', () => {
     const [query] = mockPoolQuery.mock.calls[0]
     expect(query).toContain("d.four_eyes_status IN ('approved'")
     expect(query).not.toContain("'verified_via_sibling'")
+    expect(query).toContain("(d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)")
   })
 
   it('bounds the query to deployments created no later than the deployment being verified', async () => {
@@ -53,6 +54,16 @@ describe('findRootApprovedSiblingForCommit', () => {
     const result = await findRootApprovedSiblingForCommit('sha-abc', 'repo-1', 999)
 
     expect(result).toBeNull()
+  })
+
+  it('excludes opted-out Apply deployments from previous-deployment candidates', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] })
+
+    await getPreviousDeployment(999, 'navikt', 'nda', 'repo-1', null, 'sha-current')
+
+    expect(mockPoolQuery.mock.calls[0][0]).toContain(
+      "(d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)",
+    )
   })
 })
 

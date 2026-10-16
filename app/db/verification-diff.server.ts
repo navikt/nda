@@ -33,6 +33,7 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
       FROM deployments d
       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
       WHERE d.monitored_app_id = $1
+        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
         AND d.commit_sha IS NOT NULL
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
@@ -71,8 +72,10 @@ export async function getVerificationDiffsForRepository(
             d.monitored_app_id, d.team_slug, d.app_name
      FROM verification_diffs vd
      JOIN deployments d ON vd.deployment_id = d.id
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE vd.repository_id = $1
        AND d.monitored_app_id = ANY($2)
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
      ORDER BY d.created_at DESC`,
     [repositoryId, monitoredAppIds],
   )
@@ -97,7 +100,9 @@ export async function getPreviousDeploymentForDiff(
        AND ar.github_owner = d.detected_github_owner
        AND ar.github_repo_name = d.detected_github_repo_name
        AND ar.status IN ('active', 'historical')
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE ar.github_repo_id = $2
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
        AND d.commit_sha IS NOT NULL
        AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})

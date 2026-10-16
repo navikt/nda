@@ -57,7 +57,9 @@ export async function reverifyPendingChecks(
     `SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name, d.github_pr_number,
             d.trigger_url, d.workflow_trigger_config
      FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE d.monitored_app_id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.commit_checks_checked_at IS NULL
        AND d.detected_github_owner IS NOT NULL
        AND d.detected_github_repo_name IS NOT NULL
@@ -155,12 +157,14 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
     }
 
     processedCount++
+    const deploymentReference =
+      deployment.deployment_source_id ?? deployment.nais_deployment_id ?? String(deployment.id)
 
     try {
-      logger.info(`🔍 Verifying deployment ${deployment.nais_deployment_id}...`)
+      logger.info(`🔍 Verifying deployment ${deploymentReference}...`)
 
       if (!deployment.commit_sha) {
-        logger.info(`⏭️  Skipping deployment without commit SHA: ${deployment.nais_deployment_id}`)
+        logger.info(`⏭️  Skipping deployment without commit SHA: ${deploymentReference}`)
         skipped++
         continue
       }
@@ -191,7 +195,7 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
         await isAppBlockedByRunningJob(deployment.monitored_app_id, VERIFICATION_DIFF_CONFLICT_GROUP, getCurrentJobId())
       ) {
         logger.info(
-          `⏳ Skipping deployment ${deployment.nais_deployment_id} — a reverify or refresh job is currently running for its app or repository`,
+          `⏳ Skipping deployment ${deploymentReference} — a reverify or refresh job is currently running for its app or repository`,
         )
         skipped++
         continue

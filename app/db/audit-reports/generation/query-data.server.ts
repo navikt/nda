@@ -68,6 +68,8 @@ export async function getAuditReportData(
     `SELECT 
        d.id,
        d.nais_deployment_id,
+       d.deployment_source,
+       d.deployment_source_id,
        d.title,
        d.created_at,
        d.commit_sha,
@@ -104,6 +106,7 @@ export async function getAuditReportData(
                AND prev.environment_name = ma.environment_name
                AND prev.created_at < d.created_at
                AND prev.commit_sha IS NOT NULL
+               AND (prev.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
                AND prev.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
                AND prev.commit_sha !~ '^refs/'
              ORDER BY prev.created_at DESC
@@ -147,6 +150,7 @@ export async function getAuditReportData(
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.monitored_app_id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.created_at >= $2
        AND d.created_at <= $3
        AND ma.environment_name IN ('prod-fss', 'prod-gcp')
@@ -247,6 +251,11 @@ export async function getAuditReportData(
      FROM deployment_status_history dsh
      JOIN deployments d ON d.id = dsh.deployment_id
      WHERE d.monitored_app_id = $1
+       AND (d.deployment_source != 'nais_apply' OR EXISTS (
+         SELECT 1
+         FROM monitored_applications ma
+         WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
+       ))
        AND dsh.change_source = 'admin_reset'
        AND dsh.created_at >= $2 AND dsh.created_at <= $3
      ORDER BY dsh.created_at ASC`,

@@ -515,7 +515,8 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
        ${effectiveAuditStartYearSql('ma')} AS audit_start_year
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-     WHERE d.id = $1`,
+     WHERE d.id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
     [deploymentId],
   )
 

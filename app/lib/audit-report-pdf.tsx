@@ -466,7 +466,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
                   <Text style={[styles.tableHeaderCell, styles.r2col5]}>PR-forf.</Text>
                   <Text style={[styles.tableHeaderCell, styles.r2col6]}>Deployer</Text>
                   <Text style={[styles.tableHeaderCell, styles.r2col7]}>Godkjenner</Text>
-                  <Text style={[styles.tableHeaderCell, styles.r2col8]}>Nais ID</Text>
+                  <Text style={[styles.tableHeaderCell, styles.r2col8]}>Kilde-ID</Text>
                 </View>
                 {monthDeployments.map((d, idx) => (
                   <View
@@ -536,7 +536,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
                         {d.approver ? d.approver_display_name || d.approver : '-'}
                       </Text>
                       <Text style={[styles.tableCell, styles.r2col8, { fontSize: 6, color: '#888888' }]}>
-                        {d.nais_deployment_id || ''}
+                        {d.deployment_source_id || d.nais_deployment_id || ''}
                       </Text>
                     </View>
                     {/* Row 3: Endringsopphav (conditional) */}
@@ -591,7 +591,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
                 </Text>
                 {approval.title && <Text style={[styles.manualDetail, { fontWeight: 600 }]}>{approval.title}</Text>}
                 <Text style={[styles.manualDetail, { fontSize: 7, color: '#666666' }]}>
-                  Nais ID: {approval.nais_deployment_id || 'N/A'}
+                  Kilde-ID: {approval.deployment_source_id || approval.nais_deployment_id || 'N/A'}
                 </Text>
                 <Text style={styles.manualDetail}>
                   Commit:{' '}

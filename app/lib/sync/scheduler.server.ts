@@ -9,7 +9,7 @@ import {
 } from './code-delivery-sync.server'
 import { CHECKS_REVERIFY_LIMIT_PER_APP, reverifyPendingChecks, verifyDeploymentsFourEyes } from './github-verify.server'
 import { cacheCheckLogsWithLock } from './log-cache-job.server'
-import { syncNewDeploymentsFromNais } from './nais-sync.server'
+import { syncNaisApplyActivityFromNais, syncNewDeploymentsFromNais } from './nais-sync.server'
 import { withSyncLock } from './with-sync-lock.server'
 
 let periodicSyncStarted = false
@@ -18,7 +18,7 @@ export const VERIFY_LIMIT_PER_APP = 50
 
 const APP_THROTTLE_MS = 250
 
-async function syncNewDeploymentsWithLock(
+export async function syncNewDeploymentsWithLock(
   monitoredAppId: number,
   teamSlug: string,
   environmentName: string,
@@ -35,6 +35,7 @@ async function syncNewDeploymentsWithLock(
         newCount: r.newCount,
         alertsCreated: r.alertsCreated,
         stoppedEarly: r.stoppedEarly,
+        naisApplyActivityCount: r.naisApplyActivityCount,
         ...(r.initialHistorySyncStatus
           ? {
               initialHistorySyncStatus: r.initialHistorySyncStatus,
@@ -43,7 +44,34 @@ async function syncNewDeploymentsWithLock(
           : {}),
       }),
     },
-    () => syncNewDeploymentsFromNais(teamSlug, environmentName, appName, monitoredAppId),
+    async () => {
+      const legacySync = await syncNewDeploymentsFromNais(teamSlug, environmentName, appName, monitoredAppId).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason) => ({ status: 'rejected' as const, reason }),
+      )
+      const applyActivitySync = await syncNaisApplyActivityFromNais(monitoredAppId).then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (reason) => ({ status: 'rejected' as const, reason }),
+      )
+
+      if (applyActivitySync.status === 'rejected') {
+        logger.error(
+          `❌ Nais Apply activity sync failed for app ${appName} (${teamSlug}/${environmentName}); continuing with legacy deployments:`,
+          applyActivitySync.reason,
+        )
+      }
+      if (legacySync.status === 'rejected') {
+        if (applyActivitySync.status === 'rejected') {
+          throw new AggregateError([legacySync.reason, applyActivitySync.reason], 'Nais source synchronization failed')
+        }
+        throw legacySync.reason
+      }
+
+      return {
+        ...legacySync.value,
+        naisApplyActivityCount: applyActivitySync.status === 'fulfilled' ? applyActivitySync.value : 0,
+      }
+    },
   )
 }
 

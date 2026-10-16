@@ -36,7 +36,9 @@ export async function findRootApprovedSiblingForCommit(
        AND ar.github_owner = d.detected_github_owner
        AND ar.github_repo_name = d.detected_github_repo_name
        AND ar.status IN ('active', 'historical')
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE ar.github_repo_id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.commit_sha = $2
        AND d.id <= $3
        AND d.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
@@ -136,7 +138,9 @@ async function logZeroCandidateDiagnostics(
     const olderSameAppResult = await pool.query(
       `SELECT d.id, d.detected_github_owner, d.detected_github_repo_name, d.commit_sha, d.four_eyes_status, d.created_at
        FROM deployments d
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = $1
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $2)
        ORDER BY d.created_at DESC, d.id DESC
        LIMIT 5`,
@@ -176,7 +180,10 @@ async function logZeroCandidateDiagnostics(
                AND ar.github_repo_id = $2
            ) AS matches_application_repository_join,
            ($3::date IS NULL OR d.created_at >= $3::date) AS passes_audit_start_year
-         FROM deployments d WHERE d.id = $1`,
+         FROM deployments d
+         JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+         WHERE d.id = $1
+           AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
         [nearest.id, githubRepoId, auditStartDate],
       )
       logger.warn('getPreviousDeployment: predicate-by-predicate check on nearest older same-app deployment', {
@@ -214,8 +221,10 @@ async function queryCandidates(
       AND ar.github_owner = d.detected_github_owner
       AND ar.github_repo_name = d.detected_github_repo_name
       AND ar.status IN ('active', 'historical')
+    JOIN monitored_applications ma ON ma.id = d.monitored_app_id
     WHERE (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
       AND ar.github_repo_id = $2
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
       AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
