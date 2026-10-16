@@ -12,6 +12,7 @@ const {
   mockHasActiveReportForPeriod,
   mockCreateReportJob,
   mockProcessReportJobAsync,
+  mockTransactionClientQuery,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockCanAccessAppAdmin: vi.fn(),
@@ -23,6 +24,7 @@ const {
   mockHasActiveReportForPeriod: vi.fn(),
   mockCreateReportJob: vi.fn(),
   mockProcessReportJobAsync: vi.fn(),
+  mockTransactionClientQuery: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({ requireUser: mockRequireUser }))
@@ -41,7 +43,7 @@ vi.mock('~/db/audit-reports.server', () => ({
 }))
 
 vi.mock('~/db/connection.server', () => ({
-  withTransaction: async (fn: (client: unknown) => Promise<unknown>) => fn({}),
+  withTransaction: async (fn: (client: unknown) => Promise<unknown>) => fn({ query: mockTransactionClientQuery }),
 }))
 
 vi.mock('~/db/monitored-applications.server', () => ({
@@ -106,6 +108,7 @@ describe('admin actions - Slack config toggles', () => {
     mockGetMonitoredApplicationById.mockReset()
     mockUpdateMonitoredApplication.mockReset()
     mockRecordAppConfigAuditLog.mockReset()
+    mockTransactionClientQuery.mockReset().mockResolvedValue({ rows: [] })
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990001', name: 'Glad Fjord', role: 'admin', isActualAdmin: true })
     mockCanAccessAppAdmin.mockResolvedValue(true)
     mockUpdateMonitoredApplication.mockResolvedValue(undefined)
@@ -236,6 +239,13 @@ describe('admin actions - Slack config toggles', () => {
     })
 
     expect(result).toEqual({ success: 'Nais Apply-innstilling oppdatert!' })
+    expect(mockTransactionClientQuery).toHaveBeenCalledWith(
+      'SELECT id FROM monitored_applications WHERE id = $1 FOR UPDATE',
+      [42],
+    )
+    expect(mockTransactionClientQuery.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGetMonitoredApplicationById.mock.invocationCallOrder[0],
+    )
     expect(mockUpdateMonitoredApplication).toHaveBeenCalledWith(42, { nais_apply_enabled: true }, expect.anything())
     expect(mockRecordAppConfigAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({

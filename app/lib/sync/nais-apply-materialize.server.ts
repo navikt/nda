@@ -1,16 +1,11 @@
 import { createHash } from 'node:crypto'
 import { createRepositoryAlertForDeployment } from '~/db/alerts.server'
-import {
-  findRepositoryForApp,
-  getRepositoriesByAppId,
-  isNaisApplyRepositoryRejected,
-  upsertApplicationRepository,
-} from '~/db/application-repositories.server'
+import { getRepositoriesByAppId, upsertNaisApplyRepository } from '~/db/application-repositories.server'
 import { upsertNaisApplyDeployment } from '~/db/deployments.server'
 import { getMonitoredApplicationById, type MonitoredApplication } from '~/db/monitored-applications.server'
 import { getNaisApplyActivityEvents } from '~/db/nais-apply-activity.server'
 import { ensureRepositoryRowForGithubRepo, syncRepositoryDefaultBranch } from '~/db/repositories.server'
-import { fetchWorkflowRunHeadSha, getRepositoryId } from '~/lib/github/git.server'
+import { fetchWorkflowRunHeadSha, getRepositoryIdentity } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import type { NaisApplicationUpdatedActivity } from '~/lib/nais.server'
 import { syncDefaultBranchForApp } from './default-branch-sync.server'
@@ -44,6 +39,8 @@ interface ApplyRepositoryLink {
   notes: string | null
   approved_at: Date | null
   approved_by: string | null
+  canonicalGithubOwner: string
+  canonicalGithubRepoName: string
 }
 
 function hash(value: string): string {
@@ -113,60 +110,25 @@ async function ensureApplyRepositoryLink(
   claims: ActivityClaims,
 ): Promise<ApplyRepositoryLink | null> {
   const monitoredAppId = app.id
-  const actualRepositoryId = await getRepositoryId(claims.owner, claims.repo)
-  if (actualRepositoryId === null || String(actualRepositoryId) !== claims.repositoryId) {
+  const identity = await getRepositoryIdentity(claims.owner, claims.repo)
+  if (identity === null || String(identity.id) !== claims.repositoryId) {
     logger.warn('Nais Apply GitHub repository claim did not match the current repository identity', {
       monitoredAppId,
       owner: claims.owner,
       repo: claims.repo,
       claimedRepositoryId: claims.repositoryId,
-      actualRepositoryId,
+      actualRepositoryId: identity?.id ?? null,
     })
     return null
   }
 
-  if (await isNaisApplyRepositoryRejected(monitoredAppId, claims.repositoryId)) return null
-
-  const repoCheck = await findRepositoryForApp(monitoredAppId, claims.owner, claims.repo)
-  let repository = repoCheck.repository
-
-  if (repository && repository.github_repo_id !== claims.repositoryId) {
-    if (repository.github_repo_id !== null) {
-      logger.warn('Nais Apply repository claim does not match the application repository link', {
-        monitoredAppId,
-        owner: claims.owner,
-        repo: claims.repo,
-        claimedRepositoryId: claims.repositoryId,
-        linkedRepositoryId: repository.github_repo_id,
-      })
-      return null
-    }
-
-    repository = await upsertApplicationRepository({
-      monitoredAppId,
-      githubOwner: repository.github_owner,
-      githubRepoName: repository.github_repo_name,
-      status: repository.status,
-      redirectsToOwner: repository.redirects_to_owner,
-      redirectsToRepo: repository.redirects_to_repo,
-      notes: repository.notes,
-      approvedBy: repository.approved_by,
-      approvedAt: repository.approved_at,
-      expectedGithubRepoId: claims.repositoryId,
-    })
-  }
-
-  if (!repository) {
-    const existingRepositories = await getRepositoriesByAppId(monitoredAppId)
-    repository = await upsertApplicationRepository({
-      monitoredAppId,
-      githubOwner: claims.owner,
-      githubRepoName: claims.repo,
-      status: existingRepositories.length === 0 ? 'active' : 'pending_approval',
-      expectedGithubRepoId: claims.repositoryId,
-      ...(existingRepositories.length === 0 ? { approvedBy: 'system' } : {}),
-    })
-  }
+  const repository = await upsertNaisApplyRepository({
+    monitoredAppId,
+    githubOwner: claims.owner,
+    githubRepoName: claims.repo,
+    githubRepoId: claims.repositoryId,
+  })
+  if (!repository) return null
 
   if (repository.github_repo_id !== claims.repositoryId) {
     logger.warn('Nais Apply repository link could not be verified against the GitHub repository claim', {
@@ -197,8 +159,8 @@ async function ensureApplyRepositoryLink(
           appName: app.app_name,
           currentDefaultBranch: app.default_branch,
           defaultBranchSyncedAt: app.default_branch_synced_at,
-          owner: claims.owner,
-          repo: claims.repo,
+          owner: identity.owner,
+          repo: identity.name,
           expectedGithubRepoId: claims.repositoryId,
         })
       } catch (error) {
@@ -212,7 +174,11 @@ async function ensureApplyRepositoryLink(
     }
   }
 
-  return repository
+  return {
+    ...repository,
+    canonicalGithubOwner: identity.owner,
+    canonicalGithubRepoName: identity.name,
+  }
 }
 
 export async function materializeNaisApplyDeployments(
@@ -221,15 +187,19 @@ export async function materializeNaisApplyDeployments(
 ): Promise<number> {
   const app = await getMonitoredApplicationById(monitoredAppId)
   if (!app) throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
+  if (!app.nais_apply_enabled) throw new Error(`Nais Apply is disabled for application ${monitoredAppId}`)
 
   const events = await getNaisApplyActivityEvents(monitoredAppId)
+  const latestApp = await getMonitoredApplicationById(monitoredAppId)
+  if (!latestApp) throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
+  if (!latestApp.nais_apply_enabled) throw new Error(`Nais Apply is disabled for application ${monitoredAppId}`)
   const eligibleEvents = events.filter((event) => {
-    if (event.environmentName === app.environment_name) return true
+    if (event.environmentName === latestApp.environment_name) return true
     logger.warn('Skipping Nais Apply activity without matching environment', {
       monitoredAppId,
       activityLogId: event.id,
       activityEnvironmentName: event.environmentName,
-      monitoredEnvironmentName: app.environment_name,
+      monitoredEnvironmentName: latestApp.environment_name,
     })
     return false
   })
@@ -264,7 +234,7 @@ export async function materializeNaisApplyDeployments(
       const repositoryKey = `${claims.repositoryId}:${claims.owner}/${claims.repo}`
       let link = repositoryLinks.get(repositoryKey)
       if (!link) {
-        link = ensureApplyRepositoryLink(app, claims)
+        link = ensureApplyRepositoryLink(latestApp, claims)
         repositoryLinks.set(repositoryKey, link)
       }
       repositoryLink = await link
@@ -278,20 +248,20 @@ export async function materializeNaisApplyDeployments(
     ) {
       await ensureRepositoryRowForGithubRepo({
         githubRepoId: claims.repositoryId,
-        githubOwner: claims.owner,
-        githubRepoName: claims.repo,
+        githubOwner: repositoryLink.canonicalGithubOwner,
+        githubRepoName: repositoryLink.canonicalGithubRepoName,
       })
       ensuredRepositoryRows.add(claims.repositoryId)
     }
 
     const firstChange = group.reduce((earliest, change) => (change.createdAt < earliest.createdAt ? change : earliest))
     const deployment = await upsertNaisApplyDeployment({
-      monitoredApplicationId: app.id,
+      monitoredApplicationId: latestApp.id,
       sourceId: representative.sourceId,
       createdAt: firstChange.createdAt,
-      teamSlug: app.team_slug,
-      environmentName: app.environment_name,
-      appName: app.app_name,
+      teamSlug: latestApp.team_slug,
+      environmentName: latestApp.environment_name,
+      appName: latestApp.app_name,
       title: `Nais Apply: ${representative.image}`,
       suppressNotifications: options.suppressNotifications,
       deployerUsername: claims?.actor || representative.activity.actor || null,
@@ -308,18 +278,18 @@ export async function materializeNaisApplyDeployments(
 
     if (repositoryLink?.status === 'pending_approval' && claims) {
       await createRepositoryAlertForDeployment({
-        monitoredApplicationId: app.id,
+        monitoredApplicationId: latestApp.id,
         deploymentId: deployment.id,
         detectedGithubOwner: claims.owner,
         detectedGithubRepoName: claims.repo,
         alertType: 'pending_approval',
       })
     } else if (repositoryLink?.status === 'historical' && claims) {
-      const activeRepository = (await getRepositoriesByAppId(app.id)).find(
+      const activeRepository = (await getRepositoriesByAppId(latestApp.id)).find(
         (repository) => repository.status === 'active',
       )
       await createRepositoryAlertForDeployment({
-        monitoredApplicationId: app.id,
+        monitoredApplicationId: latestApp.id,
         deploymentId: deployment.id,
         detectedGithubOwner: claims.owner,
         detectedGithubRepoName: claims.repo,

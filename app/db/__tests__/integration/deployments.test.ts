@@ -184,6 +184,47 @@ describe('deployment queries', () => {
     expect(approvedRows.rows[0]).toEqual({ repository_id: repositoryId, four_eyes_status: 'pending' })
   })
 
+  it('reports an Apply SHA conflict instead of comparing local and GitHub repository IDs', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    const githubRepoId = '987654'
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId,
+      githubOwner: 'navikt',
+      githubRepoName: 'my-app',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'my-app',
+      githubRepoId,
+    })
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:sha-conflict',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: 'a'.repeat(40),
+      triggerUrl: 'https://github.com/navikt/my-app/actions/runs/123',
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'my-app',
+      detectedGithubRepositoryId: githubRepoId,
+    }
+    const deployment = await upsertNaisApplyDeployment(params)
+    const { rows } = await pool.query<{ repository_id: number | null }>(
+      'SELECT repository_id FROM deployments WHERE id = $1',
+      [deployment.id],
+    )
+
+    expect(rows[0].repository_id).toBe(repositoryId)
+    await expect(upsertNaisApplyDeployment({ ...params, commitSha: 'b'.repeat(40) })).rejects.toThrow(
+      'Conflicting commit SHAs',
+    )
+  })
+
   it('hides stored Apply deployments from listings and notifications while the app opt-in is off', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
     await pool.query(

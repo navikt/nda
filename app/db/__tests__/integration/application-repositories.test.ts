@@ -20,6 +20,7 @@ import {
   isNaisApplyRepositoryRejected,
   rejectRepository,
   upsertApplicationRepository,
+  upsertNaisApplyRepository,
 } from '../../application-repositories.server'
 import { lockRepositoryForVerificationJob, VERIFICATION_JOB_LOCK_NAMESPACE } from '../../connection.server'
 
@@ -172,6 +173,57 @@ describe('application-repositories', () => {
       [appId, '12345'],
     )
     expect(rows).toHaveLength(0)
+  })
+
+  it('serializes Apply rediscovery with concurrent repository rejection', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const { rows } = await pool.query<{ id: number }>(
+      `INSERT INTO application_repositories (
+         monitored_app_id, github_owner, github_repo_name, github_repo_id, status
+       ) VALUES ($1, 'navikt', 'repo', '12345', 'pending_approval') RETURNING id`,
+      [appId],
+    )
+
+    await Promise.all([
+      upsertNaisApplyRepository({
+        monitoredAppId: appId,
+        githubOwner: 'navikt',
+        githubRepoName: 'repo',
+        githubRepoId: '12345',
+      }),
+      rejectRepository(rows[0].id),
+    ])
+
+    expect(await isNaisApplyRepositoryRejected(appId, '12345')).toBe(true)
+    const { rows: links } = await pool.query(
+      'SELECT id FROM application_repositories WHERE monitored_app_id = $1 AND github_repo_id = $2',
+      [appId, '12345'],
+    )
+    expect(links).toHaveLength(0)
+  })
+
+  it('allows an approved link to override a stale Apply rejection marker', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    await pool.query(
+      'INSERT INTO nais_apply_rejected_repositories (monitored_app_id, github_repo_id) VALUES ($1, $2)',
+      [appId, '12345'],
+    )
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo',
+      githubRepoId: '12345',
+      status: 'historical',
+    })
+
+    const approved = await upsertNaisApplyRepository({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo',
+      githubRepoId: '12345',
+    })
+
+    expect(approved).toMatchObject({ status: 'historical', github_repo_id: '12345' })
   })
 
   it('reject does not delete active repositories', async () => {

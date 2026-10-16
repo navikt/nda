@@ -2,7 +2,11 @@ import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
 import { closePool } from '~/db/connection.server'
 import { getLinkedObjectivesForApps } from '~/db/deployment-goal-links.server'
-import { getDeploymentAppsForRepository, getDeploymentsPaginated } from '~/db/deployments.server'
+import {
+  getDeploymentAppsForRepository,
+  getDeploymentsPaginated,
+  upsertNaisApplyDeployment,
+} from '~/db/deployments.server'
 import {
   seedApp,
   seedApplicationRepository,
@@ -133,6 +137,41 @@ it('excludes ambiguous legacy names while retaining explicit repository identiti
   const explicit = await getDeploymentsPaginated({ repository_id: repositoryId })
   expect(explicit.total).toBe(3)
   expect(explicit.deployments.map((d) => d.id).sort()).toEqual(ids.slice(0, 3).sort())
+})
+
+it('does not associate Apply rows without a verified repository ID through a name fallback', async () => {
+  const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
+  const repositoryId = await seedRepository(pool, {
+    githubRepoId: '123',
+    githubOwner: 'navikt',
+    githubRepoName: 'repo-a',
+  })
+  await seedApplicationRepository(pool, {
+    monitoredAppId: appId,
+    githubOwner: 'navikt',
+    githubRepo: 'repo-a',
+    githubRepoId: '123',
+  })
+  await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
+  await upsertNaisApplyDeployment({
+    monitoredApplicationId: appId,
+    sourceId: 'nais-apply:unverified-repository',
+    createdAt: new Date(),
+    teamSlug: 'team-a',
+    environmentName: 'prod-gcp',
+    appName: 'app-a',
+    title: 'Nais Apply: registry/image:latest',
+    deployerUsername: 'developer',
+    commitSha: null,
+    triggerUrl: null,
+    detectedGithubOwner: 'navikt',
+    detectedGithubRepoName: 'repo-a',
+  })
+
+  const result = await getDeploymentsPaginated({ repository_id: repositoryId })
+
+  expect(result.total).toBe(0)
+  expect(result.deployments).toEqual([])
 })
 
 it('scopes goal options to repository deployments within its audit boundary without changing unscoped options', async () => {

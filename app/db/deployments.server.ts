@@ -657,11 +657,9 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
        FROM application_repositories ar
        JOIN repositories r ON r.github_repo_id = ar.github_repo_id
        WHERE ar.monitored_app_id = $1
-         AND ar.github_owner = $11 AND ar.github_repo_name = $12
          AND ar.github_repo_id = $13::bigint
          AND ar.status IN ('active', 'historical')
          AND r.github_repo_id = $13::bigint
-         AND r.github_owner = $11 AND r.github_repo_name = $12
        LIMIT 1
      )
      INSERT INTO deployments (
@@ -736,9 +734,13 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
 
   if (result.rows[0]) return result.rows[0]
 
-  const existing = await pool.query<Deployment & { repository_id: number | null }>(
-    `SELECT * FROM deployments
-     WHERE monitored_app_id = $1 AND deployment_source = 'nais_apply' AND deployment_source_id = $2`,
+  const existing = await pool.query<
+    Deployment & { repository_id: number | null; repository_github_repo_id: string | null }
+  >(
+    `SELECT d.*, r.github_repo_id AS repository_github_repo_id
+     FROM deployments d
+     LEFT JOIN repositories r ON r.id = d.repository_id
+     WHERE d.monitored_app_id = $1 AND d.deployment_source = 'nais_apply' AND d.deployment_source_id = $2`,
     [data.monitoredApplicationId, data.sourceId],
   )
   const deployment = existing.rows[0]
@@ -750,7 +752,7 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
   if (
     deployment.repository_id !== null &&
     data.detectedGithubRepositoryId != null &&
-    String(deployment.repository_id) !== data.detectedGithubRepositoryId
+    deployment.repository_github_repo_id !== data.detectedGithubRepositoryId
   ) {
     throw new Error(`Nais Apply source ${data.sourceId} is already associated with a different GitHub repository`)
   }

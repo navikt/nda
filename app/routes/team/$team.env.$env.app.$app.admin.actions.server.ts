@@ -218,6 +218,7 @@ export async function action({ request }: { request: Request; params: Record<str
 
     try {
       await withTransaction(async (client) => {
+        await client.query('SELECT id FROM monitored_applications WHERE id = $1 FOR UPDATE', [appId])
         const currentApp = await getMonitoredApplicationById(appId, client)
         if (!currentApp) {
           throw new AppNotFoundError()

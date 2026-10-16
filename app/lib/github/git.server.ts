@@ -547,6 +547,28 @@ export async function getRepositoryDefaultBranch(owner: string, repo: string): P
 
 const REPOSITORY_ID_CACHE_TTL_MS = 5 * 60 * 1000
 
+export interface GitHubRepositoryIdentity {
+  id: number
+  owner: string
+  name: string
+}
+
+export async function getRepositoryIdentity(owner: string, repo: string): Promise<GitHubRepositoryIdentity | null> {
+  try {
+    const response = await getGitHubClient().repos.get({ owner, repo })
+    return {
+      id: response.data.id,
+      owner: response.data.owner.login,
+      name: response.data.name,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to fetch repository identity for ${owner}/${repo}:`, { error: message, stack_trace: stack })
+    return null
+  }
+}
+
 const repositoryIdCache = new Map<string, { promise: Promise<number | null>; expiresAt: number }>()
 
 export async function getRepositoryId(owner: string, repo: string): Promise<number | null> {
@@ -556,8 +578,7 @@ export async function getRepositoryId(owner: string, repo: string): Promise<numb
 
   const promise = (async () => {
     try {
-      const client = getGitHubClient()
-      const response = await client.repos.get({ owner, repo })
+      const response = await getGitHubClient().repos.get({ owner, repo })
       return response.data.id
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

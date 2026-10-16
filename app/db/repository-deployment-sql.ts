@@ -2,6 +2,8 @@ export function repositoryDeploymentSql(repositoryIdSql: string): string {
   return `(
     d.repository_id = ${repositoryIdSql}
     OR (
+      d.deployment_source != 'nais_apply'
+      AND
       d.repository_id IS NULL
       AND EXISTS (
         SELECT 1
