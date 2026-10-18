@@ -25,6 +25,7 @@ interface RepositoryDeliveryIntervalCommit {
   sha: string
   message: string
   authorUsername: string
+  authorLogin: string | null
   htmlUrl: string
   pullRequestNumber: number | null
   status: RepositoryDeliveryCommitAssessmentStatus
@@ -33,6 +34,7 @@ interface RepositoryDeliveryIntervalCommit {
 
 export interface RepositoryDeliveryIntervalAssessment {
   state: 'complete' | 'incomplete' | 'unavailable'
+  comparisonComplete: boolean
   defaultBranch: string | null
   totalCommits: number | null
   listedCommits: number
@@ -54,6 +56,7 @@ export interface RepositoryDeliveryIntervalCompare {
     sha: string
     message: string
     authorUsername: string
+    authorLogin: string | null
     authorDate: string
     committerDate: string
     parentShas: string[]
@@ -93,6 +96,7 @@ function unknownCommit(
     sha: commit.sha,
     message: commit.message,
     authorUsername: commit.authorUsername,
+    authorLogin: commit.authorLogin,
     htmlUrl: commit.htmlUrl,
     pullRequestNumber,
     status: 'unknown',
@@ -109,6 +113,7 @@ function coveredCommit(
     sha: commit.sha,
     message: commit.message,
     authorUsername: commit.authorUsername,
+    authorLogin: commit.authorLogin,
     htmlUrl: commit.htmlUrl,
     pullRequestNumber,
     status: 'covered',
@@ -125,6 +130,7 @@ function notCoveredCommit(
     sha: commit.sha,
     message: commit.message,
     authorUsername: commit.authorUsername,
+    authorLogin: commit.authorLogin,
     htmlUrl: commit.htmlUrl,
     pullRequestNumber,
     status: 'not_covered',
@@ -216,6 +222,7 @@ export function assessRepositoryDeliveryInterval(input: {
   if (!compare) {
     return {
       state: 'unavailable',
+      comparisonComplete: false,
       defaultBranch,
       totalCommits: null,
       listedCommits: 0,
@@ -270,6 +277,7 @@ export function assessRepositoryDeliveryInterval(input: {
 
   return {
     state,
+    comparisonComplete: completeComparison,
     defaultBranch,
     totalCommits: compare.totalCommits,
     listedCommits: compare.commits.length,

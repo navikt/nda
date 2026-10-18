@@ -3,6 +3,7 @@ import { getRepositoryCodeDeliveryEvidence } from '~/db/repository-code-delivery
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
+import { assessRepositoryDeliveryApproval } from '~/lib/repository-code-delivery/approval-assessment'
 import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
 import { requireParams } from '~/lib/route-params.server'
 import { serializeUserLookups } from '~/lib/user-display'
@@ -44,18 +45,42 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const delivery = await getRepositoryCodeDeliveryEvidence(repository.id, deliveryId, page)
   if (!delivery) throw new Response('Code delivery not found', { status: 404 })
 
-  const reviewerUsernames = [
-    ...new Set(
-      delivery.deployments.flatMap((deployment) =>
+  const relevantUsernames = [
+    ...new Set([
+      ...delivery.deployments.flatMap((deployment) =>
         deployment.verification_runs.flatMap((run) =>
           run.review_snapshots.flatMap((snapshot) => snapshot.reviews?.map((review) => review.username) ?? []),
         ),
       ),
-    ),
+      ...delivery.interval_assessment.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
+    ]),
   ]
-  const userMappings = serializeUserLookups(
-    reviewerUsernames.length > 0 ? await getGithubUserLookups(reviewerUsernames) : new Map(),
+  const githubUserLookups = relevantUsernames.length > 0 ? await getGithubUserLookups(relevantUsernames) : new Map()
+  const activeGithubUserLookups = new Map(
+    [...githubUserLookups].map(([username, lookup]) => [
+      username,
+      {
+        ...lookup,
+        nav_ident: lookup.account_deleted_at === null ? lookup.active_nav_ident : null,
+      },
+    ]),
   )
+  const userMappings = serializeUserLookups(activeGithubUserLookups)
+  const approvalAssessment = assessRepositoryDeliveryApproval({
+    baseSha: delivery.base_sha,
+    headSha: delivery.head_sha,
+    commitHistoryComplete: delivery.interval_assessment.comparisonComplete,
+    totalCommits: delivery.interval_assessment.totalCommits,
+    commits: delivery.interval_assessment.commits.map((commit) => ({
+      sha: commit.sha,
+      authorIdentityKey: commit.authorLogin
+        ? (activeGithubUserLookups.get(commit.authorLogin)?.nav_ident ?? null)
+        : null,
+      prCoverage:
+        commit.status === 'covered' ? 'approved' : commit.status === 'not_covered' ? 'not_approved' : 'unknown',
+    })),
+    approvals: [],
+  })
 
   return {
     repository: {
@@ -64,6 +89,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       githubRepoName: repository.github_repo_name,
     },
     delivery,
+    approvalAssessment,
     userMappings,
   }
 }

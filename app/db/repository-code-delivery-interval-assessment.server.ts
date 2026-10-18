@@ -76,6 +76,7 @@ function parseCompareData(value: unknown): RepositoryDeliveryIntervalCompare | n
     commits.push({
       sha: commit.sha,
       message: commitData.message,
+      authorLogin: typeof author?.login === 'string' ? author.login : null,
       authorUsername:
         typeof author?.login === 'string'
           ? author.login

@@ -22,6 +22,7 @@ const compare = {
       sha: commitSha,
       message: 'Add feature',
       authorUsername: 'glad-fjord',
+      authorLogin: 'glad-fjord',
       authorDate: '2026-10-01T10:00:00Z',
       committerDate: '2026-10-01T10:00:00Z',
       parentShas: ['0'.repeat(40)],
