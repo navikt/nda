@@ -1,6 +1,7 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
+import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
 import type { WorkflowRunResolution } from '~/lib/github/git.server'
@@ -125,12 +126,7 @@ export async function fetchVerificationData(
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
          AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
-         AND EXISTS (
-           SELECT 1 FROM application_repositories ar
-           WHERE ar.monitored_app_id = d.monitored_app_id
-             AND ar.github_repo_id = $3
-             AND ar.status IN ('active', 'historical')
-         )
+         AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $3)')}
          AND d.id != $1
          AND d.commit_sha = $2
          AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})
@@ -166,12 +162,7 @@ export async function fetchVerificationData(
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
          AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
-         AND EXISTS (
-           SELECT 1 FROM application_repositories ar
-           WHERE ar.monitored_app_id = d.monitored_app_id
-             AND ar.github_repo_id = $2
-             AND ar.status IN ('active', 'historical')
-         )
+         AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $2)')}
          AND d.id != $1
          AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})
          AND d.created_at BETWEEN (

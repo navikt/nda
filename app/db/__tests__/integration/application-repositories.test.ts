@@ -68,6 +68,42 @@ describe('application-repositories', () => {
     })
   })
 
+  it('prefers an approved immutable-ID match over a reused repository name', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    await seedRepository(pool, {
+      githubRepoId: '111',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-name',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'reused-name',
+      githubRepoId: '222',
+      status: 'historical',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'current-name',
+      githubRepoId: '111',
+      status: 'active',
+    })
+
+    const result = await upsertNaisApplyRepository({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'reused-name',
+      githubRepoId: '111',
+    })
+
+    expect(result).toMatchObject({
+      github_repo_name: 'current-name',
+      github_repo_id: '111',
+      status: 'active',
+    })
+  })
+
   it('creates a repository in pending_approval status', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 

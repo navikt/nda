@@ -1,5 +1,6 @@
 import { AUDIT_START_YEAR_FILTER } from '~/db/audit-start-year'
 import { pool } from '~/db/connection.server'
+import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { APPROVED_STATUSES_SQL, NON_DIFFABLE_STATUSES_SQL, UNAUTHORIZED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
@@ -98,12 +99,7 @@ export async function getPreviousDeploymentForDiff(
     `SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     WHERE EXISTS (
-         SELECT 1 FROM application_repositories ar
-         WHERE ar.monitored_app_id = d.monitored_app_id
-           AND ar.github_repo_id = $2
-           AND ar.status IN ('active', 'historical')
-       )
+     WHERE ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $2)')}
        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
        AND d.commit_sha IS NOT NULL

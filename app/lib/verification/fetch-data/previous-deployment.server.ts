@@ -1,4 +1,5 @@
 import { pool } from '~/db/connection.server'
+import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import {
   NON_DIFFABLE_STATUSES_SQL,
   ROOT_APPROVED_STATUSES_SQL,
@@ -32,12 +33,7 @@ export async function findRootApprovedSiblingForCommit(
     `SELECT d.id, d.monitored_app_id, d.four_eyes_status
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     WHERE EXISTS (
-         SELECT 1 FROM application_repositories ar
-         WHERE ar.monitored_app_id = d.monitored_app_id
-           AND ar.github_repo_id = $1
-           AND ar.status IN ('active', 'historical')
-       )
+     WHERE ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $1)')}
        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.commit_sha = $2
        AND d.id <= $3
@@ -218,12 +214,7 @@ async function queryCandidates(
     FROM deployments d
     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
     WHERE (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
-      AND EXISTS (
-        SELECT 1 FROM application_repositories ar
-        WHERE ar.monitored_app_id = d.monitored_app_id
-          AND ar.github_repo_id = $2
-          AND ar.status IN ('active', 'historical')
-      )
+      AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $2)')}
       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})

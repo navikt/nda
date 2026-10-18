@@ -743,7 +743,9 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
          AND existing.four_eyes_status != 'pending'
        RETURNING id
      )
-     SELECT * FROM upserted`,
+     SELECT upserted.*
+     FROM upserted
+     CROSS JOIN (SELECT COUNT(*) FROM status_history) AS status_history_result`,
     [
       data.monitoredApplicationId,
       data.sourceId,

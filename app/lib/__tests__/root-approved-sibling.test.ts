@@ -26,6 +26,8 @@ describe('findRootApprovedSiblingForCommit', () => {
     expect(query).toContain("d.four_eyes_status IN ('approved'")
     expect(query).not.toContain("'verified_via_sibling'")
     expect(query).toContain("(d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)")
+    expect(query).toContain('d.repository_id = (SELECT id FROM repositories WHERE github_repo_id = $1)')
+    expect(query).toContain("d.deployment_source != 'nais_apply'")
   })
 
   it('bounds the query to deployments created no later than the deployment being verified', async () => {

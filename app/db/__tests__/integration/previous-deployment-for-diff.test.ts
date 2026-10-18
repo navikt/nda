@@ -1,6 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
+import { findRootApprovedSiblingForCommit } from '~/lib/verification/fetch-data/previous-deployment.server'
 import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -134,6 +135,64 @@ describe('getPreviousDeploymentForDiff', () => {
     const previous = await getPreviousDeploymentForDiff(currentId, '9001')
 
     expect(previous?.id).toBe(previousId)
+  })
+
+  it('does not reuse another repository deployment as a diff base or approved root', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'multi-repo-app',
+      environment: 'prod-gcp',
+    })
+    const repositoryAId = await seedRepository(pool, {
+      githubRepoId: '9001',
+      githubOwner: owner,
+      githubRepoName: repo,
+    })
+    const repositoryBId = await seedRepository(pool, {
+      githubRepoId: '9002',
+      githubOwner: owner,
+      githubRepoName: 'other-repo',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9001',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: 'other-repo',
+      githubRepoId: '9002',
+      status: 'historical',
+    })
+    const otherRepositoryDeploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'same-repository-commit',
+      createdAt: new Date('2026-01-01T10:00:00Z'),
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [
+      repositoryBId,
+      otherRepositoryDeploymentId,
+    ])
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'current-repository-commit',
+      createdAt: new Date('2026-02-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryAId, currentId])
+
+    expect(await getPreviousDeploymentForDiff(currentId, '9001')).toBeNull()
+    expect(await findRootApprovedSiblingForCommit('same-repository-commit', '9001', currentId)).toBeNull()
   })
 
   it('skips legacy and legacy_pending deployments', async () => {

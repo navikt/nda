@@ -106,4 +106,31 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
       previousDeployment: null,
     })
   })
+
+  it('scopes nearby verification evidence to the candidate deployment repository', async () => {
+    getPreviousDeployment.mockResolvedValue({
+      id: 99,
+      commitSha: 'b'.repeat(40),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      monitoredAppId: 7,
+      fourEyesStatus: 'approved',
+    })
+    preferRootApprovedSibling.mockImplementation(async (candidate) => candidate)
+    fetchCommitsBetween.mockResolvedValue({
+      commitsBetween: [],
+      compareSummary: { noDiffDetected: false },
+      derivedFromRaw: false,
+    })
+    poolQuery.mockResolvedValue({ rows: [] })
+
+    await fetchVerificationData(100, 'a'.repeat(40), 'navikt/old-name', 'prod-gcp', 'main', 7, undefined, undefined, 77)
+
+    expect(poolQuery).toHaveBeenCalledTimes(2)
+    expect(poolQuery.mock.calls[0][0]).toContain(
+      'd.repository_id = (SELECT id FROM repositories WHERE github_repo_id = $3)',
+    )
+    expect(poolQuery.mock.calls[1][0]).toContain(
+      'd.repository_id = (SELECT id FROM repositories WHERE github_repo_id = $2)',
+    )
+  })
 })

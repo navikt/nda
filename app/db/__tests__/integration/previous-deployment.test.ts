@@ -1,6 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { seedApp, seedApplicationRepository, seedDeployment, truncateAllTables } from './helpers'
+import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 vi.mock('~/lib/github', () => ({
   getCommitAncestryStatus: vi.fn(),
@@ -858,6 +858,59 @@ describe('getPreviousDeployment', () => {
 
     const prev = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
     expect(prev).toBeNull()
+    expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
+  })
+
+  it('does not use an explicitly assigned deployment from another linked repository as a candidate', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const repositoryAId = await seedRepository(pool, {
+      githubRepoId: '1001',
+      githubOwner: 'navikt',
+      githubRepoName: repo,
+    })
+    const repositoryBId = await seedRepository(pool, {
+      githubRepoId: '2002',
+      githubOwner: 'navikt',
+      githubRepoName: 'other-repo',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'other-repo',
+      githubRepoId: '2002',
+      status: 'historical',
+    })
+    const previousId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'other-repository-sha',
+      fourEyesStatus: 'approved',
+      createdAt: new Date('2025-01-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryBId, previousId])
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'current-sha',
+      createdAt: new Date('2025-02-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryAId, currentId])
+
+    const previous = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
+
+    expect(previous).toBeNull()
     expect(mockedGetCommitAncestryStatus).not.toHaveBeenCalled()
   })
 

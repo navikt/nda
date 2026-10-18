@@ -231,7 +231,6 @@ export async function upsertNaisApplyRepository(data: {
       [data.monitoredAppId, data.githubOwner, data.githubRepoName],
     )
     const namedLink = namedLinks[0]
-    if (namedLink?.github_repo_id && namedLink.github_repo_id !== data.githubRepoId) return namedLink
 
     const { rows: approvedLinks } = await client.query<ApplicationRepository>(
       `SELECT * FROM application_repositories
@@ -250,6 +249,7 @@ export async function upsertNaisApplyRepository(data: {
     )
     if (rejectedRows[0]?.rejected) return approvedLinks[0] ?? null
     if (approvedLinks[0]) return approvedLinks[0]
+    if (namedLink?.github_repo_id && namedLink.github_repo_id !== data.githubRepoId) return namedLink
 
     if (namedLink) {
       return upsertApplicationRepositoryWithClient(
