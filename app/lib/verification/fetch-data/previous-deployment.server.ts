@@ -31,13 +31,13 @@ export async function findRootApprovedSiblingForCommit(
   const result = await pool.query(
     `SELECT d.id, d.monitored_app_id, d.four_eyes_status
      FROM deployments d
-     JOIN application_repositories ar
-       ON ar.monitored_app_id = d.monitored_app_id
-       AND ar.github_owner = d.detected_github_owner
-       AND ar.github_repo_name = d.detected_github_repo_name
-       AND ar.status IN ('active', 'historical')
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     WHERE ar.github_repo_id = $1
+     WHERE EXISTS (
+         SELECT 1 FROM application_repositories ar
+         WHERE ar.monitored_app_id = d.monitored_app_id
+           AND ar.github_repo_id = $1
+           AND ar.status IN ('active', 'historical')
+       )
        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.commit_sha = $2
        AND d.id <= $3
@@ -216,14 +216,14 @@ async function queryCandidates(
   const query = `
     SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
     FROM deployments d
-    JOIN application_repositories ar
-      ON ar.monitored_app_id = d.monitored_app_id
-      AND ar.github_owner = d.detected_github_owner
-      AND ar.github_repo_name = d.detected_github_repo_name
-      AND ar.status IN ('active', 'historical')
     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
     WHERE (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
-      AND ar.github_repo_id = $2
+      AND EXISTS (
+        SELECT 1 FROM application_repositories ar
+        WHERE ar.monitored_app_id = d.monitored_app_id
+          AND ar.github_repo_id = $2
+          AND ar.status IN ('active', 'historical')
+      )
       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})

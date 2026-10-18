@@ -2,7 +2,7 @@ import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { TITLE_COALESCE_SQL } from '~/db/deployments.server'
 import { propagateVerificationToSiblings } from '~/db/monorepo.server'
-import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
@@ -113,7 +113,7 @@ export async function runVerification(
   }
 
   const { verificationRunId } = await storeVerificationResult(deploymentId, result, snapshotIds, input, undefined, {
-    repository: options.repository,
+    repository: input.repository,
     commitsBetween: input.commitsBetween,
   })
 
@@ -510,7 +510,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     `SELECT
        d.id, d.commit_sha, d.four_eyes_status,
        d.github_pr_number, d.environment_name, d.monitored_app_id,
-       d.detected_github_owner, d.detected_github_repo_name,
+       d.detected_github_owner, d.detected_github_repo_name, d.repository_id,
        ${effectiveDefaultBranchSql('ma')} AS default_branch,
        ${effectiveAuditStartYearSql('ma')} AS audit_start_year
      FROM deployments d
@@ -530,16 +530,23 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     return null
   }
 
-  const { implicitApprovalSettings } = await getEffectiveSettingsForApp(dep.monitored_app_id)
-
-  const owner = dep.detected_github_owner as string | null
-  const repo = dep.detected_github_repo_name as string | null
+  let owner = dep.detected_github_owner as string | null
+  let repo = dep.detected_github_repo_name as string | null
   if (!owner || !repo) return null
   if (!dep.default_branch) return null
   const baseBranch = dep.default_branch
 
-  const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo)
+  const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo, dep.repository_id ?? undefined)
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+  if (dep.repository_id != null && repoCheck.repository) {
+    owner = repoCheck.effectiveOwner
+    repo = repoCheck.effectiveRepo
+  }
+  const appSettings =
+    dep.repository_id != null
+      ? await getEffectiveSettingsForRepository(dep.repository_id, dep.monitored_app_id)
+      : await getEffectiveSettingsForApp(dep.monitored_app_id)
+  const { implicitApprovalSettings } = appSettings
   const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !githubRepoId
   const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
   const previousDeployment = prevRow

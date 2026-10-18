@@ -15,6 +15,7 @@ vi.mock('~/lib/github/git.server', () => ({
 import { getRepositoryId } from '~/lib/github/git.server'
 import {
   approveRepository,
+  findRepositoryForApp,
   getAppIdsSharingRepo,
   getMonitoredAppIdsForRepository,
   isNaisApplyRepositoryRejected,
@@ -37,6 +38,36 @@ afterEach(async () => {
 })
 
 describe('application-repositories', () => {
+  it('finds the approved repository link by immutable repository identity after a rename', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const githubRepoId = '987654321'
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId,
+      githubOwner: 'navikt',
+      githubRepoName: 'current-name',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'current-name',
+      githubRepoId,
+    })
+
+    const result = await findRepositoryForApp(appId, 'navikt', 'old-name', repositoryId)
+
+    expect(result.repository).toMatchObject({
+      github_owner: 'navikt',
+      github_repo_name: 'current-name',
+      github_repo_id: githubRepoId,
+      status: 'active',
+    })
+    expect(result).toMatchObject({
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'current-name',
+      isRedirected: false,
+    })
+  })
+
   it('creates a repository in pending_approval status', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 

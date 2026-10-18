@@ -62,21 +62,36 @@ export async function computeVerificationDiffs(
 
   const repoIdCache = new Map<
     string,
-    { githubRepoId: string | null; status: string | null; repositoryId: number | null }
+    {
+      githubRepoId: string | null
+      status: string | null
+      repositoryId: number | null
+      effectiveOwner: string
+      effectiveRepo: string
+    }
   >()
   async function resolveRepoInfo(
     owner: string,
     repo: string,
-  ): Promise<{ githubRepoId: string | null; status: string | null; repositoryId: number | null }> {
-    const cacheKey = `${owner}/${repo}`
+    deploymentRepositoryId: number | null,
+  ): Promise<{
+    githubRepoId: string | null
+    status: string | null
+    repositoryId: number | null
+    effectiveOwner: string
+    effectiveRepo: string
+  }> {
+    const cacheKey = deploymentRepositoryId == null ? `${owner}/${repo}` : String(deploymentRepositoryId)
     const cached = repoIdCache.get(cacheKey)
     if (cached) return cached
-    const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
+    const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo, deploymentRepositoryId ?? undefined)
     const githubRepoId = repoCheck.repository?.github_repo_id ?? null
     const info = {
       githubRepoId,
       status: repoCheck.repository?.status ?? null,
       repositoryId: githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null,
+      effectiveOwner: repoCheck.effectiveOwner,
+      effectiveRepo: repoCheck.effectiveRepo,
     }
     repoIdCache.set(cacheKey, info)
     return info
@@ -98,8 +113,8 @@ export async function computeVerificationDiffs(
         continue
       }
 
-      const owner = row.detected_github_owner as string
-      const repo = row.detected_github_repo_name as string
+      let owner = row.detected_github_owner as string
+      let repo = row.detected_github_repo_name as string
 
       if (!row.default_branch) {
         result.skipped++
@@ -111,7 +126,15 @@ export async function computeVerificationDiffs(
       let input: VerificationInput
       let precomputedResult: ReturnType<typeof verifyDeployment> | null = null
 
-      const { githubRepoId, status, repositoryId } = await resolveRepoInfo(owner, repo)
+      const { githubRepoId, status, repositoryId, effectiveOwner, effectiveRepo } = await resolveRepoInfo(
+        owner,
+        repo,
+        row.repository_id,
+      )
+      if (row.repository_id != null && status) {
+        owner = effectiveOwner
+        repo = effectiveRepo
+      }
       const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
       const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
       const previousDeployment = prevRow

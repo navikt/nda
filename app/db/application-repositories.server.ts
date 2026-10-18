@@ -73,19 +73,34 @@ export async function findRepositoryForApp(
   appId: number,
   owner: string,
   repoName: string,
+  repositoryId?: number,
 ): Promise<{
   repository: ApplicationRepository | null
   effectiveOwner: string
   effectiveRepo: string
   isRedirected: boolean
 }> {
-  const result = await pool.query(
-    `SELECT * FROM application_repositories 
-     WHERE monitored_app_id = $1 
-       AND github_owner = $2 
-       AND github_repo_name = $3`,
-    [appId, owner, repoName],
-  )
+  const result =
+    repositoryId == null
+      ? await pool.query(
+          `SELECT * FROM application_repositories
+           WHERE monitored_app_id = $1
+             AND github_owner = $2
+             AND github_repo_name = $3`,
+          [appId, owner, repoName],
+        )
+      : await pool.query(
+          `SELECT ar.*, r.github_owner AS canonical_owner, r.github_repo_name AS canonical_repo_name
+           FROM application_repositories ar
+           JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+           WHERE monitored_app_id = $1
+             AND ar.github_repo_id = (SELECT github_repo_id FROM repositories WHERE id = $2)
+             AND ar.status IN ('active', 'historical')
+           ORDER BY CASE ar.status WHEN 'active' THEN 1 WHEN 'historical' THEN 2 ELSE 3 END,
+                    ar.created_at DESC, ar.id DESC
+           LIMIT 1`,
+          [appId, repositoryId],
+        )
 
   if (result.rows.length === 0) {
     return {
@@ -109,8 +124,8 @@ export async function findRepositoryForApp(
 
   return {
     repository: repo,
-    effectiveOwner: owner,
-    effectiveRepo: repoName,
+    effectiveOwner: repo.canonical_owner ?? owner,
+    effectiveRepo: repo.canonical_repo_name ?? repoName,
     isRedirected: false,
   }
 }

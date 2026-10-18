@@ -1,4 +1,9 @@
-import { APPROVED_STATUSES_SQL, notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
+import {
+  APPROVED_STATUSES_SQL,
+  notApprovedWhereClause,
+  PENDING_STATUSES_SQL,
+  PROTECTED_STATUSES_SQL,
+} from '~/lib/four-eyes-status'
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
 import { pool } from './connection.server'
@@ -652,7 +657,15 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
   const hasVerifiedRepository = hasRepository && data.detectedGithubRepositoryId != null
   const initialStatus = hasVerifiedRepository && data.commitSha ? 'pending' : 'unverifiable'
   const result = await pool.query(
-    `WITH verified_repository AS (
+    `WITH existing AS MATERIALIZED (
+       SELECT id, created_at, four_eyes_status
+       FROM deployments
+       WHERE monitored_app_id = $1
+         AND deployment_source = 'nais_apply'
+         AND deployment_source_id = $2
+       FOR UPDATE
+     ),
+     verified_repository AS (
        SELECT r.id
        FROM application_repositories ar
        JOIN repositories r ON r.github_repo_id = ar.github_repo_id
@@ -661,57 +674,76 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
          AND ar.status IN ('active', 'historical')
          AND r.github_repo_id = $13::bigint
        LIMIT 1
+     ),
+     upserted AS (
+       INSERT INTO deployments (
+         monitored_app_id, nais_deployment_id, deployment_source, deployment_source_id,
+         created_at, team_slug, environment_name, app_name, title, deployer_username, commit_sha,
+         trigger_url, detected_github_owner, detected_github_repo_name, resources, four_eyes_status,
+         slack_notifications_suppressed_at, repository_id
+       )
+       SELECT
+         $1, NULL, 'nais_apply', $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         $11::varchar, $12::varchar, $14,
+         CASE WHEN $15 = 'pending' AND EXISTS (SELECT 1 FROM verified_repository)
+           THEN 'pending' ELSE 'unverifiable' END,
+         CASE WHEN $16 THEN CURRENT_TIMESTAMP END,
+         (SELECT id FROM verified_repository)
+       ON CONFLICT (monitored_app_id, deployment_source, deployment_source_id)
+       DO UPDATE SET
+         created_at = LEAST(deployments.created_at, EXCLUDED.created_at),
+         title = COALESCE(deployments.title, EXCLUDED.title),
+         deployer_username = COALESCE(deployments.deployer_username, EXCLUDED.deployer_username),
+         commit_sha = COALESCE(deployments.commit_sha, EXCLUDED.commit_sha),
+         trigger_url = COALESCE(deployments.trigger_url, EXCLUDED.trigger_url),
+         detected_github_owner = COALESCE(deployments.detected_github_owner, EXCLUDED.detected_github_owner),
+         detected_github_repo_name = COALESCE(deployments.detected_github_repo_name, EXCLUDED.detected_github_repo_name),
+         repository_id = COALESCE(deployments.repository_id, EXCLUDED.repository_id),
+         resources = EXCLUDED.resources,
+         slack_notifications_suppressed_at = COALESCE(
+           deployments.slack_notifications_suppressed_at,
+           EXCLUDED.slack_notifications_suppressed_at
+         ),
+         four_eyes_status = CASE
+           WHEN EXCLUDED.created_at < deployments.created_at
+             AND deployments.four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
+             THEN 'pending'
+           WHEN deployments.four_eyes_status = 'unverifiable'
+             AND EXCLUDED.commit_sha IS NOT NULL
+             AND EXCLUDED.detected_github_owner IS NOT NULL
+             AND EXCLUDED.detected_github_repo_name IS NOT NULL
+             AND EXCLUDED.repository_id IS NOT NULL
+             THEN 'pending'
+           ELSE deployments.four_eyes_status
+         END,
+         synced_at = CURRENT_TIMESTAMP
+       WHERE (
+         deployments.commit_sha IS NULL
+         OR EXCLUDED.commit_sha IS NULL
+         OR deployments.commit_sha = EXCLUDED.commit_sha
+       )
+         AND (
+         EXCLUDED.repository_id IS NULL
+         OR
+         deployments.repository_id IS NULL
+         OR deployments.repository_id = EXCLUDED.repository_id
+       )
+       RETURNING *
+     ),
+     status_history AS (
+       INSERT INTO deployment_status_history
+         (deployment_id, from_status, to_status, change_source, details)
+       SELECT upserted.id, existing.four_eyes_status, 'pending',
+              'nais_apply_timestamp_correction',
+              jsonb_build_object('previousCreatedAt', existing.created_at, 'createdAt', upserted.created_at)
+       FROM existing
+       JOIN upserted ON upserted.id = existing.id
+       WHERE upserted.created_at < existing.created_at
+         AND existing.four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
+         AND existing.four_eyes_status != 'pending'
+       RETURNING id
      )
-     INSERT INTO deployments (
-       monitored_app_id, nais_deployment_id, deployment_source, deployment_source_id,
-       created_at, team_slug, environment_name, app_name, title, deployer_username, commit_sha,
-       trigger_url, detected_github_owner, detected_github_repo_name, resources, four_eyes_status,
-       slack_notifications_suppressed_at, repository_id
-     )
-     SELECT
-       $1, NULL, 'nais_apply', $2, $3, $4, $5, $6, $7, $8, $9, $10,
-       $11::varchar, $12::varchar, $14,
-       CASE WHEN $15 = 'pending' AND EXISTS (SELECT 1 FROM verified_repository)
-         THEN 'pending' ELSE 'unverifiable' END,
-       CASE WHEN $16 THEN CURRENT_TIMESTAMP END,
-       (SELECT id FROM verified_repository)
-     ON CONFLICT (monitored_app_id, deployment_source, deployment_source_id)
-     DO UPDATE SET
-       created_at = LEAST(deployments.created_at, EXCLUDED.created_at),
-       title = COALESCE(deployments.title, EXCLUDED.title),
-       deployer_username = COALESCE(deployments.deployer_username, EXCLUDED.deployer_username),
-       commit_sha = COALESCE(deployments.commit_sha, EXCLUDED.commit_sha),
-       trigger_url = COALESCE(deployments.trigger_url, EXCLUDED.trigger_url),
-       detected_github_owner = COALESCE(deployments.detected_github_owner, EXCLUDED.detected_github_owner),
-       detected_github_repo_name = COALESCE(deployments.detected_github_repo_name, EXCLUDED.detected_github_repo_name),
-       repository_id = COALESCE(deployments.repository_id, EXCLUDED.repository_id),
-       resources = EXCLUDED.resources,
-       slack_notifications_suppressed_at = COALESCE(
-         deployments.slack_notifications_suppressed_at,
-         EXCLUDED.slack_notifications_suppressed_at
-       ),
-       four_eyes_status = CASE
-         WHEN deployments.four_eyes_status = 'unverifiable'
-           AND EXCLUDED.commit_sha IS NOT NULL
-           AND EXCLUDED.detected_github_owner IS NOT NULL
-           AND EXCLUDED.detected_github_repo_name IS NOT NULL
-           AND EXCLUDED.repository_id IS NOT NULL
-           THEN 'pending'
-         ELSE deployments.four_eyes_status
-       END,
-       synced_at = CURRENT_TIMESTAMP
-     WHERE (
-       deployments.commit_sha IS NULL
-       OR EXCLUDED.commit_sha IS NULL
-       OR deployments.commit_sha = EXCLUDED.commit_sha
-     )
-       AND (
-       EXCLUDED.repository_id IS NULL
-       OR
-       deployments.repository_id IS NULL
-       OR deployments.repository_id = EXCLUDED.repository_id
-     )
-     RETURNING *`,
+     SELECT * FROM upserted`,
     [
       data.monitoredApplicationId,
       data.sourceId,

@@ -110,7 +110,7 @@ async function reverifyPendingChecksWithLock(monitoredAppId: number, limit: numb
   )
 }
 
-async function runPeriodicSync(): Promise<void> {
+export async function runPeriodicSync(): Promise<void> {
   try {
     const result = await withSyncClient(async () => {
       logger.info('🔄 Starting periodic sync cycle...')
@@ -129,13 +129,24 @@ async function runPeriodicSync(): Promise<void> {
 
       for (const app of apps) {
         let didWork = false
+        let appFailed = false
 
         try {
-          const syncResult = await syncNewDeploymentsWithLock(app.id, app.team_slug, app.environment_name, app.app_name)
+          let syncResult: Awaited<ReturnType<typeof syncNewDeploymentsWithLock>> | undefined
+          try {
+            syncResult = await syncNewDeploymentsWithLock(app.id, app.team_slug, app.environment_name, app.app_name)
+          } catch (error) {
+            appFailed = true
+            didWork = true
+            logger.error(
+              `❌ Nais source synchronization failed for app ${app.app_name} (${app.team_slug}/${app.environment_name}); continuing verification:`,
+              error,
+            )
+          }
 
-          if (syncResult.locked) {
+          if (syncResult?.locked) {
             lockedCount++
-          } else if (syncResult.success) {
+          } else if (syncResult?.success) {
             syncedCount++
             newDeploymentsCount += syncResult.result?.newCount || 0
             if (syncResult.result?.initialHistorySyncStatus === 'pending') {
@@ -169,13 +180,15 @@ async function runPeriodicSync(): Promise<void> {
             didWork = didWork || cacheResult.result.cached > 0
           }
         } catch (error) {
-          failedCount++
+          appFailed = true
           didWork = true
           logger.error(
             `❌ Sync cycle failed for app ${app.app_name} (${app.team_slug}/${app.environment_name}):`,
             error,
           )
         }
+
+        if (appFailed) failedCount++
 
         if (didWork) {
           await new Promise((resolve) => setTimeout(resolve, APP_THROTTLE_MS))

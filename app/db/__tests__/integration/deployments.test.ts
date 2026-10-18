@@ -225,6 +225,92 @@ describe('deployment queries', () => {
     )
   })
 
+  it('reverifies automatically resolved Apply deliveries when delayed activity moves them earlier', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    const githubRepoId = '987655'
+    await seedRepository(pool, {
+      githubRepoId,
+      githubOwner: 'navikt',
+      githubRepoName: 'my-app',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'my-app',
+      githubRepoId,
+    })
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:delayed-activity',
+      createdAt: new Date('2026-10-15T10:00:00Z'),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: 'a'.repeat(40),
+      triggerUrl: 'https://github.com/navikt/my-app/actions/runs/123',
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'my-app',
+      detectedGithubRepositoryId: githubRepoId,
+    }
+    const deployment = await upsertNaisApplyDeployment(params)
+    await pool.query("UPDATE deployments SET four_eyes_status = 'approved' WHERE id = $1", [deployment.id])
+
+    await upsertNaisApplyDeployment({
+      ...params,
+      createdAt: new Date('2026-10-15T09:00:00Z'),
+    })
+
+    const { rows } = await pool.query(
+      `SELECT d.created_at, d.four_eyes_status, h.from_status, h.to_status, h.change_source
+       FROM deployments d
+       LEFT JOIN deployment_status_history h ON h.deployment_id = d.id
+       WHERE d.id = $1`,
+      [deployment.id],
+    )
+    expect(rows[0]).toMatchObject({
+      created_at: new Date('2026-10-15T09:00:00Z'),
+      four_eyes_status: 'pending',
+      from_status: 'approved',
+      to_status: 'pending',
+      change_source: 'nais_apply_timestamp_correction',
+    })
+  })
+
+  it('preserves manually approved Apply deliveries when delayed activity moves them earlier', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:delayed-manual-approval',
+      createdAt: new Date('2026-10-15T10:00:00Z'),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: null,
+      triggerUrl: null,
+      detectedGithubOwner: null,
+      detectedGithubRepoName: null,
+    }
+    const deployment = await upsertNaisApplyDeployment(params)
+    await pool.query("UPDATE deployments SET four_eyes_status = 'manually_approved' WHERE id = $1", [deployment.id])
+
+    await upsertNaisApplyDeployment({
+      ...params,
+      createdAt: new Date('2026-10-15T09:00:00Z'),
+    })
+
+    const { rows } = await pool.query('SELECT created_at, four_eyes_status FROM deployments WHERE id = $1', [
+      deployment.id,
+    ])
+    expect(rows[0]).toEqual({
+      created_at: new Date('2026-10-15T09:00:00Z'),
+      four_eyes_status: 'manually_approved',
+    })
+  })
+
   it('hides stored Apply deployments from listings and notifications while the app opt-in is off', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
     await pool.query(

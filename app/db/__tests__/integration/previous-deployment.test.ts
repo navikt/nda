@@ -184,6 +184,42 @@ describe('getPreviousDeployment', () => {
     expect(mockedGetCommitAncestryStatus).toHaveBeenCalledTimes(1)
   })
 
+  it('finds the previous deployment by immutable repository ID when claims use an old name', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: 'renamed-repository',
+      githubRepoId,
+    })
+    const previousId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'previous-sha',
+      fourEyesStatus: 'approved',
+      createdAt: new Date('2025-01-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team',
+      environment: 'prod',
+      commitSha: 'current-sha',
+      fourEyesStatus: 'pending',
+      createdAt: new Date('2025-02-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    mockedGetCommitAncestryStatus.mockResolvedValue('ahead')
+
+    const previous = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')
+
+    expect(previous?.id).toBe(previousId)
+    expect(mockedGetCommitAncestryStatus).toHaveBeenCalledWith(owner, repo, 'previous-sha', 'current-sha', 1001)
+  })
+
   it('should skip legacy_pending deployments', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
     await seedApplicationRepository(pool, {

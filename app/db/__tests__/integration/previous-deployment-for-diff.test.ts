@@ -94,6 +94,48 @@ describe('getPreviousDeploymentForDiff', () => {
     expect(prev?.id).toBe(firstId)
   })
 
+  it('finds previous deployment by immutable repository ID when claims use an old name', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: 'renamed-repository',
+      githubRepoId: '9001',
+    })
+    await seedRepository(pool, {
+      githubRepoId: '9001',
+      githubOwner: owner,
+      githubRepoName: 'renamed-repository',
+      auditStartYear: 2026,
+    })
+    const previousId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'old1234aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2025-12-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'new5678bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      createdAt: new Date('2026-01-15T13:57:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    const previous = await getPreviousDeploymentForDiff(currentId, '9001')
+
+    expect(previous?.id).toBe(previousId)
+  })
+
   it('skips legacy and legacy_pending deployments', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'pensjonselvbetjening',

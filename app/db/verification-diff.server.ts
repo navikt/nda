@@ -13,6 +13,7 @@ interface VerificationDiffDeployment {
   created_at: Date
   detected_github_owner: string
   detected_github_repo_name: string
+  repository_id: number | null
   default_branch: string | null
   audit_start_year: number | null
 }
@@ -28,6 +29,7 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
         d.created_at,
         d.detected_github_owner,
         d.detected_github_repo_name,
+        d.repository_id,
         ${effectiveDefaultBranchSql('ma')} AS default_branch,
         ${effectiveAuditStartYearSql('ma')} AS audit_start_year
       FROM deployments d
@@ -95,13 +97,13 @@ export async function getPreviousDeploymentForDiff(
   const result = await pool.query(
     `SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
      FROM deployments d
-     JOIN application_repositories ar
-       ON ar.monitored_app_id = d.monitored_app_id
-       AND ar.github_owner = d.detected_github_owner
-       AND ar.github_repo_name = d.detected_github_repo_name
-       AND ar.status IN ('active', 'historical')
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     WHERE ar.github_repo_id = $2
+     WHERE EXISTS (
+         SELECT 1 FROM application_repositories ar
+         WHERE ar.monitored_app_id = d.monitored_app_id
+           AND ar.github_repo_id = $2
+           AND ar.status IN ('active', 'historical')
+       )
        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
        AND d.commit_sha IS NOT NULL
