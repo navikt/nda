@@ -16,6 +16,7 @@ import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
 import type { RepositoryCodeDeliveryEvidence } from '~/db/repository-code-delivery-overview.server'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
+import type { RepositoryDeliveryApprovalAssessment } from '~/lib/repository-code-delivery/approval-assessment'
 import { repositoryDeliveryRangeMatches } from '~/lib/repository-code-delivery/evidence'
 import type {
   RepositoryDeliveryCommitAssessmentReason,
@@ -26,6 +27,7 @@ import type { UserLookupMap } from '~/lib/user-display'
 interface RepositoryCodeDeliveryEvidencePageProps {
   repository: { id: number; githubOwner: string; githubRepoName: string }
   delivery: RepositoryCodeDeliveryEvidence
+  approvalAssessment: RepositoryDeliveryApprovalAssessment
   userMappings: UserLookupMap
 }
 
@@ -138,6 +140,195 @@ function assessmentReasonLabel(reason: RepositoryDeliveryCommitAssessmentReason)
   return labels[reason]
 }
 
+function approvalStatusLabel(status: RepositoryDeliveryApprovalAssessment['status']): string {
+  if (status === 'approved') return 'Dekket av eksisterende PR-godkjenning'
+  if (status === 'not_approved') return 'Krever manuell godkjenning'
+  if (status === 'no_changes') return 'Ingen commits i intervallet'
+  return 'Kan ikke vurderes'
+}
+
+function approvalCommitReasonLabel(reason: RepositoryDeliveryApprovalAssessment['commits'][number]['reason']): string {
+  const labels: Record<RepositoryDeliveryApprovalAssessment['commits'][number]['reason'], string> = {
+    approved_pr: 'Dekket av PR etter NDA sine eksisterende regler',
+    manual_approval: 'Dekket av manuell godkjenning',
+    missing_approval: 'Ingen manuell godkjenning dekker denne commiten',
+    unknown_pr_coverage: 'PR-kobling eller review-grunnlag er ukjent',
+    unknown_commit_author: 'Commit author mangler verifisert GitHub-konto eller kobling til NAV-ident',
+    unknown_approver_identity: 'Godkjenner kan ikke kobles sikkert til en NAV-ident',
+    incomplete_commit_history: 'Commit-historikken er ufullstendig',
+    invalid_interval: 'Commit-historikken samsvarer ikke med leveranseintervallet',
+    duplicate_commit: 'Commit-historikken inneholder duplikate commits',
+    approval_outside_interval: 'En godkjenning viser til en commit utenfor intervallet',
+  }
+  return labels[reason]
+}
+
+function RepositoryApprovalAssessment({
+  repository,
+  delivery,
+  approvalAssessment,
+  userMappings,
+}: {
+  repository: { githubOwner: string; githubRepoName: string }
+  delivery: RepositoryCodeDeliveryEvidence
+  approvalAssessment: RepositoryDeliveryApprovalAssessment
+  userMappings: UserLookupMap
+}) {
+  const intervalCommitsBySha = new Map(
+    delivery.interval_assessment.commits.map((commit) => [commit.sha.toLowerCase(), commit]),
+  )
+  const counts = {
+    covered: approvalAssessment.commits.filter((commit) => commit.status === 'covered').length,
+    notCovered: approvalAssessment.commits.filter((commit) => commit.status === 'not_covered').length,
+    unknown: approvalAssessment.commits.filter((commit) => commit.status === 'unknown').length,
+  }
+
+  return (
+    <div>
+      <Heading level="2" size="small" spacing>
+        Forhåndsvurdering av repositorygodkjenning
+      </Heading>
+      <VStack gap="space-16">
+        <Alert variant="info" size="small">
+          Skrivebeskyttet vurdering av lagrede GitHub-snapshots med NDA sine eksisterende PR-regler, inkludert implisitt
+          godkjenning. Manuelle godkjenninger er ikke registrert eller vurdert her. Vurderingen oppretter ingen
+          beslutning og endrer ikke deploymentstatus.
+        </Alert>
+        <HStack gap="space-8" align="center" wrap>
+          <Tag
+            data-color={
+              approvalAssessment.status === 'approved'
+                ? 'success'
+                : approvalAssessment.status === 'not_approved'
+                  ? 'warning'
+                  : 'neutral'
+            }
+            variant="outline"
+            size="small"
+          >
+            {approvalStatusLabel(approvalAssessment.status)}
+          </Tag>
+          {approvalAssessment.status !== 'no_changes' && (
+            <>
+              <Tag data-color="success" variant="outline" size="small">
+                Dekket: {counts.covered}
+              </Tag>
+              <Tag data-color="warning" variant="outline" size="small">
+                Trenger godkjenning: {counts.notCovered}
+              </Tag>
+              <Tag data-color="neutral" variant="outline" size="small">
+                Ukjent: {counts.unknown + approvalAssessment.omittedCommits}
+              </Tag>
+              <BodyShort size="small" textColor="subtle">
+                {approvalAssessment.totalCommits === null
+                  ? `${approvalAssessment.listedCommits} commits vist · totalt antall ukjent`
+                  : `${approvalAssessment.listedCommits} av ${approvalAssessment.totalCommits} commits vurdert`}
+              </BodyShort>
+            </>
+          )}
+        </HStack>
+        {approvalAssessment.status === 'no_changes' ? (
+          <BodyShort>Dette er et anker uten kodeendringer, ikke en godkjenning.</BodyShort>
+        ) : approvalAssessment.status === 'incomplete' ? (
+          <Alert variant="warning" size="small">
+            Grunnlaget er ufullstendig eller kan ikke knyttes sikkert til leveranseintervallet. Ukjent evidens gir ikke
+            godkjenning.
+          </Alert>
+        ) : null}
+        {approvalAssessment.commits.length > 0 && (
+          <Table size="small">
+            <caption className="aksel-sr-only">Forhåndsvurdering av repositorygodkjenning per commit</caption>
+            <Table.Header>
+              <Table.Row>
+                <Table.HeaderCell>Commit</Table.HeaderCell>
+                <Table.HeaderCell>GitHub commit author</Table.HeaderCell>
+                <Table.HeaderCell>PR-grunnlag</Table.HeaderCell>
+                <Table.HeaderCell>Vurdering</Table.HeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {approvalAssessment.commits.map((commit) => {
+                const intervalCommit = intervalCommitsBySha.get(commit.sha.toLowerCase())
+                const authorLogin = intervalCommit?.authorLogin
+                const authorMapping = authorLogin ? userMappings[authorLogin] : null
+
+                return (
+                  <Table.Row key={commit.sha}>
+                    <Table.DataCell>
+                      <VStack gap="space-4">
+                        <CommitLink repository={repository} sha={commit.sha} />
+                        {intervalCommit && <BodyShort size="small">{intervalCommit.message.split('\n')[0]}</BodyShort>}
+                      </VStack>
+                    </Table.DataCell>
+                    <Table.DataCell>
+                      {authorLogin ? (
+                        <VStack gap="space-4">
+                          <ExternalLink href={`https://github.com/${authorLogin}`}>
+                            <UserName username={authorLogin} userMappings={userMappings} link={false} />
+                          </ExternalLink>
+                          <BodyShort size="small" textColor="subtle">
+                            {authorMapping?.nav_ident
+                              ? `Koblet til NAV-ident ${authorMapping.nav_ident}`
+                              : 'Ikke koblet til NAV-ident'}
+                          </BodyShort>
+                        </VStack>
+                      ) : (
+                        'Ukjent'
+                      )}
+                    </Table.DataCell>
+                    <Table.DataCell>
+                      {intervalCommit?.pullRequestNumber ? (
+                        <VStack gap="space-4">
+                          <ExternalLink
+                            href={`https://github.com/${repository.githubOwner}/${repository.githubRepoName}/pull/${intervalCommit.pullRequestNumber}`}
+                          >
+                            PR #{intervalCommit.pullRequestNumber}
+                          </ExternalLink>
+                          <BodyShort size="small">
+                            {intervalCommit.status === 'covered'
+                              ? 'Godkjent etter NDA-reglene'
+                              : intervalCommit.status === 'not_covered'
+                                ? assessmentReasonLabel(intervalCommit.reason)
+                                : 'PR-grunnlaget er ukjent'}
+                          </BodyShort>
+                        </VStack>
+                      ) : (
+                        'Ingen dokumentert PR-dekning'
+                      )}
+                    </Table.DataCell>
+                    <Table.DataCell>
+                      <VStack gap="space-4">
+                        <Tag
+                          data-color={
+                            commit.status === 'covered'
+                              ? 'success'
+                              : commit.status === 'not_covered'
+                                ? 'warning'
+                                : 'neutral'
+                          }
+                          variant="outline"
+                          size="small"
+                        >
+                          {commit.status === 'covered'
+                            ? 'Dekket'
+                            : commit.status === 'not_covered'
+                              ? 'Trenger manuell godkjenning'
+                              : 'Ukjent'}
+                        </Tag>
+                        <BodyShort size="small">{approvalCommitReasonLabel(commit.reason)}</BodyShort>
+                      </VStack>
+                    </Table.DataCell>
+                  </Table.Row>
+                )
+              })}
+            </Table.Body>
+          </Table>
+        )}
+      </VStack>
+    </div>
+  )
+}
+
 function IntervalAssessment({
   repository,
   delivery,
@@ -245,6 +436,7 @@ function IntervalAssessment({
 export function RepositoryCodeDeliveryEvidencePage({
   repository,
   delivery,
+  approvalAssessment,
   userMappings,
 }: RepositoryCodeDeliveryEvidencePageProps) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -297,6 +489,12 @@ export function RepositoryCodeDeliveryEvidencePage({
       </Box>
 
       <IntervalAssessment repository={repository} delivery={delivery} />
+      <RepositoryApprovalAssessment
+        repository={repository}
+        delivery={delivery}
+        approvalAssessment={approvalAssessment}
+        userMappings={userMappings}
+      />
 
       <div>
         <Heading level="2" size="small" spacing>

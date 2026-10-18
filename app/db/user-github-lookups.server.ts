@@ -12,6 +12,7 @@ interface GithubUserLookup {
   display_github_username: string | null
   display_name: string | null
   nav_ident: string | null
+  active_nav_ident: string | null
   slack_member_id: string | null
   account_deleted_at: Date | null
 }
@@ -22,6 +23,7 @@ export async function getGithubUserLookup(githubUsername: string): Promise<Githu
             uga.display_github_username,
             u.display_name,
             uga.nav_ident,
+            u.nav_ident AS active_nav_ident,
             u.slack_member_id,
             uga.deleted_at AS account_deleted_at
      FROM user_github_accounts uga
@@ -40,6 +42,7 @@ export async function getGithubUserLookups(githubUsernames: string[]): Promise<M
             uga.display_github_username,
             u.display_name,
             uga.nav_ident,
+            u.nav_ident AS active_nav_ident,
             u.slack_member_id,
             uga.deleted_at AS account_deleted_at
      FROM user_github_accounts uga

@@ -38,6 +38,27 @@ const evidence = {
   page: 1,
   totalPages: 1,
   totalEvidenceEntries: 1,
+  interval_assessment: {
+    state: 'complete',
+    comparisonComplete: true,
+    defaultBranch: 'main',
+    totalCommits: 1,
+    listedCommits: 1,
+    omittedCommits: 0,
+    summary: { covered: 1, notCovered: 0, unknown: 0 },
+    commits: [
+      {
+        sha: '2'.repeat(40),
+        message: 'Add delivery evidence',
+        authorUsername: 'rask-elv',
+        authorLogin: 'rask-elv',
+        htmlUrl: `https://github.com/navikt/glad-fjord/commit/${'2'.repeat(40)}`,
+        pullRequestNumber: 42,
+        status: 'covered',
+        reason: 'approved_review',
+      },
+    ],
+  },
   deployments: [
     {
       id: 23,
@@ -90,7 +111,17 @@ describe('repository code delivery evidence loader', () => {
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [] })
     mockGetEvidence.mockResolvedValue(evidence)
     mockGetGithubUserLookups.mockResolvedValue(
-      new Map([['rask-elv', { display_name: 'Rask Elv', nav_ident: 'Z990010' }]]),
+      new Map([
+        [
+          'rask-elv',
+          {
+            display_name: 'Rask Elv',
+            nav_ident: 'Z990010',
+            active_nav_ident: 'Z990010',
+            account_deleted_at: null,
+          },
+        ],
+      ]),
     )
   })
 
@@ -115,7 +146,7 @@ describe('repository code delivery evidence loader', () => {
     },
   )
 
-  it('returns evidence and mapped reviewer names for the repository delivery', async () => {
+  it('returns evidence and evaluates PR coverage for the repository delivery', async () => {
     const result = await loader({ params, request: makeRequest() } as never)
 
     expect(mockResolveRepositoryFromParams).toHaveBeenCalledWith(
@@ -129,7 +160,79 @@ describe('repository code delivery evidence loader', () => {
     expect(result).toMatchObject({
       repository: { id: 5, githubOwner: 'navikt', githubRepoName: 'glad-fjord' },
       delivery: evidence,
+      approvalAssessment: {
+        status: 'approved',
+        totalCommits: 1,
+        listedCommits: 1,
+        commits: [{ sha: '2'.repeat(40), status: 'covered', reason: 'approved_pr' }],
+      },
       userMappings: { 'rask-elv': { display_name: 'Rask Elv', nav_ident: 'Z990010' } },
+    })
+  })
+
+  it('keeps unmapped commit authors unknown', async () => {
+    mockGetGithubUserLookups.mockResolvedValue(new Map())
+    mockGetEvidence.mockResolvedValue({
+      ...evidence,
+      interval_assessment: {
+        ...evidence.interval_assessment,
+        commits: [
+          {
+            ...evidence.interval_assessment.commits[0],
+            pullRequestNumber: null,
+            status: 'not_covered',
+            reason: 'no_associated_pull_request',
+          },
+        ],
+      },
+    })
+
+    const result = await loader({ params, request: makeRequest() } as never)
+
+    expect(result.approvalAssessment).toMatchObject({
+      status: 'incomplete',
+      commits: [{ status: 'unknown', reason: 'unknown_commit_author' }],
+    })
+  })
+
+  it('does not use a deleted GitHub account mapping as commit author identity', async () => {
+    mockGetGithubUserLookups.mockResolvedValue(
+      new Map([
+        [
+          'rask-elv',
+          {
+            display_name: 'Rask Elv',
+            nav_ident: 'Z990010',
+            active_nav_ident: 'Z990010',
+            account_deleted_at: new Date('2026-10-17T10:00:00Z'),
+          },
+        ],
+      ]),
+    )
+    mockGetEvidence.mockResolvedValue({
+      ...evidence,
+      interval_assessment: {
+        ...evidence.interval_assessment,
+        commits: [
+          {
+            ...evidence.interval_assessment.commits[0],
+            pullRequestNumber: null,
+            status: 'not_covered',
+            reason: 'no_associated_pull_request',
+          },
+        ],
+      },
+    })
+
+    const result = await loader({ params, request: makeRequest() } as never)
+
+    expect(result.approvalAssessment).toMatchObject({
+      status: 'incomplete',
+      commits: [{ status: 'unknown', reason: 'unknown_commit_author' }],
+    })
+    expect(result.userMappings['rask-elv']).toMatchObject({
+      display_name: 'Rask Elv',
+      nav_ident: null,
     })
   })
 

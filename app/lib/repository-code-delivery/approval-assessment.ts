@@ -6,7 +6,7 @@ interface RepositoryDeliveryApprovalAssessmentInput {
   baseSha: string
   headSha: string
   commitHistoryComplete: boolean
-  totalCommits: number
+  totalCommits: number | null
   commits: Array<{
     sha: string
     authorIdentityKey: string | null
@@ -20,9 +20,9 @@ interface RepositoryDeliveryApprovalAssessmentInput {
 
 type RepositoryDeliveryApprovalCommitStatus = 'covered' | 'not_covered' | 'unknown'
 
-interface RepositoryDeliveryApprovalAssessment {
+export interface RepositoryDeliveryApprovalAssessment {
   status: 'approved' | 'not_approved' | 'incomplete' | 'no_changes'
-  totalCommits: number
+  totalCommits: number | null
   listedCommits: number
   omittedCommits: number
   commits: Array<{
@@ -51,7 +51,7 @@ function unknownAssessment(
   input: RepositoryDeliveryApprovalAssessmentInput,
   reason: 'incomplete_commit_history' | 'invalid_interval' | 'duplicate_commit' | 'approval_outside_interval',
 ): RepositoryDeliveryApprovalAssessment {
-  const omittedCommits = Math.max(0, input.totalCommits - input.commits.length)
+  const omittedCommits = input.totalCommits === null ? 0 : Math.max(0, input.totalCommits - input.commits.length)
   return {
     status: 'incomplete',
     totalCommits: input.totalCommits,
@@ -67,10 +67,11 @@ export function assessRepositoryDeliveryApproval(
   if (
     !isFullCommitSha(input.baseSha) ||
     !isFullCommitSha(input.headSha) ||
-    !Number.isSafeInteger(input.totalCommits) ||
-    input.totalCommits < 0 ||
-    input.totalCommits < input.commits.length ||
-    (input.baseSha.toLowerCase() === input.headSha.toLowerCase()) !== (input.totalCommits === 0)
+    (input.totalCommits !== null &&
+      (!Number.isSafeInteger(input.totalCommits) ||
+        input.totalCommits < 0 ||
+        input.totalCommits < input.commits.length ||
+        (input.baseSha.toLowerCase() === input.headSha.toLowerCase()) !== (input.totalCommits === 0)))
   ) {
     return unknownAssessment(input, 'invalid_interval')
   }
@@ -90,7 +91,7 @@ export function assessRepositoryDeliveryApproval(
     return unknownAssessment(input, 'approval_outside_interval')
   }
 
-  if (!input.commitHistoryComplete || input.totalCommits !== input.commits.length) {
+  if (!input.commitHistoryComplete || input.totalCommits === null || input.totalCommits !== input.commits.length) {
     return unknownAssessment(input, 'incomplete_commit_history')
   }
 

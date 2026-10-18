@@ -197,6 +197,18 @@ describe('repository code delivery approval assessment', () => {
     })
   })
 
+  it('keeps the assessment unknown when the total commit count is unavailable', () => {
+    expect(
+      assess({
+        totalCommits: null,
+      }),
+    ).toMatchObject({
+      status: 'incomplete',
+      totalCommits: null,
+      commits: [{ status: 'unknown', reason: 'incomplete_commit_history' }],
+    })
+  })
+
   it('does not apply an approval to a commit outside the interval', () => {
     expect(
       assess({

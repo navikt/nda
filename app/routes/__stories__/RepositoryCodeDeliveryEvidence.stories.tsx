@@ -11,6 +11,13 @@ type Story = StoryObj<typeof RepositoryCodeDeliveryEvidencePage>
 export const WithStoredReviews: Story = {
   args: {
     repository: { id: 5, githubOwner: 'navikt', githubRepoName: 'glad-fjord' },
+    approvalAssessment: {
+      status: 'approved',
+      totalCommits: 1,
+      listedCommits: 1,
+      omittedCommits: 0,
+      commits: [{ sha: '2'.repeat(40), status: 'covered', reason: 'approved_pr' }],
+    },
     userMappings: { 'rask-elv': { display_name: 'Rask Elv', nav_ident: 'Z990010' } },
     delivery: {
       id: 3,
@@ -22,6 +29,7 @@ export const WithStoredReviews: Story = {
       totalEvidenceEntries: 1,
       interval_assessment: {
         state: 'complete',
+        comparisonComplete: true,
         defaultBranch: 'main',
         totalCommits: 1,
         listedCommits: 1,
@@ -32,6 +40,7 @@ export const WithStoredReviews: Story = {
             sha: '2'.repeat(40),
             message: 'Add delivery evidence',
             authorUsername: 'rask-elv',
+            authorLogin: 'rask-elv',
             htmlUrl: `https://github.com/navikt/glad-fjord/commit/${'2'.repeat(40)}`,
             pullRequestNumber: 42,
             status: 'covered',
@@ -84,6 +93,13 @@ export const WithStoredReviews: Story = {
 export const MissingStoredEvidence: Story = {
   args: {
     repository: { id: 5, githubOwner: 'navikt', githubRepoName: 'glad-fjord' },
+    approvalAssessment: {
+      status: 'incomplete',
+      totalCommits: null,
+      listedCommits: 0,
+      omittedCommits: 0,
+      commits: [],
+    },
     userMappings: {},
     delivery: {
       id: 4,
@@ -95,6 +111,7 @@ export const MissingStoredEvidence: Story = {
       totalEvidenceEntries: 1,
       interval_assessment: {
         state: 'unavailable',
+        comparisonComplete: false,
         defaultBranch: 'main',
         totalCommits: null,
         listedCommits: 0,
