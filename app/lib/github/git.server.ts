@@ -551,20 +551,27 @@ export interface GitHubRepositoryIdentity {
   id: number
   owner: string
   name: string
+  defaultBranch?: string | null
 }
 
-export async function getRepositoryIdentity(owner: string, repo: string): Promise<GitHubRepositoryIdentity | null> {
+export async function getRepositoryIdentityById(repositoryId: number): Promise<GitHubRepositoryIdentity | null> {
   try {
-    const response = await getGitHubClient().repos.get({ owner, repo })
+    const response = await getGitHubClient().request('GET /repositories/{repository_id}', {
+      repository_id: repositoryId,
+    })
     return {
       id: response.data.id,
       owner: response.data.owner.login,
       name: response.data.name,
+      defaultBranch: response.data.default_branch || null,
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const stack = error instanceof Error ? error.stack : undefined
-    logger.warn(`⚠️ Failed to fetch repository identity for ${owner}/${repo}:`, { error: message, stack_trace: stack })
+    logger.warn(`⚠️ Failed to fetch repository identity for GitHub repository ${repositoryId}:`, {
+      error: message,
+      stack_trace: stack,
+    })
     return null
   }
 }

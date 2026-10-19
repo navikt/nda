@@ -14,6 +14,7 @@ interface VerificationDiffDeployment {
   created_at: Date
   detected_github_owner: string
   detected_github_repo_name: string
+  deployment_source: string
   repository_id: number | null
   default_branch: string | null
   audit_start_year: number | null
@@ -30,8 +31,13 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
         d.created_at,
         d.detected_github_owner,
         d.detected_github_repo_name,
+        d.deployment_source,
         d.repository_id,
-        ${effectiveDefaultBranchSql('ma')} AS default_branch,
+        CASE WHEN d.deployment_source = 'nais_apply'
+             THEN (SELECT COALESCE(r_apply.default_branch, ma.default_branch)
+                   FROM repositories r_apply WHERE r_apply.id = d.repository_id)
+             ELSE ${effectiveDefaultBranchSql('ma')}
+        END AS default_branch,
         ${effectiveAuditStartYearSql('ma')} AS audit_start_year
       FROM deployments d
       JOIN monitored_applications ma ON d.monitored_app_id = ma.id

@@ -8,6 +8,7 @@ const {
   mockRefreshCommitChecksOnly,
   mockFetchWorkflowRunSnapshotIfMissing,
   mockParseWorkflowRunUrl,
+  mockGetRepositoryIdentityById,
 } = vi.hoisted(() => ({
   mockPoolQuery: vi.fn(),
   mockFetchVerificationData: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockRefreshCommitChecksOnly: vi.fn(),
   mockFetchWorkflowRunSnapshotIfMissing: vi.fn(),
   mockParseWorkflowRunUrl: vi.fn(),
+  mockGetRepositoryIdentityById: vi.fn(),
 }))
 
 vi.mock('~/db/connection.server', () => ({
@@ -61,10 +63,14 @@ vi.mock('~/lib/verification/fetch-data/workflow-triggers.server', () => ({
 
 vi.mock('~/lib/github/git.server', () => ({
   fetchWorkflowRunSnapshotIfMissing: mockFetchWorkflowRunSnapshotIfMissing,
+  getRepositoryIdentityById: mockGetRepositoryIdentityById,
   parseWorkflowRunUrl: mockParseWorkflowRunUrl,
 }))
 
-import { fetchVerificationDataForRepository } from '~/lib/verification/fetch-data/bulk-fetch.server'
+import {
+  fetchVerificationDataForAllDeployments,
+  fetchVerificationDataForRepository,
+} from '~/lib/verification/fetch-data/bulk-fetch.server'
 
 function deploymentRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -97,6 +103,12 @@ describe('fetchVerificationDataForRepository', () => {
     mockBackfillWorkflowTriggerConfig.mockReset().mockResolvedValue(false)
     mockRefreshCommitChecksOnly.mockReset().mockResolvedValue({})
     mockFetchWorkflowRunSnapshotIfMissing.mockReset()
+    mockGetRepositoryIdentityById.mockReset().mockResolvedValue({
+      id: 987654321,
+      owner: 'navikt',
+      name: 'current-name',
+      defaultBranch: 'main',
+    })
     mockParseWorkflowRunUrl.mockReset()
     mockParseWorkflowRunUrl.mockImplementation((url: string | null, owner: string, repo: string) => {
       const match = url?.match(/^https:\/\/github[.]com\/([^/]+)\/([^/]+)\/actions\/runs\/([0-9]+)$/i)
@@ -137,9 +149,76 @@ describe('fetchVerificationDataForRepository', () => {
     await fetchVerificationDataForRepository(42)
 
     const [query] = mockPoolQuery.mock.calls[0]
-    expect(query).toContain('PARTITION BY d.detected_github_owner, d.detected_github_repo_name')
+    expect(query).toContain("CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_owner")
+    expect(query).toContain('PARTITION BY')
     expect(query).not.toContain('PARTITION BY d.monitored_app_id')
     expect(query).toContain('ORDER BY d.created_at ASC, d.id ASC')
+  })
+
+  it('uses the immutable repository name for Apply history and excludes unlinked Apply rows', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        deploymentRow({
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'current-name',
+          matched_repository_id: 42,
+          default_branch: 'release',
+        }),
+      ],
+    })
+
+    await fetchVerificationDataForAllDeployments(10)
+
+    const [query] = mockPoolQuery.mock.calls[0]
+    expect(query).toContain("CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_repo_name")
+    expect(query).toContain('(d.repository_id IS NOT NULL AND r.id IS NOT NULL)')
+    expect(query).toContain('PARTITION BY')
+    expect(mockFetchVerificationData).toHaveBeenCalledWith(
+      1,
+      'a'.repeat(40),
+      'navikt/current-name',
+      'prod-gcp',
+      'release',
+      10,
+      { forceRefresh: false },
+      undefined,
+      42,
+      undefined,
+    )
+  })
+
+  it('refreshes Apply checks using the current repository ID name when cached snapshots exist', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        deploymentRow({
+          deployment_source: 'nais_apply',
+          claim_github_owner: 'navikt',
+          claim_github_repo_name: 'old-name',
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'old-name',
+          trigger_url: 'https://github.com/navikt/old-name/actions/runs/12345',
+          matched_repository_id: 42,
+          matched_github_repo_id: '987654321',
+          has_pr_snapshot: true,
+          has_compare_snapshot: true,
+          has_checks_data: false,
+        }),
+      ],
+    })
+
+    await fetchVerificationDataForAllDeployments(10)
+
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledWith(987654321)
+    expect(mockRefreshCommitChecksOnly).toHaveBeenCalledWith(
+      1,
+      'navikt',
+      'current-name',
+      'a'.repeat(40),
+      undefined,
+      'https://github.com/navikt/current-name/actions/runs/12345',
+      null,
+      undefined,
+    )
   })
 
   it('processes deployments from multiple monitored apps linked to the same repository, using each row own app id', async () => {
@@ -173,6 +252,8 @@ describe('fetchVerificationDataForRepository', () => {
           deployment_id: 1,
           detected_github_owner: 'navikt',
           detected_github_repo_name: 'nda',
+          github_owner: 'navikt',
+          github_repo_name: 'nda',
           trigger_url: 'https://github.com/navikt/nda/actions/runs/12345',
           github_repo_id: '987654321',
         },
@@ -180,6 +261,8 @@ describe('fetchVerificationDataForRepository', () => {
           deployment_id: 2,
           detected_github_owner: 'navikt',
           detected_github_repo_name: 'old-nda-name',
+          github_owner: 'navikt',
+          github_repo_name: 'nda',
           trigger_url: 'https://github.com/navikt/old-nda-name/actions/runs/12345',
           github_repo_id: '987654321',
         },
@@ -198,6 +281,34 @@ describe('fetchVerificationDataForRepository', () => {
     )
     expect(result.workflowRunSnapshotsFetched).toBe(1)
     expect(result.workflowRunSnapshotsAvailable).toBe(1)
+  })
+
+  it('fetches Apply workflow-run snapshots using the current repository identity', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
+      rows: [
+        {
+          deployment_id: 1,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'old-name',
+          deployment_source: 'nais_apply',
+          github_owner: 'navikt',
+          github_repo_name: 'stale-canonical-name',
+          trigger_url: 'https://github.com/navikt/old-name/actions/runs/12345',
+          github_repo_id: '987654321',
+        },
+      ],
+    })
+    mockFetchWorkflowRunSnapshotIfMissing.mockResolvedValueOnce({ status: 'fetched' })
+
+    await fetchVerificationDataForRepository(42)
+
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledWith(987654321)
+    expect(mockFetchWorkflowRunSnapshotIfMissing).toHaveBeenCalledWith(
+      'navikt',
+      'current-name',
+      'https://github.com/navikt/current-name/actions/runs/12345',
+      '987654321',
+    )
   })
 
   it('reuses snapshot workflow-trigger data for deployments sharing a workflow run', async () => {
@@ -221,6 +332,8 @@ describe('fetchVerificationDataForRepository', () => {
             deployment_id: 1,
             detected_github_owner: 'navikt',
             detected_github_repo_name: 'nda',
+            github_owner: 'navikt',
+            github_repo_name: 'nda',
             trigger_url: triggerUrl,
             github_repo_id: '987654321',
           },
@@ -274,6 +387,8 @@ describe('fetchVerificationDataForRepository', () => {
             deployment_id: 1,
             detected_github_owner: 'navikt',
             detected_github_repo_name: 'nda',
+            github_owner: 'navikt',
+            github_repo_name: 'nda',
             trigger_url: triggerUrl,
             github_repo_id: '987654321',
           },
@@ -299,6 +414,8 @@ describe('fetchVerificationDataForRepository', () => {
           deployment_id: 1,
           detected_github_owner: 'navikt',
           detected_github_repo_name: 'nda',
+          github_owner: 'navikt',
+          github_repo_name: 'nda',
           trigger_url: triggerUrl,
           github_repo_id: '987654321',
         },
@@ -320,6 +437,8 @@ describe('fetchVerificationDataForRepository', () => {
           deployment_id: 3,
           detected_github_owner: 'navikt',
           detected_github_repo_name: 'nda',
+          github_owner: 'navikt',
+          github_repo_name: 'nda',
           trigger_url: 'https://github.com/navikt/nda/actions/runs/12345',
           github_repo_id: '987654321',
         },

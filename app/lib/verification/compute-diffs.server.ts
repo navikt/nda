@@ -13,6 +13,7 @@ import {
   getPreviousDeploymentForDiff,
 } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
+import { getRepositoryIdentityById } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
 import {
@@ -116,13 +117,6 @@ export async function computeVerificationDiffs(
       let owner = row.detected_github_owner as string
       let repo = row.detected_github_repo_name as string
 
-      if (!row.default_branch) {
-        result.skipped++
-        result.deploymentsChecked++
-        continue
-      }
-      const baseBranch = row.default_branch
-
       let input: VerificationInput
       let precomputedResult: ReturnType<typeof verifyDeployment> | null = null
 
@@ -131,9 +125,32 @@ export async function computeVerificationDiffs(
         repo,
         row.repository_id,
       )
+      let applyIdentity: Awaited<ReturnType<typeof getRepositoryIdentityById>> = null
+      if (row.deployment_source === 'nais_apply') {
+        const numericGithubRepoId = Number(githubRepoId)
+        applyIdentity =
+          githubRepoId && Number.isSafeInteger(numericGithubRepoId)
+            ? await getRepositoryIdentityById(numericGithubRepoId)
+            : null
+        if (!applyIdentity || String(applyIdentity.id) !== githubRepoId) {
+          result.skipped++
+          result.deploymentsChecked++
+          continue
+        }
+        owner = applyIdentity.owner
+        repo = applyIdentity.name
+      }
       if (row.repository_id != null && status) {
-        owner = effectiveOwner
-        repo = effectiveRepo
+        if (!applyIdentity) {
+          owner = effectiveOwner
+          repo = effectiveRepo
+        }
+      }
+      const baseBranch = row.deployment_source === 'nais_apply' ? applyIdentity?.defaultBranch : row.default_branch
+      if (!baseBranch) {
+        result.skipped++
+        result.deploymentsChecked++
+        continue
       }
       const previousDeploymentLookupFailed = status === 'active' && (!githubRepoId || repositoryId == null)
       const prevRow =

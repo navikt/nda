@@ -29,6 +29,14 @@ vi.mock('~/db/application-repositories.server', () => ({
   LATEST_ACTIVE_REPOSITORY_LINK_SQL: '',
 }))
 
+const { mockGetRepositoryIdentityById } = vi.hoisted(() => ({
+  mockGetRepositoryIdentityById: vi.fn(),
+}))
+
+vi.mock('~/lib/github/git.server', () => ({
+  getRepositoryIdentityById: mockGetRepositoryIdentityById,
+}))
+
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
@@ -152,6 +160,12 @@ describe('computeVerificationDiffs double-check logic', () => {
       isRedirected: false,
     })
     mockGetRepositoryIdByGithubRepoId.mockResolvedValue(7)
+    mockGetRepositoryIdentityById.mockResolvedValue({
+      id: 123,
+      owner: 'navikt',
+      name: 'test-repo',
+      defaultBranch: 'main',
+    })
   })
 
   it('triggers forceRefresh when cache-only produces different status than stored', async () => {
@@ -238,6 +252,38 @@ describe('computeVerificationDiffs double-check logic', () => {
     expect(mockFetchVerificationData).not.toHaveBeenCalled()
     expect(mockVerifyDeployment).toHaveBeenCalledTimes(1)
     expect(result.diffsFound).toBe(0)
+  })
+
+  it('uses the Apply repository default branch from the immutable GitHub identity', async () => {
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({
+        four_eyes_status: 'unverified_commits',
+        deployment_source: 'nais_apply',
+        repository_id: 7,
+        default_branch: 'master',
+      }),
+    ])
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'abc123',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockFindPrForCommit.mockResolvedValue({ prNumber: null, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+
+    await computeVerificationDiffs(1)
+
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledWith(123)
+    expect(mockGetCompareSnapshot).toHaveBeenCalledWith('navikt', 'test-repo', 'abc123', null)
+    expect(mockBuildCommitsBetween).toHaveBeenCalledWith(
+      'navikt',
+      'test-repo',
+      'main',
+      { commits: [] },
+      { cacheOnly: true },
+    )
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ baseBranch: 'main' }))
   })
 
   it('discovers PR via cache-only lookup when deployment has no stored github_pr_number', async () => {

@@ -11,6 +11,7 @@ import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repo
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { getMergedPullRequestsInWindow } from '~/lib/github'
+import { getRepositoryIdentityById } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
 import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
@@ -541,16 +542,26 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   let owner = dep.detected_github_owner as string | null
   let repo = dep.detected_github_repo_name as string | null
   if (!owner || !repo) return null
-  if (!dep.default_branch) return null
-  const baseBranch = dep.default_branch
 
   const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo, dep.repository_id ?? undefined)
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
   const canonicalRepositoryId = githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null
-  if (dep.repository_id != null && repoCheck.repository) {
+  let applyIdentity: Awaited<ReturnType<typeof getRepositoryIdentityById>> = null
+  if (dep.deployment_source === 'nais_apply') {
+    const numericGithubRepoId = Number(githubRepoId)
+    applyIdentity =
+      githubRepoId && Number.isSafeInteger(numericGithubRepoId)
+        ? await getRepositoryIdentityById(numericGithubRepoId)
+        : null
+    if (!applyIdentity || String(applyIdentity.id) !== githubRepoId) return null
+    owner = applyIdentity.owner
+    repo = applyIdentity.name
+  } else if (dep.repository_id != null && repoCheck.repository) {
     owner = repoCheck.effectiveOwner
     repo = repoCheck.effectiveRepo
   }
+  const baseBranch = dep.deployment_source === 'nais_apply' ? applyIdentity?.defaultBranch : dep.default_branch
+  if (!baseBranch) return null
   const appSettings =
     dep.repository_id != null
       ? await getEffectiveSettingsForRepository(dep.repository_id, dep.monitored_app_id)

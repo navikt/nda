@@ -7,7 +7,7 @@ const {
   getMonitoredApplicationById,
   upsertNaisApplyDeployment,
   fetchWorkflowRunHeadSha,
-  getRepositoryIdentity,
+  getRepositoryIdentityById,
   upsertNaisApplyRepository,
   getRepositoriesByAppId,
   createRepositoryAlertForDeployment,
@@ -19,7 +19,7 @@ const {
   getMonitoredApplicationById: vi.fn(),
   upsertNaisApplyDeployment: vi.fn(),
   fetchWorkflowRunHeadSha: vi.fn(),
-  getRepositoryIdentity: vi.fn(),
+  getRepositoryIdentityById: vi.fn(),
   upsertNaisApplyRepository: vi.fn(),
   getRepositoriesByAppId: vi.fn(),
   createRepositoryAlertForDeployment: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock('~/db/application-repositories.server', () => ({
 }))
 vi.mock('~/db/alerts.server', () => ({ createRepositoryAlertForDeployment }))
 vi.mock('~/db/repositories.server', () => ({ ensureRepositoryRowForGithubRepo, syncRepositoryDefaultBranch }))
-vi.mock('~/lib/github/git.server', () => ({ fetchWorkflowRunHeadSha, getRepositoryIdentity }))
+vi.mock('~/lib/github/git.server', () => ({ fetchWorkflowRunHeadSha, getRepositoryIdentityById }))
 vi.mock('../default-branch-sync.server', () => ({ syncDefaultBranchForApp }))
 vi.mock('~/lib/logger.server', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
@@ -108,7 +108,7 @@ describe('materializeNaisApplyDeployments', () => {
     vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([])
     vi.mocked(upsertNaisApplyDeployment).mockResolvedValue({ id: 100 } as never)
     vi.mocked(fetchWorkflowRunHeadSha).mockResolvedValue('a'.repeat(40))
-    vi.mocked(getRepositoryIdentity).mockResolvedValue({ id: 12345, owner: 'navikt', name: 'app-a' })
+    vi.mocked(getRepositoryIdentityById).mockResolvedValue({ id: 12345, owner: 'navikt', name: 'app-a' })
     vi.mocked(getRepositoriesByAppId).mockResolvedValue([])
     vi.mocked(upsertNaisApplyRepository).mockResolvedValue({
       github_owner: 'navikt',
@@ -171,10 +171,12 @@ describe('materializeNaisApplyDeployments', () => {
     vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([
       { ...activity, gitHubActorClaims: { ...claims, repository: 'navikt/old-app-a' } },
     ])
-    vi.mocked(getRepositoryIdentity).mockResolvedValue({ id: 12345, owner: 'navikt', name: 'app-a' })
+    vi.mocked(getRepositoryIdentityById).mockResolvedValue({ id: 12345, owner: 'navikt', name: 'app-a' })
 
     await materializeNaisApplyDeployments(monitoredApp.id)
 
+    expect(getRepositoryIdentityById).toHaveBeenCalledWith(12345)
+    expect(fetchWorkflowRunHeadSha).toHaveBeenCalledWith('navikt', 'app-a', 98765, 1, '12345')
     expect(ensureRepositoryRowForGithubRepo).toHaveBeenCalledWith({
       githubRepoId: '12345',
       githubOwner: 'navikt',
@@ -185,6 +187,36 @@ describe('materializeNaisApplyDeployments', () => {
         detectedGithubOwner: 'navikt',
         detectedGithubRepoName: 'old-app-a',
         detectedGithubRepositoryId: '12345',
+        triggerUrl: 'https://github.com/navikt/app-a/actions/runs/98765',
+      }),
+    )
+  })
+
+  it('resolves historical Apply claims by immutable ID when their old name has been reused', async () => {
+    const activity = makeActivity('activity-1', 'registry/image:sha1')
+    const claims = activity.gitHubActorClaims
+    if (!claims) throw new Error('Expected GitHub claims')
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([
+      { ...activity, gitHubActorClaims: { ...claims, repository: 'navikt/old-app-a' } },
+    ])
+    vi.mocked(getRepositoryIdentityById).mockResolvedValue({ id: 12345, owner: 'navikt', name: 'current-app-a' })
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(getRepositoryIdentityById).toHaveBeenCalledWith(12345)
+    expect(fetchWorkflowRunHeadSha).toHaveBeenCalledWith('navikt', 'current-app-a', 98765, 1, '12345')
+    expect(upsertNaisApplyRepository).toHaveBeenCalledWith({
+      monitoredAppId: monitoredApp.id,
+      githubOwner: 'navikt',
+      githubRepoName: 'current-app-a',
+      githubRepoId: '12345',
+    })
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detectedGithubOwner: 'navikt',
+        detectedGithubRepoName: 'old-app-a',
+        detectedGithubRepositoryId: '12345',
+        triggerUrl: 'https://github.com/navikt/current-app-a/actions/runs/98765',
       }),
     )
   })

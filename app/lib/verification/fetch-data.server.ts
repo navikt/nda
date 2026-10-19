@@ -8,7 +8,7 @@ import {
 import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
-import type { WorkflowRunResolution } from '~/lib/github/git.server'
+import { getRepositoryIdentityById, type WorkflowRunResolution } from '~/lib/github/git.server'
 import { buildBranchMismatch } from './branch-mismatch'
 import { fetchCommitChecks, getCachedCommitChecks } from './fetch-data/commit-checks.server'
 import { fetchCommitsBetween } from './fetch-data/commits-between.server'
@@ -28,13 +28,14 @@ export async function fetchVerificationData(
   commitSha: string,
   repository: string,
   environmentName: string,
-  baseBranch: string,
+  baseBranchInput: string,
   monitoredAppId: number,
   options?: FetchOptions,
   triggerUrl?: string | null,
   repositoryId?: number,
   resolvedWorkflowRun?: WorkflowRunResolution,
 ): Promise<VerificationInput> {
+  let baseBranch = baseBranchInput
   let [owner, repo] = repository.split('/')
   if (!owner || !repo) {
     throw new Error(`Invalid repository format: ${repository}`)
@@ -68,7 +69,22 @@ export async function fetchVerificationData(
     : 'unknown'
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
   const canonicalRepositoryId = githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null
-  if (deploymentRepositoryId != null && repoCheck.repository) {
+  if (deployment.deployment_source === 'nais_apply') {
+    const numericGithubRepoId = Number(githubRepoId)
+    const identity =
+      githubRepoId && Number.isSafeInteger(numericGithubRepoId)
+        ? await getRepositoryIdentityById(numericGithubRepoId)
+        : null
+    if (!identity || String(identity.id) !== githubRepoId) {
+      throw new Error(`Cannot resolve the GitHub repository for Nais Apply deployment ${deploymentId}`)
+    }
+    owner = identity.owner
+    repo = identity.name
+    if (!identity.defaultBranch) {
+      throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} without the GitHub default branch`)
+    }
+    baseBranch = identity.defaultBranch
+  } else if (deploymentRepositoryId != null && repoCheck.repository) {
     owner = repoCheck.effectiveOwner
     repo = repoCheck.effectiveRepo
   }

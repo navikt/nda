@@ -2,7 +2,16 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 vi.mock('~/db/repositories.server', () => ({
   getEffectiveSettingsForApp: vi.fn(),
+  getEffectiveSettingsForRepository: vi.fn(),
   getRepositoryIdByGithubRepoId: vi.fn().mockResolvedValue(123),
+}))
+
+const { mockGetRepositoryIdentityById } = vi.hoisted(() => ({
+  mockGetRepositoryIdentityById: vi.fn(),
+}))
+
+vi.mock('~/lib/github/git.server', () => ({
+  getRepositoryIdentityById: mockGetRepositoryIdentityById,
 }))
 
 vi.mock('~/db/monorepo.server', () => ({
@@ -58,7 +67,11 @@ vi.mock('~/lib/verification/verify', () => ({
 
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import {
   buildCommitsBetweenFromCache,
@@ -75,6 +88,7 @@ const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
 const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
+const mockGetEffectiveSettingsForRepository = getEffectiveSettingsForRepository as Mock
 const mockGetCanonicalRepositoryId = getRepositoryIdByGithubRepoId as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
 const mockFindPrForCommit = findPrForCommit as Mock
@@ -91,6 +105,12 @@ describe('reverifyDeployment cache base validation', () => {
       effectiveOwner: 'navikt',
       effectiveRepo: 'repo',
       isRedirected: false,
+    })
+    mockGetRepositoryIdentityById.mockResolvedValue({
+      id: 123,
+      owner: 'navikt',
+      name: 'repo',
+      defaultBranch: 'main',
     })
   })
 
@@ -308,6 +328,61 @@ describe('reverifyDeployment cache base validation', () => {
       oldStatus: 'approved',
       newStatus: 'approved',
     })
+  })
+
+  it('uses the current default branch for an Apply repository when reverifying cached data', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 15,
+          commit_sha: 'head789',
+          four_eyes_status: 'unverified_commits',
+          github_pr_number: null,
+          environment_name: 'prod-gcp',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'old-repo-name',
+          deployment_source: 'nais_apply',
+          repository_id: 7,
+          default_branch: 'master',
+          audit_start_year: 2026,
+        },
+      ],
+    })
+    mockGetEffectiveSettingsForRepository.mockResolvedValue({
+      repositoryId: 7,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head789',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({
+      prNumber: null,
+      mismatchedBaseBranches: [],
+      mismatchedPrNumbers: [],
+    })
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+    mockUpdateDeploymentVerification.mockResolvedValue(true)
+
+    await reverifyDeployment(15)
+
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledWith(123)
+    expect(mockGetCompareSnapshot).toHaveBeenCalledWith('navikt', 'repo', 'head789', null)
+    expect(mockBuildCommitsBetween).toHaveBeenCalledWith(
+      'navikt',
+      'repo',
+      'main',
+      { commits: [] },
+      {
+        cacheOnly: true,
+      },
+    )
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ baseBranch: 'main' }))
   })
 
   it('does not report prBackfilled when the deployment update affects zero rows (e.g. status became protected mid-flight)', async () => {

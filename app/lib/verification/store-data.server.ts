@@ -157,16 +157,17 @@ async function buildGithubPrDataFromSnapshotsForPr(
   deploymentId: number,
 ): Promise<ReturnType<typeof buildGithubPrDataFromSnapshots> | null> {
   const deploymentResult = await pool.query(
-    `SELECT detected_github_owner, detected_github_repo_name, github_pr_data FROM deployments WHERE id = $1`,
+    `SELECT CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_owner ELSE d.detected_github_owner END AS owner,
+            CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_repo_name ELSE d.detected_github_repo_name END AS repo,
+            d.github_pr_data
+     FROM deployments d
+     LEFT JOIN repositories r ON r.id = d.repository_id
+     WHERE d.id = $1`,
     [deploymentId],
   )
   if (deploymentResult.rows.length === 0) return null
 
-  const {
-    detected_github_owner: owner,
-    detected_github_repo_name: repo,
-    github_pr_data: existingPrData,
-  } = deploymentResult.rows[0]
+  const { owner, repo, github_pr_data: existingPrData } = deploymentResult.rows[0]
   if (!owner || !repo) return null
 
   const cachedPrData = await getCachedPrData(owner, repo, prNumber)

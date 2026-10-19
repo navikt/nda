@@ -6,6 +6,7 @@ const {
   getEffectiveSettingsForRepository,
   getEffectiveSettingsForApp,
   getRepositoryIdByGithubRepoId,
+  getRepositoryIdentityById,
   getBranchFromWorkflowRun,
   getSingleCommitMessage,
   isCommitOnBranch,
@@ -22,6 +23,7 @@ const {
   getEffectiveSettingsForRepository: vi.fn(),
   getEffectiveSettingsForApp: vi.fn(),
   getRepositoryIdByGithubRepoId: vi.fn(),
+  getRepositoryIdentityById: vi.fn(),
   getBranchFromWorkflowRun: vi.fn(),
   getSingleCommitMessage: vi.fn(),
   isCommitOnBranch: vi.fn(),
@@ -46,6 +48,7 @@ vi.mock('~/lib/github', () => ({
   getSingleCommitMessage,
   isCommitOnBranch,
 }))
+vi.mock('~/lib/github/git.server', () => ({ getRepositoryIdentityById }))
 vi.mock('~/lib/four-eyes-status', () => ({ APPROVED_STATUSES_SQL: "'approved'" }))
 vi.mock('../verification/fetch-data/previous-deployment.server', () => ({
   getPreviousDeployment,
@@ -82,6 +85,12 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
       implicitApprovalSettings: { mode: 'off' },
     })
     getRepositoryIdByGithubRepoId.mockResolvedValue(77)
+    getRepositoryIdentityById.mockResolvedValue({
+      id: 12345,
+      owner: 'navikt',
+      name: 'current-name',
+      defaultBranch: 'main',
+    })
     getEffectiveSettingsForApp.mockResolvedValue({
       auditStartYear: null,
       implicitApprovalSettings: { mode: 'off' },
@@ -138,6 +147,16 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
 
     expect(findRepositoryForApp).not.toHaveBeenCalled()
     expect(isCommitOnBranch).not.toHaveBeenCalled()
+  })
+
+  it('uses the GitHub default branch for the immutable Apply repository, not the caller app branch', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [{ deployment_source: 'nais_apply', repository_id: 77 }] })
+
+    await fetchVerificationData(100, 'a'.repeat(40), 'navikt/old-name', 'prod-gcp', 'wrong-app-branch', 7)
+
+    expect(getRepositoryIdentityById).toHaveBeenCalledWith(12345)
+    expect(isCommitOnBranch).toHaveBeenCalledWith('navikt', 'current-name', 'a'.repeat(40), 'main')
+    expect(fetchDeployedPrData).toHaveBeenCalledWith('navikt', 'current-name', 'a'.repeat(40), 'main', undefined)
   })
 
   it('scopes nearby verification evidence to the candidate deployment repository', async () => {

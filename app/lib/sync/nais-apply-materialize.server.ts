@@ -5,7 +5,7 @@ import { upsertNaisApplyDeployment } from '~/db/deployments.server'
 import { getMonitoredApplicationById, type MonitoredApplication } from '~/db/monitored-applications.server'
 import { getNaisApplyActivityEvents } from '~/db/nais-apply-activity.server'
 import { ensureRepositoryRowForGithubRepo, syncRepositoryDefaultBranch } from '~/db/repositories.server'
-import { fetchWorkflowRunHeadSha, getRepositoryIdentity } from '~/lib/github/git.server'
+import { fetchWorkflowRunHeadSha, getRepositoryIdentityById } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import type { NaisApplicationUpdatedActivity } from '~/lib/nais.server'
 import { syncDefaultBranchForApp } from './default-branch-sync.server'
@@ -108,9 +108,9 @@ function groupImageChanges(changes: ApplyImageChange[]): ApplyImageChange[][] {
 async function ensureApplyRepositoryLink(
   app: MonitoredApplication,
   claims: ActivityClaims,
+  identity: Awaited<ReturnType<typeof getRepositoryIdentityById>>,
 ): Promise<ApplyRepositoryLink | null> {
   const monitoredAppId = app.id
-  const identity = await getRepositoryIdentity(claims.owner, claims.repo)
   if (identity === null || String(identity.id) !== claims.repositoryId) {
     logger.warn('Nais Apply GitHub repository claim did not match the current repository identity', {
       monitoredAppId,
@@ -124,8 +124,8 @@ async function ensureApplyRepositoryLink(
 
   const repository = await upsertNaisApplyRepository({
     monitoredAppId,
-    githubOwner: claims.owner,
-    githubRepoName: claims.repo,
+    githubOwner: identity.owner,
+    githubRepoName: identity.name,
     githubRepoId: claims.repositoryId,
   })
   if (!repository) return null
@@ -206,6 +206,7 @@ export async function materializeNaisApplyDeployments(
   const groups = groupImageChanges(eligibleEvents.flatMap(getImageChanges))
   const resolvedRuns = new Map<string, Promise<string | null>>()
   const repositoryLinks = new Map<string, Promise<ApplyRepositoryLink | null>>()
+  const repositoryIdentities = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
   const ensuredRepositoryRows = new Set<string>()
 
   for (const group of groups) {
@@ -213,21 +214,29 @@ export async function materializeNaisApplyDeployments(
     const claims = representative.claims
     let commitSha: string | null = null
     let repositoryKey: string | undefined
+    let identity: Awaited<ReturnType<typeof getRepositoryIdentityById>> = null
 
     if (claims) {
+      let identityResolution = repositoryIdentities.get(claims.repositoryId)
+      if (!identityResolution) {
+        identityResolution = getRepositoryIdentityById(Number(claims.repositoryId))
+        repositoryIdentities.set(claims.repositoryId, identityResolution)
+      }
+      identity = await identityResolution
+
       const runKey = `${claims.repositoryId}:${claims.runId}:${claims.runAttempt}`
       let resolution = resolvedRuns.get(runKey)
-      if (!resolution) {
+      if (!resolution && identity && String(identity.id) === claims.repositoryId) {
         resolution = fetchWorkflowRunHeadSha(
-          claims.owner,
-          claims.repo,
+          identity.owner,
+          identity.name,
           claims.runId,
           claims.runAttempt,
           claims.repositoryId,
         )
         resolvedRuns.set(runKey, resolution)
       }
-      commitSha = await resolution
+      if (resolution) commitSha = await resolution
     }
 
     let repositoryLink: ApplyRepositoryLink | null = null
@@ -235,7 +244,7 @@ export async function materializeNaisApplyDeployments(
       repositoryKey = `${claims.repositoryId}:${claims.owner}/${claims.repo}`
       let link = repositoryLinks.get(repositoryKey)
       if (!link) {
-        link = ensureApplyRepositoryLink(latestApp, claims)
+        link = ensureApplyRepositoryLink(latestApp, claims, identity)
         repositoryLinks.set(repositoryKey, link)
       }
       repositoryLink = await link
@@ -268,7 +277,9 @@ export async function materializeNaisApplyDeployments(
       suppressNotifications: options.suppressNotifications,
       deployerUsername: claims?.actor || representative.activity.actor || null,
       commitSha,
-      triggerUrl: claims ? `https://github.com/${claims.owner}/${claims.repo}/actions/runs/${claims.runId}` : null,
+      triggerUrl: claims
+        ? `https://github.com/${identity?.owner ?? claims.owner}/${identity?.name ?? claims.repo}/actions/runs/${claims.runId}`
+        : null,
       detectedGithubOwner: claims?.owner ?? null,
       detectedGithubRepoName: claims?.repo ?? null,
       detectedGithubRepositoryId:
