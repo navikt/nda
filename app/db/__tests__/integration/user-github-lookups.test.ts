@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -18,6 +19,7 @@ vi.mock('~/lib/slack/client.server', () => ({
 
 import { isSlackConfigured, lookupSlackUserIdByEmail, SlackLookupFailedError } from '~/lib/slack/client.server'
 import { getUsersByNavIdenter } from '~/lib/user-lookup.server'
+import { restoreGithubAccountLink } from '../../soft-deleted.server'
 import {
   getActiveGithubAccountByNavIdent,
   getAllUsersWithAccounts,
@@ -29,6 +31,9 @@ import {
   getUserBySlackMemberId,
   getUsersByIdentifiers,
   populateUsersFromDirectory,
+  softDeleteGithubAccount,
+  upsertUser,
+  upsertUserAndGithubAccount,
 } from '../../user-github-lookups.server'
 import { seedApp, seedDeployment, truncateAllTables } from './helpers'
 
@@ -133,6 +138,208 @@ describe('getGithubUserLookups', () => {
     expect(result.size).toBe(1)
     expect(result.has('GladFjord')).toBe(true)
     expect(result.has('unknown-user')).toBe(false)
+  })
+})
+
+describe('identity versions', () => {
+  beforeEach(async () => {
+    await truncateAllTables(pool)
+    await seedAccount('GladFjord', 'Z990001')
+  })
+
+  async function versions() {
+    const lookup = await getGithubUserLookup('GladFjord')
+    expect(lookup).not.toBeNull()
+    return {
+      account: lookup?.account_identity_version,
+      user: lookup?.user_identity_version,
+    }
+  }
+
+  it('backfills unique versions for existing users and accounts without changing their data', async () => {
+    await seedAccount('RaskElv', 'Z990002', { deleted: true })
+    await pool.query(`UPDATE users SET deleted_at = NOW() WHERE nav_ident = 'Z990002'`)
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query(`
+        DROP TRIGGER users_identity_version ON users;
+        DROP TRIGGER github_accounts_identity_version ON user_github_accounts;
+        DROP FUNCTION assign_user_identity_version();
+        DROP FUNCTION assign_github_account_identity_version();
+        ALTER TABLE users DROP COLUMN identity_version;
+        ALTER TABLE user_github_accounts DROP COLUMN identity_version;
+        DROP SEQUENCE identity_version_sequence;
+      `)
+      const usersBefore = await client.query('SELECT to_jsonb(u) AS data FROM users u ORDER BY nav_ident')
+      const accountsBefore = await client.query(
+        'SELECT to_jsonb(a) AS data FROM user_github_accounts a ORDER BY github_username',
+      )
+      await client.query(readFileSync('app/db/migrations/1792388760000_add-identity-versions.sql', 'utf8'))
+      expect(
+        (await client.query("SELECT to_jsonb(u) - 'identity_version' AS data FROM users u ORDER BY nav_ident")).rows,
+      ).toEqual(usersBefore.rows)
+      expect(
+        (
+          await client.query(
+            "SELECT to_jsonb(a) - 'identity_version' AS data FROM user_github_accounts a ORDER BY github_username",
+          )
+        ).rows,
+      ).toEqual(accountsBefore.rows)
+      const { rows } = await client.query<{ identity_version: string }>(
+        `SELECT identity_version::text FROM users
+         UNION ALL SELECT identity_version::text FROM user_github_accounts`,
+      )
+      expect(rows).toHaveLength(4)
+      for (const row of rows) {
+        expect(row.identity_version).toMatch(/^[1-9]\d*$/)
+      }
+      expect(new Set(rows.map((row) => row.identity_version)).size).toBe(rows.length)
+      const { rows: columns } = await client.query<{ is_nullable: string }>(
+        `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name IN ('users', 'user_github_accounts')
+           AND column_name = 'identity_version'`,
+      )
+      expect(columns).toHaveLength(2)
+      expect(columns.every((column) => column.is_nullable === 'NO')).toBe(true)
+    } finally {
+      try {
+        await client.query('ROLLBACK')
+      } finally {
+        client.release()
+      }
+    }
+  })
+
+  it('exposes the same versions through single and batch lookups', async () => {
+    const single = await getGithubUserLookup('GladFjord')
+    const batch = (await getGithubUserLookups(['GladFjord'])).get('GladFjord')
+    expect(single?.account_identity_version).toMatch(/^\d+$/)
+    expect(single?.user_identity_version).toMatch(/^\d+$/)
+    expect(batch?.account_identity_version).toBe(single?.account_identity_version)
+    expect(batch?.user_identity_version).toBe(single?.user_identity_version)
+  })
+
+  it('preserves versions for profile updates and ignores caller-supplied versions', async () => {
+    const before = await versions()
+    await pool.query(
+      `UPDATE users SET display_name = 'Rask Elv', slack_member_id = 'slack-test',
+       updated_at = NOW(), identity_version = 0 WHERE nav_ident = 'Z990001'`,
+    )
+    await pool.query(
+      `UPDATE user_github_accounts SET display_github_username = 'gladfjord',
+       updated_at = NOW(), identity_version = 0 WHERE github_username = 'gladfjord'`,
+    )
+    expect(await versions()).toEqual(before)
+  })
+
+  it('changes account version for A to B to A without restoring the original version', async () => {
+    await pool.query(`INSERT INTO users (nav_ident, display_name) VALUES ('Z990002', 'Rask Elv')`)
+    const before = await versions()
+    await pool.query(`UPDATE user_github_accounts SET nav_ident = 'Z990002' WHERE github_username = 'gladfjord'`)
+    const changed = await versions()
+    await pool.query(`UPDATE user_github_accounts SET nav_ident = 'Z990001' WHERE github_username = 'gladfjord'`)
+    const restored = await versions()
+    expect(changed.account).not.toBe(before.account)
+    expect(restored.account).not.toBe(changed.account)
+    expect(restored.account).not.toBe(before.account)
+    expect(restored.user).toBe(before.user)
+  })
+
+  it('changes account version on deletion and restoration', async () => {
+    const before = await versions()
+    await softDeleteGithubAccount('GladFjord')
+    const deleted = await versions()
+    await upsertUserAndGithubAccount({ githubUsername: 'GladFjord', navIdent: 'Z990001' })
+    const restored = await versions()
+    expect(deleted.account).not.toBe(before.account)
+    expect(restored.account).not.toBe(deleted.account)
+    expect(restored.account).not.toBe(before.account)
+    expect(restored.user).toBe(before.user)
+  })
+
+  it('assigns a new account version when restored through the admin function', async () => {
+    const before = await versions()
+    expect(await softDeleteGithubAccount('GladFjord')).toBe(true)
+    const deleted = await versions()
+
+    expect(await restoreGithubAccountLink('GladFjord')).toBe(true)
+    const restored = await versions()
+
+    expect(deleted.account).not.toBe(before.account)
+    expect(restored.account).not.toBe(deleted.account)
+    expect(restored.account).not.toBe(before.account)
+    expect(restored.user).toBe(before.user)
+    expect((await getGithubUserLookup('GladFjord'))?.account_deleted_at).toBeNull()
+    expect(await restoreGithubAccountLink('GladFjord')).toBe(false)
+    expect(await versions()).toEqual(restored)
+  })
+
+  it('changes user version on deletion and restoration without changing the account version', async () => {
+    const before = await versions()
+    await pool.query(`UPDATE users SET deleted_at = NOW() WHERE nav_ident = 'Z990001'`)
+    const deleted = await versions()
+    expect(deleted.user).toBeNull()
+    const { rows } = await pool.query<{ identity_version: string }>(
+      `SELECT identity_version::text FROM users WHERE nav_ident = 'Z990001'`,
+    )
+    expect(rows[0].identity_version).not.toBe(before.user)
+    await upsertUser({ navIdent: 'Z990001', displayName: 'Glad Fjord' })
+    const restored = await versions()
+    expect(restored.user).not.toBe(before.user)
+    expect(restored.user).not.toBe(rows[0].identity_version)
+    expect(restored.account).toBe(before.account)
+  })
+
+  it('assigns a new account version after physical deletion and recreation', async () => {
+    const before = await versions()
+    await pool.query(`DELETE FROM user_github_accounts WHERE github_username = 'gladfjord'`)
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident, identity_version)
+       VALUES ('gladfjord', 'Z990001', $1)`,
+      [before.account],
+    )
+    expect((await versions()).account).not.toBe(before.account)
+  })
+
+  it('assigns new versions to a physically recreated user and account', async () => {
+    const before = await versions()
+    await pool.query(`DELETE FROM user_github_accounts WHERE github_username = 'gladfjord'`)
+    await pool.query(`DELETE FROM users WHERE nav_ident = 'Z990001'`)
+    await seedAccount('GladFjord', 'Z990001')
+    const recreated = await versions()
+    expect(recreated.account).not.toBe(before.account)
+    expect(recreated.user).not.toBe(before.user)
+  })
+
+  it('preserves versions on an upsert that leaves the identity unchanged', async () => {
+    const before = await versions()
+    await pool.query(
+      `INSERT INTO user_github_accounts (github_username, nav_ident)
+       VALUES ('gladfjord', 'Z990001')
+       ON CONFLICT (github_username) DO UPDATE SET nav_ident = EXCLUDED.nav_ident, updated_at = NOW()`,
+    )
+    expect(await versions()).toEqual(before)
+  })
+
+  it('changes account version through production upserts without changing the user version', async () => {
+    const before = await versions()
+    await upsertUserAndGithubAccount({
+      githubUsername: 'GladFjord',
+      navIdent: 'Z990002',
+      displayName: 'Rask Elv',
+    })
+    const changed = await versions()
+    await upsertUserAndGithubAccount({
+      githubUsername: 'GladFjord',
+      navIdent: 'Z990001',
+      displayName: 'Glad Fjord',
+    })
+    const restored = await versions()
+    expect(changed.account).not.toBe(before.account)
+    expect(restored.account).not.toBe(changed.account)
+    expect(restored.account).not.toBe(before.account)
+    expect(restored.user).toBe(before.user)
   })
 })
 
