@@ -212,6 +212,7 @@ export async function materializeNaisApplyDeployments(
     const representative = group[0]
     const claims = representative.claims
     let commitSha: string | null = null
+    let repositoryKey: string | undefined
 
     if (claims) {
       const runKey = `${claims.repositoryId}:${claims.runId}:${claims.runAttempt}`
@@ -231,7 +232,7 @@ export async function materializeNaisApplyDeployments(
 
     let repositoryLink: ApplyRepositoryLink | null = null
     if (claims) {
-      const repositoryKey = `${claims.repositoryId}:${claims.owner}/${claims.repo}`
+      repositoryKey = `${claims.repositoryId}:${claims.owner}/${claims.repo}`
       let link = repositoryLinks.get(repositoryKey)
       if (!link) {
         link = ensureApplyRepositoryLink(latestApp, claims)
@@ -244,14 +245,15 @@ export async function materializeNaisApplyDeployments(
       repositoryLink &&
       (repositoryLink.status === 'active' || repositoryLink.status === 'historical') &&
       claims &&
-      !ensuredRepositoryRows.has(claims.repositoryId)
+      repositoryKey !== undefined &&
+      !ensuredRepositoryRows.has(repositoryKey)
     ) {
       await ensureRepositoryRowForGithubRepo({
         githubRepoId: claims.repositoryId,
         githubOwner: repositoryLink.canonicalGithubOwner,
         githubRepoName: repositoryLink.canonicalGithubRepoName,
       })
-      ensuredRepositoryRows.add(claims.repositoryId)
+      ensuredRepositoryRows.add(repositoryKey)
     }
 
     const firstChange = group.reduce((earliest, change) => (change.createdAt < earliest.createdAt ? change : earliest))

@@ -59,7 +59,7 @@ import { fetchVerificationData } from '../verification/fetch-data.server'
 describe('fetchVerificationData for renamed Apply repositories', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    poolQuery.mockResolvedValue({ rows: [{ repository_id: 77 }] })
+    poolQuery.mockResolvedValue({ rows: [{ deployment_source: 'nais_deployment', repository_id: 77 }] })
     findRepositoryForApp.mockResolvedValue({
       repository: {
         github_repo_id: '12345',
@@ -107,6 +107,17 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
     })
   })
 
+  it('rejects Apply verification without a stored repository ID even when a caller supplies one', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [{ deployment_source: 'nais_apply', repository_id: null }] })
+
+    await expect(
+      fetchVerificationData(100, 'a'.repeat(40), 'navikt/old-name', 'prod-gcp', 'main', 7, undefined, undefined, 77),
+    ).rejects.toThrow('without an immutable repository association')
+
+    expect(findRepositoryForApp).not.toHaveBeenCalled()
+    expect(isCommitOnBranch).not.toHaveBeenCalled()
+  })
+
   it('scopes nearby verification evidence to the candidate deployment repository', async () => {
     getPreviousDeployment.mockResolvedValue({
       id: 99,
@@ -121,15 +132,18 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
       compareSummary: { noDiffDetected: false },
       derivedFromRaw: false,
     })
+    poolQuery.mockResolvedValueOnce({
+      rows: [{ deployment_source: 'nais_deployment', repository_id: 77 }],
+    })
     poolQuery.mockResolvedValue({ rows: [] })
 
     await fetchVerificationData(100, 'a'.repeat(40), 'navikt/old-name', 'prod-gcp', 'main', 7, undefined, undefined, 77)
 
-    expect(poolQuery).toHaveBeenCalledTimes(2)
-    expect(poolQuery.mock.calls[0][0]).toContain(
+    expect(poolQuery).toHaveBeenCalledTimes(3)
+    expect(poolQuery.mock.calls[1][0]).toContain(
       'd.repository_id = (SELECT id FROM repositories WHERE github_repo_id = $3)',
     )
-    expect(poolQuery.mock.calls[1][0]).toContain(
+    expect(poolQuery.mock.calls[2][0]).toContain(
       'd.repository_id = (SELECT id FROM repositories WHERE github_repo_id = $2)',
     )
   })

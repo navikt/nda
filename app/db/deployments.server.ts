@@ -763,7 +763,7 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
          AND upserted.repository_id IS NOT NULL
          AND upserted.commit_sha IS NOT NULL
          AND d.monitored_app_id != upserted.monitored_app_id
-         AND d.repository_id = upserted.repository_id
+         AND ${repositoryDeploymentSql('upserted.repository_id')}
          AND d.commit_sha = upserted.commit_sha
          AND d.four_eyes_status = 'verified_via_sibling'
        RETURNING d.id

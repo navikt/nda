@@ -189,6 +189,48 @@ describe('materializeNaisApplyDeployments', () => {
     )
   })
 
+  it('re-canonicalizes each claimed alias of the same repository ID', async () => {
+    const firstActivity = makeActivity('activity-1', 'registry/image:sha1')
+    const firstClaims = firstActivity.gitHubActorClaims
+    if (!firstClaims) throw new Error('Expected GitHub claims')
+    const secondActivity = makeActivity('activity-2', 'registry/image:sha2', {
+      gitHubActorClaims: {
+        ...firstClaims,
+        repository: 'navikt/current-app-a',
+        checkRunID: '554434',
+      },
+    })
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([
+      {
+        ...firstActivity,
+        gitHubActorClaims: { ...firstClaims, repository: 'navikt/old-app-a' },
+      },
+      secondActivity,
+    ])
+    vi.mocked(getRepositoriesByAppId).mockResolvedValue([
+      {
+        github_owner: 'navikt',
+        github_repo_name: 'old-app-a',
+        github_repo_id: '12345',
+        status: 'active',
+      } as never,
+    ])
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(ensureRepositoryRowForGithubRepo).toHaveBeenCalledTimes(2)
+    expect(ensureRepositoryRowForGithubRepo).toHaveBeenNthCalledWith(1, {
+      githubRepoId: '12345',
+      githubOwner: 'navikt',
+      githubRepoName: 'app-a',
+    })
+    expect(ensureRepositoryRowForGithubRepo).toHaveBeenNthCalledWith(2, {
+      githubRepoId: '12345',
+      githubOwner: 'navikt',
+      githubRepoName: 'app-a',
+    })
+  })
+
   it('does not sync default branch for an older active repository link', async () => {
     vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:sha1')])
     vi.mocked(upsertNaisApplyRepository).mockResolvedValue({

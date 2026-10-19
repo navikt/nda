@@ -36,14 +36,22 @@ export async function fetchVerificationData(
     throw new Error(`Invalid repository format: ${repository}`)
   }
 
+  const deploymentResult = await pool.query<{
+    deployment_source: string
+    repository_id: number | null
+  }>('SELECT deployment_source, repository_id FROM deployments WHERE id = $1', [deploymentId])
+  const deployment = deploymentResult.rows[0]
+  if (!deployment) {
+    throw new Error(`Deployment ${deploymentId} not found`)
+  }
+  if (deployment.deployment_source === 'nais_apply' && deployment.repository_id === null) {
+    throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} without an immutable repository association`)
+  }
+
   const deploymentRepositoryId =
-    repositoryId ??
-    (
-      await pool.query<{ repository_id: number | null }>('SELECT repository_id FROM deployments WHERE id = $1', [
-        deploymentId,
-      ])
-    ).rows[0]?.repository_id ??
-    undefined
+    (deployment.deployment_source === 'nais_apply'
+      ? deployment.repository_id
+      : (repositoryId ?? deployment.repository_id)) ?? undefined
 
   const appSettings =
     deploymentRepositoryId != null

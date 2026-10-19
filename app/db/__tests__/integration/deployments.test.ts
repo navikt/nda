@@ -9,6 +9,7 @@ import {
 } from '~/db/deployments.server'
 import { propagateVerificationToSiblings } from '~/db/monorepo.server'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
+import { fetchVerificationData } from '~/lib/verification/fetch-data.server'
 import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 let pool: Pool
@@ -282,6 +283,11 @@ describe('deployment queries', () => {
   it('requeues sibling approvals when a delayed Apply delivery moves its approved root earlier', async () => {
     const rootAppId = await seedApp(pool, { teamSlug: 'team-1', appName: 'root-app', environment: 'prod-gcp' })
     const siblingAppId = await seedApp(pool, { teamSlug: 'team-1', appName: 'sibling-app', environment: 'prod-gcp' })
+    const legacySiblingAppId = await seedApp(pool, {
+      teamSlug: 'team-1',
+      appName: 'legacy-sibling-app',
+      environment: 'prod-gcp',
+    })
     const unrelatedAppId = await seedApp(pool, {
       teamSlug: 'team-1',
       appName: 'unrelated-app',
@@ -294,7 +300,7 @@ describe('deployment queries', () => {
       githubOwner: 'navikt',
       githubRepoName: 'unrelated-app',
     })
-    for (const monitoredAppId of [rootAppId, siblingAppId]) {
+    for (const monitoredAppId of [rootAppId, siblingAppId, legacySiblingAppId]) {
       await seedApplicationRepository(pool, {
         monitoredAppId,
         githubOwner: repositoryOptions.githubOwner,
@@ -337,6 +343,16 @@ describe('deployment queries', () => {
       githubOwner: repositoryOptions.githubOwner,
       githubRepo: repositoryOptions.githubRepoName,
     })
+    const legacySiblingId = await seedDeployment(pool, {
+      monitoredAppId: legacySiblingAppId,
+      teamSlug: 'team-1',
+      environment: 'prod-gcp',
+      commitSha: params.commitSha,
+      createdAt: new Date('2026-10-15T11:00:00Z'),
+      fourEyesStatus: 'verified_via_sibling',
+      githubOwner: repositoryOptions.githubOwner,
+      githubRepo: repositoryOptions.githubRepoName,
+    })
     const unrelatedSiblingId = await seedDeployment(pool, {
       monitoredAppId: unrelatedAppId,
       teamSlug: 'team-1',
@@ -367,7 +383,7 @@ describe('deployment queries', () => {
          ON h.deployment_id = d.id AND h.change_source = 'nais_apply_timestamp_correction'
        WHERE d.id = ANY($1::int[])
        ORDER BY d.id`,
-      [[root.id, siblingId, unrelatedSiblingId]],
+      [[root.id, siblingId, legacySiblingId, unrelatedSiblingId]],
     )
     expect(rows).toEqual([
       {
@@ -385,6 +401,13 @@ describe('deployment queries', () => {
         change_source: 'nais_apply_timestamp_correction',
       },
       {
+        id: legacySiblingId,
+        four_eyes_status: 'pending',
+        from_status: 'verified_via_sibling',
+        to_status: 'pending',
+        change_source: 'nais_apply_timestamp_correction',
+      },
+      {
         id: unrelatedSiblingId,
         four_eyes_status: 'verified_via_sibling',
         from_status: null,
@@ -392,6 +415,41 @@ describe('deployment queries', () => {
         change_source: null,
       },
     ])
+  })
+
+  it('rejects verification of an Apply deployment with no stored repository association', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod-gcp',
+      commitSha: 'd'.repeat(40),
+      githubOwner: 'navikt',
+      githubRepo: 'my-app',
+    })
+    await pool.query(
+      `UPDATE deployments
+       SET nais_deployment_id = NULL,
+           deployment_source = 'nais_apply',
+           deployment_source_id = 'nais-apply:unassociated',
+           repository_id = NULL
+       WHERE id = $1`,
+      [deploymentId],
+    )
+
+    await expect(
+      fetchVerificationData(
+        deploymentId,
+        'd'.repeat(40),
+        'navikt/my-app',
+        'prod-gcp',
+        'main',
+        appId,
+        undefined,
+        undefined,
+        123,
+      ),
+    ).rejects.toThrow('without an immutable repository association')
   })
 
   it('preserves manually approved Apply deliveries when delayed activity moves them earlier', async () => {

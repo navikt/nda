@@ -510,7 +510,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     `SELECT
        d.id, d.commit_sha, d.four_eyes_status,
        d.github_pr_number, d.environment_name, d.monitored_app_id,
-       d.detected_github_owner, d.detected_github_repo_name, d.repository_id,
+       d.detected_github_owner, d.detected_github_repo_name, d.repository_id, d.deployment_source,
        ${effectiveDefaultBranchSql('ma')} AS default_branch,
        ${effectiveAuditStartYearSql('ma')} AS audit_start_year
      FROM deployments d
@@ -525,6 +525,10 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   }
 
   const dep = row.rows[0]
+
+  if (dep.deployment_source === 'nais_apply' && dep.repository_id == null) {
+    return null
+  }
 
   if (isProtectedStatus(dep.four_eyes_status ?? '')) {
     return null
