@@ -232,7 +232,12 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   repositoryId: number,
   deliveries: Array<{ id: number; base_sha: string; head_sha: string }>,
 ): Promise<
-  Array<{ deliveryId: number; assessment: RepositoryDeliveryIntervalAssessment; pullRequestNumbers: number[] }>
+  Array<{
+    deliveryId: number
+    assessment: RepositoryDeliveryIntervalAssessment
+    pullRequestNumbers: number[]
+    evidence: Parameters<typeof assessRepositoryDeliveryInterval>[0]
+  }>
 > {
   if (deliveries.length === 0) return []
 
@@ -340,17 +345,19 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
     const associatedPullRequestsByCommit = Object.fromEntries(
       (compare?.commits ?? []).map((commit) => [commit.sha, associatedPullRequestsBySha.get(commit.sha)]),
     )
-    const assessment = assessRepositoryDeliveryInterval({
+    const evidence = {
       compare,
       defaultBranch: repository.default_branch,
       implicitApprovalMode,
       associatedPullRequestsByCommit,
       pullRequestsByNumber,
-    })
+    }
+    const assessment = assessRepositoryDeliveryInterval(evidence)
     return {
       deliveryId: delivery.id,
       assessment,
       pullRequestNumbers,
+      evidence,
     }
   })
 }
@@ -360,7 +367,12 @@ export async function getRepositoryCodeDeliveryIntervalAssessments(
   deliveries: Array<{ id: number; base_sha: string; head_sha: string }>,
   client?: Pick<PoolClient, 'query'>,
 ): Promise<
-  Array<{ deliveryId: number; assessment: RepositoryDeliveryIntervalAssessment; pullRequestNumbers: number[] }>
+  Array<{
+    deliveryId: number
+    assessment: RepositoryDeliveryIntervalAssessment
+    pullRequestNumbers: number[]
+    evidence: Parameters<typeof assessRepositoryDeliveryInterval>[0]
+  }>
 > {
   if (deliveries.length === 0) return []
   if (client) return getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(client, repositoryId, deliveries)

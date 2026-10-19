@@ -29,6 +29,7 @@ import {
   isTeamMember,
   resolveAppCapabilities,
   resolveDeploymentCapabilities,
+  resolveRepositoryApprovalCapabilities,
   resolveSectionCapabilities,
   resolveTeamAdminCapabilities,
 } from '~/lib/authorization.server'
@@ -689,6 +690,118 @@ describe('canAccessRepositorySettingsAdmin', () => {
     await assignTeamRole(tl.navIdent, teamId, 'tech_lead', 'admin')
 
     expect(await canAccessRepositorySettingsAdmin(tl, appA)).toBe(true)
+  })
+})
+
+describe('resolveRepositoryApprovalCapabilities', () => {
+  async function setupApprovalAccess() {
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '9001',
+      githubOwner: 'navikt',
+      githubRepoName: 'approval-repo',
+    })
+    const appId = await seedApp(pool, {
+      teamSlug: 'approval-team',
+      appName: 'approval-app',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'approval-repo',
+      githubRepoId: '9001',
+    })
+    const sectionId = await seedSection(pool, 'approval-section')
+    const teamId = await seedDevTeam(pool, 'approval-dev-team', 'Approval Team', sectionId)
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+    return { repositoryId, appId, teamId, sectionId }
+  }
+
+  it.each(['utvikler', 'produktleder', 'tech_lead'] as const)('allows %s from one managing team', async (role) => {
+    const { repositoryId, teamId } = await setupApprovalAccess()
+    const actor = makeUser('Z990001')
+    await assignTeamRole(actor.navIdent, teamId, role, 'Z990002')
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: true })
+    expect(await canAccessRepositoryAdmin(actor, repositoryId)).toBe(role !== 'utvikler')
+  })
+
+  it.each(['app', 'team', 'role', 'link', 'team_link'] as const)(
+    'denies inactive or deleted %s access',
+    async (kind) => {
+      const { repositoryId, appId, teamId } = await setupApprovalAccess()
+      const actor = makeUser('Z990001')
+      await assignTeamRole(actor.navIdent, teamId, 'utvikler', 'Z990002')
+      if (kind === 'app') await pool.query('UPDATE monitored_applications SET is_active = false WHERE id = $1', [appId])
+      if (kind === 'team') await pool.query('UPDATE dev_teams SET is_active = false WHERE id = $1', [teamId])
+      if (kind === 'role')
+        await pool.query('UPDATE dev_team_role_assignments SET deleted_at = NOW() WHERE dev_team_id = $1', [teamId])
+      if (kind === 'link')
+        await pool.query('UPDATE application_repositories SET status = $1 WHERE monitored_app_id = $2', [
+          'historical',
+          appId,
+        ])
+      if (kind === 'team_link')
+        await pool.query('UPDATE dev_team_applications SET deleted_at = NOW() WHERE dev_team_id = $1', [teamId])
+      expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: false })
+    },
+  )
+
+  it('allows Nais-team management and denies unrelated users and repositories', async () => {
+    const { repositoryId, teamId } = await setupApprovalAccess()
+    await pool.query('DELETE FROM dev_team_applications WHERE dev_team_id = $1', [teamId])
+    await pool.query(`INSERT INTO dev_team_nais_teams (dev_team_id, nais_team_slug) VALUES ($1, 'approval-team')`, [
+      teamId,
+    ])
+    const actor = makeUser('Z990001')
+    await assignTeamRole(actor.navIdent, teamId, 'utvikler', 'Z990002')
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: true })
+    expect(await resolveRepositoryApprovalCapabilities(makeUser('Z990003'), repositoryId)).toEqual({
+      canApprove: false,
+    })
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId + 1)).toEqual({ canApprove: false })
+    expect(await resolveRepositoryApprovalCapabilities(makeAdmin('Z990002'), repositoryId)).toEqual({
+      canApprove: true,
+    })
+    await pool.query('UPDATE dev_team_nais_teams SET deleted_at = NOW() WHERE dev_team_id = $1', [teamId])
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: false })
+  })
+
+  it('does not grant approval through section roles or a superseded active repository link', async () => {
+    const { repositoryId, appId, teamId, sectionId } = await setupApprovalAccess()
+    const actor = makeUser('Z990001')
+    await assignSectionRole(actor.navIdent, sectionId, 'seksjonsleder', 'Z990002')
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: false })
+    await assignTeamRole(actor.navIdent, teamId, 'utvikler', 'Z990002')
+    await seedRepository(pool, { githubRepoId: '9002', githubOwner: 'navikt', githubRepoName: 'other-repo' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'other-repo',
+      githubRepoId: '9002',
+    })
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: false })
+  })
+
+  it('requires access to only one active app without granting repository admin access', async () => {
+    const { repositoryId, teamId } = await setupApprovalAccess()
+    const otherAppId = await seedApp(pool, {
+      teamSlug: 'other-team',
+      appName: 'other-app',
+      environment: 'prod-gcp',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: otherAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'approval-repo',
+      githubRepoId: '9001',
+    })
+    const actor = makeUser('Z990001')
+    await assignTeamRole(actor.navIdent, teamId, 'tech_lead', 'Z990002')
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: true })
+    expect(await canAccessRepositoryAdmin(actor, repositoryId)).toBe(false)
   })
 })
 

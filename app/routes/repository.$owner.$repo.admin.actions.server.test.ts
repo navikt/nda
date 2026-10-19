@@ -456,6 +456,14 @@ describe('repository admin actions - authorization', () => {
       expect(result).toEqual({ error: 'Registreringen må være på for å starte på nytt' })
     })
 
+    it('explains why stored approval snapshots prevent restarting', async () => {
+      mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'has_approval_snapshots' })
+      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+      expect(result).toEqual({
+        error: 'Registreringen kan ikke startes på nytt fordi repositoryet har lagrede godkjenningsgrunnlag',
+      })
+    })
+
     it('refuses when the actor lacks admin access', async () => {
       mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'unauthorized' })
 
