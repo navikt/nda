@@ -1,7 +1,10 @@
-import { Accordion, BodyShort, Heading, Table, Tag, VStack } from '@navikt/ds-react'
+import { Accordion, BodyShort, Button, Heading, Table, Tag, Textarea, VStack } from '@navikt/ds-react'
+import { useFetcher } from 'react-router'
+import { ActionAlert } from '~/components/ActionAlert'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
+import { isDocumentationUrl } from '~/lib/repository-manual-approval'
 
 export interface ManualApprovalHistoryEntry {
   id: number
@@ -9,6 +12,8 @@ export interface ManualApprovalHistoryEntry {
   registeredBy: string
   reviewedAt: Date | string
   registeredAt: Date | string
+  reviewDocumentation?: string | null
+  documentationUrl?: string | null
   baseSha: string
   headSha: string
   commits: Array<{
@@ -25,12 +30,37 @@ export interface ManualApprovalHistoryEntry {
   }>
 }
 
+function RevokeApproval({ approvalId, revoked }: { approvalId: number; revoked: boolean }) {
+  const fetcher = useFetcher()
+  return (
+    <VStack gap="space-12">
+      <ActionAlert data={fetcher.data} />
+      {!revoked && (
+        <fetcher.Form method="post">
+          <VStack gap="space-12">
+            <input type="hidden" name="intent" value="revoke-approval" />
+            <input type="hidden" name="approvalId" value={approvalId} />
+            <Textarea name="reason" label="Begrunnelse for tilbakekalling" aria-required />
+            <Button type="submit" variant="secondary" data-color="danger" loading={fetcher.state !== 'idle'}>
+              Tilbakekall godkjenningen
+            </Button>
+          </VStack>
+        </fetcher.Form>
+      )}
+    </VStack>
+  )
+}
+
 export function RepositoryManualApprovalHistory({
   repository,
   entries,
+  canRevoke = false,
+  firstDeployedAt,
 }: {
   repository: { githubOwner: string; githubRepoName: string }
   entries: ManualApprovalHistoryEntry[]
+  canRevoke?: boolean
+  firstDeployedAt?: Date | string | null
 }) {
   return (
     <section aria-labelledby="manual-approval-history-heading">
@@ -50,12 +80,32 @@ export function RepositoryManualApprovalHistory({
             <Accordion.Item key={entry.id}>
               <Accordion.Header>
                 Gjennomgått av {entry.reviewer} · {formatAuditLogTimestamp(entry.reviewedAt)}
+                {firstDeployedAt &&
+                  new Date(entry.reviewedAt).getTime() > new Date(firstDeployedAt).getTime() &&
+                  ' · Etterfølgende godkjenning'}
               </Accordion.Header>
               <Accordion.Content>
                 <VStack gap="space-16">
                   <BodyShort size="small">
                     Registrert av {entry.registeredBy} · {formatAuditLogTimestamp(entry.registeredAt)}
                   </BodyShort>
+                  {firstDeployedAt && new Date(entry.registeredAt).getTime() > new Date(firstDeployedAt).getTime() && (
+                    <Tag variant="outline" data-color="warning">
+                      Registrert etter første deploy
+                    </Tag>
+                  )}
+                  {firstDeployedAt && new Date(entry.reviewedAt).getTime() > new Date(firstDeployedAt).getTime() && (
+                    <Tag variant="outline" data-color="warning">
+                      Etterfølgende godkjenning – ikke godkjent ved første deploy
+                    </Tag>
+                  )}
+                  <BodyShort size="small">
+                    Hva som er gjennomgått:{' '}
+                    {entry.reviewDocumentation ?? 'Ikke dokumentert i den gamle registreringen.'}
+                  </BodyShort>
+                  {entry.documentationUrl && isDocumentationUrl(entry.documentationUrl) && (
+                    <ExternalLink href={entry.documentationUrl}>Ytterligere dokumentasjon</ExternalLink>
+                  )}
                   <BodyShort size="small">
                     Lagret intervall: <code>{entry.baseSha}</code> → <code>{entry.headSha}</code>
                   </BodyShort>
@@ -111,6 +161,12 @@ export function RepositoryManualApprovalHistory({
                       {event.reason ? ` · Begrunnelse: ${event.reason}` : ''}
                     </BodyShort>
                   ))}
+                  {canRevoke && (
+                    <RevokeApproval
+                      approvalId={entry.id}
+                      revoked={entry.events.some((event) => event.type === 'revoked')}
+                    />
+                  )}
                 </VStack>
               </Accordion.Content>
             </Accordion.Item>

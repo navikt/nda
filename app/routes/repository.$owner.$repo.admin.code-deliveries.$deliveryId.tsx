@@ -4,12 +4,15 @@ import { getRepositoryCodeDeliveryEvidence } from '~/db/repository-code-delivery
 import { getRepositoryManualApprovalHistoryForAdmin } from '~/db/repository-manual-approvals.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
-import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
+import { resolveRepositoryApprovalCapabilities } from '~/lib/authorization.server'
+import { presentRepositoryApprovalHistory } from '~/lib/repository-approval-history.server'
 import { assessRepositoryDeliveryApproval } from '~/lib/repository-code-delivery/approval-assessment'
 import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
 import { requireParams } from '~/lib/route-params.server'
 import { serializeUserLookups } from '~/lib/user-display'
 import type { Route } from './+types/repository.$owner.$repo.admin.code-deliveries.$deliveryId'
+
+export { action } from './repository.$owner.$repo.admin.code-deliveries.$deliveryId.actions.server'
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [
@@ -37,8 +40,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const user = await requireUser(request)
   const url = new URL(request.url)
   const repository = await resolveRepositoryFromParams(owner, repo, url, `/admin/code-deliveries/${deliveryId}`)
-  const { authorized } = await resolveRepositoryAdminAccess(user, repository.id)
-  if (!authorized) {
+  const { canAccessAdmin, canApprove } = await resolveRepositoryApprovalCapabilities(user, repository.id)
+  if (!canAccessAdmin) {
     throw new Response('Forbidden - admin access required', { status: 403 })
   }
 
@@ -109,35 +112,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       delivery,
       approvalAssessment,
-      manualApprovalHistory: [...new Set(history.commits.map((commit) => commit.id))].map((id) => {
-        const commits = history.commits.filter((commit) => commit.id === id)
-        const approval = commits[0]
-        const snapshot = history.snapshots.find((snapshot) => snapshot.id === approval.snapshot_id)
-        if (!snapshot) throw new Error(`Missing snapshot for manual approval ${id}`)
-        return {
-          id,
-          reviewer: approval.reviewer_nav_ident,
-          registeredBy: approval.registered_by_nav_ident,
-          reviewedAt: approval.reviewed_at,
-          registeredAt: approval.registered_at,
-          baseSha: snapshot.base_sha,
-          headSha: snapshot.head_sha,
-          commits: commits.map((commit) => ({
-            sha: commit.sha,
-            authorLogin: commit.author_login,
-            authorNavIdent: commit.author_nav_ident,
-            status: commit.status,
-          })),
-          events: history.events
-            .filter((event) => event.approval_id === id)
-            .map((event) => ({
-              type: event.event_type,
-              actor: event.actor_nav_ident,
-              reason: event.reason,
-              at: event.created_at,
-            })),
-        }
-      }),
+      manualApprovalHistory: presentRepositoryApprovalHistory(history),
+      canApprove,
+      canRevoke: true,
       userMappings,
     }
   })

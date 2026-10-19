@@ -3,7 +3,14 @@ import type { PoolClient } from 'pg'
 import type { UserIdentity } from '~/lib/auth.server'
 import { canAccessRepositoryAdminWithClient, resolveRepositoryApprovalCapabilities } from '~/lib/authorization.server'
 import { isFullCommitSha } from '~/lib/git-constants'
-import type { assessRepositoryDeliveryInterval } from '~/lib/repository-code-delivery/interval-assessment'
+import { presentRepositoryApprovalHistory } from '~/lib/repository-approval-history.server'
+import { assessRepositoryDeliveryInterval } from '~/lib/repository-code-delivery/interval-assessment'
+import {
+  isDocumentationUrl,
+  isRepositoryApprovalId,
+  parseReviewTime,
+  type RepositoryApprovalReview,
+} from '~/lib/repository-manual-approval'
 import { withTransaction } from './connection.server'
 import { getRepositoryCodeDeliveryIntervalAssessments } from './repository-code-delivery-interval-assessment.server'
 
@@ -20,6 +27,7 @@ interface Snapshot {
   evidence: Evidence
   evidence_hash: string
   created_at: Date
+  created_by_nav_ident: string | null
 }
 
 interface AuthorIdentity {
@@ -31,7 +39,13 @@ interface AuthorIdentity {
 
 export class RepositoryApprovalError extends Error {
   constructor(
-    readonly code: 'forbidden' | 'not_found' | 'stale_ground' | 'incomplete_evidence' | 'invalid_approval',
+    readonly code:
+      | 'forbidden'
+      | 'not_found'
+      | 'stale_ground'
+      | 'incomplete_evidence'
+      | 'invalid_approval'
+      | 'commit_outside_snapshot',
     message: string,
   ) {
     super(message)
@@ -65,6 +79,12 @@ async function withApprovalTransaction<T>(operation: (client: PoolClient) => Pro
 async function requireApprovalAccess(client: PoolClient, actor: UserIdentity, repositoryId: number): Promise<void> {
   const { canApprove } = await resolveRepositoryApprovalCapabilities(actor, repositoryId, client)
   if (!canApprove) throw new RepositoryApprovalError('forbidden', 'Repository approval access required')
+}
+
+function requireValidIds(...ids: number[]) {
+  if (ids.some((id) => !isRepositoryApprovalId(id))) {
+    throw new RepositoryApprovalError('invalid_approval', 'ID-er må være positive heltall.')
+  }
 }
 
 async function currentGround(client: PoolClient, repositoryId: number, deliveryId: number) {
@@ -124,6 +144,88 @@ export async function createRepositoryApprovalSnapshot(
   repositoryId: number,
   deliveryId: number,
 ): Promise<Snapshot> {
+  return createApprovalSnapshot(actor, repositoryId, deliveryId, (snapshot) => snapshot)
+}
+
+export async function createRepositoryApprovalReview(
+  actor: UserIdentity,
+  repositoryId: number,
+  deliveryId: number,
+): Promise<RepositoryApprovalReview> {
+  return createApprovalSnapshot(actor, repositoryId, deliveryId, (snapshot, identities) => {
+    const assessment = assessRepositoryDeliveryInterval(snapshot.evidence)
+    return {
+      snapshotId: snapshot.id,
+      baseSha: snapshot.base_sha,
+      headSha: snapshot.head_sha,
+      createdAt: snapshot.created_at.toISOString(),
+      reviewer: actor.navIdent,
+      defaultBranch: snapshot.evidence.defaultBranch,
+      implicitApprovalMode: snapshot.evidence.implicitApprovalMode,
+      commits: assessment.commits.map((commit) => {
+        const source = snapshot.evidence.compare?.commits.find((candidate) => candidate.sha === commit.sha)
+        const identity = commit.authorLogin ? identities.get(commit.authorLogin.toLowerCase()) : undefined
+        return {
+          sha: commit.sha,
+          message: commit.message,
+          authorLogin: commit.authorLogin,
+          authorNavIdent: identity?.author_nav_ident ?? null,
+          authorDate: source?.authorDate ?? '',
+          committerDate: source?.committerDate ?? '',
+          prStatus: commit.status,
+          prReason: commit.reason,
+          pullRequestNumber: commit.pullRequestNumber,
+          associations: snapshot.evidence.associatedPullRequestsByCommit[commit.sha] ?? null,
+          unavailableReason:
+            commit.status === 'unknown'
+              ? 'PR-grunnlaget er ukjent.'
+              : !identity
+                ? 'Forfatteren mangler en aktiv kobling til NAV-ident.'
+                : identity.author_nav_ident === actor.navIdent
+                  ? 'Du kan ikke godkjenne dine egne commits.'
+                  : !source || !parseReviewTime(source.committerDate)
+                    ? 'Lagret committer-tid mangler eller er ugyldig. Ingen alternativ tid brukes.'
+                    : null,
+        }
+      }),
+      pullRequests: Object.values(snapshot.evidence.pullRequestsByNumber).flatMap((pr) =>
+        pr
+          ? [
+              {
+                number: pr.number,
+                headSha: pr.headSha,
+                baseBranch: pr.baseBranch,
+                authorLogin: pr.authorLogin,
+                mergedByLogin: pr.mergedByLogin,
+                mergeCommitSha: pr.mergeCommitSha,
+                commitCount: pr.commitCount,
+                commits: (pr.commits ?? []).map((commit) => ({
+                  sha: commit.sha,
+                  authorLogin: commit.authorLogin ?? null,
+                  authorDate: commit.authorDate,
+                  committerDate: commit.committerDate,
+                })),
+                reviews: (pr.reviews ?? []).map((review) => ({
+                  username: review.username,
+                  state: review.state,
+                  submittedAt: review.submittedAt,
+                  commitSha: review.commitId ?? null,
+                })),
+              },
+            ]
+          : [],
+      ),
+    }
+  })
+}
+
+async function createApprovalSnapshot<T>(
+  actor: UserIdentity,
+  repositoryId: number,
+  deliveryId: number,
+  present: (snapshot: Snapshot, identities: Map<string, AuthorIdentity>) => T,
+): Promise<T> {
+  requireValidIds(repositoryId, deliveryId)
   return withApprovalTransaction(async (client) => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
     await requireApprovalAccess(client, actor, repositoryId)
@@ -134,8 +236,8 @@ export async function createRepositoryApprovalSnapshot(
     )
     const { rows } = await client.query<Snapshot>(
       `INSERT INTO repository_approval_snapshots
-         (delivery_id, repository_id, base_sha, head_sha, schema_version, evaluator_version, evidence, evidence_hash)
-       VALUES ($1, $2, lower($3), lower($4), 1, 1, $5::jsonb, $6) RETURNING *`,
+         (delivery_id, repository_id, base_sha, head_sha, schema_version, evaluator_version, evidence, evidence_hash, created_by_nav_ident)
+       VALUES ($1, $2, lower($3), lower($4), 1, 1, $5::jsonb, $6, $7) RETURNING *`,
       [
         deliveryId,
         repositoryId,
@@ -143,6 +245,7 @@ export async function createRepositoryApprovalSnapshot(
         ground.delivery.head_sha,
         JSON.stringify(ground.evidence),
         evidenceHash(ground.evidence),
+        actor.navIdent,
       ],
     )
     const snapshot = rows[0]
@@ -162,7 +265,7 @@ export async function createRepositoryApprovalSnapshot(
         ],
       )
     }
-    return snapshot
+    return present(snapshot, identities)
   })
 }
 
@@ -180,14 +283,25 @@ export async function registerRepositoryManualApproval(
   actor: UserIdentity,
   repositoryId: number,
   deliveryId: number,
-  input: { snapshotId: number; commitShas: string[]; reviewedAt: Date },
+  input: {
+    snapshotId: number
+    commitShas: string[]
+    reviewedAt: Date
+    reviewDocumentation: string
+    documentationUrl: string | null
+  },
 ): Promise<number> {
+  requireValidIds(repositoryId, deliveryId, input.snapshotId)
+  const documentationUrl = input.documentationUrl?.trim() || null
   if (
     !/^[A-Z][0-9]{6}$/.test(actor.navIdent) ||
     !Number.isFinite(input.reviewedAt.getTime()) ||
     input.commitShas.length === 0 ||
     input.commitShas.some((sha) => !isFullCommitSha(sha)) ||
-    new Set(input.commitShas.map((sha) => sha.toLowerCase())).size !== input.commitShas.length
+    new Set(input.commitShas.map((sha) => sha.toLowerCase())).size !== input.commitShas.length ||
+    typeof input.reviewDocumentation !== 'string' ||
+    !input.reviewDocumentation.trim() ||
+    (documentationUrl !== null && !isDocumentationUrl(documentationUrl))
   ) {
     throw new RepositoryApprovalError('invalid_approval', 'Valid reviewer, review time and unique commits are required')
   }
@@ -197,6 +311,7 @@ export async function registerRepositoryManualApproval(
     const snapshot = await getSnapshot(client, repositoryId, deliveryId, input.snapshotId)
     const ground = await currentGround(client, repositoryId, deliveryId)
     if (
+      snapshot.created_by_nav_ident !== actor.navIdent ||
       snapshot.schema_version !== 1 ||
       snapshot.evaluator_version !== 1 ||
       snapshot.evidence_hash !== evidenceHash(ground.evidence) ||
@@ -205,7 +320,7 @@ export async function registerRepositoryManualApproval(
     ) {
       throw new RepositoryApprovalError('stale_ground', 'The delivery evidence has changed; reload before approving')
     }
-    const { rows: commits } = await client.query<{
+    const { rows: snapshotCommits } = await client.query<{
       sha: string
       author_login: string | null
       author_nav_ident: string | null
@@ -213,35 +328,54 @@ export async function registerRepositoryManualApproval(
       user_identity_version: string | null
     }>(
       `SELECT sha, author_login, author_nav_ident, account_identity_version::text, user_identity_version::text
-       FROM repository_approval_snapshot_commits WHERE snapshot_id = $1 AND sha = ANY($2::text[]) ORDER BY sha`,
-      [snapshot.id, input.commitShas.map((sha) => sha.toLowerCase())],
+       FROM repository_approval_snapshot_commits WHERE snapshot_id = $1 ORDER BY sha`,
+      [snapshot.id],
     )
+    const selectedShas = new Set(input.commitShas.map((sha) => sha.toLowerCase()))
+    const commits = snapshotCommits.filter((commit) => selectedShas.has(commit.sha))
     if (commits.length !== input.commitShas.length) {
-      throw new RepositoryApprovalError('invalid_approval', 'Every selected commit must belong to this interval')
+      throw new RepositoryApprovalError('commit_outside_snapshot', 'Every selected commit must belong to this interval')
     }
     const identities = await lockAuthorIdentities(
       client,
-      commits.flatMap((commit) => (commit.author_login ? [commit.author_login] : [])),
+      snapshotCommits.flatMap((commit) => (commit.author_login ? [commit.author_login] : [])),
     )
-    for (const commit of commits) {
+    for (const commit of snapshotCommits) {
       const identity = commit.author_login ? identities.get(commit.author_login) : undefined
       if (
-        !identity ||
-        identity.author_nav_ident !== commit.author_nav_ident ||
-        identity.account_identity_version !== commit.account_identity_version ||
-        identity.user_identity_version !== commit.user_identity_version
+        (identity?.author_nav_ident ?? null) !== commit.author_nav_ident ||
+        (identity?.account_identity_version ?? null) !== commit.account_identity_version ||
+        (identity?.user_identity_version ?? null) !== commit.user_identity_version
       ) {
         throw new RepositoryApprovalError(
           'stale_ground',
           'Author identity is missing or has changed; reload before approving',
         )
       }
+    }
+    for (const commit of commits) {
+      const identity = commit.author_login ? identities.get(commit.author_login) : undefined
+      if (!identity) throw new RepositoryApprovalError('stale_ground', 'Author identity is missing')
       if (identity.author_nav_ident === actor.navIdent) {
         throw new RepositoryApprovalError('invalid_approval', 'A reviewer cannot approve their own commits')
       }
       const coverage = ground.assessment.commits.find((candidate) => candidate.sha.toLowerCase() === commit.sha)
       if (!coverage || coverage.status === 'unknown') {
         throw new RepositoryApprovalError('incomplete_evidence', 'Unknown PR evidence cannot receive manual coverage')
+      }
+      const source = snapshot.evidence.compare?.commits.find((candidate) => candidate.sha.toLowerCase() === commit.sha)
+      const commitTime = source ? parseReviewTime(source.committerDate) : null
+      if (!commitTime) {
+        throw new RepositoryApprovalError(
+          'incomplete_evidence',
+          'Lagret committer-tid mangler eller er ugyldig for en valgt commit. Ingen alternativ tid brukes.',
+        )
+      }
+      if (input.reviewedAt < commitTime) {
+        throw new RepositoryApprovalError(
+          'invalid_approval',
+          'Gjennomgangen kan ikke være før den nyeste valgte committens lagrede committer-tid.',
+        )
       }
     }
     const { rows: times } = await client.query<{ valid: boolean }>(
@@ -251,9 +385,9 @@ export async function registerRepositoryManualApproval(
     if (!times[0].valid) throw new RepositoryApprovalError('invalid_approval', 'Review time cannot be in the future')
     const { rows } = await client.query<{ id: number }>(
       `INSERT INTO repository_manual_approvals
-         (snapshot_id, reviewer_nav_ident, registered_by_nav_ident, reviewed_at)
-       VALUES ($1, $2, $2, $3) RETURNING id`,
-      [snapshot.id, actor.navIdent, input.reviewedAt],
+         (snapshot_id, reviewer_nav_ident, registered_by_nav_ident, reviewed_at, review_documentation, documentation_url)
+       VALUES ($1, $2, $2, $3, $4, $5) RETURNING id`,
+      [snapshot.id, actor.navIdent, input.reviewedAt, input.reviewDocumentation.trim(), documentationUrl],
     )
     const approvalId = rows[0].id
     await client.query(
@@ -277,6 +411,7 @@ export async function revokeRepositoryManualApproval(
   approvalId: number,
   reason: string,
 ): Promise<boolean> {
+  requireValidIds(repositoryId, deliveryId, approvalId)
   if (!reason.trim()) throw new RepositoryApprovalError('invalid_approval', 'A revocation reason is required')
   return withTransaction(async (client) => {
     if (!(await canAccessRepositoryAdminWithClient(actor, repositoryId, client))) {
@@ -298,13 +433,35 @@ export async function revokeRepositoryManualApproval(
   })
 }
 
-async function readRepositoryManualApprovalHistory(
+async function readFullApprovalSnapshots(client: PoolClient, repositoryId: number, deliveryId: number) {
+  const { rows } = await client.query<Snapshot>(
+    `SELECT * FROM repository_approval_snapshots
+     WHERE repository_id = $1 AND delivery_id = $2 ORDER BY id`,
+    [repositoryId, deliveryId],
+  )
+  return rows
+}
+
+async function readApprovalSnapshotMetadata(client: PoolClient, repositoryId: number, deliveryId: number) {
+  const { rows } = await client.query<Pick<Snapshot, 'id' | 'base_sha' | 'head_sha'>>(
+    `SELECT s.id, s.base_sha, s.head_sha FROM repository_approval_snapshots s
+     WHERE s.repository_id = $1 AND s.delivery_id = $2
+       AND EXISTS (SELECT 1 FROM repository_manual_approvals a WHERE a.snapshot_id = s.id)
+     ORDER BY s.id`,
+    [repositoryId, deliveryId],
+  )
+  return rows
+}
+
+async function readRepositoryManualApprovalHistory<T extends Pick<Snapshot, 'id' | 'base_sha' | 'head_sha'>>(
   actor: UserIdentity,
   repositoryId: number,
   deliveryId: number,
   requireAccess: (client: PoolClient, actor: UserIdentity, repositoryId: number) => Promise<void>,
+  readSnapshots: (client: PoolClient, repositoryId: number, deliveryId: number) => Promise<T[]>,
   transactionClient?: PoolClient,
 ) {
+  requireValidIds(repositoryId, deliveryId)
   const read = async (client: PoolClient) => {
     await requireAccess(client, actor, repositoryId)
     const { rows } = await client.query<{
@@ -314,6 +471,8 @@ async function readRepositoryManualApprovalHistory(
       registered_by_nav_ident: string
       reviewed_at: Date
       registered_at: Date
+      review_documentation: string | null
+      documentation_url: string | null
       sha: string
       author_login: string | null
       author_nav_ident: string | null
@@ -321,6 +480,7 @@ async function readRepositoryManualApprovalHistory(
       revoked: boolean
     }>(
       `SELECT a.id, a.snapshot_id, a.reviewer_nav_ident, a.registered_by_nav_ident, a.reviewed_at, a.registered_at,
+              a.review_documentation, a.documentation_url,
               c.sha, c.author_login, c.author_nav_ident,
               EXISTS (SELECT 1 FROM repository_manual_approval_events e
                       WHERE e.approval_id = a.id AND e.event_type = 'revoked') AS revoked,
@@ -358,11 +518,7 @@ async function readRepositoryManualApprovalHistory(
        WHERE s.repository_id = $1 AND s.delivery_id = $2 ORDER BY e.id`,
       [repositoryId, deliveryId],
     )
-    const { rows: snapshots } = await client.query<Snapshot>(
-      `SELECT * FROM repository_approval_snapshots
-       WHERE repository_id = $1 AND delivery_id = $2 ORDER BY id`,
-      [repositoryId, deliveryId],
-    )
+    const snapshots = await readSnapshots(client, repositoryId, deliveryId)
     return {
       snapshots,
       commits: rows.map(({ eligible, revoked, ...row }) => ({
@@ -389,7 +545,14 @@ export async function getRepositoryManualApprovalHistory(
   deliveryId: number,
   client?: PoolClient,
 ) {
-  return readRepositoryManualApprovalHistory(actor, repositoryId, deliveryId, requireApprovalAccess, client)
+  return readRepositoryManualApprovalHistory(
+    actor,
+    repositoryId,
+    deliveryId,
+    requireApprovalAccess,
+    readFullApprovalSnapshots,
+    client,
+  )
 }
 
 export async function getRepositoryManualApprovalHistoryForAdmin(
@@ -407,6 +570,53 @@ export async function getRepositoryManualApprovalHistoryForAdmin(
         throw new RepositoryApprovalError('forbidden', 'Repository admin access required')
       }
     },
+    readFullApprovalSnapshots,
     client,
   )
+}
+
+export async function getRepositoryApprovalPage(actor: UserIdentity, repositoryId: number, deliveryId: number) {
+  requireValidIds(repositoryId, deliveryId)
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    await requireApprovalAccess(client, actor, repositoryId)
+    const { rows } = await client.query<{
+      id: number
+      base_sha: string
+      head_sha: string
+      first_deployed_at: Date | null
+    }>(
+      `SELECT c.id, c.base_sha, c.head_sha, min(d.created_at) AS first_deployed_at
+       FROM repository_code_deliveries c
+       LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id AND d.repository_id = c.repository_id
+       WHERE c.repository_id = $1 AND c.id = $2 GROUP BY c.id`,
+      [repositoryId, deliveryId],
+    )
+    if (!rows[0]) throw new RepositoryApprovalError('not_found', 'Code delivery not found')
+    const history = await readRepositoryManualApprovalHistory(
+      actor,
+      repositoryId,
+      deliveryId,
+      async () => {},
+      readApprovalSnapshotMetadata,
+      client,
+    )
+    return { delivery: rows[0], manualApprovalHistory: presentRepositoryApprovalHistory(history) }
+  })
+}
+
+export async function getRepositoryApprovalDeliveries(actor: UserIdentity, repositoryId: number, page: number) {
+  requireValidIds(repositoryId, page)
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    await requireApprovalAccess(client, actor, repositoryId)
+    const { rows } = await client.query<{ id: number; baseSha: string; headSha: string; firstDeployedAt: Date | null }>(
+      `SELECT c.id, c.base_sha AS "baseSha", c.head_sha AS "headSha", min(d.created_at) AS "firstDeployedAt"
+       FROM repository_code_deliveries c
+       LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id AND d.repository_id = c.repository_id
+       WHERE c.repository_id = $1 GROUP BY c.id ORDER BY c.id DESC LIMIT 51 OFFSET $2`,
+      [repositoryId, (page - 1) * 50],
+    )
+    return { deliveries: rows.slice(0, 50), hasNextPage: rows.length > 50, page }
+  })
 }

@@ -9,6 +9,7 @@ En applikasjon for å overvåke deployments på Nav sin Nais-plattform og verifi
 - 🔍 **Application Discovery**: Søk etter Nais teams og finn tilgjengelige applikasjoner
 - 📦 **Deployment Tracking**: Automatisk synkronisering av deployments fra Nais
 - ✅ **Four-Eyes Verification**: Automatisk sjekk av PR-godkjenninger
+- 📝 **[Manuell repositorygodkjenning](docs/repository-manual-approval.md)**: Gjennomgå og dokumenter valgte commits fra et fryst grunnlag, uten å endre deploymentstatus
 - 🚨 **Repository Alerts**: Varsler hvis deployment kommer fra uventet repository (sikkerhet!)
 - 💬 **Kommentarer**: Legg til Slack-lenker for direct pushes
 - 🎯 **Tertialtavler**: Koble deployments til tertialmål (tight-loose-tight)

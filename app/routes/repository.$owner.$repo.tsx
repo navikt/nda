@@ -7,7 +7,7 @@ import {
   getEffectiveSettingsForApps,
 } from '~/db/repositories.server'
 import { getUserIdentity } from '~/lib/auth.server'
-import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
+import { resolveRepositoryApprovalCapabilities } from '~/lib/authorization.server'
 import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
 import { requireParams } from '~/lib/route-params.server'
 import { getDateRangeForPeriod, type TimePeriod } from '~/lib/time-periods'
@@ -23,13 +23,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const repository = await resolveRepositoryFromParams(owner, repo, url, '')
 
   const identity = await getUserIdentity(request)
-
-  const { affectedApps, canAccessAdmin } = identity
-    ? await resolveRepositoryAdminAccess(identity, repository.id).then(({ affectedApps, authorized }) => ({
-        affectedApps,
-        canAccessAdmin: authorized,
-      }))
-    : { affectedApps: await getAffectedAppsForRepositoryId(repository.id), canAccessAdmin: false }
+  const { affectedApps, canAccessAdmin, canApprove } = identity
+    ? await resolveRepositoryApprovalCapabilities(identity, repository.id)
+    : { affectedApps: await getAffectedAppsForRepositoryId(repository.id), canAccessAdmin: false, canApprove: false }
 
   const period = (url.searchParams.get('period') || 'last-week') as TimePeriod
   const range = getDateRangeForPeriod(period)
@@ -46,19 +42,22 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     repository,
     affectedApps,
     canAccessAdmin,
+    canApprove,
     deploymentStats,
     period,
   }
 }
 
 export default function RepositoryRoute() {
-  const { repository, affectedApps, canAccessAdmin, deploymentStats, period } = useLoaderData<typeof loader>()
+  const { repository, affectedApps, canAccessAdmin, canApprove, deploymentStats, period } =
+    useLoaderData<typeof loader>()
 
   return (
     <RepositoryPage
       repository={repository}
       affectedApps={affectedApps}
       canAccessAdmin={canAccessAdmin}
+      canApprove={canApprove}
       deploymentStats={deploymentStats}
       period={period}
     />
