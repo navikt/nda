@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockRequireUser,
   mockResolveRepositoryFromParams,
-  mockResolveRepositoryAdminAccess,
+  mockResolveRepositoryApprovalCapabilities,
   mockGetEvidence,
   mockGetGithubUserLookups,
   mockGetHistory,
@@ -11,7 +11,7 @@ const {
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockResolveRepositoryFromParams: vi.fn(),
-  mockResolveRepositoryAdminAccess: vi.fn(),
+  mockResolveRepositoryApprovalCapabilities: vi.fn(),
   mockGetEvidence: vi.fn(),
   mockGetGithubUserLookups: vi.fn(),
   mockGetHistory: vi.fn(),
@@ -26,7 +26,9 @@ vi.mock('~/db/repository-manual-approvals.server', () => ({
 }))
 vi.mock('~/lib/auth.server', () => ({ requireUser: mockRequireUser }))
 vi.mock('~/lib/repository-resolution.server', () => ({ resolveRepositoryFromParams: mockResolveRepositoryFromParams }))
-vi.mock('~/lib/authorization.server', () => ({ resolveRepositoryAdminAccess: mockResolveRepositoryAdminAccess }))
+vi.mock('~/lib/authorization.server', () => ({
+  resolveRepositoryApprovalCapabilities: mockResolveRepositoryApprovalCapabilities,
+}))
 vi.mock('~/db/repository-code-delivery-overview.server', () => ({
   getRepositoryCodeDeliveryEvidence: mockGetEvidence,
 }))
@@ -116,9 +118,13 @@ function makeRequest(search = '?repositoryId=5') {
 describe('repository code delivery evidence loader', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockResolveRepositoryApprovalCapabilities.mockResolvedValue({
+      canApprove: false,
+      canAccessAdmin: true,
+      affectedApps: [],
+    })
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990010', name: 'Rask Elv' })
     mockResolveRepositoryFromParams.mockResolvedValue(repository)
-    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [] })
     mockGetEvidence.mockResolvedValue(evidence)
     mockGetHistory.mockResolvedValue({ snapshots: [], commits: [], events: [] })
     mockGetGithubUserLookups.mockResolvedValue(
@@ -137,7 +143,11 @@ describe('repository code delivery evidence loader', () => {
   })
 
   it('requires repository admin access before loading evidence', async () => {
-    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: false, affectedApps: [] })
+    mockResolveRepositoryApprovalCapabilities.mockResolvedValue({
+      canApprove: true,
+      canAccessAdmin: false,
+      affectedApps: [],
+    })
 
     await expect(loader({ params, request: makeRequest() } as never)).rejects.toMatchObject({ status: 403 })
 
@@ -259,14 +269,18 @@ describe('repository code delivery evidence loader', () => {
   it('uses admin history access for a historical repository admin without approval rights', async () => {
     const user = { navIdent: 'Z990010', role: 'user', isActualAdmin: false }
     mockRequireUser.mockResolvedValue(user)
-    mockResolveRepositoryAdminAccess.mockResolvedValue({
-      authorized: true,
+    mockResolveRepositoryApprovalCapabilities.mockResolvedValue({
+      canAccessAdmin: true,
+      canApprove: false,
       affectedApps: [{ id: 9, app_name: 'flyttet-app' }],
     })
     const result = await loader({ params, request: makeRequest() } as never)
     expect(mockGetHistory).toHaveBeenCalledWith(user, 5, 17, mockClient)
     expect(result.delivery).toEqual(evidence)
     expect(result.manualApprovalHistory).toEqual([])
+    expect(result.canApprove).toBe(false)
+    expect(result.canRevoke).toBe(true)
+    expect(mockResolveRepositoryApprovalCapabilities).toHaveBeenCalledExactlyOnceWith(user, 5)
   })
 
   it('returns not found if the delivery does not belong to the repository', async () => {
@@ -373,6 +387,8 @@ describe('repository code delivery evidence loader', () => {
       expect(result.manualApprovalHistory).toEqual([
         {
           id: 41,
+          reviewDocumentation: null,
+          documentationUrl: null,
           reviewer: 'Z990001',
           registeredBy: 'Z990001',
           reviewedAt,

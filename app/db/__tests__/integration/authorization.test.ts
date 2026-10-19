@@ -1,5 +1,5 @@
 import { Pool } from 'pg'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   assignSectionRole,
   assignTeamRole,
@@ -724,8 +724,27 @@ describe('resolveRepositoryApprovalCapabilities', () => {
     const { repositoryId, teamId } = await setupApprovalAccess()
     const actor = makeUser('Z990001')
     await assignTeamRole(actor.navIdent, teamId, role, 'Z990002')
-    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: true })
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toMatchObject({
+      canApprove: true,
+      canAccessAdmin: role !== 'utvikler',
+    })
     expect(await canAccessRepositoryAdmin(actor, repositoryId)).toBe(role !== 'utvikler')
+  })
+
+  it('resolves approval, admin and affected apps in a single query without granting historical approval access', async () => {
+    const { repositoryId, appId, teamId } = await setupApprovalAccess()
+    const actor = makeUser('Z990001')
+    await assignTeamRole(actor.navIdent, teamId, 'tech_lead', 'Z990002')
+    await pool.query(`UPDATE application_repositories SET status = 'historical' WHERE monitored_app_id = $1`, [appId])
+    const query = vi.spyOn(pool, 'query')
+    try {
+      const capabilities = await resolveRepositoryApprovalCapabilities(actor, repositoryId, pool)
+      expect(query).toHaveBeenCalledTimes(1)
+      expect(capabilities).toMatchObject({ canApprove: false, canAccessAdmin: true, affectedApps: [{ id: appId }] })
+    } finally {
+      query.mockRestore()
+    }
+    expect(await canAccessRepositoryAdmin(actor, repositoryId)).toBe(true)
   })
 
   it.each(['app', 'team', 'role', 'link', 'team_link'] as const)(
@@ -745,7 +764,7 @@ describe('resolveRepositoryApprovalCapabilities', () => {
         ])
       if (kind === 'team_link')
         await pool.query('UPDATE dev_team_applications SET deleted_at = NOW() WHERE dev_team_id = $1', [teamId])
-      expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: false })
+      expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toMatchObject({ canApprove: false })
     },
   )
 
@@ -757,23 +776,37 @@ describe('resolveRepositoryApprovalCapabilities', () => {
     ])
     const actor = makeUser('Z990001')
     await assignTeamRole(actor.navIdent, teamId, 'utvikler', 'Z990002')
-    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: true })
-    expect(await resolveRepositoryApprovalCapabilities(makeUser('Z990003'), repositoryId)).toEqual({
-      canApprove: false,
-    })
-    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId + 1)).toEqual({ canApprove: false })
-    expect(await resolveRepositoryApprovalCapabilities(makeAdmin('Z990002'), repositoryId)).toEqual({
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toMatchObject({
       canApprove: true,
+      canAccessAdmin: false,
+    })
+    expect(await resolveRepositoryApprovalCapabilities(makeUser('Z990003'), repositoryId)).toMatchObject({
+      canApprove: false,
+      canAccessAdmin: false,
+    })
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId + 1)).toMatchObject({
+      canApprove: false,
+      canAccessAdmin: false,
+    })
+    expect(await resolveRepositoryApprovalCapabilities(makeAdmin('Z990002'), repositoryId)).toMatchObject({
+      canApprove: true,
+      canAccessAdmin: true,
     })
     await pool.query('UPDATE dev_team_nais_teams SET deleted_at = NOW() WHERE dev_team_id = $1', [teamId])
-    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: false })
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toMatchObject({
+      canApprove: false,
+      canAccessAdmin: false,
+    })
   })
 
   it('does not grant approval through section roles or a superseded active repository link', async () => {
     const { repositoryId, appId, teamId, sectionId } = await setupApprovalAccess()
     const actor = makeUser('Z990001')
     await assignSectionRole(actor.navIdent, sectionId, 'seksjonsleder', 'Z990002')
-    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: false })
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toMatchObject({
+      canApprove: false,
+      canAccessAdmin: false,
+    })
     await assignTeamRole(actor.navIdent, teamId, 'utvikler', 'Z990002')
     await seedRepository(pool, { githubRepoId: '9002', githubOwner: 'navikt', githubRepoName: 'other-repo' })
     await seedApplicationRepository(pool, {
@@ -782,7 +815,10 @@ describe('resolveRepositoryApprovalCapabilities', () => {
       githubRepo: 'other-repo',
       githubRepoId: '9002',
     })
-    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: false })
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toMatchObject({
+      canApprove: false,
+      canAccessAdmin: false,
+    })
   })
 
   it('requires access to only one active app without granting repository admin access', async () => {
@@ -800,7 +836,10 @@ describe('resolveRepositoryApprovalCapabilities', () => {
     })
     const actor = makeUser('Z990001')
     await assignTeamRole(actor.navIdent, teamId, 'tech_lead', 'Z990002')
-    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toEqual({ canApprove: true })
+    expect(await resolveRepositoryApprovalCapabilities(actor, repositoryId)).toMatchObject({
+      canApprove: true,
+      canAccessAdmin: false,
+    })
     expect(await canAccessRepositoryAdmin(actor, repositoryId)).toBe(false)
   })
 })

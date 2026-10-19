@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockResolveRepositoryFromParams,
   mockGetUserIdentity,
-  mockResolveRepositoryAdminAccess,
+  mockResolveRepositoryApprovalCapabilities,
   mockGetAffectedAppsForRepositoryId,
   mockGetAllAppsLinkedToRepositoryId,
   mockGetEffectiveSettingsForApps,
@@ -11,7 +11,7 @@ const {
 } = vi.hoisted(() => ({
   mockResolveRepositoryFromParams: vi.fn(),
   mockGetUserIdentity: vi.fn(),
-  mockResolveRepositoryAdminAccess: vi.fn(),
+  mockResolveRepositoryApprovalCapabilities: vi.fn(),
   mockGetAffectedAppsForRepositoryId: vi.fn(),
   mockGetAllAppsLinkedToRepositoryId: vi.fn(),
   mockGetEffectiveSettingsForApps: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock('~/lib/auth.server', () => ({
 }))
 
 vi.mock('~/lib/authorization.server', () => ({
-  resolveRepositoryAdminAccess: mockResolveRepositoryAdminAccess,
+  resolveRepositoryApprovalCapabilities: mockResolveRepositoryApprovalCapabilities,
 }))
 
 vi.mock('~/db/repositories.server', () => ({
@@ -81,6 +81,11 @@ function makeArgs(search = '') {
 describe('repository root loader', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockResolveRepositoryApprovalCapabilities.mockResolvedValue({
+      canApprove: false,
+      canAccessAdmin: false,
+      affectedApps: [],
+    })
     mockResolveRepositoryFromParams.mockResolvedValue(repository)
     mockGetUserIdentity.mockResolvedValue(null)
     mockGetAffectedAppsForRepositoryId.mockResolvedValue([])
@@ -130,8 +135,23 @@ describe('repository root loader', () => {
 
     const result = await loader(makeArgs())
 
-    expect(mockResolveRepositoryAdminAccess).not.toHaveBeenCalled()
+    expect(mockResolveRepositoryApprovalCapabilities).not.toHaveBeenCalled()
     expect(result.canAccessAdmin).toBe(false)
     expect(result.affectedApps).toHaveLength(1)
+  })
+
+  it('exposes the approval entry point without granting repository admin capabilities', async () => {
+    const identity = { navIdent: 'Z990003', role: 'user', isActualAdmin: false }
+    mockGetUserIdentity.mockResolvedValue(identity)
+    mockResolveRepositoryApprovalCapabilities.mockResolvedValue({
+      canApprove: true,
+      canAccessAdmin: false,
+      affectedApps: [linkedApp],
+    })
+    const result = await loader(makeArgs())
+    expect(result.canApprove).toBe(true)
+    expect(result.canAccessAdmin).toBe(false)
+    expect(mockResolveRepositoryApprovalCapabilities).toHaveBeenCalledExactlyOnceWith(identity, 5)
+    expect(mockGetAffectedAppsForRepositoryId).not.toHaveBeenCalled()
   })
 })

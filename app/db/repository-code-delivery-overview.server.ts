@@ -243,6 +243,7 @@ export interface RepositoryCodeDeliveryEvidence {
   base_sha: string
   head_sha: string
   created_at: Date
+  first_deployed_at?: Date | null
   interval_assessment: RepositoryDeliveryIntervalAssessment
   page: number
   totalPages: number
@@ -922,9 +923,11 @@ export async function getRepositoryCodeDeliveryEvidence(
     const { rows: deliveryRows } = await client.query<
       Omit<RepositoryCodeDeliveryEvidence, 'deployments' | 'page' | 'totalPages' | 'totalEvidenceEntries'>
     >(
-      `SELECT id, base_sha, head_sha, created_at
-       FROM repository_code_deliveries
-       WHERE repository_id = $1 AND id = $2`,
+      `SELECT c.id, c.base_sha, c.head_sha, c.created_at,
+              (SELECT min(d.created_at) FROM deployments d
+               WHERE d.repository_id = c.repository_id AND d.repository_code_delivery_id = c.id) AS first_deployed_at
+       FROM repository_code_deliveries c
+       WHERE c.repository_id = $1 AND c.id = $2`,
       [repositoryId, deliveryId],
     )
     const delivery = deliveryRows[0]

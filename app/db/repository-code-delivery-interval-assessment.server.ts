@@ -84,12 +84,7 @@ function parseCompareData(value: unknown): RepositoryDeliveryIntervalCompare | n
             ? authorData.name
             : 'unknown',
       authorDate: typeof authorData?.date === 'string' ? authorData.date : '',
-      committerDate:
-        typeof committerData?.date === 'string'
-          ? committerData.date
-          : typeof authorData?.date === 'string'
-            ? authorData.date
-            : '',
+      committerDate: typeof committerData?.date === 'string' ? committerData.date : '',
       parentShas: parents,
       isMergeCommit: parents.length > 1,
       htmlUrl: typeof commit.html_url === 'string' ? commit.html_url : '',

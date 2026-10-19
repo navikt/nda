@@ -50,3 +50,11 @@ export const PartialAndRevoked: Story = {
     ],
   },
 }
+
+export const CanRevoke: Story = {
+  args: {
+    entries: PartialAndRevoked.args?.entries ?? [],
+    canRevoke: true,
+    firstDeployedAt: '2026-10-18T08:00:00Z',
+  },
+}
