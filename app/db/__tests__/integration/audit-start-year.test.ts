@@ -305,8 +305,8 @@ describe('audit_start_year filter — Dependabot link query', () => {
       environment: 'prod',
       createdAt: POST_YEAR,
       deployerUsername: 'alice',
+      githubPrData: { creator: { username: 'dependabot[bot]' } },
     })
-    await pool.query("UPDATE deployments SET pr_creator_username = 'dependabot[bot]' WHERE id = $1", [legacyId])
 
     const disabledApplyId = await createDependabotApplyDeployment(disabledApplyAppId, 'disabled-apply')
     const enabledApplyId = await createDependabotApplyDeployment(enabledApplyAppId, 'enabled-apply')
@@ -332,7 +332,10 @@ async function createDependabotApplyDeployment(monitoredApplicationId: number, s
     detectedGithubOwner: null,
     detectedGithubRepoName: null,
   })
-  await pool.query("UPDATE deployments SET pr_creator_username = 'dependabot[bot]' WHERE id = $1", [deployment.id])
+  await pool.query('UPDATE deployments SET github_pr_data = $2::jsonb WHERE id = $1', [
+    deployment.id,
+    JSON.stringify({ creator: { username: 'dependabot[bot]' } }),
+  ])
   return deployment.id
 }
 
