@@ -4,7 +4,16 @@ import { lockRepositoryAdminForWrite, lockRepositoryCodeDeliveries, pool, withTr
 import { getAppIdsForGithubRepoId, REPOSITORY_SETTING_KEYS, recordRepoConfigAuditLog } from './repositories.server'
 
 export type RestartCodeDeliveryTrackingResult =
-  | { ok: false; reason: 'repo_not_found' | 'repo_not_linked' | 'unauthorized' | 'tracking_disabled' | 'not_earlier' }
+  | {
+      ok: false
+      reason:
+        | 'repo_not_found'
+        | 'repo_not_linked'
+        | 'unauthorized'
+        | 'tracking_disabled'
+        | 'not_earlier'
+        | 'has_approval_snapshots'
+    }
   | {
       ok: true
       since: Date
@@ -31,7 +40,7 @@ export async function restartCodeDeliveryTracking(params: {
       code_delivery_tracking: boolean
       code_delivery_tracking_since: Date | null
     }>(
-      `SELECT github_repo_id, code_delivery_tracking, code_delivery_tracking_since FROM repositories WHERE id = $1 FOR UPDATE`,
+      `SELECT github_repo_id, code_delivery_tracking, code_delivery_tracking_since FROM repositories WHERE id = $1 FOR NO KEY UPDATE`,
       [repositoryId],
     )
     const repository = rows[0]
@@ -47,6 +56,15 @@ export async function restartCodeDeliveryTracking(params: {
     ) {
       return { ok: false, reason: 'not_earlier' }
     }
+
+    await client.query('SELECT id FROM repository_code_deliveries WHERE repository_id = $1 ORDER BY id FOR UPDATE', [
+      repositoryId,
+    ])
+    const { rows: snapshots } = await client.query<{ exists: boolean }>(
+      'SELECT EXISTS (SELECT 1 FROM repository_approval_snapshots WHERE repository_id = $1) AS exists',
+      [repositoryId],
+    )
+    if (snapshots[0].exists) return { ok: false, reason: 'has_approval_snapshots' }
 
     const cleared = await client.query(
       `DELETE FROM repository_code_delivery_unresolved

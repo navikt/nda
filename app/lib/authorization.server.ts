@@ -97,6 +97,41 @@ export async function canApproveDeployment(actor: UserIdentity, monitoredAppId: 
   return teamRoles.some((r) => managingSet.has(r.dev_team_id))
 }
 
+export async function resolveRepositoryApprovalCapabilities(
+  actor: UserIdentity,
+  repositoryId: number,
+  queryable: Queryable = pool,
+): Promise<{ canApprove: boolean }> {
+  if (isEntraAdmin(actor)) return { canApprove: true }
+  const { rows } = await queryable.query<{ can_approve: boolean }>(
+    `WITH active_apps AS (
+       SELECT ma.id, ma.team_slug
+       FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) ar
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+       JOIN monitored_applications ma ON ma.id = ar.monitored_app_id AND ma.is_active = true
+       WHERE r.id = $1
+     ), managing_teams AS (
+       SELECT dta.dev_team_id
+       FROM dev_team_applications dta
+       JOIN active_apps ma ON ma.id = dta.monitored_app_id
+       WHERE dta.deleted_at IS NULL
+       UNION
+       SELECT dnt.dev_team_id
+       FROM dev_team_nais_teams dnt
+       JOIN active_apps ma ON ma.team_slug = dnt.nais_team_slug
+       WHERE dnt.deleted_at IS NULL
+     )
+     SELECT EXISTS (
+       SELECT 1 FROM managing_teams mt
+       JOIN dev_teams dt ON dt.id = mt.dev_team_id AND dt.is_active = true
+       JOIN dev_team_role_assignments role ON role.dev_team_id = mt.dev_team_id
+       WHERE role.nav_ident = $2 AND role.deleted_at IS NULL
+     ) AS can_approve`,
+    [repositoryId, actor.navIdent],
+  )
+  return { canApprove: rows[0].can_approve }
+}
+
 async function isTeamLeaderOfManagingTeam(
   actor: UserIdentity,
   monitoredAppId: number,

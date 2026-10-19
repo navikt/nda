@@ -40,7 +40,23 @@ En felles, ikke-syklisk PostgreSQL-sekvens tildeler nye versjoner ved innsetting
 
 `getGithubUserLookup(s)` returnerer `account_identity_version` og den aktive brukerens `user_identity_version` som strenger, slik at BIGINT ikke mister presisjon i JavaScript. Slettet eller manglende bruker gir `user_identity_version = null`; slettet kontokobling markeres fortsatt med `account_deleted_at`. Et fremtidig godkjenningsgrunnlag må lagre og kontrollere begge versjonene, aktiv status og NAV-ident. Brukerens versjon gjør sletting/gjenoppretting synlig uten å endre alle tilknyttede kontorader.
 
-Dette innfører bare identitetsversjonering. Ingen godkjenninger lagres, tilbakekalles eller aktiveres, og eksisterende vurdering og deploymentstatus er uendret.
+Versjoneringen brukes av lagringsgrunnlaget for manuell repositorygodkjenning nedenfor. Eksisterende vurdering og deploymentstatus er uendret.
+
+## Lagringsgrunnlag for manuell repositorygodkjenning
+
+`app/db/repository-manual-approvals.server.ts` tilbyr opprettelse av vurderingsgrunnlag, registrering av delgodkjenning, tilbakekalling og historikk. Funksjonene er foreløpig ikke koblet til brukergrensesnitt, actions eller deploymentstatus. Eksisterende godkjenninger importeres ikke.
+
+`repository_approval_snapshots` kopierer det normaliserte GitHub-grunnlaget og innstillingene som den rene intervallvurderingen bruker, med repository-ID, låst base/head, hash og format-/evaluatorversjon. `repository_approval_snapshot_commits` lagrer deklarert author-login, avklart NAV-ident og begge identitetsversjoner. Manglende identitet beholdes som ukjent; det finnes ingen fallback til navn, e-post, committer eller pusher.
+
+`repository_manual_approvals` lagrer innlogget reviewer og registrator separat, men krever samme NAV-ident i denne første flyten. Faktisk reviewtid og registreringstid lagres separat. Reviewtid må være gyldig og ikke i fremtiden; ytterligere tidsregler og krav til reviewdokumentasjon må avklares før en brukerhandling innføres. `repository_manual_approval_commits` binder godkjenningen til eksplisitte commits i akkurat dette grunnlaget. Flere delgodkjenninger kan dekke ulike commits; en reviewer kan ikke godkjenne egne commits. Reviewer trenger ikke GitHub-kobling.
+
+Opprettelse og registrering bruker transaksjoner med `REPEATABLE READ`. Registrering kontrollerer gjeldende tilgang, komplett intervall, uendret vurderingsgrunnlag og aktive author-identiteter med samme NAV-ident og begge versjoner. Identitetsradene låses mot samtidige endringer. Ukjent PR-grunnlag kan ikke få manuell dekning. Godkjenning, commitkoblinger og `created`-hendelse lagres atomisk. Tilgang gis til Entra-admin eller brukere med aktiv teamrolle i et aktivt forvaltende team for minst én aktiv app med repositoryet som siste aktive kobling. Dette gir ikke i seg selv repositoryadminrett.
+
+`repository_manual_approval_events` lagrer opprettelse og begrunnet tilbakekalling. Tilbakekalling krever repositoryadminrett og returnerer `false` hvis godkjenningen allerede er tilbakekalt. Alle fem tabeller avviser `UPDATE` og `DELETE`; originalt grunnlag og historikk bevares. «Restart sporing» avvises når repositoryet har lagrede godkjenningsgrunnlag, også uten registrerte delgodkjenninger. Sporingsdata og startdato beholdes uendret.
+
+Evidenshashen bruker JSON med rekursivt sorterte objektnøkler, slik at den kan etterprøves etter JSONB-lagring; arrayrekkefølgen beholdes. Identitetslåsing tar brukerrader før kontorader, i samme rekkefølge som bruker-/kontooppdatering. Serialiseringsfeil og deadlock ved opprettelse eller registrering oversettes til `stale_ground`; andre databasefeil sendes videre.
+
+Historikkoppslaget skiller mellom tilbakekalt, endret identitet/intervall og `eligible`. Sistnevnte betyr bare at den lagrede delgodkjenningen fortsatt har gyldig identitet og intervall, ikke at leveransen er godkjent. En senere vurdering må også kontrollere gjeldende evidens og kombinere uavhengige dekningskilder. Bytte og tilbakebytte av author-kobling eller sletting og gjenoppretting reaktiverer aldri gammel dekning. Historiske identiteter omskrives ikke, og uavhengige delgodkjenninger påvirkes ikke.
 
 ## Checks — samlet kilde for alle leveransetyper
 
