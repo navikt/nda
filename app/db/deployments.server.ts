@@ -3,6 +3,7 @@ import {
   notApprovedWhereClause,
   PENDING_STATUSES_SQL,
   PROTECTED_STATUSES_SQL,
+  ROOT_APPROVED_STATUSES_SQL,
 } from '~/lib/four-eyes-status'
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
@@ -665,6 +666,12 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
          AND deployment_source_id = $2
        FOR UPDATE
      ),
+     previous_values AS MATERIALIZED (
+       SELECT id, created_at, four_eyes_status FROM existing
+       UNION ALL
+       SELECT NULL::integer, NULL::timestamptz, NULL::text
+       WHERE NOT EXISTS (SELECT 1 FROM existing)
+     ),
      verified_repository AS (
        SELECT r.id
        FROM application_repositories ar
@@ -689,6 +696,8 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
            THEN 'pending' ELSE 'unverifiable' END,
          CASE WHEN $16 THEN CURRENT_TIMESTAMP END,
          (SELECT id FROM verified_repository)
+       FROM previous_values
+       WHERE TRUE
        ON CONFLICT (monitored_app_id, deployment_source, deployment_source_id)
        DO UPDATE SET
          created_at = LEAST(deployments.created_at, EXCLUDED.created_at),
@@ -736,16 +745,48 @@ export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentP
        SELECT upserted.id, existing.four_eyes_status, 'pending',
               'nais_apply_timestamp_correction',
               jsonb_build_object('previousCreatedAt', existing.created_at, 'createdAt', upserted.created_at)
-       FROM existing
+       FROM previous_values existing
        JOIN upserted ON upserted.id = existing.id
        WHERE upserted.created_at < existing.created_at
          AND existing.four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
          AND existing.four_eyes_status != 'pending'
        RETURNING id
+     ),
+     invalidated_siblings AS (
+       UPDATE deployments d
+       SET four_eyes_status = 'pending'
+       FROM previous_values existing
+       JOIN upserted ON upserted.id = existing.id
+       WHERE upserted.created_at < existing.created_at
+         AND existing.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
+         AND upserted.four_eyes_status = 'pending'
+         AND upserted.repository_id IS NOT NULL
+         AND upserted.commit_sha IS NOT NULL
+         AND d.monitored_app_id != upserted.monitored_app_id
+         AND d.repository_id = upserted.repository_id
+         AND d.commit_sha = upserted.commit_sha
+         AND d.four_eyes_status = 'verified_via_sibling'
+       RETURNING d.id
+     ),
+     sibling_status_history AS (
+       INSERT INTO deployment_status_history
+         (deployment_id, from_status, to_status, change_source, details)
+       SELECT invalidated_siblings.id, 'verified_via_sibling', 'pending',
+              'nais_apply_timestamp_correction',
+              jsonb_build_object(
+                'rootDeploymentId', upserted.id,
+                'previousCreatedAt', existing.created_at,
+                'createdAt', upserted.created_at
+              )
+       FROM invalidated_siblings
+       JOIN upserted ON upserted.four_eyes_status = 'pending'
+       JOIN previous_values existing ON existing.id = upserted.id
+       RETURNING id
      )
      SELECT upserted.*
      FROM upserted
-     CROSS JOIN (SELECT COUNT(*) FROM status_history) AS status_history_result`,
+     CROSS JOIN (SELECT COUNT(*) FROM status_history) AS status_history_result
+     CROSS JOIN (SELECT COUNT(*) FROM sibling_status_history) AS sibling_status_history_result`,
     [
       data.monitoredApplicationId,
       data.sourceId,

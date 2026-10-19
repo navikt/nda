@@ -1,6 +1,27 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
+import {
+  seedApp,
+  seedApplicationRepository as seedApplicationRepositoryRow,
+  seedDeployment,
+  seedRepository,
+  truncateAllTables,
+} from './helpers'
+
+async function seedApplicationRepository(
+  pool: Pool,
+  options: Parameters<typeof seedApplicationRepositoryRow>[1],
+): Promise<number> {
+  if (options.githubRepoId) {
+    await pool.query(
+      `INSERT INTO repositories (github_repo_id, github_owner, github_repo_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (github_repo_id) DO NOTHING`,
+      [options.githubRepoId, options.githubOwner, options.githubRepo],
+    )
+  }
+  return seedApplicationRepositoryRow(pool, options)
+}
 
 vi.mock('~/lib/github', () => ({
   getCommitAncestryStatus: vi.fn(),
@@ -186,6 +207,11 @@ describe('getPreviousDeployment', () => {
 
   it('finds the previous deployment by immutable repository ID when claims use an old name', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId,
+      githubOwner: owner,
+      githubRepoName: 'renamed-repository',
+    })
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: owner,
@@ -212,6 +238,10 @@ describe('getPreviousDeployment', () => {
       githubOwner: owner,
       githubRepo: repo,
     })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = ANY($2::int[])', [
+      repositoryId,
+      [previousId, currentId],
+    ])
     mockedGetCommitAncestryStatus.mockResolvedValue('ahead')
 
     const previous = await getPreviousDeployment(currentId, owner, repo, githubRepoId, null, 'current-sha')

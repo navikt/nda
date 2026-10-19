@@ -2,7 +2,28 @@ import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { findRootApprovedSiblingForCommit } from '~/lib/verification/fetch-data/previous-deployment.server'
-import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
+import {
+  seedApp,
+  seedApplicationRepository as seedApplicationRepositoryRow,
+  seedDeployment,
+  seedRepository,
+  truncateAllTables,
+} from './helpers'
+
+async function seedApplicationRepository(
+  pool: Pool,
+  options: Parameters<typeof seedApplicationRepositoryRow>[1],
+): Promise<number> {
+  if (options.githubRepoId) {
+    await pool.query(
+      `INSERT INTO repositories (github_repo_id, github_owner, github_repo_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (github_repo_id) DO NOTHING`,
+      [options.githubRepoId, options.githubOwner, options.githubRepo],
+    )
+  }
+  return seedApplicationRepositoryRow(pool, options)
+}
 
 let pool: Pool
 
@@ -28,13 +49,13 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'pensjon-app',
       environment: 'prod-gcp',
     })
+    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: owner,
       githubRepo: repo,
       githubRepoId: '9001',
     })
-    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
     const olderId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'pensjonselvbetjening',
@@ -64,13 +85,13 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'pensjon-app',
       environment: 'prod-gcp',
     })
+    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: owner,
       githubRepo: repo,
       githubRepoId: '9001',
     })
-    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
     const firstId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'pensjonselvbetjening',
@@ -101,17 +122,17 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'pensjon-app',
       environment: 'prod-gcp',
     })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '9001',
+      githubOwner: owner,
+      githubRepoName: 'renamed-repository',
+      auditStartYear: 2026,
+    })
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: owner,
       githubRepo: 'renamed-repository',
       githubRepoId: '9001',
-    })
-    await seedRepository(pool, {
-      githubRepoId: '9001',
-      githubOwner: owner,
-      githubRepoName: 'renamed-repository',
-      auditStartYear: 2026,
     })
     const previousId = await seedDeployment(pool, {
       monitoredAppId: appId,
@@ -131,6 +152,10 @@ describe('getPreviousDeploymentForDiff', () => {
       githubOwner: owner,
       githubRepo: repo,
     })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = ANY($2::int[])', [
+      repositoryId,
+      [previousId, currentId],
+    ])
 
     const previous = await getPreviousDeploymentForDiff(currentId, '9001')
 
@@ -368,6 +393,7 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'sibling-app',
       environment: 'prod-gcp',
     })
+    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2020 })
     await seedApplicationRepository(pool, {
       monitoredAppId: actingAppId,
       githubOwner: owner,
@@ -380,7 +406,6 @@ describe('getPreviousDeploymentForDiff', () => {
       githubRepo: repo,
       githubRepoId: '9001',
     })
-    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2020 })
     const siblingDeploymentId = await seedDeployment(pool, {
       monitoredAppId: siblingAppId,
       teamSlug: 'pensjonselvbetjening',
