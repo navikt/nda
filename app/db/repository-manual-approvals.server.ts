@@ -298,14 +298,15 @@ export async function revokeRepositoryManualApproval(
   })
 }
 
-export async function getRepositoryManualApprovalHistory(
+async function readRepositoryManualApprovalHistory(
   actor: UserIdentity,
   repositoryId: number,
   deliveryId: number,
+  requireAccess: (client: PoolClient, actor: UserIdentity, repositoryId: number) => Promise<void>,
+  transactionClient?: PoolClient,
 ) {
-  return withTransaction(async (client) => {
-    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-    await requireApprovalAccess(client, actor, repositoryId)
+  const read = async (client: PoolClient) => {
+    await requireAccess(client, actor, repositoryId)
     const { rows } = await client.query<{
       id: number
       snapshot_id: number
@@ -374,5 +375,38 @@ export async function getRepositoryManualApprovalHistory(
       })),
       events,
     }
+  }
+  if (transactionClient) return read(transactionClient)
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    return read(client)
   })
+}
+
+export async function getRepositoryManualApprovalHistory(
+  actor: UserIdentity,
+  repositoryId: number,
+  deliveryId: number,
+  client?: PoolClient,
+) {
+  return readRepositoryManualApprovalHistory(actor, repositoryId, deliveryId, requireApprovalAccess, client)
+}
+
+export async function getRepositoryManualApprovalHistoryForAdmin(
+  actor: UserIdentity,
+  repositoryId: number,
+  deliveryId: number,
+  client?: PoolClient,
+) {
+  return readRepositoryManualApprovalHistory(
+    actor,
+    repositoryId,
+    deliveryId,
+    async (transaction, user, id) => {
+      if (!(await canAccessRepositoryAdminWithClient(user, id, transaction))) {
+        throw new RepositoryApprovalError('forbidden', 'Repository admin access required')
+      }
+    },
+    client,
+  )
 }

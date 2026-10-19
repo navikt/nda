@@ -4,11 +4,12 @@ import { RepositoryCodeDeliveryEvidencePage } from '~/components/RepositoryCodeD
 const meta: Meta<typeof RepositoryCodeDeliveryEvidencePage> = {
   title: 'Features/RepositoryAdmin/RepositoryCodeDeliveryEvidencePage',
   component: RepositoryCodeDeliveryEvidencePage,
+  args: { manualApprovalHistory: [] },
 }
 export default meta
 type Story = StoryObj<typeof RepositoryCodeDeliveryEvidencePage>
 
-export const WithStoredReviews: Story = {
+export const WithStoredReviews = {
   args: {
     repository: { id: 5, githubOwner: 'navikt', githubRepoName: 'glad-fjord' },
     approvalAssessment: {
@@ -87,6 +88,56 @@ export const WithStoredReviews: Story = {
         },
       ],
     },
+  },
+} satisfies Story
+
+export const WithManualApproval: Story = {
+  args: {
+    ...WithStoredReviews.args,
+    approvalAssessment: {
+      status: 'approved',
+      totalCommits: 1,
+      listedCommits: 1,
+      omittedCommits: 0,
+      commits: [{ sha: '2'.repeat(40), status: 'covered', reason: 'manual_approval' }],
+    },
+    delivery: {
+      ...WithStoredReviews.args.delivery,
+      interval_assessment: {
+        state: 'complete',
+        comparisonComplete: true,
+        defaultBranch: 'main',
+        totalCommits: 1,
+        listedCommits: 1,
+        omittedCommits: 0,
+        summary: { covered: 0, notCovered: 1, unknown: 0 },
+        commits: [
+          {
+            sha: '2'.repeat(40),
+            message: 'Add delivery evidence',
+            authorUsername: 'glad-fjord',
+            authorLogin: 'glad-fjord',
+            htmlUrl: `https://github.com/navikt/glad-fjord/commit/${'2'.repeat(40)}`,
+            pullRequestNumber: null,
+            status: 'not_covered',
+            reason: 'no_associated_pull_request',
+          },
+        ],
+      },
+    },
+    manualApprovalHistory: [
+      {
+        id: 1,
+        reviewer: 'Z990003',
+        registeredBy: 'Z990003',
+        reviewedAt: '2026-10-19T07:00:00Z',
+        registeredAt: '2026-10-19T07:10:00Z',
+        baseSha: '1'.repeat(40),
+        headSha: '2'.repeat(40),
+        commits: [{ sha: '2'.repeat(40), authorLogin: 'glad-fjord', authorNavIdent: 'Z990001', status: 'eligible' }],
+        events: [{ type: 'created', actor: 'Z990003', reason: null, at: '2026-10-19T07:10:00Z' }],
+      },
+    ],
   },
 }
 

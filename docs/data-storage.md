@@ -44,7 +44,7 @@ Versjoneringen brukes av lagringsgrunnlaget for manuell repositorygodkjenning ne
 
 ## Lagringsgrunnlag for manuell repositorygodkjenning
 
-`app/db/repository-manual-approvals.server.ts` tilbyr opprettelse av vurderingsgrunnlag, registrering av delgodkjenning, tilbakekalling og historikk. Funksjonene er foreløpig ikke koblet til brukergrensesnitt, actions eller deploymentstatus. Eksisterende godkjenninger importeres ikke.
+`app/db/repository-manual-approvals.server.ts` tilbyr opprettelse av vurderingsgrunnlag, registrering av delgodkjenning, tilbakekalling og historikk. Historikken brukes i den skrivebeskyttede leveransedetaljsiden; skrivefunksjonene er ikke koblet til brukergrensesnitt eller actions, og deploymentstatus er uendret. Eksisterende deploymentgodkjenninger importeres ikke.
 
 `repository_approval_snapshots` kopierer det normaliserte GitHub-grunnlaget og innstillingene som den rene intervallvurderingen bruker, med repository-ID, låst base/head, hash og format-/evaluatorversjon. `repository_approval_snapshot_commits` lagrer deklarert author-login, avklart NAV-ident og begge identitetsversjoner. Manglende identitet beholdes som ukjent; det finnes ingen fallback til navn, e-post, committer eller pusher.
 
@@ -57,6 +57,10 @@ Opprettelse og registrering bruker transaksjoner med `REPEATABLE READ`. Registre
 Evidenshashen bruker JSON med rekursivt sorterte objektnøkler, slik at den kan etterprøves etter JSONB-lagring; arrayrekkefølgen beholdes. Identitetslåsing tar brukerrader før kontorader, i samme rekkefølge som bruker-/kontooppdatering. Serialiseringsfeil og deadlock ved opprettelse eller registrering oversettes til `stale_ground`; andre databasefeil sendes videre.
 
 Historikkoppslaget skiller mellom tilbakekalt, endret identitet/intervall og `eligible`. Sistnevnte betyr bare at den lagrede delgodkjenningen fortsatt har gyldig identitet og intervall, ikke at leveransen er godkjent. En senere vurdering må også kontrollere gjeldende evidens og kombinere uavhengige dekningskilder. Bytte og tilbakebytte av author-kobling eller sletting og gjenoppretting reaktiverer aldri gammel dekning. Historiske identiteter omskrives ikke, og uavhengige delgodkjenninger påvirkes ikke.
+
+Leveransedetaljsiden kombinerer nå gyldige manuelle delgodkjenninger med gjeldende PR-dekning i den skrivebeskyttede forhåndsvurderingen. Evidens, author-identiteter og godkjenningshistorikk leses i samme read-only `REPEATABLE READ`-transaksjon. Ukjent PR-grunnlag og ufullstendig commit-historikk gir fortsatt ikke manuell dekning. Tilbakekalt eller identitetsutdatert dekning utelates, uten å påvirke uavhengig PR-dekning. Historikken viser reviewer, registrator, begge tidspunkt, lagrede author-identiteter og begrunnede tilbakekallinger; den sender ikke snapshotenes fulle evidens eller identitetsversjoner til klienten. Siden oppretter ingen godkjenninger og endrer ikke deploymentstatus.
+
+Detaljsiden leser historikk med repository-adminrett, også når appkoblingene bare er historiske. Dette gir ikke rett til å registrere nye godkjenninger; skrivefunksjonene krever fortsatt godkjenningsrett via aktive appkoblinger eller Entra-admin.
 
 ## Checks — samlet kilde for alle leveransetyper
 

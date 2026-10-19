@@ -1,17 +1,28 @@
 import { createHash } from 'node:crypto'
 import { Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { assignTeamRole } from '~/db/role-assignments.server'
 import type { UserIdentity } from '~/lib/auth.server'
 import { assessRepositoryDeliveryApproval } from '~/lib/repository-code-delivery/approval-assessment'
 import { createRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
+import { getRepositoryCodeDeliveryEvidence } from '../../repository-code-delivery-overview.server'
 import {
   createRepositoryApprovalSnapshot,
   getRepositoryManualApprovalHistory,
+  getRepositoryManualApprovalHistoryForAdmin,
   RepositoryApprovalError,
   registerRepositoryManualApproval,
   revokeRepositoryManualApproval,
 } from '../../repository-manual-approvals.server'
-import { seedRepository, truncateAllTables } from './helpers'
+import { getGithubUserLookups } from '../../user-github-lookups.server'
+import {
+  seedApp,
+  seedApplicationRepository,
+  seedDevTeam,
+  seedRepository,
+  seedSection,
+  truncateAllTables,
+} from './helpers'
 
 let pool: Pool
 let repositoryId: number
@@ -101,6 +112,81 @@ async function history() {
 }
 
 describe('repository manual approval storage', () => {
+  it('allows historical repository admins to read full history without granting approval rights', async () => {
+    const { id, snapshot } = await approve()
+    const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'glad-fjord', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'glad-fjord',
+      githubRepoId: '12345',
+      status: 'historical',
+    })
+    const sectionId = await seedSection(pool, 'fjord')
+    const teamId = await seedDevTeam(pool, 'team-fjord', 'Glad Fjord', sectionId)
+    await pool.query('INSERT INTO dev_team_applications (dev_team_id, monitored_app_id) VALUES ($1, $2)', [
+      teamId,
+      appId,
+    ])
+    await assignTeamRole('Z990002', teamId, 'tech_lead', 'Z990003')
+    const reviewer: UserIdentity = {
+      ...actor,
+      navIdent: 'Z990002',
+      role: 'user',
+      isActualAdmin: false,
+      adminSuppressed: true,
+    }
+    const expected = await history()
+    expect(await getRepositoryManualApprovalHistoryForAdmin(reviewer, repositoryId, deliveryId)).toEqual(expected)
+    await expect(getRepositoryManualApprovalHistory(reviewer, repositoryId, deliveryId)).rejects.toMatchObject({
+      code: 'forbidden',
+    })
+    await expect(createRepositoryApprovalSnapshot(reviewer, repositoryId, deliveryId)).rejects.toMatchObject({
+      code: 'forbidden',
+    })
+    await expect(
+      registerRepositoryManualApproval(reviewer, repositoryId, deliveryId, {
+        snapshotId: snapshot.id,
+        commitShas: [firstSha],
+        reviewedAt,
+      }),
+    ).rejects.toMatchObject({ code: 'forbidden' })
+    expect(expected.commits.every((commit) => commit.id === id)).toBe(true)
+    await expect(
+      getRepositoryManualApprovalHistoryForAdmin({ ...reviewer, navIdent: 'Z990001' }, repositoryId, deliveryId),
+    ).rejects.toMatchObject({ code: 'forbidden' })
+  })
+
+  it('reads evidence, author identities and revocations from the same read-only snapshot', async () => {
+    const { id } = await approve()
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+      const before = await getRepositoryCodeDeliveryEvidence(repositoryId, deliveryId, 1, client)
+      await revokeRepositoryManualApproval(actor, repositoryId, deliveryId, id, 'Changed ground')
+      await pool.query(`UPDATE user_github_accounts SET nav_ident = 'Z990002' WHERE github_username = 'glad-fjord'`)
+      await pool.query('DELETE FROM github_commit_associated_prs_raw_snapshots')
+      const evidence = await getRepositoryCodeDeliveryEvidence(repositoryId, deliveryId, 1, client)
+      const approvals = await getRepositoryManualApprovalHistory(actor, repositoryId, deliveryId, client)
+      const identities = await getGithubUserLookups(['glad-fjord'], client)
+      expect(evidence).toEqual(before)
+      expect(approvals.commits.every((commit) => commit.status === 'eligible')).toBe(true)
+      expect(approvals.events).toHaveLength(1)
+      expect(identities.get('glad-fjord')?.active_nav_ident).toBe('Z990001')
+    } finally {
+      try {
+        await client.query('ROLLBACK')
+      } finally {
+        client.release()
+      }
+    }
+    expect((await history()).commits.every((commit) => commit.status === 'revoked')).toBe(true)
+    expect((await getGithubUserLookups(['glad-fjord'])).get('glad-fjord')?.active_nav_ident).toBe('Z990002')
+    expect(
+      (await getRepositoryCodeDeliveryEvidence(repositoryId, deliveryId))?.interval_assessment.summary.unknown,
+    ).toBe(2)
+  })
+
   it('stores a hash reproducible from JSONB evidence regardless of object key order', async () => {
     const snapshot = await createRepositoryApprovalSnapshot(actor, repositoryId, deliveryId)
     const { snapshots } = await history()

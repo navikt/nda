@@ -1,5 +1,7 @@
 import { RepositoryCodeDeliveryEvidencePage } from '~/components/RepositoryCodeDeliveryEvidencePage'
+import { withTransaction } from '~/db/connection.server'
 import { getRepositoryCodeDeliveryEvidence } from '~/db/repository-code-delivery-overview.server'
+import { getRepositoryManualApprovalHistoryForAdmin } from '~/db/repository-manual-approvals.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
@@ -42,56 +44,103 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const requestedPage = Number.parseInt(url.searchParams.get('page') ?? '1', 10)
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
-  const delivery = await getRepositoryCodeDeliveryEvidence(repository.id, deliveryId, page)
-  if (!delivery) throw new Response('Code delivery not found', { status: 404 })
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    const delivery = await getRepositoryCodeDeliveryEvidence(repository.id, deliveryId, page, client)
+    if (!delivery) throw new Response('Code delivery not found', { status: 404 })
+    const history = await getRepositoryManualApprovalHistoryForAdmin(user, repository.id, deliveryId, client)
 
-  const relevantUsernames = [
-    ...new Set([
-      ...delivery.deployments.flatMap((deployment) =>
-        deployment.verification_runs.flatMap((run) =>
-          run.review_snapshots.flatMap((snapshot) => snapshot.reviews?.map((review) => review.username) ?? []),
+    const relevantUsernames = [
+      ...new Set([
+        ...delivery.deployments.flatMap((deployment) =>
+          deployment.verification_runs.flatMap((run) =>
+            run.review_snapshots.flatMap((snapshot) => snapshot.reviews?.map((review) => review.username) ?? []),
+          ),
         ),
-      ),
-      ...delivery.interval_assessment.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
-    ]),
-  ]
-  const githubUserLookups = relevantUsernames.length > 0 ? await getGithubUserLookups(relevantUsernames) : new Map()
-  const activeGithubUserLookups = new Map(
-    [...githubUserLookups].map(([username, lookup]) => [
-      username,
-      {
-        ...lookup,
-        nav_ident: lookup.account_deleted_at === null ? lookup.active_nav_ident : null,
-      },
-    ]),
-  )
-  const userMappings = serializeUserLookups(activeGithubUserLookups)
-  const approvalAssessment = assessRepositoryDeliveryApproval({
-    baseSha: delivery.base_sha,
-    headSha: delivery.head_sha,
-    commitHistoryComplete: delivery.interval_assessment.comparisonComplete,
-    totalCommits: delivery.interval_assessment.totalCommits,
-    commits: delivery.interval_assessment.commits.map((commit) => ({
-      sha: commit.sha,
-      authorIdentityKey: commit.authorLogin
-        ? (activeGithubUserLookups.get(commit.authorLogin)?.nav_ident ?? null)
-        : null,
-      prCoverage:
-        commit.status === 'covered' ? 'approved' : commit.status === 'not_covered' ? 'not_approved' : 'unknown',
-    })),
-    approvals: [],
-  })
+        ...delivery.interval_assessment.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
+      ]),
+    ]
+    const githubUserLookups =
+      relevantUsernames.length > 0 ? await getGithubUserLookups(relevantUsernames, client) : new Map()
+    const activeGithubUserLookups = new Map(
+      [...githubUserLookups].map(([username, lookup]) => [
+        username,
+        {
+          ...lookup,
+          nav_ident: lookup.account_deleted_at === null ? lookup.active_nav_ident : null,
+        },
+      ]),
+    )
+    const userMappings = serializeUserLookups(activeGithubUserLookups)
+    const intervalCommits = new Map(
+      delivery.interval_assessment.commits.map((commit) => [commit.sha.toLowerCase(), commit]),
+    )
+    const approvalAssessment = assessRepositoryDeliveryApproval({
+      baseSha: delivery.base_sha,
+      headSha: delivery.head_sha,
+      commitHistoryComplete: delivery.interval_assessment.comparisonComplete,
+      totalCommits: delivery.interval_assessment.totalCommits,
+      commits: delivery.interval_assessment.commits.map((commit) => ({
+        sha: commit.sha,
+        authorIdentityKey: commit.authorLogin
+          ? (activeGithubUserLookups.get(commit.authorLogin)?.nav_ident ?? null)
+          : null,
+        prCoverage:
+          commit.status === 'covered' ? 'approved' : commit.status === 'not_covered' ? 'not_approved' : 'unknown',
+      })),
+      approvals: history.commits
+        .filter((commit) => {
+          const currentAuthor = intervalCommits.get(commit.sha.toLowerCase())?.authorLogin
+          if (!currentAuthor) return false
+          return (
+            commit.status === 'eligible' &&
+            currentAuthor?.toLowerCase() === commit.author_login &&
+            activeGithubUserLookups.get(currentAuthor)?.nav_ident === commit.author_nav_ident
+          )
+        })
+        .map((commit) => ({ approverIdentityKey: commit.reviewer_nav_ident, commitShas: [commit.sha] })),
+    })
 
-  return {
-    repository: {
-      id: repository.id,
-      githubOwner: repository.github_owner,
-      githubRepoName: repository.github_repo_name,
-    },
-    delivery,
-    approvalAssessment,
-    userMappings,
-  }
+    return {
+      repository: {
+        id: repository.id,
+        githubOwner: repository.github_owner,
+        githubRepoName: repository.github_repo_name,
+      },
+      delivery,
+      approvalAssessment,
+      manualApprovalHistory: [...new Set(history.commits.map((commit) => commit.id))].map((id) => {
+        const commits = history.commits.filter((commit) => commit.id === id)
+        const approval = commits[0]
+        const snapshot = history.snapshots.find((snapshot) => snapshot.id === approval.snapshot_id)
+        if (!snapshot) throw new Error(`Missing snapshot for manual approval ${id}`)
+        return {
+          id,
+          reviewer: approval.reviewer_nav_ident,
+          registeredBy: approval.registered_by_nav_ident,
+          reviewedAt: approval.reviewed_at,
+          registeredAt: approval.registered_at,
+          baseSha: snapshot.base_sha,
+          headSha: snapshot.head_sha,
+          commits: commits.map((commit) => ({
+            sha: commit.sha,
+            authorLogin: commit.author_login,
+            authorNavIdent: commit.author_nav_ident,
+            status: commit.status,
+          })),
+          events: history.events
+            .filter((event) => event.approval_id === id)
+            .map((event) => ({
+              type: event.event_type,
+              actor: event.actor_nav_ident,
+              reason: event.reason,
+              at: event.created_at,
+            })),
+        }
+      }),
+      userMappings,
+    }
+  })
 }
 
 export default function RepositoryCodeDeliveryEvidenceRoute({ loaderData }: Route.ComponentProps) {

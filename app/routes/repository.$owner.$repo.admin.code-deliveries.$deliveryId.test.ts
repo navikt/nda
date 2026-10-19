@@ -6,14 +6,24 @@ const {
   mockResolveRepositoryAdminAccess,
   mockGetEvidence,
   mockGetGithubUserLookups,
+  mockGetHistory,
+  mockClient,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockResolveRepositoryFromParams: vi.fn(),
   mockResolveRepositoryAdminAccess: vi.fn(),
   mockGetEvidence: vi.fn(),
   mockGetGithubUserLookups: vi.fn(),
+  mockGetHistory: vi.fn(),
+  mockClient: { query: vi.fn() },
 }))
 
+vi.mock('~/db/connection.server', () => ({
+  withTransaction: (operation: (client: typeof mockClient) => Promise<unknown>) => operation(mockClient),
+}))
+vi.mock('~/db/repository-manual-approvals.server', () => ({
+  getRepositoryManualApprovalHistoryForAdmin: mockGetHistory,
+}))
 vi.mock('~/lib/auth.server', () => ({ requireUser: mockRequireUser }))
 vi.mock('~/lib/repository-resolution.server', () => ({ resolveRepositoryFromParams: mockResolveRepositoryFromParams }))
 vi.mock('~/lib/authorization.server', () => ({ resolveRepositoryAdminAccess: mockResolveRepositoryAdminAccess }))
@@ -110,6 +120,7 @@ describe('repository code delivery evidence loader', () => {
     mockResolveRepositoryFromParams.mockResolvedValue(repository)
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [] })
     mockGetEvidence.mockResolvedValue(evidence)
+    mockGetHistory.mockResolvedValue({ snapshots: [], commits: [], events: [] })
     mockGetGithubUserLookups.mockResolvedValue(
       new Map([
         [
@@ -131,6 +142,7 @@ describe('repository code delivery evidence loader', () => {
     await expect(loader({ params, request: makeRequest() } as never)).rejects.toMatchObject({ status: 403 })
 
     expect(mockGetEvidence).not.toHaveBeenCalled()
+    expect(mockGetHistory).not.toHaveBeenCalled()
   })
 
   it.each(['0', '-1', 'abc', '17extra', '2147483648', '9007199254740992'])(
@@ -155,8 +167,10 @@ describe('repository code delivery evidence loader', () => {
       expect.any(URL),
       '/admin/code-deliveries/17',
     )
-    expect(mockGetEvidence).toHaveBeenCalledWith(5, 17, 1)
-    expect(mockGetGithubUserLookups).toHaveBeenCalledWith(['rask-elv'])
+    expect(mockClient.query).toHaveBeenCalledWith('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    expect(mockGetEvidence).toHaveBeenCalledWith(5, 17, 1, mockClient)
+    expect(mockGetHistory).toHaveBeenCalledWith(expect.objectContaining({ navIdent: 'Z990010' }), 5, 17, mockClient)
+    expect(mockGetGithubUserLookups).toHaveBeenCalledWith(['rask-elv'], mockClient)
     expect(result).toMatchObject({
       repository: { id: 5, githubOwner: 'navikt', githubRepoName: 'glad-fjord' },
       delivery: evidence,
@@ -239,7 +253,20 @@ describe('repository code delivery evidence loader', () => {
   it('loads the requested evidence page', async () => {
     await loader({ params, request: makeRequest('?repositoryId=5&page=3') } as never)
 
-    expect(mockGetEvidence).toHaveBeenCalledWith(5, 17, 3)
+    expect(mockGetEvidence).toHaveBeenCalledWith(5, 17, 3, mockClient)
+  })
+
+  it('uses admin history access for a historical repository admin without approval rights', async () => {
+    const user = { navIdent: 'Z990010', role: 'user', isActualAdmin: false }
+    mockRequireUser.mockResolvedValue(user)
+    mockResolveRepositoryAdminAccess.mockResolvedValue({
+      authorized: true,
+      affectedApps: [{ id: 9, app_name: 'flyttet-app' }],
+    })
+    const result = await loader({ params, request: makeRequest() } as never)
+    expect(mockGetHistory).toHaveBeenCalledWith(user, 5, 17, mockClient)
+    expect(result.delivery).toEqual(evidence)
+    expect(result.manualApprovalHistory).toEqual([])
   })
 
   it('returns not found if the delivery does not belong to the repository', async () => {
@@ -247,5 +274,119 @@ describe('repository code delivery evidence loader', () => {
 
     await expect(loader({ params, request: makeRequest() } as never)).rejects.toMatchObject({ status: 404 })
     expect(mockGetGithubUserLookups).not.toHaveBeenCalled()
+    expect(mockGetHistory).not.toHaveBeenCalled()
   })
+
+  it.each([
+    { manualStatus: 'eligible', prStatus: 'not_covered', expected: 'approved', reason: 'manual_approval' },
+    { manualStatus: 'revoked', prStatus: 'not_covered', expected: 'not_approved', reason: 'missing_approval' },
+    {
+      manualStatus: 'identity_or_interval_changed',
+      prStatus: 'not_covered',
+      expected: 'not_approved',
+      reason: 'missing_approval',
+    },
+    { manualStatus: 'eligible', prStatus: 'unknown', expected: 'incomplete', reason: 'unknown_pr_coverage' },
+    { manualStatus: 'revoked', prStatus: 'covered', expected: 'approved', reason: 'approved_pr' },
+    {
+      manualStatus: 'eligible',
+      prStatus: 'not_covered',
+      expected: 'not_approved',
+      reason: 'missing_approval',
+      storedAuthor: 'stille-skog',
+    },
+    {
+      manualStatus: 'eligible',
+      prStatus: 'not_covered',
+      expected: 'not_approved',
+      reason: 'missing_approval',
+      storedNavIdent: 'Z990002',
+    },
+    {
+      manualStatus: 'eligible',
+      prStatus: 'not_covered',
+      expected: 'incomplete',
+      reason: 'incomplete_commit_history',
+      comparisonComplete: false,
+    },
+  ])(
+    'combines $manualStatus manual approval and $prStatus PR coverage',
+    async ({
+      manualStatus,
+      prStatus,
+      expected,
+      reason,
+      storedAuthor = 'rask-elv',
+      storedNavIdent = 'Z990010',
+      comparisonComplete = true,
+    }) => {
+      const reviewedAt = new Date('2026-10-18T10:00:00Z')
+      const registeredAt = new Date('2026-10-18T11:00:00Z')
+      mockGetEvidence.mockResolvedValue({
+        ...evidence,
+        interval_assessment: {
+          ...evidence.interval_assessment,
+          comparisonComplete,
+          commits: [{ ...evidence.interval_assessment.commits[0], status: prStatus }],
+        },
+      })
+      mockGetHistory.mockResolvedValue({
+        snapshots: [
+          {
+            id: 31,
+            base_sha: evidence.base_sha,
+            head_sha: evidence.head_sha,
+            evidence: { private: 'raw evidence must not reach the client' },
+            evidence_hash: 'internal',
+          },
+        ],
+        commits: [
+          {
+            id: 41,
+            snapshot_id: 31,
+            reviewer_nav_ident: 'Z990001',
+            registered_by_nav_ident: 'Z990001',
+            reviewed_at: reviewedAt,
+            registered_at: registeredAt,
+            sha: evidence.head_sha,
+            author_login: storedAuthor,
+            author_nav_ident: storedNavIdent,
+            status: manualStatus,
+          },
+        ],
+        events: [
+          {
+            id: 51,
+            approval_id: 41,
+            event_type: 'created',
+            actor_nav_ident: 'Z990001',
+            reason: null,
+            created_at: registeredAt,
+          },
+        ],
+      })
+      const result = await loader({ params, request: makeRequest() } as never)
+      expect(result.approvalAssessment).toMatchObject({
+        status: expected,
+        commits: [{ sha: evidence.head_sha, reason }],
+      })
+      expect(result.manualApprovalHistory).toEqual([
+        {
+          id: 41,
+          reviewer: 'Z990001',
+          registeredBy: 'Z990001',
+          reviewedAt,
+          registeredAt,
+          baseSha: evidence.base_sha,
+          headSha: evidence.head_sha,
+          commits: [
+            { sha: evidence.head_sha, authorLogin: storedAuthor, authorNavIdent: storedNavIdent, status: manualStatus },
+          ],
+          events: [{ type: 'created', actor: 'Z990001', reason: null, at: registeredAt }],
+        },
+      ])
+      expect(JSON.stringify(result)).not.toContain('raw evidence')
+      expect(JSON.stringify(result)).not.toContain('evidence_hash')
+    },
+  )
 })

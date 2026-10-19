@@ -916,9 +916,9 @@ export async function getRepositoryCodeDeliveryEvidence(
   repositoryId: number,
   deliveryId: number,
   requestedPage = 1,
+  transactionClient?: PoolClient,
 ): Promise<RepositoryCodeDeliveryEvidence | null> {
-  return withTransaction(async (client) => {
-    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+  const read = async (client: PoolClient): Promise<RepositoryCodeDeliveryEvidence | null> => {
     const { rows: deliveryRows } = await client.query<
       Omit<RepositoryCodeDeliveryEvidence, 'deployments' | 'page' | 'totalPages' | 'totalEvidenceEntries'>
     >(
@@ -1053,6 +1053,11 @@ export async function getRepositoryCodeDeliveryEvidence(
       totalEvidenceEntries,
       deployments: [...deployments.values()],
     }
+  }
+  if (transactionClient) return read(transactionClient)
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    return read(client)
   })
 }
 
