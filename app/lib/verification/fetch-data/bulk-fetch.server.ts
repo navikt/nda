@@ -102,7 +102,34 @@ async function fetchWorkflowRunSnapshotsForRepository(
   const repositoryIdentityCache = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
   let identityResolutionErrors = 0
   for (const row of rows) {
-    const parsed = parseWorkflowRunUrl(row.trigger_url, row.detected_github_owner, row.detected_github_repo_name)
+    let parsed = parseWorkflowRunUrl(row.trigger_url, row.detected_github_owner, row.detected_github_repo_name)
+    if (!parsed && row.deployment_source === 'nais_apply') {
+      let identityResolution = repositoryIdentityCache.get(row.github_repo_id)
+      if (!identityResolution) {
+        const numericGithubRepoId = Number(row.github_repo_id)
+        if (!Number.isSafeInteger(numericGithubRepoId)) {
+          identityResolutionErrors++
+          logger.warn('Skipping Nais Apply workflow-run snapshot with invalid GitHub repository ID', {
+            deploymentId: row.deployment_id,
+            githubRepoId: row.github_repo_id,
+          })
+          continue
+        }
+        identityResolution = getRepositoryIdentityById(numericGithubRepoId)
+        repositoryIdentityCache.set(row.github_repo_id, identityResolution)
+      }
+      const identity = await identityResolution
+      if (!identity || String(identity.id) !== row.github_repo_id) {
+        identityResolutionErrors++
+        logger.warn('Skipping Nais Apply workflow-run snapshot with unresolved GitHub repository identity', {
+          deploymentId: row.deployment_id,
+          githubRepoId: row.github_repo_id,
+          actualGithubRepoId: identity?.id ?? null,
+        })
+        continue
+      }
+      parsed = parseWorkflowRunUrl(row.trigger_url, identity.owner, identity.name)
+    }
     if (!parsed) continue
     const key = `${row.github_repo_id}:${parsed.runId}`
     if (!uniqueRuns.has(key)) {

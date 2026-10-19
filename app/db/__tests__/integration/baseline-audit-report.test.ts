@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildReportData, getAuditReportData } from '../../audit-reports.server'
-import { seedApp, seedApplicationRepository, seedDeployment, truncateAllTables } from './helpers'
+import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -151,5 +151,78 @@ describe('repository resolution for zero-deployment audit report', () => {
 
     expect(rawData.deployments).toHaveLength(0)
     expect(rawData.repository).toBe('unknown')
+  })
+})
+
+describe('renamed Apply deployments in audit reports', () => {
+  it('uses snapshots scoped to the immutable repository ID instead of the claim-time name', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-g', appName: 'app-g', environment: 'prod-gcp' })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
+
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '7001',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-repo',
+    })
+    await seedRepository(pool, {
+      githubRepoId: '7002',
+      githubOwner: 'navikt',
+      githubRepoName: 'old-repo',
+    })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-g',
+      environment: 'prod-gcp',
+      createdAt: new Date('2026-03-09T10:00:00Z'),
+      commitSha: 'a'.repeat(40),
+      fourEyesStatus: 'approved_pr',
+    })
+    const applyDeploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-g',
+      environment: 'prod-gcp',
+      createdAt: IN_PERIOD,
+      commitSha: 'b'.repeat(40),
+      fourEyesStatus: 'approved_pr',
+      githubOwner: 'navikt',
+      githubRepo: 'old-repo',
+    })
+    await pool.query(
+      `UPDATE deployments
+       SET deployment_source = 'nais_apply',
+           nais_deployment_id = NULL,
+           deployment_source_id = '7001:12345',
+           repository_id = $2,
+           github_pr_number = 42
+       WHERE id = $1`,
+      [applyDeploymentId, repositoryId],
+    )
+
+    await pool.query(
+      `INSERT INTO github_compare_snapshots (owner, repo, base_sha, head_sha, schema_version, data)
+       VALUES ('navikt', 'old-repo', $1, $2, 1, $3)`,
+      ['a'.repeat(40), 'b'.repeat(40), JSON.stringify({ commits: [{ sha: 'c'.repeat(40) }] })],
+    )
+    await pool.query(
+      `INSERT INTO github_compare_raw_snapshots
+         (github_repo_id, owner, repo, base_sha, head_sha, api_version, data)
+       VALUES ('7001', 'navikt', 'current-repo', $1, $2, '2022-11-28', $3)`,
+      ['a'.repeat(40), 'b'.repeat(40), JSON.stringify({ commits: [{ sha: 'd'.repeat(40) }] })],
+    )
+    await pool.query(
+      `INSERT INTO github_pr_raw_snapshots
+         (github_repo_id, owner, repo, pr_number, data_type, api_version, data)
+       VALUES
+         ('7001', 'navikt', 'old-repo', 42, 'commits', '2022-11-28', $1),
+         ('7002', 'navikt', 'old-repo', 42, 'commits', '2022-11-28', $2)`,
+      [JSON.stringify([{ sha: 'e'.repeat(40) }]), JSON.stringify([{ sha: 'f'.repeat(40) }])],
+    )
+
+    const rawData = await getAuditReportData(appId, PERIOD_START, PERIOD_END)
+
+    expect(rawData.deployments.find(({ id }) => id === applyDeploymentId)?.delivery_commit_shas).toEqual([
+      'd'.repeat(40),
+    ])
+    expect(rawData.deployments.find(({ id }) => id === applyDeploymentId)?.pr_commit_shas).toEqual(['e'.repeat(40)])
   })
 })

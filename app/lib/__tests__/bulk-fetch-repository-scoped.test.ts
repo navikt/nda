@@ -311,6 +311,33 @@ describe('fetchVerificationDataForRepository', () => {
     )
   })
 
+  it('accepts the canonical workflow URL for renamed Apply deployments', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
+      rows: [
+        {
+          deployment_id: 1,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'old-name',
+          deployment_source: 'nais_apply',
+          github_owner: 'navikt',
+          github_repo_name: 'stale-canonical-name',
+          trigger_url: 'https://github.com/navikt/current-name/actions/runs/12345',
+          github_repo_id: '987654321',
+        },
+      ],
+    })
+    mockFetchWorkflowRunSnapshotIfMissing.mockResolvedValueOnce({ status: 'fetched' })
+
+    await fetchVerificationDataForRepository(42)
+
+    expect(mockFetchWorkflowRunSnapshotIfMissing).toHaveBeenCalledWith(
+      'navikt',
+      'current-name',
+      'https://github.com/navikt/current-name/actions/runs/12345',
+      '987654321',
+    )
+  })
+
   it('reuses snapshot workflow-trigger data for deployments sharing a workflow run', async () => {
     const triggerUrl = 'https://github.com/navikt/nda/actions/runs/12345'
     const workflowTriggerConfig = {
