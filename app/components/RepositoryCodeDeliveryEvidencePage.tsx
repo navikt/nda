@@ -13,6 +13,10 @@ import {
 import { Link, useSearchParams } from 'react-router'
 import { PaginationControls } from '~/components/deployments/PaginationControls'
 import { ExternalLink } from '~/components/ExternalLink'
+import {
+  type ManualApprovalHistoryEntry,
+  RepositoryManualApprovalHistory,
+} from '~/components/RepositoryManualApprovalHistory'
 import { UserName } from '~/components/UserName'
 import type { RepositoryCodeDeliveryEvidence } from '~/db/repository-code-delivery-overview.server'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
@@ -28,6 +32,7 @@ interface RepositoryCodeDeliveryEvidencePageProps {
   repository: { id: number; githubOwner: string; githubRepoName: string }
   delivery: RepositoryCodeDeliveryEvidence
   approvalAssessment: RepositoryDeliveryApprovalAssessment
+  manualApprovalHistory: ManualApprovalHistoryEntry[]
   userMappings: UserLookupMap
 }
 
@@ -141,7 +146,7 @@ function assessmentReasonLabel(reason: RepositoryDeliveryCommitAssessmentReason)
 }
 
 function approvalStatusLabel(status: RepositoryDeliveryApprovalAssessment['status']): string {
-  if (status === 'approved') return 'Dekket av eksisterende PR-godkjenning'
+  if (status === 'approved') return 'Hele intervallet er dekket'
   if (status === 'not_approved') return 'Krever manuell godkjenning'
   if (status === 'no_changes') return 'Ingen commits i intervallet'
   return 'Kan ikke vurderes'
@@ -191,8 +196,8 @@ function RepositoryApprovalAssessment({
       <VStack gap="space-16">
         <Alert variant="info" size="small">
           Skrivebeskyttet vurdering av lagrede GitHub-snapshots med NDA sine eksisterende PR-regler, inkludert implisitt
-          godkjenning. Manuelle godkjenninger er ikke registrert eller vurdert her. Vurderingen oppretter ingen
-          beslutning og endrer ikke deploymentstatus.
+          godkjenning, kombinert med gyldige manuelle delgodkjenninger. Ukjent PR-grunnlag gir ikke manuell dekning.
+          Vurderingen oppretter ingen beslutning og endrer ikke deploymentstatus.
         </Alert>
         <HStack gap="space-8" align="center" wrap>
           <Tag
@@ -437,6 +442,7 @@ export function RepositoryCodeDeliveryEvidencePage({
   repository,
   delivery,
   approvalAssessment,
+  manualApprovalHistory,
   userMappings,
 }: RepositoryCodeDeliveryEvidencePageProps) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -461,8 +467,9 @@ export function RepositoryCodeDeliveryEvidencePage({
 
       <Alert variant="info" size="small">
         Dette er en skrivebeskyttet visning av snapshots knyttet til verifiseringskjøringer for deployments av denne
-        leveransen. Den vurderer ikke om hele intervallet er dekket, oppretter ingen repositorygodkjenning og endrer
-        ikke deploymentstatus. Manglende snapshot betyr ukjent grunnlag, ikke at reviews mangler.
+        leveransen, med forhåndsvurdering av repositorygodkjenning og manuell historikk. Den oppretter ingen
+        repositorygodkjenning og endrer ikke deploymentstatus. Manglende snapshot betyr ukjent grunnlag, ikke at reviews
+        mangler.
       </Alert>
 
       <Box padding="space-24" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
@@ -495,6 +502,7 @@ export function RepositoryCodeDeliveryEvidencePage({
         approvalAssessment={approvalAssessment}
         userMappings={userMappings}
       />
+      <RepositoryManualApprovalHistory repository={repository} entries={manualApprovalHistory} />
 
       <div>
         <Heading level="2" size="small" spacing>
