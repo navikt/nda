@@ -1,6 +1,10 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
 import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
@@ -63,6 +67,7 @@ export async function fetchVerificationData(
     ? (repoCheck.repository.status as RepositoryStatus)
     : 'unknown'
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+  const canonicalRepositoryId = githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null
   if (deploymentRepositoryId != null && repoCheck.repository) {
     owner = repoCheck.effectiveOwner
     repo = repoCheck.effectiveRepo
@@ -70,20 +75,16 @@ export async function fetchVerificationData(
 
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
-  const previousDeploymentResult = await getPreviousDeployment(
-    deploymentId,
-    owner,
-    repo,
-    githubRepoId,
-    appSettings.auditStartYear,
-    commitSha,
-  )
+  const previousDeploymentResult =
+    githubRepoId && canonicalRepositoryId
+      ? await getPreviousDeployment(deploymentId, owner, repo, githubRepoId, appSettings.auditStartYear, commitSha)
+      : null
   const previousDeploymentRateLimited = previousDeploymentResult === 'rate_limited'
   const previousDeployment = previousDeploymentRateLimited
     ? null
     : await preferRootApprovedSibling(previousDeploymentResult, commitSha, githubRepoId, monitoredAppId, deploymentId)
   const previousDeploymentLookupFailed =
-    (repositoryStatus === 'active' && !githubRepoId) || previousDeploymentRateLimited
+    (repositoryStatus === 'active' && (!githubRepoId || !canonicalRepositoryId)) || previousDeploymentRateLimited
 
   const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, options)
   const deployedPr = deployedPrResult.deployedPr

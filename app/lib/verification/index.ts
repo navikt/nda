@@ -2,7 +2,11 @@ import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { TITLE_COALESCE_SQL } from '~/db/deployments.server'
 import { propagateVerificationToSiblings } from '~/db/monorepo.server'
-import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
@@ -542,6 +546,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo, dep.repository_id ?? undefined)
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+  const canonicalRepositoryId = githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null
   if (dep.repository_id != null && repoCheck.repository) {
     owner = repoCheck.effectiveOwner
     repo = repoCheck.effectiveRepo
@@ -551,8 +556,10 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       ? await getEffectiveSettingsForRepository(dep.repository_id, dep.monitored_app_id)
       : await getEffectiveSettingsForApp(dep.monitored_app_id)
   const { implicitApprovalSettings } = appSettings
-  const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !githubRepoId
-  const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
+  const previousDeploymentLookupFailed =
+    repoCheck.repository?.status === 'active' && (!githubRepoId || !canonicalRepositoryId)
+  const prevRow =
+    githubRepoId && canonicalRepositoryId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
   const previousDeployment = prevRow
     ? await preferRootApprovedSibling(
         {

@@ -135,8 +135,9 @@ export async function computeVerificationDiffs(
         owner = effectiveOwner
         repo = effectiveRepo
       }
-      const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
-      const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
+      const previousDeploymentLookupFailed = status === 'active' && (!githubRepoId || repositoryId == null)
+      const prevRow =
+        githubRepoId && repositoryId != null ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
       const previousDeployment = prevRow
         ? await preferRootApprovedSibling(
             {

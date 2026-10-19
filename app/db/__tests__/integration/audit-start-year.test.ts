@@ -284,7 +284,57 @@ describe('audit_start_year filter — Dependabot link query', () => {
     const ids = await getUnlinkedDependabotDeploymentIds('alice')
     expect(ids).toEqual([postId])
   })
+
+  it('utelater Apply-deployments for apper med Apply deaktivert, men beholder legacy og aktivert Apply', async () => {
+    const legacyAppId = await seedApp(pool, { teamSlug: 'team-a', appName: 'legacy-app', environment: 'prod' })
+    const disabledApplyAppId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'disabled-apply-app',
+      environment: 'prod',
+    })
+    const enabledApplyAppId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'enabled-apply-app',
+      environment: 'prod',
+    })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [enabledApplyAppId])
+
+    const legacyId = await seedDeployment(pool, {
+      monitoredAppId: legacyAppId,
+      teamSlug: 'team-a',
+      environment: 'prod',
+      createdAt: POST_YEAR,
+      deployerUsername: 'alice',
+    })
+    await pool.query("UPDATE deployments SET pr_creator_username = 'dependabot[bot]' WHERE id = $1", [legacyId])
+
+    const disabledApplyId = await createDependabotApplyDeployment(disabledApplyAppId, 'disabled-apply')
+    const enabledApplyId = await createDependabotApplyDeployment(enabledApplyAppId, 'enabled-apply')
+
+    const ids = await getUnlinkedDependabotDeploymentIds('alice')
+    expect(ids.sort((a, b) => a - b)).toEqual([legacyId, enabledApplyId].sort((a, b) => a - b))
+    expect(ids).not.toContain(disabledApplyId)
+  })
 })
+
+async function createDependabotApplyDeployment(monitoredApplicationId: number, sourceId: string): Promise<number> {
+  const deployment = await upsertNaisApplyDeployment({
+    monitoredApplicationId,
+    sourceId,
+    createdAt: POST_YEAR,
+    teamSlug: 'team-a',
+    environmentName: 'prod',
+    appName: sourceId,
+    title: sourceId,
+    deployerUsername: 'alice',
+    commitSha: 'a'.repeat(40),
+    triggerUrl: null,
+    detectedGithubOwner: null,
+    detectedGithubRepoName: null,
+  })
+  await pool.query("UPDATE deployments SET pr_creator_username = 'dependabot[bot]' WHERE id = $1", [deployment.id])
+  return deployment.id
+}
 
 describe('audit_start_year filter — deviations queries', () => {
   it('getDeviationsByAppId ekskluderer avvik knyttet til pre-revisjons-deployments', async () => {

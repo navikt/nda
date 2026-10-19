@@ -5,6 +5,7 @@ const {
   findRepositoryForApp,
   getEffectiveSettingsForRepository,
   getEffectiveSettingsForApp,
+  getRepositoryIdByGithubRepoId,
   getBranchFromWorkflowRun,
   getSingleCommitMessage,
   isCommitOnBranch,
@@ -20,6 +21,7 @@ const {
   findRepositoryForApp: vi.fn(),
   getEffectiveSettingsForRepository: vi.fn(),
   getEffectiveSettingsForApp: vi.fn(),
+  getRepositoryIdByGithubRepoId: vi.fn(),
   getBranchFromWorkflowRun: vi.fn(),
   getSingleCommitMessage: vi.fn(),
   isCommitOnBranch: vi.fn(),
@@ -34,7 +36,11 @@ const {
 
 vi.mock('~/db/connection.server', () => ({ pool: { query: poolQuery } }))
 vi.mock('~/db/application-repositories.server', () => ({ findRepositoryForApp }))
-vi.mock('~/db/repositories.server', () => ({ getEffectiveSettingsForRepository, getEffectiveSettingsForApp }))
+vi.mock('~/db/repositories.server', () => ({
+  getEffectiveSettingsForRepository,
+  getEffectiveSettingsForApp,
+  getRepositoryIdByGithubRepoId,
+}))
 vi.mock('~/lib/github', () => ({
   getBranchFromWorkflowRun,
   getSingleCommitMessage,
@@ -75,6 +81,7 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
       auditStartYear: null,
       implicitApprovalSettings: { mode: 'off' },
     })
+    getRepositoryIdByGithubRepoId.mockResolvedValue(77)
     getEffectiveSettingsForApp.mockResolvedValue({
       auditStartYear: null,
       implicitApprovalSettings: { mode: 'off' },
@@ -104,6 +111,21 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
       repository: 'navikt/current-name',
       repositoryStatus: 'active',
       previousDeployment: null,
+      previousDeploymentLookupFailed: false,
+    })
+  })
+
+  it('reports a failed history lookup when the linked repository lacks canonical metadata', async () => {
+    getRepositoryIdByGithubRepoId.mockResolvedValueOnce(null)
+
+    const result = await fetchVerificationData(100, 'a'.repeat(40), 'navikt/old-name', 'prod-gcp', 'main', 7)
+
+    expect(getRepositoryIdByGithubRepoId).toHaveBeenCalledWith('12345')
+    expect(getPreviousDeployment).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      repositoryStatus: 'active',
+      previousDeployment: null,
+      previousDeploymentLookupFailed: true,
     })
   })
 

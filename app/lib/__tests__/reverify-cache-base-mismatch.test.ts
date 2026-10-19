@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 vi.mock('~/db/repositories.server', () => ({
   getEffectiveSettingsForApp: vi.fn(),
+  getRepositoryIdByGithubRepoId: vi.fn().mockResolvedValue(123),
 }))
 
 vi.mock('~/db/monorepo.server', () => ({
@@ -57,7 +58,7 @@ vi.mock('~/lib/verification/verify', () => ({
 
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import {
   buildCommitsBetweenFromCache,
@@ -74,6 +75,7 @@ const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
 const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
+const mockGetCanonicalRepositoryId = getRepositoryIdByGithubRepoId as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
 const mockFindPrForCommit = findPrForCommit as Mock
 const mockGetPrDataForDiff = getPrDataForDiff as Mock
@@ -203,6 +205,51 @@ describe('reverifyDeployment cache base validation', () => {
     expect(mockGetPrDataForDiff).toHaveBeenCalledWith('navikt', 'repo', 1812)
     expect(mockVerifyDeployment).toHaveBeenCalledWith(
       expect.objectContaining({ deployedPr: expect.objectContaining({ number: 1812 }) }),
+    )
+  })
+
+  it('marks cached reverification as failed when canonical repository metadata is missing', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 14,
+          commit_sha: 'head-missing-metadata',
+          four_eyes_status: 'approved',
+          github_pr_number: null,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          default_branch: 'master',
+          audit_start_year: 2026,
+        },
+      ],
+    })
+    mockFindRepositoryForApp.mockResolvedValue({
+      repository: { github_repo_id: '123', status: 'active' },
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'repo',
+      isRedirected: false,
+    })
+    mockGetCanonicalRepositoryId.mockResolvedValueOnce(null)
+    mockGetEffectiveSettings.mockResolvedValue({
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head-missing-metadata',
+      data: { commits: [] },
+    })
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockFindPrForCommit.mockResolvedValue({ prNumber: null, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+    mockUpdateDeploymentVerification.mockResolvedValue(false)
+
+    await reverifyDeployment(14)
+
+    expect(mockGetPreviousDeployment).not.toHaveBeenCalled()
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ previousDeployment: null, previousDeploymentLookupFailed: true }),
     )
   })
 
