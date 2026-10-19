@@ -39,6 +39,24 @@ describe('repository manual approval UI', () => {
     expect(html).not.toContain('/admin')
   })
 
+  it('explains history anchors instead of offering a review', () => {
+    const html = render(
+      <RepositoryManualApprovalPage
+        repository={approvalRepository}
+        delivery={{
+          id: 17,
+          base_sha: approvalReview.headSha.toUpperCase(),
+          head_sha: approvalReview.headSha,
+          first_deployed_at: null,
+        }}
+        manualApprovalHistory={[]}
+      />,
+    )
+    expect(html).toContain('startpunktet for repositoryhistorikken')
+    expect(html).not.toContain('start-review')
+    expect(html).not.toContain('register-approval')
+  })
+
   it('presents saved snapshot details before explicit confirmation, with only eligible commits selectable and none preselected', () => {
     const html = render(
       <>

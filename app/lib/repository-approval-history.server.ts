@@ -2,7 +2,9 @@ import type { ManualApprovalHistoryEntry } from '~/components/RepositoryManualAp
 import type { getRepositoryManualApprovalHistory } from '~/db/repository-manual-approvals.server'
 
 export function presentRepositoryApprovalHistory(
-  history: Awaited<ReturnType<typeof getRepositoryManualApprovalHistory>>,
+  history: Omit<Awaited<ReturnType<typeof getRepositoryManualApprovalHistory>>, 'snapshots'> & {
+    snapshots: { id: number; base_sha: string; head_sha: string }[]
+  },
 ): ManualApprovalHistoryEntry[] {
   return [...new Set(history.commits.map((commit) => commit.id))].map((id) => {
     const commits = history.commits.filter((commit) => commit.id === id)

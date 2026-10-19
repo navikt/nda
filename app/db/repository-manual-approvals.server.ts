@@ -433,11 +433,32 @@ export async function revokeRepositoryManualApproval(
   })
 }
 
-async function readRepositoryManualApprovalHistory(
+async function readFullApprovalSnapshots(client: PoolClient, repositoryId: number, deliveryId: number) {
+  const { rows } = await client.query<Snapshot>(
+    `SELECT * FROM repository_approval_snapshots
+     WHERE repository_id = $1 AND delivery_id = $2 ORDER BY id`,
+    [repositoryId, deliveryId],
+  )
+  return rows
+}
+
+async function readApprovalSnapshotMetadata(client: PoolClient, repositoryId: number, deliveryId: number) {
+  const { rows } = await client.query<Pick<Snapshot, 'id' | 'base_sha' | 'head_sha'>>(
+    `SELECT s.id, s.base_sha, s.head_sha FROM repository_approval_snapshots s
+     WHERE s.repository_id = $1 AND s.delivery_id = $2
+       AND EXISTS (SELECT 1 FROM repository_manual_approvals a WHERE a.snapshot_id = s.id)
+     ORDER BY s.id`,
+    [repositoryId, deliveryId],
+  )
+  return rows
+}
+
+async function readRepositoryManualApprovalHistory<T extends Pick<Snapshot, 'id' | 'base_sha' | 'head_sha'>>(
   actor: UserIdentity,
   repositoryId: number,
   deliveryId: number,
   requireAccess: (client: PoolClient, actor: UserIdentity, repositoryId: number) => Promise<void>,
+  readSnapshots: (client: PoolClient, repositoryId: number, deliveryId: number) => Promise<T[]>,
   transactionClient?: PoolClient,
 ) {
   requireValidIds(repositoryId, deliveryId)
@@ -497,11 +518,7 @@ async function readRepositoryManualApprovalHistory(
        WHERE s.repository_id = $1 AND s.delivery_id = $2 ORDER BY e.id`,
       [repositoryId, deliveryId],
     )
-    const { rows: snapshots } = await client.query<Snapshot>(
-      `SELECT * FROM repository_approval_snapshots
-       WHERE repository_id = $1 AND delivery_id = $2 ORDER BY id`,
-      [repositoryId, deliveryId],
-    )
+    const snapshots = await readSnapshots(client, repositoryId, deliveryId)
     return {
       snapshots,
       commits: rows.map(({ eligible, revoked, ...row }) => ({
@@ -528,7 +545,14 @@ export async function getRepositoryManualApprovalHistory(
   deliveryId: number,
   client?: PoolClient,
 ) {
-  return readRepositoryManualApprovalHistory(actor, repositoryId, deliveryId, requireApprovalAccess, client)
+  return readRepositoryManualApprovalHistory(
+    actor,
+    repositoryId,
+    deliveryId,
+    requireApprovalAccess,
+    readFullApprovalSnapshots,
+    client,
+  )
 }
 
 export async function getRepositoryManualApprovalHistoryForAdmin(
@@ -546,6 +570,7 @@ export async function getRepositoryManualApprovalHistoryForAdmin(
         throw new RepositoryApprovalError('forbidden', 'Repository admin access required')
       }
     },
+    readFullApprovalSnapshots,
     client,
   )
 }
@@ -568,7 +593,14 @@ export async function getRepositoryApprovalPage(actor: UserIdentity, repositoryI
       [repositoryId, deliveryId],
     )
     if (!rows[0]) throw new RepositoryApprovalError('not_found', 'Code delivery not found')
-    const history = await readRepositoryManualApprovalHistory(actor, repositoryId, deliveryId, async () => {}, client)
+    const history = await readRepositoryManualApprovalHistory(
+      actor,
+      repositoryId,
+      deliveryId,
+      async () => {},
+      readApprovalSnapshotMetadata,
+      client,
+    )
     return { delivery: rows[0], manualApprovalHistory: presentRepositoryApprovalHistory(history) }
   })
 }

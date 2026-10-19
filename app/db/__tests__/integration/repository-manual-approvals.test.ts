@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { Pool } from 'pg'
+import { Client, Pool } from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { assignTeamRole } from '~/db/role-assignments.server'
 import type { UserIdentity } from '~/lib/auth.server'
@@ -590,6 +590,37 @@ describe('repository manual approval storage', () => {
     await expect(
       getRepositoryManualApprovalHistoryForAdmin({ ...reviewer, navIdent: 'Z990001' }, repositoryId, deliveryId),
     ).rejects.toMatchObject({ code: 'forbidden' })
+  })
+
+  it('loads only snapshot metadata for approvals while preserving complete snapshot history', async () => {
+    await createRepositoryApprovalReview(actor, repositoryId, deliveryId)
+    const { id } = await approve()
+    const query = vi.spyOn(Client.prototype, 'query')
+    try {
+      const page = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+      expect(page.manualApprovalHistory.map((approval) => approval.id)).toEqual([id])
+      const snapshotReads = query.mock.calls
+        .map(([sql]) => sql)
+        .filter((sql): sql is string => typeof sql === 'string' && sql.includes('FROM repository_approval_snapshots'))
+      expect(snapshotReads).toHaveLength(1)
+      expect(snapshotReads[0]).toContain('SELECT s.id, s.base_sha, s.head_sha')
+      expect(snapshotReads[0]).toContain('EXISTS')
+      expect(snapshotReads[0]).not.toContain('evidence')
+      expect(snapshotReads[0]).not.toContain('*')
+    } finally {
+      query.mockRestore()
+    }
+    const complete = await history()
+    expect(complete.snapshots).toHaveLength(2)
+    expect(complete.snapshots.every((snapshot) => snapshot.evidence.compare?.commits.length === 2)).toBe(true)
+  })
+
+  it('rejects starting a review for a history anchor without storing a snapshot', async () => {
+    const anchor = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha: baseSha })
+    await expect(createRepositoryApprovalReview(actor, repositoryId, anchor.id)).rejects.toMatchObject({
+      code: 'incomplete_evidence',
+    })
+    expect((await getRepositoryManualApprovalHistory(actor, repositoryId, anchor.id)).snapshots).toEqual([])
   })
 
   it('reads evidence, author identities and revocations from the same read-only snapshot', async () => {

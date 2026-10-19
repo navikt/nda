@@ -289,12 +289,19 @@ export function RepositoryManualApprovalPage({
       {delivery.first_deployed_at && (
         <BodyShort>Første tilknyttede deployment: {formatAuditLogTimestamp(delivery.first_deployed_at)}</BodyShort>
       )}
-      <fetcher.Form method="post">
-        <input type="hidden" name="intent" value="start-review" />
-        <Button type="submit" variant={review ? 'secondary' : 'primary'} loading={fetcher.state !== 'idle'}>
-          {review ? 'Start en ny gjennomgang med nytt grunnlag' : 'Start gjennomgang'}
-        </Button>
-      </fetcher.Form>
+      {delivery.base_sha.toLowerCase() === delivery.head_sha.toLowerCase() ? (
+        <Alert variant="info">
+          Dette er startpunktet for repositoryhistorikken. Leveransen har ikke et endringsintervall som kan godkjennes
+          manuelt.
+        </Alert>
+      ) : (
+        <fetcher.Form method="post">
+          <input type="hidden" name="intent" value="start-review" />
+          <Button type="submit" variant={review ? 'secondary' : 'primary'} loading={fetcher.state !== 'idle'}>
+            {review ? 'Start en ny gjennomgang med nytt grunnlag' : 'Start gjennomgang'}
+          </Button>
+        </fetcher.Form>
+      )}
       <ActionAlert data={fetcher.data} />
       {review && (
         <>

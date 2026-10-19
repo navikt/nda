@@ -13,6 +13,8 @@ verifiseringshistorikk eller eksisterende PR-regler. Gamle appgodkjenninger impo
    fra en leveranses adminside når du har godkjenningsrett.
 2. Velg leveransen og trykk **Start gjennomgang**. Dette sender POST og lagrer
    et uforanderlig snapshot. GET oppretter aldri snapshots eller godkjenninger.
+   Historiens startpunkt med lik base/head har ikke et endringsintervall og kan
+   ikke godkjennes manuelt.
 3. Les det fryste grunnlaget før bekreftelsen: base/head, lagringstidspunkt,
    default-branch, implisitt PR-regel, commits, forfatterkoblinger, Git-tider og
    lagrede PR-commits og reviews. GitHub-lenker er hjelp til kodegjennomgangen;

@@ -27,6 +27,12 @@ type Story = StoryObj<typeof meta>
 
 export const BeforeReview: Story = {}
 
+export const HistoryAnchor: Story = {
+  args: {
+    delivery: { ...meta.args.delivery, base_sha: approvalReview.headSha },
+  },
+}
+
 export const FrozenGroundAndExplicitSelection: Story = {
   render: () => (
     <VStack gap="space-24">
