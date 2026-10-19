@@ -68,6 +68,46 @@ describe('application-repositories', () => {
     })
   })
 
+  it('uses canonical names for immutable-ID lookups despite stale redirects', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '987654322',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-name',
+    })
+    await seedRepository(pool, {
+      githubRepoId: '987654323',
+      githubOwner: 'navikt',
+      githubRepoName: 'reused-redirect-name',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'current-name',
+      githubRepoId: '987654322',
+    })
+    await pool.query(
+      `UPDATE application_repositories
+       SET redirects_to_owner = 'navikt', redirects_to_repo = 'reused-redirect-name'
+       WHERE monitored_app_id = $1 AND github_repo_id = '987654322'`,
+      [appId],
+    )
+
+    const byId = await findRepositoryForApp(appId, 'navikt', 'old-name', repositoryId)
+    expect(byId).toMatchObject({
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'current-name',
+      isRedirected: false,
+    })
+
+    const byName = await findRepositoryForApp(appId, 'navikt', 'current-name')
+    expect(byName).toMatchObject({
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'reused-redirect-name',
+      isRedirected: true,
+    })
+  })
+
   it('prefers an approved immutable-ID match over a reused repository name', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
     await seedRepository(pool, {

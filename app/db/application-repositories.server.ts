@@ -113,7 +113,7 @@ export async function findRepositoryForApp(
 
   const repo = result.rows[0]
 
-  if (repo.redirects_to_owner && repo.redirects_to_repo) {
+  if (repositoryId == null && repo.redirects_to_owner && repo.redirects_to_repo) {
     return {
       repository: repo,
       effectiveOwner: repo.redirects_to_owner,
