@@ -11,51 +11,30 @@ verifiseringshistorikk eller eksisterende PR-regler. Gamle appgodkjenninger impo
 
 1. Åpne **Manuell repositorygodkjenning** fra repositorysiden, eller bruk lenken
    fra en leveranses adminside når du har godkjenningsrett.
-2. Velg leveransen og trykk **Start gjennomgang**. Dette sender POST og lagrer
-   et uforanderlig snapshot. GET oppretter aldri snapshots eller godkjenninger.
-   Historiens startpunkt med lik base/head har ikke et endringsintervall og kan
-   ikke godkjennes manuelt.
-3. Les det fryste grunnlaget før bekreftelsen: base/head, lagringstidspunkt,
-   default-branch, implisitt PR-regel, commits, forfatterkoblinger, Git-tider og
-   lagrede PR-commits og reviews. GitHub-lenker er hjelp til kodegjennomgangen;
-   eksternt innhold kan ha endret seg siden snapshotten ble lagret.
-4. Velg eksplisitt bare committene du har gjennomgått. Ingen er forhåndsvalgt.
-   Egne commits, ukjent PR-grunnlag, ukjent forfatteridentitet og commits uten
-   gyldig lagret committer-tid kan ikke velges. Årsaken vises i grunnlaget.
-5. Beskriv hva du har gjennomgått. En lenke til ytterligere dokumentasjon er
-   valgfri og må bruke `http` eller `https`. Ikke skriv personopplysninger eller
-   hemmeligheter i friteksten.
-6. Oppgi faktisk reviewtid med eksplisitt tidssone, eksempelvis
-   `2026-10-19T11:30:00+02:00`. Tidspunktet er ikke forhåndsutfylt.
-7. Bekreft de valgte committene. Registrator og reviewer er alltid den
-   serverautentiserte NAV-identen; skjemaet kan ikke velge en annen person.
+2. Se forhåndsvisningen av base/head, commits, forfatterkoblinger og lagret
+   PR-grunnlag. GET lagrer ikke snapshots eller godkjenninger.
+3. Bare commits med kjent PR-grunnlag uten PR-godkjenning kan godkjennes manuelt.
+   PR-dekkede commits er markert, og ukjent PR-grunnlag kan ikke godkjennes.
+   Egne commits, commits med ukjent forfatteridentitet og commits som allerede
+   er godkjent manuelt, er heller ikke tilgjengelige for godkjenning.
+4. Velg **Godkjenn manuelt** og legg eventuelt til en kommentar. Én innsending
+   godkjenner alle kvalifiserte commits; brukeren velger ikke SHA-er eller
+   tidspunkt. Registreringen får serverens tidspunkt.
 
-Grunnlaget erstattes ikke ved revalidering eller ved avvist registrering.
-Hvis evidens, innlogget godkjenner eller en forfatterkobling i det viste
-grunnlaget er endret, avvises registreringen. Brukeren må selv starte en ny
-gjennomgang og vurdere det nye grunnlaget. Ingen delgodkjenning eller
-opprettelseshendelse lagres når valideringen feiler.
+Ved innsending beregner serveren grunnlaget og forfatterkoblingene på nytt.
+Hvis de avviker fra forhåndsvisningen, avvises handlingen uten lagring. Snapshot,
+godkjenning, commitkoblinger og opprettelseshendelse lagres atomisk. Reviewer og
+registrator er den serverautentiserte NAV-identen.
 
 ## Tid og etterfølgende godkjenning
 
-Serveren sammenligner reviewtid med **lagret committer-tid for hver valgt commit**.
-Reviewtid må være minst like sen som den nyeste av disse tidene og ikke være i
-fremtiden etter databaseklokken. Uvalgte commits flytter ikke den nedre tidsgrensen.
-Manglende eller ugyldig committer-tid gir avslag; author-tid, deploymenttid og
-registreringstid brukes aldri som skjult reserve. Tidsstrengen valideres også for
-gyldig kalenderdato og tidssone.
+Registreringstidspunktet fastsettes av databasen og vises i historikken.
+Git-committer-tid brukes ikke for å kreve at brukeren oppgir et separat reviewtidspunkt.
 
-Git-metadata er ikke sikkert tidsbevis. Dette er en kontroll mot det lagrede
-grunnlaget, ikke en garanti for når kode faktisk ble tilgjengelig.
-
-Review etter deployment er tillatt. Hvis reviewtid er etter første tilknyttede
-deployment, merkes historikken **Etterfølgende godkjenning – ikke godkjent ved
-første deploy**. Første deployment beregnes over alle tilknyttede deployments,
-ikke bare siden som vises i den paginerte evidensvisningen. Merket er ikke en
-beregning av godkjenningsstatus for senere deployments. Registreringstid vises
-separat fra reviewtid. Hvis registreringen skjer etter første deployment, vises
-også **Registrert etter første deploy**, selv om oppgitt reviewtid er tidligere.
-Oppgitt reviewtid er ikke bevis på at godkjenningen var registrert før deployment.
+Review etter deployment er tillatt og merkes **Etterfølgende godkjenning – ikke
+godkjent ved første deploy**. Første deployment beregnes over alle tilknyttede
+deployments. Merket er ikke en beregning av godkjenningsstatus for senere
+deployments. Registreringstidspunktet vises separat.
 
 ## Tilgang og dataminimering
 
@@ -69,11 +48,11 @@ i én spørring. Eksisterende adminsemantikk er beholdt.
 - En godkjenner uten adminrett får tilgang til `/repository/:owner/:repo/approvals`
   og `/repository/:owner/:repo/approvals/:deliveryId`, ikke adminsiden.
 - Historiske repositoryadminer uten godkjenningsrett kan lese historikk og
-  tilbakekalle, men ikke starte en review eller registrere godkjenning.
+  tilbakekalle, men ikke se forhåndsvisningen eller registrere godkjenning.
 
-Godkjenningssiden returnerer bare leveranseintervall, første deployment og en
-avgrenset historikk. POST-responsen viser en egen DTO for det fryste grunnlaget,
-ikke hele evaluatorinputen, hash eller interne identitetsversjoner. Ingen
+Godkjenningssiden returnerer bare leveranseintervall, første deployment,
+forhåndsvisning og en avgrenset historikk. Forhåndsvisningen viser ikke hele
+evaluatorinputen eller interne identitetsversjoner. Ingen
 admininnstillinger, driftsjobber eller rå verifiseringsdata returneres av disse
 rutene.
 
@@ -92,9 +71,7 @@ Ukjente handlinger avvises.
 - Registrering releser gjeldende evidens og identiteter i `REPEATABLE READ`.
   Identiteter låses i rekkefølgen users før accounts. Serialiseringskonflikter
   og deadlocks oversettes til avslag på endret grunnlag.
-- Beskrivelse og dokumentasjonslenke lagres sammen med godkjenningen.
-  Ny serverkode krever beskrivelse. Gamle rader har fortsatt `NULL`, og vises
-  som ikke dokumentert i den gamle registreringen.
+- Kommentar er valgfri og lagres sammen med godkjenningen når den er oppgitt.
 - Tilbakekalling krever repositoryadmin og en ikke-blank begrunnelse.
   En `revoked`-hendelse legges til; originalen endres ikke. Gjentatt
   tilbakekalling returnerer `false`, og actionen rapporterer ingen endring.
@@ -109,14 +86,14 @@ fortsatt leses i historikken, men kan ikke bekreftes i den nye serverflyten.
 
 1. Kjør ordinær migrering før ny applikasjonskode.
 2. Verifiser godkjenner uten adminrett og historisk admin uten godkjenningsrett.
-3. Kontroller at GET ikke lager snapshots. Start via POST, og sammenlign vist
-   intervall og forfattere med det lagrede grunnlaget.
-4. Registrer et eksplisitt subset med beskrivelse og faktisk reviewtid.
-   Kontroller at bare valgte SHA-er lagres og vises i historikken.
-5. Kontroller avslag for egne commits, manglende tekst, ugyldig URL, fremtidig
-   reviewtid, for tidlig reviewtid og manglende committer-tid.
-6. Endre evidens eller forfatterkobling i et kontrollert testmiljø mellom start
-   og bekreftelse. Kontroller at bekreftelsen avvises uten nytt snapshot.
+3. Kontroller at GET ikke lager snapshots. Sammenlign forhåndsvisningens
+   intervall, PR-dekning og forfattere med det lagrede grunnlaget.
+4. Godkjenn manuelt med og uten valgfri kommentar. Kontroller at bare commits
+   uten kjent PR-dekning lagres.
+5. Kontroller avslag for egne commits, PR-dekkede commits og ukjent PR-grunnlag.
+6. Endre evidens eller forfatterkobling i et kontrollert testmiljø mellom
+   forhåndsvisning og godkjenning. Kontroller at handlingen avvises uten
+   snapshot eller godkjenning.
 7. Kontroller merking etter deployment og begrunnet tilbakekalling.
 8. Sammenlign deploymentstatus og verifiseringshistorikk før og etter handlingene;
    ingen av dem skal være endret.
@@ -128,9 +105,9 @@ En feilregistrering håndteres med begrunnet tilbakekalling, ikke datavask.
 
 ### Observabilitet
 
-Handlingene logger strukturerte hendelser for snapshotstart, registrering,
-avslag og tilbakekalling. Metadata begrenses til repository-ID, leveranse-ID,
-snapshot-/godkjennings-ID, avvisningskode og om tilbakekallingen endret noe.
+Handlingene logger strukturerte hendelser for registrering, avslag og
+tilbakekalling. Metadata begrenses til repository-ID, leveranse-ID,
+godkjennings-ID, avvisningskode og om tilbakekallingen endret noe.
 NAV-identer, fritekst, begrunnelser, lenker, hash og evaluatorinput logges ikke.
 Eksisterende HTTP-logging og tracing brukes; flyten gjør ingen eksterne API-kall.
 
@@ -144,11 +121,11 @@ første flyten.
 
 ## Validering
 
-Målrettede tester dekker actions, tilgang, dataminimering, snapshot før
-bekreftelse, valgte commits, tid, dokumentasjon, stale grunnlag, IDOR,
-tilbakekalling, etterfølgende godkjenning og uendret deploymentstatus.
-Storybook viser start, fryst grunnlag, utilgjengelige commits, manglende
-tidsgrunnlag, etterfølgende godkjenning og tilbakekalling.
+Målrettede tester dekker actions, tilgang, dataminimering, forhåndsvisning uten
+lagring, PR-dekkede commits, ukjent PR-grunnlag, godkjenning av udekkede commits,
+stale grunnlag, IDOR, tilbakekalling, etterfølgende godkjenning og uendret
+deploymentstatus. Storybook viser forhåndsvisning, utilgjengelige commits,
+historikkanker, etterfølgende godkjenning og tilbakekalling.
 
 Kjør `pnpm run check`, `pnpm test`, `pnpm run knip`, `pnpm run build` og
 `pnpm run build-storybook`. PostgreSQL-integrasjonstestene kan ved lokale

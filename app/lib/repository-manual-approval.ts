@@ -9,6 +9,7 @@ export interface RepositoryApprovalReview {
   headSha: string
   createdAt: string
   reviewer: string
+  previewToken: string
   defaultBranch: string | null
   implicitApprovalMode: string
   commits: Array<{
@@ -37,6 +38,8 @@ export interface RepositoryApprovalReview {
   }>
 }
 
+export type RepositoryApprovalPreview = Omit<RepositoryApprovalReview, 'snapshotId' | 'createdAt' | 'reviewer'>
+
 export function isRepositoryApprovalId(value: number): boolean {
   return Number.isFinite(value) && Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647
 }
@@ -45,16 +48,6 @@ export function parseRepositoryApprovalId(value: string | null): number | null {
   if (!value || !/^\d+$/.test(value)) return null
   const id = Number(value)
   return isRepositoryApprovalId(id) ? id : null
-}
-
-export function isDocumentationUrl(value: string): boolean {
-  if (!/^https?:\/\//i.test(value)) return false
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' || url.protocol === 'http:'
-  } catch {
-    return false
-  }
 }
 
 export function parseReviewTime(value: string): Date | null {

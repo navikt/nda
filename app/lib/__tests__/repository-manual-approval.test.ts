@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  isDocumentationUrl,
-  isRepositoryApprovalId,
-  parseRepositoryApprovalId,
-  parseReviewTime,
-} from '../repository-manual-approval'
+import { isRepositoryApprovalId, parseRepositoryApprovalId, parseReviewTime } from '../repository-manual-approval'
 
 describe('repository approval input validation', () => {
   it.each(['0', '-1', '1x', '1.1', 'NaN', 'Infinity', '2147483648', '', null])('rejects invalid ID %j', (value) => {
@@ -16,22 +11,6 @@ describe('repository approval input validation', () => {
   it('accepts valid IDs', () => {
     expect(parseRepositoryApprovalId('17')).toBe(17)
     expect(isRepositoryApprovalId(2_147_483_647)).toBe(true)
-  })
-  it.each([
-    'javascript:alert(1)',
-    'data:text/html,test',
-    '/relative',
-    '//example.com',
-    'not a url',
-    'https://',
-    'https:example.com',
-    'http:/example.com',
-    'https:\\example.com',
-  ])('rejects URL %s', (value) => {
-    expect(isDocumentationUrl(value)).toBe(false)
-  })
-  it.each(['https://example.com/review?q=1', 'http://example.com/review'])('accepts URL %s', (value) => {
-    expect(isDocumentationUrl(value)).toBe(true)
   })
   it.each([
     '',
