@@ -583,6 +583,137 @@ describe('repository code delivery overview', () => {
     })
   })
 
+  it('covers a parent-first stack from persisted delivery parent SHAs without changing the divergent parent comparison', async () => {
+    const repositoryId = await createRepository('1029')
+    await pool.query(`UPDATE repositories SET default_branch = 'main' WHERE id = $1`, [repositoryId])
+    const baseSha = '98b7abf4d6a2b95789358d9af52b7d2804c4acaf'
+    const parentMergeSha = 'a241f12fbf597182791089f45283200807e30c35'
+    const childMergeSha = '95acc5e50eb2137ba03c4c7a7f7db43ba63a5952'
+    const headSha = '6b89c946c91d7563af68b7a542f0173be27cbf94'
+    const parentHeadSha = '73a1112a74d670fde0c190522804872a55356923'
+    const entries = [
+      {
+        number: 233,
+        base: 'main',
+        headSha: parentHeadSha,
+        mergeSha: parentMergeSha,
+        parentSha: baseSha,
+        mergedAt: '2026-09-21T10:48:00Z',
+      },
+      {
+        number: 234,
+        base: 'sp-forvaltning/confirm-form-validation',
+        headSha: '6d0751d9b39a19d0ab423faf27fdd549f9620802',
+        mergeSha: childMergeSha,
+        parentSha: parentMergeSha,
+        mergedAt: '2026-09-21T10:48:01Z',
+      },
+      {
+        number: 232,
+        base: 'main',
+        headSha: 'dca17f13a5a1b0df09c355c3a2785896923d5781',
+        mergeSha: headSha,
+        parentSha: childMergeSha,
+        mergedAt: '2026-09-22T12:12:58Z',
+      },
+    ]
+    const rawCommit = (sha: string, parentSha: string) => ({
+      sha,
+      commit: {
+        message: 'Oppdater leveranse',
+        author: { name: 'Glad Fjord', date: '2026-09-18T12:00:08Z' },
+        committer: { date: '2026-09-18T12:00:08Z' },
+      },
+      author: { login: 'glad-fjord' },
+      parents: [{ sha: parentSha }],
+    })
+    const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha })
+    await pool.query(
+      `INSERT INTO github_compare_raw_snapshots
+         (github_repo_id, owner, repo, base_sha, head_sha, api_version, data)
+       VALUES ('1029', 'navikt', 'repo-1029', $1, $2, '2022-11-28', $3::jsonb),
+              ('1029', 'navikt', 'repo-1029', $4, $5, '2022-11-28', $6::jsonb)`,
+      [
+        baseSha,
+        headSha,
+        JSON.stringify({
+          status: 'ahead',
+          ahead_by: 3,
+          behind_by: 0,
+          total_commits: 3,
+          commits: entries.map((entry) => rawCommit(entry.mergeSha, entry.parentSha)),
+        }),
+        childMergeSha,
+        parentHeadSha,
+        JSON.stringify({ status: 'diverged', ahead_by: 2, behind_by: 7, total_commits: 2 }),
+      ],
+    )
+    for (const entry of entries) {
+      await pool.query(
+        `INSERT INTO github_commit_associated_prs_raw_snapshots
+           (github_repo_id, owner, repo, sha, api_version, data, pagination_complete)
+         VALUES ('1029', 'navikt', 'repo-1029', $1, '2022-11-28', $2::jsonb, true)`,
+        [entry.mergeSha, JSON.stringify([{ number: entry.number, base: { ref: entry.base } }])],
+      )
+      const snapshots = [
+        {
+          type: 'pr',
+          data: {
+            number: entry.number,
+            base: { ref: entry.base, sha: entry.parentSha },
+            head: { ref: `feature/${entry.number}`, sha: entry.headSha },
+            commits: 1,
+            user: { login: 'glad-fjord' },
+            merged_by: { login: 'rask-elv' },
+            merge_commit_sha: entry.mergeSha,
+            merged_at: entry.mergedAt,
+          },
+        },
+        { type: 'commits', data: [rawCommit(entry.headSha, entry.parentSha)] },
+        {
+          type: 'reviews',
+          data: [
+            {
+              id: 1,
+              user: { login: 'rask-elv' },
+              state: 'APPROVED',
+              submitted_at: '2026-09-21T10:47:20Z',
+              commit_id: entry.headSha,
+            },
+          ],
+        },
+      ]
+      for (const snapshot of snapshots) {
+        await pool.query(
+          `INSERT INTO github_pr_raw_snapshots
+             (github_repo_id, owner, repo, pr_number, data_type, api_version, data)
+           VALUES ('1029', 'navikt', 'repo-1029', $1, $2, '2022-11-28', $3::jsonb)`,
+          [entry.number, snapshot.type, JSON.stringify(snapshot.data)],
+        )
+      }
+    }
+    await pool.query(
+      `INSERT INTO repository_code_delivery_assessment_sync
+         (delivery_id, completed_pull_request_snapshot_ids, stack_parent_pull_request_numbers,
+          completed_at, completed_assessment_version)
+       VALUES ($1, '{"232": {}, "233": {}, "234": {}}', '{"234": [233]}', now(), 1)`,
+      [delivery.id],
+    )
+
+    expect(await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)).toMatchObject({
+      assessment_sync: { status: 'completed' },
+      interval_assessment: {
+        state: 'complete',
+        summary: { covered: 3, notCovered: 0, unknown: 0 },
+        commits: [
+          { sha: parentMergeSha, pullRequestNumber: 233, status: 'covered' },
+          { sha: childMergeSha, pullRequestNumber: 234, status: 'covered', reason: 'approved_review' },
+          { sha: headSha, pullRequestNumber: 232, status: 'covered' },
+        ],
+      },
+    })
+  })
+
   it('returns an empty overview for a repository without deliveries', async () => {
     const repositoryId = await createRepository('1000')
 
