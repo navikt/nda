@@ -6,6 +6,7 @@ import {
   enqueueRepositoryCodeDeliveryAssessmentSync,
   getRepositoryCodeDeliveryAssessmentSyncProgress,
   markRepositoryCodeDeliveryAssessmentAssociationCompleted,
+  markRepositoryCodeDeliveryAssessmentStackParentsCompleted,
   markRepositoryCodeDeliveryAssessmentSyncCompleted,
   markRepositoryCodeDeliveryAssessmentSyncFailed,
 } from '../../repository-code-delivery-assessment-sync.server'
@@ -133,12 +134,14 @@ describe('repository code delivery assessment sync queue', () => {
 
     const sha = '3'.repeat(40)
     await markRepositoryCodeDeliveryAssessmentAssociationCompleted(deliveryId, sha, 17)
+    await markRepositoryCodeDeliveryAssessmentStackParentsCompleted(deliveryId, 17, [18, 19])
     await deferRepositoryCodeDeliveryAssessmentSync(deliveryId, 'rate limit')
 
     const progress = await getRepositoryCodeDeliveryAssessmentSyncProgress(deliveryId)
     expect(progress).toEqual({
       completedAssociationSnapshotIds: { [sha]: 17 },
       completedPullRequestSnapshotIds: {},
+      stackParentPullRequestNumbers: { 17: [18, 19] },
     })
   })
 })

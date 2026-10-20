@@ -70,6 +70,8 @@ function assess(overrides: Partial<Parameters<typeof assessRepositoryDeliveryInt
     implicitApprovalMode: 'off',
     associatedPullRequestsByCommit: associatedPullRequests,
     pullRequestsByNumber: approvedPullRequest,
+    stackParentPullRequestNumbersByNumber: {},
+    stackAncestryByPullRequestNumber: {},
     ...overrides,
   })
 }
@@ -262,7 +264,7 @@ describe('repository code delivery interval assessment', () => {
           number: 42,
           baseBranch: 'main',
           headBranch: 'feature/base',
-          headSha: '2'.repeat(40),
+          headSha: '9'.repeat(40),
           mergeCommitSha: '4'.repeat(40),
           mergedAt: '2026-10-01T12:00:00Z',
         },
@@ -277,6 +279,8 @@ describe('repository code delivery interval assessment', () => {
           mergedAt: '2026-10-01T13:00:00Z',
         },
       },
+      stackParentPullRequestNumbersByNumber: { 43: [42] },
+      stackAncestryByPullRequestNumber: { 43: { 42: 'ahead' } },
     })
     expect(result.commits[0]).toMatchObject({
       status: 'covered',
@@ -305,6 +309,107 @@ describe('repository code delivery interval assessment', () => {
           mergedAt: '2026-10-01T13:00:00Z',
         },
       },
+      stackParentPullRequestNumbersByNumber: { 43: [] },
+    })
+    expect(result.commits[0]).toMatchObject({
+      status: 'not_covered',
+      reason: 'no_default_branch_pull_request',
+    })
+  })
+
+  it('keeps stack evidence unknown when parent discovery or ancestry evidence is incomplete', () => {
+    const result = assess({
+      associatedPullRequestsByCommit: {
+        [commitSha]: {
+          complete: true,
+          pullRequests: [{ number: 43, baseBranch: 'feature/base' }],
+        },
+      },
+      pullRequestsByNumber: {
+        43: {
+          ...approvedPullRequest[42],
+          number: 43,
+          baseBranch: 'feature/base',
+          baseSha: '2'.repeat(40),
+          headBranch: 'feature/stacked',
+          headSha: commitSha,
+          mergeCommitSha: '5'.repeat(40),
+          mergedAt: '2026-10-01T13:00:00Z',
+        },
+      },
+      stackParentPullRequestNumbersByNumber: { 43: [42] },
+    })
+    expect(result.commits[0]).toMatchObject({
+      status: 'unknown',
+      reason: 'incomplete_stack_evidence',
+      pullRequestNumber: 43,
+    })
+    expect(result.state).toBe('incomplete')
+  })
+
+  it('preserves unknown stack evidence when another PR candidate is unapproved', () => {
+    const result = assess({
+      associatedPullRequestsByCommit: {
+        [commitSha]: {
+          complete: true,
+          pullRequests: [
+            { number: 41, baseBranch: 'main' },
+            { number: 43, baseBranch: 'feature/base' },
+          ],
+        },
+      },
+      pullRequestsByNumber: {
+        41: { ...approvedPullRequest[42], number: 41, reviews: [] },
+        43: {
+          ...approvedPullRequest[42],
+          number: 43,
+          baseBranch: 'feature/base',
+          baseSha: '2'.repeat(40),
+          headBranch: 'feature/stacked',
+          headSha: commitSha,
+          mergeCommitSha: '5'.repeat(40),
+          mergedAt: '2026-10-01T13:00:00Z',
+        },
+      },
+      stackParentPullRequestNumbersByNumber: { 43: [42] },
+    })
+    expect(result.commits[0]).toMatchObject({
+      status: 'unknown',
+      reason: 'incomplete_stack_evidence',
+    })
+  })
+
+  it('does not cover a stack when the child merge commit is not an ancestor of its parent merge', () => {
+    const result = assess({
+      associatedPullRequestsByCommit: {
+        [commitSha]: {
+          complete: true,
+          pullRequests: [{ number: 43, baseBranch: 'feature/base' }],
+        },
+      },
+      pullRequestsByNumber: {
+        42: {
+          ...approvedPullRequest[42],
+          number: 42,
+          baseBranch: 'main',
+          headBranch: 'feature/base',
+          headSha: '9'.repeat(40),
+          mergeCommitSha: '4'.repeat(40),
+          mergedAt: '2026-10-01T12:00:00Z',
+        },
+        43: {
+          ...approvedPullRequest[42],
+          number: 43,
+          baseBranch: 'feature/base',
+          baseSha: '2'.repeat(40),
+          headBranch: 'feature/stacked',
+          headSha: commitSha,
+          mergeCommitSha: '5'.repeat(40),
+          mergedAt: '2026-10-01T13:00:00Z',
+        },
+      },
+      stackParentPullRequestNumbersByNumber: { 43: [42] },
+      stackAncestryByPullRequestNumber: { 43: { 42: 'diverged' } },
     })
     expect(result.commits[0]).toMatchObject({
       status: 'not_covered',

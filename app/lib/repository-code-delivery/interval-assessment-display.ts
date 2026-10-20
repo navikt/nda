@@ -15,6 +15,7 @@ export function assessmentReasonLabel(reason: RepositoryDeliveryCommitAssessment
     missing_pull_request_snapshot: 'Snapshot av PR, commits eller reviews mangler',
     incomplete_pull_request_snapshot: 'PR-snapshotten er ufullstendig eller har feil branch',
     pull_request_head_mismatch: 'PR-head samsvarer ikke med siste commit i snapshotten',
+    incomplete_stack_evidence: 'Snapshottene beviser ikke om den stablede PR-en nådde default-branch',
     commit_not_in_pull_request: 'Committen finnes ikke i PR-snapshotten',
     unknown_default_branch: 'Repositoryets default-branch er ukjent',
     invalid_comparison_range: 'Sammenligningen viser ikke et gyldig base..head-intervall',

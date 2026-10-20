@@ -17,6 +17,7 @@ export type RepositoryDeliveryCommitAssessmentReason =
   | 'missing_pull_request_snapshot'
   | 'incomplete_pull_request_snapshot'
   | 'pull_request_head_mismatch'
+  | 'incomplete_stack_evidence'
   | 'commit_not_in_pull_request'
   | 'unknown_default_branch'
   | 'invalid_comparison_range'
@@ -90,29 +91,59 @@ export interface RepositoryDeliveryPullRequestEvidence {
   reviews: PrReview[] | null
 }
 
+export type RepositoryDeliveryStackAncestryStatus = 'identical' | 'ahead' | 'behind' | 'diverged'
+type StackPathStatus = 'reaches_default_branch' | 'does_not_reach_default_branch' | 'unknown'
+
 function isMergedPullRequest(pullRequest: RepositoryDeliveryPullRequestEvidence): boolean {
   return pullRequest.mergedAt != null && pullRequest.mergeCommitSha != null
 }
 
-function hasMergedStackPathToDefaultBranch(
-  pullRequest: RepositoryDeliveryPullRequestEvidence,
+function getMergedStackPathStatus(
+  pullRequestNumber: number,
   pullRequests: Record<number, RepositoryDeliveryPullRequestEvidence | null | undefined>,
+  stackParentPullRequestNumbersByNumber: Record<number, number[]>,
+  stackAncestryByPullRequestNumber: Record<number, Record<number, RepositoryDeliveryStackAncestryStatus>>,
   defaultBranch: string,
   visited = new Set<number>(),
-): boolean {
-  if (visited.has(pullRequest.number) || !isMergedPullRequest(pullRequest)) return false
-  if (pullRequest.baseBranch === defaultBranch) return true
-  if (!pullRequest.baseSha || !pullRequest.headBranch) return false
-  visited.add(pullRequest.number)
+): StackPathStatus {
+  const pullRequest = pullRequests[pullRequestNumber]
+  if (!pullRequest) return 'unknown'
+  if (visited.has(pullRequestNumber) || !isMergedPullRequest(pullRequest)) return 'does_not_reach_default_branch'
+  if (pullRequest.baseBranch === defaultBranch) return 'reaches_default_branch'
 
-  return Object.values(pullRequests).some(
-    (parent) =>
-      parent !== null &&
-      parent !== undefined &&
-      parent.headBranch === pullRequest.baseBranch &&
-      parent.headSha === pullRequest.baseSha &&
-      hasMergedStackPathToDefaultBranch(parent, pullRequests, defaultBranch, new Set(visited)),
-  )
+  if (!Object.hasOwn(stackParentPullRequestNumbersByNumber, pullRequestNumber)) return 'unknown'
+  const parentPullRequestNumbers = stackParentPullRequestNumbersByNumber[pullRequestNumber]
+  if (parentPullRequestNumbers.length === 0) return 'does_not_reach_default_branch'
+  visited.add(pullRequestNumber)
+
+  let hasUnknownParent = false
+  for (const parentPullRequestNumber of parentPullRequestNumbers) {
+    const parent = pullRequests[parentPullRequestNumber]
+    if (!parent) {
+      hasUnknownParent = true
+      continue
+    }
+    if (!isMergedPullRequest(parent)) continue
+
+    const ancestry = stackAncestryByPullRequestNumber[pullRequestNumber]?.[parentPullRequestNumber]
+    if (!ancestry) {
+      hasUnknownParent = true
+      continue
+    }
+    if (ancestry !== 'ahead' && ancestry !== 'identical') continue
+
+    const parentPath = getMergedStackPathStatus(
+      parentPullRequestNumber,
+      pullRequests,
+      stackParentPullRequestNumbersByNumber,
+      stackAncestryByPullRequestNumber,
+      defaultBranch,
+      new Set(visited),
+    )
+    if (parentPath === 'reaches_default_branch') return parentPath
+    if (parentPath === 'unknown') hasUnknownParent = true
+  }
+  return hasUnknownParent ? 'unknown' : 'does_not_reach_default_branch'
 }
 
 function unknownCommit(
@@ -245,8 +276,12 @@ export function assessRepositoryDeliveryInterval(input: {
   implicitApprovalMode: ImplicitApprovalMode
   associatedPullRequestsByCommit: Record<string, RepositoryDeliveryAssociatedPullRequestSnapshot | undefined>
   pullRequestsByNumber: Record<number, RepositoryDeliveryPullRequestEvidence | null | undefined>
+  stackParentPullRequestNumbersByNumber?: Record<number, number[]>
+  stackAncestryByPullRequestNumber?: Record<number, Record<number, RepositoryDeliveryStackAncestryStatus>>
 }): RepositoryDeliveryIntervalAssessment {
   const { compare, defaultBranch, implicitApprovalMode } = input
+  const stackParentPullRequestNumbersByNumber = input.stackParentPullRequestNumbersByNumber ?? {}
+  const stackAncestryByPullRequestNumber = input.stackAncestryByPullRequestNumber ?? {}
   if (!compare) {
     return {
       state: 'unavailable',
@@ -278,17 +313,31 @@ export function assessRepositoryDeliveryInterval(input: {
       return unknownCommit(commit, 'missing_associated_pull_request_snapshot')
     }
 
-    const matchingPullRequests = associations.pullRequests.filter((pr) => {
-      if (pr.baseBranch === defaultBranch) return true
+    const matchingPullRequests: Array<{ number: number; baseBranch: string }> = []
+    const unresolvedStackPullRequests: number[] = []
+    for (const pr of associations.pullRequests) {
+      if (pr.baseBranch === defaultBranch) {
+        matchingPullRequests.push(pr)
+        continue
+      }
       const pullRequest = input.pullRequestsByNumber[pr.number]
-      return (
-        pullRequest !== null &&
-        pullRequest !== undefined &&
-        pullRequest.baseBranch === pr.baseBranch &&
-        hasMergedStackPathToDefaultBranch(pullRequest, input.pullRequestsByNumber, defaultBranch)
+      const stackPath = getMergedStackPathStatus(
+        pr.number,
+        input.pullRequestsByNumber,
+        stackParentPullRequestNumbersByNumber,
+        stackAncestryByPullRequestNumber,
+        defaultBranch,
       )
-    })
+      if (pullRequest?.baseBranch !== pr.baseBranch || stackPath === 'unknown') {
+        unresolvedStackPullRequests.push(pr.number)
+      } else if (stackPath === 'reaches_default_branch') {
+        matchingPullRequests.push(pr)
+      }
+    }
     if (matchingPullRequests.length === 0) {
+      if (unresolvedStackPullRequests.length > 0) {
+        return unknownCommit(commit, 'incomplete_stack_evidence', unresolvedStackPullRequests[0])
+      }
       return associations.pullRequests.length === 0
         ? notCoveredCommit(commit, null, 'no_associated_pull_request')
         : notCoveredCommit(commit, null, 'no_default_branch_pull_request')
@@ -301,6 +350,11 @@ export function assessRepositoryDeliveryInterval(input: {
         input.pullRequestsByNumber[pullRequest.number],
         pullRequest.baseBranch,
         implicitApprovalMode,
+      ),
+    )
+    candidates.push(
+      ...unresolvedStackPullRequests.map((pullRequestNumber) =>
+        unknownCommit(commit, 'incomplete_stack_evidence', pullRequestNumber),
       ),
     )
     const covered = candidates.find((candidate) => candidate.status === 'covered')

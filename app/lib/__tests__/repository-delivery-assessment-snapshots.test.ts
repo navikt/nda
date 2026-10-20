@@ -7,6 +7,7 @@ const getLatestCompareRawSnapshot = vi.fn()
 const saveCompareRawSnapshot = vi.fn()
 const getCommitsBetween = vi.fn()
 const getGitHubRateLimitRemaining = vi.fn()
+const getCommitAncestryStatus = vi.fn()
 const getPullRequestForCommit = vi.fn()
 const getPullRequestsForHeadBranch = vi.fn()
 const ensurePrReviewSnapshots = vi.fn()
@@ -14,6 +15,7 @@ const getAllLatestPrRawSnapshots = vi.fn()
 const getRepositoryCodeDeliveryAssessmentSyncProgress = vi.fn()
 const markRepositoryCodeDeliveryAssessmentAssociationCompleted = vi.fn()
 const markRepositoryCodeDeliveryAssessmentPullRequestCompleted = vi.fn()
+const markRepositoryCodeDeliveryAssessmentStackParentsCompleted = vi.fn()
 
 vi.mock('~/db/connection.server', () => ({ pool: { query: (...args: unknown[]) => query(...args) } }))
 vi.mock('~/db/repository-code-delivery-assessment-sync.server', () => ({
@@ -23,6 +25,8 @@ vi.mock('~/db/repository-code-delivery-assessment-sync.server', () => ({
     markRepositoryCodeDeliveryAssessmentAssociationCompleted(...args),
   markRepositoryCodeDeliveryAssessmentPullRequestCompleted: (...args: unknown[]) =>
     markRepositoryCodeDeliveryAssessmentPullRequestCompleted(...args),
+  markRepositoryCodeDeliveryAssessmentStackParentsCompleted: (...args: unknown[]) =>
+    markRepositoryCodeDeliveryAssessmentStackParentsCompleted(...args),
 }))
 vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrRawSnapshots: (...args: unknown[]) => getAllLatestPrRawSnapshots(...args),
@@ -33,6 +37,7 @@ vi.mock('~/db/github-data.server', () => ({
 }))
 vi.mock('~/lib/github', () => ({
   GITHUB_RATE_LIMIT_SAFETY_BUFFER: 200,
+  getCommitAncestryStatus: (...args: unknown[]) => getCommitAncestryStatus(...args),
   getCommitsBetween: (...args: unknown[]) => getCommitsBetween(...args),
   getGitHubRateLimitRemaining: () => getGitHubRateLimitRemaining(),
   getPullRequestsForHeadBranch: (...args: unknown[]) => getPullRequestsForHeadBranch(...args),
@@ -83,6 +88,7 @@ describe('ingestRepositoryDeliveryAssessmentSnapshots', () => {
     getRepositoryCodeDeliveryAssessmentSyncProgress.mockResolvedValue({
       completedAssociationSnapshotIds: {},
       completedPullRequestSnapshotIds: {},
+      stackParentPullRequestNumbers: {},
     })
     ensurePrReviewSnapshots.mockResolvedValue({
       pr: 1,
@@ -187,6 +193,7 @@ describe('ingestRepositoryDeliveryAssessmentSnapshots', () => {
       completedPullRequestSnapshotIds: {
         12: { pr: 1, reviews: 2, commits: 3, comments: 4, reviewComments: 5 },
       },
+      stackParentPullRequestNumbers: {},
     })
     getLatestCommitAssociatedPrsRawSnapshot.mockResolvedValue({
       id: 17,
@@ -244,7 +251,7 @@ describe('ingestRepositoryDeliveryAssessmentSnapshots', () => {
           : {
               number: 12,
               base: { ref: 'main', sha: 'a'.repeat(40) },
-              head: { ref: 'feature/base', sha: 'd'.repeat(40) },
+              head: { ref: 'feature/base', sha: '9'.repeat(40) },
               merged_at: '2026-10-01T12:00:00Z',
               merge_commit_sha: 'f'.repeat(40),
             }
@@ -256,15 +263,33 @@ describe('ingestRepositoryDeliveryAssessmentSnapshots', () => {
         baseBranch: 'main',
         baseSha: 'a'.repeat(40),
         headBranch: 'feature/base',
-        headSha: 'd'.repeat(40),
+        headSha: '9'.repeat(40),
         mergedAt: '2026-10-01T12:00:00Z',
         mergeCommitSha: 'f'.repeat(40),
       },
     ])
+    let ancestrySnapshotArchived = false
+    getCommitAncestryStatus.mockImplementation(async () => {
+      ancestrySnapshotArchived = true
+      return 'ahead'
+    })
+    getLatestCompareRawSnapshot.mockImplementation(
+      async (_owner: string, _repo: string, baseSha: string, headSha: string) =>
+        baseSha === 'e'.repeat(40) && headSha === '9'.repeat(40) && ancestrySnapshotArchived
+          ? { githubRepoId: 900, data: { status: 'ahead' } }
+          : { githubRepoId: 900 },
+    )
 
     await ingestRepositoryDeliveryAssessmentSnapshots(7)
 
     expect(getPullRequestsForHeadBranch).toHaveBeenCalledWith('example-org', 'sample-repo', 'feature/base')
+    expect(getCommitAncestryStatus).toHaveBeenCalledWith(
+      'example-org',
+      'sample-repo',
+      'e'.repeat(40),
+      '9'.repeat(40),
+      900,
+    )
     expect(ensurePrReviewSnapshots).toHaveBeenCalledWith(
       'example-org',
       'sample-repo',
@@ -288,5 +313,6 @@ describe('ingestRepositoryDeliveryAssessmentSnapshots', () => {
       comments: 4,
       reviewComments: 5,
     })
+    expect(markRepositoryCodeDeliveryAssessmentStackParentsCompleted).toHaveBeenCalledWith(7, 13, [12])
   })
 })

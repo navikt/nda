@@ -10,9 +10,11 @@ import {
   getRepositoryCodeDeliveryAssessmentSyncProgress,
   markRepositoryCodeDeliveryAssessmentAssociationCompleted,
   markRepositoryCodeDeliveryAssessmentPullRequestCompleted,
+  markRepositoryCodeDeliveryAssessmentStackParentsCompleted,
 } from '~/db/repository-code-delivery-assessment-sync.server'
 import {
   GITHUB_RATE_LIMIT_SAFETY_BUFFER,
+  getCommitAncestryStatus,
   getCommitsBetween,
   getGitHubRateLimitRemaining,
   getPullRequestForCommit,
@@ -41,6 +43,12 @@ interface PullRequestBranchEvidence extends AssociatedPullRequest {
   headSha: string
   mergedAt: string | null
   mergeCommitSha: string | null
+}
+
+type CommitAncestryStatus = 'identical' | 'ahead' | 'behind' | 'diverged'
+
+function isCommitAncestryStatus(value: unknown): value is CommitAncestryStatus {
+  return value === 'identical' || value === 'ahead' || value === 'behind' || value === 'diverged'
 }
 
 function parsePullRequestBranchEvidence(
@@ -158,6 +166,7 @@ export async function ingestRepositoryDeliveryAssessmentSnapshots(deliveryId: nu
   const progress = await getRepositoryCodeDeliveryAssessmentSyncProgress(deliveryId)
   const completedAssociationSnapshotIds = { ...progress.completedAssociationSnapshotIds }
   const completedPullRequestSnapshotIds = { ...progress.completedPullRequestSnapshotIds }
+  const stackParentPullRequestNumbers = { ...progress.stackParentPullRequestNumbers }
   let compareData = await getDerivedCompareDataFromRawSnapshot(githubOwner, githubRepoName, baseSha, headSha)
   const compareSnapshot = compareData
     ? await getLatestCompareRawSnapshot(githubOwner, githubRepoName, baseSha, headSha)
@@ -266,22 +275,71 @@ export async function ingestRepositoryDeliveryAssessmentSnapshots(deliveryId: nu
       continue
     }
     assertGitHubRateLimitBudget()
-    const possibleParents = await getPullRequestsForHeadBranch(githubOwner, githubRepoName, pullRequest.baseBranch)
-    for (const parentReference of possibleParents) {
-      if (
-        parentReference.headSha !== pullRequest.baseSha ||
-        !parentReference.mergedAt ||
-        !parentReference.mergeCommitSha
-      ) {
-        continue
-      }
-      assertGitHubRateLimitBudget()
-      const parent = await ensurePullRequest(parentReference.number)
-      if (parent.headBranch === pullRequest.baseBranch && parent.headSha === pullRequest.baseSha) {
+    let parentPullRequestNumbers = stackParentPullRequestNumbers[pullRequestNumber]
+    if (!parentPullRequestNumbers) {
+      const possibleParents = await getPullRequestsForHeadBranch(githubOwner, githubRepoName, pullRequest.baseBranch)
+      parentPullRequestNumbers = possibleParents
+        .filter((parent) => parent.headBranch === pullRequest.baseBranch && parent.number !== pullRequestNumber)
+        .map((parent) => parent.number)
+      await markRepositoryCodeDeliveryAssessmentStackParentsCompleted(
+        deliveryId,
+        pullRequestNumber,
+        parentPullRequestNumbers,
+      )
+      stackParentPullRequestNumbers[pullRequestNumber] = parentPullRequestNumbers
+    }
+
+    for (const parentPullRequestNumber of parentPullRequestNumbers) {
+      const parent = await ensurePullRequest(parentPullRequestNumber)
+      if (!parent.mergedAt || !parent.mergeCommitSha || !parent.headSha) continue
+      const ancestry = await getStoredCommitAncestryStatus(
+        githubOwner,
+        githubRepoName,
+        githubRepoId,
+        pullRequest.mergeCommitSha,
+        parent.headSha,
+        assertGitHubRateLimitBudget,
+      )
+      if (ancestry === 'ahead' || ancestry === 'identical') {
         pendingPullRequests.push(parent.number)
       }
     }
   }
+}
+
+async function getStoredCommitAncestryStatus(
+  owner: string,
+  repo: string,
+  githubRepoId: number,
+  childMergeCommitSha: string,
+  parentMergeCommitSha: string,
+  beforeFetch: () => void,
+): Promise<CommitAncestryStatus> {
+  const readStatus = async (): Promise<CommitAncestryStatus | null> => {
+    const snapshot = await getLatestCompareRawSnapshot(owner, repo, childMergeCommitSha, parentMergeCommitSha)
+    if (snapshot?.githubRepoId !== githubRepoId || !snapshot.data || typeof snapshot.data !== 'object') return null
+    const status = (snapshot.data as Record<string, unknown>).status
+    return isCommitAncestryStatus(status) ? status : null
+  }
+  const currentStatus = await readStatus()
+  if (currentStatus) return currentStatus
+
+  beforeFetch()
+  const fetchedStatus = await getCommitAncestryStatus(
+    owner,
+    repo,
+    childMergeCommitSha,
+    parentMergeCommitSha,
+    githubRepoId,
+  )
+  if (!isCommitAncestryStatus(fetchedStatus)) {
+    throw new Error(`Failed to compare stacked PR merge commits in ${owner}/${repo}`)
+  }
+  const storedStatus = await readStatus()
+  if (storedStatus !== fetchedStatus) {
+    throw new Error(`Stacked PR merge ancestry was not archived for ${owner}/${repo}`)
+  }
+  return storedStatus
 }
 
 function isSamePrSnapshotIds(

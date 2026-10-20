@@ -23,6 +23,7 @@ export interface RepositoryCodeDeliveryAssessmentPrSnapshotIds {
 export interface RepositoryCodeDeliveryAssessmentSyncProgress {
   completedAssociationSnapshotIds: Record<string, number>
   completedPullRequestSnapshotIds: Record<string, RepositoryCodeDeliveryAssessmentPrSnapshotIds>
+  stackParentPullRequestNumbers: Record<string, number[]>
 }
 
 export async function enqueueRepositoryCodeDeliveryAssessmentSync(
@@ -39,6 +40,7 @@ export async function enqueueRepositoryCodeDeliveryAssessmentSync(
          failed_permanently = false,
          completed_association_snapshot_ids = '{}'::jsonb,
          completed_pull_request_snapshot_ids = '{}'::jsonb,
+         stack_parent_pull_request_numbers = '{}'::jsonb,
          last_error = NULL,
          updated_at = now()
      WHERE repository_code_delivery_assessment_sync.failed_permanently = true`,
@@ -106,7 +108,8 @@ export async function getRepositoryCodeDeliveryAssessmentSyncProgress(
 ): Promise<RepositoryCodeDeliveryAssessmentSyncProgress> {
   const { rows } = await pool.query<RepositoryCodeDeliveryAssessmentSyncProgress>(
     `SELECT completed_association_snapshot_ids AS "completedAssociationSnapshotIds",
-            completed_pull_request_snapshot_ids AS "completedPullRequestSnapshotIds"
+            completed_pull_request_snapshot_ids AS "completedPullRequestSnapshotIds",
+            stack_parent_pull_request_numbers AS "stackParentPullRequestNumbers"
      FROM repository_code_delivery_assessment_sync
      WHERE delivery_id = $1`,
     [deliveryId],
@@ -152,6 +155,26 @@ export async function markRepositoryCodeDeliveryAssessmentPullRequestCompleted(
          updated_at = now()
      WHERE delivery_id = $1`,
     [deliveryId, pullRequestNumber, JSON.stringify(snapshotIds)],
+  )
+  if (rowCount === 0) throw new Error(`Assessment sync queue row missing for delivery ${deliveryId}`)
+}
+
+export async function markRepositoryCodeDeliveryAssessmentStackParentsCompleted(
+  deliveryId: number,
+  pullRequestNumber: number,
+  parentPullRequestNumbers: number[],
+): Promise<void> {
+  const { rowCount } = await pool.query(
+    `UPDATE repository_code_delivery_assessment_sync
+     SET stack_parent_pull_request_numbers = jsonb_set(
+           stack_parent_pull_request_numbers,
+           ARRAY[$2::text],
+           $3::jsonb,
+           true
+         ),
+         updated_at = now()
+     WHERE delivery_id = $1`,
+    [deliveryId, pullRequestNumber, JSON.stringify(parentPullRequestNumbers)],
   )
   if (rowCount === 0) throw new Error(`Assessment sync queue row missing for delivery ${deliveryId}`)
 }
