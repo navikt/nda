@@ -10,6 +10,7 @@ import { useRef } from 'react'
 import { Form, Link, useNavigation, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
+import { DeploymentViewLinks } from '~/components/deployments/DeploymentViewLinks'
 import { ExternalLink } from '~/components/ExternalLink'
 import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
@@ -93,6 +94,11 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
 
   return (
     <VStack gap="space-32">
+      <DeploymentViewLinks
+        pathname={`${appUrl}/deployments/${deployment.id}`}
+        searchParams={searchParams}
+        currentView="application"
+      />
       <HStack justify="space-between" gap="space-8">
         <div>
           {(isDebugMode || isAdmin) && (

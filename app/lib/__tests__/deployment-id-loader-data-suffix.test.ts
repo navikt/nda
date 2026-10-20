@@ -37,4 +37,17 @@ describe('deployments/$id loader legacy redirect (React Router v8 .data suffix)'
     const location = (response as Response).headers.get('Location')
     expect(location).toBe('http://localhost/team/plattform/env/prod/app/nda/deployments/42?status=approved')
   })
+
+  it('preserves repository view and list context when redirecting the legacy deployment URL', async () => {
+    const response = await loader({
+      params: { id: '42' },
+      request: new Request('http://localhost/deployments/42.data?view=repository&period=all&page=2'),
+      url: new URL('http://localhost/deployments/42?view=repository&period=all&page=2'),
+    } as never)
+
+    expect(response).toBeInstanceOf(Response)
+    expect((response as Response).headers.get('Location')).toBe(
+      'http://localhost/team/plattform/env/prod/app/nda/deployments/42?view=repository&period=all&page=2',
+    )
+  })
 })

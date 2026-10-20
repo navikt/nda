@@ -10,6 +10,7 @@ import type { UserLookupMap } from '~/lib/user-display'
 import type { StoredVerificationResult } from '~/lib/verification/types'
 import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 import styles from '~/styles/common.module.css'
+import { DeploymentViewLinks } from './DeploymentViewLinks'
 
 interface DeploymentData {
   id: number
@@ -43,6 +44,7 @@ interface DeploymentRowProps {
   showApp?: boolean
   currentEnv?: string
   searchParams?: URLSearchParams
+  showRepositoryView?: boolean
 }
 
 export function DeploymentRow({
@@ -54,9 +56,11 @@ export function DeploymentRow({
   showApp,
   currentEnv,
   searchParams,
+  showRepositoryView = false,
 }: DeploymentRowProps) {
   const searchStr = searchParams?.toString()
-  const detailUrl = `/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}/deployments/${deployment.id}${searchStr ? `?${searchStr}` : ''}`
+  const detailPath = `/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}/deployments/${deployment.id}`
+  const detailUrl = `${detailPath}${searchStr ? `?${searchStr}` : ''}`
 
   return (
     <Box padding="space-20" background="raised" className={styles.stackedListItem}>
@@ -164,9 +168,13 @@ export function DeploymentRow({
                 {getWorkflowTriggerLabel(deployment.workflow_trigger_config.triggerEvent)}
               </Tag>
             )}
-            <Button as={Link} to={detailUrl} variant="tertiary" size="small">
-              Vis
-            </Button>
+            {showRepositoryView ? (
+              <DeploymentViewLinks pathname={detailPath} searchParams={searchParams ?? new URLSearchParams()} />
+            ) : (
+              <Button as={Link} to={detailUrl} variant="tertiary" size="small">
+                Vis
+              </Button>
+            )}
           </HStack>
         </HStack>
 

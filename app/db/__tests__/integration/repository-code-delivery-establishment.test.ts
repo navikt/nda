@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { getDeploymentRepositoryView } from '../../deployment-repository-view.server'
 import { linkDeploymentToRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
 import {
   establishCodeDeliveryForDeployment,
@@ -515,6 +516,93 @@ describe('code delivery tracking start', () => {
   })
 })
 
+describe('deployment repository comparison', () => {
+  it('reads stored links across applications without linking an exact SHA candidate during GET', async () => {
+    const repositoryId = await createRepository()
+    const firstApp = await createApp('glad-fjord-api')
+    const secondApp = await createApp('glad-fjord-web')
+    const firstDeployment = await createDeployment({
+      appId: firstApp,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_100,
+    })
+    const secondDeployment = await createDeployment({
+      appId: secondApp,
+      appName: 'glad-fjord-web',
+      repositoryId,
+      commitSha: SHA_100,
+    })
+    await establish(firstDeployment)
+    const candidate = await getDeploymentRepositoryView(secondDeployment, null, secondApp)
+    expect(candidate?.link).toMatchObject({ state: 'missing', candidate: { headSha: SHA_100 } })
+    expect(await getLinkedDeliveryId(secondDeployment)).toBeNull()
+    expect(await getDeploymentRepositoryView(secondDeployment, null, firstApp)).toBeNull()
+
+    await establish(secondDeployment)
+    const linked = await getDeploymentRepositoryView(secondDeployment, null, secondApp)
+    expect(linked?.link).toMatchObject({
+      state: 'linked',
+      assessment: { status: 'no_changes' },
+      deploymentCount: 2,
+      canApprove: false,
+    })
+    expect(await getDeliveries(repositoryId)).toHaveLength(1)
+    expect(await getLinkedDeliveryId(secondDeployment)).toBe(await getLinkedDeliveryId(firstDeployment))
+  })
+
+  it('uses current application identities without changing historical repository links', async () => {
+    const repositoryId = await createRepository()
+    const firstApp = await createApp('glad-fjord-api')
+    const secondApp = await createApp('glad-fjord-web')
+    const firstDeployment = await createDeployment({
+      appId: firstApp,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_100,
+    })
+    const secondDeployment = await createDeployment({
+      appId: secondApp,
+      appName: 'glad-fjord-web',
+      repositoryId,
+      commitSha: SHA_100,
+    })
+    await establish(firstDeployment)
+    await establish(secondDeployment)
+    await pool.query(
+      `UPDATE monitored_applications
+       SET team_slug = $1, environment_name = $2, app_name = $3 WHERE id = $4`,
+      ['team-elv', 'dev-gcp', 'rask-elv-api', firstApp],
+    )
+    await pool.query('UPDATE monitored_applications SET app_name = $1 WHERE id = $2', ['rask-elv-web', secondApp])
+
+    const data = await getDeploymentRepositoryView(firstDeployment, null, firstApp)
+    expect(data?.deployment).toMatchObject({
+      teamSlug: 'team-elv',
+      environmentName: 'dev-gcp',
+      appName: 'rask-elv-api',
+    })
+    expect(data?.repository?.id).toBe(repositoryId)
+    expect(data?.link).toMatchObject({
+      state: 'linked',
+      deployments: expect.arrayContaining([
+        expect.objectContaining({
+          id: firstDeployment,
+          teamSlug: 'team-elv',
+          environmentName: 'dev-gcp',
+          appName: 'rask-elv-api',
+        }),
+        expect.objectContaining({
+          id: secondDeployment,
+          teamSlug: 'team-fjord',
+          environmentName: 'prod-gcp',
+          appName: 'rask-elv-web',
+        }),
+      ]),
+    })
+  })
+})
+
 describe('getDeploymentIdsAwaitingCodeDelivery', () => {
   const DAY = 24 * 60 * 60 * 1000
 
@@ -529,6 +617,7 @@ describe('getDeploymentIdsAwaitingCodeDelivery', () => {
       commitSha: SHA_100,
       createdAt: new Date(Date.now() - 2 * DAY),
     })
+
     const later = await createDeployment({
       appId,
       appName: 'app-a',
