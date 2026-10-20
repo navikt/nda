@@ -98,6 +98,44 @@ function isMergedPullRequest(pullRequest: RepositoryDeliveryPullRequestEvidence)
   return pullRequest.mergedAt != null && pullRequest.mergeCommitSha != null
 }
 
+function getDefaultBranchAncestors(
+  compare: RepositoryDeliveryIntervalCompare,
+  associatedPullRequestsByCommit: Record<string, RepositoryDeliveryAssociatedPullRequestSnapshot | undefined>,
+  pullRequests: Record<number, RepositoryDeliveryPullRequestEvidence | null | undefined>,
+  defaultBranch: string,
+): Set<string> {
+  const commitsBySha = new Map(compare.commits.map((commit) => [commit.sha, commit]))
+  if (commitsBySha.size !== compare.commits.length) return new Set()
+
+  const pending = compare.commits
+    .filter((commit) => {
+      const associations = associatedPullRequestsByCommit[commit.sha]
+      return (
+        associations?.complete &&
+        associations.pullRequests.some((association) => {
+          const pullRequest = pullRequests[association.number]
+          return (
+            association.baseBranch === defaultBranch &&
+            pullRequest?.baseBranch === defaultBranch &&
+            isMergedPullRequest(pullRequest) &&
+            pullRequest.mergeCommitSha === commit.sha
+          )
+        })
+      )
+    })
+    .map((commit) => commit.sha)
+  const ancestors = new Set<string>()
+  while (pending.length > 0) {
+    const sha = pending.pop()
+    if (!sha || ancestors.has(sha)) continue
+    const commit = commitsBySha.get(sha)
+    if (!commit) continue
+    ancestors.add(sha)
+    pending.push(...commit.parentShas)
+  }
+  return ancestors
+}
+
 function getMergedStackPathStatus(
   pullRequestNumber: number,
   pullRequests: Record<number, RepositoryDeliveryPullRequestEvidence | null | undefined>,
@@ -304,6 +342,15 @@ export function assessRepositoryDeliveryInterval(input: {
       compare.commits.length <= compare.totalCommits) ||
     (compare.status === 'identical' && compare.aheadBy === 0 && compare.behindBy === 0 && compare.totalCommits === 0)
   const completeComparison = validComparison && comparisonCommitCountMatches
+  const defaultBranchAncestors =
+    completeComparison && defaultBranch
+      ? getDefaultBranchAncestors(
+          compare,
+          input.associatedPullRequestsByCommit,
+          input.pullRequestsByNumber,
+          defaultBranch,
+        )
+      : new Set<string>()
   const commits = compare.commits.map((commit) => {
     if (!validComparison) return unknownCommit(commit, 'invalid_comparison_range')
     if (!defaultBranch) return unknownCommit(commit, 'unknown_default_branch')
@@ -321,13 +368,16 @@ export function assessRepositoryDeliveryInterval(input: {
         continue
       }
       const pullRequest = input.pullRequestsByNumber[pr.number]
-      const stackPath = getMergedStackPathStatus(
-        pr.number,
-        input.pullRequestsByNumber,
-        stackParentPullRequestNumbersByNumber,
-        stackAncestryByPullRequestNumber,
-        defaultBranch,
-      )
+      const stackPath =
+        pullRequest && isMergedPullRequest(pullRequest) && defaultBranchAncestors.has(pullRequest.mergeCommitSha ?? '')
+          ? 'reaches_default_branch'
+          : getMergedStackPathStatus(
+              pr.number,
+              input.pullRequestsByNumber,
+              stackParentPullRequestNumbersByNumber,
+              stackAncestryByPullRequestNumber,
+              defaultBranch,
+            )
       if (pullRequest?.baseBranch !== pr.baseBranch || stackPath === 'unknown') {
         unresolvedStackPullRequests.push(pr.number)
       } else if (stackPath === 'reaches_default_branch') {
