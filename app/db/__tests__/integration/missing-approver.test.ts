@@ -356,6 +356,35 @@ describe('missing approver detection — getAllApprovedDeploymentsMissingApprove
   })
 })
 
+describe('missing approver refreshes and summaries respect Apply opt-out', () => {
+  it('excludes Apply deliveries from scoped, global, and summary lookups when the app opts out', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-optout', appName: 'app-optout', environment: 'prod-gcp' })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
+    const applyDeploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-optout',
+      appName: 'app-optout',
+      environment: 'prod-gcp',
+      createdAt: IN_PERIOD,
+      fourEyesStatus: 'approved',
+      githubPrData: { reviewers: [] },
+    })
+    await pool.query(
+      `UPDATE deployments
+       SET deployment_source = 'nais_apply',
+           nais_deployment_id = NULL,
+           deployment_source_id = '7001:12345'
+       WHERE id = $1`,
+      [applyDeploymentId],
+    )
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = false WHERE id = $1', [appId])
+
+    expect(await getApprovedDeploymentsMissingApproverForApps([appId])).toEqual([])
+    expect(await getAllApprovedDeploymentsMissingApprover()).toEqual([])
+    expect(await getMissingApproverSummary()).toEqual({ total: 0, byApp: [] })
+  })
+})
+
 describe('missing approver detection — getMissingApproverSummary', () => {
   it('returns total count and per-app breakdown', async () => {
     const appId1 = await seedApp(pool, { teamSlug: 'team-s1', appName: 'app-s1', environment: 'prod' })

@@ -176,8 +176,12 @@ const MISSING_APPROVER_CONDITIONS = `
 export async function findDeploymentIdsMissingApprover(deploymentIds: number[]): Promise<Set<number>> {
   if (deploymentIds.length === 0) return new Set()
   const result = await pool.query<{ id: number }>(
-    `SELECT d.id FROM deployments d
-     WHERE d.id = ANY($1) AND ${MISSING_APPROVER_CONDITIONS}`,
+    `SELECT d.id
+     FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE d.id = ANY($1)
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+       AND ${MISSING_APPROVER_CONDITIONS}`,
     [deploymentIds],
   )
   return new Set(result.rows.map((r) => r.id))
@@ -202,6 +206,7 @@ export async function getApprovedDeploymentsMissingApproverForApps(
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE d.monitored_app_id = ANY($1)
        AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${MISSING_APPROVER_CONDITIONS}
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY d.created_at DESC`,
@@ -221,6 +226,7 @@ export async function getAllApprovedDeploymentsMissingApprover(): Promise<Global
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE ma.is_active = true
        AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${MISSING_APPROVER_CONDITIONS}
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY d.team_slug, d.app_name, d.created_at DESC`,
@@ -245,6 +251,7 @@ export async function getMissingApproverSummary(): Promise<{
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE ma.is_active = true
        AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${MISSING_APPROVER_CONDITIONS}
        AND ${AUDIT_START_YEAR_FILTER}
      GROUP BY d.team_slug, d.environment_name, d.app_name

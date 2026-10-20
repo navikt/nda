@@ -68,7 +68,9 @@ import { fetchVerificationData } from '../verification/fetch-data.server'
 describe('fetchVerificationData for renamed Apply repositories', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    poolQuery.mockResolvedValue({ rows: [{ deployment_source: 'nais_deployment', repository_id: 77 }] })
+    poolQuery.mockResolvedValue({
+      rows: [{ deployment_source: 'nais_deployment', repository_id: 77, nais_apply_enabled: false }],
+    })
     findRepositoryForApp.mockResolvedValue({
       repository: {
         github_repo_id: '12345',
@@ -139,7 +141,9 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
   })
 
   it('rejects Apply verification without a stored repository ID even when a caller supplies one', async () => {
-    poolQuery.mockResolvedValueOnce({ rows: [{ deployment_source: 'nais_apply', repository_id: null }] })
+    poolQuery.mockResolvedValueOnce({
+      rows: [{ deployment_source: 'nais_apply', repository_id: null, nais_apply_enabled: true }],
+    })
 
     await expect(
       fetchVerificationData(100, 'a'.repeat(40), 'navikt/old-name', 'prod-gcp', 'main', 7, undefined, undefined, 77),
@@ -149,8 +153,23 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
     expect(isCommitOnBranch).not.toHaveBeenCalled()
   })
 
+  it('rejects Apply verification after the app has opted out', async () => {
+    poolQuery.mockResolvedValueOnce({
+      rows: [{ deployment_source: 'nais_apply', repository_id: 77, nais_apply_enabled: false }],
+    })
+
+    await expect(
+      fetchVerificationData(100, 'a'.repeat(40), 'navikt/current-name', 'prod-gcp', 'main', 7),
+    ).rejects.toThrow('while Apply is disabled')
+
+    expect(findRepositoryForApp).not.toHaveBeenCalled()
+    expect(isCommitOnBranch).not.toHaveBeenCalled()
+  })
+
   it('uses the GitHub default branch for the immutable Apply repository, not the caller app branch', async () => {
-    poolQuery.mockResolvedValueOnce({ rows: [{ deployment_source: 'nais_apply', repository_id: 77 }] })
+    poolQuery.mockResolvedValueOnce({
+      rows: [{ deployment_source: 'nais_apply', repository_id: 77, nais_apply_enabled: true }],
+    })
 
     await fetchVerificationData(100, 'a'.repeat(40), 'navikt/old-name', 'prod-gcp', 'wrong-app-branch', 7)
 
@@ -176,7 +195,7 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
       derivedFromRaw: false,
     })
     poolQuery.mockResolvedValueOnce({
-      rows: [{ deployment_source: 'nais_deployment', repository_id: 77 }],
+      rows: [{ deployment_source: 'nais_deployment', repository_id: 77, nais_apply_enabled: false }],
     })
     poolQuery.mockResolvedValue({ rows: [] })
 

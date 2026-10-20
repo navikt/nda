@@ -44,10 +44,20 @@ export async function fetchVerificationData(
   const deploymentResult = await pool.query<{
     deployment_source: string
     repository_id: number | null
-  }>('SELECT deployment_source, repository_id FROM deployments WHERE id = $1', [deploymentId])
+    nais_apply_enabled: boolean
+  }>(
+    `SELECT d.deployment_source, d.repository_id, COALESCE(ma.nais_apply_enabled, false) AS nais_apply_enabled
+     FROM deployments d
+     LEFT JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE d.id = $1`,
+    [deploymentId],
+  )
   const deployment = deploymentResult.rows[0]
   if (!deployment) {
     throw new Error(`Deployment ${deploymentId} not found`)
+  }
+  if (deployment.deployment_source === 'nais_apply' && !deployment.nais_apply_enabled) {
+    throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} while Apply is disabled for its app`)
   }
   if (deployment.deployment_source === 'nais_apply' && deployment.repository_id === null) {
     throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} without an immutable repository association`)
