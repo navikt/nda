@@ -68,6 +68,8 @@ export async function getAuditReportData(
     `SELECT 
        d.id,
        d.nais_deployment_id,
+       d.deployment_source,
+       d.deployment_source_id,
        d.title,
        d.created_at,
        d.commit_sha,
@@ -91,52 +93,88 @@ export async function getAuditReportData(
        -- Include unverified commits JSONB for report appendix
        d.unverified_commits,
        -- Commit SHAs bundled in this delivery, from the cached GitHub compare snapshot
-       (
-         SELECT ARRAY(SELECT jsonb_array_elements(cmp.data->'commits')->>'sha')
-         FROM github_compare_snapshots cmp
-         WHERE cmp.owner = d.detected_github_owner
-           AND cmp.repo = d.detected_github_repo_name
-           AND cmp.head_sha = d.commit_sha
-           AND cmp.base_sha = (
-             SELECT prev.commit_sha
-             FROM deployments prev
-             WHERE prev.monitored_app_id = d.monitored_app_id
-               AND prev.environment_name = ma.environment_name
-               AND prev.created_at < d.created_at
-               AND prev.commit_sha IS NOT NULL
-               AND prev.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
-               AND prev.commit_sha !~ '^refs/'
-             ORDER BY prev.created_at DESC
-             LIMIT 1
-           )
-         ORDER BY cmp.fetched_at DESC
-         LIMIT 1
+       COALESCE(
+         (
+           SELECT ARRAY(SELECT jsonb_array_elements(cmp.data->'commits')->>'sha')
+           FROM github_compare_raw_snapshots cmp
+           WHERE d.deployment_source = 'nais_apply'
+             AND cmp.github_repo_id = r.github_repo_id
+             AND cmp.base_sha = COALESCE(latest_apply_verification.comparison_base_sha, (
+               SELECT prev.commit_sha
+               FROM deployments prev
+               WHERE prev.monitored_app_id = d.monitored_app_id
+                 AND prev.environment_name = ma.environment_name
+                 AND prev.created_at < d.created_at
+                 AND prev.commit_sha IS NOT NULL
+                 AND (prev.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+                 AND prev.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
+                 AND prev.commit_sha !~ '^refs/'
+               ORDER BY prev.created_at DESC
+               LIMIT 1
+             ))
+             AND cmp.head_sha = COALESCE(latest_apply_verification.comparison_head_sha, d.commit_sha)
+           ORDER BY cmp.fetched_at DESC
+           LIMIT 1
+         ),
+         CASE
+           WHEN jsonb_typeof(latest_apply_verification.comparison_commit_shas) = 'array'
+           THEN ARRAY(SELECT jsonb_array_elements_text(latest_apply_verification.comparison_commit_shas))
+         END,
+         (
+           SELECT ARRAY(SELECT jsonb_array_elements(cmp.data->'commits')->>'sha')
+           FROM github_compare_snapshots cmp
+           WHERE d.deployment_source != 'nais_apply'
+             AND cmp.owner = d.detected_github_owner
+             AND cmp.repo = d.detected_github_repo_name
+             AND cmp.head_sha = d.commit_sha
+             AND cmp.base_sha = (
+               SELECT prev.commit_sha
+               FROM deployments prev
+               WHERE prev.monitored_app_id = d.monitored_app_id
+                 AND prev.environment_name = ma.environment_name
+                 AND prev.created_at < d.created_at
+                 AND prev.commit_sha IS NOT NULL
+                 AND (prev.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+                 AND prev.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
+                 AND prev.commit_sha !~ '^refs/'
+               ORDER BY prev.created_at DESC
+               LIMIT 1
+             )
+           ORDER BY cmp.fetched_at DESC
+           LIMIT 1
+         )
        ) AS delivery_commit_shas,
        -- Commit SHAs belonging to this deployment's PR, if any (raw snapshot preferred, legacy as fallback)
        COALESCE(
          (
            SELECT ARRAY(SELECT jsonb_array_elements(pr.data)->>'sha')
            FROM github_pr_raw_snapshots pr
-           WHERE pr.owner = d.detected_github_owner
-             AND pr.repo = d.detected_github_repo_name
-             AND pr.pr_number = d.github_pr_number
+           WHERE pr.pr_number = d.github_pr_number
              AND pr.data_type = 'commits'
-             AND pr.github_repo_id = (
-               SELECT github_repo_id
-               FROM github_pr_raw_snapshots
-               WHERE owner = d.detected_github_owner
-                 AND repo = d.detected_github_repo_name
-                 AND pr_number = d.github_pr_number
-               ORDER BY fetched_at DESC
-               LIMIT 1
+             AND (
+               d.deployment_source = 'nais_apply'
+               OR (pr.owner = d.detected_github_owner AND pr.repo = d.detected_github_repo_name)
              )
+             AND pr.github_repo_id = CASE
+               WHEN d.deployment_source = 'nais_apply' THEN r.github_repo_id
+               ELSE (
+                 SELECT github_repo_id
+                 FROM github_pr_raw_snapshots
+                 WHERE owner = d.detected_github_owner
+                   AND repo = d.detected_github_repo_name
+                   AND pr_number = d.github_pr_number
+                 ORDER BY fetched_at DESC
+                 LIMIT 1
+               )
+             END
            ORDER BY pr.fetched_at DESC
            LIMIT 1
          ),
          (
            SELECT ARRAY(SELECT jsonb_array_elements(pr.data)->>'sha')
            FROM github_pr_snapshots pr
-           WHERE pr.owner = d.detected_github_owner
+           WHERE d.deployment_source != 'nais_apply'
+             AND pr.owner = d.detected_github_owner
              AND pr.repo = d.detected_github_repo_name
              AND pr.pr_number = d.github_pr_number
              AND pr.data_type = 'commits'
@@ -146,7 +184,30 @@ export async function getAuditReportData(
        ) AS pr_commit_shas
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+     LEFT JOIN repositories r ON r.id = d.repository_id
+     LEFT JOIN LATERAL (
+       SELECT CASE
+                WHEN vr.result->'comparisonRange'->>'headSha' = d.commit_sha
+                 AND vr.result->'comparisonRange'->>'baseSha' ~ '^[0-9a-fA-F]{40}$'
+                THEN vr.result->'comparisonRange'->>'baseSha'
+              END AS comparison_base_sha,
+              CASE
+                WHEN vr.result->'comparisonRange'->>'headSha' = d.commit_sha
+                 AND vr.result->'comparisonRange'->>'baseSha' ~ '^[0-9a-fA-F]{40}$'
+                THEN vr.result->'comparisonRange'->>'headSha'
+              END AS comparison_head_sha,
+              CASE
+                WHEN vr.result->>'comparisonCommitHeadSha' = d.commit_sha
+                 AND jsonb_typeof(vr.result->'comparisonCommitShas') = 'array'
+                THEN vr.result->'comparisonCommitShas'
+              END AS comparison_commit_shas
+       FROM verification_runs vr
+       WHERE vr.deployment_id = d.id
+       ORDER BY vr.run_at DESC, vr.id DESC
+       LIMIT 1
+     ) latest_apply_verification ON d.deployment_source = 'nais_apply'
      WHERE d.monitored_app_id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.created_at >= $2
        AND d.created_at <= $3
        AND ma.environment_name IN ('prod-fss', 'prod-gcp')
@@ -247,6 +308,11 @@ export async function getAuditReportData(
      FROM deployment_status_history dsh
      JOIN deployments d ON d.id = dsh.deployment_id
      WHERE d.monitored_app_id = $1
+       AND (d.deployment_source != 'nais_apply' OR EXISTS (
+         SELECT 1
+         FROM monitored_applications ma
+         WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
+       ))
        AND dsh.change_source = 'admin_reset'
        AND dsh.created_at >= $2 AND dsh.created_at <= $3
      ORDER BY dsh.created_at ASC`,

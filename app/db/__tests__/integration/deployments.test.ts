@@ -1,7 +1,16 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import {
+  getDeploymentById,
+  getDeploymentsNeedingDeployNotify,
+  getDeploymentsPaginated,
+  getLatestDeploymentForApp,
+  upsertNaisApplyDeployment,
+} from '~/db/deployments.server'
+import { propagateVerificationToSiblings } from '~/db/monorepo.server'
 import { APPROVED_STATUSES_SQL, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
-import { seedApp, seedDeployment, truncateAllTables } from './helpers'
+import { fetchVerificationData } from '~/lib/verification/fetch-data.server'
+import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 let pool: Pool
 
@@ -50,6 +59,477 @@ describe('deployment queries', () => {
         [appId],
       ),
     ).rejects.toThrow(/unique|duplicate/)
+  })
+
+  it('keeps Apply rows out of the legacy Nais deployment cursor', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod-gcp',
+      naisDeploymentId: 'legacy-deployment',
+      createdAt: new Date('2026-10-10T10:00:00Z'),
+    })
+    await upsertNaisApplyDeployment({
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:activity:test',
+      createdAt: new Date('2026-10-10T11:00:00Z'),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: null,
+      triggerUrl: null,
+      detectedGithubOwner: null,
+      detectedGithubRepoName: null,
+    })
+
+    await expect(getLatestDeploymentForApp(appId)).resolves.toMatchObject({
+      nais_deployment_id: 'legacy-deployment',
+    })
+  })
+
+  it('stores an Apply deployment without a Nais ID as unverifiable and idempotently', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    await pool.query(
+      `UPDATE monitored_applications
+       SET slack_deploy_notify_enabled = TRUE,
+           slack_deploy_channel_id = 'C123',
+           slack_deploy_notify_enabled_at = CURRENT_TIMESTAMP - INTERVAL '1 day'
+       WHERE id = $1`,
+      [appId],
+    )
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:activity:test',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: null,
+      triggerUrl: null,
+      detectedGithubOwner: null,
+      detectedGithubRepoName: null,
+      suppressNotifications: true,
+    }
+
+    await upsertNaisApplyDeployment(params)
+    await upsertNaisApplyDeployment(params)
+
+    const { rows } = await pool.query(
+      `SELECT nais_deployment_id, deployment_source, deployment_source_id, four_eyes_status,
+              slack_notifications_suppressed_at IS NOT NULL AS notifications_suppressed
+       FROM deployments
+       WHERE monitored_app_id = $1 AND deployment_source_id = $2`,
+      [appId, params.sourceId],
+    )
+    expect(rows).toEqual([
+      {
+        nais_deployment_id: null,
+        deployment_source: 'nais_apply',
+        deployment_source_id: params.sourceId,
+        four_eyes_status: 'unverifiable',
+        notifications_suppressed: true,
+      },
+    ])
+    await expect(getDeploymentsNeedingDeployNotify()).resolves.toEqual([])
+  })
+
+  it('does not associate an Apply deployment with a pending repository link', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    const repositoryOptions = { githubRepoId: '987654', githubOwner: 'navikt', githubRepoName: 'new-app' }
+    const repositoryId = await seedRepository(pool, repositoryOptions)
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: repositoryOptions.githubOwner,
+      githubRepo: repositoryOptions.githubRepoName,
+      githubRepoId: repositoryOptions.githubRepoId,
+      status: 'pending_approval',
+    })
+
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:pending-repository',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: 'a'.repeat(40),
+      triggerUrl: 'https://github.com/navikt/new-app/actions/runs/123',
+      detectedGithubOwner: repositoryOptions.githubOwner,
+      detectedGithubRepoName: repositoryOptions.githubRepoName,
+      detectedGithubRepositoryId: repositoryOptions.githubRepoId,
+    }
+    const deployment = await upsertNaisApplyDeployment(params)
+
+    const { rows } = await pool.query<{ repository_id: number | null; four_eyes_status: string }>(
+      'SELECT repository_id, four_eyes_status FROM deployments WHERE id = $1',
+      [deployment.id],
+    )
+    expect(rows[0]).toEqual({ repository_id: null, four_eyes_status: 'unverifiable' })
+
+    await pool.query(
+      `UPDATE application_repositories SET status = 'active' WHERE monitored_app_id = $1 AND github_repo_id = $2`,
+      [appId, repositoryOptions.githubRepoId],
+    )
+    await upsertNaisApplyDeployment(params)
+
+    const approvedRows = await pool.query<{ repository_id: number | null; four_eyes_status: string }>(
+      'SELECT repository_id, four_eyes_status FROM deployments WHERE id = $1',
+      [deployment.id],
+    )
+    expect(approvedRows.rows[0]).toEqual({ repository_id: repositoryId, four_eyes_status: 'pending' })
+  })
+
+  it('reports an Apply SHA conflict instead of comparing local and GitHub repository IDs', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    const githubRepoId = '987654'
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId,
+      githubOwner: 'navikt',
+      githubRepoName: 'my-app',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'my-app',
+      githubRepoId,
+    })
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:sha-conflict',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: 'a'.repeat(40),
+      triggerUrl: 'https://github.com/navikt/my-app/actions/runs/123',
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'my-app',
+      detectedGithubRepositoryId: githubRepoId,
+    }
+    const deployment = await upsertNaisApplyDeployment(params)
+    const { rows } = await pool.query<{ repository_id: number | null }>(
+      'SELECT repository_id FROM deployments WHERE id = $1',
+      [deployment.id],
+    )
+
+    expect(rows[0].repository_id).toBe(repositoryId)
+    await expect(upsertNaisApplyDeployment({ ...params, commitSha: 'b'.repeat(40) })).rejects.toThrow(
+      'Conflicting commit SHAs',
+    )
+  })
+
+  it('reverifies automatically resolved Apply deliveries when delayed activity moves them earlier', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    const githubRepoId = '987655'
+    await seedRepository(pool, {
+      githubRepoId,
+      githubOwner: 'navikt',
+      githubRepoName: 'my-app',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'my-app',
+      githubRepoId,
+    })
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:delayed-activity',
+      createdAt: new Date('2026-10-15T10:00:00Z'),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: 'a'.repeat(40),
+      triggerUrl: 'https://github.com/navikt/my-app/actions/runs/123',
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'my-app',
+      detectedGithubRepositoryId: githubRepoId,
+    }
+    const deployment = await upsertNaisApplyDeployment(params)
+    await pool.query("UPDATE deployments SET four_eyes_status = 'approved' WHERE id = $1", [deployment.id])
+
+    await upsertNaisApplyDeployment({
+      ...params,
+      createdAt: new Date('2026-10-15T09:00:00Z'),
+    })
+
+    const { rows } = await pool.query(
+      `SELECT d.created_at, d.four_eyes_status, h.from_status, h.to_status, h.change_source
+       FROM deployments d
+       LEFT JOIN deployment_status_history h ON h.deployment_id = d.id
+       WHERE d.id = $1`,
+      [deployment.id],
+    )
+    expect(rows[0]).toMatchObject({
+      created_at: new Date('2026-10-15T09:00:00Z'),
+      four_eyes_status: 'pending',
+      from_status: 'approved',
+      to_status: 'pending',
+      change_source: 'nais_apply_timestamp_correction',
+    })
+  })
+
+  it('requeues sibling approvals when a delayed Apply delivery moves its approved root earlier', async () => {
+    const rootAppId = await seedApp(pool, { teamSlug: 'team-1', appName: 'root-app', environment: 'prod-gcp' })
+    const siblingAppId = await seedApp(pool, { teamSlug: 'team-1', appName: 'sibling-app', environment: 'prod-gcp' })
+    const legacySiblingAppId = await seedApp(pool, {
+      teamSlug: 'team-1',
+      appName: 'legacy-sibling-app',
+      environment: 'prod-gcp',
+    })
+    const unrelatedAppId = await seedApp(pool, {
+      teamSlug: 'team-1',
+      appName: 'unrelated-app',
+      environment: 'prod-gcp',
+    })
+    const repositoryOptions = { githubRepoId: '987656', githubOwner: 'navikt', githubRepoName: 'my-app' }
+    const repositoryId = await seedRepository(pool, repositoryOptions)
+    const unrelatedRepositoryId = await seedRepository(pool, {
+      githubRepoId: '987657',
+      githubOwner: 'navikt',
+      githubRepoName: 'unrelated-app',
+    })
+    for (const monitoredAppId of [rootAppId, siblingAppId, legacySiblingAppId]) {
+      await seedApplicationRepository(pool, {
+        monitoredAppId,
+        githubOwner: repositoryOptions.githubOwner,
+        githubRepo: repositoryOptions.githubRepoName,
+        githubRepoId: repositoryOptions.githubRepoId,
+      })
+    }
+    await seedApplicationRepository(pool, {
+      monitoredAppId: unrelatedAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'unrelated-app',
+      githubRepoId: '987657',
+    })
+
+    const params = {
+      monitoredApplicationId: rootAppId,
+      sourceId: 'nais-apply:delayed-activity-with-sibling',
+      createdAt: new Date('2026-10-15T10:00:00Z'),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'root-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: 'c'.repeat(40),
+      triggerUrl: 'https://github.com/navikt/my-app/actions/runs/124',
+      detectedGithubOwner: repositoryOptions.githubOwner,
+      detectedGithubRepoName: repositoryOptions.githubRepoName,
+      detectedGithubRepositoryId: repositoryOptions.githubRepoId,
+    }
+    const root = await upsertNaisApplyDeployment(params)
+    await pool.query("UPDATE deployments SET four_eyes_status = 'approved' WHERE id = $1", [root.id])
+
+    const siblingId = await seedDeployment(pool, {
+      monitoredAppId: siblingAppId,
+      teamSlug: 'team-1',
+      environment: 'prod-gcp',
+      commitSha: params.commitSha,
+      createdAt: new Date('2026-10-15T11:00:00Z'),
+      fourEyesStatus: 'verified_via_sibling',
+      githubOwner: repositoryOptions.githubOwner,
+      githubRepo: repositoryOptions.githubRepoName,
+    })
+    const legacySiblingId = await seedDeployment(pool, {
+      monitoredAppId: legacySiblingAppId,
+      teamSlug: 'team-1',
+      environment: 'prod-gcp',
+      commitSha: params.commitSha,
+      createdAt: new Date('2026-10-15T11:00:00Z'),
+      fourEyesStatus: 'verified_via_sibling',
+      githubOwner: repositoryOptions.githubOwner,
+      githubRepo: repositoryOptions.githubRepoName,
+    })
+    const unrelatedSiblingId = await seedDeployment(pool, {
+      monitoredAppId: unrelatedAppId,
+      teamSlug: 'team-1',
+      environment: 'prod-gcp',
+      commitSha: params.commitSha,
+      createdAt: new Date('2026-10-15T11:00:00Z'),
+      fourEyesStatus: 'verified_via_sibling',
+      githubOwner: 'navikt',
+      githubRepo: 'unrelated-app',
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryId, siblingId])
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [
+      unrelatedRepositoryId,
+      unrelatedSiblingId,
+    ])
+
+    await upsertNaisApplyDeployment({
+      ...params,
+      createdAt: new Date('2026-10-15T09:00:00Z'),
+    })
+    await pool.query("UPDATE deployments SET four_eyes_status = 'direct_push' WHERE id = $1", [root.id])
+    await expect(propagateVerificationToSiblings(root.id, 'direct_push', params.commitSha, rootAppId)).resolves.toBe(0)
+
+    const { rows } = await pool.query(
+      `SELECT d.id, d.four_eyes_status, h.from_status, h.to_status, h.change_source
+       FROM deployments d
+       LEFT JOIN deployment_status_history h
+         ON h.deployment_id = d.id AND h.change_source = 'nais_apply_timestamp_correction'
+       WHERE d.id = ANY($1::int[])
+       ORDER BY d.id`,
+      [[root.id, siblingId, legacySiblingId, unrelatedSiblingId]],
+    )
+    expect(rows).toEqual([
+      {
+        id: root.id,
+        four_eyes_status: 'direct_push',
+        from_status: 'approved',
+        to_status: 'pending',
+        change_source: 'nais_apply_timestamp_correction',
+      },
+      {
+        id: siblingId,
+        four_eyes_status: 'pending',
+        from_status: 'verified_via_sibling',
+        to_status: 'pending',
+        change_source: 'nais_apply_timestamp_correction',
+      },
+      {
+        id: legacySiblingId,
+        four_eyes_status: 'pending',
+        from_status: 'verified_via_sibling',
+        to_status: 'pending',
+        change_source: 'nais_apply_timestamp_correction',
+      },
+      {
+        id: unrelatedSiblingId,
+        four_eyes_status: 'verified_via_sibling',
+        from_status: null,
+        to_status: null,
+        change_source: null,
+      },
+    ])
+  })
+
+  it('rejects verification of an Apply deployment with no stored repository association', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-1',
+      environment: 'prod-gcp',
+      commitSha: 'd'.repeat(40),
+      githubOwner: 'navikt',
+      githubRepo: 'my-app',
+    })
+    await pool.query(
+      `UPDATE deployments
+       SET nais_deployment_id = NULL,
+           deployment_source = 'nais_apply',
+           deployment_source_id = 'nais-apply:unassociated',
+           repository_id = NULL
+       WHERE id = $1`,
+      [deploymentId],
+    )
+
+    await expect(
+      fetchVerificationData(
+        deploymentId,
+        'd'.repeat(40),
+        'navikt/my-app',
+        'prod-gcp',
+        'main',
+        appId,
+        undefined,
+        undefined,
+        123,
+      ),
+    ).rejects.toThrow('without an immutable repository association')
+  })
+
+  it('preserves manually approved Apply deliveries when delayed activity moves them earlier', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    const params = {
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:delayed-manual-approval',
+      createdAt: new Date('2026-10-15T10:00:00Z'),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: null,
+      triggerUrl: null,
+      detectedGithubOwner: null,
+      detectedGithubRepoName: null,
+    }
+    const deployment = await upsertNaisApplyDeployment(params)
+    await pool.query("UPDATE deployments SET four_eyes_status = 'manually_approved' WHERE id = $1", [deployment.id])
+
+    await upsertNaisApplyDeployment({
+      ...params,
+      createdAt: new Date('2026-10-15T09:00:00Z'),
+    })
+
+    const { rows } = await pool.query('SELECT created_at, four_eyes_status FROM deployments WHERE id = $1', [
+      deployment.id,
+    ])
+    expect(rows[0]).toEqual({
+      created_at: new Date('2026-10-15T09:00:00Z'),
+      four_eyes_status: 'manually_approved',
+    })
+  })
+
+  it('hides stored Apply deployments from listings and notifications while the app opt-in is off', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
+    await pool.query(
+      `UPDATE monitored_applications
+       SET slack_deploy_notify_enabled = TRUE,
+           slack_deploy_channel_id = 'C123',
+           slack_deploy_notify_enabled_at = CURRENT_TIMESTAMP - INTERVAL '1 day'
+       WHERE id = $1`,
+      [appId],
+    )
+    const deployment = await upsertNaisApplyDeployment({
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:activity:toggle-test',
+      createdAt: new Date(),
+      teamSlug: 'team-1',
+      environmentName: 'prod-gcp',
+      appName: 'my-app',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: null,
+      triggerUrl: null,
+      detectedGithubOwner: null,
+      detectedGithubRepoName: null,
+    })
+
+    await expect(getDeploymentById(deployment.id)).resolves.toBeNull()
+    await expect(getDeploymentsPaginated({ monitored_app_id: appId })).resolves.toMatchObject({
+      deployments: [],
+      total: 0,
+    })
+    await expect(getDeploymentsNeedingDeployNotify()).resolves.toEqual([])
+    await expect(pool.query('SELECT id FROM deployments WHERE id = $1', [deployment.id])).resolves.toMatchObject({
+      rows: [{ id: deployment.id }],
+    })
+
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = TRUE WHERE id = $1', [appId])
+    await expect(getDeploymentById(deployment.id)).resolves.toMatchObject({ id: deployment.id })
+    await expect(getDeploymentsPaginated({ monitored_app_id: appId })).resolves.toMatchObject({
+      deployments: [expect.objectContaining({ id: deployment.id })],
+      total: 1,
+    })
+    await expect(getDeploymentsNeedingDeployNotify()).resolves.toMatchObject([
+      expect.objectContaining({ id: deployment.id }),
+    ])
   })
 
   it('should update title with COALESCE (preserving existing value)', async () => {

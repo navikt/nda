@@ -348,6 +348,21 @@ async function upsertRepositoryRow(
   return rows[0]
 }
 
+export async function ensureRepositoryRowForGithubRepo(params: {
+  githubRepoId: string
+  githubOwner: string
+  githubRepoName: string
+}): Promise<Repository> {
+  return withTransaction(async (client) => {
+    await lockRepositoryAdminForWrite(client)
+    return upsertRepositoryRow(client, {
+      githubRepoId: params.githubRepoId,
+      githubOwner: params.githubOwner,
+      githubRepoName: params.githubRepoName,
+    })
+  })
+}
+
 export async function recordRepoConfigAuditLog(
   params: {
     repositoryId: number
@@ -648,14 +663,17 @@ export async function syncRepositoryDefaultBranch(params: {
   monitoredAppId: number
   defaultBranch: string | null
   syncedAt: Date
+  onlyIfMissing?: boolean
+  expectedGithubRepoId?: string
 }): Promise<boolean> {
-  const { monitoredAppId, defaultBranch, syncedAt } = params
+  const { monitoredAppId, defaultBranch, syncedAt, onlyIfMissing = false, expectedGithubRepoId } = params
 
   return withTransaction(async (client) => {
     await lockRepositoryAdminForWrite(client)
 
     const link = await getActiveRepoLink(client, monitoredAppId)
     if (!link) return false
+    if (expectedGithubRepoId && link.githubRepoId !== expectedGithubRepoId) return false
 
     const repository = await upsertRepositoryRow(client, link)
 
@@ -664,8 +682,9 @@ export async function syncRepositoryDefaultBranch(params: {
        SET default_branch = COALESCE($1, default_branch),
            default_branch_synced_at = $2,
            updated_at = now()
-       WHERE id = $3`,
-      [defaultBranch, syncedAt, repository.id],
+       WHERE id = $3
+         AND ($4::boolean = false OR (default_branch IS NULL AND $1::varchar IS NOT NULL))`,
+      [defaultBranch, syncedAt, repository.id, onlyIfMissing],
     )
     return (rowCount ?? 0) > 0
   })

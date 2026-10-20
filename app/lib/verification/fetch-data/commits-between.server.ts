@@ -161,13 +161,13 @@ export async function buildCommitsBetweenFromCache(
       repo,
       commit.sha,
       baseBranch,
-      { cacheOnly, forceRefresh: options?.forceRefresh },
+      { cacheOnly, forceRefresh: options?.forceRefresh, githubRepoId: options?.githubRepoId },
     )
 
     let prData: VerificationInput['commitsBetween'][0]['pr'] = null
 
     if (prNumber && !options?.forceRefresh) {
-      const cachedPrData = await getCachedPrData(owner, repo, prNumber, ['reviews', 'commits'])
+      const cachedPrData = await getCachedPrData(owner, repo, prNumber, ['reviews', 'commits'], options?.githubRepoId)
       if (cachedPrData) {
         const { metadata, reviews, commits: prCommits } = mapPrDataToVerificationTypes(prNumber, cachedPrData)
         prData = {
@@ -193,6 +193,7 @@ export async function buildCommitsBetweenFromCache(
           options?.forceRefresh ?? false,
           options?.includeComments ?? true,
           options?.includeReviews ?? true,
+          options?.githubRepoId,
         ).catch((error) => {
           prFetchCache.delete(prNumber)
           throw error

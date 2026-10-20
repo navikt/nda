@@ -103,6 +103,8 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     return {
       id: d.id,
       nais_deployment_id: d.nais_deployment_id,
+      deployment_source: d.deployment_source,
+      deployment_source_id: d.deployment_source_id,
       title: displayTitle || '',
       date: d.created_at.toISOString(),
       commit_sha: d.commit_sha || '',
@@ -138,6 +140,8 @@ export function buildReportData(rawData: Awaited<ReturnType<typeof getAuditRepor
     return {
       deployment_id: a.deployment_id,
       nais_deployment_id: deployment.nais_deployment_id,
+      deployment_source: deployment.deployment_source,
+      deployment_source_id: deployment.deployment_source_id,
       title:
         computeDisplayTitle(
           deployment.title,

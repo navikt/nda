@@ -1,6 +1,10 @@
 import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
 import {
   getSyncJobById,
   heartbeatSyncJob,
@@ -13,6 +17,7 @@ import {
   getPreviousDeploymentForDiff,
 } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
+import { getRepositoryIdentityById } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
 import {
@@ -52,6 +57,22 @@ export async function computeVerificationDiffs(
 ): Promise<ComputeDiffsResult> {
   const deployments = await getDeploymentsForDiffComputation(monitoredAppId)
   const { implicitApprovalSettings } = await getEffectiveSettingsForApp(monitoredAppId)
+  const implicitApprovalSettingsCache = new Map<
+    number,
+    Promise<Awaited<ReturnType<typeof getEffectiveSettingsForRepository>>['implicitApprovalSettings']>
+  >()
+
+  async function getImplicitApprovalSettings(repositoryId: number | null) {
+    if (repositoryId == null) return implicitApprovalSettings
+    let settings = implicitApprovalSettingsCache.get(repositoryId)
+    if (!settings) {
+      settings = getEffectiveSettingsForRepository(repositoryId, monitoredAppId).then(
+        (effectiveSettings) => effectiveSettings.implicitApprovalSettings,
+      )
+      implicitApprovalSettingsCache.set(repositoryId, settings)
+    }
+    return settings
+  }
 
   const result: ComputeDiffsResult = {
     deploymentsChecked: 0,
@@ -62,21 +83,36 @@ export async function computeVerificationDiffs(
 
   const repoIdCache = new Map<
     string,
-    { githubRepoId: string | null; status: string | null; repositoryId: number | null }
+    {
+      githubRepoId: string | null
+      status: string | null
+      repositoryId: number | null
+      effectiveOwner: string
+      effectiveRepo: string
+    }
   >()
   async function resolveRepoInfo(
     owner: string,
     repo: string,
-  ): Promise<{ githubRepoId: string | null; status: string | null; repositoryId: number | null }> {
-    const cacheKey = `${owner}/${repo}`
+    deploymentRepositoryId: number | null,
+  ): Promise<{
+    githubRepoId: string | null
+    status: string | null
+    repositoryId: number | null
+    effectiveOwner: string
+    effectiveRepo: string
+  }> {
+    const cacheKey = deploymentRepositoryId == null ? `${owner}/${repo}` : String(deploymentRepositoryId)
     const cached = repoIdCache.get(cacheKey)
     if (cached) return cached
-    const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
+    const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo, deploymentRepositoryId ?? undefined)
     const githubRepoId = repoCheck.repository?.github_repo_id ?? null
     const info = {
       githubRepoId,
       status: repoCheck.repository?.status ?? null,
       repositoryId: githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null,
+      effectiveOwner: repoCheck.effectiveOwner,
+      effectiveRepo: repoCheck.effectiveRepo,
     }
     repoIdCache.set(cacheKey, info)
     return info
@@ -89,6 +125,7 @@ export async function computeVerificationDiffs(
     errorReason: string | null
     repositoryId: number | null
   }> = []
+  const applyIdentityCache = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
 
   for (const row of deployments) {
     try {
@@ -98,22 +135,51 @@ export async function computeVerificationDiffs(
         continue
       }
 
-      const owner = row.detected_github_owner as string
-      const repo = row.detected_github_repo_name as string
-
-      if (!row.default_branch) {
-        result.skipped++
-        result.deploymentsChecked++
-        continue
-      }
-      const baseBranch = row.default_branch
+      let owner = row.detected_github_owner as string
+      let repo = row.detected_github_repo_name as string
 
       let input: VerificationInput
       let precomputedResult: ReturnType<typeof verifyDeployment> | null = null
 
-      const { githubRepoId, status, repositoryId } = await resolveRepoInfo(owner, repo)
-      const previousDeploymentLookupFailed = status === 'active' && !githubRepoId
-      const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
+      const { githubRepoId, status, repositoryId, effectiveOwner, effectiveRepo } = await resolveRepoInfo(
+        owner,
+        repo,
+        row.repository_id,
+      )
+      let applyIdentity: Awaited<ReturnType<typeof getRepositoryIdentityById>> = null
+      if (row.deployment_source === 'nais_apply') {
+        const numericGithubRepoId = Number(githubRepoId)
+        if (githubRepoId && Number.isSafeInteger(numericGithubRepoId)) {
+          let identityResolution = applyIdentityCache.get(githubRepoId)
+          if (!identityResolution) {
+            identityResolution = getRepositoryIdentityById(numericGithubRepoId)
+            applyIdentityCache.set(githubRepoId, identityResolution)
+          }
+          applyIdentity = await identityResolution
+        }
+        if (!applyIdentity || String(applyIdentity.id) !== githubRepoId) {
+          result.skipped++
+          result.deploymentsChecked++
+          continue
+        }
+        owner = applyIdentity.owner
+        repo = applyIdentity.name
+      }
+      if (row.repository_id != null && status) {
+        if (!applyIdentity) {
+          owner = effectiveOwner
+          repo = effectiveRepo
+        }
+      }
+      const baseBranch = row.deployment_source === 'nais_apply' ? applyIdentity?.defaultBranch : row.default_branch
+      if (!baseBranch) {
+        result.skipped++
+        result.deploymentsChecked++
+        continue
+      }
+      const previousDeploymentLookupFailed = status === 'active' && (!githubRepoId || repositoryId == null)
+      const prevRow =
+        githubRepoId && repositoryId != null ? await getPreviousDeploymentForDiff(row.id, githubRepoId) : null
       const previousDeployment = prevRow
         ? await preferRootApprovedSibling(
             {
@@ -164,14 +230,25 @@ export async function computeVerificationDiffs(
         } else {
           const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
             cacheOnly: true,
+            ...(row.deployment_source === 'nais_apply' && githubRepoId ? { githubRepoId } : {}),
           })
 
           let deployedPr: VerificationInput['deployedPr'] = null
+          const applyGithubRepoId = row.deployment_source === 'nais_apply' ? (githubRepoId ?? undefined) : undefined
           const cachedPrNumber =
             row.github_pr_number ??
-            (await findPrForCommit(owner, repo, row.commit_sha, baseBranch, { cacheOnly: true })).prNumber
+            (
+              await findPrForCommit(owner, repo, row.commit_sha, baseBranch, {
+                cacheOnly: true,
+                ...(applyGithubRepoId != null ? { githubRepoId: applyGithubRepoId } : {}),
+              })
+            ).prNumber
+          const repositoryImplicitApprovalSettings = await getImplicitApprovalSettings(repositoryId)
           if (cachedPrNumber) {
-            const prData = await getPrDataForDiff(owner, repo, cachedPrNumber)
+            const prData =
+              applyGithubRepoId == null
+                ? await getPrDataForDiff(owner, repo, cachedPrNumber)
+                : await getPrDataForDiff(owner, repo, cachedPrNumber, applyGithubRepoId)
             if (prData) {
               deployedPr = {
                 number: cachedPrNumber,
@@ -192,7 +269,7 @@ export async function computeVerificationDiffs(
             repositoryStatus: 'active',
             commitOnBaseBranch: true,
             auditStartYear: row.audit_start_year,
-            implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
+            implicitApprovalSettings: repositoryImplicitApprovalSettings ?? { mode: 'off' },
             monitoredAppId,
             previousDeployment,
             previousDeploymentLookupFailed,

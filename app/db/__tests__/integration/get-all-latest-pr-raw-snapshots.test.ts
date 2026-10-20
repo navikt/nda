@@ -57,6 +57,27 @@ describe('getAllLatestPrRawSnapshots', () => {
     expect(result.get('pr')?.data).toEqual({ title: 'Second fetch' })
   })
 
+  it('uses the immutable repository ID when the stored repository name is stale', async () => {
+    await savePrRawSnapshotsBatch('navikt', 'current-name', 100, 111, apiVersion, [
+      { dataType: 'pr', data: { title: 'Original repository PR' } },
+      { dataType: 'reviews', data: [{ id: 1 }] },
+      { dataType: 'commits', data: [{ sha: 'original' }] },
+    ])
+    await savePrRawSnapshotsBatch('navikt', 'old-name', 100, 222, apiVersion, [
+      { dataType: 'pr', data: { title: 'Replacement repository PR' } },
+      { dataType: 'reviews', data: [{ id: 2 }] },
+      { dataType: 'commits', data: [{ sha: 'replacement' }] },
+    ])
+
+    const result = await getAllLatestPrRawSnapshots('navikt', 'old-name', 100, 111)
+
+    expect(result.get('pr')?.data).toEqual({ title: 'Original repository PR' })
+    expect(result.get('commits')?.data).toEqual([{ sha: 'original' }])
+    for (const snapshot of result.values()) {
+      expect(snapshot.githubRepoId).toBe(111)
+    }
+  })
+
   it('returns an empty map when no snapshots exist', async () => {
     const result = await getAllLatestPrRawSnapshots('navikt', 'nda', 999)
 

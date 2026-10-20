@@ -276,6 +276,35 @@ describe('refreshCommitChecksOnly', () => {
     expect(mockUpdateDeploymentCommitChecks).toHaveBeenCalledWith(1, result.commitChecks, true)
   })
 
+  it('uses the immutable repository ID when resolving an Apply PR head after a rename', async () => {
+    mockGetAllLatestPrRawSnapshots.mockResolvedValueOnce(new Map())
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: null,
+      checks: [],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
+
+    await refreshCommitChecksOnly(
+      1,
+      'navikt',
+      'current-name',
+      'a'.repeat(40),
+      42,
+      undefined,
+      undefined,
+      undefined,
+      12345,
+    )
+
+    expect(mockGetAllLatestPrRawSnapshots).toHaveBeenCalledWith('navikt', 'current-name', 42, 12345)
+    expect(mockGetAllLatestPrSnapshots).not.toHaveBeenCalled()
+  })
+
   it('skips the PR head SHA fallback lookup when there is no PR number', async () => {
     mockGetChecksForCommit.mockResolvedValueOnce({
       checks_passed: null,

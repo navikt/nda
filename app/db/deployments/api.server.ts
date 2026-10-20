@@ -25,6 +25,14 @@ export async function getAppChangeOriginCoverage(
     LEFT JOIN deployment_goal_links dgl ON dgl.deployment_id = d.id AND dgl.is_active = true
       AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
     WHERE d.monitored_app_id = $1
+      AND (
+        d.deployment_source != 'nais_apply'
+        OR EXISTS (
+          SELECT 1
+          FROM monitored_applications ma
+          WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
+        )
+      )
       AND d.created_at >= $2
       AND d.created_at <= $3`
 
@@ -68,6 +76,14 @@ export async function getLastDeploymentSummary(monitoredAppId: number): Promise<
       ) AS has_change_origin
     FROM deployments d
     WHERE d.monitored_app_id = $1
+      AND (
+        d.deployment_source != 'nais_apply'
+        OR EXISTS (
+          SELECT 1
+          FROM monitored_applications ma
+          WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
+        )
+      )
     ORDER BY d.created_at DESC
     LIMIT 1`,
     [monitoredAppId],

@@ -1,5 +1,7 @@
 import {
   getWorkflowRunRawSnapshotData,
+  hasRecentWorkflowRunAttemptShaFailure,
+  recordWorkflowRunAttemptShaFailure,
   saveCommitRawSnapshot,
   saveCompareRawSnapshot,
   saveWorkflowRunRawSnapshot,
@@ -367,6 +369,97 @@ export async function fetchWorkflowRunSnapshotIfMissing(
   }
 }
 
+export async function fetchWorkflowRunHeadSha(
+  owner: string,
+  repo: string,
+  runId: number,
+  runAttempt: number,
+  expectedRepositoryId: string,
+): Promise<string | null> {
+  const snapshot = await getWorkflowRunRawSnapshotData(expectedRepositoryId, runId, runAttempt)
+  if (isMatchingWorkflowRunHeadSha(snapshot, expectedRepositoryId, runAttempt)) {
+    return snapshot.head_sha.toLowerCase()
+  }
+
+  if (await hasRecentWorkflowRunAttemptShaFailure(expectedRepositoryId, runId, runAttempt)) {
+    return null
+  }
+
+  const rateLimitRemaining = getGitHubRateLimitRemaining()
+  if (rateLimitRemaining !== null && rateLimitRemaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER) {
+    logger.warn(`⚠️ GitHub rate limit near exhaustion; skipping SHA lookup for workflow run ${runId}`, {
+      remaining: rateLimitRemaining,
+    })
+    return null
+  }
+
+  let response: Awaited<ReturnType<ReturnType<typeof getGitHubClient>['actions']['getWorkflowRunAttempt']>>
+  try {
+    response = await getGitHubClient().actions.getWorkflowRunAttempt({
+      owner,
+      repo,
+      run_id: runId,
+      attempt_number: runAttempt,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = (error as { status?: unknown }).status
+    const rateLimitError = getGitHubRateLimitError(error)
+    if (rateLimitError) {
+      logger.warn(`⚠️ GitHub rate limit reached while fetching workflow run ${runId} for ${owner}/${repo}`, {
+        remaining: rateLimitError.remaining,
+      })
+      return null
+    }
+    if (status === 404) {
+      await recordWorkflowRunAttemptShaFailure(expectedRepositoryId, runId, runAttempt)
+    }
+    logger.warn(`⚠️ Could not resolve deployed commit from workflow run ${runId} for ${owner}/${repo}`, {
+      error: message,
+    })
+    return null
+  }
+
+  if (String(response.data.repository?.id) !== expectedRepositoryId) {
+    await recordWorkflowRunAttemptShaFailure(expectedRepositoryId, runId, runAttempt)
+    logger.warn(`⚠️ Workflow run ${runId} belongs to a different GitHub repository than Nais claims`)
+    return null
+  }
+  if (!isMatchingWorkflowRunHeadSha(response.data, expectedRepositoryId, runAttempt)) {
+    await recordWorkflowRunAttemptShaFailure(expectedRepositoryId, runId, runAttempt)
+    logger.warn(`⚠️ Workflow run ${runId} has an invalid head SHA`)
+    return null
+  }
+
+  await saveWorkflowRunRawSnapshot(
+    owner,
+    repo,
+    expectedRepositoryId,
+    runId,
+    response.data,
+    captureApiVersionMetadata(response.headers, null),
+  )
+  return response.data.head_sha.toLowerCase()
+}
+
+function isMatchingWorkflowRunHeadSha(
+  data: unknown,
+  expectedRepositoryId: string,
+  expectedRunAttempt: number,
+): data is { head_sha: string; run_attempt: number } {
+  if (!data || typeof data !== 'object') return false
+  const run = data as Record<string, unknown>
+  const repository = run.repository
+  if (!repository || typeof repository !== 'object') return false
+  const repositoryData = repository as Record<string, unknown>
+  return (
+    String(repositoryData.id) === expectedRepositoryId &&
+    run.run_attempt === expectedRunAttempt &&
+    typeof run.head_sha === 'string' &&
+    /^[a-f0-9]{40}$/i.test(run.head_sha)
+  )
+}
+
 async function archiveWorkflowRunRawSnapshot(
   owner: string,
   repo: string,
@@ -454,6 +547,35 @@ export async function getRepositoryDefaultBranch(owner: string, repo: string): P
 
 const REPOSITORY_ID_CACHE_TTL_MS = 5 * 60 * 1000
 
+export interface GitHubRepositoryIdentity {
+  id: number
+  owner: string
+  name: string
+  defaultBranch?: string | null
+}
+
+export async function getRepositoryIdentityById(repositoryId: number): Promise<GitHubRepositoryIdentity | null> {
+  try {
+    const response = await getGitHubClient().request('GET /repositories/{repository_id}', {
+      repository_id: repositoryId,
+    })
+    return {
+      id: response.data.id,
+      owner: response.data.owner.login,
+      name: response.data.name,
+      defaultBranch: response.data.default_branch || null,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    logger.warn(`⚠️ Failed to fetch repository identity for GitHub repository ${repositoryId}:`, {
+      error: message,
+      stack_trace: stack,
+    })
+    return null
+  }
+}
+
 const repositoryIdCache = new Map<string, { promise: Promise<number | null>; expiresAt: number }>()
 
 export async function getRepositoryId(owner: string, repo: string): Promise<number | null> {
@@ -463,8 +585,7 @@ export async function getRepositoryId(owner: string, repo: string): Promise<numb
 
   const promise = (async () => {
     try {
-      const client = getGitHubClient()
-      const response = await client.repos.get({ owner, repo })
+      const response = await getGitHubClient().repos.get({ owner, repo })
       return response.data.id
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

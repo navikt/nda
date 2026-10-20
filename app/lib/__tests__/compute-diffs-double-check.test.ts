@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 vi.mock('~/db/repositories.server', () => ({
   getEffectiveSettingsForApp: vi.fn(),
+  getEffectiveSettingsForRepository: vi.fn(),
   getRepositoryIdByGithubRepoId: vi.fn(),
 }))
 
@@ -29,6 +30,14 @@ vi.mock('~/db/application-repositories.server', () => ({
   LATEST_ACTIVE_REPOSITORY_LINK_SQL: '',
 }))
 
+const { mockGetRepositoryIdentityById } = vi.hoisted(() => ({
+  mockGetRepositoryIdentityById: vi.fn(),
+}))
+
+vi.mock('~/lib/github/git.server', () => ({
+  getRepositoryIdentityById: mockGetRepositoryIdentityById,
+}))
+
 vi.mock('~/lib/logger.server', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
@@ -46,7 +55,11 @@ vi.mock('~/lib/verification/verify', () => ({
 
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
 import {
   getCompareSnapshotForCommit,
   getDeploymentsForDiffComputation,
@@ -69,6 +82,7 @@ const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetPrDataForDiff = getPrDataForDiff as Mock
 const mockFindPrForCommit = findPrForCommit as Mock
 const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
+const mockGetEffectiveSettingsForRepository = getEffectiveSettingsForRepository as Mock
 const mockGetRepositoryIdByGithubRepoId = getRepositoryIdByGithubRepoId as Mock
 const mockBuildCommitsBetween = buildCommitsBetweenFromCache as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
@@ -145,6 +159,9 @@ describe('computeVerificationDiffs double-check logic', () => {
       implicitApprovalSettings: { mode: 'off' },
       defaultBranch: 'main',
     })
+    mockGetEffectiveSettingsForRepository.mockResolvedValue({
+      implicitApprovalSettings: { mode: 'off' },
+    })
     mockFindRepositoryForApp.mockResolvedValue({
       repository: { github_repo_id: '123' },
       effectiveOwner: 'navikt',
@@ -152,6 +169,12 @@ describe('computeVerificationDiffs double-check logic', () => {
       isRedirected: false,
     })
     mockGetRepositoryIdByGithubRepoId.mockResolvedValue(7)
+    mockGetRepositoryIdentityById.mockResolvedValue({
+      id: 123,
+      owner: 'navikt',
+      name: 'test-repo',
+      defaultBranch: 'main',
+    })
   })
 
   it('triggers forceRefresh when cache-only produces different status than stored', async () => {
@@ -238,6 +261,63 @@ describe('computeVerificationDiffs double-check logic', () => {
     expect(mockFetchVerificationData).not.toHaveBeenCalled()
     expect(mockVerifyDeployment).toHaveBeenCalledTimes(1)
     expect(result.diffsFound).toBe(0)
+  })
+
+  it('uses the Apply repository default branch from the immutable GitHub identity', async () => {
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({
+        four_eyes_status: 'unverified_commits',
+        deployment_source: 'nais_apply',
+        repository_id: 7,
+        default_branch: 'master',
+      }),
+    ])
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'abc123',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockFindPrForCommit.mockResolvedValue({ prNumber: null, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+
+    await computeVerificationDiffs(1)
+
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledWith(123)
+    expect(mockGetCompareSnapshot).toHaveBeenCalledWith('navikt', 'test-repo', 'abc123', null)
+    expect(mockBuildCommitsBetween).toHaveBeenCalledWith(
+      'navikt',
+      'test-repo',
+      'main',
+      { commits: [] },
+      { cacheOnly: true, githubRepoId: '123' },
+    )
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ baseBranch: 'main' }))
+  })
+
+  it('resolves an Apply repository identity only once per GitHub repository ID', async () => {
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({
+        id: 1,
+        four_eyes_status: 'unverified_commits',
+        deployment_source: 'nais_apply',
+        repository_id: 7,
+      }),
+      makeDeploymentRow({
+        id: 2,
+        four_eyes_status: 'unverified_commits',
+        deployment_source: 'nais_apply',
+        repository_id: 7,
+      }),
+    ])
+    mockGetCompareSnapshot.mockResolvedValue(null)
+    mockFetchVerificationData.mockResolvedValue(makeVerificationInput())
+    mockVerifyDeployment.mockReturnValue({ status: 'unverified_commits', unverifiedCommits: [] })
+
+    await computeVerificationDiffs(1)
+
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledTimes(1)
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledWith(123)
   })
 
   it('discovers PR via cache-only lookup when deployment has no stored github_pr_number', async () => {
@@ -402,5 +482,52 @@ describe('computeVerificationDiffs double-check logic', () => {
     )
     expect(repositoryIdsByDeployment.get(1)).toBe(10)
     expect(repositoryIdsByDeployment.get(2)).toBe(20)
+  })
+
+  it('uses each deployment repository implicit-approval settings in the cached diff path', async () => {
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({
+        id: 1,
+        four_eyes_status: 'approved',
+        detected_github_repo_name: 'repo-a',
+        repository_id: 7,
+      }),
+      makeDeploymentRow({
+        id: 2,
+        four_eyes_status: 'approved',
+        detected_github_repo_name: 'repo-b',
+        repository_id: 8,
+      }),
+    ])
+    mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockFindRepositoryForApp.mockImplementation(async (_appId: number, owner: string, repo: string) => ({
+      repository: { github_repo_id: repo === 'repo-a' ? '123' : '456' },
+      effectiveOwner: owner,
+      effectiveRepo: repo,
+      isRedirected: false,
+    }))
+    mockGetRepositoryIdByGithubRepoId.mockImplementation(async (githubRepoId: string) =>
+      githubRepoId === '123' ? 7 : 8,
+    )
+    mockGetEffectiveSettingsForRepository.mockImplementation(async (repositoryId: number) => ({
+      implicitApprovalSettings: { mode: repositoryId === 7 ? 'all' : 'off' },
+    }))
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', approvalDetails: { reason: 'pr_approved' } })
+
+    await computeVerificationDiffs(1)
+
+    expect(mockGetEffectiveSettingsForRepository).toHaveBeenCalledWith(7, 1)
+    expect(mockGetEffectiveSettingsForRepository).toHaveBeenCalledWith(8, 1)
+    expect(mockVerifyDeployment).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ implicitApprovalSettings: { mode: 'all' } }),
+    )
+    expect(mockVerifyDeployment).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ implicitApprovalSettings: { mode: 'off' } }),
+    )
   })
 })

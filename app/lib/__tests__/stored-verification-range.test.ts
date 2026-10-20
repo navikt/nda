@@ -38,10 +38,36 @@ it('persists full input SHAs in the run without mutating the verification result
   expect(returned).toEqual({ verificationRunId: 42 })
   expect(mockSaveVerificationRun).toHaveBeenCalledWith(
     3,
-    { status: result.status, result: { ...result, comparisonRange: { baseSha, headSha } } },
+    {
+      status: result.status,
+      result: {
+        ...result,
+        comparisonRange: { baseSha, headSha },
+        comparisonCommitHeadSha: headSha,
+        comparisonCommitShas: [],
+      },
+    },
     snapshotIds,
   )
   expect(result).not.toHaveProperty('comparisonRange')
+})
+
+it('persists compared commit SHAs for reports when a transformed compare cache is reused', async () => {
+  const commitsBetween: VerificationInput['commitsBetween'] = ['c'.repeat(40), 'd'.repeat(40)].map((sha) => ({
+    sha,
+    message: 'commit',
+    authorUsername: 'author',
+    authorDate: '2026-01-01T00:00:00Z',
+    isMergeCommit: false,
+    parentShas: [],
+    htmlUrl: `https://github.com/navikt/nda/commit/${sha}`,
+    pr: null,
+  }))
+
+  await storeVerificationResult(3, result, snapshotIds, { commitSha: headSha, previousDeployment, commitsBetween })
+
+  expect(mockSaveVerificationRun.mock.calls[0][1].result.comparisonCommitHeadSha).toBe(headSha)
+  expect(mockSaveVerificationRun.mock.calls[0][1].result.comparisonCommitShas).toEqual(['c'.repeat(40), 'd'.repeat(40)])
 })
 
 it('preserves identical base and head for same-SHA comparisons', async () => {
