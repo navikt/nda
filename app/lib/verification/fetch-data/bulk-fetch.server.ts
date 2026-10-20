@@ -482,6 +482,7 @@ async function processDeployments(
           triggerUrl,
           deployment.workflow_trigger_config,
           workflowTriggerResolution,
+          deployment.deployment_source === 'nais_apply' ? (deployment.matched_github_repo_id ?? undefined) : undefined,
         )
         if (refreshDisplayData && deployment.github_pr_number) {
           await refreshPrDisplayData(owner, repo, deployment.github_pr_number)

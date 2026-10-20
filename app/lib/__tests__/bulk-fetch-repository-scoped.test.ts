@@ -218,6 +218,7 @@ describe('fetchVerificationDataForRepository', () => {
       'https://github.com/navikt/current-name/actions/runs/12345',
       null,
       undefined,
+      '987654321',
     )
   })
 
