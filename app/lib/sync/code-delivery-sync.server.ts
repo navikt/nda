@@ -3,6 +3,7 @@ import {
   deferRepositoryCodeDeliveryAssessmentSync,
   markRepositoryCodeDeliveryAssessmentSyncCompleted,
   markRepositoryCodeDeliveryAssessmentSyncFailed,
+  REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION,
 } from '~/db/repository-code-delivery-assessment-sync.server'
 import {
   type EstablishmentOutcome,
@@ -82,7 +83,10 @@ export async function syncRepositoryCodeDeliveryAssessmentSnapshots(
     result.processed++
     try {
       await ingestRepositoryDeliveryAssessmentSnapshots(candidate.deliveryId)
-      await markRepositoryCodeDeliveryAssessmentSyncCompleted(candidate.deliveryId)
+      await markRepositoryCodeDeliveryAssessmentSyncCompleted(
+        candidate.deliveryId,
+        REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION,
+      )
       result.completed++
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

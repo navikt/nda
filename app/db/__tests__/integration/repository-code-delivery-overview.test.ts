@@ -345,6 +345,168 @@ describe('repository code delivery overview', () => {
     })
   })
 
+  it('assembles stacked PR coverage from persisted ancestry snapshots and preserves unknown when ancestry is missing', async () => {
+    const repositoryId = await createRepository('1019')
+    await pool.query(`UPDATE repositories SET default_branch = 'main' WHERE id = $1`, [repositoryId])
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+    const childMergeCommitSha = '5'.repeat(40)
+    const parentHeadSha = '6'.repeat(40)
+    const commitDate = '2026-10-06T10:00:00Z'
+
+    await pool.query(
+      `INSERT INTO github_compare_raw_snapshots
+         (github_repo_id, owner, repo, base_sha, head_sha, api_version, data)
+       VALUES ('1019', 'navikt', 'repo-1019', $1, $2, '2022-11-28', $3::jsonb)`,
+      [
+        SHA_1,
+        SHA_2,
+        JSON.stringify({
+          status: 'ahead',
+          ahead_by: 1,
+          behind_by: 0,
+          total_commits: 1,
+          commits: [
+            {
+              sha: SHA_2,
+              commit: {
+                message: 'Add stacked feature',
+                author: { name: 'Glad Fjord', date: commitDate },
+                committer: { date: commitDate },
+              },
+              author: { login: 'glad-fjord' },
+              html_url: `https://github.com/navikt/repo-1019/commit/${SHA_2}`,
+              parents: [{ sha: SHA_1 }],
+            },
+          ],
+        }),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO github_commit_associated_prs_raw_snapshots
+         (github_repo_id, owner, repo, sha, api_version, data, pagination_complete)
+       VALUES ('1019', 'navikt', 'repo-1019', $1, '2022-11-28', $2::jsonb, true)`,
+      [SHA_2, JSON.stringify([{ number: 43, base: { ref: 'feature/stack(1' } }])],
+    )
+
+    const childPr = {
+      number: 43,
+      base: { ref: 'feature/stack(1', sha: SHA_1 },
+      head: { ref: 'feature/stack(2', sha: SHA_2 },
+      commits: 1,
+      user: { login: 'glad-fjord' },
+      merged_by: { login: 'rask-elv' },
+      merge_commit_sha: childMergeCommitSha,
+      merged_at: '2026-10-06T12:00:00Z',
+    }
+    const parentPr = {
+      number: 42,
+      base: { ref: 'main', sha: SHA_1 },
+      head: { ref: 'feature/stack(1', sha: parentHeadSha },
+      commits: 1,
+      user: { login: 'glad-fjord' },
+      merged_by: { login: 'rask-elv' },
+      merge_commit_sha: parentHeadSha,
+      merged_at: '2026-10-06T13:00:00Z',
+    }
+    const prSnapshots = [
+      { prNumber: 43, dataType: 'pr', data: childPr },
+      {
+        prNumber: 43,
+        dataType: 'reviews',
+        data: [
+          {
+            id: 1,
+            user: { login: 'rask-elv' },
+            state: 'APPROVED',
+            submitted_at: '2026-10-06T11:00:00Z',
+            commit_id: SHA_2,
+          },
+        ],
+      },
+      {
+        prNumber: 43,
+        dataType: 'commits',
+        data: [
+          {
+            sha: SHA_2,
+            commit: {
+              message: 'Add stacked feature',
+              author: { name: 'Glad Fjord', date: commitDate },
+              committer: { date: commitDate },
+            },
+            author: { login: 'glad-fjord' },
+            parents: [{ sha: SHA_1 }],
+          },
+        ],
+      },
+      { prNumber: 42, dataType: 'pr', data: parentPr },
+      { prNumber: 42, dataType: 'reviews', data: [] },
+      {
+        prNumber: 42,
+        dataType: 'commits',
+        data: [
+          {
+            sha: parentHeadSha,
+            commit: {
+              message: 'Merge stacked child',
+              author: { name: 'Glad Fjord', date: commitDate },
+              committer: { date: commitDate },
+            },
+            author: { login: 'glad-fjord' },
+            parents: [{ sha: childMergeCommitSha }, { sha: SHA_1 }],
+          },
+        ],
+      },
+    ]
+    for (const snapshot of prSnapshots) {
+      await pool.query(
+        `INSERT INTO github_pr_raw_snapshots
+           (github_repo_id, owner, repo, pr_number, data_type, api_version, data)
+         VALUES ('1019', 'navikt', 'repo-1019', $1, $2, '2022-11-28', $3::jsonb)`,
+        [snapshot.prNumber, snapshot.dataType, JSON.stringify(snapshot.data)],
+      )
+    }
+    await pool.query(
+      `INSERT INTO repository_code_delivery_assessment_sync
+         (delivery_id, completed_pull_request_snapshot_ids, stack_parent_pull_request_numbers, completed_at)
+       VALUES ($1, $2::jsonb, $3::jsonb, now())`,
+      [delivery.id, JSON.stringify({ 42: {}, 43: {} }), JSON.stringify({ 43: [42] })],
+    )
+    await pool.query(
+      `INSERT INTO github_compare_raw_snapshots
+         (github_repo_id, owner, repo, base_sha, head_sha, api_version, data)
+       VALUES ('1019', 'navikt', 'repo-1019', $1, $2, '2022-11-28', $3::jsonb)`,
+      [
+        childMergeCommitSha,
+        parentHeadSha,
+        JSON.stringify({ status: 'ahead', ahead_by: 1, behind_by: 0, total_commits: 1, commits: [] }),
+      ],
+    )
+
+    const [coveredAssessment] = await getRepositoryCodeDeliveryIntervalAssessments(repositoryId, [delivery])
+    expect(coveredAssessment.assessment).toMatchObject({
+      state: 'complete',
+      summary: { covered: 1, notCovered: 0, unknown: 0 },
+      commits: [{ sha: SHA_2, pullRequestNumber: 43, status: 'covered', reason: 'approved_review' }],
+    })
+
+    await pool.query(
+      `DELETE FROM github_compare_raw_snapshots
+       WHERE github_repo_id = '1019' AND base_sha = $1 AND head_sha = $2`,
+      [childMergeCommitSha, parentHeadSha],
+    )
+    const [unknownAssessment] = await getRepositoryCodeDeliveryIntervalAssessments(repositoryId, [delivery])
+    expect(unknownAssessment.assessment).toMatchObject({
+      state: 'incomplete',
+      summary: { covered: 0, notCovered: 0, unknown: 1 },
+      commits: [{ sha: SHA_2, status: 'unknown', reason: 'incomplete_stack_evidence', pullRequestNumber: 43 }],
+    })
+  })
+
   it('returns an empty overview for a repository without deliveries', async () => {
     const repositoryId = await createRepository('1000')
 
