@@ -431,6 +431,13 @@ describe('updateRepositorySettingsByRepositoryId', () => {
     expect(afterEnable.code_delivery_tracking).toBe(true)
     expect(afterEnable.code_delivery_tracking_since).not.toBeNull()
 
+    const { rows: deliveryRows } = await pool.query<{ id: number }>(
+      `INSERT INTO repository_code_deliveries (repository_id, base_sha, head_sha, created_at)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [repositoryId, '1'.repeat(40), '2'.repeat(40), new Date(Date.now() - 24 * 60 * 60 * 1000)],
+    )
+
     const unchanged = await toggle(true)
     expect(unchanged.ok && unchanged.changedKeys).toEqual([])
 
@@ -439,6 +446,11 @@ describe('updateRepositorySettingsByRepositoryId', () => {
     const afterReEnable = await readRepository()
     expect(afterReEnable.code_delivery_tracking).toBe(true)
     expect(afterReEnable.code_delivery_tracking_since).toEqual(afterEnable.code_delivery_tracking_since)
+    const queuedDeliveries = await pool.query(
+      'SELECT delivery_id FROM repository_code_delivery_assessment_sync WHERE delivery_id = $1',
+      [deliveryRows[0].id],
+    )
+    expect(queuedDeliveries.rowCount).toBe(1)
 
     const log = await pool.query(
       'SELECT new_value FROM repo_config_audit_log WHERE repository_id = $1 AND setting_key = $2 ORDER BY id',

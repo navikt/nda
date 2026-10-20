@@ -254,12 +254,12 @@ export async function getAllLatestPrRawSnapshots(
              SELECT github_repo_id
              FROM github_pr_raw_snapshots
              WHERE owner = $1 AND repo = $2 AND pr_number = $3
-             ORDER BY fetched_at DESC
+             ORDER BY fetched_at DESC, id DESC
              LIMIT 1
            )
          )
        )
-     ORDER BY data_type, fetched_at DESC`,
+     ORDER BY data_type, fetched_at DESC, id DESC`,
     [owner, repo, prNumber, githubRepoId ?? null],
   )
 

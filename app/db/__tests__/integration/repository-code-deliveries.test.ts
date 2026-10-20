@@ -40,6 +40,12 @@ describe('repository code delivery storage', () => {
     try {
       await client.query('BEGIN')
       await client.query('ALTER TABLE deployments DROP COLUMN repository_code_delivery_id')
+      await client.query('DROP TABLE repository_code_delivery_assessment_sync')
+      await client.query(
+        `DROP TABLE repository_manual_approval_events, repository_manual_approval_commits,
+                    repository_manual_approvals, repository_approval_snapshot_commits,
+                    repository_approval_snapshots`,
+      )
       await client.query('DROP TABLE repository_code_deliveries')
       const deploymentsBefore = await client.query('SELECT to_jsonb(d) AS data FROM deployments d ORDER BY id')
       const repositoryBefore = await client.query('SELECT to_jsonb(r) AS data FROM repositories r WHERE id = $1', [

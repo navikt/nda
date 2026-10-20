@@ -4,7 +4,9 @@ import {
   createRepositoryCodeDelivery,
   linkDeploymentToRepositoryCodeDelivery,
 } from '../../repository-code-deliveries.server'
+import { getRepositoryCodeDeliveryIntervalAssessments } from '../../repository-code-delivery-interval-assessment.server'
 import {
+  getRepositoryCodeDeliveryDiagnosticForDelivery,
   getRepositoryCodeDeliveryEvidence,
   getRepositoryCodeDeliveryExportData,
   getRepositoryCodeDeliveryOverview,
@@ -182,6 +184,165 @@ describe('repository code delivery overview', () => {
     expect(secondPage).toMatchObject({ page: 2, totalPages: 2, totalEvidenceEntries: 26 })
     expect(secondPage?.deployments).toHaveLength(1)
     expect(secondPage?.deployments[0].verification_runs).toHaveLength(1)
+  })
+
+  it('assesses a delivery interval from complete stored compare, association, and PR snapshots', async () => {
+    const repositoryId = await createRepository('1018')
+    await pool.query(`UPDATE repositories SET default_branch = 'main' WHERE id = $1`, [repositoryId])
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+    const deliveryWithoutCompare = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_3,
+      headSha: SHA_4,
+    })
+    const commitDate = '2026-10-05T10:00:00Z'
+    await pool.query(
+      `INSERT INTO github_compare_raw_snapshots
+         (github_repo_id, owner, repo, base_sha, head_sha, api_version, data)
+       VALUES
+         ('1018', 'navikt', 'repo-1018', $1, $2, '2022-11-28', $3::jsonb)`,
+      [
+        SHA_1,
+        SHA_2,
+        JSON.stringify({
+          status: 'ahead',
+          ahead_by: 1,
+          behind_by: 0,
+          total_commits: 1,
+          commits: [
+            {
+              sha: SHA_2,
+              commit: {
+                message: 'Add feature',
+                author: { name: 'Glad Fjord', date: commitDate },
+                committer: { date: commitDate },
+              },
+              author: { login: 'glad-fjord' },
+              html_url: `https://github.com/navikt/repo-1018/commit/${SHA_2}`,
+              parents: [{ sha: SHA_1 }],
+            },
+          ],
+        }),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO github_commit_associated_prs_raw_snapshots
+         (github_repo_id, owner, repo, sha, api_version, data)
+       VALUES ('1018', 'navikt', 'repo-1018', $1, '2022-11-28', $2::jsonb)`,
+      [
+        SHA_2,
+        JSON.stringify([
+          { number: 41, base: { ref: 'main' } },
+          { number: 42, base: { ref: 'main' } },
+        ]),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO github_pr_raw_snapshots
+         (github_repo_id, owner, repo, pr_number, data_type, api_version, data)
+       VALUES
+         ('1018', 'navikt', 'repo-1018', 42, 'pr', '2022-11-28', $1::jsonb),
+         ('1018', 'navikt', 'repo-1018', 42, 'reviews', '2022-11-28', $2::jsonb),
+         ('1018', 'navikt', 'repo-1018', 42, 'commits', '2022-11-28', $3::jsonb)`,
+      [
+        JSON.stringify({
+          number: 42,
+          base: { ref: 'main' },
+          head: { sha: SHA_2 },
+          commits: 1,
+          user: { login: 'glad-fjord' },
+          merged_by: { login: 'rask-elv' },
+          merge_commit_sha: null,
+        }),
+        JSON.stringify([
+          {
+            id: 1,
+            user: { login: 'rask-elv' },
+            state: 'APPROVED',
+            submitted_at: '2026-10-05T11:00:00Z',
+            commit_id: SHA_2,
+          },
+        ]),
+        JSON.stringify([
+          {
+            sha: SHA_2,
+            commit: {
+              message: 'Add feature',
+              author: { name: 'Glad Fjord', date: commitDate },
+              committer: { date: commitDate },
+            },
+            author: { login: 'glad-fjord' },
+            parents: [{ sha: SHA_1 }],
+          },
+        ]),
+      ],
+    )
+
+    const evidence = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)
+    expect(evidence?.interval_assessment).toMatchObject({
+      state: 'incomplete',
+      summary: { covered: 0, notCovered: 0, unknown: 1 },
+      commits: [{ sha: SHA_2, status: 'unknown', reason: 'missing_associated_pull_request_snapshot' }],
+    })
+
+    await pool.query(
+      `UPDATE github_commit_associated_prs_raw_snapshots
+       SET pagination_complete = true
+       WHERE github_repo_id = '1018' AND sha = $1`,
+      [SHA_2],
+    )
+    const completeEvidence = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)
+    expect(completeEvidence?.interval_assessment).toMatchObject({
+      state: 'complete',
+      totalCommits: 1,
+      summary: { covered: 1, notCovered: 0, unknown: 0 },
+      commits: [{ sha: SHA_2, pullRequestNumber: 42, status: 'covered', reason: 'approved_review' }],
+    })
+    const summaries = await getRepositoryCodeDeliveryIntervalAssessments(repositoryId, [
+      delivery,
+      deliveryWithoutCompare,
+    ])
+    expect(summaries).toMatchObject([
+      {
+        deliveryId: delivery.id,
+        assessment: {
+          state: 'complete',
+          summary: { covered: 1, notCovered: 0, unknown: 0 },
+        },
+        pullRequestNumbers: [41, 42],
+      },
+      {
+        deliveryId: deliveryWithoutCompare.id,
+        assessment: {
+          state: 'unavailable',
+          summary: { covered: 0, notCovered: 0, unknown: 0 },
+        },
+        pullRequestNumbers: [],
+      },
+    ])
+
+    await pool.query(
+      `UPDATE github_commit_associated_prs_raw_snapshots
+       SET data = $1::jsonb
+       WHERE github_repo_id = '1018' AND sha = $2`,
+      [JSON.stringify([{ number: 42, base: { ref: 'main' } }]), SHA_2],
+    )
+    await pool.query(
+      `UPDATE github_pr_raw_snapshots
+       SET data = jsonb_set(data, '{head,sha}', to_jsonb($1::text))
+       WHERE github_repo_id = '1018' AND pr_number = 42 AND data_type = 'pr'`,
+      [SHA_3],
+    )
+    const staleEvidence = await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)
+    expect(staleEvidence?.interval_assessment).toMatchObject({
+      state: 'incomplete',
+      summary: { covered: 0, notCovered: 0, unknown: 1 },
+      commits: [{ sha: SHA_2, status: 'unknown', reason: 'pull_request_head_mismatch' }],
+    })
   })
 
   it('returns an empty overview for a repository without deliveries', async () => {
@@ -604,6 +765,75 @@ describe('repository code delivery overview', () => {
       }),
     ])
     expect(exportData?.implicitApprovalMode).toBe('all')
+  })
+
+  it('exports exactly one delivery and every deployment linked to it', async () => {
+    const repositoryId = await createRepository('1020')
+    const otherRepositoryId = await createRepository('1021')
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+    const deployments: number[] = []
+    for (const appName of ['diagnostic-app-a', 'diagnostic-app-a', 'diagnostic-app-b', 'diagnostic-app-b']) {
+      deployments.push(await createDeployment(appName, repositoryId, SHA_2))
+    }
+    for (const deploymentId of deployments) {
+      await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
+    }
+    const separateDelivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_2,
+      headSha: SHA_3,
+    })
+    const separateDeployment = await createDeployment('diagnostic-separate-app', repositoryId, SHA_3)
+    await linkDeploymentToRepositoryCodeDelivery(separateDeployment, separateDelivery.id)
+    const otherDelivery = await createRepositoryCodeDelivery({
+      repositoryId: otherRepositoryId,
+      baseSha: SHA_3,
+      headSha: SHA_4,
+    })
+    const otherDeployment = await createDeployment('diagnostic-other-app', otherRepositoryId, SHA_4)
+    await linkDeploymentToRepositoryCodeDelivery(otherDeployment, otherDelivery.id)
+    await pool.query(
+      `INSERT INTO verification_runs
+         (deployment_id, schema_version, pr_snapshot_ids, result, status, run_at)
+       VALUES ($1, 3, '{}', '{"status":"approved"}', 'approved', '2026-10-14T10:00:00Z')`,
+      [deployments[0]],
+    )
+
+    const exportData = await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, delivery.id)
+
+    expect(exportData.deliveryTarget).toEqual({
+      deliveryId: delivery.id,
+      includedDeploymentIds: expect.arrayContaining(deployments),
+    })
+    expect(exportData.deliveryTarget?.includedDeploymentIds).toHaveLength(4)
+    expect(exportData.deliveries).toMatchObject([
+      {
+        id: delivery.id,
+        base_sha: SHA_1,
+        head_sha: SHA_2,
+        deployment_count: 4,
+        contexts: [],
+      },
+    ])
+    expect(exportData.deployments.map((row) => row.deployment_id)).toEqual(expect.arrayContaining(deployments))
+    expect(exportData.deployments).toHaveLength(4)
+    expect(exportData.deployments.map((row) => row.app_name).sort()).toEqual([
+      'diagnostic-app-a',
+      'diagnostic-app-a',
+      'diagnostic-app-b',
+      'diagnostic-app-b',
+    ])
+    expect(exportData.verificationRuns).toMatchObject([{ deployment_id: deployments[0], status: 'approved' }])
+    expect(exportData.diagnosticTargets).toEqual([])
+    expect(await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, otherDelivery.id)).toMatchObject({
+      deliveryTarget: null,
+      deployments: [],
+      deliveries: [],
+    })
   })
 
   it('includes matching compare snapshots as candidate ancestry evidence without asserting retry linkage', async () => {

@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { chunk } from '~/lib/chunk'
 import { isValidNavIdent } from '~/lib/form-validators'
 import { isGitHubBot } from '~/lib/github-bots'
@@ -12,6 +13,9 @@ interface GithubUserLookup {
   display_github_username: string | null
   display_name: string | null
   nav_ident: string | null
+  active_nav_ident: string | null
+  account_identity_version: string
+  user_identity_version: string | null
   slack_member_id: string | null
   account_deleted_at: Date | null
 }
@@ -22,6 +26,9 @@ export async function getGithubUserLookup(githubUsername: string): Promise<Githu
             uga.display_github_username,
             u.display_name,
             uga.nav_ident,
+            u.nav_ident AS active_nav_ident,
+            uga.identity_version::text AS account_identity_version,
+            u.identity_version::text AS user_identity_version,
             u.slack_member_id,
             uga.deleted_at AS account_deleted_at
      FROM user_github_accounts uga
@@ -32,14 +39,20 @@ export async function getGithubUserLookup(githubUsername: string): Promise<Githu
   return result.rows[0] ?? null
 }
 
-export async function getGithubUserLookups(githubUsernames: string[]): Promise<Map<string, GithubUserLookup>> {
+export async function getGithubUserLookups(
+  githubUsernames: string[],
+  client: Pick<PoolClient, 'query'> = pool,
+): Promise<Map<string, GithubUserLookup>> {
   if (githubUsernames.length === 0) return new Map()
 
-  const result = await pool.query<GithubUserLookup>(
+  const result = await client.query<GithubUserLookup>(
     `SELECT uga.github_username,
             uga.display_github_username,
             u.display_name,
             uga.nav_ident,
+            u.nav_ident AS active_nav_ident,
+            uga.identity_version::text AS account_identity_version,
+            u.identity_version::text AS user_identity_version,
             u.slack_member_id,
             uga.deleted_at AS account_deleted_at
      FROM user_github_accounts uga

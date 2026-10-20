@@ -5,9 +5,11 @@ import {
   type RepositoryDeliveryComparisonRange,
   type RepositoryDeliveryReviewEvidence,
 } from '~/lib/repository-code-delivery/evidence'
+import type { RepositoryDeliveryIntervalAssessment } from '~/lib/repository-code-delivery/interval-assessment'
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool, withTransaction } from './connection.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
+import { getRepositoryCodeDeliveryIntervalAssessments } from './repository-code-delivery-interval-assessment.server'
 
 export interface RepositoryCodeDeliveryOverview {
   deliveryCount: number
@@ -141,6 +143,11 @@ export interface RepositoryCodeDeliveryDiagnosticTarget {
   includedDeploymentIds: number[]
 }
 
+export interface RepositoryCodeDeliveryDiagnosticDeliveryTarget {
+  deliveryId: number
+  includedDeploymentIds: number[]
+}
+
 export interface RepositoryCodeDeliveryRepositoryAlias {
   owner: string
   repo: string
@@ -163,6 +170,7 @@ export interface RepositoryCodeDeliveryExportData {
   verificationRuns: RepositoryVerificationRunExportRow[]
   repositoryConfigAuditLog: RepositoryConfigAuditExportRow[]
   diagnosticTargets: RepositoryCodeDeliveryDiagnosticTarget[]
+  deliveryTarget: RepositoryCodeDeliveryDiagnosticDeliveryTarget | null
   implicitApprovalMode: ImplicitApprovalMode
   prSnapshots: RepositoryGitHubPrSnapshotExportRow[]
   commitSnapshots: RepositoryGitHubCommitSnapshotExportRow[]
@@ -237,6 +245,8 @@ export interface RepositoryCodeDeliveryEvidence {
   base_sha: string
   head_sha: string
   created_at: Date
+  first_deployed_at?: Date | null
+  interval_assessment: RepositoryDeliveryIntervalAssessment
   page: number
   totalPages: number
   totalEvidenceEntries: number
@@ -593,6 +603,20 @@ export async function getRepositoryCodeDeliveryExportData(
   repositoryId: number,
   unresolvedDeploymentId?: number,
 ): Promise<RepositoryCodeDeliveryExportData> {
+  return getRepositoryCodeDeliveryExportDataForTarget(repositoryId, { unresolvedDeploymentId })
+}
+
+export async function getRepositoryCodeDeliveryDiagnosticForDelivery(
+  repositoryId: number,
+  deliveryId: number,
+): Promise<RepositoryCodeDeliveryExportData> {
+  return getRepositoryCodeDeliveryExportDataForTarget(repositoryId, { deliveryId })
+}
+
+async function getRepositoryCodeDeliveryExportDataForTarget(
+  repositoryId: number,
+  target: { unresolvedDeploymentId?: number; deliveryId?: number },
+): Promise<RepositoryCodeDeliveryExportData> {
   return withTransaction(async (client) => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
     const {
@@ -611,8 +635,24 @@ export async function getRepositoryCodeDeliveryExportData(
        FROM repositories WHERE id = $1`,
       [repositoryId],
     )
-    const [nearby, repositoryConfigAuditLog, historyReadiness, repositoryAliases] = await Promise.all([
-      listNearbyCodeDeliveries(repositoryId, unresolvedDeploymentId, client),
+    const deliveryTargetResult =
+      target.deliveryId === undefined
+        ? null
+        : await client.query<Omit<RepositoryCodeDeliveryExportDelivery, 'contexts'>>(
+            `SELECT c.id, c.base_sha, c.head_sha, c.created_at AS registered_at,
+                    min(d.created_at) AS first_deployed_at, count(d.id)::int AS deployment_count
+             FROM repository_code_deliveries c
+             LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id
+             WHERE c.repository_id = $1 AND c.id = $2
+             GROUP BY c.id`,
+            [repositoryId, target.deliveryId],
+          )
+    const deliveryTarget = deliveryTargetResult?.rows[0] ?? null
+    const nearby =
+      target.deliveryId === undefined
+        ? await listNearbyCodeDeliveries(repositoryId, target.unresolvedDeploymentId, client)
+        : { targets: [], deliveries: [] }
+    const [repositoryConfigAuditLog, historyReadiness, repositoryAliases] = await Promise.all([
       listRepositoryConfigAuditLog(repositoryId, client),
       getRepositoryHistoryReadinessFromClient(repositoryId, client),
       client
@@ -633,7 +673,9 @@ export async function getRepositoryCodeDeliveryExportData(
       code_delivery_tracking_since,
       audit_start_year,
     } = repository
-    const includedDeliveryIds = [...new Set(nearby.deliveries.map((delivery) => delivery.id))]
+    const includedDeliveryIds = deliveryTarget
+      ? [deliveryTarget.id]
+      : [...new Set(nearby.deliveries.map((delivery) => delivery.id))]
     const unresolvedDeploymentIds = nearby.targets.map((target) => target.unresolved_deployment_id)
     const { rows: includedDeploymentRows } = await client.query<{
       id: number
@@ -685,12 +727,14 @@ export async function getRepositoryCodeDeliveryExportData(
       })
       includedDeliveryContexts.set(delivery.id, contexts)
     }
-    const deliveries = [...new Map(nearby.deliveries.map((delivery) => [delivery.id, delivery])).values()].map(
-      ({ unresolved_deployment_id, relative_position, ...delivery }) => ({
-        ...delivery,
-        contexts: includedDeliveryContexts.get(delivery.id) ?? [],
-      }),
-    )
+    const deliveries = deliveryTarget
+      ? [{ ...deliveryTarget, contexts: [] }]
+      : [...new Map(nearby.deliveries.map((delivery) => [delivery.id, delivery])).values()].map(
+          ({ unresolved_deployment_id, relative_position, ...delivery }) => ({
+            ...delivery,
+            contexts: includedDeliveryContexts.get(delivery.id) ?? [],
+          }),
+        )
     const [deployments, ancestryEvidence, verificationRuns, workflowRunSnapshots] = await Promise.all([
       listRepositoryCodeDeliveryExportRows(repositoryId, client, includedDeploymentIds),
       listRepositoryCodeDeliveryAncestryEvidence(
@@ -725,6 +769,7 @@ export async function getRepositoryCodeDeliveryExportData(
       verificationRuns,
       repositoryConfigAuditLog,
       diagnosticTargets,
+      deliveryTarget: deliveryTarget ? { deliveryId: deliveryTarget.id, includedDeploymentIds } : null,
       implicitApprovalMode: repository.implicit_approval_mode,
       prSnapshots,
       commitSnapshots,
@@ -922,15 +967,17 @@ export async function getRepositoryCodeDeliveryEvidence(
   repositoryId: number,
   deliveryId: number,
   requestedPage = 1,
+  transactionClient?: PoolClient,
 ): Promise<RepositoryCodeDeliveryEvidence | null> {
-  return withTransaction(async (client) => {
-    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+  const read = async (client: PoolClient): Promise<RepositoryCodeDeliveryEvidence | null> => {
     const { rows: deliveryRows } = await client.query<
       Omit<RepositoryCodeDeliveryEvidence, 'deployments' | 'page' | 'totalPages' | 'totalEvidenceEntries'>
     >(
-      `SELECT id, base_sha, head_sha, created_at
-       FROM repository_code_deliveries
-       WHERE repository_id = $1 AND id = $2`,
+      `SELECT c.id, c.base_sha, c.head_sha, c.created_at,
+              (SELECT min(d.created_at) FROM deployments d
+               WHERE d.repository_id = c.repository_id AND d.repository_code_delivery_id = c.id) AS first_deployed_at
+       FROM repository_code_deliveries c
+       WHERE c.repository_id = $1 AND c.id = $2`,
       [repositoryId, deliveryId],
     )
     const delivery = deliveryRows[0]
@@ -1052,7 +1099,22 @@ export async function getRepositoryCodeDeliveryEvidence(
       }
     }
 
-    return { ...delivery, page, totalPages, totalEvidenceEntries, deployments: [...deployments.values()] }
+    const [intervalAssessment] = await getRepositoryCodeDeliveryIntervalAssessments(repositoryId, [delivery], client)
+    if (!intervalAssessment) throw new Error(`Missing interval assessment for delivery ${deliveryId}`)
+
+    return {
+      ...delivery,
+      interval_assessment: intervalAssessment.assessment,
+      page,
+      totalPages,
+      totalEvidenceEntries,
+      deployments: [...deployments.values()],
+    }
+  }
+  if (transactionClient) return read(transactionClient)
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    return read(client)
   })
 }
 

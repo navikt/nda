@@ -23,6 +23,7 @@ export interface RepositoryPageProps {
   repository: RepositoryPageRepository
   affectedApps: RepositoryPageAffectedApp[]
   canAccessAdmin: boolean
+  canApprove?: boolean
   deploymentStats: AppDeploymentStats
   period: TimePeriod
 }
@@ -31,6 +32,7 @@ export function RepositoryPage({
   repository,
   affectedApps,
   canAccessAdmin,
+  canApprove = false,
   deploymentStats,
   period,
 }: RepositoryPageProps) {
@@ -50,6 +52,14 @@ export function RepositoryPage({
             <AkselLink as={Link} to={deploymentsUrl}>
               Se alle deployments for repoet
             </AkselLink>
+            {canApprove && (
+              <AkselLink
+                as={Link}
+                to={`/repository/${repository.github_owner}/${repository.github_repo_name}/approvals?repositoryId=${repository.id}`}
+              >
+                Manuell repositorygodkjenning
+              </AkselLink>
+            )}
           </HStack>
         </div>
         {canAccessAdmin && (

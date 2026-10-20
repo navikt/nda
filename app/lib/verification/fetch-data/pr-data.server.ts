@@ -7,6 +7,7 @@ import {
   saveCommitSnapshot,
   savePrRawSnapshotsBatch,
 } from '~/db/github-data.server'
+import type { RepositoryCodeDeliveryAssessmentPrSnapshotIds } from '~/db/repository-code-delivery-assessment-sync.server'
 import {
   getDetailedPullRequestInfo,
   getDisplayDataFromGitHub,
@@ -27,13 +28,9 @@ import { buildGithubPrDataFromSnapshots } from '../build-github-pr-data'
 import type { PrChecks, PrComment, PrCommit, PrMetadata, PrReview, VerificationInput } from '../types'
 import { CURRENT_SCHEMA_VERSION } from '../types'
 
-async function getDerivedPrDataFromRawSnapshots(
-  owner: string,
-  repo: string,
-  prNumber: number,
-  githubRepoId?: number | string,
-): Promise<GitHubPRData | null> {
-  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber, githubRepoId)
+function derivePrDataFromRawSnapshots(
+  rawSnapshots: Awaited<ReturnType<typeof getAllLatestPrRawSnapshots>>,
+): GitHubPRData | null {
   const prSnapshot = rawSnapshots.get('pr')
   if (!prSnapshot) return null
 
@@ -48,6 +45,16 @@ async function getDerivedPrDataFromRawSnapshots(
   }
 
   return derivePrDataFromRaw(raw)
+}
+
+async function getDerivedPrDataFromRawSnapshots(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  githubRepoId?: number | string,
+): Promise<GitHubPRData | null> {
+  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber, githubRepoId)
+  return derivePrDataFromRawSnapshots(rawSnapshots)
 }
 
 export type LegacyPrDataType = 'reviews' | 'commits' | 'checks' | 'comments'
@@ -297,6 +304,119 @@ export async function fetchOrRefreshMergedPrData(
   return fetched
 }
 
+function isConsistentPrAssessmentData(pr: unknown, reviews: unknown, commits: unknown, prNumber: number): boolean {
+  if (!pr || typeof pr !== 'object' || Array.isArray(pr) || !Array.isArray(reviews) || !Array.isArray(commits)) {
+    return false
+  }
+
+  const metadata = pr as Record<string, unknown>
+  const head = metadata.head
+  if (
+    metadata.number !== prNumber ||
+    !Number.isSafeInteger(metadata.commits) ||
+    metadata.commits !== commits.length ||
+    !head ||
+    typeof head !== 'object' ||
+    Array.isArray(head) ||
+    typeof (head as Record<string, unknown>).sha !== 'string'
+  ) {
+    return false
+  }
+
+  const lastCommit = commits[commits.length - 1]
+  return (
+    !!lastCommit &&
+    typeof lastCommit === 'object' &&
+    !Array.isArray(lastCommit) &&
+    (lastCommit as Record<string, unknown>).sha === (head as Record<string, unknown>).sha
+  )
+}
+
+export async function ensurePrReviewSnapshots(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  githubRepoId: number,
+  deliverySnapshotIds: RepositoryCodeDeliveryAssessmentPrSnapshotIds | undefined,
+  beforeFetch: () => void,
+): Promise<RepositoryCodeDeliveryAssessmentPrSnapshotIds> {
+  const getConsistentRawSnapshotIds = async (): Promise<RepositoryCodeDeliveryAssessmentPrSnapshotIds | null> => {
+    const snapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
+    if (
+      !(['pr', 'reviews', 'commits', 'comments', 'review_comments'] as const).every(
+        (type) => snapshots.get(type)?.githubRepoId === githubRepoId,
+      ) ||
+      !isConsistentPrAssessmentData(
+        snapshots.get('pr')?.data,
+        snapshots.get('reviews')?.data,
+        snapshots.get('commits')?.data,
+        prNumber,
+      ) ||
+      derivePrDataFromRawSnapshots(snapshots) === null
+    ) {
+      return null
+    }
+
+    const pr = snapshots.get('pr')
+    const reviews = snapshots.get('reviews')
+    const commits = snapshots.get('commits')
+    const comments = snapshots.get('comments')
+    const reviewComments = snapshots.get('review_comments')
+    if (!pr || !reviews || !commits || !comments || !reviewComments) return null
+    return {
+      pr: pr.id,
+      reviews: reviews.id,
+      commits: commits.id,
+      comments: comments.id,
+      reviewComments: reviewComments.id,
+    }
+  }
+
+  const currentSnapshotIds = await getConsistentRawSnapshotIds()
+  if (deliverySnapshotIds && currentSnapshotIds && isSamePrSnapshotIds(currentSnapshotIds, deliverySnapshotIds)) {
+    return currentSnapshotIds
+  }
+
+  beforeFetch()
+  const fetched = await getDetailedPullRequestInfo(owner, repo, prNumber)
+  if (!fetched) throw new Error(`Failed to fetch fresh snapshots for PR #${prNumber} from ${owner}/${repo}`)
+  if (fetched.githubRepoId !== githubRepoId) {
+    throw new Error(`GitHub repository identity changed while loading PR #${prNumber}`)
+  }
+
+  const { pr, reviews, commits } = fetched.raw
+  if (!isConsistentPrAssessmentData(pr, reviews, commits, prNumber)) {
+    throw new Error(`Fresh PR #${prNumber} snapshots are inconsistent for ${owner}/${repo}`)
+  }
+
+  await savePrRawSnapshotsBatch(owner, repo, prNumber, fetched.githubRepoId, fetched.apiVersion, [
+    { dataType: 'pr', data: pr },
+    { dataType: 'reviews', data: reviews },
+    { dataType: 'commits', data: commits },
+    { dataType: 'comments', data: fetched.raw.issueComments },
+    { dataType: 'review_comments', data: fetched.raw.reviewComments },
+  ])
+
+  const persistedSnapshotIds = await getConsistentRawSnapshotIds()
+  if (!persistedSnapshotIds) {
+    throw new Error(`Fresh PR #${prNumber} snapshots were not persisted for ${owner}/${repo}`)
+  }
+  return persistedSnapshotIds
+}
+
+function isSamePrSnapshotIds(
+  left: RepositoryCodeDeliveryAssessmentPrSnapshotIds,
+  right: RepositoryCodeDeliveryAssessmentPrSnapshotIds,
+): boolean {
+  return (
+    left.pr === right.pr &&
+    left.reviews === right.reviews &&
+    left.commits === right.commits &&
+    left.comments === right.comments &&
+    left.reviewComments === right.reviewComments
+  )
+}
+
 export async function findPrForCommit(
   owner: string,
   repo: string,
@@ -314,7 +434,7 @@ export async function findPrForCommit(
   let cachedPrs: Array<{ number: number; baseBranch: string }> | null = null
   if (!forceRefresh && options?.githubRepoId != null) {
     const cached = await getLatestCommitAssociatedPrsRawSnapshot(owner, repo, commitSha, options.githubRepoId)
-    if (cached && Array.isArray(cached.data)) {
+    if (cached?.paginationComplete && Array.isArray(cached.data)) {
       cachedPrs = cached.data.flatMap((entry: { number?: unknown; base?: { ref?: unknown } }) =>
         typeof entry.number === 'number' && typeof entry.base?.ref === 'string'
           ? [{ number: entry.number, baseBranch: entry.base.ref }]

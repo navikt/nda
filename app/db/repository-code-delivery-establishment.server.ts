@@ -5,6 +5,7 @@ import {
   getRepositoryCodeDelivery,
   linkDeploymentToRepositoryCodeDeliveryInTransaction,
 } from './repository-code-deliveries.server'
+import { enqueueRepositoryCodeDeliveryAssessmentSync } from './repository-code-delivery-assessment-sync.server'
 
 export type UnresolvedReason =
   | 'ancestry_unknown'
@@ -72,6 +73,7 @@ export async function establishCodeDeliveryForDeployment(
         deploymentId,
         deployment.repository_code_delivery_id,
       )
+      await enqueueRepositoryCodeDeliveryAssessmentSync(client, deployment.repository_code_delivery_id)
       return { outcome: 'already_linked', deliveryId: deployment.repository_code_delivery_id }
     }
     const headSha = deployment.commit_sha
@@ -93,6 +95,7 @@ export async function establishCodeDeliveryForDeployment(
     const existing = await getRepositoryCodeDelivery(repositoryId, headSha, client)
     if (existing) {
       await linkDeploymentToRepositoryCodeDeliveryInTransaction(client, deploymentId, existing.id)
+      await enqueueRepositoryCodeDeliveryAssessmentSync(client, existing.id)
       return { outcome: 'linked', deliveryId: existing.id }
     }
 
@@ -106,6 +109,7 @@ export async function establishCodeDeliveryForDeployment(
     const baseSha = currentHead ?? headSha
     const created = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha }, client)
     await linkDeploymentToRepositoryCodeDeliveryInTransaction(client, deploymentId, created.id)
+    await enqueueRepositoryCodeDeliveryAssessmentSync(client, created.id)
     return { outcome: 'created', deliveryId: created.id, baseSha: created.base_sha, headSha: created.head_sha }
   })
 }
