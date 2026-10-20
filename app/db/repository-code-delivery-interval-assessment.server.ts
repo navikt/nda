@@ -212,9 +212,12 @@ function parsePullRequestEvidence(
   return {
     number: prNumber,
     baseBranch: base.ref,
+    baseSha: typeof base.sha === 'string' ? base.sha : null,
     authorLogin: typeof author?.login === 'string' ? author.login : null,
     mergedByLogin: typeof mergedBy?.login === 'string' ? mergedBy.login : null,
     mergeCommitSha: typeof metadata.merge_commit_sha === 'string' ? metadata.merge_commit_sha : null,
+    mergedAt: typeof metadata.merged_at === 'string' ? metadata.merged_at : null,
+    headBranch: typeof head.ref === 'string' ? head.ref : null,
     headSha: head.sha,
     commitCount: metadata.commits,
     commits,
@@ -289,14 +292,27 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   const associatedPullRequestsBySha = new Map(
     associatedRows.map((row) => [row.sha, parseAssociatedPullRequests(row.data, row.pagination_complete)]),
   )
-  const pullRequestNumbers = [
+  const associatedPullRequestNumbers = [
     ...new Set(
       [...associatedPullRequestsBySha.values()].flatMap((snapshot) =>
-        snapshot.pullRequests
-          .filter((pullRequest) => pullRequest.baseBranch === repository.default_branch)
-          .map((pullRequest) => pullRequest.number),
+        snapshot.pullRequests.map((pullRequest) => pullRequest.number),
       ),
     ),
+  ]
+  const { rows: stackedPullRequestRows } = await client.query<{ delivery_id: number; pull_request_number: string }>(
+    `SELECT sync.delivery_id, pr_number AS pull_request_number
+     FROM repository_code_delivery_assessment_sync sync
+     CROSS JOIN LATERAL jsonb_object_keys(sync.completed_pull_request_snapshot_ids) AS pr_numbers(pr_number)
+     WHERE sync.delivery_id = ANY($1::int[])`,
+    [deliveryIds],
+  )
+  const pullRequestNumbers = [
+    ...new Set([
+      ...associatedPullRequestNumbers,
+      ...stackedPullRequestRows
+        .map((row) => Number(row.pull_request_number))
+        .filter((number) => Number.isSafeInteger(number) && number > 0),
+    ]),
   ]
   const { rows: pullRequestRows } =
     pullRequestNumbers.length === 0
@@ -327,25 +343,29 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   return deliveries.map((delivery) => {
     const compare = compareByDeliveryId.get(delivery.id) ?? null
     const pullRequestNumbers = [
-      ...new Set(
-        (compare?.commits ?? []).flatMap(
+      ...new Set([
+        ...(compare?.commits ?? []).flatMap(
           (commit) =>
-            associatedPullRequestsBySha
-              .get(commit.sha)
-              ?.pullRequests.filter((pullRequest) => pullRequest.baseBranch === repository.default_branch)
-              .map((pullRequest) => pullRequest.number) ?? [],
+            associatedPullRequestsBySha.get(commit.sha)?.pullRequests.map((pullRequest) => pullRequest.number) ?? [],
         ),
-      ),
+        ...stackedPullRequestRows
+          .filter((row) => row.delivery_id === delivery.id)
+          .map((row) => Number(row.pull_request_number))
+          .filter((number) => Number.isSafeInteger(number) && number > 0),
+      ]),
     ]
     const associatedPullRequestsByCommit = Object.fromEntries(
       (compare?.commits ?? []).map((commit) => [commit.sha, associatedPullRequestsBySha.get(commit.sha)]),
+    )
+    const deliveryPullRequestsByNumber = Object.fromEntries(
+      pullRequestNumbers.map((pullRequestNumber) => [pullRequestNumber, pullRequestsByNumber[pullRequestNumber]]),
     )
     const evidence = {
       compare,
       defaultBranch: repository.default_branch,
       implicitApprovalMode,
       associatedPullRequestsByCommit,
-      pullRequestsByNumber,
+      pullRequestsByNumber: deliveryPullRequestsByNumber,
     }
     const assessment = assessRepositoryDeliveryInterval(evidence)
     return {

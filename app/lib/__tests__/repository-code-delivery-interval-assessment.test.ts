@@ -41,9 +41,12 @@ const approvedPullRequest = {
   42: {
     number: 42,
     baseBranch: 'main',
+    baseSha: '0'.repeat(40),
+    headBranch: 'feature/change',
     authorLogin: 'glad-fjord',
     mergedByLogin: 'rask-elv',
     mergeCommitSha: null,
+    mergedAt: null,
     headSha: commitSha,
     commitCount: 1,
     commits: [prCommit],
@@ -242,6 +245,70 @@ describe('repository code delivery interval assessment', () => {
       status: 'covered',
       pullRequestNumber: 42,
       reason: 'approved_review',
+    })
+  })
+
+  it('accepts an approved PR when a merged stack chain reaches the default branch', () => {
+    const result = assess({
+      associatedPullRequestsByCommit: {
+        [commitSha]: {
+          complete: true,
+          pullRequests: [{ number: 43, baseBranch: 'feature/base' }],
+        },
+      },
+      pullRequestsByNumber: {
+        42: {
+          ...approvedPullRequest[42],
+          number: 42,
+          baseBranch: 'main',
+          headBranch: 'feature/base',
+          headSha: '2'.repeat(40),
+          mergeCommitSha: '4'.repeat(40),
+          mergedAt: '2026-10-01T12:00:00Z',
+        },
+        43: {
+          ...approvedPullRequest[42],
+          number: 43,
+          baseBranch: 'feature/base',
+          baseSha: '2'.repeat(40),
+          headBranch: 'feature/stacked',
+          headSha: commitSha,
+          mergeCommitSha: '5'.repeat(40),
+          mergedAt: '2026-10-01T13:00:00Z',
+        },
+      },
+    })
+    expect(result.commits[0]).toMatchObject({
+      status: 'covered',
+      reason: 'approved_review',
+      pullRequestNumber: 43,
+    })
+  })
+
+  it('does not accept an approved side-branch PR without a merged path to the default branch', () => {
+    const result = assess({
+      associatedPullRequestsByCommit: {
+        [commitSha]: {
+          complete: true,
+          pullRequests: [{ number: 43, baseBranch: 'feature/unrelated' }],
+        },
+      },
+      pullRequestsByNumber: {
+        43: {
+          ...approvedPullRequest[42],
+          number: 43,
+          baseBranch: 'feature/unrelated',
+          baseSha: '2'.repeat(40),
+          headBranch: 'feature/change',
+          headSha: commitSha,
+          mergeCommitSha: '5'.repeat(40),
+          mergedAt: '2026-10-01T13:00:00Z',
+        },
+      },
+    })
+    expect(result.commits[0]).toMatchObject({
+      status: 'not_covered',
+      reason: 'no_default_branch_pull_request',
     })
   })
 

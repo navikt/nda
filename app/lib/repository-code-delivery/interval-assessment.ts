@@ -78,13 +78,41 @@ export interface RepositoryDeliveryAssociatedPullRequestSnapshot {
 export interface RepositoryDeliveryPullRequestEvidence {
   number: number
   baseBranch: string
+  baseSha?: string | null
   authorLogin: string | null
   mergedByLogin: string | null
   mergeCommitSha: string | null
+  mergedAt?: string | null
+  headBranch?: string | null
   headSha: string | null
   commitCount: number | null
   commits: PrCommit[] | null
   reviews: PrReview[] | null
+}
+
+function isMergedPullRequest(pullRequest: RepositoryDeliveryPullRequestEvidence): boolean {
+  return pullRequest.mergedAt != null && pullRequest.mergeCommitSha != null
+}
+
+function hasMergedStackPathToDefaultBranch(
+  pullRequest: RepositoryDeliveryPullRequestEvidence,
+  pullRequests: Record<number, RepositoryDeliveryPullRequestEvidence | null | undefined>,
+  defaultBranch: string,
+  visited = new Set<number>(),
+): boolean {
+  if (visited.has(pullRequest.number) || !isMergedPullRequest(pullRequest)) return false
+  if (pullRequest.baseBranch === defaultBranch) return true
+  if (!pullRequest.baseSha || !pullRequest.headBranch) return false
+  visited.add(pullRequest.number)
+
+  return Object.values(pullRequests).some(
+    (parent) =>
+      parent !== null &&
+      parent !== undefined &&
+      parent.headBranch === pullRequest.baseBranch &&
+      parent.headSha === pullRequest.baseSha &&
+      hasMergedStackPathToDefaultBranch(parent, pullRequests, defaultBranch, new Set(visited)),
+  )
 }
 
 function unknownCommit(
@@ -153,7 +181,7 @@ function assessPullRequestCandidate(
   commit: RepositoryDeliveryIntervalCompare['commits'][number],
   pullRequestNumber: number,
   pullRequest: RepositoryDeliveryPullRequestEvidence | null | undefined,
-  defaultBranch: string,
+  expectedBaseBranch: string,
   implicitApprovalMode: ImplicitApprovalMode,
 ): RepositoryDeliveryIntervalCommit {
   if (!pullRequest) {
@@ -161,7 +189,7 @@ function assessPullRequestCandidate(
   }
 
   if (
-    pullRequest.baseBranch !== defaultBranch ||
+    pullRequest.baseBranch !== expectedBaseBranch ||
     pullRequest.headSha === null ||
     pullRequest.commitCount === null ||
     pullRequest.commits === null ||
@@ -250,7 +278,16 @@ export function assessRepositoryDeliveryInterval(input: {
       return unknownCommit(commit, 'missing_associated_pull_request_snapshot')
     }
 
-    const matchingPullRequests = associations.pullRequests.filter((pr) => pr.baseBranch === defaultBranch)
+    const matchingPullRequests = associations.pullRequests.filter((pr) => {
+      if (pr.baseBranch === defaultBranch) return true
+      const pullRequest = input.pullRequestsByNumber[pr.number]
+      return (
+        pullRequest !== null &&
+        pullRequest !== undefined &&
+        pullRequest.baseBranch === pr.baseBranch &&
+        hasMergedStackPathToDefaultBranch(pullRequest, input.pullRequestsByNumber, defaultBranch)
+      )
+    })
     if (matchingPullRequests.length === 0) {
       return associations.pullRequests.length === 0
         ? notCoveredCommit(commit, null, 'no_associated_pull_request')
@@ -262,7 +299,7 @@ export function assessRepositoryDeliveryInterval(input: {
         commit,
         pullRequest.number,
         input.pullRequestsByNumber[pullRequest.number],
-        defaultBranch,
+        pullRequest.baseBranch,
         implicitApprovalMode,
       ),
     )
