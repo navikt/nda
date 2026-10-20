@@ -19,6 +19,7 @@ const meta = {
       head_sha: approvalReview.headSha,
       first_deployed_at: '2026-10-18T08:00:00Z',
     },
+    review: approvalReview,
     manualApprovalHistory: [],
   },
 } satisfies Meta<typeof RepositoryManualApprovalPage>
@@ -30,10 +31,11 @@ export const BeforeReview: Story = {}
 export const HistoryAnchor: Story = {
   args: {
     delivery: { ...meta.args.delivery, base_sha: approvalReview.headSha },
+    review: null,
   },
 }
 
-export const FrozenGroundAndExplicitSelection: Story = {
+export const ReadOnlyGroundAndSimpleApproval: Story = {
   render: () => (
     <VStack gap="space-24">
       <RepositoryApprovalSnapshot repository={approvalRepository} review={approvalReview} />
@@ -42,9 +44,18 @@ export const FrozenGroundAndExplicitSelection: Story = {
   ),
 }
 
-export const MissingTimeGround: Story = {
+export const NoEligibleAuthor: Story = {
   render: () => {
-    const review = { ...approvalReview, commits: [approvalReview.commits[4]] }
+    const review = {
+      ...approvalReview,
+      commits: [
+        {
+          ...approvalReview.commits[4],
+          authorNavIdent: null,
+          unavailableReason: 'Forfatteren mangler en aktiv kobling til NAV-ident.',
+        },
+      ],
+    }
     return (
       <VStack gap="space-24">
         <RepositoryApprovalSnapshot repository={approvalRepository} review={review} />

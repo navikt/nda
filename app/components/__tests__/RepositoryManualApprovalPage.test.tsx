@@ -18,7 +18,7 @@ function render(element: React.ReactNode) {
 }
 
 describe('repository manual approval UI', () => {
-  it('has only the POST start action before a snapshot exists, never a registration form', () => {
+  it('shows the read-only assessment and one approve action without a separate start step', () => {
     const html = render(
       <RepositoryManualApprovalPage
         repository={approvalRepository}
@@ -28,14 +28,19 @@ describe('repository manual approval UI', () => {
           head_sha: approvalReview.headSha,
           first_deployed_at: null,
         }}
+        review={approvalReview}
         manualApprovalHistory={[]}
       />,
     )
-    expect(html).toContain('Start gjennomgang')
+    expect(html).toContain('Vurderingsgrunnlag')
     expect(html).toContain('method="post"')
-    expect(html).toContain('start-review')
-    expect(html).not.toContain('register-approval')
+    expect(html).toContain('approve-repository')
+    expect(html).toContain('Godkjenn manuelt')
+    expect(html).toContain('Kommentar (valgfritt)')
+    expect(html).not.toContain('Start gjennomgang')
     expect(html).not.toContain('snapshotId')
+    expect(html).not.toContain('reviewedAt')
+    expect(html).not.toContain('documentationUrl')
     expect(html).not.toContain('/admin')
   })
 
@@ -49,6 +54,7 @@ describe('repository manual approval UI', () => {
           head_sha: approvalReview.headSha,
           first_deployed_at: null,
         }}
+        review={null}
         manualApprovalHistory={[]}
       />,
     )
@@ -57,42 +63,37 @@ describe('repository manual approval UI', () => {
     expect(html).not.toContain('register-approval')
   })
 
-  it('presents saved snapshot details before explicit confirmation, with only eligible commits selectable and none preselected', () => {
+  it('shows PR coverage and only offers manual approval for known uncovered commits', () => {
     const html = render(
       <>
         <RepositoryApprovalSnapshot repository={approvalRepository} review={approvalReview} />
         <RepositoryApprovalConfirmation review={approvalReview} />
       </>,
     )
-    expect(html.indexOf('Fryst vurderingsgrunnlag')).toBeLessThan(html.indexOf('Bekreft gjennomgangen'))
+    expect(html.indexOf('Vurderingsgrunnlag')).toBeLessThan(html.indexOf('Godkjenn manuelt'))
     expect(html).toContain(approvalReview.baseSha)
     expect(html).toContain(approvalReview.headSha)
     expect(html).toContain('Z990003')
     expect(html).toContain('2026-10-17T10:00:00Z')
-    expect(html).toContain('Git-metadata er ikke sikkert tidsbevis')
-    expect(html).toContain('erstattes ikke automatisk')
+    expect(html).toContain('Grunnlaget er en forhåndsvisning')
     expect(html).toContain('Du kan ikke godkjenne dine egne commits.')
     expect(html).toContain('PR-grunnlaget er ukjent.')
     expect(html).toContain('Forfatteren mangler en aktiv kobling')
-    expect(html).toContain('Ingen alternativ tid brukes.')
-    expect(html.match(/name="commitShas"/g)).toHaveLength(1)
-    expect(html).toContain(`value="${approvalReview.commits[0].sha}"`)
-    expect(html).not.toContain('checked=""')
-    expect(html).toContain('name="snapshotId" value="23"')
-    expect(html).toContain('Hva har du gjennomgått?')
-    expect(html).toContain('Faktisk tidspunkt for gjennomgangen')
-    expect(html).toContain('med tidssone')
-    expect(html).toContain('Lenke til ytterligere dokumentasjon (valgfritt)')
-    expect(html).not.toContain('name="reviewer"')
-    expect(html).not.toContain('name="registeredBy"')
+    expect(html).toContain('Kan godkjennes manuelt')
+    expect(html).toContain('name="previewToken"')
+    expect(html).not.toContain('name="commitShas"')
+    expect(html).not.toContain('name="reviewedAt"')
+    expect(html).not.toContain('name="documentationUrl"')
   })
 
-  it('explains when no commit is selectable', () => {
-    const html = render(
-      <RepositoryApprovalConfirmation review={{ ...approvalReview, commits: approvalReview.commits.slice(1) }} />,
-    )
-    expect(html).toContain('Ingen commits kan velges')
-    expect(html).not.toContain('name="commitShas"')
+  it('does not offer manual approval for PR-covered or unknown commits', () => {
+    const review = {
+      ...approvalReview,
+      commits: approvalReview.commits.slice(1, 3).map((commit) => ({ ...commit, prStatus: 'covered' as const })),
+    }
+    const html = render(<RepositoryApprovalConfirmation review={review} />)
+    expect(html).toContain('Ingen commits mangler kjent PR-dekning')
+    expect(html).not.toContain('approve-repository')
   })
 
   it('shows a restricted delivery entry point with no admin navigation', () => {

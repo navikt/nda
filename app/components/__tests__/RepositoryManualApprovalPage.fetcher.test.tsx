@@ -17,19 +17,16 @@ const Form = ({ children, ...props }: ComponentProps<'form'>) => <form {...props
 const props = {
   repository: approvalRepository,
   delivery: { id: 17, base_sha: approvalReview.baseSha, head_sha: approvalReview.headSha, first_deployed_at: null },
+  review: approvalReview,
   manualApprovalHistory: [],
 }
 
-function render(confirmationData: Record<string, unknown> | undefined, headSha = approvalReview.headSha) {
-  useFetcher.mockReturnValueOnce({
-    Form,
-    data: { success: 'Vurderingsgrunnlaget er fryst.', review: approvalReview },
-    state: 'idle',
-  })
+function render(confirmationData: Record<string, unknown> | undefined, review = approvalReview) {
+  useFetcher.mockReturnValueOnce({ Form, data: undefined, state: 'idle' })
   useFetcher.mockReturnValueOnce({ Form, data: confirmationData, state: 'idle' })
   return renderToStaticMarkup(
     <MemoryRouter>
-      <RepositoryManualApprovalPage {...props} delivery={{ ...props.delivery, head_sha: headSha }} />
+      <RepositoryManualApprovalPage {...props} review={review} />
     </MemoryRouter>,
   )
 }
@@ -39,35 +36,28 @@ beforeEach(() => {
 })
 
 describe('manual approval fetcher response presentation', () => {
-  it('shows the POST-created snapshot before the confirmation action', () => {
+  it('shows preview and single approval action without a separate snapshot post', () => {
     const html = render(undefined)
-    expect(html.indexOf('Fryst vurderingsgrunnlag')).toBeLessThan(html.indexOf('register-approval'))
-    expect(html).toContain('name="snapshotId" value="23"')
-    expect(html).toContain('Start en ny gjennomgang med nytt grunnlag')
+    expect(html.indexOf('Vurderingsgrunnlag')).toBeLessThan(html.indexOf('approve-repository'))
+    expect(html).toContain('name="previewToken"')
+    expect(html).toContain('Kommentar (valgfritt)')
+    expect(html).not.toContain('snapshotId')
+    expect(html).not.toContain('start-review')
   })
 
-  it('retains the stored ground after loader revalidation instead of replacing it with live evidence', () => {
-    const html = render({ error: 'Reviewtid er ugyldig.' }, '1'.repeat(40))
-    expect(html).toContain('Reviewtid er ugyldig.')
-    expect(html).toContain('name="snapshotId" value="23"')
-    expect(html).toContain(`compare/${approvalReview.baseSha}...${approvalReview.headSha}`)
-    expect(html).not.toContain(`compare/${approvalReview.baseSha}...${'1'.repeat(40)}`)
-  })
-
-  it('keeps the displayed snapshot on stale rejection but removes confirmation until an explicit new review', () => {
-    const html = render({ error: 'Evidens eller identitet er endret.', stale: true })
+  it('shows stale-ground rejection and uses the refreshed read-only preview', () => {
+    const refreshed = { ...approvalReview, previewToken: 'b'.repeat(64) }
+    const html = render({ error: 'Evidens eller identitet er endret.' }, refreshed)
     expect(html).toContain('Evidens eller identitet er endret.')
-    expect(html).toContain('Fryst vurderingsgrunnlag')
-    expect(html).toContain('Start en ny gjennomgang med nytt grunnlag')
-    expect(html).toContain('start-review')
-    expect(html).not.toContain('register-approval')
+    expect(html).toContain(`value="${'b'.repeat(64)}"`)
+    expect(html).not.toContain(`value="${'a'.repeat(64)}"`)
   })
 
-  it('only reports registration after server confirmation and prevents resubmitting the same form in the UI', () => {
+  it('only reports registration after server confirmation and hides the form', () => {
     const html = render({ success: 'Godkjenningen er registrert. Deploymentstatus er ikke endret.', registered: true })
     expect(html).toContain('Godkjenningen er registrert. Deploymentstatus er ikke endret.')
-    expect(html).toContain('Fryst vurderingsgrunnlag')
-    expect(html).not.toContain('register-approval')
+    expect(html).toContain('Vurderingsgrunnlag')
+    expect(html).not.toContain('approve-repository')
   })
 
   it('retains the revocation result after revalidation hides the form', () => {

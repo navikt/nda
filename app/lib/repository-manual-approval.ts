@@ -9,6 +9,7 @@ export interface RepositoryApprovalReview {
   headSha: string
   createdAt: string
   reviewer: string
+  previewToken: string
   defaultBranch: string | null
   implicitApprovalMode: string
   commits: Array<{
@@ -36,6 +37,8 @@ export interface RepositoryApprovalReview {
     reviews: Array<{ username: string; state: string; submittedAt: string; commitSha: string | null }>
   }>
 }
+
+export type RepositoryApprovalPreview = Omit<RepositoryApprovalReview, 'snapshotId' | 'createdAt' | 'reviewer'>
 
 export function isRepositoryApprovalId(value: number): boolean {
   return Number.isFinite(value) && Number.isSafeInteger(value) && value > 0 && value <= 2_147_483_647
