@@ -22,7 +22,7 @@ import {
   getPrDataForDiff,
 } from './fetch-data.server'
 import { storeVerificationResult, updateDeploymentVerification } from './store-data.server'
-import type { CompareData, VerificationInput, VerificationResult } from './types'
+import type { CompareData, RepositoryStatus, VerificationInput, VerificationResult } from './types'
 import { verifyDeployment } from './verify'
 
 export { fetchVerificationDataForRepository } from './fetch-data/bulk-fetch.server'
@@ -544,6 +544,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
   if (!owner || !repo) return null
 
   const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo, dep.repository_id ?? undefined)
+  const repositoryStatus: RepositoryStatus = repoCheck.repository?.status ?? 'unknown'
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
   const canonicalRepositoryId = githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null
   let applyIdentity: Awaited<ReturnType<typeof getRepositoryIdentityById>> = null
@@ -659,7 +660,7 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
       commitsBetween,
       compareSummary: hasCompareMetadata ? compareData.compare : null,
       dataFreshness: { deployedPrFetchedAt: null, commitsFetchedAt: null, schemaVersion: 1 },
-      repositoryStatus: 'active',
+      repositoryStatus,
       commitOnBaseBranch: null,
       detectedTitle: deriveDetectedTitle(deployedPr, commitsBetween),
     }

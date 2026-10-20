@@ -1,6 +1,7 @@
 import { PROPAGATABLE_STATUSES, REVERIFIABLE_STATUSES, ROOT_APPROVED_STATUSES } from '~/lib/four-eyes-status'
 import { LATEST_ACTIVE_REPOSITORY_LINK_SQL } from './application-repositories.server'
 import { pool } from './connection.server'
+import { repositoryDeploymentSql } from './repository-deployment-sql'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from './repository-settings-sql'
 
 interface MonorepoAppEntry {
@@ -238,6 +239,12 @@ export async function propagateVerificationToSiblings(
      WHERE d.commit_sha = $2
        AND d.four_eyes_status = ANY($3::text[])
        AND (d.created_at, d.id) > (SELECT created_at, id FROM deployments WHERE id = $4)
+       AND ${repositoryDeploymentSql(`(
+         SELECT r.id
+         FROM deployments d
+         JOIN repositories r ON ${repositoryDeploymentSql('r.id')}
+         WHERE d.id = $4 AND d.monitored_app_id = $5
+       )`)}
        AND (
          d.deployment_source != 'nais_apply'
          OR EXISTS (
