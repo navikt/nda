@@ -72,7 +72,6 @@ Ukjente handlinger avvises.
   Identiteter låses i rekkefølgen users før accounts. Serialiseringskonflikter
   og deadlocks oversettes til avslag på endret grunnlag.
 - Kommentar er valgfri og lagres sammen med godkjenningen når den er oppgitt.
-  Historiske dokumentasjonslenker kan fortsatt vises.
 - Tilbakekalling krever repositoryadmin og en ikke-blank begrunnelse.
   En `revoked`-hendelse legges til; originalen endres ikke. Gjentatt
   tilbakekalling returnerer `false`, og actionen rapporterer ingen endring.

@@ -50,16 +50,6 @@ export function parseRepositoryApprovalId(value: string | null): number | null {
   return isRepositoryApprovalId(id) ? id : null
 }
 
-export function isDocumentationUrl(value: string): boolean {
-  if (!/^https?:\/\//i.test(value)) return false
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' || url.protocol === 'http:'
-  } catch {
-    return false
-  }
-}
-
 export function parseReviewTime(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return null
   const date = new Date(value)

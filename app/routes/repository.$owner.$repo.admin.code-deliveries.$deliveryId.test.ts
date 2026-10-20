@@ -388,7 +388,6 @@ describe('repository code delivery evidence loader', () => {
         {
           id: 41,
           reviewDocumentation: null,
-          documentationUrl: null,
           reviewer: 'Z990001',
           registeredBy: 'Z990001',
           reviewedAt,

@@ -4,7 +4,6 @@ import { ActionAlert } from '~/components/ActionAlert'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
-import { isDocumentationUrl } from '~/lib/repository-manual-approval'
 
 export interface ManualApprovalHistoryEntry {
   id: number
@@ -13,7 +12,6 @@ export interface ManualApprovalHistoryEntry {
   reviewedAt: Date | string
   registeredAt: Date | string
   reviewDocumentation?: string | null
-  documentationUrl?: string | null
   baseSha: string
   headSha: string
   commits: Array<{
@@ -103,9 +101,6 @@ export function RepositoryManualApprovalHistory({
                     Hva som er gjennomgått:{' '}
                     {entry.reviewDocumentation ?? 'Ikke dokumentert i den gamle registreringen.'}
                   </BodyShort>
-                  {entry.documentationUrl && isDocumentationUrl(entry.documentationUrl) && (
-                    <ExternalLink href={entry.documentationUrl}>Ytterligere dokumentasjon</ExternalLink>
-                  )}
                   <BodyShort size="small">
                     Lagret intervall: <code>{entry.baseSha}</code> → <code>{entry.headSha}</code>
                   </BodyShort>

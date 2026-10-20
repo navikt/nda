@@ -40,7 +40,6 @@ describe('repository manual approval UI', () => {
     expect(html).not.toContain('Start gjennomgang')
     expect(html).not.toContain('snapshotId')
     expect(html).not.toContain('reviewedAt')
-    expect(html).not.toContain('documentationUrl')
     expect(html).not.toContain('/admin')
   })
 
@@ -83,7 +82,6 @@ describe('repository manual approval UI', () => {
     expect(html).toContain('name="previewToken"')
     expect(html).not.toContain('name="commitShas"')
     expect(html).not.toContain('name="reviewedAt"')
-    expect(html).not.toContain('name="documentationUrl"')
   })
 
   it('does not offer manual approval for PR-covered or unknown commits', () => {
@@ -113,7 +111,7 @@ describe('repository manual approval UI', () => {
     expect(html).not.toContain('/admin')
   })
 
-  it('shows subsequent approval, documentation, safe link and the reasoned revoke form only for admins', () => {
+  it('shows subsequent approval, comment and the reasoned revoke form only for admins', () => {
     const entry = {
       id: 41,
       reviewer: 'Z990003',
@@ -123,7 +121,6 @@ describe('repository manual approval UI', () => {
       baseSha: approvalReview.baseSha,
       headSha: approvalReview.headSha,
       reviewDocumentation: 'Gjennomgått kode og tester.',
-      documentationUrl: 'https://example.com/review',
       commits: [
         {
           sha: approvalReview.commits[0].sha,
@@ -140,8 +137,7 @@ describe('repository manual approval UI', () => {
     expect(html).toContain('Registrert etter første deploy')
     expect(html).toContain('ikke godkjent ved første deploy')
     expect(html).toContain('Gjennomgått kode og tester.')
-    expect(html).toContain('https://example.com/review')
-    expect(html).toContain('noopener')
+    expect(html).not.toContain('Ytterligere dokumentasjon')
     expect(html).toContain('Begrunnelse for tilbakekalling')
     expect(html).toContain('revoke-approval')
     expect(render(<RepositoryManualApprovalHistory {...props} />)).not.toContain('revoke-approval')

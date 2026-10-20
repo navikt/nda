@@ -122,7 +122,6 @@ export const SubsequentApproval: Story = {
         baseSha: approvalReview.baseSha,
         headSha: approvalReview.headSha,
         reviewDocumentation: 'Gjennomgått kodeendringene og testene for første commit.',
-        documentationUrl: 'https://example.com/review',
         commits: [
           {
             sha: approvalReview.commits[0].sha,

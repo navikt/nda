@@ -6,7 +6,6 @@ import { isFullCommitSha } from '~/lib/git-constants'
 import { presentRepositoryApprovalHistory } from '~/lib/repository-approval-history.server'
 import { assessRepositoryDeliveryInterval } from '~/lib/repository-code-delivery/interval-assessment'
 import {
-  isDocumentationUrl,
   isRepositoryApprovalId,
   parseReviewTime,
   type RepositoryApprovalPreview,
@@ -431,11 +430,9 @@ export async function registerRepositoryManualApproval(
     commitShas: string[]
     reviewedAt: Date
     reviewDocumentation: string
-    documentationUrl: string | null
   },
 ): Promise<number> {
   requireValidIds(repositoryId, deliveryId, input.snapshotId)
-  const documentationUrl = input.documentationUrl?.trim() || null
   if (
     !/^[A-Z][0-9]{6}$/.test(actor.navIdent) ||
     !Number.isFinite(input.reviewedAt.getTime()) ||
@@ -443,8 +440,7 @@ export async function registerRepositoryManualApproval(
     input.commitShas.some((sha) => !isFullCommitSha(sha)) ||
     new Set(input.commitShas.map((sha) => sha.toLowerCase())).size !== input.commitShas.length ||
     typeof input.reviewDocumentation !== 'string' ||
-    !input.reviewDocumentation.trim() ||
-    (documentationUrl !== null && !isDocumentationUrl(documentationUrl))
+    !input.reviewDocumentation.trim()
   ) {
     throw new RepositoryApprovalError('invalid_approval', 'Valid reviewer, review time and unique commits are required')
   }
@@ -531,9 +527,9 @@ export async function registerRepositoryManualApproval(
     if (!times[0].valid) throw new RepositoryApprovalError('invalid_approval', 'Review time cannot be in the future')
     const { rows } = await client.query<{ id: number }>(
       `INSERT INTO repository_manual_approvals
-         (snapshot_id, reviewer_nav_ident, registered_by_nav_ident, reviewed_at, review_documentation, documentation_url)
-       VALUES ($1, $2, $2, $3, $4, $5) RETURNING id`,
-      [snapshot.id, actor.navIdent, input.reviewedAt, input.reviewDocumentation.trim(), documentationUrl],
+         (snapshot_id, reviewer_nav_ident, registered_by_nav_ident, reviewed_at, review_documentation)
+       VALUES ($1, $2, $2, $3, $4) RETURNING id`,
+      [snapshot.id, actor.navIdent, input.reviewedAt, input.reviewDocumentation.trim()],
     )
     const approvalId = rows[0].id
     await client.query(
@@ -720,7 +716,6 @@ async function readRepositoryManualApprovalHistory<T extends Pick<Snapshot, 'id'
       reviewed_at: Date
       registered_at: Date
       review_documentation: string | null
-      documentation_url: string | null
       sha: string
       author_login: string | null
       author_nav_ident: string | null
@@ -728,7 +723,7 @@ async function readRepositoryManualApprovalHistory<T extends Pick<Snapshot, 'id'
       revoked: boolean
     }>(
       `SELECT a.id, a.snapshot_id, a.reviewer_nav_ident, a.registered_by_nav_ident, a.reviewed_at, a.registered_at,
-              a.review_documentation, a.documentation_url,
+              a.review_documentation,
               c.sha, c.author_login, c.author_nav_ident,
               EXISTS (SELECT 1 FROM repository_manual_approval_events e
                       WHERE e.approval_id = a.id AND e.event_type = 'revoked') AS revoked,
