@@ -1,5 +1,6 @@
 ALTER TABLE repository_code_delivery_assessment_sync
-  ADD COLUMN stack_parent_pull_request_numbers JSONB NOT NULL DEFAULT '{}'::jsonb;
+  ADD COLUMN stack_parent_pull_request_numbers JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN completed_assessment_version INTEGER NOT NULL DEFAULT 0;
 
 INSERT INTO repository_code_delivery_assessment_sync (delivery_id)
 SELECT delivery.id

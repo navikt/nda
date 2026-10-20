@@ -9,6 +9,7 @@ import {
   markRepositoryCodeDeliveryAssessmentStackParentsCompleted,
   markRepositoryCodeDeliveryAssessmentSyncCompleted,
   markRepositoryCodeDeliveryAssessmentSyncFailed,
+  REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION,
 } from '../../repository-code-delivery-assessment-sync.server'
 import { seedRepository, truncateAllTables } from './helpers'
 
@@ -109,12 +110,34 @@ describe('repository code delivery assessment sync queue', () => {
       [deliveryId],
     )
     await claimRepositoryCodeDeliveryAssessmentSyncCandidates(1)
-    await markRepositoryCodeDeliveryAssessmentSyncCompleted(deliveryId)
-    const completedState = await pool.query<{ completed_at: Date | null }>(
-      'SELECT completed_at FROM repository_code_delivery_assessment_sync WHERE delivery_id = $1',
+    await pool.query(
+      `UPDATE repository_code_delivery_assessment_sync
+       SET completed_at = now()
+       WHERE delivery_id = $1`,
+      [deliveryId],
+    )
+    expect(await claimRepositoryCodeDeliveryAssessmentSyncCandidates(1)).toEqual([
+      expect.objectContaining({ deliveryId }),
+    ])
+    const reclaimedState = await pool.query<{ completed_at: Date | null; completed_assessment_version: number }>(
+      `SELECT completed_at, completed_assessment_version
+       FROM repository_code_delivery_assessment_sync
+       WHERE delivery_id = $1`,
+      [deliveryId],
+    )
+    expect(reclaimedState.rows[0]).toEqual({ completed_at: null, completed_assessment_version: 0 })
+    await markRepositoryCodeDeliveryAssessmentSyncCompleted(deliveryId, REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION)
+    const completedState = await pool.query<{
+      completed_at: Date | null
+      completed_assessment_version: number
+    }>(
+      `SELECT completed_at, completed_assessment_version
+       FROM repository_code_delivery_assessment_sync
+       WHERE delivery_id = $1`,
       [deliveryId],
     )
     expect(completedState.rows[0].completed_at).not.toBeNull()
+    expect(completedState.rows[0].completed_assessment_version).toBe(REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION)
     expect(await claimRepositoryCodeDeliveryAssessmentSyncCandidates(1)).toEqual([])
   })
 

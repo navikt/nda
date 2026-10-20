@@ -223,6 +223,50 @@ describe('ingestRepositoryDeliveryAssessmentSnapshots', () => {
     expect(markRepositoryCodeDeliveryAssessmentPullRequestCompleted).not.toHaveBeenCalled()
   })
 
+  it('refreshes commit associations when the associated PR was retargeted', async () => {
+    getDerivedCompareDataFromRawSnapshot.mockResolvedValue({ ...compareData, commits: [compareData.commits[0]] })
+    getRepositoryCodeDeliveryAssessmentSyncProgress.mockResolvedValue({
+      completedAssociationSnapshotIds: { ['c'.repeat(40)]: 17 },
+      completedPullRequestSnapshotIds: {
+        12: { pr: 1, reviews: 2, commits: 3, comments: 4, reviewComments: 5 },
+      },
+      stackParentPullRequestNumbers: {},
+    })
+    getLatestCommitAssociatedPrsRawSnapshot
+      .mockResolvedValueOnce({
+        id: 17,
+        githubRepoId: 900,
+        paginationComplete: true,
+        data: [{ number: 12, base: { ref: 'feature/base' } }],
+      })
+      .mockResolvedValueOnce({
+        id: 18,
+        githubRepoId: 900,
+        paginationComplete: true,
+        data: [{ number: 12, base: { ref: 'main' } }],
+      })
+    getAllLatestPrRawSnapshots.mockResolvedValue(
+      new Map([
+        [
+          'pr',
+          {
+            githubRepoId: 900,
+            data: {
+              ...pullRequestRawSnapshot,
+              base: { ref: 'main', sha: 'a'.repeat(40) },
+            },
+          },
+        ],
+      ]),
+    )
+
+    await ingestRepositoryDeliveryAssessmentSnapshots(7)
+
+    expect(getPullRequestForCommit).toHaveBeenCalledWith('example-org', 'sample-repo', 'c'.repeat(40), false, 'main')
+    expect(markRepositoryCodeDeliveryAssessmentAssociationCompleted).toHaveBeenCalledWith(7, 'c'.repeat(40), 18)
+    expect(getPullRequestsForHeadBranch).not.toHaveBeenCalled()
+  })
+
   it('collects anonymized parent PR snapshots for a merged stack chain', async () => {
     getDerivedCompareDataFromRawSnapshot.mockResolvedValue({ ...compareData, commits: [compareData.commits[0]] })
     getLatestCommitAssociatedPrsRawSnapshot

@@ -23,6 +23,7 @@ vi.mock('~/db/repository-code-delivery-assessment-sync.server', () => ({
   deferRepositoryCodeDeliveryAssessmentSync: (...args: unknown[]) => deferRepositoryCodeDeliveryAssessmentSync(...args),
   markRepositoryCodeDeliveryAssessmentSyncCompleted: (...args: unknown[]) =>
     markRepositoryCodeDeliveryAssessmentSyncCompleted(...args),
+  REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION: 1,
   markRepositoryCodeDeliveryAssessmentSyncFailed: (...args: unknown[]) =>
     markRepositoryCodeDeliveryAssessmentSyncFailed(...args),
 }))
@@ -131,7 +132,7 @@ describe('syncRepositoryCodeDeliveryAssessmentSnapshots', () => {
       CODE_DELIVERY_ASSESSMENT_SYNC_LIMIT,
     )
     expect(ingestRepositoryDeliveryAssessmentSnapshots).toHaveBeenCalledWith(17)
-    expect(markRepositoryCodeDeliveryAssessmentSyncCompleted).toHaveBeenCalledWith(17)
+    expect(markRepositoryCodeDeliveryAssessmentSyncCompleted).toHaveBeenCalledWith(17, 1)
     expect(result).toMatchObject({ processed: 1, completed: 1, failed: 0 })
   })
 

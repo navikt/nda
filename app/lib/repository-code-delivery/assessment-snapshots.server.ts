@@ -192,6 +192,8 @@ export async function ingestRepositoryDeliveryAssessmentSnapshots(deliveryId: nu
   }
 
   const pullRequestsByNumber = new Map<number, AssociatedPullRequest>()
+  const associatedPullRequestsByCommit = new Map<string, AssociatedPullRequest[]>()
+  const associationSnapshotIdsByCommit = new Map<string, number>()
   for (const commit of compareData.commits) {
     let snapshot = await getLatestCommitAssociatedPrsRawSnapshot(githubOwner, githubRepoName, commit.sha)
     const completedSnapshotId = completedAssociationSnapshotIds[commit.sha]
@@ -220,7 +222,10 @@ export async function ingestRepositoryDeliveryAssessmentSnapshots(deliveryId: nu
       completedAssociationSnapshotIds[commit.sha] = snapshot.id
     }
 
-    for (const pullRequest of parseAssociatedPullRequests(snapshot.data)) {
+    const associatedPullRequests = parseAssociatedPullRequests(snapshot.data)
+    associatedPullRequestsByCommit.set(commit.sha, associatedPullRequests)
+    associationSnapshotIdsByCommit.set(commit.sha, snapshot.id)
+    for (const pullRequest of associatedPullRequests) {
       pullRequestsByNumber.set(pullRequest.number, pullRequest)
     }
   }
@@ -254,9 +259,52 @@ export async function ingestRepositoryDeliveryAssessmentSnapshots(deliveryId: nu
     return evidence
   }
 
-  const pendingPullRequests: number[] = []
   for (const pullRequest of pullRequestsByNumber.values()) {
     await ensurePullRequest(pullRequest.number)
+  }
+
+  for (const commit of compareData.commits) {
+    const currentAssociations = associatedPullRequestsByCommit.get(commit.sha) ?? []
+    const hasRetargetedPullRequest = currentAssociations.some(
+      (pullRequest) => storedPullRequests.get(pullRequest.number)?.baseBranch !== pullRequest.baseBranch,
+    )
+    if (!hasRetargetedPullRequest) continue
+
+    const previousSnapshotId = associationSnapshotIdsByCommit.get(commit.sha)
+    assertGitHubRateLimitBudget()
+    await getPullRequestForCommit(githubOwner, githubRepoName, commit.sha, false, defaultBranch)
+    const refreshedSnapshot = await getLatestCommitAssociatedPrsRawSnapshot(githubOwner, githubRepoName, commit.sha)
+    if (
+      !refreshedSnapshot?.paginationComplete ||
+      refreshedSnapshot.githubRepoId !== githubRepoId ||
+      (previousSnapshotId !== undefined && refreshedSnapshot.id <= previousSnapshotId)
+    ) {
+      throw new Error(`Fresh PR-association snapshot was not persisted for retargeted commit ${commit.sha}`)
+    }
+
+    const refreshedAssociations = parseAssociatedPullRequests(refreshedSnapshot.data)
+    associatedPullRequestsByCommit.set(commit.sha, refreshedAssociations)
+    associationSnapshotIdsByCommit.set(commit.sha, refreshedSnapshot.id)
+    await markRepositoryCodeDeliveryAssessmentAssociationCompleted(deliveryId, commit.sha, refreshedSnapshot.id)
+
+    for (const pullRequest of refreshedAssociations) {
+      pullRequestsByNumber.set(pullRequest.number, pullRequest)
+      const evidence = await ensurePullRequest(pullRequest.number)
+      if (evidence.baseBranch !== pullRequest.baseBranch) {
+        throw new Error(`PR association base branch is stale for commit ${commit.sha}`)
+      }
+    }
+  }
+
+  pullRequestsByNumber.clear()
+  for (const associatedPullRequests of associatedPullRequestsByCommit.values()) {
+    for (const pullRequest of associatedPullRequests) {
+      pullRequestsByNumber.set(pullRequest.number, pullRequest)
+    }
+  }
+
+  const pendingPullRequests: number[] = []
+  for (const pullRequest of pullRequestsByNumber.values()) {
     pendingPullRequests.push(pullRequest.number)
   }
 
