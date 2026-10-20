@@ -1,16 +1,17 @@
 import { useNavigate } from 'react-router'
 import { RepositoryCodeDeliveriesPage } from '~/components/RepositoryCodeDeliveriesPage'
-import { getRepositoryCodeDeliveryIntervalAssessments } from '~/db/repository-code-delivery-interval-assessment.server'
+import { withTransaction } from '~/db/connection.server'
+import { getRepositoryCodeDeliveryFollowUp } from '~/db/repository-code-delivery-follow-up.server'
 import {
   getRepositoryCodeDeliveryOverview,
   getRepositoryHistoryReadiness,
   listOpenUnresolvedCodeDeployments,
-  listRepositoryCodeDeliveries,
   type RepositoryCodeDeliverySortDirection,
   type RepositoryCodeDeliverySortKey,
 } from '~/db/repository-code-delivery-overview.server'
 import { requireUser } from '~/lib/auth.server'
-import { resolveRepositoryAdminAccess } from '~/lib/authorization.server'
+import { resolveRepositoryApprovalCapabilities } from '~/lib/authorization.server'
+import type { RepositoryDeliveryApprovalAssessment } from '~/lib/repository-code-delivery/approval-assessment'
 import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
 import { requireParams } from '~/lib/route-params.server'
 import type { Route } from './+types/repository.$owner.$repo.admin.code-deliveries'
@@ -25,6 +26,14 @@ const DELIVERY_SORT_KEYS = new Set<string>([
   'deployment_count',
   'app_names',
 ])
+
+type FollowUpFilter = RepositoryDeliveryApprovalAssessment['status'] | 'all'
+
+function parseFollowUpFilter(value: string | null): FollowUpFilter {
+  return value === 'approved' || value === 'not_approved' || value === 'incomplete' || value === 'no_changes'
+    ? value
+    : 'all'
+}
 
 function isDeliverySortKey(value: string | null): value is RepositoryCodeDeliverySortKey {
   return value !== null && DELIVERY_SORT_KEYS.has(value)
@@ -50,12 +59,14 @@ export function createDeliverySearchParams(
   repositoryId: number,
   page: number,
   sort: { orderBy: RepositoryCodeDeliverySortKey; direction: RepositoryCodeDeliverySortDirection } | undefined,
+  status: FollowUpFilter = 'all',
 ): URLSearchParams {
   const searchParams = new URLSearchParams({ repositoryId: String(repositoryId), page: String(page) })
   if (sort) {
     searchParams.set('sort', sort.orderBy)
     searchParams.set('direction', sort.direction)
   }
+  if (status !== 'all') searchParams.set('status', status)
   return searchParams
 }
 
@@ -75,13 +86,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const url = new URL(request.url)
   const repository = await resolveRepositoryFromParams(owner, repo, url, '/admin/code-deliveries')
 
-  const { authorized } = await resolveRepositoryAdminAccess(user, repository.id)
-  if (!authorized) {
-    throw new Response('Forbidden - admin access required', { status: 403 })
-  }
-
   const parsedPage = parseInt(url.searchParams.get('page') || '1', 10)
-  const requestedPage = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1
+  const requestedPage = Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1
+  const status = parseFollowUpFilter(url.searchParams.get('status'))
   const requestedSortKey = url.searchParams.get('sort')
   const requestedSortDirection = url.searchParams.get('direction')
   const sort =
@@ -92,60 +99,55 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         }
       : undefined
 
-  const [overview, unresolved, historyReadiness] = await Promise.all([
-    getRepositoryCodeDeliveryOverview(repository.id),
-    listOpenUnresolvedCodeDeployments(repository.id, UNRESOLVED_LIMIT),
-    getRepositoryHistoryReadiness(repository.id),
-  ])
-  const totalPages = Math.max(1, Math.ceil(overview.deliveryCount / PAGE_SIZE))
-  const page = Math.min(requestedPage, totalPages)
-  const deliveries = await listRepositoryCodeDeliveries(repository.id, {
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
-    sort,
-  })
-  const deliveryAssessments = await getRepositoryCodeDeliveryIntervalAssessments(repository.id, deliveries)
-  const assessmentsByDeliveryId = new Map(deliveryAssessments.map((item) => [item.deliveryId, item]))
-  const deliveriesWithAssessment = deliveries.map((delivery) => {
-    const assessment = assessmentsByDeliveryId.get(delivery.id)
-    if (!assessment) throw new Error(`Missing interval assessment for delivery ${delivery.id}`)
-    const { state, totalCommits, listedCommits, summary } = assessment.assessment
+  return withTransaction(async (client) => {
+    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    const { canAccessAdmin, canApprove } = await resolveRepositoryApprovalCapabilities(user, repository.id, client)
+    if (!canAccessAdmin) throw new Response('Forbidden - admin access required', { status: 403 })
+    const [overview, unresolved, historyReadiness, followUp] = await Promise.all([
+      getRepositoryCodeDeliveryOverview(repository.id, client),
+      listOpenUnresolvedCodeDeployments(repository.id, UNRESOLVED_LIMIT, client),
+      getRepositoryHistoryReadiness(repository.id, client),
+      getRepositoryCodeDeliveryFollowUp(
+        repository.id,
+        { page: requestedPage, pageSize: PAGE_SIZE, status, sort },
+        client,
+      ),
+    ])
+
     return {
-      ...delivery,
-      assessment: { state, totalCommits, listedCommits, summary },
-      pullRequestNumbers: assessment.pullRequestNumbers,
+      repository: {
+        id: repository.id,
+        githubOwner: repository.github_owner,
+        githubRepoName: repository.github_repo_name,
+      },
+      tracking: {
+        enabled: repository.code_delivery_tracking,
+        since: repository.code_delivery_tracking_since,
+      },
+      overview,
+      historyReadiness,
+      deliveries: followUp.deliveries,
+      followUpCounts: followUp.counts,
+      filteredTotal: followUp.total,
+      status,
+      canApprove,
+      unresolved,
+      page: followUp.page,
+      totalPages: followUp.totalPages,
+      sort,
     }
   })
-
-  return {
-    repository: {
-      id: repository.id,
-      githubOwner: repository.github_owner,
-      githubRepoName: repository.github_repo_name,
-    },
-    tracking: {
-      enabled: repository.code_delivery_tracking,
-      since: repository.code_delivery_tracking_since,
-    },
-    overview,
-    historyReadiness,
-    deliveries: deliveriesWithAssessment,
-    unresolved,
-    page,
-    totalPages,
-    sort,
-  }
 }
 
 export default function RepositoryCodeDeliveriesRoute({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate()
-  const { repository, sort } = loaderData
+  const { repository, sort, status } = loaderData
 
   const updateSearchParams = (
     page: number,
     nextSort: { orderBy: RepositoryCodeDeliverySortKey; direction: RepositoryCodeDeliverySortDirection } | undefined,
   ) => {
-    const searchParams = createDeliverySearchParams(repository.id, page, nextSort)
+    const searchParams = createDeliverySearchParams(repository.id, page, nextSort, status)
     navigate(`?${searchParams}`)
   }
 
