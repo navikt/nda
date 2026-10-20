@@ -8,6 +8,7 @@ import {
 import type { RepositoryDeliveryIntervalAssessment } from '~/lib/repository-code-delivery/interval-assessment'
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool, withTransaction } from './connection.server'
+import { REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION } from './repository-code-delivery-assessment-sync.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
 import { getRepositoryCodeDeliveryIntervalAssessments } from './repository-code-delivery-interval-assessment.server'
 
@@ -244,6 +245,27 @@ export interface RepositoryCodeDeliveryEvidence {
   head_sha: string
   created_at: Date
   first_deployed_at?: Date | null
+  assessment_sync: {
+    status:
+      | 'tracking_disabled'
+      | 'not_queued'
+      | 'queued'
+      | 'processing'
+      | 'retry_wait'
+      | 'outdated'
+      | 'completed'
+      | 'permanently_failed'
+    attempt_count: number
+    next_attempt_at: string | null
+    locked_until: string | null
+    completed_at: string | null
+    completed_assessment_version: number
+    last_error: string | null
+    updated_at: string | null
+    completed_association_snapshots: number
+    completed_pull_request_snapshots: number
+    stack_parent_pull_requests: number
+  }
   interval_assessment: RepositoryDeliveryIntervalAssessment
   page: number
   totalPages: number
@@ -925,10 +947,42 @@ export async function getRepositoryCodeDeliveryEvidence(
     >(
       `SELECT c.id, c.base_sha, c.head_sha, c.created_at,
               (SELECT min(d.created_at) FROM deployments d
-               WHERE d.repository_id = c.repository_id AND d.repository_code_delivery_id = c.id) AS first_deployed_at
+               WHERE d.repository_id = c.repository_id AND d.repository_code_delivery_id = c.id) AS first_deployed_at,
+              jsonb_build_object(
+                'status', CASE
+                  WHEN sync.completed_at IS NOT NULL
+                       AND sync.completed_assessment_version >= $3 THEN 'completed'
+                  WHEN sync.failed_permanently THEN 'permanently_failed'
+                  WHEN sync.locked_until > now() THEN 'processing'
+                  WHEN NOT repository.code_delivery_tracking
+                       OR repository.code_delivery_tracking_since IS NULL THEN 'tracking_disabled'
+                  WHEN sync.delivery_id IS NULL THEN 'not_queued'
+                  WHEN sync.completed_at IS NOT NULL
+                       AND sync.completed_assessment_version < $3 THEN 'outdated'
+                  WHEN sync.next_attempt_at > now() THEN 'retry_wait'
+                  ELSE 'queued'
+                END,
+                'attempt_count', COALESCE(sync.attempt_count, 0),
+                'next_attempt_at', sync.next_attempt_at,
+                'locked_until', sync.locked_until,
+                'completed_at', sync.completed_at,
+                'completed_assessment_version', COALESCE(sync.completed_assessment_version, 0),
+                'last_error', sync.last_error,
+                'updated_at', sync.updated_at,
+                'completed_association_snapshots',
+                  (SELECT count(*)::int FROM jsonb_object_keys(sync.completed_association_snapshot_ids)),
+                'completed_pull_request_snapshots',
+                  (SELECT count(*)::int FROM jsonb_object_keys(sync.completed_pull_request_snapshot_ids)),
+                'stack_parent_pull_requests',
+                  (SELECT count(DISTINCT parent.number)::int
+                   FROM jsonb_each(sync.stack_parent_pull_request_numbers) AS checked
+                   CROSS JOIN LATERAL jsonb_array_elements_text(checked.value) AS parent(number))
+              ) AS assessment_sync
        FROM repository_code_deliveries c
+       JOIN repositories repository ON repository.id = c.repository_id
+       LEFT JOIN repository_code_delivery_assessment_sync sync ON sync.delivery_id = c.id
        WHERE c.repository_id = $1 AND c.id = $2`,
-      [repositoryId, deliveryId],
+      [repositoryId, deliveryId, REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION],
     )
     const delivery = deliveryRows[0]
     if (!delivery) return null

@@ -123,6 +123,105 @@ function assessmentStatusLabel(status: RepositoryDeliveryCommitAssessmentStatus)
   return 'Ukjent'
 }
 
+function assessmentSyncStatus(status: RepositoryCodeDeliveryEvidence['assessment_sync']['status']) {
+  const labels: Record<
+    RepositoryCodeDeliveryEvidence['assessment_sync']['status'],
+    { label: string; color: 'neutral' | 'info' | 'success' | 'warning' | 'danger'; description: string }
+  > = {
+    tracking_disabled: {
+      label: 'Sporing deaktivert',
+      color: 'neutral',
+      description: 'Repositoryet har ikke aktiv synkronisering av leveranseevidens.',
+    },
+    not_queued: {
+      label: 'Ikke lagt i kø',
+      color: 'neutral',
+      description: 'Leveransen er ikke lagt i kø for synkronisering ennå.',
+    },
+    queued: {
+      label: 'Venter på synk',
+      color: 'info',
+      description: 'Leveransen venter på at synkroniseringsjobben skal behandle den.',
+    },
+    processing: {
+      label: 'Synkroniserer',
+      color: 'info',
+      description: 'Synkroniseringsjobben behandler leveransen.',
+    },
+    retry_wait: {
+      label: 'Venter på nytt forsøk',
+      color: 'warning',
+      description: 'Forrige forsøk feilet eller ble utsatt. Et nytt forsøk er planlagt.',
+    },
+    outdated: {
+      label: 'Venter på oppdatert synk',
+      color: 'warning',
+      description: 'Lagret synk er fra en eldre vurderingsversjon og må oppdateres.',
+    },
+    completed: {
+      label: 'Synk fullført',
+      color: 'success',
+      description: 'Lagret evidens er oppdatert til gjeldende vurderingsversjon.',
+    },
+    permanently_failed: {
+      label: 'Feilet permanent',
+      color: 'danger',
+      description: 'Synkroniseringen har nådd grensen for automatiske forsøk.',
+    },
+  }
+  return labels[status]
+}
+
+function AssessmentSyncStatus({ sync }: { sync: RepositoryCodeDeliveryEvidence['assessment_sync'] }) {
+  const status = assessmentSyncStatus(sync.status)
+  return (
+    <Box padding="space-20" borderRadius="8" background="raised" borderColor="neutral-subtle" borderWidth="1">
+      <VStack gap="space-12">
+        <Heading level="2" size="small">
+          Synkstatus for lagret evidens
+        </Heading>
+        <HStack gap="space-8" align="center" wrap>
+          <Tag data-color={status.color} variant="outline" size="small">
+            {status.label}
+          </Tag>
+          <BodyShort size="small">{status.description}</BodyShort>
+        </HStack>
+        {sync.updated_at !== null && (
+          <BodyShort size="small">
+            Forsøk: {sync.attempt_count} · Synkede commit-assosiasjoner: {sync.completed_association_snapshots} ·
+            Synkede PR-er: {sync.completed_pull_request_snapshots} · Stack-foreldre: {sync.stack_parent_pull_requests}
+          </BodyShort>
+        )}
+        {sync.status === 'completed' && sync.completed_at && (
+          <BodyShort size="small" textColor="subtle">
+            Fullført {formatAuditLogTimestamp(sync.completed_at)}
+          </BodyShort>
+        )}
+        {sync.status === 'processing' && sync.locked_until && (
+          <BodyShort size="small" textColor="subtle">
+            Arbeidslås utløper {formatAuditLogTimestamp(sync.locked_until)}
+          </BodyShort>
+        )}
+        {sync.status === 'retry_wait' && sync.next_attempt_at && (
+          <BodyShort size="small" textColor="subtle">
+            Neste forsøk etter {formatAuditLogTimestamp(sync.next_attempt_at)}
+          </BodyShort>
+        )}
+        {sync.updated_at && (
+          <BodyShort size="small" textColor="subtle">
+            Køstatus oppdatert {formatAuditLogTimestamp(sync.updated_at)}
+          </BodyShort>
+        )}
+        {sync.last_error && (
+          <Alert variant="warning" size="small">
+            Siste feil: {sync.last_error}
+          </Alert>
+        )}
+      </VStack>
+    </Box>
+  )
+}
+
 function approvalStatusLabel(status: RepositoryDeliveryApprovalAssessment['status']): string {
   if (status === 'approved') return 'Hele intervallet er dekket'
   if (status === 'not_approved') return 'Krever manuell godkjenning'
@@ -485,6 +584,7 @@ export function RepositoryCodeDeliveryEvidencePage({
       </Box>
 
       <IntervalAssessment repository={repository} delivery={delivery} />
+      <AssessmentSyncStatus sync={delivery.assessment_sync} />
       <RepositoryApprovalAssessment
         repository={repository}
         delivery={delivery}
