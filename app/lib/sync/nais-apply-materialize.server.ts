@@ -3,7 +3,7 @@ import { createRepositoryAlertForDeployment } from '~/db/alerts.server'
 import { getRepositoriesByAppId, upsertNaisApplyRepository } from '~/db/application-repositories.server'
 import { upsertNaisApplyDeployment } from '~/db/deployments.server'
 import { getMonitoredApplicationById, type MonitoredApplication } from '~/db/monitored-applications.server'
-import { getNaisApplyActivityEvents } from '~/db/nais-apply-activity.server'
+import { getNaisApplyActivityEvents, markNaisApplyActivitiesMaterialized } from '~/db/nais-apply-activity.server'
 import { ensureRepositoryRowForGithubRepo, syncRepositoryDefaultBranch } from '~/db/repositories.server'
 import { fetchWorkflowRunHeadSha, getRepositoryIdentityById } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
@@ -183,13 +183,13 @@ async function ensureApplyRepositoryLink(
 
 export async function materializeNaisApplyDeployments(
   monitoredAppId: number,
-  options: { suppressNotifications?: boolean } = {},
+  options: { suppressNotifications?: boolean; fullHistory?: boolean } = {},
 ): Promise<number> {
   const app = await getMonitoredApplicationById(monitoredAppId)
   if (!app) throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
   if (!app.nais_apply_enabled) throw new Error(`Nais Apply is disabled for application ${monitoredAppId}`)
 
-  const events = await getNaisApplyActivityEvents(monitoredAppId)
+  const events = await getNaisApplyActivityEvents(monitoredAppId, { fullHistory: options.fullHistory ?? false })
   const latestApp = await getMonitoredApplicationById(monitoredAppId)
   if (!latestApp) throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
   if (!latestApp.nais_apply_enabled) throw new Error(`Nais Apply is disabled for application ${monitoredAppId}`)
@@ -203,7 +203,29 @@ export async function materializeNaisApplyDeployments(
     })
     return false
   })
-  const groups = groupImageChanges(eligibleEvents.flatMap(getImageChanges))
+  const changes = eligibleEvents.flatMap(getImageChanges)
+  const eventSourceIds = new Map<string, Set<string>>()
+  for (const change of changes) {
+    const ids = eventSourceIds.get(change.activity.id) ?? new Set<string>()
+    ids.add(change.sourceId)
+    eventSourceIds.set(change.activity.id, ids)
+  }
+  const sourceIds = [...new Set(changes.map((change) => change.sourceId))]
+  const historicalEvents =
+    !options.fullHistory && sourceIds.length > 0 ? await getNaisApplyActivityEvents(monitoredAppId, { sourceIds }) : []
+  const affectedSourceIds = new Set(sourceIds)
+  const combinedEvents = new Map(
+    [...historicalEvents, ...eligibleEvents]
+      .filter((event) => event.environmentName === latestApp.environment_name)
+      .map((event) => [event.id, event]),
+  )
+  const groups = groupImageChanges(
+    [...combinedEvents.values()]
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+      .flatMap(getImageChanges)
+      .filter((change) => affectedSourceIds.has(change.sourceId)),
+  )
+  const retryActivityIds = new Set<string>()
   const resolvedRuns = new Map<string, Promise<string | null>>()
   const repositoryLinks = new Map<string, Promise<ApplyRepositoryLink | null>>()
   const repositoryIdentities = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
@@ -311,7 +333,19 @@ export async function materializeNaisApplyDeployments(
         alertType: 'historical_repository',
       })
     }
+
+    if (claims && (!commitSha || !repositoryLink || repositoryLink.status === 'pending_approval')) {
+      for (const change of group) retryActivityIds.add(change.activity.id)
+    }
   }
 
+  await markNaisApplyActivitiesMaterialized(
+    monitoredAppId,
+    events.map((event) => ({
+      activityLogId: event.id,
+      sourceIds: [...(eventSourceIds.get(event.id) ?? [])],
+      retry: retryActivityIds.has(event.id),
+    })),
+  )
   return groups.length
 }

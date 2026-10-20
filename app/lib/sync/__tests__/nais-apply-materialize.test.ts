@@ -4,6 +4,7 @@ import type { NaisApplicationUpdatedActivity } from '~/lib/nais.server'
 
 const {
   getNaisApplyActivityEvents,
+  markNaisApplyActivitiesMaterialized,
   getMonitoredApplicationById,
   upsertNaisApplyDeployment,
   fetchWorkflowRunHeadSha,
@@ -16,6 +17,7 @@ const {
   syncDefaultBranchForApp,
 } = vi.hoisted(() => ({
   getNaisApplyActivityEvents: vi.fn(),
+  markNaisApplyActivitiesMaterialized: vi.fn(),
   getMonitoredApplicationById: vi.fn(),
   upsertNaisApplyDeployment: vi.fn(),
   fetchWorkflowRunHeadSha: vi.fn(),
@@ -28,7 +30,10 @@ const {
   syncDefaultBranchForApp: vi.fn(),
 }))
 
-vi.mock('~/db/nais-apply-activity.server', () => ({ getNaisApplyActivityEvents }))
+vi.mock('~/db/nais-apply-activity.server', () => ({
+  getNaisApplyActivityEvents,
+  markNaisApplyActivitiesMaterialized,
+}))
 vi.mock('~/db/deployments.server', () => ({ upsertNaisApplyDeployment }))
 vi.mock('~/db/monitored-applications.server', () => ({ getMonitoredApplicationById }))
 vi.mock('~/db/application-repositories.server', () => ({
@@ -106,6 +111,7 @@ describe('materializeNaisApplyDeployments', () => {
     vi.clearAllMocks()
     vi.mocked(getMonitoredApplicationById).mockResolvedValue(monitoredApp)
     vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([])
+    vi.mocked(markNaisApplyActivitiesMaterialized).mockResolvedValue(undefined)
     vi.mocked(upsertNaisApplyDeployment).mockResolvedValue({ id: 100 } as never)
     vi.mocked(fetchWorkflowRunHeadSha).mockResolvedValue('a'.repeat(40))
     vi.mocked(getRepositoryIdentityById).mockResolvedValue({ id: 12345, owner: 'navikt', name: 'app-a' })
@@ -432,5 +438,120 @@ describe('materializeNaisApplyDeployments', () => {
 
     expect(fetchWorkflowRunHeadSha).toHaveBeenCalledOnce()
     expect(upsertNaisApplyDeployment).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not resolve runs or update deployments when no activities need processing', async () => {
+    await expect(materializeNaisApplyDeployments(monitoredApp.id)).resolves.toBe(0)
+
+    expect(getNaisApplyActivityEvents).toHaveBeenCalledExactlyOnceWith(monitoredApp.id, { fullHistory: false })
+    expect(getRepositoryIdentityById).not.toHaveBeenCalled()
+    expect(fetchWorkflowRunHeadSha).not.toHaveBeenCalled()
+    expect(upsertNaisApplyDeployment).not.toHaveBeenCalled()
+  })
+
+  it('loads all retained activities only for the initial history pass', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:one')])
+
+    await materializeNaisApplyDeployments(monitoredApp.id, { fullHistory: true, suppressNotifications: true })
+
+    expect(getNaisApplyActivityEvents).toHaveBeenCalledExactlyOnceWith(monitoredApp.id, { fullHistory: true })
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledWith(expect.objectContaining({ suppressNotifications: true }))
+    expect(markNaisApplyActivitiesMaterialized).toHaveBeenCalledWith(monitoredApp.id, [
+      { activityLogId: 'activity-1', sourceIds: [expect.any(String)], retry: false },
+    ])
+  })
+
+  it('merges a delayed activity with older group members without processing unrelated history', async () => {
+    const historical = makeActivity('historical', 'registry/image:one', { createdAt: '2026-10-15T10:01:00Z' })
+    const delayed = makeActivity('delayed', 'registry/image:one', { createdAt: '2026-10-15T10:00:00Z' })
+    vi.mocked(getNaisApplyActivityEvents)
+      .mockResolvedValueOnce([delayed])
+      .mockResolvedValueOnce([
+        historical,
+        makeActivity('unrelated', 'registry/image:two'),
+        makeActivity('wrong-env', 'registry/image:one', {
+          environmentName: 'dev-gcp',
+          createdAt: '2026-10-14T10:00:00Z',
+        }),
+      ])
+
+    await expect(materializeNaisApplyDeployments(monitoredApp.id)).resolves.toBe(1)
+
+    const { sourceId } = upsertNaisApplyDeployment.mock.calls[0][0]
+    expect(getNaisApplyActivityEvents).toHaveBeenNthCalledWith(2, monitoredApp.id, { sourceIds: [sourceId] })
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ sourceId, createdAt: new Date(delayed.createdAt) }),
+    )
+    expect(markNaisApplyActivitiesMaterialized).toHaveBeenCalledWith(monitoredApp.id, [
+      { activityLogId: 'delayed', sourceIds: [sourceId], retry: false },
+    ])
+  })
+
+  it('keeps the earliest historical timestamp when a later group member arrives', async () => {
+    vi.mocked(getNaisApplyActivityEvents)
+      .mockResolvedValueOnce([makeActivity('later', 'registry/image:one', { createdAt: '2026-10-16T10:00:00Z' })])
+      .mockResolvedValueOnce([makeActivity('historical', 'registry/image:one')])
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(upsertNaisApplyDeployment).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ createdAt: new Date('2026-10-15T10:00:00Z') }),
+    )
+  })
+
+  it.each(['sha', 'identity', 'approval'] as const)('schedules unresolved %s groups for retry', async (missing) => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('unresolved', 'registry/image:one')])
+    if (missing === 'sha') vi.mocked(fetchWorkflowRunHeadSha).mockResolvedValue(null)
+    if (missing === 'identity') vi.mocked(getRepositoryIdentityById).mockResolvedValue(null)
+    if (missing === 'approval') {
+      vi.mocked(upsertNaisApplyRepository).mockResolvedValue({
+        github_repo_id: '12345',
+        status: 'pending_approval',
+      })
+    }
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(markNaisApplyActivitiesMaterialized).toHaveBeenCalledWith(monitoredApp.id, [
+      { activityLogId: 'unresolved', sourceIds: [expect.any(String)], retry: true },
+    ])
+  })
+
+  it('completes an unresolved group when a subsequent attempt resolves its SHA', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('retry', 'registry/image:one')])
+    vi.mocked(fetchWorkflowRunHeadSha).mockResolvedValueOnce(null).mockResolvedValueOnce('a'.repeat(40))
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(markNaisApplyActivitiesMaterialized).toHaveBeenNthCalledWith(1, monitoredApp.id, [
+      { activityLogId: 'retry', sourceIds: [expect.any(String)], retry: true },
+    ])
+    expect(markNaisApplyActivitiesMaterialized).toHaveBeenNthCalledWith(2, monitoredApp.id, [
+      { activityLogId: 'retry', sourceIds: [expect.any(String)], retry: false },
+    ])
+  })
+
+  it('does not repeatedly retry immutable events without usable claims or image changes', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([
+      makeActivity('manual', 'registry/image:one', { gitHubActorClaims: null }),
+      makeActivity('no-image', 'registry/image:two', { changedFields: [] }),
+    ])
+
+    await materializeNaisApplyDeployments(monitoredApp.id)
+
+    expect(markNaisApplyActivitiesMaterialized).toHaveBeenCalledWith(monitoredApp.id, [
+      { activityLogId: 'manual', sourceIds: [expect.any(String)], retry: false },
+      { activityLogId: 'no-image', sourceIds: [], retry: false },
+    ])
+  })
+
+  it('leaves activities pending if an upsert or alert fails', async () => {
+    vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('pending', 'registry/image:one')])
+    vi.mocked(upsertNaisApplyDeployment).mockRejectedValueOnce(new Error('Database unavailable'))
+
+    await expect(materializeNaisApplyDeployments(monitoredApp.id)).rejects.toThrow('Database unavailable')
+
+    expect(markNaisApplyActivitiesMaterialized).not.toHaveBeenCalled()
   })
 })

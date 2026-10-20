@@ -463,7 +463,10 @@ describe('syncNaisApplyActivityFromNais', () => {
       new Date('2026-10-13T11:00:00Z'),
       true,
     )
-    expect(materializeNaisApplyDeployments).toHaveBeenCalledWith(monitoredApp.id, { suppressNotifications: true })
+    expect(materializeNaisApplyDeployments).toHaveBeenCalledWith(monitoredApp.id, {
+      suppressNotifications: true,
+      fullHistory: true,
+    })
     expect(materializeNaisApplyDeployments.mock.invocationCallOrder[0]).toBeLessThan(
       markNaisApplyActivitySyncComplete.mock.invocationCallOrder[0],
     )
@@ -488,7 +491,10 @@ describe('syncNaisApplyActivityFromNais', () => {
       '2026-10-07T12:00:00.000Z',
     )
     expect(markNaisApplyActivitySyncComplete).toHaveBeenCalledWith(monitoredApp.id, null, false)
-    expect(materializeNaisApplyDeployments).toHaveBeenCalledWith(monitoredApp.id, { suppressNotifications: false })
+    expect(materializeNaisApplyDeployments).toHaveBeenCalledWith(monitoredApp.id, {
+      suppressNotifications: false,
+      fullHistory: false,
+    })
   })
 
   it('records failed activity synchronization without marking it complete', async () => {

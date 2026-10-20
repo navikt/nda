@@ -119,6 +119,7 @@ async function syncNaisApplyActivityForApp(monitoredApp: MonitoredApplication): 
 
   const materializedCount = await materializeNaisApplyDeployments(monitoredAppId, {
     suppressNotifications: !initialHistoryComplete,
+    fullHistory: !initialHistoryComplete,
   })
   await markNaisApplyActivitySyncComplete(monitoredAppId, latestActivityCreatedAt, !initialHistoryComplete)
   logger.info('✅ Nais Apply activity sync complete', {

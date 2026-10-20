@@ -9,7 +9,10 @@ export interface NaisApplyActivitySyncState {
   last_error: string | null
 }
 
-export async function getNaisApplyActivityEvents(monitoredAppId: number): Promise<NaisApplicationUpdatedActivity[]> {
+export async function getNaisApplyActivityEvents(
+  monitoredAppId: number,
+  options: { fullHistory?: boolean; sourceIds?: string[] } = {},
+): Promise<NaisApplicationUpdatedActivity[]> {
   const result = await pool.query<{
     activity_log_id: string
     created_at: Date
@@ -25,8 +28,15 @@ export async function getNaisApplyActivityEvents(monitoredAppId: number): Promis
             environment_name, github_actor_claims, changed_fields
      FROM nais_apply_activity_events
      WHERE monitored_app_id = $1
+       ${
+         options.sourceIds !== undefined
+           ? 'AND materialization_source_ids && $2::text[]'
+           : options.fullHistory
+             ? ''
+             : `AND (materialized_at IS NULL OR materialization_retry_at <= CURRENT_TIMESTAMP)`
+       }
      ORDER BY created_at, id`,
-    [monitoredAppId],
+    options.sourceIds !== undefined ? [monitoredAppId, options.sourceIds] : [monitoredAppId],
   )
   return result.rows.map((row) => ({
     id: row.activity_log_id,
@@ -39,6 +49,23 @@ export async function getNaisApplyActivityEvents(monitoredAppId: number): Promis
     gitHubActorClaims: row.github_actor_claims,
     changedFields: row.changed_fields,
   }))
+}
+
+export async function markNaisApplyActivitiesMaterialized(
+  monitoredAppId: number,
+  activities: { activityLogId: string; sourceIds: string[]; retry: boolean }[],
+): Promise<void> {
+  if (activities.length === 0) return
+
+  await pool.query(
+    `UPDATE nais_apply_activity_events events
+     SET materialized_at = CURRENT_TIMESTAMP,
+         materialization_source_ids = ARRAY(SELECT jsonb_array_elements_text(entries."sourceIds")),
+         materialization_retry_at = CASE WHEN entries.retry THEN CURRENT_TIMESTAMP + INTERVAL '5 minutes' END
+     FROM jsonb_to_recordset($2::jsonb) AS entries("activityLogId" TEXT, "sourceIds" JSONB, retry BOOLEAN)
+     WHERE events.monitored_app_id = $1 AND events.activity_log_id = entries."activityLogId"`,
+    [monitoredAppId, JSON.stringify(activities)],
+  )
 }
 
 export async function getNaisApplyActivitySyncState(
