@@ -73,19 +73,34 @@ export async function findRepositoryForApp(
   appId: number,
   owner: string,
   repoName: string,
+  repositoryId?: number,
 ): Promise<{
   repository: ApplicationRepository | null
   effectiveOwner: string
   effectiveRepo: string
   isRedirected: boolean
 }> {
-  const result = await pool.query(
-    `SELECT * FROM application_repositories 
-     WHERE monitored_app_id = $1 
-       AND github_owner = $2 
-       AND github_repo_name = $3`,
-    [appId, owner, repoName],
-  )
+  const result =
+    repositoryId == null
+      ? await pool.query(
+          `SELECT * FROM application_repositories
+           WHERE monitored_app_id = $1
+             AND github_owner = $2
+             AND github_repo_name = $3`,
+          [appId, owner, repoName],
+        )
+      : await pool.query(
+          `SELECT ar.*, r.github_owner AS canonical_owner, r.github_repo_name AS canonical_repo_name
+           FROM application_repositories ar
+           JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+           WHERE monitored_app_id = $1
+             AND ar.github_repo_id = (SELECT github_repo_id FROM repositories WHERE id = $2)
+             AND ar.status IN ('active', 'historical')
+           ORDER BY CASE ar.status WHEN 'active' THEN 1 WHEN 'historical' THEN 2 ELSE 3 END,
+                    ar.created_at DESC, ar.id DESC
+           LIMIT 1`,
+          [appId, repositoryId],
+        )
 
   if (result.rows.length === 0) {
     return {
@@ -98,7 +113,7 @@ export async function findRepositoryForApp(
 
   const repo = result.rows[0]
 
-  if (repo.redirects_to_owner && repo.redirects_to_repo) {
+  if (repositoryId == null && repo.redirects_to_owner && repo.redirects_to_repo) {
     return {
       repository: repo,
       effectiveOwner: repo.redirects_to_owner,
@@ -109,13 +124,13 @@ export async function findRepositoryForApp(
 
   return {
     repository: repo,
-    effectiveOwner: owner,
-    effectiveRepo: repoName,
+    effectiveOwner: repo.canonical_owner ?? owner,
+    effectiveRepo: repo.canonical_repo_name ?? repoName,
     isRedirected: false,
   }
 }
 
-export async function upsertApplicationRepository(data: {
+type UpsertApplicationRepositoryData = {
   monitoredAppId: number
   githubOwner: string
   githubRepoName: string
@@ -124,54 +139,154 @@ export async function upsertApplicationRepository(data: {
   redirectsToRepo?: string | null
   notes?: string | null
   approvedBy?: string | null
-}): Promise<ApplicationRepository> {
-  const approvedAt = data.status !== 'pending_approval' ? new Date() : null
+  approvedAt?: Date | null
+  expectedGithubRepoId?: string
+}
+
+async function upsertApplicationRepositoryWithClient(
+  client: PoolClient,
+  data: UpsertApplicationRepositoryData,
+  githubRepoId: number | string | null,
+): Promise<ApplicationRepository> {
+  const approvedAt =
+    data.approvedAt !== undefined ? data.approvedAt : data.status !== 'pending_approval' ? new Date() : null
+  if (data.expectedGithubRepoId && String(githubRepoId) !== data.expectedGithubRepoId) {
+    throw new Error(
+      `GitHub repository identity changed while linking ${data.githubOwner}/${data.githubRepoName}: expected ${data.expectedGithubRepoId}, received ${githubRepoId}`,
+    )
+  }
+
+  const { rows: existingRows } = await client.query<{ github_repo_id: string | null }>(
+    `SELECT github_repo_id FROM application_repositories
+     WHERE monitored_app_id = $1 AND github_owner = $2 AND github_repo_name = $3`,
+    [data.monitoredAppId, data.githubOwner, data.githubRepoName],
+  )
+  const isGenuinelyNewPendingLink = existingRows.length === 0 && data.status === 'pending_approval'
+  if (!isGenuinelyNewPendingLink) {
+    const effectiveGithubRepoId =
+      existingRows[0]?.github_repo_id ?? (githubRepoId === null ? null : String(githubRepoId))
+    await lockRepositoriesForVerificationCoordination(client, [effectiveGithubRepoId])
+  }
+
+  const result = await client.query(
+    `INSERT INTO application_repositories (
+      monitored_app_id, github_owner, github_repo_name, github_repo_id, status,
+      redirects_to_owner, redirects_to_repo, notes, approved_at, approved_by
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (monitored_app_id, github_owner, github_repo_name)
+    DO UPDATE SET
+      github_repo_id = COALESCE(application_repositories.github_repo_id, EXCLUDED.github_repo_id),
+      status = EXCLUDED.status,
+      redirects_to_owner = EXCLUDED.redirects_to_owner,
+      redirects_to_repo = EXCLUDED.redirects_to_repo,
+      notes = EXCLUDED.notes,
+      approved_at = EXCLUDED.approved_at,
+      approved_by = EXCLUDED.approved_by
+    RETURNING *`,
+    [
+      data.monitoredAppId,
+      data.githubOwner,
+      data.githubRepoName,
+      githubRepoId,
+      data.status,
+      data.redirectsToOwner || null,
+      data.redirectsToRepo || null,
+      data.notes || null,
+      approvedAt,
+      data.approvedBy || null,
+    ],
+  )
+  return result.rows[0]
+}
+
+export async function upsertApplicationRepository(
+  data: UpsertApplicationRepositoryData,
+): Promise<ApplicationRepository> {
   const githubRepoId = await getRepositoryId(data.githubOwner, data.githubRepoName)
+  if (data.expectedGithubRepoId && String(githubRepoId) !== data.expectedGithubRepoId) {
+    throw new Error(
+      `GitHub repository identity changed while linking ${data.githubOwner}/${data.githubRepoName}: expected ${data.expectedGithubRepoId}, received ${githubRepoId}`,
+    )
+  }
 
   return withTransaction(async (client) => {
     await lockRepositoryAdminForWrite(client)
+    return upsertApplicationRepositoryWithClient(client, data, githubRepoId)
+  })
+}
 
-    const { rows: existingRows } = await client.query<{ github_repo_id: string | null }>(
-      `SELECT github_repo_id FROM application_repositories
-       WHERE monitored_app_id = $1 AND github_owner = $2 AND github_repo_name = $3`,
+export async function upsertNaisApplyRepository(data: {
+  monitoredAppId: number
+  githubOwner: string
+  githubRepoName: string
+  githubRepoId: string
+}): Promise<ApplicationRepository | null> {
+  return withTransaction(async (client) => {
+    await lockRepositoryAdminForWrite(client)
+
+    const { rows: namedLinks } = await client.query<ApplicationRepository>(
+      `SELECT * FROM application_repositories
+       WHERE monitored_app_id = $1 AND github_owner = $2 AND github_repo_name = $3
+       FOR UPDATE`,
       [data.monitoredAppId, data.githubOwner, data.githubRepoName],
     )
-    const isGenuinelyNewPendingLink = existingRows.length === 0 && data.status === 'pending_approval'
-    if (!isGenuinelyNewPendingLink) {
-      const effectiveGithubRepoId =
-        existingRows[0]?.github_repo_id ?? (githubRepoId === null ? null : String(githubRepoId))
-      await lockRepositoriesForVerificationCoordination(client, [effectiveGithubRepoId])
+    const namedLink = namedLinks[0]
+
+    const { rows: approvedLinks } = await client.query<ApplicationRepository>(
+      `SELECT * FROM application_repositories
+       WHERE monitored_app_id = $1 AND github_repo_id = $2
+         AND status IN ('active', 'historical')
+       ORDER BY CASE status WHEN 'active' THEN 1 ELSE 2 END, created_at DESC, id DESC
+       LIMIT 1`,
+      [data.monitoredAppId, data.githubRepoId],
+    )
+    const { rows: rejectedRows } = await client.query<{ rejected: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM nais_apply_rejected_repositories
+         WHERE monitored_app_id = $1 AND github_repo_id = $2::bigint
+       ) AS rejected`,
+      [data.monitoredAppId, data.githubRepoId],
+    )
+    if (rejectedRows[0]?.rejected) return approvedLinks[0] ?? null
+    if (approvedLinks[0]) return approvedLinks[0]
+    if (namedLink?.github_repo_id && namedLink.github_repo_id !== data.githubRepoId) return namedLink
+
+    if (namedLink) {
+      return upsertApplicationRepositoryWithClient(
+        client,
+        {
+          monitoredAppId: data.monitoredAppId,
+          githubOwner: namedLink.github_owner,
+          githubRepoName: namedLink.github_repo_name,
+          status: namedLink.status,
+          redirectsToOwner: namedLink.redirects_to_owner,
+          redirectsToRepo: namedLink.redirects_to_repo,
+          notes: namedLink.notes,
+          approvedBy: namedLink.approved_by,
+          approvedAt: namedLink.approved_at,
+          expectedGithubRepoId: data.githubRepoId,
+        },
+        data.githubRepoId,
+      )
     }
 
-    const result = await client.query(
-      `INSERT INTO application_repositories (
-        monitored_app_id, github_owner, github_repo_name, github_repo_id, status,
-        redirects_to_owner, redirects_to_repo, notes, approved_at, approved_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      ON CONFLICT (monitored_app_id, github_owner, github_repo_name)
-      DO UPDATE SET
-        github_repo_id = COALESCE(application_repositories.github_repo_id, EXCLUDED.github_repo_id),
-        status = EXCLUDED.status,
-        redirects_to_owner = EXCLUDED.redirects_to_owner,
-        redirects_to_repo = EXCLUDED.redirects_to_repo,
-        notes = EXCLUDED.notes,
-        approved_at = EXCLUDED.approved_at,
-        approved_by = EXCLUDED.approved_by
-      RETURNING *`,
-      [
-        data.monitoredAppId,
-        data.githubOwner,
-        data.githubRepoName,
-        githubRepoId,
-        data.status,
-        data.redirectsToOwner || null,
-        data.redirectsToRepo || null,
-        data.notes || null,
-        approvedAt,
-        data.approvedBy || null,
-      ],
+    const { rows: countRows } = await client.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM application_repositories WHERE monitored_app_id = $1',
+      [data.monitoredAppId],
     )
-    return result.rows[0]
+    const isFirstRepository = Number(countRows[0]?.count ?? 0) === 0
+    return upsertApplicationRepositoryWithClient(
+      client,
+      {
+        monitoredAppId: data.monitoredAppId,
+        githubOwner: data.githubOwner,
+        githubRepoName: data.githubRepoName,
+        status: isFirstRepository ? 'active' : 'pending_approval',
+        expectedGithubRepoId: data.githubRepoId,
+        ...(isFirstRepository ? { approvedBy: 'system' } : {}),
+      },
+      data.githubRepoId,
+    )
   })
 }
 
@@ -234,8 +349,39 @@ export async function approveRepository(
 export async function rejectRepository(repoId: number): Promise<void> {
   await withTransaction(async (client) => {
     await lockRepositoryAdminForWrite(client)
+    const pendingRepository = await client.query<{
+      monitored_app_id: number
+      github_repo_id: string | null
+    }>(
+      `SELECT monitored_app_id, github_repo_id
+       FROM application_repositories
+       WHERE id = $1 AND status = 'pending_approval'
+       FOR UPDATE`,
+      [repoId],
+    )
+    const repository = pendingRepository.rows[0]
+    if (repository?.github_repo_id) {
+      await client.query(
+        `INSERT INTO nais_apply_rejected_repositories (monitored_app_id, github_repo_id)
+         VALUES ($1, $2)
+         ON CONFLICT (monitored_app_id, github_repo_id) DO NOTHING`,
+        [repository.monitored_app_id, repository.github_repo_id],
+      )
+    }
     await client.query(`DELETE FROM application_repositories WHERE id = $1 AND status = 'pending_approval'`, [repoId])
   })
+}
+
+export async function isNaisApplyRepositoryRejected(monitoredAppId: number, githubRepoId: string): Promise<boolean> {
+  const result = await pool.query<{ rejected: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM nais_apply_rejected_repositories
+       WHERE monitored_app_id = $1 AND github_repo_id = $2::bigint
+     ) AS rejected`,
+    [monitoredAppId, githubRepoId],
+  )
+  return result.rows[0]?.rejected === true
 }
 
 export async function setRepositoryAsActive(repoId: number): Promise<ApplicationRepository> {

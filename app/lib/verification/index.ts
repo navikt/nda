@@ -2,11 +2,16 @@ import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
 import { TITLE_COALESCE_SQL } from '~/db/deployments.server'
 import { propagateVerificationToSiblings } from '~/db/monorepo.server'
-import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from '~/db/repository-settings-sql'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { getMergedPullRequestsInWindow } from '~/lib/github'
+import { getRepositoryIdentityById } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import { analyzeMergedPrWindow } from './debug-merged-prs'
 import { preferRootApprovedSibling } from './fetch-data/previous-deployment.server'
@@ -113,7 +118,7 @@ export async function runVerification(
   }
 
   const { verificationRunId } = await storeVerificationResult(deploymentId, result, snapshotIds, input, undefined, {
-    repository: options.repository,
+    repository: input.repository,
     commitsBetween: input.commitsBetween,
   })
 
@@ -510,12 +515,13 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     `SELECT
        d.id, d.commit_sha, d.four_eyes_status,
        d.github_pr_number, d.environment_name, d.monitored_app_id,
-       d.detected_github_owner, d.detected_github_repo_name,
+       d.detected_github_owner, d.detected_github_repo_name, d.repository_id, d.deployment_source,
        ${effectiveDefaultBranchSql('ma')} AS default_branch,
        ${effectiveAuditStartYearSql('ma')} AS audit_start_year
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-     WHERE d.id = $1`,
+     WHERE d.id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
     [deploymentId],
   )
 
@@ -525,22 +531,46 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
 
   const dep = row.rows[0]
 
+  if (dep.deployment_source === 'nais_apply' && dep.repository_id == null) {
+    return null
+  }
+
   if (isProtectedStatus(dep.four_eyes_status ?? '')) {
     return null
   }
 
-  const { implicitApprovalSettings } = await getEffectiveSettingsForApp(dep.monitored_app_id)
-
-  const owner = dep.detected_github_owner as string | null
-  const repo = dep.detected_github_repo_name as string | null
+  let owner = dep.detected_github_owner as string | null
+  let repo = dep.detected_github_repo_name as string | null
   if (!owner || !repo) return null
-  if (!dep.default_branch) return null
-  const baseBranch = dep.default_branch
 
-  const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo)
+  const repoCheck = await findRepositoryForApp(dep.monitored_app_id, owner, repo, dep.repository_id ?? undefined)
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
-  const previousDeploymentLookupFailed = repoCheck.repository?.status === 'active' && !githubRepoId
-  const prevRow = githubRepoId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
+  const canonicalRepositoryId = githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null
+  let applyIdentity: Awaited<ReturnType<typeof getRepositoryIdentityById>> = null
+  if (dep.deployment_source === 'nais_apply') {
+    const numericGithubRepoId = Number(githubRepoId)
+    applyIdentity =
+      githubRepoId && Number.isSafeInteger(numericGithubRepoId)
+        ? await getRepositoryIdentityById(numericGithubRepoId)
+        : null
+    if (!applyIdentity || String(applyIdentity.id) !== githubRepoId) return null
+    owner = applyIdentity.owner
+    repo = applyIdentity.name
+  } else if (dep.repository_id != null && repoCheck.repository) {
+    owner = repoCheck.effectiveOwner
+    repo = repoCheck.effectiveRepo
+  }
+  const baseBranch = dep.deployment_source === 'nais_apply' ? applyIdentity?.defaultBranch : dep.default_branch
+  if (!baseBranch) return null
+  const appSettings =
+    dep.repository_id != null
+      ? await getEffectiveSettingsForRepository(dep.repository_id, dep.monitored_app_id)
+      : await getEffectiveSettingsForApp(dep.monitored_app_id)
+  const { implicitApprovalSettings } = appSettings
+  const previousDeploymentLookupFailed =
+    repoCheck.repository?.status === 'active' && (!githubRepoId || !canonicalRepositoryId)
+  const prevRow =
+    githubRepoId && canonicalRepositoryId ? await getPreviousDeploymentForDiff(dep.id, githubRepoId) : null
   const previousDeployment = prevRow
     ? await preferRootApprovedSibling(
         {
@@ -584,14 +614,24 @@ export async function reverifyDeployment(deploymentId: number): Promise<{
     const compareData = compareSnapshot.data as CompareData
     const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
       cacheOnly: true,
+      ...(dep.deployment_source === 'nais_apply' && githubRepoId ? { githubRepoId } : {}),
     })
 
     let deployedPr: VerificationInput['deployedPr'] = null
+    const applyGithubRepoId = dep.deployment_source === 'nais_apply' ? (githubRepoId ?? undefined) : undefined
     const cachedPrNumber =
       dep.github_pr_number ??
-      (await findPrForCommit(owner, repo, dep.commit_sha, baseBranch, { cacheOnly: true })).prNumber
+      (
+        await findPrForCommit(owner, repo, dep.commit_sha, baseBranch, {
+          cacheOnly: true,
+          ...(applyGithubRepoId != null ? { githubRepoId: applyGithubRepoId } : {}),
+        })
+      ).prNumber
     if (cachedPrNumber) {
-      const prData = await getPrDataForDiff(owner, repo, cachedPrNumber)
+      const prData =
+        applyGithubRepoId == null
+          ? await getPrDataForDiff(owner, repo, cachedPrNumber)
+          : await getPrDataForDiff(owner, repo, cachedPrNumber, applyGithubRepoId)
       if (prData) {
         deployedPr = {
           number: cachedPrNumber,

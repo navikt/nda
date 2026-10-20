@@ -1,9 +1,14 @@
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp, getEffectiveSettingsForRepository } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
+import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import { APPROVED_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { getBranchFromWorkflowRun, getSingleCommitMessage, isCommitOnBranch } from '~/lib/github'
-import type { WorkflowRunResolution } from '~/lib/github/git.server'
+import { getRepositoryIdentityById, type WorkflowRunResolution } from '~/lib/github/git.server'
 import { buildBranchMismatch } from './branch-mismatch'
 import { fetchCommitChecks, getCachedCommitChecks } from './fetch-data/commit-checks.server'
 import { fetchCommitsBetween } from './fetch-data/commits-between.server'
@@ -23,47 +28,93 @@ export async function fetchVerificationData(
   commitSha: string,
   repository: string,
   environmentName: string,
-  baseBranch: string,
+  baseBranchInput: string,
   monitoredAppId: number,
   options?: FetchOptions,
   triggerUrl?: string | null,
   repositoryId?: number,
   resolvedWorkflowRun?: WorkflowRunResolution,
 ): Promise<VerificationInput> {
-  const [owner, repo] = repository.split('/')
+  let baseBranch = baseBranchInput
+  let [owner, repo] = repository.split('/')
   if (!owner || !repo) {
     throw new Error(`Invalid repository format: ${repository}`)
   }
 
+  const deploymentResult = await pool.query<{
+    deployment_source: string
+    repository_id: number | null
+    nais_apply_enabled: boolean
+  }>(
+    `SELECT d.deployment_source, d.repository_id, COALESCE(ma.nais_apply_enabled, false) AS nais_apply_enabled
+     FROM deployments d
+     LEFT JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE d.id = $1`,
+    [deploymentId],
+  )
+  const deployment = deploymentResult.rows[0]
+  if (!deployment) {
+    throw new Error(`Deployment ${deploymentId} not found`)
+  }
+  if (deployment.deployment_source === 'nais_apply' && !deployment.nais_apply_enabled) {
+    throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} while Apply is disabled for its app`)
+  }
+  if (deployment.deployment_source === 'nais_apply' && deployment.repository_id === null) {
+    throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} without an immutable repository association`)
+  }
+
+  const deploymentRepositoryId =
+    (deployment.deployment_source === 'nais_apply'
+      ? deployment.repository_id
+      : (repositoryId ?? deployment.repository_id)) ?? undefined
+
   const appSettings =
-    repositoryId != null
-      ? await getEffectiveSettingsForRepository(repositoryId, monitoredAppId)
+    deploymentRepositoryId != null
+      ? await getEffectiveSettingsForRepository(deploymentRepositoryId, monitoredAppId)
       : await getAppSettings(monitoredAppId)
 
-  const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo)
+  const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo, deploymentRepositoryId)
   const repositoryStatus: RepositoryStatus = repoCheck.repository
     ? (repoCheck.repository.status as RepositoryStatus)
     : 'unknown'
   const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+  const canonicalRepositoryId = githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null
+  if (deployment.deployment_source === 'nais_apply') {
+    const numericGithubRepoId = Number(githubRepoId)
+    const identity =
+      githubRepoId && Number.isSafeInteger(numericGithubRepoId)
+        ? await getRepositoryIdentityById(numericGithubRepoId)
+        : null
+    if (!identity || String(identity.id) !== githubRepoId) {
+      throw new Error(`Cannot resolve the GitHub repository for Nais Apply deployment ${deploymentId}`)
+    }
+    owner = identity.owner
+    repo = identity.name
+    if (!identity.defaultBranch) {
+      throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} without the GitHub default branch`)
+    }
+    baseBranch = identity.defaultBranch
+  } else if (deploymentRepositoryId != null && repoCheck.repository) {
+    owner = repoCheck.effectiveOwner
+    repo = repoCheck.effectiveRepo
+  }
 
+  const verificationOptions =
+    deployment.deployment_source === 'nais_apply' && githubRepoId ? { ...options, githubRepoId } : options
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
-  const previousDeploymentResult = await getPreviousDeployment(
-    deploymentId,
-    owner,
-    repo,
-    githubRepoId,
-    appSettings.auditStartYear,
-    commitSha,
-  )
+  const previousDeploymentResult =
+    githubRepoId && canonicalRepositoryId
+      ? await getPreviousDeployment(deploymentId, owner, repo, githubRepoId, appSettings.auditStartYear, commitSha)
+      : null
   const previousDeploymentRateLimited = previousDeploymentResult === 'rate_limited'
   const previousDeployment = previousDeploymentRateLimited
     ? null
     : await preferRootApprovedSibling(previousDeploymentResult, commitSha, githubRepoId, monitoredAppId, deploymentId)
   const previousDeploymentLookupFailed =
-    (repositoryStatus === 'active' && !githubRepoId) || previousDeploymentRateLimited
+    (repositoryStatus === 'active' && (!githubRepoId || !canonicalRepositoryId)) || previousDeploymentRateLimited
 
-  const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, options)
+  const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, verificationOptions)
   const deployedPr = deployedPrResult.deployedPr
 
   let commitsBetween: VerificationInput['commitsBetween'] = []
@@ -78,7 +129,7 @@ export async function fetchVerificationData(
       commitSha,
       baseBranch,
       previousDeployment.createdAt,
-      options,
+      verificationOptions,
     )
     if (result === null) {
       compareFailed = true
@@ -109,9 +160,10 @@ export async function fetchVerificationData(
     const nearbyResult = await pool.query(
       `SELECT d.id, d.four_eyes_status
        FROM deployments d
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
-         AND d.detected_github_owner = $3
-         AND d.detected_github_repo_name = $4
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+         AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $3)')}
          AND d.id != $1
          AND d.commit_sha = $2
          AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})
@@ -122,7 +174,7 @@ export async function fetchVerificationData(
          )
        ORDER BY d.created_at DESC
        LIMIT 1`,
-      [deploymentId, commitSha, owner, repo],
+      [deploymentId, commitSha, githubRepoId],
     )
     if (nearbyResult.rows.length > 0) {
       nearbyApprovedDeployWithSameCommit = {
@@ -144,9 +196,10 @@ export async function fetchVerificationData(
     const nearbyAnyResult = await pool.query(
       `SELECT d.id, d.commit_sha, d.four_eyes_status
        FROM deployments d
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
-         AND d.detected_github_owner = $2
-         AND d.detected_github_repo_name = $3
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+         AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $2)')}
          AND d.id != $1
          AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})
          AND d.created_at BETWEEN (
@@ -156,7 +209,7 @@ export async function fetchVerificationData(
          )
        ORDER BY d.created_at DESC
        LIMIT 1`,
-      [deploymentId, owner, repo],
+      [deploymentId, githubRepoId],
     )
     if (nearbyAnyResult.rows.length > 0) {
       nearbyApprovedDeploy = {
@@ -219,7 +272,7 @@ export async function fetchVerificationData(
   return {
     deploymentId,
     commitSha,
-    repository,
+    repository: `${owner}/${repo}`,
     environmentName,
     baseBranch,
     repositoryStatus,

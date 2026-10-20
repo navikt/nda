@@ -35,6 +35,8 @@ function makeDeployment(deploymentId: number, githubPrNumber: number | null): Re
   return {
     deployment_id: deploymentId,
     nais_deployment_id: `deploy-${deploymentId}`,
+    deployment_source: 'nais_deployment',
+    deployment_source_id: `deploy-${deploymentId}`,
     deployed_at: new Date('2026-10-14T10:00:00Z'),
     team_slug: 'team-fjord',
     app_name: 'glad-fjord',

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 vi.mock('~/db/github-data.server', () => ({
   getDerivedCompareDataFromRawSnapshot: vi.fn(),
   getLatestCompareSnapshot: vi.fn(),
+  getLatestCommitAssociatedPrsRawSnapshot: vi.fn(),
   saveCommitSnapshot: vi.fn(),
   saveCompareRawSnapshot: vi.fn(),
   saveCompareSnapshot: vi.fn(),

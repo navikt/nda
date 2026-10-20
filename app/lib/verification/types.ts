@@ -519,6 +519,8 @@ interface VerificationComparisonRange {
 
 export interface StoredVerificationResult extends VerificationResult {
   comparisonRange: VerificationComparisonRange | null
+  comparisonCommitHeadSha: string
+  comparisonCommitShas: string[]
 }
 
 export interface VerificationResult {

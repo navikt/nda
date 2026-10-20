@@ -5,6 +5,7 @@ const {
   createRepositoryAlert,
   createDeployment,
   fetchApplicationDeployments,
+  fetchApplicationUpdatedActivityPage,
   fetchNewDeployments,
   findRepositoryForApp,
   getCurrentJobId,
@@ -12,9 +13,14 @@ const {
   getLatestDeploymentForApp,
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
+  getNaisApplyActivitySyncState,
   getRepositoriesByAppId,
   logger,
   markInitialNaisHistorySynced,
+  markNaisApplyActivitySyncFailure,
+  markNaisApplyActivitySyncComplete,
+  materializeNaisApplyDeployments,
+  saveNaisApplyActivityEvents,
   syncDefaultBranchForApp,
   updateMonitoredApplication,
   upsertApplicationRepository,
@@ -22,6 +28,7 @@ const {
   createRepositoryAlert: vi.fn(),
   createDeployment: vi.fn(),
   fetchApplicationDeployments: vi.fn(),
+  fetchApplicationUpdatedActivityPage: vi.fn(),
   fetchNewDeployments: vi.fn(),
   findRepositoryForApp: vi.fn(),
   getCurrentJobId: vi.fn(),
@@ -29,9 +36,14 @@ const {
   getLatestDeploymentForApp: vi.fn(),
   getMonitoredApplicationById: vi.fn(),
   getMonitoredApplicationByIdentity: vi.fn(),
+  getNaisApplyActivitySyncState: vi.fn(),
   getRepositoriesByAppId: vi.fn(),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   markInitialNaisHistorySynced: vi.fn(),
+  markNaisApplyActivitySyncFailure: vi.fn(),
+  markNaisApplyActivitySyncComplete: vi.fn(),
+  materializeNaisApplyDeployments: vi.fn(),
+  saveNaisApplyActivityEvents: vi.fn(),
   syncDefaultBranchForApp: vi.fn(),
   updateMonitoredApplication: vi.fn(),
   upsertApplicationRepository: vi.fn(),
@@ -48,6 +60,13 @@ vi.mock('~/db/deployments.server', () => ({
   getDeploymentByNaisId,
   getLatestDeploymentForApp,
 }))
+vi.mock('~/db/nais-apply-activity.server', () => ({
+  getNaisApplyActivitySyncState,
+  markNaisApplyActivitySyncFailure,
+  markNaisApplyActivitySyncComplete,
+  saveNaisApplyActivityEvents,
+}))
+vi.mock('../nais-apply-materialize.server', () => ({ materializeNaisApplyDeployments }))
 vi.mock('~/db/monitored-applications.server', () => ({
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
@@ -57,12 +76,12 @@ vi.mock('~/db/monitored-applications.server', () => ({
 vi.mock('~/lib/logger.server', () => ({ getCurrentJobId, logger }))
 vi.mock('~/lib/nais.server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('~/lib/nais.server')>()
-  return { ...actual, fetchApplicationDeployments, fetchNewDeployments }
+  return { ...actual, fetchApplicationDeployments, fetchApplicationUpdatedActivityPage, fetchNewDeployments }
 })
 vi.mock('../default-branch-sync.server', () => ({ syncDefaultBranchForApp }))
 
 import { NaisDeploymentEnumerationError } from '~/lib/nais.server'
-import { syncNewDeploymentsFromNais } from '../nais-sync.server'
+import { syncNaisApplyActivityFromNais, syncNewDeploymentsFromNais } from '../nais-sync.server'
 
 const monitoredApp: MonitoredApplication = {
   id: 7,
@@ -84,6 +103,7 @@ const monitoredApp: MonitoredApplication = {
   slack_deploy_channel_id: null,
   slack_deploy_notify_enabled: false,
   slack_deploy_notify_enabled_at: null,
+  nais_apply_enabled: false,
   not_found_in_nais_at: null,
   initial_nais_history_synced_at: null,
   created_at: new Date('2026-01-01T00:00:00Z'),
@@ -96,6 +116,15 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
     vi.mocked(getLatestDeploymentForApp).mockResolvedValue(null)
     vi.mocked(getMonitoredApplicationById).mockResolvedValue(monitoredApp)
     vi.mocked(getMonitoredApplicationByIdentity).mockResolvedValue(monitoredApp)
+    vi.mocked(getNaisApplyActivitySyncState).mockResolvedValue(null)
+    vi.mocked(fetchApplicationUpdatedActivityPage).mockResolvedValue({
+      nodes: [],
+      pageInfo: { hasNextPage: false, endCursor: null },
+    })
+    vi.mocked(saveNaisApplyActivityEvents).mockResolvedValue(0)
+    vi.mocked(markNaisApplyActivitySyncComplete).mockResolvedValue(undefined)
+    vi.mocked(markNaisApplyActivitySyncFailure).mockResolvedValue(undefined)
+    vi.mocked(materializeNaisApplyDeployments).mockResolvedValue(0)
     vi.mocked(createDeployment).mockResolvedValue(undefined as never)
     vi.mocked(getRepositoriesByAppId).mockResolvedValue([])
     vi.mocked(getCurrentJobId).mockReturnValue(42)
@@ -376,5 +405,148 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
 
     expect(result.alertsCreated).toBe(alertsCreated)
     expect(createRepositoryAlert).toHaveBeenCalledOnce()
+  })
+})
+
+describe('syncNaisApplyActivityFromNais', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getMonitoredApplicationById).mockResolvedValue({ ...monitoredApp, nais_apply_enabled: true })
+    vi.mocked(getNaisApplyActivitySyncState).mockResolvedValue(null)
+    vi.mocked(saveNaisApplyActivityEvents).mockResolvedValue(1)
+    vi.mocked(markNaisApplyActivitySyncComplete).mockResolvedValue(undefined)
+    vi.mocked(markNaisApplyActivitySyncFailure).mockResolvedValue(undefined)
+  })
+
+  it('fetches all available history page by page on the initial sync', async () => {
+    const firstActivity = {
+      id: 'activity-1',
+      createdAt: '2026-10-13T10:00:00Z',
+      actor: 'github-repo:navikt/app-a',
+      message: 'Application app-a updated',
+      resourceName: 'app-a',
+      teamSlug: 'team-a',
+      environmentName: 'prod-gcp',
+      gitHubActorClaims: null,
+      changedFields: [{ field: 'spec.image', oldValue: 'old', newValue: 'new' }],
+    }
+    const secondActivity = {
+      ...firstActivity,
+      id: 'activity-2',
+      createdAt: '2026-10-13T11:00:00Z',
+    }
+    vi.mocked(fetchApplicationUpdatedActivityPage)
+      .mockResolvedValueOnce({
+        nodes: [firstActivity],
+        pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
+      })
+      .mockResolvedValueOnce({
+        nodes: [secondActivity],
+        pageInfo: { hasNextPage: false, endCursor: 'cursor-2' },
+      })
+    vi.mocked(saveNaisApplyActivityEvents).mockResolvedValueOnce(1).mockResolvedValueOnce(1)
+
+    const insertedCount = await syncNaisApplyActivityFromNais(monitoredApp.id)
+
+    expect(insertedCount).toBe(2)
+    expect(fetchApplicationUpdatedActivityPage).toHaveBeenNthCalledWith(1, 'team-a', 'prod-gcp', 'app-a', null, null)
+    expect(fetchApplicationUpdatedActivityPage).toHaveBeenNthCalledWith(
+      2,
+      'team-a',
+      'prod-gcp',
+      'app-a',
+      'cursor-1',
+      null,
+    )
+    expect(markNaisApplyActivitySyncComplete).toHaveBeenCalledWith(
+      monitoredApp.id,
+      new Date('2026-10-13T11:00:00Z'),
+      true,
+    )
+    expect(materializeNaisApplyDeployments).toHaveBeenCalledWith(monitoredApp.id, { suppressNotifications: true })
+    expect(materializeNaisApplyDeployments.mock.invocationCallOrder[0]).toBeLessThan(
+      markNaisApplyActivitySyncComplete.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('uses an overlap window for incremental polling', async () => {
+    vi.mocked(getNaisApplyActivitySyncState).mockResolvedValue({
+      last_activity_created_at: new Date('2026-10-14T12:00:00Z'),
+      initial_history_synced_at: new Date('2026-10-14T12:00:00Z'),
+      last_synced_at: new Date('2026-10-14T12:00:00Z'),
+      last_attempt_at: new Date('2026-10-14T12:00:00Z'),
+      last_error: null,
+    })
+
+    await syncNaisApplyActivityFromNais(monitoredApp.id)
+
+    expect(fetchApplicationUpdatedActivityPage).toHaveBeenCalledWith(
+      'team-a',
+      'prod-gcp',
+      'app-a',
+      null,
+      '2026-10-07T12:00:00.000Z',
+    )
+    expect(markNaisApplyActivitySyncComplete).toHaveBeenCalledWith(monitoredApp.id, null, false)
+    expect(materializeNaisApplyDeployments).toHaveBeenCalledWith(monitoredApp.id, { suppressNotifications: false })
+  })
+
+  it('records failed activity synchronization without marking it complete', async () => {
+    const error = new Error('Nais activity API unavailable')
+    vi.mocked(fetchApplicationUpdatedActivityPage).mockRejectedValue(error)
+
+    await expect(syncNaisApplyActivityFromNais(monitoredApp.id)).rejects.toBe(error)
+
+    expect(markNaisApplyActivitySyncFailure).toHaveBeenCalledWith(monitoredApp.id, error.message)
+    expect(markNaisApplyActivitySyncComplete).not.toHaveBeenCalled()
+  })
+
+  it('does not query the activity log when opt-in is disabled', async () => {
+    vi.mocked(getMonitoredApplicationById).mockResolvedValue(monitoredApp)
+
+    await expect(syncNaisApplyActivityFromNais(monitoredApp.id)).resolves.toBe(0)
+
+    expect(getNaisApplyActivitySyncState).not.toHaveBeenCalled()
+    expect(fetchApplicationUpdatedActivityPage).not.toHaveBeenCalled()
+    expect(markNaisApplyActivitySyncComplete).not.toHaveBeenCalled()
+  })
+
+  it('does not advance history when the app scope does not match the activity', async () => {
+    vi.mocked(fetchApplicationUpdatedActivityPage).mockResolvedValue({
+      nodes: [
+        {
+          id: 'activity-1',
+          createdAt: '2026-10-13T10:00:00Z',
+          actor: 'manual',
+          message: 'Application app-a updated',
+          resourceName: 'another-app',
+          teamSlug: 'team-a',
+          environmentName: 'prod-gcp',
+          gitHubActorClaims: null,
+          changedFields: [],
+        },
+      ],
+      pageInfo: { hasNextPage: false, endCursor: null },
+    })
+
+    await expect(syncNaisApplyActivityFromNais(monitoredApp.id)).rejects.toThrow(
+      'Unexpected Nais activity resource for monitored application',
+    )
+
+    expect(saveNaisApplyActivityEvents).not.toHaveBeenCalled()
+    expect(markNaisApplyActivitySyncComplete).not.toHaveBeenCalled()
+  })
+
+  it('does not advance history when pagination is incomplete', async () => {
+    vi.mocked(fetchApplicationUpdatedActivityPage).mockResolvedValue({
+      nodes: [],
+      pageInfo: { hasNextPage: true, endCursor: null },
+    })
+
+    await expect(syncNaisApplyActivityFromNais(monitoredApp.id)).rejects.toThrow(
+      'Nais activity page is missing its cursor',
+    )
+
+    expect(markNaisApplyActivitySyncComplete).not.toHaveBeenCalled()
   })
 })

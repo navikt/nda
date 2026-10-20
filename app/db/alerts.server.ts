@@ -22,7 +22,9 @@ interface RepositoryAlertWithContext extends RepositoryAlert {
   team_slug: string
   environment_name: string
   app_name: string
-  deployment_nais_id: string
+  deployment_nais_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   deployment_created_at: Date
   deployer_username: string
   commit_sha: string
@@ -48,8 +50,26 @@ export async function createRepositoryAlert(data: {
     )
   }
 
-  const deployment = depResult.rows[0]
+  return createRepositoryAlertForDeployment({
+    monitoredApplicationId: data.monitoredApplicationId,
+    deploymentId: depResult.rows[0].id,
+    detectedGithubOwner: data.detectedGithubOwner,
+    detectedGithubRepoName: data.detectedGithubRepoName,
+    expectedGithubOwner: data.expectedGithubOwner,
+    expectedGithubRepoName: data.expectedGithubRepoName,
+    alertType: data.alertType,
+  })
+}
 
+export async function createRepositoryAlertForDeployment(data: {
+  monitoredApplicationId: number
+  deploymentId: number
+  detectedGithubOwner: string
+  detectedGithubRepoName: string
+  expectedGithubOwner?: string
+  expectedGithubRepoName?: string
+  alertType: RepositoryAlertType
+}): Promise<boolean> {
   const expectedOwner = data.expectedGithubOwner || data.detectedGithubOwner
   const expectedRepoName = data.expectedGithubRepoName || data.detectedGithubRepoName
 
@@ -90,7 +110,7 @@ export async function createRepositoryAlert(data: {
     RETURNING id`,
     [
       data.monitoredApplicationId,
-      deployment.id,
+      data.deploymentId,
       data.alertType,
       expectedOwner,
       expectedRepoName,
@@ -119,10 +139,13 @@ export async function resolveRepositoryAlert(id: number, resolutionNote: string)
 
 export async function getAlertCountsByApp(): Promise<Map<number, number>> {
   const result = await pool.query(`
-    SELECT monitored_app_id, COUNT(*) as count
-    FROM repository_alerts
-    WHERE resolved_at IS NULL
-    GROUP BY monitored_app_id
+    SELECT ra.monitored_app_id, COUNT(*) as count
+    FROM repository_alerts ra
+    LEFT JOIN deployments d ON d.id = ra.deployment_id
+    JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
+    WHERE ra.resolved_at IS NULL
+      AND (d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+    GROUP BY ra.monitored_app_id
   `)
   const map = new Map<number, number>()
   for (const row of result.rows) {
@@ -139,13 +162,17 @@ export async function getUnresolvedAlertsByApp(monitoredAppId: number): Promise<
       ma.environment_name,
       ma.app_name,
       d.nais_deployment_id as deployment_nais_id,
+      d.deployment_source,
+      d.deployment_source_id,
       d.created_at as deployment_created_at,
       d.deployer_username,
       d.commit_sha
     FROM repository_alerts ra
     JOIN monitored_applications ma ON ra.monitored_app_id = ma.id
     JOIN deployments d ON ra.deployment_id = d.id
-    WHERE ra.resolved_at IS NULL AND ra.monitored_app_id = $1
+    WHERE ra.resolved_at IS NULL
+      AND ra.monitored_app_id = $1
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
     ORDER BY ra.created_at DESC`,
     [monitoredAppId],
   )

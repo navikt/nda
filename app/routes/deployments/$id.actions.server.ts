@@ -118,7 +118,9 @@ export async function action({
             'Kan ikke verifisere: default_branch er ikke satt. Vent på automatisk synkronisering eller sett branchen manuelt i app-admin.',
         }
       }
-      logger.info(`🔍 Manually verifying deployment ${deployment.nais_deployment_id}...`)
+      const deploymentReference =
+        deployment.deployment_source_id ?? deployment.nais_deployment_id ?? String(deployment.id)
+      logger.info(`🔍 Manually verifying deployment ${deploymentReference}...`)
       const result = await runVerification(deployment.id, {
         commitSha: deployment.commit_sha,
         repository: `${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`,

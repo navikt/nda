@@ -11,7 +11,7 @@ import { isDependabotUser } from '~/lib/dependabot'
 import { isApprovedStatus, REVERIFIABLE_STATUSES, REVERIFIABLE_STATUSES_SQL } from '~/lib/four-eyes-status'
 import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
-import type { WorkflowTriggerConfig } from '~/lib/github/git.server'
+import { getRepositoryIdentityById, parseWorkflowRunUrl, type WorkflowTriggerConfig } from '~/lib/github/git.server'
 import { getCurrentJobId, logger } from '~/lib/logger.server'
 import { refreshCommitChecksOnly, runVerification } from '~/lib/verification'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from './goal-keyword-sync.server'
@@ -34,8 +34,12 @@ export const CHECKS_REVERIFY_LIMIT_PER_APP = 50
 interface PendingChecksRow {
   id: number
   commit_sha: string
+  deployment_source: string
+  github_repo_id: string | null
   detected_github_owner: string
   detected_github_repo_name: string
+  claim_github_owner: string
+  claim_github_repo_name: string
   github_pr_number: number | null
   trigger_url: string | null
   workflow_trigger_config: WorkflowTriggerConfig | null
@@ -54,10 +58,22 @@ export async function reverifyPendingChecks(
   const giveUpBefore = new Date(Date.now() - CHECKS_REVERIFY_GIVE_UP_MS)
 
   const { rows } = await pool.query<PendingChecksRow>(
-    `SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name, d.github_pr_number,
+    `SELECT d.id, d.commit_sha,
+            CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_owner ELSE d.detected_github_owner END
+              AS detected_github_owner,
+            CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_repo_name ELSE d.detected_github_repo_name END
+              AS detected_github_repo_name,
+            d.detected_github_owner AS claim_github_owner,
+            d.detected_github_repo_name AS claim_github_repo_name,
+            d.deployment_source, r.github_repo_id,
+            d.github_pr_number,
             d.trigger_url, d.workflow_trigger_config
      FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     LEFT JOIN repositories r ON r.id = d.repository_id
      WHERE d.monitored_app_id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+       AND (d.deployment_source != 'nais_apply' OR (d.repository_id IS NOT NULL AND r.id IS NOT NULL))
        AND d.commit_checks_checked_at IS NULL
        AND d.detected_github_owner IS NOT NULL
        AND d.detected_github_repo_name IS NOT NULL
@@ -71,6 +87,7 @@ export async function reverifyPendingChecks(
 
   let fetched = 0
   let errors = 0
+  const repositoryIdentityCache = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
 
   for (const deployment of rows) {
     const rateLimitRemaining = getGitHubRateLimitRemaining()
@@ -80,14 +97,42 @@ export async function reverifyPendingChecks(
     }
 
     try {
+      let owner = deployment.detected_github_owner
+      let repo = deployment.detected_github_repo_name
+      let triggerUrl = deployment.trigger_url
+      if (deployment.deployment_source === 'nais_apply') {
+        const githubRepoId = deployment.github_repo_id
+        const numericGithubRepoId = Number(githubRepoId)
+        let identityResolution = githubRepoId ? repositoryIdentityCache.get(githubRepoId) : undefined
+        if (!identityResolution && githubRepoId && Number.isSafeInteger(numericGithubRepoId)) {
+          identityResolution = getRepositoryIdentityById(numericGithubRepoId)
+          repositoryIdentityCache.set(githubRepoId, identityResolution)
+        }
+        const identity = identityResolution ? await identityResolution : null
+        if (!identity || String(identity.id) !== githubRepoId) {
+          throw new Error(`Cannot resolve GitHub identity for Nais Apply deployment ${deployment.id}`)
+        }
+        owner = identity.owner
+        repo = identity.name
+        const parsedClaimRun = parseWorkflowRunUrl(
+          triggerUrl,
+          deployment.claim_github_owner,
+          deployment.claim_github_repo_name,
+        )
+        if (parsedClaimRun) {
+          triggerUrl = `https://github.com/${owner}/${repo}/actions/runs/${parsedClaimRun.runId}`
+        }
+      }
       await refreshCommitChecksOnly(
         deployment.id,
-        deployment.detected_github_owner,
-        deployment.detected_github_repo_name,
+        owner,
+        repo,
         deployment.commit_sha,
         deployment.github_pr_number,
-        deployment.trigger_url,
+        triggerUrl,
         deployment.workflow_trigger_config,
+        undefined,
+        deployment.deployment_source === 'nais_apply' ? (deployment.github_repo_id ?? undefined) : undefined,
       )
       fetched++
     } catch (error) {
@@ -155,12 +200,14 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
     }
 
     processedCount++
+    const deploymentReference =
+      deployment.deployment_source_id ?? deployment.nais_deployment_id ?? String(deployment.id)
 
     try {
-      logger.info(`🔍 Verifying deployment ${deployment.nais_deployment_id}...`)
+      logger.info(`🔍 Verifying deployment ${deploymentReference}...`)
 
       if (!deployment.commit_sha) {
-        logger.info(`⏭️  Skipping deployment without commit SHA: ${deployment.nais_deployment_id}`)
+        logger.info(`⏭️  Skipping deployment without commit SHA: ${deploymentReference}`)
         skipped++
         continue
       }
@@ -191,7 +238,7 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
         await isAppBlockedByRunningJob(deployment.monitored_app_id, VERIFICATION_DIFF_CONFLICT_GROUP, getCurrentJobId())
       ) {
         logger.info(
-          `⏳ Skipping deployment ${deployment.nais_deployment_id} — a reverify or refresh job is currently running for its app or repository`,
+          `⏳ Skipping deployment ${deploymentReference} — a reverify or refresh job is currently running for its app or repository`,
         )
         skipped++
         continue

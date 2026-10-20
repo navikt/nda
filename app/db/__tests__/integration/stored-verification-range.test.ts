@@ -78,7 +78,12 @@ it('persists the input interval as JSONB while leaving earlier results unchanged
     previousDeployment: { id: 1, commitSha: baseSha, createdAt: '2026-01-01T00:00:00Z' },
   })
   const { rows: stored } = await pool.query('SELECT result FROM verification_runs WHERE id = $1', [verificationRunId])
-  expect(stored[0].result).toEqual({ ...before[0].result, comparisonRange: { baseSha, headSha } })
+  expect(stored[0].result).toEqual({
+    ...before[0].result,
+    comparisonRange: { baseSha, headSha },
+    comparisonCommitHeadSha: headSha,
+    comparisonCommitShas: [],
+  })
   const { rows: after } = await pool.query('SELECT result FROM verification_runs WHERE id = $1', [legacyRunId])
   expect(after).toEqual(before)
   expect(after[0].result).not.toHaveProperty('comparisonRange')
@@ -90,4 +95,6 @@ it('persists the input interval as JSONB while leaving earlier results unchanged
   })
   const { rows: missing } = await pool.query('SELECT result FROM verification_runs WHERE id = $1', [missingRunId])
   expect(missing[0].result.comparisonRange).toBeNull()
+  expect(missing[0].result.comparisonCommitHeadSha).toBe(headSha)
+  expect(missing[0].result.comparisonCommitShas).toEqual([])
 })
