@@ -177,6 +177,38 @@ describe('computeVerificationDiffs double-check logic', () => {
     })
   })
 
+  it.each(['historical', 'pending_approval', 'unknown'] as const)(
+    'detects an authorization downgrade for a cached %s Apply repository',
+    async (status) => {
+      mockGetDeployments.mockResolvedValue([makeDeploymentRow({ repository_id: 7, deployment_source: 'nais_apply' })])
+      mockFindRepositoryForApp.mockResolvedValue({
+        repository: { github_repo_id: '123', status: status === 'unknown' ? undefined : status },
+        effectiveOwner: 'navikt',
+        effectiveRepo: 'test-repo',
+      })
+      mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())
+      mockGetPreviousDeployment.mockResolvedValue(null)
+      mockGetPrDataForDiff.mockResolvedValue(makePrSnapshotMap())
+      mockBuildCommitsBetween.mockResolvedValue([])
+      mockVerifyDeployment.mockImplementation((input) => ({
+        status: input.repositoryStatus === 'active' ? 'approved' : 'unauthorized_repository',
+        approvalDetails: { reason: 'repository status' },
+      }))
+      mockFetchVerificationData.mockResolvedValue({ ...makeVerificationInput(), repositoryStatus: status })
+
+      const result = await computeVerificationDiffs(1)
+
+      expect(mockVerifyDeployment).toHaveBeenNthCalledWith(1, expect.objectContaining({ repositoryStatus: status }))
+      expect(mockFetchVerificationData).toHaveBeenCalledWith(1, 'abc123', 'navikt/test-repo', 'prod-gcp', 'main', 1, {
+        forceRefresh: true,
+        includeComments: false,
+        includeReviews: false,
+      })
+      expect(result.diffsFound).toBe(1)
+      mockVerifyDeployment.mockReset()
+    },
+  )
+
   it('triggers forceRefresh when cache-only produces different status than stored', async () => {
     mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved' })])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())

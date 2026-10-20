@@ -26,7 +26,7 @@ import {
   findPrForCommit,
   getPrDataForDiff,
 } from './fetch-data.server'
-import type { CompareData, VerificationInput } from './types'
+import type { CompareData, RepositoryStatus, VerificationInput } from './types'
 import { verifyDeployment } from './verify'
 
 interface ComputeDiffsOptions {
@@ -85,7 +85,7 @@ export async function computeVerificationDiffs(
     string,
     {
       githubRepoId: string | null
-      status: string | null
+      status: RepositoryStatus
       repositoryId: number | null
       effectiveOwner: string
       effectiveRepo: string
@@ -97,7 +97,7 @@ export async function computeVerificationDiffs(
     deploymentRepositoryId: number | null,
   ): Promise<{
     githubRepoId: string | null
-    status: string | null
+    status: RepositoryStatus
     repositoryId: number | null
     effectiveOwner: string
     effectiveRepo: string
@@ -107,9 +107,10 @@ export async function computeVerificationDiffs(
     if (cached) return cached
     const repoCheck = await findRepositoryForApp(monitoredAppId, owner, repo, deploymentRepositoryId ?? undefined)
     const githubRepoId = repoCheck.repository?.github_repo_id ?? null
+    const status: RepositoryStatus = repoCheck.repository?.status ?? 'unknown'
     const info = {
       githubRepoId,
-      status: repoCheck.repository?.status ?? null,
+      status,
       repositoryId: githubRepoId ? await getRepositoryIdByGithubRepoId(githubRepoId) : null,
       effectiveOwner: repoCheck.effectiveOwner,
       effectiveRepo: repoCheck.effectiveRepo,
@@ -266,7 +267,7 @@ export async function computeVerificationDiffs(
             repository: `${owner}/${repo}`,
             environmentName: row.environment_name,
             baseBranch,
-            repositoryStatus: 'active',
+            repositoryStatus: status,
             commitOnBaseBranch: true,
             auditStartYear: row.audit_start_year,
             implicitApprovalSettings: repositoryImplicitApprovalSettings ?? { mode: 'off' },

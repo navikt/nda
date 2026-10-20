@@ -109,6 +109,8 @@ Nais Apply-aktiviteter uten `environmentName` lagres rått, men materialiseres i
 
 Den første komplette Apply-historikksynken undertrykker Slack-varsler for materialiserte Apply-leveranser. Nye hendelser fra senere pollinger følger eksisterende Slack-varslingsinnstillinger.
 
+Apply-logghenting bruker deploymentets repository-ID til å finne gjeldende GitHub-navn. Uavklart identitet blir ikke markert som ferdig cachet. Søskenpropagering avgrenses til kildedeploymentets repository, og cachet reverifisering og diff-forhåndsvurdering bruker faktisk repositorystatus, også for historiske koblinger.
+
 Etter førstegangsinnhentingen materialiseres bare nye aktiviteter og aktiviteter med uavklart GitHub-SHA eller repositorytilknytning som er klare for nytt forsøk etter fem minutter. Ferdigbehandlet historikk materialiseres ikke på nytt ved hver polling. Eldre medlemmer av berørte bildegrupper hentes inn slik at forsinkede hendelser fortsatt kan korrigere gruppens første tidspunkt. Behandlingsstatus lagres først etter at materialisering og tilhørende varsler er fullført, slik at avbrutte forsøk kan gjenopptas.
 
 ---
