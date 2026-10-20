@@ -41,7 +41,9 @@ export interface RepositoryHistoryReadiness {
 
 export interface RepositoryCodeDeliveryExportRow {
   deployment_id: number
-  nais_deployment_id: string
+  nais_deployment_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   deployed_at: Date
   team_slug: string
   app_name: string
@@ -291,7 +293,8 @@ export async function listRepositoryCodeDeliveryExportRows(
   deploymentIds?: number[],
 ): Promise<RepositoryCodeDeliveryExportRow[]> {
   const { rows } = await executor.query<RepositoryCodeDeliveryExportRow>(
-    `SELECT d.id AS deployment_id, d.nais_deployment_id, d.created_at AS deployed_at,
+    `SELECT d.id AS deployment_id, d.nais_deployment_id, d.deployment_source, d.deployment_source_id,
+            d.created_at AS deployed_at,
             d.team_slug, d.app_name, d.environment_name, d.commit_sha AS deployed_sha, d.branch_name, d.trigger_url,
             d.github_pr_number,
             c.id AS delivery_id, c.base_sha AS delivery_base_sha, c.head_sha AS delivery_head_sha,
@@ -300,15 +303,20 @@ export async function listRepositoryCodeDeliveryExportRows(
             u.updated_at AS unresolved_last_attempt_at, u.resolved_at AS unresolved_resolved_at,
             r.code_delivery_tracking_since AS tracking_since, r.default_branch
      FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      JOIN repositories r ON r.id = d.repository_id
      LEFT JOIN repository_code_deliveries c ON c.id = d.repository_code_delivery_id
      LEFT JOIN LATERAL (
        SELECT min(linked.created_at) AS first_deployed_at
        FROM deployments linked
+       JOIN monitored_applications linked_app ON linked_app.id = linked.monitored_app_id
        WHERE linked.repository_code_delivery_id = c.id
+         AND (linked.deployment_source != 'nais_apply' OR linked_app.nais_apply_enabled = true)
      ) delivery_first ON true
      LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
-     WHERE d.repository_id = $1 AND ($2::int[] IS NULL OR d.id = ANY($2::int[]))
+     WHERE d.repository_id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+       AND ($2::int[] IS NULL OR d.id = ANY($2::int[]))
      ORDER BY d.created_at ASC, d.id ASC`,
     [repositoryId, deploymentIds ?? null],
   )
@@ -342,6 +350,7 @@ export async function listRepositoryCodeDeliveryAncestryEvidence(
             s.fetched_at BETWEEN u.created_at AND u.updated_at AS fetched_between_observations
      FROM repository_code_delivery_unresolved u
      JOIN deployments d ON d.id = u.deployment_id
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      JOIN repositories r ON r.id = d.repository_id
      JOIN repository_code_deliveries c ON c.repository_id = r.id
      JOIN github_compare_raw_snapshots s
@@ -350,7 +359,9 @@ export async function listRepositoryCodeDeliveryAncestryEvidence(
         (lower(s.base_sha) = lower(c.head_sha) AND lower(s.head_sha) = lower(d.commit_sha))
         OR (lower(s.base_sha) = lower(d.commit_sha) AND lower(s.head_sha) = lower(c.head_sha))
       )
-     WHERE r.id = $1 AND u.reason IN ('ancestry_unknown', 'ancestry_diverged', 'ancestry_behind')
+     WHERE r.id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+       AND u.reason IN ('ancestry_unknown', 'ancestry_diverged', 'ancestry_behind')
        AND ($2::int[] IS NULL OR d.id = ANY($2::int[]))
        AND ($3::int[] IS NULL OR c.id = ANY($3::int[]))
        AND (
@@ -463,20 +474,35 @@ async function listNearbyCodeDeliveries(
     `WITH targets AS (
        SELECT d.id AS unresolved_deployment_id, d.created_at AS unresolved_deployed_at
        FROM deployments d
-       JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
-       WHERE d.repository_id = $1 AND u.resolved_at IS NULL
+      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+      JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
+      WHERE d.repository_id = $1
+        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+        AND u.resolved_at IS NULL
          AND ($2::int IS NULL OR d.id = $2)
      ),
      delivery_timeline AS (
        SELECT c.id, c.base_sha, c.head_sha, c.created_at AS registered_at,
               first_deployment.first_deployment_id, first_deployment.first_deployed_at,
-              count(d.id)::int AS deployment_count
+              count(d.id) FILTER (
+                WHERE d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true
+              )::int AS deployment_count
        FROM repository_code_deliveries c
        LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id
+         AND (
+           d.deployment_source != 'nais_apply'
+           OR EXISTS (
+             SELECT 1 FROM monitored_applications ma
+             WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
+           )
+         )
+       LEFT JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        LEFT JOIN LATERAL (
          SELECT deployment.id AS first_deployment_id, deployment.created_at AS first_deployed_at
          FROM deployments deployment
+         JOIN monitored_applications deployment_app ON deployment_app.id = deployment.monitored_app_id
          WHERE deployment.repository_code_delivery_id = c.id
+           AND (deployment.deployment_source != 'nais_apply' OR deployment_app.nais_apply_enabled = true)
          ORDER BY deployment.created_at, deployment.id
          LIMIT 1
        ) first_deployment ON true
@@ -558,12 +584,14 @@ async function listWorkflowRunSnapshots(
        SELECT d.id, parsed.run_parts
        FROM deployments d
        JOIN repositories r ON r.id = d.repository_id
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        CROSS JOIN LATERAL regexp_match(
          d.trigger_url,
          '^https://github[.]com/([^/?#]+)/([^/?#]+)/actions/runs/([0-9]+)(?:[/?#].*)?$',
          'i'
        ) AS parsed(run_parts)
        WHERE d.repository_id = $1 AND d.id = ANY($2::int[])
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND (
            (
              lower(parsed.run_parts[1]) = lower(r.github_owner)
@@ -675,11 +703,13 @@ async function getRepositoryCodeDeliveryExportDataForTarget(
       id: number
       repository_code_delivery_id: number | null
     }>(
-      `SELECT id, repository_code_delivery_id
+      `SELECT deployments.id, deployments.repository_code_delivery_id
        FROM deployments
-       WHERE repository_id = $1
-         AND (id = ANY($2::int[]) OR repository_code_delivery_id = ANY($3::int[]))
-       ORDER BY created_at, id`,
+       JOIN monitored_applications ma ON ma.id = deployments.monitored_app_id
+       WHERE deployments.repository_id = $1
+         AND (deployments.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+         AND (deployments.id = ANY($2::int[]) OR deployments.repository_code_delivery_id = ANY($3::int[]))
+       ORDER BY deployments.created_at, deployments.id`,
       [repositoryId, unresolvedDeploymentIds, includedDeliveryIds],
     )
     const includedDeploymentIds = includedDeploymentRows.map((row) => row.id)
@@ -804,7 +834,9 @@ async function getRepositoryHistoryReadinessFromClient(
               )::int AS repository_deployments_missing_sha
        FROM repository_apps ra
        JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
-       LEFT JOIN deployments d ON d.monitored_app_id = ma.id
+       LEFT JOIN deployments d
+         ON d.monitored_app_id = ma.id
+        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        GROUP BY ma.id
        ORDER BY ma.is_active DESC, ma.environment_name, ma.team_slug, ma.app_name`,
     [repositoryId],
@@ -829,7 +861,9 @@ async function getRepositoryHistoryReadinessFromClient(
               )::int AS deployments_without_known_app_link
        FROM deployments d
        JOIN repositories r ON r.id = d.repository_id
-       WHERE r.id = $1`,
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+       WHERE r.id = $1
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
     [repositoryId],
   )
 
@@ -865,16 +899,22 @@ export async function getRepositoryCodeDeliveryOverview(
       [repositoryId],
     ),
     client.query<{ count: number }>(
-      `SELECT count(*)::int AS count FROM deployments
-       WHERE repository_id = $1 AND repository_code_delivery_id IS NOT NULL`,
+      `SELECT count(*)::int AS count
+       FROM deployments d
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+       WHERE d.repository_id = $1
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+         AND d.repository_code_delivery_id IS NOT NULL`,
       [repositoryId],
     ),
     client.query<{ count: number }>(
       `SELECT count(*)::int AS count
        FROM deployments d
        JOIN repositories r ON r.id = d.repository_id
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
        WHERE d.repository_id = $1
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND r.code_delivery_tracking = true
          AND r.code_delivery_tracking_since IS NOT NULL
          AND d.created_at >= r.code_delivery_tracking_since
@@ -887,7 +927,10 @@ export async function getRepositoryCodeDeliveryOverview(
       `SELECT u.reason, count(*)::int AS count
        FROM repository_code_delivery_unresolved u
        JOIN deployments d ON d.id = u.deployment_id
-       WHERE d.repository_id = $1 AND u.resolved_at IS NULL
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+       WHERE d.repository_id = $1
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+         AND u.resolved_at IS NULL
        GROUP BY u.reason`,
       [repositoryId],
     ),
@@ -934,6 +977,13 @@ export async function listRepositoryCodeDeliveries(
             COALESCE(array_agg(DISTINCT d.app_name ORDER BY d.app_name) FILTER (WHERE d.id IS NOT NULL), '{}') AS app_names
      FROM repository_code_deliveries c
      LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id
+       AND (
+         d.deployment_source != 'nais_apply'
+         OR EXISTS (
+           SELECT 1 FROM monitored_applications ma
+           WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
+         )
+       )
      WHERE c.repository_id = $1
      GROUP BY c.id
      ORDER BY ${orderBy}
@@ -998,8 +1048,10 @@ export async function getRepositoryCodeDeliveryEvidence(
     const { rows: countRows } = await client.query<{ count: number }>(
       `SELECT count(*)::int AS count
        FROM deployments d
-       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
-       WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2`,
+      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+      LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
+      WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
+        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
       [repositoryId, deliveryId],
     )
     const totalEvidenceEntries = countRows[0].count
@@ -1024,8 +1076,10 @@ export async function getRepositoryCodeDeliveryEvidence(
               vr.id AS verification_run_id, vr.run_at, vr.schema_version, vr.status,
               vr.result->'comparisonRange' AS comparison_range, vr.pr_snapshot_ids
        FROM deployments d
-       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
-       WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
+      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+      LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
+      WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
+        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        ORDER BY d.created_at, d.id, vr.run_at, vr.id
        LIMIT $3 OFFSET $4`,
       [

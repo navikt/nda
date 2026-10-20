@@ -93,6 +93,7 @@ export async function seedDeployment(
     monitoredAppId: number
     teamSlug: string
     environment: string
+    naisDeploymentId?: string
     commitSha?: string | null
     createdAt?: Date
     title?: string
@@ -105,7 +106,7 @@ export async function seedDeployment(
     workflowTriggerConfig?: Record<string, unknown> | null
   },
 ): Promise<number> {
-  const naisId = `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const naisId = opts.naisDeploymentId ?? `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO deployments (
       monitored_app_id, nais_deployment_id, team_slug, app_name, environment_name,

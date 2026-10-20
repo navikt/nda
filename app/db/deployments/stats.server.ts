@@ -85,7 +85,8 @@ export async function getPendingVerificationCount(monitoredAppId: number): Promi
       COUNT(*) as total
     FROM deployments d
     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-    WHERE d.monitored_app_id = $1`,
+    WHERE d.monitored_app_id = $1
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
     [monitoredAppId, statusesToVerify],
   )
 
@@ -145,14 +146,30 @@ export async function getAppDeploymentStatsBatch(
       COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM deployment_goal_links dgl WHERE dgl.deployment_id = deployments.id AND dgl.is_active = true AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL))${deployerFilterClause}) as missing_goal_links,
       MAX(created_at) as last_deployment
     FROM deployments
-    WHERE monitored_app_id = ANY($1) ${auditYearFilter} ${dateFilter}
+    WHERE monitored_app_id = ANY($1)
+      AND (
+        deployments.deployment_source != 'nais_apply'
+        OR EXISTS (
+          SELECT 1 FROM monitored_applications ma
+          WHERE ma.id = deployments.monitored_app_id AND ma.nais_apply_enabled = true
+        )
+      )
+      ${auditYearFilter} ${dateFilter}
     GROUP BY monitored_app_id`,
       baseParams,
     ),
     pool.query(
       `SELECT monitored_app_id, COUNT(*) AS baseline_action_count
      FROM deployments
-     WHERE monitored_app_id = ANY($1) ${auditYearFilter}
+     WHERE monitored_app_id = ANY($1)
+       AND (
+         deployments.deployment_source != 'nais_apply'
+         OR EXISTS (
+           SELECT 1 FROM monitored_applications ma
+           WHERE ma.id = deployments.monitored_app_id AND ma.nais_apply_enabled = true
+         )
+       )
+       ${auditYearFilter}
        AND ${baselineActionSql('deployments')}
      GROUP BY monitored_app_id`,
       [appIds],
@@ -161,6 +178,13 @@ export async function getAppDeploymentStatsBatch(
       `SELECT DISTINCT ON (monitored_app_id) monitored_app_id, id
      FROM deployments
      WHERE monitored_app_id = ANY($1)
+       AND (
+         deployments.deployment_source != 'nais_apply'
+         OR EXISTS (
+           SELECT 1 FROM monitored_applications ma
+           WHERE ma.id = deployments.monitored_app_id AND ma.nais_apply_enabled = true
+         )
+       )
      ORDER BY monitored_app_id, created_at DESC`,
       [appIds],
     ),

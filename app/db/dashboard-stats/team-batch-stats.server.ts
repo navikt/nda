@@ -167,6 +167,8 @@ export async function getDevTeamStatsBatch(
               COUNT(DISTINCT td.deployment_id) FILTER (WHERE md.deployment_id IS NULL)::int AS non_member_deployments
        FROM team_deployments td
        JOIN deployments d ON d.id = td.deployment_id
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        LEFT JOIN linked_goal_deployments lgd ON lgd.deployment_id = td.deployment_id
        LEFT JOIN member_deployed md ON md.dev_team_id = td.dev_team_id AND md.deployment_id = td.deployment_id
        GROUP BY td.dev_team_id

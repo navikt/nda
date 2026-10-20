@@ -2,6 +2,7 @@ import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { UserIdentity } from '~/lib/auth.server'
 import {
+  ensureRepositoryRowForGithubRepo,
   getAffectedAppsForRepositoryId,
   getAllAppsLinkedToRepositoryId,
   getEffectiveAuditStartYear,
@@ -595,6 +596,36 @@ describe('syncRepositoryDefaultBranch', () => {
     ).toBe(false)
   })
 
+  it('does not sync a branch for an older active link', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-sync-old', appName: 'app-sync-old', environment: 'prod-gcp' })
+    const oldLinkId = await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'old-sync',
+      githubRepoId: '4141',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'current-sync',
+      githubRepoId: '4242',
+    })
+    await pool.query(`UPDATE application_repositories SET created_at = now() - interval '1 day' WHERE id = $1`, [
+      oldLinkId,
+    ])
+
+    expect(
+      await syncRepositoryDefaultBranch({
+        monitoredAppId: appId,
+        defaultBranch: 'old-branch',
+        syncedAt: new Date(),
+        expectedGithubRepoId: '4141',
+      }),
+    ).toBe(false)
+    const { rows } = await pool.query(`SELECT id FROM repositories WHERE github_repo_id = '4141'`)
+    expect(rows).toHaveLength(0)
+  })
+
   it('records the previous owner/name in repository_name_history when the repo is renamed', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-rename', appName: 'app-rename', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
@@ -626,6 +657,21 @@ describe('syncRepositoryDefaultBranch', () => {
       ['5050'],
     )
     expect(repoRows[0].github_repo_name).toBe('new-name')
+  })
+})
+
+describe('ensureRepositoryRowForGithubRepo', () => {
+  it('creates canonical repository metadata without requiring an active app link', async () => {
+    const repository = await ensureRepositoryRowForGithubRepo({
+      githubRepoId: '5151',
+      githubOwner: 'navikt',
+      githubRepoName: 'historical-repo',
+    })
+
+    expect(repository.github_repo_id).toBe('5151')
+    expect(repository.github_owner).toBe('navikt')
+    expect(repository.github_repo_name).toBe('historical-repo')
+    expect(repository.default_branch).toBeNull()
   })
 })
 

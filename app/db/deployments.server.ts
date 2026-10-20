@@ -1,4 +1,10 @@
-import { APPROVED_STATUSES_SQL, notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
+import {
+  APPROVED_STATUSES_SQL,
+  notApprovedWhereClause,
+  PENDING_STATUSES_SQL,
+  PROTECTED_STATUSES_SQL,
+  ROOT_APPROVED_STATUSES_SQL,
+} from '~/lib/four-eyes-status'
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
 import { pool } from './connection.server'
@@ -21,7 +27,9 @@ export interface UnverifiedCommit {
 export interface Deployment {
   id: number
   monitored_app_id: number
-  nais_deployment_id: string
+  nais_deployment_id: string | null
+  deployment_source: 'nais_deployment' | 'nais_apply'
+  deployment_source_id: string | null
   created_at: Date
   deployer_username: string | null
   commit_sha: string | null
@@ -268,7 +276,7 @@ export async function getDeploymentAppsForRepository(
 }
 
 export async function getDeploymentsPaginated(filters?: DeploymentFilters): Promise<PaginatedDeployments> {
-  let whereSql = ' WHERE 1=1'
+  let whereSql = " WHERE (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)"
   const params: any[] = []
   let paramIndex = 1
 
@@ -546,7 +554,8 @@ export async function getDeploymentById(id: number): Promise<DeploymentWithApp |
     LEFT JOIN commits c ON c.sha = d.commit_sha
       AND c.repo_owner = d.detected_github_owner
       AND c.repo_name = d.detected_github_repo_name
-    WHERE d.id = $1`,
+    WHERE d.id = $1
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
     [id],
   )
   const row = result.rows[0] || null
@@ -560,10 +569,11 @@ export async function getDeploymentByNaisId(
   naisDeploymentId: string,
   monitoredAppId: number,
 ): Promise<Deployment | null> {
-  const result = await pool.query('SELECT * FROM deployments WHERE nais_deployment_id = $1 AND monitored_app_id = $2', [
-    naisDeploymentId,
-    monitoredAppId,
-  ])
+  const result = await pool.query(
+    `SELECT * FROM deployments
+     WHERE nais_deployment_id = $1 AND monitored_app_id = $2 AND deployment_source = 'nais_deployment'`,
+    [naisDeploymentId, monitoredAppId],
+  )
   return result.rows[0] || null
 }
 
@@ -576,7 +586,8 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
     `INSERT INTO deployments 
       (monitored_app_id, nais_deployment_id, created_at, team_slug, environment_name, app_name,
        deployer_username, commit_sha, trigger_url,
-       detected_github_owner, detected_github_repo_name, resources, four_eyes_status, repository_id)
+       detected_github_owner, detected_github_repo_name, resources, four_eyes_status, repository_id,
+       deployment_source, deployment_source_id)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::varchar, $11::varchar, $12, $13, (
       SELECT r.id
       FROM application_repositories ar
@@ -584,7 +595,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
       WHERE ar.monitored_app_id = $1
         AND ar.github_owner = $10 AND ar.github_repo_name = $11
         AND r.github_owner = $10 AND r.github_repo_name = $11
-    ))
+    ), 'nais_deployment', $2)
     ON CONFLICT DO NOTHING
     RETURNING *`,
     [
@@ -611,7 +622,7 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
     `UPDATE deployments SET
       resources = $3,
       synced_at = CURRENT_TIMESTAMP
-    WHERE nais_deployment_id = $1 AND monitored_app_id = $2
+    WHERE nais_deployment_id = $1 AND monitored_app_id = $2 AND deployment_source = 'nais_deployment'
     RETURNING *`,
     [data.naisDeploymentId, data.monitoredApplicationId, data.resources ? JSON.stringify(data.resources) : null],
   )
@@ -624,13 +635,219 @@ export async function createDeployment(data: CreateDeploymentParams): Promise<De
   return deployment
 }
 
+export interface CreateNaisApplyDeploymentParams {
+  monitoredApplicationId: number
+  sourceId: string
+  createdAt: Date
+  teamSlug: string
+  environmentName: string
+  appName: string
+  title: string
+  suppressNotifications?: boolean
+  deployerUsername: string | null
+  commitSha: string | null
+  triggerUrl: string | null
+  detectedGithubOwner: string | null
+  detectedGithubRepoName: string | null
+  detectedGithubRepositoryId?: string | null
+  resources?: unknown
+}
+
+export async function upsertNaisApplyDeployment(data: CreateNaisApplyDeploymentParams): Promise<Deployment> {
+  const hasRepository = Boolean(data.detectedGithubOwner && data.detectedGithubRepoName)
+  const hasVerifiedRepository = hasRepository && data.detectedGithubRepositoryId != null
+  const initialStatus = hasVerifiedRepository && data.commitSha ? 'pending' : 'unverifiable'
+  const result = await pool.query(
+    `WITH existing AS MATERIALIZED (
+       SELECT id, created_at, four_eyes_status
+       FROM deployments
+       WHERE monitored_app_id = $1
+         AND deployment_source = 'nais_apply'
+         AND deployment_source_id = $2
+       FOR UPDATE
+     ),
+     previous_values AS MATERIALIZED (
+       SELECT id, created_at, four_eyes_status FROM existing
+       UNION ALL
+       SELECT NULL::integer, NULL::timestamptz, NULL::text
+       WHERE NOT EXISTS (SELECT 1 FROM existing)
+     ),
+     verified_repository AS (
+       SELECT r.id
+       FROM application_repositories ar
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+       WHERE ar.monitored_app_id = $1
+         AND ar.github_repo_id = $13::bigint
+         AND ar.status IN ('active', 'historical')
+         AND r.github_repo_id = $13::bigint
+       LIMIT 1
+     ),
+     upserted AS (
+       INSERT INTO deployments (
+         monitored_app_id, nais_deployment_id, deployment_source, deployment_source_id,
+         created_at, team_slug, environment_name, app_name, title, deployer_username, commit_sha,
+         trigger_url, detected_github_owner, detected_github_repo_name, resources, four_eyes_status,
+         slack_notifications_suppressed_at, repository_id
+       )
+       SELECT
+         $1, NULL, 'nais_apply', $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         $11::varchar, $12::varchar, $14,
+         CASE WHEN $15 = 'pending' AND EXISTS (SELECT 1 FROM verified_repository)
+           THEN 'pending' ELSE 'unverifiable' END,
+         CASE WHEN $16 THEN CURRENT_TIMESTAMP END,
+         (SELECT id FROM verified_repository)
+       FROM previous_values
+       WHERE TRUE
+       ON CONFLICT (monitored_app_id, deployment_source, deployment_source_id)
+       DO UPDATE SET
+         created_at = LEAST(deployments.created_at, EXCLUDED.created_at),
+         title = COALESCE(deployments.title, EXCLUDED.title),
+         deployer_username = COALESCE(deployments.deployer_username, EXCLUDED.deployer_username),
+         commit_sha = COALESCE(deployments.commit_sha, EXCLUDED.commit_sha),
+         trigger_url = COALESCE(deployments.trigger_url, EXCLUDED.trigger_url),
+         detected_github_owner = COALESCE(deployments.detected_github_owner, EXCLUDED.detected_github_owner),
+         detected_github_repo_name = COALESCE(deployments.detected_github_repo_name, EXCLUDED.detected_github_repo_name),
+         repository_id = COALESCE(deployments.repository_id, EXCLUDED.repository_id),
+         resources = EXCLUDED.resources,
+         slack_notifications_suppressed_at = COALESCE(
+           deployments.slack_notifications_suppressed_at,
+           EXCLUDED.slack_notifications_suppressed_at
+         ),
+         four_eyes_status = CASE
+           WHEN EXCLUDED.created_at < deployments.created_at
+             AND deployments.four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
+             THEN 'pending'
+           WHEN deployments.four_eyes_status = 'unverifiable'
+             AND EXCLUDED.commit_sha IS NOT NULL
+             AND EXCLUDED.detected_github_owner IS NOT NULL
+             AND EXCLUDED.detected_github_repo_name IS NOT NULL
+             AND EXCLUDED.repository_id IS NOT NULL
+             THEN 'pending'
+           ELSE deployments.four_eyes_status
+         END,
+         synced_at = CURRENT_TIMESTAMP
+       WHERE (
+         deployments.commit_sha IS NULL
+         OR EXCLUDED.commit_sha IS NULL
+         OR deployments.commit_sha = EXCLUDED.commit_sha
+       )
+         AND (
+         EXCLUDED.repository_id IS NULL
+         OR
+         deployments.repository_id IS NULL
+         OR deployments.repository_id = EXCLUDED.repository_id
+       )
+       RETURNING *
+     ),
+     status_history AS (
+       INSERT INTO deployment_status_history
+         (deployment_id, from_status, to_status, change_source, details)
+       SELECT upserted.id, existing.four_eyes_status, 'pending',
+              'nais_apply_timestamp_correction',
+              jsonb_build_object('previousCreatedAt', existing.created_at, 'createdAt', upserted.created_at)
+       FROM previous_values existing
+       JOIN upserted ON upserted.id = existing.id
+       WHERE upserted.created_at < existing.created_at
+         AND existing.four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})
+         AND existing.four_eyes_status != 'pending'
+       RETURNING id
+     ),
+     invalidated_siblings AS (
+       UPDATE deployments d
+       SET four_eyes_status = 'pending'
+       FROM previous_values existing
+       JOIN upserted ON upserted.id = existing.id
+       WHERE upserted.created_at < existing.created_at
+         AND existing.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
+         AND upserted.four_eyes_status = 'pending'
+         AND upserted.repository_id IS NOT NULL
+         AND upserted.commit_sha IS NOT NULL
+         AND d.monitored_app_id != upserted.monitored_app_id
+         AND ${repositoryDeploymentSql('upserted.repository_id')}
+         AND d.commit_sha = upserted.commit_sha
+         AND d.four_eyes_status = 'verified_via_sibling'
+       RETURNING d.id
+     ),
+     sibling_status_history AS (
+       INSERT INTO deployment_status_history
+         (deployment_id, from_status, to_status, change_source, details)
+       SELECT invalidated_siblings.id, 'verified_via_sibling', 'pending',
+              'nais_apply_timestamp_correction',
+              jsonb_build_object(
+                'rootDeploymentId', upserted.id,
+                'previousCreatedAt', existing.created_at,
+                'createdAt', upserted.created_at
+              )
+       FROM invalidated_siblings
+       JOIN upserted ON upserted.four_eyes_status = 'pending'
+       JOIN previous_values existing ON existing.id = upserted.id
+       RETURNING id
+     )
+     SELECT upserted.*
+     FROM upserted
+     CROSS JOIN (SELECT COUNT(*) FROM status_history) AS status_history_result
+     CROSS JOIN (SELECT COUNT(*) FROM sibling_status_history) AS sibling_status_history_result`,
+    [
+      data.monitoredApplicationId,
+      data.sourceId,
+      data.createdAt,
+      data.teamSlug,
+      data.environmentName,
+      data.appName,
+      data.title,
+      data.deployerUsername,
+      data.commitSha,
+      data.triggerUrl,
+      data.detectedGithubOwner,
+      data.detectedGithubRepoName,
+      data.detectedGithubRepositoryId ?? null,
+      data.resources ? JSON.stringify(data.resources) : null,
+      initialStatus,
+      data.suppressNotifications ?? false,
+    ],
+  )
+
+  if (result.rows[0]) return result.rows[0]
+
+  const existing = await pool.query<
+    Deployment & { repository_id: number | null; repository_github_repo_id: string | null }
+  >(
+    `SELECT d.*, r.github_repo_id AS repository_github_repo_id
+     FROM deployments d
+     LEFT JOIN repositories r ON r.id = d.repository_id
+     WHERE d.monitored_app_id = $1 AND d.deployment_source = 'nais_apply' AND d.deployment_source_id = $2`,
+    [data.monitoredApplicationId, data.sourceId],
+  )
+  const deployment = existing.rows[0]
+  if (!deployment) {
+    throw new Error(
+      `Nais Apply source ${data.sourceId} could not be inserted or found for application ${data.monitoredApplicationId}`,
+    )
+  }
+  if (
+    deployment.repository_id !== null &&
+    data.detectedGithubRepositoryId != null &&
+    deployment.repository_github_repo_id !== data.detectedGithubRepositoryId
+  ) {
+    throw new Error(`Nais Apply source ${data.sourceId} is already associated with a different GitHub repository`)
+  }
+  if (deployment.commit_sha !== data.commitSha && deployment.commit_sha !== null && data.commitSha !== null) {
+    throw new Error(
+      `Conflicting commit SHAs for Nais Apply source ${data.sourceId}: ${deployment.commit_sha} and ${data.commitSha}`,
+    )
+  }
+  throw new Error(
+    `Conflicting commit SHAs for Nais Apply source ${data.sourceId}: ${deployment.commit_sha} and ${data.commitSha}`,
+  )
+}
+
 export async function getLatestDeploymentForApp(
   monitoredAppId: number,
 ): Promise<{ nais_deployment_id: string; created_at: string } | null> {
   const result = await pool.query(
     `SELECT nais_deployment_id, created_at 
      FROM deployments 
-     WHERE monitored_app_id = $1 
+     WHERE monitored_app_id = $1 AND deployment_source = 'nais_deployment'
      ORDER BY created_at DESC 
      LIMIT 1`,
     [monitoredAppId],

@@ -1,5 +1,5 @@
 import { Pool } from 'pg'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   getAllMonorepoGroups,
   getMonorepoSiblings,
@@ -465,6 +465,74 @@ describe('propagateVerificationToSiblings', () => {
   const owner = 'navikt'
   const repo = 'monorepo-example'
 
+  beforeEach(async () => {
+    await seedRepository(pool, { githubRepoId: '1001', githubOwner: owner, githubRepoName: repo })
+  })
+
+  it.each(['nais_deployment', 'nais_apply'] as const)(
+    'does not propagate across immutable repositories from a %s source when an Apply claim name has been reused',
+    async (sourceType) => {
+      const sourceApp = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+      const targetApp = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+      for (const appId of [sourceApp, targetApp]) {
+        await seedApplicationRepository(pool, {
+          monitoredAppId: appId,
+          githubOwner: owner,
+          githubRepo: repo,
+          githubRepoId: '1001',
+        })
+      }
+      const otherRepository = await seedRepository(pool, {
+        githubRepoId: '2002',
+        githubOwner: owner,
+        githubRepoName: 'renamed-repository',
+      })
+      const { rows: sourceRepositories } = await pool.query('SELECT id FROM repositories WHERE github_repo_id = 1001')
+      await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [targetApp])
+      const source = await seedDeployment(pool, {
+        monitoredAppId: sourceApp,
+        teamSlug: 'team-a',
+        environment: 'prod-gcp',
+        commitSha: 'a'.repeat(40),
+        fourEyesStatus: 'approved',
+        githubOwner: owner,
+        githubRepo: repo,
+      })
+      const target = await seedDeployment(pool, {
+        monitoredAppId: targetApp,
+        teamSlug: 'team-a',
+        environment: 'prod-fss',
+        commitSha: 'a'.repeat(40),
+        fourEyesStatus: 'pending',
+        githubOwner: owner,
+        githubRepo: repo,
+      })
+      if (sourceType === 'nais_apply') {
+        await pool.query(
+          `UPDATE deployments SET repository_id = $2, nais_deployment_id = NULL,
+         deployment_source = 'nais_apply', deployment_source_id = 'apply:source'
+         WHERE id = $1`,
+          [source, sourceRepositories[0].id],
+        )
+      }
+      await pool.query(
+        `UPDATE deployments SET repository_id = $2, nais_deployment_id = NULL,
+       deployment_source = 'nais_apply', deployment_source_id = 'apply:other-repository'
+       WHERE id = $1`,
+        [target, otherRepository],
+      )
+
+      await expect(propagateVerificationToSiblings(source, 'approved', 'a'.repeat(40), sourceApp)).resolves.toBe(0)
+
+      const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [target])
+      expect(rows[0].four_eyes_status).toBe('pending')
+
+      await pool.query('UPDATE deployments SET repository_id = $2 WHERE id = $1', [target, sourceRepositories[0].id])
+
+      await expect(propagateVerificationToSiblings(source, 'approved', 'a'.repeat(40), sourceApp)).resolves.toBe(1)
+    },
+  )
+
   it('should propagate approved status to sibling deployments as verified_via_sibling (root attribution)', async () => {
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
@@ -555,6 +623,124 @@ describe('propagateVerificationToSiblings', () => {
 
     const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [earlierPendingSibling])
     expect(rows[0].four_eyes_status).toBe('pending')
+  })
+
+  it('should NOT propagate to an earlier historical sibling inserted after the source', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app1,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+    const app2 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app2,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+
+    const commitSha = 'abc123def456historical'
+    const source = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha,
+      createdAt: new Date('2026-01-20T00:00:00Z'),
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    const historicalSibling = await seedDeployment(pool, {
+      monitoredAppId: app2,
+      teamSlug: 'team-a',
+      environment: 'prod-fss',
+      commitSha,
+      createdAt: new Date('2026-01-10T00:00:00Z'),
+      fourEyesStatus: 'pending',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    expect(historicalSibling).toBeGreaterThan(source)
+    await expect(propagateVerificationToSiblings(source, 'approved', commitSha, app1)).resolves.toBe(0)
+
+    const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [historicalSibling])
+    expect(rows[0].four_eyes_status).toBe('pending')
+  })
+
+  it('should skip opted-out Apply siblings while still propagating to legacy siblings', async () => {
+    const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: app1,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+    const optedOutApp = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: optedOutApp,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = false WHERE id = $1', [optedOutApp])
+    const legacyApp = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-eu' })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: legacyApp,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '1001',
+    })
+
+    const commitSha = 'abc123def456optout'
+    const source = await seedDeployment(pool, {
+      monitoredAppId: app1,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha,
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    const optedOutApplySibling = await seedDeployment(pool, {
+      monitoredAppId: optedOutApp,
+      teamSlug: 'team-a',
+      environment: 'prod-fss',
+      commitSha,
+      fourEyesStatus: 'pending',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query(
+      `UPDATE deployments
+       SET nais_deployment_id = NULL,
+           deployment_source = 'nais_apply',
+           deployment_source_id = $2
+       WHERE id = $1`,
+      [optedOutApplySibling, 'nais-apply:opted-out-sibling'],
+    )
+    const legacySibling = await seedDeployment(pool, {
+      monitoredAppId: legacyApp,
+      teamSlug: 'team-a',
+      environment: 'prod-eu',
+      commitSha,
+      fourEyesStatus: 'pending',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+
+    await expect(propagateVerificationToSiblings(source, 'approved', commitSha, app1)).resolves.toBe(1)
+
+    const { rows } = await pool.query(
+      `SELECT id, four_eyes_status FROM deployments WHERE id = ANY($1::int[]) ORDER BY id`,
+      [[optedOutApplySibling, legacySibling]],
+    )
+    expect(rows).toEqual([
+      { id: optedOutApplySibling, four_eyes_status: 'pending' },
+      { id: legacySibling, four_eyes_status: 'verified_via_sibling' },
+    ])
   })
 
   it('should NOT propagate negative statuses', async () => {

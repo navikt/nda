@@ -15,9 +15,13 @@ vi.mock('~/lib/github/git.server', () => ({
 import { getRepositoryId } from '~/lib/github/git.server'
 import {
   approveRepository,
+  findRepositoryForApp,
   getAppIdsSharingRepo,
   getMonitoredAppIdsForRepository,
+  isNaisApplyRepositoryRejected,
+  rejectRepository,
   upsertApplicationRepository,
+  upsertNaisApplyRepository,
 } from '../../application-repositories.server'
 import { lockRepositoryForVerificationJob, VERIFICATION_JOB_LOCK_NAMESPACE } from '../../connection.server'
 
@@ -34,6 +38,112 @@ afterEach(async () => {
 })
 
 describe('application-repositories', () => {
+  it('finds the approved repository link by immutable repository identity after a rename', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const githubRepoId = '987654321'
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId,
+      githubOwner: 'navikt',
+      githubRepoName: 'current-name',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'current-name',
+      githubRepoId,
+    })
+
+    const result = await findRepositoryForApp(appId, 'navikt', 'old-name', repositoryId)
+
+    expect(result.repository).toMatchObject({
+      github_owner: 'navikt',
+      github_repo_name: 'current-name',
+      github_repo_id: githubRepoId,
+      status: 'active',
+    })
+    expect(result).toMatchObject({
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'current-name',
+      isRedirected: false,
+    })
+  })
+
+  it('uses canonical names for immutable-ID lookups despite stale redirects', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '987654322',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-name',
+    })
+    await seedRepository(pool, {
+      githubRepoId: '987654323',
+      githubOwner: 'navikt',
+      githubRepoName: 'reused-redirect-name',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'current-name',
+      githubRepoId: '987654322',
+    })
+    await pool.query(
+      `UPDATE application_repositories
+       SET redirects_to_owner = 'navikt', redirects_to_repo = 'reused-redirect-name'
+       WHERE monitored_app_id = $1 AND github_repo_id = '987654322'`,
+      [appId],
+    )
+
+    const byId = await findRepositoryForApp(appId, 'navikt', 'old-name', repositoryId)
+    expect(byId).toMatchObject({
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'current-name',
+      isRedirected: false,
+    })
+
+    const byName = await findRepositoryForApp(appId, 'navikt', 'current-name')
+    expect(byName).toMatchObject({
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'reused-redirect-name',
+      isRedirected: true,
+    })
+  })
+
+  it('prefers an approved immutable-ID match over a reused repository name', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    await seedRepository(pool, {
+      githubRepoId: '111',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-name',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'reused-name',
+      githubRepoId: '222',
+      status: 'historical',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'current-name',
+      githubRepoId: '111',
+      status: 'active',
+    })
+
+    const result = await upsertNaisApplyRepository({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'reused-name',
+      githubRepoId: '111',
+    })
+
+    expect(result).toMatchObject({
+      github_repo_name: 'current-name',
+      github_repo_id: '111',
+      status: 'active',
+    })
+  })
+
   it('creates a repository in pending_approval status', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
 
@@ -151,6 +261,76 @@ describe('application-repositories', () => {
 
     const { rows } = await pool.query('SELECT * FROM application_repositories WHERE id = $1', [created[0].id])
     expect(rows).toHaveLength(0)
+  })
+
+  it('keeps rejected Apply repositories from being rediscovered', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const { rows: created } = await pool.query(
+      `INSERT INTO application_repositories (
+         monitored_app_id, github_owner, github_repo_name, github_repo_id, status
+       ) VALUES ($1, 'navikt', 'repo', '12345', 'pending_approval') RETURNING id`,
+      [appId],
+    )
+
+    await rejectRepository(created[0].id)
+
+    expect(await isNaisApplyRepositoryRejected(appId, '12345')).toBe(true)
+    const { rows } = await pool.query(
+      'SELECT id FROM application_repositories WHERE monitored_app_id = $1 AND github_repo_id = $2',
+      [appId, '12345'],
+    )
+    expect(rows).toHaveLength(0)
+  })
+
+  it('serializes Apply rediscovery with concurrent repository rejection', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    const { rows } = await pool.query<{ id: number }>(
+      `INSERT INTO application_repositories (
+         monitored_app_id, github_owner, github_repo_name, github_repo_id, status
+       ) VALUES ($1, 'navikt', 'repo', '12345', 'pending_approval') RETURNING id`,
+      [appId],
+    )
+
+    await Promise.all([
+      upsertNaisApplyRepository({
+        monitoredAppId: appId,
+        githubOwner: 'navikt',
+        githubRepoName: 'repo',
+        githubRepoId: '12345',
+      }),
+      rejectRepository(rows[0].id),
+    ])
+
+    expect(await isNaisApplyRepositoryRejected(appId, '12345')).toBe(true)
+    const { rows: links } = await pool.query(
+      'SELECT id FROM application_repositories WHERE monitored_app_id = $1 AND github_repo_id = $2',
+      [appId, '12345'],
+    )
+    expect(links).toHaveLength(0)
+  })
+
+  it('allows an approved link to override a stale Apply rejection marker', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team', appName: 'app', environment: 'prod' })
+    await pool.query(
+      'INSERT INTO nais_apply_rejected_repositories (monitored_app_id, github_repo_id) VALUES ($1, $2)',
+      [appId, '12345'],
+    )
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo',
+      githubRepoId: '12345',
+      status: 'historical',
+    })
+
+    const approved = await upsertNaisApplyRepository({
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepoName: 'repo',
+      githubRepoId: '12345',
+    })
+
+    expect(approved).toMatchObject({ status: 'historical', github_repo_id: '12345' })
   })
 
   it('reject does not delete active repositories', async () => {

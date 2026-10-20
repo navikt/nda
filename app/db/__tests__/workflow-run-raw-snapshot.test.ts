@@ -8,7 +8,9 @@ import { pool } from '~/db/connection.server'
 import {
   getLatestWorkflowRunRawSnapshot,
   getWorkflowRunRawSnapshotData,
+  hasRecentWorkflowRunAttemptShaFailure,
   hasWorkflowRunRawSnapshot,
+  recordWorkflowRunAttemptShaFailure,
   saveWorkflowRunRawSnapshot,
 } from '~/db/github-data/workflow-run-raw-snapshots.server'
 
@@ -41,10 +43,41 @@ describe('getWorkflowRunRawSnapshotData', () => {
     mockPoolQuery.mockResolvedValue({ rows: [{ data: rawWorkflowRun }] })
 
     await expect(getWorkflowRunRawSnapshotData(999, 555)).resolves.toEqual(rawWorkflowRun)
-    expect(mockPoolQuery).toHaveBeenCalledWith(
-      expect.stringContaining('github_repo_id = $1 AND run_id = $2'),
-      [999, 555],
-    )
+    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_repo_id = $1 AND run_id = $2'), [
+      999,
+      555,
+      null,
+    ])
+  })
+
+  it('loads a specific attempt for a workflow run', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ data: { ...rawWorkflowRun, run_attempt: 2 } }] })
+
+    await expect(getWorkflowRunRawSnapshotData(999, 555, 2)).resolves.toEqual({
+      ...rawWorkflowRun,
+      run_attempt: 2,
+    })
+    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('run_attempt = $3'), [999, 555, 2])
+  })
+})
+
+describe('workflow run attempt SHA failure cache', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('checks for a recent failed lookup by immutable repository, run, and attempt', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [{ exists: true }] })
+
+    await expect(hasRecentWorkflowRunAttemptShaFailure(999, 555, 2)).resolves.toBe(true)
+    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining("INTERVAL '24 hours'"), [999, 555, 2])
+  })
+
+  it('records a failed attempt lookup idempotently', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [] })
+
+    await expect(recordWorkflowRunAttemptShaFailure(999, 555, 2)).resolves.toBeUndefined()
+    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('ON CONFLICT'), [999, 555, 2])
   })
 })
 
@@ -65,6 +98,7 @@ describe('saveWorkflowRunRawSnapshot', () => {
       'navikt',
       'nda',
       555,
+      null,
       apiVersion.apiVersion,
       apiVersion.apiDeprecatedAt,
       apiVersion.apiSunsetAt,

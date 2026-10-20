@@ -236,22 +236,31 @@ export async function getAllLatestPrRawSnapshots(
   owner: string,
   repo: string,
   prNumber: number,
+  githubRepoId?: number | string,
 ): Promise<Map<PrRawDataType, PrRawSnapshot>> {
   const result = await pool.query(
     `SELECT DISTINCT ON (data_type)
             id, owner, repo, github_repo_id, pr_number, data_type,
             api_version, api_deprecated_at, api_sunset_at, fetched_at, data
      FROM github_pr_raw_snapshots
-     WHERE owner = $1 AND repo = $2 AND pr_number = $3
-       AND github_repo_id = (
-         SELECT github_repo_id
-         FROM github_pr_raw_snapshots
-         WHERE owner = $1 AND repo = $2 AND pr_number = $3
-         ORDER BY fetched_at DESC, id DESC
-         LIMIT 1
+     WHERE pr_number = $3
+       AND (
+         ($4::bigint IS NOT NULL AND github_repo_id = $4::bigint)
+         OR (
+           $4::bigint IS NULL
+           AND owner = $1
+           AND repo = $2
+           AND github_repo_id = (
+             SELECT github_repo_id
+             FROM github_pr_raw_snapshots
+             WHERE owner = $1 AND repo = $2 AND pr_number = $3
+             ORDER BY fetched_at DESC, id DESC
+             LIMIT 1
+           )
+         )
        )
      ORDER BY data_type, fetched_at DESC, id DESC`,
-    [owner, repo, prNumber],
+    [owner, repo, prNumber, githubRepoId ?? null],
   )
 
   const snapshots = new Map<PrRawDataType, PrRawSnapshot>()
@@ -577,5 +586,7 @@ export { savePrWindowRawSnapshot } from './github-data/pr-window-raw-snapshots.s
 export { getLatestVerificationRun, saveVerificationRun } from './github-data/verification-runs.server'
 export {
   getWorkflowRunRawSnapshotData,
+  hasRecentWorkflowRunAttemptShaFailure,
+  recordWorkflowRunAttemptShaFailure,
   saveWorkflowRunRawSnapshot,
 } from './github-data/workflow-run-raw-snapshots.server'

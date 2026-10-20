@@ -6,6 +6,7 @@ import { VALID_COMMIT_SHA_SQL } from '~/lib/git-constants'
 import { GITHUB_RATE_LIMIT_SAFETY_BUFFER, getGitHubRateLimitRemaining } from '~/lib/github'
 import {
   fetchWorkflowRunSnapshotIfMissing,
+  getRepositoryIdentityById,
   parseWorkflowRunUrl,
   type WorkflowRunResolution,
   type WorkflowTriggerConfig,
@@ -41,6 +42,9 @@ interface WorkflowRunSnapshotCandidate {
   deployment_id: number
   detected_github_owner: string
   detected_github_repo_name: string
+  deployment_source: string
+  github_owner: string
+  github_repo_name: string
   trigger_url: string
   github_repo_id: string
 }
@@ -72,10 +76,18 @@ async function fetchWorkflowRunSnapshotsForRepository(
        d.detected_github_owner,
        d.detected_github_repo_name,
        d.trigger_url,
-       r.github_repo_id
+       r.github_repo_id,
+       CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_owner ELSE d.detected_github_owner END
+         AS github_owner,
+       CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_repo_name ELSE d.detected_github_repo_name END
+         AS github_repo_name,
+       d.deployment_source
      FROM deployments d
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      JOIN repositories r ON r.id = $1
      WHERE ${repositoryDeploymentSql('$1')}
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+       AND (d.deployment_source != 'nais_apply' OR d.repository_id = r.id)
        AND d.detected_github_owner IS NOT NULL
        AND d.detected_github_repo_name IS NOT NULL
        AND d.trigger_url IS NOT NULL
@@ -87,12 +99,77 @@ async function fetchWorkflowRunSnapshotsForRepository(
     string,
     WorkflowRunSnapshotCandidate & { runId: number; urlOwner: string; urlRepo: string }
   >()
+  const repositoryIdentityCache = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
+  let identityResolutionErrors = 0
   for (const row of rows) {
-    const parsed = parseWorkflowRunUrl(row.trigger_url, row.detected_github_owner, row.detected_github_repo_name)
+    let parsed = parseWorkflowRunUrl(row.trigger_url, row.detected_github_owner, row.detected_github_repo_name)
+    if (!parsed && row.deployment_source === 'nais_apply') {
+      let identityResolution = repositoryIdentityCache.get(row.github_repo_id)
+      if (!identityResolution) {
+        const numericGithubRepoId = Number(row.github_repo_id)
+        if (!Number.isSafeInteger(numericGithubRepoId)) {
+          identityResolutionErrors++
+          logger.warn('Skipping Nais Apply workflow-run snapshot with invalid GitHub repository ID', {
+            deploymentId: row.deployment_id,
+            githubRepoId: row.github_repo_id,
+          })
+          continue
+        }
+        identityResolution = getRepositoryIdentityById(numericGithubRepoId)
+        repositoryIdentityCache.set(row.github_repo_id, identityResolution)
+      }
+      const identity = await identityResolution
+      if (!identity || String(identity.id) !== row.github_repo_id) {
+        identityResolutionErrors++
+        logger.warn('Skipping Nais Apply workflow-run snapshot with unresolved GitHub repository identity', {
+          deploymentId: row.deployment_id,
+          githubRepoId: row.github_repo_id,
+          actualGithubRepoId: identity?.id ?? null,
+        })
+        continue
+      }
+      parsed = parseWorkflowRunUrl(row.trigger_url, identity.owner, identity.name)
+    }
     if (!parsed) continue
     const key = `${row.github_repo_id}:${parsed.runId}`
     if (!uniqueRuns.has(key)) {
-      uniqueRuns.set(key, { ...row, runId: parsed.runId, urlOwner: parsed.owner, urlRepo: parsed.repo })
+      let owner = row.github_owner
+      let repo = row.github_repo_name
+      if (row.deployment_source === 'nais_apply') {
+        let identityResolution = repositoryIdentityCache.get(row.github_repo_id)
+        if (!identityResolution) {
+          const numericGithubRepoId = Number(row.github_repo_id)
+          if (!Number.isSafeInteger(numericGithubRepoId)) {
+            identityResolutionErrors++
+            logger.warn('Skipping Nais Apply workflow-run snapshot with invalid GitHub repository ID', {
+              deploymentId: row.deployment_id,
+              githubRepoId: row.github_repo_id,
+            })
+            continue
+          }
+          identityResolution = getRepositoryIdentityById(numericGithubRepoId)
+          repositoryIdentityCache.set(row.github_repo_id, identityResolution)
+        }
+        const identity = await identityResolution
+        if (!identity || String(identity.id) !== row.github_repo_id) {
+          identityResolutionErrors++
+          logger.warn('Skipping Nais Apply workflow-run snapshot with unresolved GitHub repository identity', {
+            deploymentId: row.deployment_id,
+            githubRepoId: row.github_repo_id,
+            actualGithubRepoId: identity?.id ?? null,
+          })
+          continue
+        }
+        owner = identity.owner
+        repo = identity.name
+      }
+      uniqueRuns.set(key, {
+        ...row,
+        trigger_url: `https://github.com/${owner}/${repo}/actions/runs/${parsed.runId}`,
+        runId: parsed.runId,
+        urlOwner: owner,
+        urlRepo: repo,
+      })
     }
   }
 
@@ -100,7 +177,7 @@ async function fetchWorkflowRunSnapshotsForRepository(
     workflowRunSnapshotsFetched: 0,
     workflowRunSnapshotsAvailable: 0,
     workflowRunSnapshotsNotFound: 0,
-    workflowRunSnapshotErrors: 0,
+    workflowRunSnapshotErrors: identityResolutionErrors,
   }
   const total = uniqueRuns.size
   let processed = 0
@@ -173,20 +250,35 @@ async function fetchWorkflowRunSnapshotsForRepository(
 
 const ORDERED_DEPLOYMENTS_SELECT = (
   defaultBranchSql: string,
-  repositoryIdSql = 'NULL::int',
-  githubRepositoryIdSql = 'NULL::bigint',
+  repositoryIdSql = `CASE WHEN d.deployment_source = 'nais_apply' THEN d.repository_id ELSE NULL::int END`,
+  githubRepositoryIdSql = `CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_repo_id ELSE NULL::bigint END`,
 ) => `
-      SELECT d.id, d.commit_sha, d.detected_github_owner, d.detected_github_repo_name,
+      SELECT d.id, d.commit_sha,
+             CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_owner ELSE d.detected_github_owner END
+               AS detected_github_owner,
+             CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_repo_name ELSE d.detected_github_repo_name END
+               AS detected_github_repo_name,
+             d.detected_github_owner AS claim_github_owner,
+             d.detected_github_repo_name AS claim_github_repo_name,
+             d.deployment_source,
              d.environment_name, d.trigger_url, d.workflow_trigger_config, d.commit_checks_data,
              d.commit_checks_checked_at, d.github_pr_number, d.monitored_app_id,
-             ${defaultBranchSql} AS default_branch, ${repositoryIdSql} AS matched_repository_id,
+             CASE WHEN d.deployment_source = 'nais_apply'
+                  THEN COALESCE(r.default_branch, ma.default_branch)
+                  ELSE ${defaultBranchSql}
+             END AS default_branch, ${repositoryIdSql} AS matched_repository_id,
              ${githubRepositoryIdSql} AS matched_github_repo_id, d.created_at,
              LAG(d.commit_sha) OVER (
-               PARTITION BY d.detected_github_owner, d.detected_github_repo_name
+               PARTITION BY
+                 CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_owner ELSE d.detected_github_owner END,
+                 CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_repo_name ELSE d.detected_github_repo_name END
                ORDER BY d.created_at ASC, d.id ASC
              ) AS prev_commit_sha
       FROM deployments d
-      JOIN monitored_applications ma ON d.monitored_app_id = ma.id`
+      JOIN monitored_applications ma
+        ON d.monitored_app_id = ma.id
+        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+      LEFT JOIN repositories r ON r.id = d.repository_id`
 
 const SNAPSHOT_JOIN_AND_ORDER = `
     SELECT od.*,
@@ -220,6 +312,9 @@ interface DeploymentRow {
   commit_sha: string
   detected_github_owner: string
   detected_github_repo_name: string
+  claim_github_owner: string
+  claim_github_repo_name: string
+  deployment_source: string
   environment_name: string
   trigger_url: string | null
   workflow_trigger_config: WorkflowTriggerConfig | null
@@ -262,6 +357,8 @@ async function processDeployments(
     await updateSyncJobProgress(jobId, result)
   }
 
+  const repositoryIdentityCache = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
+
   for (const deployment of deployments) {
     if (jobId && (await isSyncJobCancelled(jobId))) {
       await logSyncJobMessage(jobId, 'info', `Jobb avbrutt etter ${result.processed} av ${result.total} deployments`)
@@ -288,10 +385,36 @@ async function processDeployments(
     }
 
     try {
-      const owner = deployment.detected_github_owner
-      const repo = deployment.detected_github_repo_name
+      let owner = deployment.detected_github_owner
+      let repo = deployment.detected_github_repo_name
+      let triggerUrl = deployment.trigger_url
+      let baseBranch = deployment.default_branch
+      if (deployment.deployment_source === 'nais_apply') {
+        const githubRepoId = deployment.matched_github_repo_id
+        const numericGithubRepoId = Number(githubRepoId)
+        let identityResolution = githubRepoId ? repositoryIdentityCache.get(githubRepoId) : undefined
+        if (!identityResolution && githubRepoId && Number.isSafeInteger(numericGithubRepoId)) {
+          identityResolution = getRepositoryIdentityById(numericGithubRepoId)
+          repositoryIdentityCache.set(githubRepoId, identityResolution)
+        }
+        const identity = identityResolution ? await identityResolution : null
+        if (!identity || String(identity.id) !== githubRepoId) {
+          throw new Error(`Cannot resolve GitHub identity for Nais Apply deployment ${deployment.id}`)
+        }
+        owner = identity.owner
+        repo = identity.name
+        baseBranch = identity.defaultBranch ?? null
+        const parsedClaimRun = parseWorkflowRunUrl(
+          triggerUrl,
+          deployment.claim_github_owner,
+          deployment.claim_github_repo_name,
+        )
+        if (parsedClaimRun) {
+          triggerUrl = `https://github.com/${owner}/${repo}/actions/runs/${parsedClaimRun.runId}`
+        }
+      }
       const commitSha = deployment.commit_sha
-      const parsedWorkflowRun = parseWorkflowRunUrl(deployment.trigger_url, owner, repo)
+      const parsedWorkflowRun = parseWorkflowRunUrl(triggerUrl, owner, repo)
       const workflowTriggerResolution =
         workflowTriggerResolutions === undefined
           ? undefined
@@ -305,7 +428,7 @@ async function processDeployments(
         deployment.id,
         owner,
         repo,
-        deployment.trigger_url,
+        triggerUrl,
         deployment.workflow_trigger_config,
         workflowTriggerResolution,
       )
@@ -319,12 +442,11 @@ async function processDeployments(
         }
       }
 
-      if (!deployment.default_branch) {
+      if (!baseBranch) {
         result.skipped++
         result.processed++
         continue
       }
-      const baseBranch = deployment.default_branch
 
       const hasCurrentData = deployment.has_pr_snapshot && deployment.has_compare_snapshot
       const hasChecksData = deployment.has_checks_data
@@ -357,9 +479,10 @@ async function processDeployments(
           repo,
           commitSha,
           deployment.github_pr_number,
-          deployment.trigger_url,
+          triggerUrl,
           deployment.workflow_trigger_config,
           workflowTriggerResolution,
+          deployment.deployment_source === 'nais_apply' ? (deployment.matched_github_repo_id ?? undefined) : undefined,
         )
         if (refreshDisplayData && deployment.github_pr_number) {
           await refreshPrDisplayData(owner, repo, deployment.github_pr_number)
@@ -387,7 +510,7 @@ async function processDeployments(
           baseBranch,
           deployment.monitored_app_id,
           { forceRefresh: false },
-          undefined,
+          deployment.deployment_source === 'nais_apply' ? triggerUrl : undefined,
           deployment.matched_repository_id ?? undefined,
           workflowTriggerResolution,
         )
@@ -475,6 +598,7 @@ export async function fetchVerificationDataForAllDeployments(
         AND d.commit_sha IS NOT NULL
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
+        AND (d.deployment_source != 'nais_apply' OR (d.repository_id IS NOT NULL AND r.id IS NOT NULL))
         AND ${VALID_COMMIT_SHA_SQL}
     )
     ${SNAPSHOT_JOIN_AND_ORDER}`
@@ -520,6 +644,7 @@ export async function fetchVerificationDataForRepository(
       WHERE d.commit_sha IS NOT NULL
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
+        AND (d.deployment_source != 'nais_apply' OR (d.repository_id IS NOT NULL AND r.id IS NOT NULL))
         AND ${VALID_COMMIT_SHA_SQL}
         AND ${repositoryDeploymentSql('$1')}
     )

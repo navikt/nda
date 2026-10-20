@@ -4,7 +4,7 @@ const { poolQuery } = vi.hoisted(() => ({ poolQuery: vi.fn() }))
 
 vi.mock('../connection.server', () => ({ pool: { query: poolQuery } }))
 
-import { createRepositoryAlert } from '../alerts.server'
+import { createRepositoryAlert, getAlertCountsByApp, getUnresolvedAlertsByApp } from '../alerts.server'
 
 describe('createRepositoryAlert', () => {
   beforeEach(() => {
@@ -56,5 +56,28 @@ describe('createRepositoryAlert', () => {
 
     expect(inserted).toBe(false)
     expect(poolQuery.mock.calls[1][0]).toContain('WHERE NOT EXISTS')
+  })
+
+  it('excludes opted-out Apply alerts while retaining alerts without a deployment', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [{ monitored_app_id: 7, count: '2' }] })
+
+    await getAlertCountsByApp()
+
+    expect(poolQuery.mock.calls[0][0]).toContain('LEFT JOIN deployments d ON d.id = ra.deployment_id')
+    expect(poolQuery.mock.calls[0][0]).toContain('JOIN monitored_applications ma ON ma.id = ra.monitored_app_id')
+    expect(poolQuery.mock.calls[0][0]).toContain(
+      "(d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)",
+    )
+  })
+
+  it('excludes Apply alerts from the app alert list when the app has opted out', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [] })
+
+    await getUnresolvedAlertsByApp(7)
+
+    expect(poolQuery.mock.calls[0][0]).toContain(
+      "(d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)",
+    )
+    expect(poolQuery.mock.calls[0][1]).toEqual([7])
   })
 })

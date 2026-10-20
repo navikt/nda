@@ -1,6 +1,7 @@
 import { pool } from '~/db/connection.server'
 import { isGcsConfigured, logExists, uploadLog } from '~/lib/gcs.server'
 import { getGitHubClient } from '~/lib/github'
+import { getRepositoryIdentityById } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 
 type ChecksColumn = 'github_pr_data' | 'commit_checks_data'
@@ -60,11 +61,13 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
       COUNT(*) as total_deployments,
       COUNT(CASE WHEN d.github_pr_data IS NOT NULL THEN 1 END) as with_pr_data,
       COUNT(CASE WHEN d.github_pr_data->'checks' IS NOT NULL OR d.commit_checks_data->'checks' IS NOT NULL THEN 1 END) as with_checks,
-      COUNT(CASE WHEN ar.github_repo_name IS NOT NULL THEN 1 END) as with_repo
+      COUNT(CASE WHEN ar.github_repo_name IS NOT NULL OR r.github_repo_id IS NOT NULL THEN 1 END) as with_repo
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-    LEFT JOIN application_repositories ar ON ar.monitored_app_id = ma.id
+    LEFT JOIN repositories r ON r.id = d.repository_id AND d.deployment_source = 'nais_apply'
+    LEFT JOIN application_repositories ar ON ar.monitored_app_id = ma.id AND d.deployment_source != 'nais_apply'
     WHERE d.monitored_app_id = $1
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.created_at >= NOW() - INTERVAL '7 days'
       AND ma.is_active = true
     `,
@@ -100,14 +103,18 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
       }>
     } | null
     repository_full_name: string | null
+    deployment_source: 'nais_deployment' | 'nais_apply'
+    github_repo_id: string | null
   }>(
     `
-    SELECT d.id, d.github_pr_data, d.commit_checks_data,
+    SELECT d.id, d.github_pr_data, d.commit_checks_data, d.deployment_source, r.github_repo_id,
            ar.github_owner || '/' || ar.github_repo_name as repository_full_name
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-    LEFT JOIN application_repositories ar ON ar.monitored_app_id = ma.id
+    LEFT JOIN repositories r ON r.id = d.repository_id AND d.deployment_source = 'nais_apply'
+    LEFT JOIN application_repositories ar ON ar.monitored_app_id = ma.id AND d.deployment_source != 'nais_apply'
     WHERE d.monitored_app_id = $1
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.created_at >= NOW() - INTERVAL '7 days'
       AND (d.github_pr_data->'checks' IS NOT NULL OR d.commit_checks_data->'checks' IS NOT NULL)
       AND ma.is_active = true
@@ -118,13 +125,36 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
   )
 
   const checks: CheckToCache[] = []
+  const identities = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
 
   for (const row of result.rows) {
-    if (!row.repository_full_name) {
+    let repositoryFullName = row.repository_full_name
+    if (row.deployment_source === 'nais_apply') {
+      repositoryFullName = null
+      const repositoryId = Number(row.github_repo_id)
+      if (row.github_repo_id && Number.isSafeInteger(repositoryId) && repositoryId > 0) {
+        let resolution = identities.get(row.github_repo_id)
+        if (!resolution) {
+          resolution = getRepositoryIdentityById(repositoryId)
+          identities.set(row.github_repo_id, resolution)
+        }
+        const identity = await resolution
+        if (identity && String(identity.id) === row.github_repo_id) {
+          repositoryFullName = `${identity.owner}/${identity.name}`
+        }
+      }
+      if (!repositoryFullName) {
+        logger.warn('Cannot resolve repository identity for Nais Apply check logs; leaving logs uncached', {
+          deploymentId: row.id,
+          githubRepoId: row.github_repo_id,
+        })
+      }
+    }
+    if (!repositoryFullName) {
       diagnostics.skippedNoRepo++
       continue
     }
-    const [owner, repo] = row.repository_full_name.split('/')
+    const [owner, repo] = repositoryFullName.split('/')
     if (!owner || !repo) continue
 
     const sources: Array<{ column: ChecksColumn; checkList: typeof row.github_pr_data }> = [

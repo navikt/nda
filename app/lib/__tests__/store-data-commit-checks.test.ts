@@ -112,6 +112,7 @@ describe('updateDeploymentVerification legacy checks fallback', () => {
   beforeEach(() => {
     mockPoolQuery.mockReset()
     mockGetAllLatestPrSnapshots.mockReset()
+    mockGetAllLatestPrRawSnapshots.mockReset().mockResolvedValue(new Map())
   })
 
   function baseResult(overrides: Partial<VerificationResult> = {}): VerificationResult {
@@ -132,8 +133,8 @@ describe('updateDeploymentVerification legacy checks fallback', () => {
       .mockResolvedValueOnce({
         rows: [
           {
-            detected_github_owner: 'navikt',
-            detected_github_repo_name: 'nda',
+            owner: 'navikt',
+            repo: 'nda',
             github_pr_data: {
               checks_passed: false,
               checks: [{ id: 1, name: 'legacy-check', conclusion: 'failure' }],
@@ -181,5 +182,32 @@ describe('updateDeploymentVerification legacy checks fallback', () => {
     expect(writtenPrData.checks_passed).toBe(false)
     expect(writtenPrData.checks).toEqual([{ id: 1, name: 'legacy-check', conclusion: 'failure' }])
     expect(writtenPrData.checks_ref).toBe('merge_commit')
+  })
+
+  it('looks up Apply PR snapshots by canonical repository name rather than claim-time name', async () => {
+    mockPoolQuery
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            owner: 'navikt',
+            repo: 'current-name',
+            deployment_source: 'nais_apply',
+            github_repo_id: '7001',
+            github_pr_data: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ four_eyes_status: 'unverified' }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+    mockGetAllLatestPrSnapshots.mockResolvedValueOnce(new Map())
+
+    await updateDeploymentVerification(1, baseResult())
+
+    const [sql] = mockPoolQuery.mock.calls[0]
+    expect(sql).toContain("CASE WHEN d.deployment_source = 'nais_apply' THEN r.github_owner")
+    expect(sql).toContain('d.github_pr_data, d.deployment_source, r.github_repo_id')
+    expect(sql).toContain('LEFT JOIN repositories r ON r.id = d.repository_id')
+    expect(mockGetAllLatestPrRawSnapshots).toHaveBeenCalledWith('navikt', 'current-name', 42, '7001')
+    expect(mockGetAllLatestPrSnapshots).not.toHaveBeenCalled()
   })
 })

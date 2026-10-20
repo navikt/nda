@@ -12,10 +12,12 @@ interface SyncDefaultBranchInput {
   defaultBranchSyncedAt: Date | null
   owner: string
   repo: string
+  expectedGithubRepoId?: string
 }
 
 export async function syncDefaultBranchForApp(input: SyncDefaultBranchInput): Promise<void> {
-  const { monitoredAppId, appName, currentDefaultBranch, defaultBranchSyncedAt, owner, repo } = input
+  const { monitoredAppId, appName, currentDefaultBranch, defaultBranchSyncedAt, owner, repo, expectedGithubRepoId } =
+    input
 
   if (defaultBranchSyncedAt) {
     const elapsedMs = Date.now() - defaultBranchSyncedAt.getTime()
@@ -41,7 +43,9 @@ export async function syncDefaultBranchForApp(input: SyncDefaultBranchInput): Pr
     monitoredAppId,
     defaultBranch: detectedDefaultBranch,
     syncedAt,
+    ...(expectedGithubRepoId ? { expectedGithubRepoId } : {}),
   })
+  if (expectedGithubRepoId && !storedAtRepoLevel) return
 
   if (detectedDefaultBranch === currentDefaultBranch) {
     await updateMonitoredApplication(monitoredAppId, {

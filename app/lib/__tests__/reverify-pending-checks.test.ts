@@ -112,8 +112,21 @@ describe('reverifyPendingChecks', () => {
       null,
       undefined,
       undefined,
+      undefined,
+      undefined,
     )
-    expect(mockRefreshChecksOnly).toHaveBeenNthCalledWith(2, 2, 'navikt', 'my-app', 'abc123', 7, undefined, undefined)
+    expect(mockRefreshChecksOnly).toHaveBeenNthCalledWith(
+      2,
+      2,
+      'navikt',
+      'my-app',
+      'abc123',
+      7,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    )
     expect(result).toEqual({ fetched: 2, errors: 0 })
   })
 

@@ -1,4 +1,5 @@
 import { pool } from '~/db/connection.server'
+import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
 import {
   NON_DIFFABLE_STATUSES_SQL,
   ROOT_APPROVED_STATUSES_SQL,
@@ -20,9 +21,6 @@ export interface RootApprovedSibling {
 // commit (making the sibling the nearest previousDeployment candidate even though the
 // current app's own earlier deployment is the true, more relevant root). Bounded to one
 // repo's apps, so this is a cheap single-hop lookup rather than a chain walk.
-// beforeDeploymentId excludes candidates created after the deployment currently being verified,
-// so a later deployment can never retroactively become the "root" for an earlier one (deployment
-// ids are a monotonic SERIAL PK, so this is equivalent to bounding on insertion order/created_at).
 export async function findRootApprovedSiblingForCommit(
   commitSha: string,
   githubRepoId: string,
@@ -31,14 +29,11 @@ export async function findRootApprovedSiblingForCommit(
   const result = await pool.query(
     `SELECT d.id, d.monitored_app_id, d.four_eyes_status
      FROM deployments d
-     JOIN application_repositories ar
-       ON ar.monitored_app_id = d.monitored_app_id
-       AND ar.github_owner = d.detected_github_owner
-       AND ar.github_repo_name = d.detected_github_repo_name
-       AND ar.status IN ('active', 'historical')
-     WHERE ar.github_repo_id = $1
+     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+     WHERE ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $1)')}
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.commit_sha = $2
-       AND d.id <= $3
+       AND (d.created_at, d.id) <= (SELECT created_at, id FROM deployments WHERE id = $3)
        AND d.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
      ORDER BY d.created_at ASC, d.id ASC
      LIMIT 1`,
@@ -136,7 +131,9 @@ async function logZeroCandidateDiagnostics(
     const olderSameAppResult = await pool.query(
       `SELECT d.id, d.detected_github_owner, d.detected_github_repo_name, d.commit_sha, d.four_eyes_status, d.created_at
        FROM deployments d
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = $1
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $2)
        ORDER BY d.created_at DESC, d.id DESC
        LIMIT 5`,
@@ -176,7 +173,10 @@ async function logZeroCandidateDiagnostics(
                AND ar.github_repo_id = $2
            ) AS matches_application_repository_join,
            ($3::date IS NULL OR d.created_at >= $3::date) AS passes_audit_start_year
-         FROM deployments d WHERE d.id = $1`,
+         FROM deployments d
+         JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+         WHERE d.id = $1
+           AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
         [nearest.id, githubRepoId, auditStartDate],
       )
       logger.warn('getPreviousDeployment: predicate-by-predicate check on nearest older same-app deployment', {
@@ -209,13 +209,10 @@ async function queryCandidates(
   const query = `
     SELECT d.id, d.commit_sha, d.created_at, d.monitored_app_id, d.four_eyes_status
     FROM deployments d
-    JOIN application_repositories ar
-      ON ar.monitored_app_id = d.monitored_app_id
-      AND ar.github_owner = d.detected_github_owner
-      AND ar.github_repo_name = d.detected_github_repo_name
-      AND ar.status IN ('active', 'historical')
+    JOIN monitored_applications ma ON ma.id = d.monitored_app_id
     WHERE (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
-      AND ar.github_repo_id = $2
+      AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $2)')}
+      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
       AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})
