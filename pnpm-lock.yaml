@@ -41,7 +41,7 @@ importers:
         version: 4.9.0(react@19.3.0)
       '@react-router/express':
         specifier: 8.4.0
-        version: 8.4.0(express@5.2.1(supports-color@7.2.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)
+        version: 8.4.0(express@5.3.0(supports-color@7.2.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)
       '@react-router/node':
         specifier: 8.4.0
         version: 8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)
@@ -70,8 +70,8 @@ importers:
         specifier: npm:@protobi/exceljs@4.4.0-protobi.10
         version: '@protobi/exceljs@4.4.0-protobi.10'
       express:
-        specifier: ^5.2.1
-        version: 5.2.1(supports-color@7.2.0)
+        specifier: ^5.3.0
+        version: 5.3.0(supports-color@7.2.0)
       graphql:
         specifier: ^16.14.2
         version: 16.14.2
@@ -2258,13 +2258,9 @@ packages:
   confbox@0.2.4:
     resolution: {integrity: sha512-ysOGlgTFbN2/Y6Cg3Iye8YKulHw+R2fNXHrgSmXISQdMnomY6eNDprVdW9R5xBguEqI954+S6709UyiO7B+6OQ==}
 
-  content-disposition@1.1.0:
-    resolution: {integrity: sha512-5jRCH9Z/+DRP7rkvY83B+yGIGX96OYdJmzngqnw2SBSxqCFPd0w2km3s5iawpGX8krnwSGmF0FW5Nhr0Hfai3g==}
+  content-disposition@2.0.1:
+    resolution: {integrity: sha512-e+H0ZXHSWYrENhQzw1LPuP4oF5MzVKmDU6d3hxlvaPEYLLg62MxtQNPRx4SYSuYJSBUgnQIG4HIN2tEtNv7Dog==}
     engines: {node: '>=18'}
-
-  content-type@1.0.5:
-    resolution: {integrity: sha512-nTjqfcBFEipKdXCv4YDQWCfmcLZKm81ldF0pAopTvyrFGVbcR6P/VAAd5G7N+0tTr8QqiU0tFadD6FK4NtJwOA==}
-    engines: {node: '>= 0.6'}
 
   content-type@2.0.0:
     resolution: {integrity: sha512-j/O/d7GcZCyNl7/hwZAb606rzqkyvaDctLmckbxLzHvFBzTJHuGEdodATcP3yIRoDrLHkIATJuvzbFlp/ki2cQ==}
@@ -2537,8 +2533,8 @@ packages:
     resolution: {integrity: sha512-knvyeauYhqjOYvQ66MznSMs83wmHrCycNEN6Ao+2AeYEfxUIkuiVxdEa1qlGEPK+We3n0THiDciYSsCcgW/DoA==}
     engines: {node: '>=12.0.0'}
 
-  express@5.2.1:
-    resolution: {integrity: sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==}
+  express@5.3.0:
+    resolution: {integrity: sha512-qCqy1xSoaugxOD4IVHb1ZWdkvCF2W3aE2okKouWj8VwJ+ztskSiXoBnCSJqfKT+cVPJhuJqe9YLbY425+Zh00g==}
     engines: {node: '>= 18'}
 
   exsolve@1.1.1:
@@ -2758,10 +2754,6 @@ packages:
 
   hyphen@1.6.6:
     resolution: {integrity: sha512-XtqmnT+b9n5MX+MsqluFAVTIenbtC25iskW0Z+jLd+awfhA+ZbWKWQMIvLJccGoa2bM1R6juWJ27cZxIFOmkWw==}
-
-  iconv-lite@0.7.2:
-    resolution: {integrity: sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw==}
-    engines: {node: '>=0.10.0'}
 
   iconv-lite@0.7.3:
     resolution: {integrity: sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==}
@@ -3496,15 +3488,15 @@ packages:
     resolution: {integrity: sha512-/FPD0nUc9jH6rfFjji9IBqOz4pcSE3CsT1m7Ep6Mdb0LxSUMj8hgl6GomOvZzpNpAqqGaXA0P3VSrZLFzIhQrw==}
     engines: {node: '>=12.0.0'}
 
-  proxy-addr@2.0.7:
-    resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
+  proxy-addr@2.0.8:
+    resolution: {integrity: sha512-5nnx0yGyVUcY6t9RnWcARWtwT9F1D8O9rt08htPvnd49W1IgZtmLkhu9WfMzQj1cFxjHIO6connUNVW5k7AVyQ==}
     engines: {node: '>= 0.10'}
 
   pump@3.0.4:
     resolution: {integrity: sha512-VS7sjc6KR7e1ukRFhQSY5LM2uBWAUPiOPa/A3mkKmiMwSmRFUITt0xuj+/lesgnCv+dPIEYlkzrcyXgquIHMcA==}
 
-  qs@6.15.3:
-    resolution: {integrity: sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A==}
+  qs@6.16.0:
+    resolution: {integrity: sha512-h6fhOIaRrID2CbEY2fqs+7t+UXZo+MLAnU5gRIq85uFtdiUPCdsApMlHhXogKVM4HM2DVbIjGNTTYH2OcmP1vA==}
     engines: {node: '>=0.6'}
 
   queue@6.0.2:
@@ -5266,10 +5258,10 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  '@react-router/express@8.4.0(express@5.2.1(supports-color@7.2.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)':
+  '@react-router/express@8.4.0(express@5.3.0(supports-color@7.2.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)':
     dependencies:
       '@react-router/node': 8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)
-      express: 5.2.1(supports-color@7.2.0)
+      express: 5.3.0(supports-color@7.2.0)
       react-router: 8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     optionalDependencies:
       typescript: 5.9.3
@@ -5283,11 +5275,11 @@ snapshots:
 
   '@react-router/serve@8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@react-router/express': 8.4.0(express@5.2.1(supports-color@7.2.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)
+      '@react-router/express': 8.4.0(express@5.3.0(supports-color@7.2.0))(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)
       '@react-router/node': 8.4.0(react-router@8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(typescript@5.9.3)
       '@remix-run/node-fetch-server': 0.14.1
       compression: 1.8.2(supports-color@7.2.0)
-      express: 5.2.1(supports-color@7.2.0)
+      express: 5.3.0(supports-color@7.2.0)
       morgan: 1.11.0(supports-color@7.2.0)
       react-router: 8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       source-map-support: 0.5.21
@@ -5437,7 +5429,7 @@ snapshots:
       '@slack/types': 3.1.0
       '@slack/web-api': 8.1.1
       '@types/express': 5.0.6
-      express: 5.2.1(supports-color@7.2.0)
+      express: 5.3.0(supports-color@7.2.0)
       path-to-regexp: 8.4.2
       raw-body: 3.0.2
       tsscmp: 1.0.6
@@ -6014,9 +6006,9 @@ snapshots:
       content-type: 2.0.0
       debug: 4.4.3(supports-color@7.2.0)
       http-errors: 2.0.1
-      iconv-lite: 0.7.2
+      iconv-lite: 0.7.3
       on-finished: 2.4.1
-      qs: 6.15.3
+      qs: 6.16.0
       raw-body: 3.0.2
       type-is: 2.1.0
     transitivePeerDependencies:
@@ -6184,9 +6176,7 @@ snapshots:
 
   confbox@0.2.4: {}
 
-  content-disposition@1.1.0: {}
-
-  content-type@1.0.5: {}
+  content-disposition@2.0.1: {}
 
   content-type@2.0.0: {}
 
@@ -6422,12 +6412,12 @@ snapshots:
 
   expect-type@1.3.0: {}
 
-  express@5.2.1(supports-color@7.2.0):
+  express@5.3.0(supports-color@7.2.0):
     dependencies:
       accepts: 2.0.0
       body-parser: 2.3.0(supports-color@7.2.0)
-      content-disposition: 1.1.0
-      content-type: 1.0.5
+      content-disposition: 2.0.1
+      content-type: 2.0.0
       cookie: 0.7.2
       cookie-signature: 1.2.2
       debug: 4.4.3(supports-color@7.2.0)
@@ -6443,8 +6433,8 @@ snapshots:
       on-finished: 2.4.1
       once: 1.4.0
       parseurl: 1.3.3
-      proxy-addr: 2.0.7
-      qs: 6.15.3
+      proxy-addr: 2.0.8
+      qs: 6.16.0
       range-parser: 1.3.0
       router: 2.2.0(supports-color@7.2.0)
       send: 1.2.1(supports-color@7.2.0)
@@ -6721,10 +6711,6 @@ snapshots:
       - supports-color
 
   hyphen@1.6.6: {}
-
-  iconv-lite@0.7.2:
-    dependencies:
-      safer-buffer: 2.1.2
 
   iconv-lite@0.7.3:
     dependencies:
@@ -7453,7 +7439,7 @@ snapshots:
       '@types/node': 24.19.0
       long: 5.3.2
 
-  proxy-addr@2.0.7:
+  proxy-addr@2.0.8:
     dependencies:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
@@ -7463,7 +7449,7 @@ snapshots:
       end-of-stream: 1.4.5
       once: 1.4.0
 
-  qs@6.15.3:
+  qs@6.16.0:
     dependencies:
       es-define-property: 1.0.1
       side-channel: 1.1.1
