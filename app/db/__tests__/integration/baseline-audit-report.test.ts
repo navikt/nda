@@ -233,8 +233,8 @@ describe('renamed Apply deployments in audit reports', () => {
     )
     await pool.query(
       `INSERT INTO verification_runs
-         (deployment_id, schema_version, result, status, has_four_eyes)
-       VALUES ($1, 1, $2, 'approved', true)`,
+         (deployment_id, schema_version, result, status)
+       VALUES ($1, 1, $2, 'approved')`,
       [
         applyDeploymentId,
         JSON.stringify({
