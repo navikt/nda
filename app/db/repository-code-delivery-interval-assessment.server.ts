@@ -5,6 +5,7 @@ import type {
   RepositoryDeliveryIntervalAssessment,
   RepositoryDeliveryIntervalCompare,
   RepositoryDeliveryPullRequestEvidence,
+  RepositoryDeliveryStackAncestryStatus,
 } from '~/lib/repository-code-delivery/interval-assessment'
 import { assessRepositoryDeliveryInterval } from '~/lib/repository-code-delivery/interval-assessment'
 import type { PrCommit, PrReview } from '~/lib/verification/types'
@@ -212,9 +213,12 @@ function parsePullRequestEvidence(
   return {
     number: prNumber,
     baseBranch: base.ref,
+    baseSha: typeof base.sha === 'string' ? base.sha : null,
     authorLogin: typeof author?.login === 'string' ? author.login : null,
     mergedByLogin: typeof mergedBy?.login === 'string' ? mergedBy.login : null,
     mergeCommitSha: typeof metadata.merge_commit_sha === 'string' ? metadata.merge_commit_sha : null,
+    mergedAt: typeof metadata.merged_at === 'string' ? metadata.merged_at : null,
+    headBranch: typeof head.ref === 'string' ? head.ref : null,
     headSha: head.sha,
     commitCount: metadata.commits,
     commits,
@@ -289,14 +293,40 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   const associatedPullRequestsBySha = new Map(
     associatedRows.map((row) => [row.sha, parseAssociatedPullRequests(row.data, row.pagination_complete)]),
   )
-  const pullRequestNumbers = [
+  const associatedPullRequestNumbers = [
     ...new Set(
       [...associatedPullRequestsBySha.values()].flatMap((snapshot) =>
-        snapshot.pullRequests
-          .filter((pullRequest) => pullRequest.baseBranch === repository.default_branch)
-          .map((pullRequest) => pullRequest.number),
+        snapshot.pullRequests.map((pullRequest) => pullRequest.number),
       ),
     ),
+  ]
+  const { rows: stackedPullRequestRows } = await client.query<{ delivery_id: number; pull_request_number: string }>(
+    `SELECT sync.delivery_id, pr_number AS pull_request_number
+     FROM repository_code_delivery_assessment_sync sync
+     CROSS JOIN LATERAL jsonb_object_keys(sync.completed_pull_request_snapshot_ids) AS pr_numbers(pr_number)
+     WHERE sync.delivery_id = ANY($1::int[])`,
+    [deliveryIds],
+  )
+  const { rows: stackParentRows } = await client.query<{
+    delivery_id: number
+    child_pull_request_number: string
+    parent_pull_request_numbers: number[]
+  }>(
+    `SELECT sync.delivery_id,
+            parent_map.key AS child_pull_request_number,
+            parent_map.value AS parent_pull_request_numbers
+     FROM repository_code_delivery_assessment_sync sync
+     CROSS JOIN LATERAL jsonb_each(sync.stack_parent_pull_request_numbers) AS parent_map(key, value)
+     WHERE sync.delivery_id = ANY($1::int[])`,
+    [deliveryIds],
+  )
+  const pullRequestNumbers = [
+    ...new Set([
+      ...associatedPullRequestNumbers,
+      ...stackedPullRequestRows
+        .map((row) => Number(row.pull_request_number))
+        .filter((number) => Number.isSafeInteger(number) && number > 0),
+    ]),
   ]
   const { rows: pullRequestRows } =
     pullRequestNumbers.length === 0
@@ -323,29 +353,94 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
       parsePullRequestEvidence(prNumber, rawPullRequests.get(prNumber) ?? {}),
     ]),
   )
+  const stackAncestryPairs = stackParentRows.flatMap((row) => {
+    const child = pullRequestsByNumber[Number(row.child_pull_request_number)]
+    const childMergeCommitSha = child?.mergeCommitSha
+    if (!childMergeCommitSha) return []
+    return row.parent_pull_request_numbers.flatMap((parentNumber) => {
+      const parent = pullRequestsByNumber[parentNumber]
+      const parentHeadSha = parent?.headSha
+      return parentHeadSha
+        ? [
+            {
+              deliveryId: row.delivery_id,
+              childNumber: Number(row.child_pull_request_number),
+              parentNumber,
+              baseSha: childMergeCommitSha,
+              headSha: parentHeadSha,
+            },
+          ]
+        : []
+    })
+  })
+  const { rows: stackAncestryRows } =
+    stackAncestryPairs.length === 0
+      ? { rows: [] }
+      : await client.query<{ base_sha: string; head_sha: string; data: unknown }>(
+          `SELECT DISTINCT ON (lower(snapshot.base_sha), lower(snapshot.head_sha))
+                  snapshot.base_sha, snapshot.head_sha, snapshot.data
+           FROM github_compare_raw_snapshots snapshot
+           WHERE snapshot.github_repo_id = $1
+             AND (lower(snapshot.base_sha), lower(snapshot.head_sha)) IN (
+               SELECT lower(pair.base_sha), lower(pair.head_sha)
+               FROM unnest($2::text[], $3::text[]) AS pair(base_sha, head_sha)
+             )
+           ORDER BY lower(snapshot.base_sha), lower(snapshot.head_sha), snapshot.fetched_at DESC, snapshot.id DESC`,
+          [
+            repository.github_repo_id,
+            stackAncestryPairs.map((pair) => pair.baseSha),
+            stackAncestryPairs.map((pair) => pair.headSha),
+          ],
+        )
+  const stackAncestryBySha = new Map<string, RepositoryDeliveryStackAncestryStatus>()
+  for (const row of stackAncestryRows) {
+    const status = asRecord(row.data)?.status
+    if (status === 'identical' || status === 'ahead' || status === 'behind' || status === 'diverged') {
+      stackAncestryBySha.set(`${row.base_sha.toLowerCase()}:${row.head_sha.toLowerCase()}`, status)
+    }
+  }
 
   return deliveries.map((delivery) => {
     const compare = compareByDeliveryId.get(delivery.id) ?? null
     const pullRequestNumbers = [
-      ...new Set(
-        (compare?.commits ?? []).flatMap(
+      ...new Set([
+        ...(compare?.commits ?? []).flatMap(
           (commit) =>
-            associatedPullRequestsBySha
-              .get(commit.sha)
-              ?.pullRequests.filter((pullRequest) => pullRequest.baseBranch === repository.default_branch)
-              .map((pullRequest) => pullRequest.number) ?? [],
+            associatedPullRequestsBySha.get(commit.sha)?.pullRequests.map((pullRequest) => pullRequest.number) ?? [],
         ),
-      ),
+        ...stackedPullRequestRows
+          .filter((row) => row.delivery_id === delivery.id)
+          .map((row) => Number(row.pull_request_number))
+          .filter((number) => Number.isSafeInteger(number) && number > 0),
+      ]),
     ]
     const associatedPullRequestsByCommit = Object.fromEntries(
       (compare?.commits ?? []).map((commit) => [commit.sha, associatedPullRequestsBySha.get(commit.sha)]),
     )
+    const deliveryPullRequestsByNumber = Object.fromEntries(
+      pullRequestNumbers.map((pullRequestNumber) => [pullRequestNumber, pullRequestsByNumber[pullRequestNumber]]),
+    )
+    const stackParentPullRequestNumbersByNumber = Object.fromEntries(
+      stackParentRows
+        .filter((row) => row.delivery_id === delivery.id)
+        .map((row) => [Number(row.child_pull_request_number), row.parent_pull_request_numbers]),
+    )
+    const stackAncestryByPullRequestNumber: Record<number, Record<number, RepositoryDeliveryStackAncestryStatus>> = {}
+    for (const pair of stackAncestryPairs.filter((candidate) => candidate.deliveryId === delivery.id)) {
+      const ancestry = stackAncestryBySha.get(`${pair.baseSha.toLowerCase()}:${pair.headSha.toLowerCase()}`)
+      if (!ancestry) continue
+      const parents = stackAncestryByPullRequestNumber[pair.childNumber] ?? {}
+      parents[pair.parentNumber] = ancestry
+      stackAncestryByPullRequestNumber[pair.childNumber] = parents
+    }
     const evidence = {
       compare,
       defaultBranch: repository.default_branch,
       implicitApprovalMode,
       associatedPullRequestsByCommit,
-      pullRequestsByNumber,
+      pullRequestsByNumber: deliveryPullRequestsByNumber,
+      stackParentPullRequestNumbersByNumber,
+      stackAncestryByPullRequestNumber,
     }
     const assessment = assessRepositoryDeliveryInterval(evidence)
     return {

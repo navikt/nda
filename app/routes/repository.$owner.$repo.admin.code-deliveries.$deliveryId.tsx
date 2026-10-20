@@ -6,7 +6,7 @@ import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { requireUser } from '~/lib/auth.server'
 import { resolveRepositoryApprovalCapabilities } from '~/lib/authorization.server'
 import { presentRepositoryApprovalHistory } from '~/lib/repository-approval-history.server'
-import { assessRepositoryDeliveryApproval } from '~/lib/repository-code-delivery/approval-assessment'
+import { assessStoredRepositoryDeliveryApproval } from '~/lib/repository-code-delivery/approval-assessment'
 import { resolveRepositoryFromParams } from '~/lib/repository-resolution.server'
 import { requireParams } from '~/lib/route-params.server'
 import { serializeUserLookups } from '~/lib/user-display'
@@ -75,34 +75,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ]),
     )
     const userMappings = serializeUserLookups(activeGithubUserLookups)
-    const intervalCommits = new Map(
-      delivery.interval_assessment.commits.map((commit) => [commit.sha.toLowerCase(), commit]),
+    const approvalAssessment = assessStoredRepositoryDeliveryApproval(
+      delivery,
+      delivery.interval_assessment,
+      history.commits,
+      new Map([...activeGithubUserLookups].map(([username, lookup]) => [username, lookup.nav_ident])),
     )
-    const approvalAssessment = assessRepositoryDeliveryApproval({
-      baseSha: delivery.base_sha,
-      headSha: delivery.head_sha,
-      commitHistoryComplete: delivery.interval_assessment.comparisonComplete,
-      totalCommits: delivery.interval_assessment.totalCommits,
-      commits: delivery.interval_assessment.commits.map((commit) => ({
-        sha: commit.sha,
-        authorIdentityKey: commit.authorLogin
-          ? (activeGithubUserLookups.get(commit.authorLogin)?.nav_ident ?? null)
-          : null,
-        prCoverage:
-          commit.status === 'covered' ? 'approved' : commit.status === 'not_covered' ? 'not_approved' : 'unknown',
-      })),
-      approvals: history.commits
-        .filter((commit) => {
-          const currentAuthor = intervalCommits.get(commit.sha.toLowerCase())?.authorLogin
-          if (!currentAuthor) return false
-          return (
-            commit.status === 'eligible' &&
-            currentAuthor?.toLowerCase() === commit.author_login &&
-            activeGithubUserLookups.get(currentAuthor)?.nav_ident === commit.author_nav_ident
-          )
-        })
-        .map((commit) => ({ approverIdentityKey: commit.reviewer_nav_ident, commitShas: [commit.sha] })),
-    })
 
     return {
       repository: {

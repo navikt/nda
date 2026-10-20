@@ -17,6 +17,7 @@ const commit: RepositoryApprovalReview['commits'][number] = {
 }
 
 export const approvalReview: RepositoryApprovalReview = {
+  previewToken: 'a'.repeat(64),
   snapshotId: 23,
   baseSha: 'a'.repeat(40),
   headSha: 'f'.repeat(40),
@@ -51,7 +52,7 @@ export const approvalReview: RepositoryApprovalReview = {
       ...commit,
       sha: 'f'.repeat(40),
       committerDate: '',
-      unavailableReason: 'Lagret committer-tid mangler eller er ugyldig. Ingen alternativ tid brukes.',
+      unavailableReason: null,
     },
   ],
   pullRequests: [],

@@ -7,8 +7,10 @@ import { assessRepositoryDeliveryApproval } from '~/lib/repository-code-delivery
 import { action as revocationAction } from '~/routes/repository.$owner.$repo.admin.code-deliveries.$deliveryId.actions.server'
 import { action as approvalAction } from '~/routes/repository.$owner.$repo.approvals.$deliveryId.actions.server'
 import { createRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
+import { getRepositoryCodeDeliveryFollowUp } from '../../repository-code-delivery-follow-up.server'
 import { getRepositoryCodeDeliveryEvidence } from '../../repository-code-delivery-overview.server'
 import {
+  approveRepositoryDelivery,
   createRepositoryApprovalReview,
   createRepositoryApprovalSnapshot,
   getRepositoryApprovalDeliveries,
@@ -116,7 +118,6 @@ async function approve(commitShas = [firstSha, headSha], reviewer = actor) {
     commitShas,
     reviewedAt,
     reviewDocumentation: 'Gjennomgått kodeendringene og relevante tester.',
-    documentationUrl: null,
   })
   return { id, snapshot }
 }
@@ -144,23 +145,59 @@ function actionArgs(fields: Record<string, string | string[]>) {
 }
 
 describe('repository manual approval storage', () => {
-  it('runs the real POST actions from snapshot presentation through subset registration and reasoned revocation', async () => {
+  it('filters follow-up using current eligible approvals and excludes revoked and changed identities', async () => {
+    const readFollowUp = async () => {
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        return await getRepositoryCodeDeliveryFollowUp(repositoryId, { page: 1, pageSize: 20, status: 'all' }, client)
+      } finally {
+        try {
+          await client.query('ROLLBACK')
+        } finally {
+          client.release()
+        }
+      }
+    }
+    expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({ status: 'not_approved', needsApproval: 2 })
+    const approval = await approve()
+    expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({
+      status: 'approved',
+      covered: 2,
+      needsApproval: 0,
+    })
+    await revokeRepositoryManualApproval(actor, repositoryId, deliveryId, approval.id, 'Feil grunnlag')
+    expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({ status: 'not_approved', needsApproval: 2 })
+    await approve()
+    await pool.query(`UPDATE user_github_accounts SET nav_ident = 'Z990002' WHERE github_username = 'glad-fjord'`)
+    await pool.query(`UPDATE user_github_accounts SET nav_ident = 'Z990001' WHERE github_username = 'glad-fjord'`)
+    expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({
+      status: 'not_approved',
+      covered: 1,
+      needsApproval: 1,
+    })
+  })
+
+  it('does not retain the unused documentation URL column', async () => {
+    const { rows } = await pool.query<{ present: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'repository_manual_approvals'
+           AND column_name = 'documentation_url'
+       ) AS present`,
+    )
+    expect(rows[0].present).toBe(false)
+  })
+
+  it('previews without storing and atomically approves only commits missing PR coverage', async () => {
     expect((await getRepositoryApprovalPage(actor, repositoryId, deliveryId)).manualApprovalHistory).toEqual([])
     expect((await history()).snapshots).toEqual([])
-    const started = await approvalAction(actionArgs({ intent: 'start-review' }))
-    if (!('review' in started)) throw new Error('Expected a stored review')
-    expect(started.review.commits.map((commit) => commit.sha)).toEqual([firstSha, headSha])
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    expect(preview.review?.commits.map((commit) => commit.sha)).toEqual([firstSha, headSha])
     expect((await history()).commits).toEqual([])
-    const fields = {
-      intent: 'register-approval',
-      snapshotId: String(started.review.snapshotId),
-      commitShas: firstSha,
-      reviewedAt: reviewedAt.toISOString(),
-      reviewDocumentation: 'Gjennomgått kode og tester.',
-      documentationUrl: 'https://example.com/review',
-      reviewer: 'Z990001',
-      registeredBy: 'Z990002',
-    }
+    expect((await history()).snapshots).toEqual([])
+    const fields = { intent: 'approve-repository', previewToken: preview.review?.previewToken ?? '', note: 'Godkjent.' }
     expect(await approvalAction(actionArgs(fields))).toMatchObject({ registered: true })
     const stored = await history()
     expect(stored.commits).toMatchObject([
@@ -168,11 +205,12 @@ describe('repository manual approval storage', () => {
         sha: firstSha,
         reviewer_nav_ident: actor.navIdent,
         registered_by_nav_ident: actor.navIdent,
-        review_documentation: fields.reviewDocumentation,
-        documentation_url: fields.documentationUrl,
+        review_documentation: fields.note,
       },
+      { sha: headSha, reviewer_nav_ident: actor.navIdent },
     ])
-    expect(stored.commits).toHaveLength(1)
+    expect(stored.commits).toHaveLength(2)
+    expect(stored.snapshots).toHaveLength(1)
     const revoke = { intent: 'revoke-approval', approvalId: String(stored.commits[0].id), reason: 'Feil grunnlag.' }
     expect(await revocationAction(actionArgs({ ...revoke, reason: '' }))).toHaveProperty('error')
     expect(await revocationAction(actionArgs(revoke))).toHaveProperty('success')
@@ -180,33 +218,149 @@ describe('repository manual approval storage', () => {
     expect((await history()).events.map((event) => event.event_type)).toEqual(['created', 'revoked'])
   })
 
-  it('surfaces real server validation failures through actions without registering or replacing the displayed snapshot', async () => {
-    const started = await approvalAction(actionArgs({ intent: 'start-review' }))
-    if (!('review' in started)) throw new Error('Expected a stored review')
-    const fields = {
-      intent: 'register-approval',
-      snapshotId: String(started.review.snapshotId),
-      commitShas: firstSha,
-      reviewedAt: reviewedAt.toISOString(),
-      reviewDocumentation: 'Gjennomgått kode.',
-      documentationUrl: '',
-    }
-    for (const invalid of [
-      { reviewDocumentation: '' },
-      { documentationUrl: 'javascript:alert(1)' },
-      { reviewedAt: new Date(Date.now() + 86_400_000).toISOString() },
-      { reviewedAt: '2026-10-16T10:00:00Z' },
-      { snapshotId: String(started.review.snapshotId + 1) },
-      { commitShas: 'invalid' },
-    ]) {
-      expect(await approvalAction(actionArgs({ ...fields, ...invalid }))).toHaveProperty('error')
-    }
+  it('rejects a changed author mapping without storing a snapshot or approval', async () => {
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    const fields = { intent: 'approve-repository', previewToken: preview.review?.previewToken ?? '', note: '' }
+    expect(await approvalAction(actionArgs({ ...fields, previewToken: 'f'.repeat(64) }))).toHaveProperty('error')
     await pool.query(`UPDATE user_github_accounts SET nav_ident = 'Z990002' WHERE github_username = 'glad-fjord'`)
     expect(await approvalAction(actionArgs(fields))).toMatchObject({ stale: true, error: expect.any(String) })
     const stored = await history()
-    expect(stored.snapshots).toHaveLength(1)
+    expect(stored.snapshots).toEqual([])
     expect(stored.commits).toEqual([])
     expect(stored.events).toEqual([])
+  })
+
+  it('invalidates a preview when another approval changes the eligible commit set', async () => {
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    await approve([firstSha])
+    await expect(
+      approveRepositoryDelivery(actor, repositoryId, deliveryId, {
+        previewToken: preview.review?.previewToken ?? '',
+        note: null,
+      }),
+    ).rejects.toMatchObject({ code: 'stale_ground' })
+    expect((await history()).commits).toHaveLength(1)
+  })
+
+  it('rejects a preview token issued to another reviewer', async () => {
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    await expect(
+      approveRepositoryDelivery({ ...actor, navIdent: 'Z990004' }, repositoryId, deliveryId, {
+        previewToken: preview.review?.previewToken ?? '',
+        note: null,
+      }),
+    ).rejects.toMatchObject({ code: 'stale_ground' })
+    expect((await history()).commits).toEqual([])
+  })
+
+  it('does not treat historical approval as coverage after the current commit author changes', async () => {
+    await approve([firstSha])
+    await pool.query(
+      `UPDATE github_compare_raw_snapshots
+       SET data = jsonb_set(data, '{commits,0,author,login}', '"rask-elv"')`,
+    )
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    expect(preview.review?.commits[0]).toMatchObject({
+      authorLogin: 'rask-elv',
+      authorNavIdent: 'Z990002',
+      unavailableReason: null,
+    })
+    expect(preview.manualApprovalHistory[0].commits[0]).toMatchObject({
+      sha: firstSha,
+      status: 'identity_or_interval_changed',
+    })
+  })
+
+  it('retains approval history when current delivery evidence is incomplete', async () => {
+    await approve([firstSha])
+    await pool.query('DELETE FROM github_compare_raw_snapshots')
+    const page = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    expect(page.review).toBeNull()
+    expect(page.manualApprovalHistory).toMatchObject([{ commits: [{ sha: firstSha, status: 'eligible' }] }])
+  })
+
+  it('serializes concurrent approvals so only one registration succeeds', async () => {
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    const fields = {
+      intent: 'approve-repository',
+      previewToken: preview.review?.previewToken ?? '',
+      note: '',
+    }
+    const results = await Promise.all([approvalAction(actionArgs(fields)), approvalAction(actionArgs(fields))])
+    expect(results.filter((result) => 'registered' in result && result.registered)).toHaveLength(1)
+    expect(results.filter((result) => 'stale' in result && result.stale)).toHaveLength(1)
+    expect((await history()).commits).toHaveLength(2)
+  })
+
+  it('approves a commit missing PR review but never a commit already covered by PR review', async () => {
+    await pool.query(
+      `UPDATE github_commit_associated_prs_raw_snapshots
+       SET data = '[{"number":42,"base":{"ref":"main"}}]'::jsonb WHERE sha = $1`,
+      [firstSha],
+    )
+    await pool.query(
+      `INSERT INTO github_pr_raw_snapshots (github_repo_id, owner, repo, pr_number, data_type, api_version, data)
+       VALUES ('12345', 'navikt', 'glad-fjord', 42, 'pr', '2022-11-28', $1::jsonb),
+              ('12345', 'navikt', 'glad-fjord', 42, 'reviews', '2022-11-28', $2::jsonb),
+              ('12345', 'navikt', 'glad-fjord', 42, 'commits', '2022-11-28', $3::jsonb)`,
+      [
+        JSON.stringify({
+          number: 42,
+          base: { ref: 'main' },
+          head: { sha: firstSha },
+          commits: 1,
+          user: { login: 'glad-fjord' },
+          merged_by: { login: 'rask-elv' },
+          merge_commit_sha: null,
+        }),
+        JSON.stringify([
+          {
+            id: 1,
+            user: { login: 'rask-elv' },
+            state: 'APPROVED',
+            submitted_at: '2026-10-17T11:00:00Z',
+            commit_id: firstSha,
+          },
+        ]),
+        JSON.stringify([
+          {
+            sha: firstSha,
+            parents: [{ sha: baseSha }],
+            author: { login: 'glad-fjord' },
+            commit: {
+              message: 'Add feature',
+              author: { date: '2026-10-17T09:00:00Z' },
+              committer: { date: '2026-10-17T10:00:00Z' },
+            },
+          },
+        ]),
+      ],
+    )
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    expect(preview.review?.commits[0]).toMatchObject({
+      prStatus: 'covered',
+      unavailableReason: 'Denne committen er allerede dekket av PR-review.',
+    })
+    expect(preview.review?.commits[1]).toMatchObject({ prStatus: 'not_covered', unavailableReason: null })
+    expect(
+      await approvalAction(
+        actionArgs({ intent: 'approve-repository', previewToken: preview.review?.previewToken ?? '', note: '' }),
+      ),
+    ).toMatchObject({ registered: true })
+    expect((await history()).commits.map((commit) => commit.sha)).toEqual([headSha])
+  })
+
+  it('does not allow approval when PR coverage is unknown', async () => {
+    await pool.query('DELETE FROM github_commit_associated_prs_raw_snapshots')
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    expect(preview.review?.commits.every((commit) => commit.prStatus === 'unknown')).toBe(true)
+    expect(
+      await approvalAction(
+        actionArgs({ intent: 'approve-repository', previewToken: preview.review?.previewToken ?? '', note: '' }),
+      ),
+    ).toMatchObject({ error: expect.stringContaining('Ukjent PR-grunnlag') })
+    expect((await history()).snapshots).toEqual([])
+    expect((await history()).commits).toEqual([])
   })
 
   it('presents the frozen PR input and rejects a changed review without refreshing it', async () => {
@@ -275,7 +429,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått kode.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'stale_ground' })
     expect(review.pullRequests[0].reviews[0].state).toBe('APPROVED')
@@ -349,26 +502,21 @@ describe('repository manual approval storage', () => {
     })
   })
 
-  it.each([
-    { reviewDocumentation: '', documentationUrl: null },
-    { reviewDocumentation: '   ', documentationUrl: null },
-    { reviewDocumentation: 'Gjennomgått', documentationUrl: 'javascript:alert(1)' },
-    { reviewDocumentation: 'Gjennomgått', documentationUrl: 'data:text/html,test' },
-    { reviewDocumentation: 'Gjennomgått', documentationUrl: 'invalid-url' },
-    { reviewDocumentation: 'Gjennomgått', documentationUrl: 'https:example.com/review' },
-    { reviewDocumentation: 'Gjennomgått', documentationUrl: 'https:\\example.com' },
-  ])('requires review documentation and a safe optional URL: %j', async (documentation) => {
-    const snapshot = await createRepositoryApprovalSnapshot(actor, repositoryId, deliveryId)
-    await expect(
-      registerRepositoryManualApproval(actor, repositoryId, deliveryId, {
-        snapshotId: snapshot.id,
-        commitShas: [firstSha],
-        reviewedAt,
-        ...documentation,
-      }),
-    ).rejects.toMatchObject({ code: 'invalid_approval' })
-    expect((await history()).commits).toEqual([])
-  })
+  it.each([{ reviewDocumentation: '' }, { reviewDocumentation: '   ' }])(
+    'requires review documentation: %j',
+    async (documentation) => {
+      const snapshot = await createRepositoryApprovalSnapshot(actor, repositoryId, deliveryId)
+      await expect(
+        registerRepositoryManualApproval(actor, repositoryId, deliveryId, {
+          snapshotId: snapshot.id,
+          commitShas: [firstSha],
+          reviewedAt,
+          ...documentation,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_approval' })
+      expect((await history()).commits).toEqual([])
+    },
+  )
 
   it('checks the latest selected timestamp, not an unselected commit, and permits equality', async () => {
     await pool.query(
@@ -380,7 +528,6 @@ describe('repository manual approval storage', () => {
       commitShas: [firstSha, headSha],
       reviewedAt,
       reviewDocumentation: 'Gjennomgått kode.',
-      documentationUrl: null,
     }
     await expect(registerRepositoryManualApproval(actor, repositoryId, deliveryId, input)).rejects.toMatchObject({
       code: 'invalid_approval',
@@ -410,7 +557,6 @@ describe('repository manual approval storage', () => {
           commitShas: [firstSha],
           reviewedAt,
           reviewDocumentation: 'Gjennomgått kode.',
-          documentationUrl: null,
         }),
       ).rejects.toMatchObject({ code: 'incomplete_evidence' })
       await expect(
@@ -419,7 +565,6 @@ describe('repository manual approval storage', () => {
           commitShas: [headSha],
           reviewedAt,
           reviewDocumentation: 'Gjennomgått kode.',
-          documentationUrl: null,
         }),
       ).resolves.toBeTypeOf('number')
     },
@@ -434,7 +579,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått kode.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'stale_ground' })
     expect((await history()).snapshots).toHaveLength(1)
@@ -449,7 +593,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått kode.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'stale_ground' })
     expect((await history()).commits).toEqual([])
@@ -463,7 +606,6 @@ describe('repository manual approval storage', () => {
       commitShas: [firstSha],
       reviewedAt,
       reviewDocumentation: 'Gjennomgått kode.',
-      documentationUrl: null,
     }
     await expect(registerRepositoryManualApproval(actor, repositoryId, other.id, input)).rejects.toMatchObject({
       code: 'not_found',
@@ -487,7 +629,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått kode.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'invalid_approval' })
     await expect(
@@ -532,7 +673,7 @@ describe('repository manual approval storage', () => {
       [rows[0].id, snapshot.id, firstSha],
     )
     expect((await getRepositoryApprovalPage(actor, repositoryId, deliveryId)).manualApprovalHistory).toMatchObject([
-      { reviewDocumentation: null, documentationUrl: null },
+      { reviewDocumentation: null },
     ])
   })
 
@@ -574,7 +715,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'forbidden' })
     expect(expected.commits.every((commit) => commit.id === id)).toBe(true)
@@ -670,7 +810,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: 'https://example.com/review',
       }),
     ).resolves.toBeTypeOf('number')
   })
@@ -687,7 +826,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'forbidden' })
     await expect(
@@ -708,7 +846,6 @@ describe('repository manual approval storage', () => {
       reviewed_at: reviewedAt,
       author_nav_ident: 'Z990001',
       review_documentation: 'Gjennomgått kodeendringene og relevante tester.',
-      documentation_url: null,
     })
     expect(result.commits[0].registered_at.getTime()).toBeGreaterThan(reviewedAt.getTime())
     expect(result.events).toMatchObject([{ approval_id: id, event_type: 'created', actor_nav_ident: actor.navIdent }])
@@ -746,7 +883,6 @@ describe('repository manual approval storage', () => {
         commitShas: [headSha, firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'invalid_approval' })
     expect((await history()).commits).toEqual([])
@@ -771,7 +907,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'stale_ground' })
   })
@@ -787,7 +922,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'stale_ground' })
   })
@@ -849,7 +983,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt,
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'not_found' })
     await expect(revokeRepositoryManualApproval(actor, other, deliveryId, id, 'Wrong scope')).rejects.toMatchObject({
@@ -883,7 +1016,6 @@ describe('repository manual approval storage', () => {
         commitShas,
         reviewedAt,
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: commitShas.includes(baseSha) ? 'commit_outside_snapshot' : 'invalid_approval' })
   })
@@ -896,7 +1028,6 @@ describe('repository manual approval storage', () => {
         commitShas: [firstSha],
         reviewedAt: new Date(Date.now() + 86_400_000),
         reviewDocumentation: 'Gjennomgått endringene.',
-        documentationUrl: null,
       }),
     ).rejects.toMatchObject({ code: 'invalid_approval' })
     const { id } = await approve()
@@ -940,7 +1071,6 @@ describe('repository manual approval storage', () => {
           commitShas: [firstSha],
           reviewedAt,
           reviewDocumentation: 'Gjennomgått endringene.',
-          documentationUrl: null,
         })
         const assertion = expect(registration).rejects.toMatchObject({ code: 'stale_ground' })
         const deadline = Date.now() + 5000

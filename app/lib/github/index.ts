@@ -23,4 +23,5 @@ export {
   getMergedPullRequestsInWindow,
   getMutablePrDataFromGitHub,
   getPullRequestForCommit,
+  getPullRequestsForHeadBranch,
 } from './pr.server'

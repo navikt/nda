@@ -18,7 +18,6 @@ export function presentRepositoryApprovalHistory(
       reviewedAt: approval.reviewed_at,
       registeredAt: approval.registered_at,
       reviewDocumentation: approval.review_documentation ?? null,
-      documentationUrl: approval.documentation_url ?? null,
       baseSha: snapshot.base_sha,
       headSha: snapshot.head_sha,
       commits: commits.map((commit) => ({

@@ -1,6 +1,8 @@
 import type { PoolClient } from 'pg'
 import { pool, withTransaction } from '~/db/connection.server'
 
+export const REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION = 1
+
 export interface RepositoryCodeDeliveryAssessmentSyncCandidate {
   deliveryId: number
   repositoryId: number
@@ -23,6 +25,7 @@ export interface RepositoryCodeDeliveryAssessmentPrSnapshotIds {
 export interface RepositoryCodeDeliveryAssessmentSyncProgress {
   completedAssociationSnapshotIds: Record<string, number>
   completedPullRequestSnapshotIds: Record<string, RepositoryCodeDeliveryAssessmentPrSnapshotIds>
+  stackParentPullRequestNumbers: Record<string, number[]>
 }
 
 export async function enqueueRepositoryCodeDeliveryAssessmentSync(
@@ -39,6 +42,7 @@ export async function enqueueRepositoryCodeDeliveryAssessmentSync(
          failed_permanently = false,
          completed_association_snapshot_ids = '{}'::jsonb,
          completed_pull_request_snapshot_ids = '{}'::jsonb,
+         stack_parent_pull_request_numbers = '{}'::jsonb,
          last_error = NULL,
          updated_at = now()
      WHERE repository_code_delivery_assessment_sync.failed_permanently = true`,
@@ -70,7 +74,7 @@ export async function claimRepositoryCodeDeliveryAssessmentSyncCandidates(
          FROM repository_code_delivery_assessment_sync sync
          JOIN repository_code_deliveries delivery ON delivery.id = sync.delivery_id
          JOIN repositories repository ON repository.id = delivery.repository_id
-         WHERE sync.completed_at IS NULL
+         WHERE (sync.completed_at IS NULL OR sync.completed_assessment_version < $2)
            AND sync.next_attempt_at <= now()
            AND (sync.locked_until IS NULL OR sync.locked_until < now())
            AND sync.failed_permanently = false
@@ -81,6 +85,7 @@ export async function claimRepositoryCodeDeliveryAssessmentSyncCandidates(
        )
        UPDATE repository_code_delivery_assessment_sync sync
        SET attempt_count = sync.attempt_count + 1,
+           completed_at = NULL,
            locked_until = now() + interval '30 minutes',
            updated_at = now()
        FROM candidates, repository_code_deliveries delivery, repositories repository
@@ -95,7 +100,7 @@ export async function claimRepositoryCodeDeliveryAssessmentSyncCandidates(
                  repository.default_branch AS "defaultBranch",
                  delivery.base_sha AS "baseSha",
                  delivery.head_sha AS "headSha"`,
-      [limit],
+      [limit, REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION],
     )
     return rows.map((row) => ({ ...row, githubRepoId: Number(row.githubRepoId) }))
   })
@@ -106,7 +111,8 @@ export async function getRepositoryCodeDeliveryAssessmentSyncProgress(
 ): Promise<RepositoryCodeDeliveryAssessmentSyncProgress> {
   const { rows } = await pool.query<RepositoryCodeDeliveryAssessmentSyncProgress>(
     `SELECT completed_association_snapshot_ids AS "completedAssociationSnapshotIds",
-            completed_pull_request_snapshot_ids AS "completedPullRequestSnapshotIds"
+            completed_pull_request_snapshot_ids AS "completedPullRequestSnapshotIds",
+            stack_parent_pull_request_numbers AS "stackParentPullRequestNumbers"
      FROM repository_code_delivery_assessment_sync
      WHERE delivery_id = $1`,
     [deliveryId],
@@ -156,13 +162,41 @@ export async function markRepositoryCodeDeliveryAssessmentPullRequestCompleted(
   if (rowCount === 0) throw new Error(`Assessment sync queue row missing for delivery ${deliveryId}`)
 }
 
-export async function markRepositoryCodeDeliveryAssessmentSyncCompleted(deliveryId: number): Promise<void> {
-  await pool.query(
+export async function markRepositoryCodeDeliveryAssessmentStackParentsCompleted(
+  deliveryId: number,
+  pullRequestNumber: number,
+  parentPullRequestNumbers: number[],
+): Promise<void> {
+  const { rowCount } = await pool.query(
     `UPDATE repository_code_delivery_assessment_sync
-     SET completed_at = now(), locked_until = NULL, last_error = NULL, updated_at = now()
+     SET stack_parent_pull_request_numbers = jsonb_set(
+           stack_parent_pull_request_numbers,
+           ARRAY[$2::text],
+           $3::jsonb,
+           true
+         ),
+         updated_at = now()
      WHERE delivery_id = $1`,
-    [deliveryId],
+    [deliveryId, pullRequestNumber, JSON.stringify(parentPullRequestNumbers)],
   )
+  if (rowCount === 0) throw new Error(`Assessment sync queue row missing for delivery ${deliveryId}`)
+}
+
+export async function markRepositoryCodeDeliveryAssessmentSyncCompleted(
+  deliveryId: number,
+  assessmentVersion: number,
+): Promise<void> {
+  const { rowCount } = await pool.query(
+    `UPDATE repository_code_delivery_assessment_sync
+     SET completed_at = now(),
+         completed_assessment_version = $2,
+         locked_until = NULL,
+         last_error = NULL,
+         updated_at = now()
+     WHERE delivery_id = $1`,
+    [deliveryId, assessmentVersion],
+  )
+  if (rowCount === 0) throw new Error(`Assessment sync queue row missing for delivery ${deliveryId}`)
 }
 
 export async function markRepositoryCodeDeliveryAssessmentSyncFailed(

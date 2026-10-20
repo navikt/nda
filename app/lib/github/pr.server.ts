@@ -31,6 +31,40 @@ interface PullRequestLookupResult {
   allAssociatedPrs: Array<{ number: number; baseBranch: string }>
 }
 
+export interface PullRequestBranchReference {
+  number: number
+  baseBranch: string
+  baseSha: string
+  headBranch: string
+  headSha: string
+  mergedAt: string | null
+  mergeCommitSha: string | null
+}
+
+export async function getPullRequestsForHeadBranch(
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<PullRequestBranchReference[]> {
+  const client = getGitHubClient()
+  const pullRequests = await client.paginate(client.pulls.list, {
+    owner,
+    repo,
+    head: `${owner}:${branch}`,
+    state: 'all',
+    per_page: 100,
+  })
+  return pullRequests.map((pullRequest) => ({
+    number: pullRequest.number,
+    baseBranch: pullRequest.base.ref,
+    baseSha: pullRequest.base.sha,
+    headBranch: pullRequest.head.ref,
+    headSha: pullRequest.head.sha,
+    mergedAt: pullRequest.merged_at,
+    mergeCommitSha: pullRequest.merge_commit_sha,
+  }))
+}
+
 async function archiveCommitAssociatedPrsRawSnapshot(
   owner: string,
   repo: string,
