@@ -4,6 +4,7 @@ import {
   createRepositoryCodeDelivery,
   linkDeploymentToRepositoryCodeDelivery,
 } from '../../repository-code-deliveries.server'
+import { deferRepositoryCodeDeliveryAssessmentSync } from '../../repository-code-delivery-assessment-sync.server'
 import { getRepositoryCodeDeliveryIntervalAssessments } from '../../repository-code-delivery-interval-assessment.server'
 import {
   getRepositoryCodeDeliveryDiagnosticForDelivery,
@@ -76,6 +77,81 @@ async function markUnresolved(deploymentId: number, reason: string, resolved = f
 }
 
 describe('repository code delivery overview', () => {
+  it('returns per-delivery assessment sync status and progress', async () => {
+    const repositoryId = await createRepository('1014')
+    await pool.query(`UPDATE repositories SET code_delivery_tracking_since = now() WHERE id = $1`, [repositoryId])
+    const delivery = await createRepositoryCodeDelivery({
+      repositoryId,
+      baseSha: SHA_1,
+      headSha: SHA_2,
+    })
+
+    expect(await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)).toMatchObject({
+      assessment_sync: {
+        status: 'not_queued',
+        attempt_count: 0,
+        completed_assessment_version: 0,
+        completed_association_snapshots: 0,
+        completed_pull_request_snapshots: 0,
+        stack_parent_pull_requests: 0,
+      },
+    })
+
+    await pool.query(
+      `INSERT INTO repository_code_delivery_assessment_sync
+         (delivery_id, attempt_count, completed_at, completed_assessment_version,
+          completed_association_snapshot_ids, completed_pull_request_snapshot_ids, stack_parent_pull_request_numbers)
+       VALUES ($1, 2, now(), 1, $2::jsonb, $3::jsonb, $4::jsonb)`,
+      [
+        delivery.id,
+        JSON.stringify({ [SHA_2]: 9 }),
+        JSON.stringify({ 42: {} }),
+        JSON.stringify({ 42: [40, 41], 43: [], 44: [41] }),
+      ],
+    )
+
+    expect(await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)).toMatchObject({
+      assessment_sync: {
+        status: 'completed',
+        attempt_count: 2,
+        completed_assessment_version: 1,
+        completed_association_snapshots: 1,
+        completed_pull_request_snapshots: 1,
+        stack_parent_pull_requests: 2,
+      },
+    })
+  })
+
+  it('keeps partial progress visible in the data after a rate-limited first attempt', async () => {
+    const repositoryId = await createRepository('1014')
+    await pool.query(`UPDATE repositories SET code_delivery_tracking_since = now() WHERE id = $1`, [repositoryId])
+    const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_1, headSha: SHA_2 })
+    await pool.query(
+      `INSERT INTO repository_code_delivery_assessment_sync
+         (delivery_id, attempt_count, locked_until, completed_association_snapshot_ids,
+          completed_pull_request_snapshot_ids, stack_parent_pull_request_numbers)
+       VALUES ($1, 1, now() + interval '30 minutes', $2::jsonb, $3::jsonb, $4::jsonb)`,
+      [delivery.id, JSON.stringify({ [SHA_2]: 9 }), JSON.stringify({ 42: {} }), JSON.stringify({ 42: [] })],
+    )
+
+    await deferRepositoryCodeDeliveryAssessmentSync(delivery.id, 'GitHub rate limit')
+
+    expect(await getRepositoryCodeDeliveryEvidence(repositoryId, delivery.id)).toMatchObject({
+      assessment_sync: {
+        status: 'retry_wait',
+        attempt_count: 0,
+        locked_until: null,
+        completed_at: null,
+        last_error: 'GitHub rate limit',
+        updated_at: expect.any(String),
+        next_attempt_at: expect.any(String),
+        completed_association_snapshots: 1,
+        completed_pull_request_snapshots: 1,
+        stack_parent_pull_requests: 0,
+      },
+    })
+  })
+
   it('returns linked deployments with their exact stored review evidence and comparison range', async () => {
     const repositoryId = await createRepository('1015')
     const otherRepositoryId = await createRepository('1016')
