@@ -17,9 +17,10 @@ async function resolvePrHeadShaFallback(
   owner: string,
   repo: string,
   prNumber: number | null,
+  githubRepoId?: number | string,
 ): Promise<string | undefined> {
   if (!prNumber) return undefined
-  const prData = await getCachedPrData(owner, repo, prNumber)
+  const prData = await getCachedPrData(owner, repo, prNumber, [], githubRepoId)
   return prData?.head_sha
 }
 
@@ -95,8 +96,9 @@ export async function refreshCommitChecksOnly(
   triggerUrl?: string | null,
   cachedWorkflowTrigger?: WorkflowTriggerConfig | null,
   resolvedWorkflowRun?: WorkflowRunResolution,
+  githubRepoId?: number | string,
 ): Promise<CommitChecksFetchResult> {
-  const fallbackSha = await resolvePrHeadShaFallback(owner, repo, githubPrNumber)
+  const fallbackSha = await resolvePrHeadShaFallback(owner, repo, githubPrNumber, githubRepoId)
   const checkSuiteId = await resolveCheckSuiteId(owner, repo, triggerUrl, cachedWorkflowTrigger, resolvedWorkflowRun)
   const result = await fetchCommitChecks(owner, repo, commitSha, fallbackSha, checkSuiteId)
   await updateDeploymentCommitChecks(deploymentId, result.commitChecks, result.attempted)

@@ -1,6 +1,10 @@
 import { findRepositoryForApp, getMonitoredAppIdsForRepository } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp, getRepositoryIdByGithubRepoId } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
 import {
   getSyncJobById,
   heartbeatSyncJob,
@@ -53,6 +57,22 @@ export async function computeVerificationDiffs(
 ): Promise<ComputeDiffsResult> {
   const deployments = await getDeploymentsForDiffComputation(monitoredAppId)
   const { implicitApprovalSettings } = await getEffectiveSettingsForApp(monitoredAppId)
+  const implicitApprovalSettingsCache = new Map<
+    number,
+    Promise<Awaited<ReturnType<typeof getEffectiveSettingsForRepository>>['implicitApprovalSettings']>
+  >()
+
+  async function getImplicitApprovalSettings(repositoryId: number | null) {
+    if (repositoryId == null) return implicitApprovalSettings
+    let settings = implicitApprovalSettingsCache.get(repositoryId)
+    if (!settings) {
+      settings = getEffectiveSettingsForRepository(repositoryId, monitoredAppId).then(
+        (effectiveSettings) => effectiveSettings.implicitApprovalSettings,
+      )
+      implicitApprovalSettingsCache.set(repositoryId, settings)
+    }
+    return settings
+  }
 
   const result: ComputeDiffsResult = {
     deploymentsChecked: 0,
@@ -223,6 +243,7 @@ export async function computeVerificationDiffs(
                 ...(applyGithubRepoId != null ? { githubRepoId: applyGithubRepoId } : {}),
               })
             ).prNumber
+          const repositoryImplicitApprovalSettings = await getImplicitApprovalSettings(repositoryId)
           if (cachedPrNumber) {
             const prData =
               applyGithubRepoId == null
@@ -248,7 +269,7 @@ export async function computeVerificationDiffs(
             repositoryStatus: 'active',
             commitOnBaseBranch: true,
             auditStartYear: row.audit_start_year,
-            implicitApprovalSettings: implicitApprovalSettings ?? { mode: 'off' },
+            implicitApprovalSettings: repositoryImplicitApprovalSettings ?? { mode: 'off' },
             monitoredAppId,
             previousDeployment,
             previousDeploymentLookupFailed,

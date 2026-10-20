@@ -131,6 +131,8 @@ export async function reverifyPendingChecks(
         deployment.github_pr_number,
         triggerUrl,
         deployment.workflow_trigger_config,
+        undefined,
+        deployment.deployment_source === 'nais_apply' ? (deployment.github_repo_id ?? undefined) : undefined,
       )
       fetched++
     } catch (error) {

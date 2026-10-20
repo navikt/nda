@@ -282,7 +282,7 @@ describe('verifyDeploymentsFourEyes', () => {
           detected_github_repo_name: 'current-name',
           claim_github_owner: 'navikt',
           claim_github_repo_name: 'old-name',
-          github_pr_number: null,
+          github_pr_number: 456,
           trigger_url: 'https://github.com/navikt/old-name/actions/runs/123',
           workflow_trigger_config: null,
         },
@@ -302,9 +302,11 @@ describe('verifyDeploymentsFourEyes', () => {
       'navikt',
       'current-name',
       'a'.repeat(40),
-      null,
+      456,
       'https://github.com/navikt/current-name/actions/runs/123',
       null,
+      undefined,
+      '12345',
     )
     expect(result).toEqual({ fetched: 1, errors: 0 })
   })
