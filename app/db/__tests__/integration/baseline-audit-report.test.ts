@@ -155,6 +155,70 @@ describe('repository resolution for zero-deployment audit report', () => {
 })
 
 describe('renamed Apply deployments in audit reports', () => {
+  it('uses the persisted verified commit list when only a transformed comparison cache exists', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-g', appName: 'app-g', environment: 'prod-gcp' })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '7001',
+      githubOwner: 'navikt',
+      githubRepoName: 'current-repo',
+    })
+    const baseSha = 'a'.repeat(40)
+    const headSha = 'b'.repeat(40)
+    const comparedCommitShas = ['c'.repeat(40), 'd'.repeat(40)]
+
+    await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-g',
+      environment: 'prod-gcp',
+      createdAt: new Date('2026-03-09T10:00:00Z'),
+      commitSha: baseSha,
+      fourEyesStatus: 'approved_pr',
+    })
+    const applyDeploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-g',
+      environment: 'prod-gcp',
+      createdAt: IN_PERIOD,
+      commitSha: headSha,
+      fourEyesStatus: 'approved_pr',
+      githubOwner: 'navikt',
+      githubRepo: 'current-repo',
+    })
+    await pool.query(
+      `UPDATE deployments
+       SET deployment_source = 'nais_apply',
+           nais_deployment_id = NULL,
+           deployment_source_id = '7001:12345',
+           repository_id = $2
+       WHERE id = $1`,
+      [applyDeploymentId, repositoryId],
+    )
+    await pool.query(
+      `INSERT INTO github_compare_snapshots (owner, repo, base_sha, head_sha, schema_version, data)
+       VALUES ('navikt', 'current-repo', $1, $2, 1, $3)`,
+      [baseSha, headSha, JSON.stringify({ commits: comparedCommitShas.map((sha) => ({ sha })) })],
+    )
+    await pool.query(
+      `INSERT INTO verification_runs (deployment_id, schema_version, result, status)
+       VALUES ($1, 1, $2, 'approved')`,
+      [
+        applyDeploymentId,
+        JSON.stringify({
+          comparisonRange: { baseSha, headSha },
+          comparisonCommitHeadSha: headSha,
+          comparisonCommitShas: comparedCommitShas,
+        }),
+      ],
+    )
+
+    const rawData = await getAuditReportData(appId, PERIOD_START, PERIOD_END)
+
+    expect(rawData.deployments.find(({ id }) => id === applyDeploymentId)?.delivery_commit_shas).toEqual(
+      comparedCommitShas,
+    )
+  })
+
   it('uses snapshots scoped to the immutable repository ID instead of the claim-time name', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-g', appName: 'app-g', environment: 'prod-gcp' })
     await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])

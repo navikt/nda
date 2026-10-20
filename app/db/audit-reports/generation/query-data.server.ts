@@ -116,6 +116,10 @@ export async function getAuditReportData(
            ORDER BY cmp.fetched_at DESC
            LIMIT 1
          ),
+         CASE
+           WHEN jsonb_typeof(latest_apply_verification.comparison_commit_shas) = 'array'
+           THEN ARRAY(SELECT jsonb_array_elements_text(latest_apply_verification.comparison_commit_shas))
+         END,
          (
            SELECT ARRAY(SELECT jsonb_array_elements(cmp.data->'commits')->>'sha')
            FROM github_compare_snapshots cmp
@@ -191,7 +195,12 @@ export async function getAuditReportData(
                 WHEN vr.result->'comparisonRange'->>'headSha' = d.commit_sha
                  AND vr.result->'comparisonRange'->>'baseSha' ~ '^[0-9a-fA-F]{40}$'
                 THEN vr.result->'comparisonRange'->>'headSha'
-              END AS comparison_head_sha
+              END AS comparison_head_sha,
+              CASE
+                WHEN vr.result->>'comparisonCommitHeadSha' = d.commit_sha
+                 AND jsonb_typeof(vr.result->'comparisonCommitShas') = 'array'
+                THEN vr.result->'comparisonCommitShas'
+              END AS comparison_commit_shas
        FROM verification_runs vr
        WHERE vr.deployment_id = d.id
        ORDER BY vr.run_at DESC, vr.id DESC

@@ -18,7 +18,8 @@ export async function storeVerificationResult(
   input: Pick<
     VerificationInput,
     'commitSha' | 'previousDeployment' | 'previousDeploymentLookupFailed' | 'previousDeploymentRateLimited'
-  >,
+  > &
+    Partial<Pick<VerificationInput, 'commitsBetween'>>,
   changeSource?: string,
   commitCacheContext?: {
     repository: string
@@ -35,6 +36,8 @@ export async function storeVerificationResult(
       !input.previousDeploymentRateLimited
         ? { baseSha: input.previousDeployment.commitSha, headSha: input.commitSha }
         : null,
+    comparisonCommitHeadSha: input.commitSha,
+    comparisonCommitShas: input.commitsBetween?.map(({ sha }) => sha) ?? [],
   }
   const verificationRunId = await saveVerificationRun(
     deploymentId,

@@ -21,9 +21,6 @@ export interface RootApprovedSibling {
 // commit (making the sibling the nearest previousDeployment candidate even though the
 // current app's own earlier deployment is the true, more relevant root). Bounded to one
 // repo's apps, so this is a cheap single-hop lookup rather than a chain walk.
-// beforeDeploymentId excludes candidates created after the deployment currently being verified,
-// so a later deployment can never retroactively become the "root" for an earlier one (deployment
-// ids are a monotonic SERIAL PK, so this is equivalent to bounding on insertion order/created_at).
 export async function findRootApprovedSiblingForCommit(
   commitSha: string,
   githubRepoId: string,
@@ -36,7 +33,7 @@ export async function findRootApprovedSiblingForCommit(
      WHERE ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $1)')}
        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.commit_sha = $2
-       AND d.id <= $3
+       AND (d.created_at, d.id) <= (SELECT created_at, id FROM deployments WHERE id = $3)
        AND d.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
      ORDER BY d.created_at ASC, d.id ASC
      LIMIT 1`,

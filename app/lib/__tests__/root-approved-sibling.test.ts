@@ -30,13 +30,13 @@ describe('findRootApprovedSiblingForCommit', () => {
     expect(query).toContain("d.deployment_source != 'nais_apply'")
   })
 
-  it('bounds the query to deployments created no later than the deployment being verified', async () => {
+  it('bounds the query by deployment timestamp and ID to exclude later backfilled deployments', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [] })
 
     await findRootApprovedSiblingForCommit('sha-abc', 'repo-1', 999)
 
     const [query, params] = mockPoolQuery.mock.calls[0]
-    expect(query).toContain('d.id <= $3')
+    expect(query).toContain('(d.created_at, d.id) <= (SELECT created_at, id FROM deployments WHERE id = $3)')
     expect(params).toEqual(['repo-1', 'sha-abc', 999])
   })
 

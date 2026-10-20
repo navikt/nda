@@ -220,6 +220,70 @@ describe('getPreviousDeploymentForDiff', () => {
     expect(await findRootApprovedSiblingForCommit('same-repository-commit', '9001', currentId)).toBeNull()
   })
 
+  it('does not select a later approved delivery as the root for a backfilled Apply delivery', async () => {
+    const approvedAppId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'approved-app',
+      environment: 'prod-gcp',
+    })
+    const applyAppId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'apply-app',
+      environment: 'prod-gcp',
+    })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [applyAppId])
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '9001',
+      githubOwner: owner,
+      githubRepoName: repo,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: approvedAppId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9001',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: applyAppId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9001',
+    })
+    const commitSha = 'e'.repeat(40)
+    const laterApprovedId = await seedDeployment(pool, {
+      monitoredAppId: approvedAppId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha,
+      createdAt: new Date('2026-01-20T10:00:00Z'),
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryId, laterApprovedId])
+    const backfilledApplyId = await seedDeployment(pool, {
+      monitoredAppId: applyAppId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha,
+      createdAt: new Date('2026-01-10T10:00:00Z'),
+      fourEyesStatus: 'pending',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query(
+      `UPDATE deployments
+       SET deployment_source = 'nais_apply',
+           nais_deployment_id = NULL,
+           deployment_source_id = '9001:12345',
+           repository_id = $2
+       WHERE id = $1`,
+      [backfilledApplyId, repositoryId],
+    )
+
+    expect(await findRootApprovedSiblingForCommit(commitSha, '9001', backfilledApplyId)).toBeNull()
+  })
+
   it('skips legacy and legacy_pending deployments', async () => {
     const appId = await seedApp(pool, {
       teamSlug: 'pensjonselvbetjening',
