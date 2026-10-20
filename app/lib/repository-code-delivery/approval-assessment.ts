@@ -1,4 +1,45 @@
 import { isFullCommitSha } from '~/lib/git-constants'
+import type { RepositoryDeliveryIntervalAssessment } from './interval-assessment'
+
+export function assessStoredRepositoryDeliveryApproval(
+  delivery: { base_sha: string; head_sha: string },
+  interval: RepositoryDeliveryIntervalAssessment,
+  history: Array<{
+    sha: string
+    status: string
+    author_login: string | null
+    author_nav_ident: string | null
+    reviewer_nav_ident: string
+  }>,
+  authorIdentities: Map<string, string | null>,
+): RepositoryDeliveryApprovalAssessment {
+  const anchor = delivery.base_sha.toLowerCase() === delivery.head_sha.toLowerCase()
+  const commits = anchor ? [] : interval.commits
+  const commitsBySha = new Map(commits.map((commit) => [commit.sha.toLowerCase(), commit]))
+  return assessRepositoryDeliveryApproval({
+    baseSha: delivery.base_sha,
+    headSha: delivery.head_sha,
+    commitHistoryComplete: anchor || interval.comparisonComplete,
+    totalCommits: anchor ? 0 : interval.totalCommits,
+    commits: commits.map((commit) => ({
+      sha: commit.sha,
+      authorIdentityKey: commit.authorLogin ? (authorIdentities.get(commit.authorLogin) ?? null) : null,
+      prCoverage:
+        commit.status === 'covered' ? 'approved' : commit.status === 'not_covered' ? 'not_approved' : 'unknown',
+    })),
+    approvals: history
+      .filter((approval) => {
+        const author = commitsBySha.get(approval.sha.toLowerCase())?.authorLogin
+        return (
+          author &&
+          approval.status === 'eligible' &&
+          author.toLowerCase() === approval.author_login?.toLowerCase() &&
+          authorIdentities.get(author) === approval.author_nav_ident
+        )
+      })
+      .map((approval) => ({ approverIdentityKey: approval.reviewer_nav_ident, commitShas: [approval.sha] })),
+  })
+}
 
 type RepositoryDeliveryPrCoverage = 'approved' | 'not_approved' | 'unknown'
 

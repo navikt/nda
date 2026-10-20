@@ -770,7 +770,11 @@ async function getRepositoryCodeDeliveryExportDataForTarget(
   })
 }
 
-export async function getRepositoryHistoryReadiness(repositoryId: number): Promise<RepositoryHistoryReadiness> {
+export async function getRepositoryHistoryReadiness(
+  repositoryId: number,
+  transactionClient?: Pick<PoolClient, 'query'>,
+): Promise<RepositoryHistoryReadiness> {
+  if (transactionClient) return getRepositoryHistoryReadinessFromClient(repositoryId, transactionClient)
   return withTransaction(async (client) => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
     return getRepositoryHistoryReadinessFromClient(repositoryId, client)
@@ -851,18 +855,21 @@ export interface UnresolvedCodeDeployment {
   last_attempt_at: Date
 }
 
-export async function getRepositoryCodeDeliveryOverview(repositoryId: number): Promise<RepositoryCodeDeliveryOverview> {
+export async function getRepositoryCodeDeliveryOverview(
+  repositoryId: number,
+  client: Pick<PoolClient, 'query'> = pool,
+): Promise<RepositoryCodeDeliveryOverview> {
   const [deliveries, linked, awaiting, unresolved] = await Promise.all([
-    pool.query<{ count: number }>(
+    client.query<{ count: number }>(
       `SELECT count(*)::int AS count FROM repository_code_deliveries WHERE repository_id = $1`,
       [repositoryId],
     ),
-    pool.query<{ count: number }>(
+    client.query<{ count: number }>(
       `SELECT count(*)::int AS count FROM deployments
        WHERE repository_id = $1 AND repository_code_delivery_id IS NOT NULL`,
       [repositoryId],
     ),
-    pool.query<{ count: number }>(
+    client.query<{ count: number }>(
       `SELECT count(*)::int AS count
        FROM deployments d
        JOIN repositories r ON r.id = d.repository_id
@@ -876,7 +883,7 @@ export async function getRepositoryCodeDeliveryOverview(repositoryId: number): P
          AND u.deployment_id IS NULL`,
       [repositoryId],
     ),
-    pool.query<{ reason: UnresolvedReason; count: number }>(
+    client.query<{ reason: UnresolvedReason; count: number }>(
       `SELECT u.reason, count(*)::int AS count
        FROM repository_code_delivery_unresolved u
        JOIN deployments d ON d.id = u.deployment_id
@@ -902,10 +909,11 @@ export async function getRepositoryCodeDeliveryOverview(repositoryId: number): P
 export async function listRepositoryCodeDeliveries(
   repositoryId: number,
   options: {
-    limit: number
+    limit: number | null
     offset: number
     sort?: { orderBy: RepositoryCodeDeliverySortKey; direction: RepositoryCodeDeliverySortDirection }
   },
+  client: Pick<PoolClient, 'query'> = pool,
 ): Promise<RepositoryCodeDeliverySummary[]> {
   const sortColumns: Record<RepositoryCodeDeliverySortKey, string> = {
     first_deployed_at: 'first_deployed_at',
@@ -918,7 +926,7 @@ export async function listRepositoryCodeDeliveries(
   const orderBy = options.sort
     ? `${sortColumns[options.sort.orderBy]} ${options.sort.direction === 'ascending' ? 'ASC' : 'DESC'} NULLS LAST, c.id DESC`
     : 'c.id DESC'
-  const { rows } = await pool.query<RepositoryCodeDeliverySummary>(
+  const { rows } = await client.query<RepositoryCodeDeliverySummary>(
     `SELECT c.id, c.base_sha, c.head_sha, c.created_at,
             min(d.created_at) AS first_deployed_at,
             lower(c.base_sha) = lower(c.head_sha) AS is_anchor,
@@ -1121,8 +1129,9 @@ export async function getRepositoryCodeDeliveryEvidence(
 export async function listOpenUnresolvedCodeDeployments(
   repositoryId: number,
   limit: number,
+  client: Pick<PoolClient, 'query'> = pool,
 ): Promise<UnresolvedCodeDeployment[]> {
-  const { rows } = await pool.query<UnresolvedCodeDeployment>(
+  const { rows } = await client.query<UnresolvedCodeDeployment>(
     `SELECT d.id AS deployment_id, d.team_slug, d.environment_name, d.app_name, d.commit_sha,
             d.detected_github_owner, d.detected_github_repo_name, d.created_at AS deployed_at, u.reason, u.created_at AS first_seen_at, u.updated_at AS last_attempt_at
      FROM repository_code_delivery_unresolved u

@@ -7,6 +7,7 @@ import { assessRepositoryDeliveryApproval } from '~/lib/repository-code-delivery
 import { action as revocationAction } from '~/routes/repository.$owner.$repo.admin.code-deliveries.$deliveryId.actions.server'
 import { action as approvalAction } from '~/routes/repository.$owner.$repo.approvals.$deliveryId.actions.server'
 import { createRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
+import { getRepositoryCodeDeliveryFollowUp } from '../../repository-code-delivery-follow-up.server'
 import { getRepositoryCodeDeliveryEvidence } from '../../repository-code-delivery-overview.server'
 import {
   approveRepositoryDelivery,
@@ -144,6 +145,40 @@ function actionArgs(fields: Record<string, string | string[]>) {
 }
 
 describe('repository manual approval storage', () => {
+  it('filters follow-up using current eligible approvals and excludes revoked and changed identities', async () => {
+    const readFollowUp = async () => {
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        return await getRepositoryCodeDeliveryFollowUp(repositoryId, { page: 1, pageSize: 20, status: 'all' }, client)
+      } finally {
+        try {
+          await client.query('ROLLBACK')
+        } finally {
+          client.release()
+        }
+      }
+    }
+    expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({ status: 'not_approved', needsApproval: 2 })
+    const approval = await approve()
+    expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({
+      status: 'approved',
+      covered: 2,
+      needsApproval: 0,
+    })
+    await revokeRepositoryManualApproval(actor, repositoryId, deliveryId, approval.id, 'Feil grunnlag')
+    expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({ status: 'not_approved', needsApproval: 2 })
+    await approve()
+    await pool.query(
+      `UPDATE user_github_accounts SET identity_version = identity_version + 1 WHERE github_username = 'glad-fjord'`,
+    )
+    expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({
+      status: 'not_approved',
+      covered: 1,
+      needsApproval: 1,
+    })
+  })
+
   it('does not retain the unused documentation URL column', async () => {
     const { rows } = await pool.query<{ present: boolean }>(
       `SELECT EXISTS (
