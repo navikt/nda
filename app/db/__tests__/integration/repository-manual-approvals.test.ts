@@ -169,9 +169,8 @@ describe('repository manual approval storage', () => {
     await revokeRepositoryManualApproval(actor, repositoryId, deliveryId, approval.id, 'Feil grunnlag')
     expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({ status: 'not_approved', needsApproval: 2 })
     await approve()
-    await pool.query(
-      `UPDATE user_github_accounts SET identity_version = identity_version + 1 WHERE github_username = 'glad-fjord'`,
-    )
+    await pool.query(`UPDATE user_github_accounts SET nav_ident = 'Z990002' WHERE github_username = 'glad-fjord'`)
+    await pool.query(`UPDATE user_github_accounts SET nav_ident = 'Z990001' WHERE github_username = 'glad-fjord'`)
     expect((await readFollowUp()).deliveries[0].followUp).toMatchObject({
       status: 'not_approved',
       covered: 1,
