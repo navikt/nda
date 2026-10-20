@@ -63,7 +63,19 @@ function evidenceHash(evidence: Evidence): string {
   return createHash('sha256').update(serialized).digest('hex')
 }
 
-function approvalGroundHash(evidence: Evidence, identities: Map<string, AuthorIdentity>): string {
+type ApprovalHistoryCommit = {
+  sha: string
+  author_login: string | null
+  author_nav_ident: string | null
+  status: string
+}
+
+function approvalGroundHash(
+  actor: UserIdentity,
+  evidence: Evidence,
+  identities: Map<string, AuthorIdentity>,
+  eligibleShas: Set<string>,
+): string {
   const authors = (evidence.compare?.commits ?? [])
     .map((commit) => {
       const login = commit.authorLogin?.toLowerCase() ?? null
@@ -78,8 +90,55 @@ function approvalGroundHash(evidence: Evidence, identities: Map<string, AuthorId
     })
     .sort((left, right) => (left.sha < right.sha ? -1 : left.sha > right.sha ? 1 : 0))
   return createHash('sha256')
-    .update(`${evidenceHash(evidence)}:${JSON.stringify(authors)}`)
+    .update(
+      `${evidenceHash(evidence)}:${actor.navIdent}:${JSON.stringify(authors)}:${JSON.stringify([...eligibleShas].sort())}`,
+    )
     .digest('hex')
+}
+
+function manuallyCoveredCommitShas(
+  history: ApprovalHistoryCommit[],
+  commits: { sha: string; authorLogin: string | null }[],
+  identities: Map<string, AuthorIdentity>,
+): Set<string> {
+  const currentCommits = new Map(commits.map((commit) => [commit.sha.toLowerCase(), commit]))
+  return new Set(
+    history
+      .filter((approval) => {
+        if (approval.status !== 'eligible') return false
+        const sha = approval.sha.toLowerCase()
+        const commit = currentCommits.get(sha)
+        const currentLogin = commit?.authorLogin?.toLowerCase()
+        const identity = currentLogin ? identities.get(currentLogin) : undefined
+        return (
+          currentLogin !== undefined &&
+          approval.author_login?.toLowerCase() === currentLogin &&
+          approval.author_nav_ident === identity?.author_nav_ident
+        )
+      })
+      .map((approval) => approval.sha.toLowerCase()),
+  )
+}
+
+function eligibleApprovalShas(
+  actor: UserIdentity,
+  assessment: ReturnType<typeof assessRepositoryDeliveryInterval>,
+  identities: Map<string, AuthorIdentity>,
+  manuallyCoveredShas: Set<string>,
+): Set<string> {
+  return new Set(
+    assessment.commits
+      .filter((commit) => {
+        const identity = commit.authorLogin ? identities.get(commit.authorLogin.toLowerCase()) : undefined
+        return (
+          commit.status === 'not_covered' &&
+          !manuallyCoveredShas.has(commit.sha.toLowerCase()) &&
+          identity !== undefined &&
+          identity.author_nav_ident !== actor.navIdent
+        )
+      })
+      .map((commit) => commit.sha.toLowerCase()),
+  )
 }
 
 async function withApprovalTransaction<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -193,7 +252,7 @@ function presentApprovalReview(
     headSha,
     ...(createdAt === undefined ? {} : { createdAt: createdAt.toISOString() }),
     reviewer: actor.navIdent,
-    previewToken: previewHash ?? evidenceHash(evidence),
+    previewToken: previewHash ?? approvalGroundHash(actor, evidence, identities, new Set()),
     defaultBranch: evidence.defaultBranch,
     implicitApprovalMode: evidence.implicitApprovalMode,
     commits: assessment.commits.map((commit) => {
@@ -259,7 +318,7 @@ async function getRepositoryApprovalPreview(
   repositoryId: number,
   deliveryId: number,
   client: PoolClient,
-  manuallyCoveredShas: Set<string>,
+  history: ApprovalHistoryCommit[],
 ): Promise<RepositoryApprovalPreview> {
   await requireApprovalAccess(client, actor, repositoryId)
   const ground = await currentGround(client, repositoryId, deliveryId, false)
@@ -267,6 +326,7 @@ async function getRepositoryApprovalPreview(
     client,
     ground.assessment.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
   )
+  const manuallyCoveredShas = manuallyCoveredCommitShas(history, ground.assessment.commits, identities)
   return presentApprovalReview(
     actor,
     ground.delivery.base_sha,
@@ -274,7 +334,12 @@ async function getRepositoryApprovalPreview(
     ground.evidence,
     identities,
     manuallyCoveredShas,
-    approvalGroundHash(ground.evidence, identities),
+    approvalGroundHash(
+      actor,
+      ground.evidence,
+      identities,
+      eligibleApprovalShas(actor, ground.assessment, identities, manuallyCoveredShas),
+    ),
   )
 }
 
@@ -299,7 +364,12 @@ export async function createRepositoryApprovalReview(
       headSha: snapshot.head_sha,
       createdAt: snapshot.created_at.toISOString(),
       reviewer: actor.navIdent,
-      previewToken: approvalGroundHash(snapshot.evidence, identities),
+      previewToken: approvalGroundHash(
+        actor,
+        snapshot.evidence,
+        identities,
+        eligibleApprovalShas(actor, assessment, identities, new Set()),
+      ),
       defaultBranch: snapshot.evidence.defaultBranch,
       implicitApprovalMode: snapshot.evidence.implicitApprovalMode,
       commits: assessment.commits.map((commit) => {
@@ -561,16 +631,13 @@ export async function approveRepositoryDelivery(
     throw new RepositoryApprovalError('invalid_approval', 'Approval input is invalid')
   }
   return withApprovalTransaction(async (client) => {
-    await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+    await client.query('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE')
     await requireApprovalAccess(client, actor, repositoryId)
     const ground = await currentGround(client, repositoryId, deliveryId)
     const identities = await lockAuthorIdentities(
       client,
       ground.assessment.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
     )
-    if (input.previewToken !== approvalGroundHash(ground.evidence, identities)) {
-      throw new RepositoryApprovalError('stale_ground', 'The delivery evidence or author identity has changed')
-    }
     const existingHistory = await readRepositoryManualApprovalHistory(
       actor,
       repositoryId,
@@ -579,11 +646,18 @@ export async function approveRepositoryDelivery(
       readApprovalSnapshotMetadata,
       client,
     )
-    const manuallyCoveredShas = new Set(
-      existingHistory.commits
-        .filter((commit) => commit.status === 'eligible')
-        .map((commit) => commit.sha.toLowerCase()),
+    const manuallyCoveredShas = manuallyCoveredCommitShas(
+      existingHistory.commits,
+      ground.assessment.commits,
+      identities,
     )
+    const eligibleShas = eligibleApprovalShas(actor, ground.assessment, identities, manuallyCoveredShas)
+    if (input.previewToken !== approvalGroundHash(actor, ground.evidence, identities, eligibleShas)) {
+      throw new RepositoryApprovalError(
+        'stale_ground',
+        'The delivery evidence, author identity or eligible commits have changed',
+      )
+    }
     const commits = ground.assessment.commits.filter((commit) => {
       if (commit.status !== 'not_covered' || manuallyCoveredShas.has(commit.sha.toLowerCase())) return false
       const identity = commit.authorLogin ? identities.get(commit.authorLogin.toLowerCase()) : undefined
@@ -844,20 +918,29 @@ export async function getRepositoryApprovalPage(actor: UserIdentity, repositoryI
       readApprovalSnapshotMetadata,
       client,
     )
-    const review =
-      rows[0].base_sha.toLowerCase() === rows[0].head_sha.toLowerCase()
-        ? null
-        : await getRepositoryApprovalPreview(
-            actor,
-            repositoryId,
-            deliveryId,
-            client,
-            new Set(
-              history.commits
-                .filter((commit) => commit.status === 'eligible')
-                .map((commit) => commit.sha.toLowerCase()),
-            ),
-          )
+    let review: RepositoryApprovalPreview | null = null
+    if (rows[0].base_sha.toLowerCase() !== rows[0].head_sha.toLowerCase()) {
+      try {
+        review = await getRepositoryApprovalPreview(actor, repositoryId, deliveryId, client, history.commits)
+      } catch (error) {
+        if (!(error instanceof RepositoryApprovalError) || error.code !== 'incomplete_evidence') throw error
+      }
+    }
+    if (review) {
+      const currentCommits = new Map(review.commits.map((commit) => [commit.sha.toLowerCase(), commit]))
+      history.commits = history.commits.map((approval) => {
+        if (approval.status !== 'eligible') return approval
+        const current = currentCommits.get(approval.sha.toLowerCase())
+        if (
+          current !== undefined &&
+          current.authorLogin?.toLowerCase() === approval.author_login?.toLowerCase() &&
+          current.authorNavIdent === approval.author_nav_ident
+        ) {
+          return approval
+        }
+        return { ...approval, status: 'identity_or_interval_changed' as const }
+      })
+    }
     return {
       delivery: rows[0],
       review,

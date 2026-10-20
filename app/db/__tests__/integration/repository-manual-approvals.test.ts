@@ -9,6 +9,7 @@ import { action as approvalAction } from '~/routes/repository.$owner.$repo.appro
 import { createRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
 import { getRepositoryCodeDeliveryEvidence } from '../../repository-code-delivery-overview.server'
 import {
+  approveRepositoryDelivery,
   createRepositoryApprovalReview,
   createRepositoryApprovalSnapshot,
   getRepositoryApprovalDeliveries,
@@ -193,6 +194,68 @@ describe('repository manual approval storage', () => {
     expect(stored.snapshots).toEqual([])
     expect(stored.commits).toEqual([])
     expect(stored.events).toEqual([])
+  })
+
+  it('invalidates a preview when another approval changes the eligible commit set', async () => {
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    await approve([firstSha])
+    await expect(
+      approveRepositoryDelivery(actor, repositoryId, deliveryId, {
+        previewToken: preview.review?.previewToken ?? '',
+        note: null,
+      }),
+    ).rejects.toMatchObject({ code: 'stale_ground' })
+    expect((await history()).commits).toHaveLength(1)
+  })
+
+  it('rejects a preview token issued to another reviewer', async () => {
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    await expect(
+      approveRepositoryDelivery({ ...actor, navIdent: 'Z990004' }, repositoryId, deliveryId, {
+        previewToken: preview.review?.previewToken ?? '',
+        note: null,
+      }),
+    ).rejects.toMatchObject({ code: 'stale_ground' })
+    expect((await history()).commits).toEqual([])
+  })
+
+  it('does not treat historical approval as coverage after the current commit author changes', async () => {
+    await approve([firstSha])
+    await pool.query(
+      `UPDATE github_compare_raw_snapshots
+       SET data = jsonb_set(data, '{commits,0,author,login}', '"rask-elv"')`,
+    )
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    expect(preview.review?.commits[0]).toMatchObject({
+      authorLogin: 'rask-elv',
+      authorNavIdent: 'Z990002',
+      unavailableReason: null,
+    })
+    expect(preview.manualApprovalHistory[0].commits[0]).toMatchObject({
+      sha: firstSha,
+      status: 'identity_or_interval_changed',
+    })
+  })
+
+  it('retains approval history when current delivery evidence is incomplete', async () => {
+    await approve([firstSha])
+    await pool.query('DELETE FROM github_compare_raw_snapshots')
+    const page = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    expect(page.review).toBeNull()
+    expect(page.manualApprovalHistory).toMatchObject([{ commits: [{ sha: firstSha, status: 'eligible' }] }])
+  })
+
+  it('serializes concurrent approvals so only one registration succeeds', async () => {
+    const preview = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+    const fields = {
+      intent: 'approve-repository',
+      previewToken: preview.review?.previewToken ?? '',
+      note: '',
+    }
+    const results = await Promise.all([approvalAction(actionArgs(fields)), approvalAction(actionArgs(fields))])
+    expect(results.filter((result) => 'registered' in result && result.registered)).toHaveLength(1)
+    expect(results.filter((result) => 'stale' in result && result.stale)).toHaveLength(1)
+    expect((await history()).commits).toHaveLength(2)
   })
 
   it('approves a commit missing PR review but never a commit already covered by PR review', async () => {

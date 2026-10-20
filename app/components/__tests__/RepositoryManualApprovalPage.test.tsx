@@ -1,6 +1,9 @@
+// @vitest-environment happy-dom
+import '@testing-library/jest-dom/vitest'
+import { fireEvent, render as renderInDom, screen, waitFor } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { createMemoryRouter, RouterProvider } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { createMemoryRouter, RouterProvider, useLoaderData } from 'react-router'
+import { describe, expect, it, vi } from 'vitest'
 import { approvalRepository, approvalReview } from '../__fixtures__/repository-approval'
 import { RepositoryApprovalDeliveriesPage } from '../RepositoryApprovalDeliveriesPage'
 import { RepositoryManualApprovalHistory } from '../RepositoryManualApprovalHistory'
@@ -8,6 +11,7 @@ import {
   RepositoryApprovalConfirmation,
   RepositoryApprovalSnapshot,
   RepositoryManualApprovalPage,
+  type RepositoryManualApprovalPageProps,
 } from '../RepositoryManualApprovalPage'
 
 function render(element: React.ReactNode) {
@@ -60,6 +64,68 @@ describe('repository manual approval UI', () => {
     expect(html).toContain('startpunktet for repositoryhistorikken')
     expect(html).not.toContain('start-review')
     expect(html).not.toContain('register-approval')
+  })
+
+  it('explains when the assessment is unavailable while preserving approval history', () => {
+    const html = render(
+      <RepositoryManualApprovalPage
+        repository={approvalRepository}
+        delivery={{
+          id: 17,
+          base_sha: approvalReview.baseSha,
+          head_sha: approvalReview.headSha,
+          first_deployed_at: null,
+        }}
+        review={null}
+        manualApprovalHistory={[]}
+      />,
+    )
+    expect(html).toContain('Vurderingsgrunnlaget er ufullstendig')
+    expect(html).toContain('tidligere godkjenninger vises')
+  })
+
+  it('preserves the stale action error when revalidation changes the preview token', async () => {
+    let loaderCalls = 0
+    const initialData = {
+      repository: approvalRepository,
+      delivery: {
+        id: 17,
+        base_sha: approvalReview.baseSha,
+        head_sha: approvalReview.headSha,
+        first_deployed_at: null,
+      },
+      review: approvalReview,
+      manualApprovalHistory: [],
+    } satisfies RepositoryManualApprovalPageProps
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          loader: () => {
+            loaderCalls += 1
+            return {
+              ...initialData,
+              review: {
+                ...approvalReview,
+                previewToken: loaderCalls > 1 ? 'e'.repeat(64) : approvalReview.previewToken,
+              },
+            }
+          },
+          action: vi.fn(() => ({ error: 'Evidens eller identitet er endret.', stale: true })),
+          Component() {
+            return <RepositoryManualApprovalPage {...useLoaderData<RepositoryManualApprovalPageProps>()} />
+          },
+        },
+      ],
+      { initialEntries: ['/'] },
+    )
+    renderInDom(<RouterProvider router={router} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Godkjenn manuelt' }))
+    expect(await screen.findByText('Evidens eller identitet er endret.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('e'.repeat(64))).toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Godkjenn manuelt' })).toBeInTheDocument()
   })
 
   it('shows PR coverage and only offers manual approval for known uncovered commits', () => {

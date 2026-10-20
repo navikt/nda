@@ -254,8 +254,14 @@ export function RepositoryManualApprovalPage({
       {review && (
         <>
           <RepositoryApprovalSnapshot repository={repository} review={review} />
-          <RepositoryApprovalConfirmation key={review.previewToken} review={review} />
+          <RepositoryApprovalConfirmation review={review} />
         </>
+      )}
+      {!review && delivery.base_sha.toLowerCase() !== delivery.head_sha.toLowerCase() && (
+        <Alert variant="warning">
+          Vurderingsgrunnlaget er ufullstendig. Godkjenning er ikke tilgjengelig, men tidligere godkjenninger vises
+          nedenfor.
+        </Alert>
       )}
       <RepositoryManualApprovalHistory
         repository={repository}
