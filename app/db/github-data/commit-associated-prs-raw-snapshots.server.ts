@@ -33,21 +33,30 @@ export async function getLatestCommitAssociatedPrsRawSnapshot(
   owner: string,
   repo: string,
   sha: string,
+  githubRepoId?: number | string,
 ): Promise<CommitAssociatedPrsRawSnapshot | null> {
   const result = await pool.query(
     `SELECT id, owner, repo, github_repo_id, sha, api_version, api_deprecated_at, api_sunset_at, fetched_at, data
      FROM github_commit_associated_prs_raw_snapshots
-     WHERE owner = $1 AND repo = $2 AND sha = $3
-       AND github_repo_id = (
-         SELECT github_repo_id
-         FROM github_commit_associated_prs_raw_snapshots
-         WHERE owner = $1 AND repo = $2 AND sha = $3
-         ORDER BY fetched_at DESC
-         LIMIT 1
+     WHERE sha = $3
+       AND (
+         ($4::bigint IS NOT NULL AND github_repo_id = $4::bigint)
+         OR (
+           $4::bigint IS NULL
+           AND owner = $1
+           AND repo = $2
+           AND github_repo_id = (
+             SELECT github_repo_id
+             FROM github_commit_associated_prs_raw_snapshots
+             WHERE owner = $1 AND repo = $2 AND sha = $3
+             ORDER BY fetched_at DESC
+             LIMIT 1
+           )
+         )
        )
      ORDER BY fetched_at DESC
      LIMIT 1`,
-    [owner, repo, sha],
+    [owner, repo, sha, githubRepoId ?? null],
   )
 
   if (result.rows.length === 0) {

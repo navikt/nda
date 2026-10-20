@@ -380,6 +380,7 @@ describe('reverifyDeployment cache base validation', () => {
       { commits: [] },
       {
         cacheOnly: true,
+        githubRepoId: '123',
       },
     )
     expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ baseBranch: 'main' }))

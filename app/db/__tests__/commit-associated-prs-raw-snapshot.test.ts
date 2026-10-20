@@ -86,4 +86,17 @@ describe('getLatestCommitAssociatedPrsRawSnapshot', () => {
       data: rawAssociatedPrs,
     })
   })
+
+  it('scopes raw associated-PR snapshots by immutable repository ID when provided', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [] })
+
+    await getLatestCommitAssociatedPrsRawSnapshot('navikt', 'reused-name', 'abc123', 999)
+
+    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('github_repo_id = $4::bigint'), [
+      'navikt',
+      'reused-name',
+      'abc123',
+      999,
+    ])
+  })
 })

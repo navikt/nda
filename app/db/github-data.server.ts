@@ -568,7 +568,10 @@ export {
   getLatestDefinitiveChecksRawSnapshot,
   saveChecksRawSnapshot,
 } from './github-data/checks-raw-snapshots.server'
-export { saveCommitAssociatedPrsRawSnapshot } from './github-data/commit-associated-prs-raw-snapshots.server'
+export {
+  getLatestCommitAssociatedPrsRawSnapshot,
+  saveCommitAssociatedPrsRawSnapshot,
+} from './github-data/commit-associated-prs-raw-snapshots.server'
 export { saveCommitRawSnapshot } from './github-data/commit-raw-snapshots.server'
 export {
   type GitHubDataStats,

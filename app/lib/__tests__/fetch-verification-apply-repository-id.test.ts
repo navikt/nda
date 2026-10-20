@@ -156,7 +156,9 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
 
     expect(getRepositoryIdentityById).toHaveBeenCalledWith(12345)
     expect(isCommitOnBranch).toHaveBeenCalledWith('navikt', 'current-name', 'a'.repeat(40), 'main')
-    expect(fetchDeployedPrData).toHaveBeenCalledWith('navikt', 'current-name', 'a'.repeat(40), 'main', undefined)
+    expect(fetchDeployedPrData).toHaveBeenCalledWith('navikt', 'current-name', 'a'.repeat(40), 'main', {
+      githubRepoId: '12345',
+    })
   })
 
   it('scopes nearby verification evidence to the candidate deployment repository', async () => {

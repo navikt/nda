@@ -210,14 +210,24 @@ export async function computeVerificationDiffs(
         } else {
           const commitsBetween = await buildCommitsBetweenFromCache(owner, repo, baseBranch, compareData, {
             cacheOnly: true,
+            ...(row.deployment_source === 'nais_apply' && githubRepoId ? { githubRepoId } : {}),
           })
 
           let deployedPr: VerificationInput['deployedPr'] = null
+          const applyGithubRepoId = row.deployment_source === 'nais_apply' ? (githubRepoId ?? undefined) : undefined
           const cachedPrNumber =
             row.github_pr_number ??
-            (await findPrForCommit(owner, repo, row.commit_sha, baseBranch, { cacheOnly: true })).prNumber
+            (
+              await findPrForCommit(owner, repo, row.commit_sha, baseBranch, {
+                cacheOnly: true,
+                ...(applyGithubRepoId != null ? { githubRepoId: applyGithubRepoId } : {}),
+              })
+            ).prNumber
           if (cachedPrNumber) {
-            const prData = await getPrDataForDiff(owner, repo, cachedPrNumber)
+            const prData =
+              applyGithubRepoId == null
+                ? await getPrDataForDiff(owner, repo, cachedPrNumber)
+                : await getPrDataForDiff(owner, repo, cachedPrNumber, applyGithubRepoId)
             if (prData) {
               deployedPr = {
                 number: cachedPrNumber,

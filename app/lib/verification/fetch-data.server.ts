@@ -89,6 +89,8 @@ export async function fetchVerificationData(
     repo = repoCheck.effectiveRepo
   }
 
+  const verificationOptions =
+    deployment.deployment_source === 'nais_apply' && githubRepoId ? { ...options, githubRepoId } : options
   const commitOnBaseBranch = await isCommitOnBranch(owner, repo, commitSha, baseBranch)
 
   const previousDeploymentResult =
@@ -102,7 +104,7 @@ export async function fetchVerificationData(
   const previousDeploymentLookupFailed =
     (repositoryStatus === 'active' && (!githubRepoId || !canonicalRepositoryId)) || previousDeploymentRateLimited
 
-  const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, options)
+  const deployedPrResult = await fetchDeployedPrData(owner, repo, commitSha, baseBranch, verificationOptions)
   const deployedPr = deployedPrResult.deployedPr
 
   let commitsBetween: VerificationInput['commitsBetween'] = []
@@ -117,7 +119,7 @@ export async function fetchVerificationData(
       commitSha,
       baseBranch,
       previousDeployment.createdAt,
-      options,
+      verificationOptions,
     )
     if (result === null) {
       compareFailed = true

@@ -281,7 +281,7 @@ describe('computeVerificationDiffs double-check logic', () => {
       'test-repo',
       'main',
       { commits: [] },
-      { cacheOnly: true },
+      { cacheOnly: true, githubRepoId: '123' },
     )
     expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ baseBranch: 'main' }))
   })
