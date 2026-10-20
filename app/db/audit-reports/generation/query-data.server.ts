@@ -99,7 +99,7 @@ export async function getAuditReportData(
            FROM github_compare_raw_snapshots cmp
            WHERE d.deployment_source = 'nais_apply'
              AND cmp.github_repo_id = r.github_repo_id
-             AND cmp.base_sha = (
+             AND cmp.base_sha = COALESCE(latest_apply_verification.comparison_base_sha, (
                SELECT prev.commit_sha
                FROM deployments prev
                WHERE prev.monitored_app_id = d.monitored_app_id
@@ -111,8 +111,8 @@ export async function getAuditReportData(
                  AND prev.commit_sha !~ '^refs/'
                ORDER BY prev.created_at DESC
                LIMIT 1
-             )
-             AND cmp.head_sha = d.commit_sha
+             ))
+             AND cmp.head_sha = COALESCE(latest_apply_verification.comparison_head_sha, d.commit_sha)
            ORDER BY cmp.fetched_at DESC
            LIMIT 1
          ),
@@ -181,6 +181,22 @@ export async function getAuditReportData(
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      LEFT JOIN repositories r ON r.id = d.repository_id
+     LEFT JOIN LATERAL (
+       SELECT CASE
+                WHEN vr.result->'comparisonRange'->>'headSha' = d.commit_sha
+                 AND vr.result->'comparisonRange'->>'baseSha' ~ '^[0-9a-fA-F]{40}$'
+                THEN vr.result->'comparisonRange'->>'baseSha'
+              END AS comparison_base_sha,
+              CASE
+                WHEN vr.result->'comparisonRange'->>'headSha' = d.commit_sha
+                 AND vr.result->'comparisonRange'->>'baseSha' ~ '^[0-9a-fA-F]{40}$'
+                THEN vr.result->'comparisonRange'->>'headSha'
+              END AS comparison_head_sha
+       FROM verification_runs vr
+       WHERE vr.deployment_id = d.id
+       ORDER BY vr.run_at DESC, vr.id DESC
+       LIMIT 1
+     ) latest_apply_verification ON d.deployment_source = 'nais_apply'
      WHERE d.monitored_app_id = $1
        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.created_at >= $2

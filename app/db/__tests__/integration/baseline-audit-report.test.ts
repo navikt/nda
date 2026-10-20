@@ -177,6 +177,20 @@ describe('renamed Apply deployments in audit reports', () => {
       commitSha: 'a'.repeat(40),
       fourEyesStatus: 'approved_pr',
     })
+    const siblingAppId = await seedApp(pool, {
+      teamSlug: 'team-h',
+      appName: 'app-h',
+      environment: 'prod-gcp',
+    })
+    const interleavedDeploymentId = await seedDeployment(pool, {
+      monitoredAppId: siblingAppId,
+      teamSlug: 'team-h',
+      environment: 'prod-gcp',
+      createdAt: new Date('2026-03-09T11:00:00Z'),
+      commitSha: 'c'.repeat(40),
+      fourEyesStatus: 'approved_pr',
+    })
+    await pool.query(`UPDATE deployments SET repository_id = $2 WHERE id = $1`, [interleavedDeploymentId, repositoryId])
     const applyDeploymentId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-g',
@@ -206,8 +220,27 @@ describe('renamed Apply deployments in audit reports', () => {
     await pool.query(
       `INSERT INTO github_compare_raw_snapshots
          (github_repo_id, owner, repo, base_sha, head_sha, api_version, data)
-       VALUES ('7001', 'navikt', 'current-repo', $1, $2, '2022-11-28', $3)`,
-      ['a'.repeat(40), 'b'.repeat(40), JSON.stringify({ commits: [{ sha: 'd'.repeat(40) }] })],
+       VALUES
+         ('7001', 'navikt', 'current-repo', $1, $3, '2022-11-28', $4),
+         ('7001', 'navikt', 'current-repo', $2, $3, '2022-11-28', $5)`,
+      [
+        'a'.repeat(40),
+        'c'.repeat(40),
+        'b'.repeat(40),
+        JSON.stringify({ commits: [{ sha: 'd'.repeat(40) }] }),
+        JSON.stringify({ commits: [{ sha: 'e'.repeat(40) }] }),
+      ],
+    )
+    await pool.query(
+      `INSERT INTO verification_runs
+         (deployment_id, schema_version, result, status, has_four_eyes)
+       VALUES ($1, 1, $2, 'approved', true)`,
+      [
+        applyDeploymentId,
+        JSON.stringify({
+          comparisonRange: { baseSha: 'c'.repeat(40), headSha: 'b'.repeat(40) },
+        }),
+      ],
     )
     await pool.query(
       `INSERT INTO github_pr_raw_snapshots
@@ -221,7 +254,7 @@ describe('renamed Apply deployments in audit reports', () => {
     const rawData = await getAuditReportData(appId, PERIOD_START, PERIOD_END)
 
     expect(rawData.deployments.find(({ id }) => id === applyDeploymentId)?.delivery_commit_shas).toEqual([
-      'd'.repeat(40),
+      'e'.repeat(40),
     ])
     expect(rawData.deployments.find(({ id }) => id === applyDeploymentId)?.pr_commit_shas).toEqual(['e'.repeat(40)])
   })

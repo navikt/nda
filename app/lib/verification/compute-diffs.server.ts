@@ -105,6 +105,7 @@ export async function computeVerificationDiffs(
     errorReason: string | null
     repositoryId: number | null
   }> = []
+  const applyIdentityCache = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
 
   for (const row of deployments) {
     try {
@@ -128,10 +129,14 @@ export async function computeVerificationDiffs(
       let applyIdentity: Awaited<ReturnType<typeof getRepositoryIdentityById>> = null
       if (row.deployment_source === 'nais_apply') {
         const numericGithubRepoId = Number(githubRepoId)
-        applyIdentity =
-          githubRepoId && Number.isSafeInteger(numericGithubRepoId)
-            ? await getRepositoryIdentityById(numericGithubRepoId)
-            : null
+        if (githubRepoId && Number.isSafeInteger(numericGithubRepoId)) {
+          let identityResolution = applyIdentityCache.get(githubRepoId)
+          if (!identityResolution) {
+            identityResolution = getRepositoryIdentityById(numericGithubRepoId)
+            applyIdentityCache.set(githubRepoId, identityResolution)
+          }
+          applyIdentity = await identityResolution
+        }
         if (!applyIdentity || String(applyIdentity.id) !== githubRepoId) {
           result.skipped++
           result.deploymentsChecked++

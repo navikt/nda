@@ -286,6 +286,31 @@ describe('computeVerificationDiffs double-check logic', () => {
     expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ baseBranch: 'main' }))
   })
 
+  it('resolves an Apply repository identity only once per GitHub repository ID', async () => {
+    mockGetDeployments.mockResolvedValue([
+      makeDeploymentRow({
+        id: 1,
+        four_eyes_status: 'unverified_commits',
+        deployment_source: 'nais_apply',
+        repository_id: 7,
+      }),
+      makeDeploymentRow({
+        id: 2,
+        four_eyes_status: 'unverified_commits',
+        deployment_source: 'nais_apply',
+        repository_id: 7,
+      }),
+    ])
+    mockGetCompareSnapshot.mockResolvedValue(null)
+    mockFetchVerificationData.mockResolvedValue(makeVerificationInput())
+    mockVerifyDeployment.mockReturnValue({ status: 'unverified_commits', unverifiedCommits: [] })
+
+    await computeVerificationDiffs(1)
+
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledTimes(1)
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledWith(123)
+  })
+
   it('discovers PR via cache-only lookup when deployment has no stored github_pr_number', async () => {
     mockGetDeployments.mockResolvedValue([makeDeploymentRow({ four_eyes_status: 'approved', github_pr_number: null })])
     mockGetCompareSnapshot.mockResolvedValue(makeCompareSnapshot())

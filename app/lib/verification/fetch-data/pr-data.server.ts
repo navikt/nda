@@ -30,8 +30,9 @@ async function getDerivedPrDataFromRawSnapshots(
   owner: string,
   repo: string,
   prNumber: number,
+  githubRepoId?: number | string,
 ): Promise<GitHubPRData | null> {
-  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
+  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber, githubRepoId)
   const prSnapshot = rawSnapshots.get('pr')
   if (!prSnapshot) return null
 
@@ -74,9 +75,11 @@ export async function getCachedPrData(
   repo: string,
   prNumber: number,
   requiredLegacyTypes: LegacyPrDataType[] = [],
+  githubRepoId?: number | string,
 ): Promise<GitHubPRData | null> {
-  const fromRaw = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+  const fromRaw = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber, githubRepoId)
   if (fromRaw) return fromRaw
+  if (githubRepoId != null) return null
   return getLegacyPrData(owner, repo, prNumber, requiredLegacyTypes)
 }
 
