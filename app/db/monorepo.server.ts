@@ -238,6 +238,13 @@ export async function propagateVerificationToSiblings(
      WHERE d.commit_sha = $2
        AND d.four_eyes_status = ANY($3::text[])
        AND (d.created_at, d.id) > (SELECT created_at, id FROM deployments WHERE id = $4)
+       AND (
+         d.deployment_source != 'nais_apply'
+         OR EXISTS (
+           SELECT 1 FROM monitored_applications ma
+           WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
+         )
+       )
        AND d.monitored_app_id IN (
          SELECT ar.monitored_app_id FROM application_repositories ar
          JOIN monitored_applications ma ON ma.id = ar.monitored_app_id
