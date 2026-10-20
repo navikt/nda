@@ -232,12 +232,15 @@ describe('ingestRepositoryDeliveryAssessmentSnapshots', () => {
       },
       stackParentPullRequestNumbers: {},
     })
+    ensurePrReviewSnapshots
+      .mockResolvedValueOnce({ pr: 1, reviews: 2, commits: 3, comments: 4, reviewComments: 5 })
+      .mockResolvedValueOnce({ pr: 6, reviews: 7, commits: 8, comments: 9, reviewComments: 10 })
     getLatestCommitAssociatedPrsRawSnapshot
       .mockResolvedValueOnce({
         id: 17,
         githubRepoId: 900,
         paginationComplete: true,
-        data: [{ number: 12, base: { ref: 'feature/base' } }],
+        data: [{ number: 12, base: { ref: 'main' } }],
       })
       .mockResolvedValueOnce({
         id: 18,
@@ -245,26 +248,135 @@ describe('ingestRepositoryDeliveryAssessmentSnapshots', () => {
         paginationComplete: true,
         data: [{ number: 12, base: { ref: 'main' } }],
       })
-    getAllLatestPrRawSnapshots.mockResolvedValue(
-      new Map([
-        [
-          'pr',
-          {
-            githubRepoId: 900,
-            data: {
-              ...pullRequestRawSnapshot,
-              base: { ref: 'main', sha: 'a'.repeat(40) },
+    getAllLatestPrRawSnapshots
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            'pr',
+            {
+              githubRepoId: 900,
+              data: {
+                ...pullRequestRawSnapshot,
+                base: { ref: 'feature/base', sha: 'a'.repeat(40) },
+              },
             },
-          },
-        ],
-      ]),
-    )
+          ],
+        ]),
+      )
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            'pr',
+            {
+              githubRepoId: 900,
+              data: {
+                ...pullRequestRawSnapshot,
+                base: { ref: 'main', sha: 'a'.repeat(40) },
+              },
+            },
+          ],
+        ]),
+      )
 
     await ingestRepositoryDeliveryAssessmentSnapshots(7)
 
     expect(getPullRequestForCommit).toHaveBeenCalledWith('example-org', 'sample-repo', 'c'.repeat(40), false, 'main')
     expect(markRepositoryCodeDeliveryAssessmentAssociationCompleted).toHaveBeenCalledWith(7, 'c'.repeat(40), 18)
+    expect(ensurePrReviewSnapshots).toHaveBeenNthCalledWith(
+      2,
+      'example-org',
+      'sample-repo',
+      12,
+      900,
+      undefined,
+      expect.any(Function),
+    )
+    expect(markRepositoryCodeDeliveryAssessmentPullRequestCompleted).toHaveBeenCalledWith(7, 12, {
+      pr: 6,
+      reviews: 7,
+      commits: 8,
+      comments: 9,
+      reviewComments: 10,
+    })
     expect(getPullRequestsForHeadBranch).not.toHaveBeenCalled()
+  })
+
+  it('refreshes earlier commit associations when a shared PR snapshot changes later', async () => {
+    getRepositoryCodeDeliveryAssessmentSyncProgress.mockResolvedValue({
+      completedAssociationSnapshotIds: {
+        ['c'.repeat(40)]: 17,
+        ['d'.repeat(40)]: 18,
+      },
+      completedPullRequestSnapshotIds: {
+        12: { pr: 1, reviews: 2, commits: 3, comments: 4, reviewComments: 5 },
+      },
+      stackParentPullRequestNumbers: {},
+    })
+    ensurePrReviewSnapshots
+      .mockResolvedValueOnce({ pr: 1, reviews: 2, commits: 3, comments: 4, reviewComments: 5 })
+      .mockResolvedValueOnce({ pr: 6, reviews: 7, commits: 8, comments: 9, reviewComments: 10 })
+    getLatestCommitAssociatedPrsRawSnapshot
+      .mockResolvedValueOnce({
+        id: 17,
+        githubRepoId: 900,
+        paginationComplete: true,
+        data: [{ number: 12, base: { ref: 'main' } }],
+      })
+      .mockResolvedValueOnce({
+        id: 18,
+        githubRepoId: 900,
+        paginationComplete: true,
+        data: [{ number: 12, base: { ref: 'feature/base' } }],
+      })
+      .mockResolvedValueOnce({
+        id: 19,
+        githubRepoId: 900,
+        paginationComplete: true,
+        data: [{ number: 12, base: { ref: 'feature/base' } }],
+      })
+      .mockResolvedValueOnce({
+        id: 20,
+        githubRepoId: 900,
+        paginationComplete: true,
+        data: [{ number: 12, base: { ref: 'feature/base' } }],
+      })
+    getAllLatestPrRawSnapshots
+      .mockResolvedValueOnce(new Map([['pr', { githubRepoId: 900, data: pullRequestRawSnapshot }]]))
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            'pr',
+            {
+              githubRepoId: 900,
+              data: {
+                ...pullRequestRawSnapshot,
+                base: { ref: 'feature/base', sha: 'a'.repeat(40) },
+              },
+            },
+          ],
+        ]),
+      )
+
+    await ingestRepositoryDeliveryAssessmentSnapshots(7)
+
+    expect(getPullRequestForCommit).toHaveBeenNthCalledWith(
+      1,
+      'example-org',
+      'sample-repo',
+      'd'.repeat(40),
+      false,
+      'main',
+    )
+    expect(getPullRequestForCommit).toHaveBeenNthCalledWith(
+      2,
+      'example-org',
+      'sample-repo',
+      'c'.repeat(40),
+      false,
+      'main',
+    )
+    expect(markRepositoryCodeDeliveryAssessmentAssociationCompleted).toHaveBeenCalledWith(7, 'c'.repeat(40), 20)
+    expect(markRepositoryCodeDeliveryAssessmentAssociationCompleted).toHaveBeenCalledWith(7, 'd'.repeat(40), 19)
   })
 
   it('collects anonymized parent PR snapshots for a merged stack chain', async () => {

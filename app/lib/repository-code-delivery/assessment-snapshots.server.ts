@@ -259,6 +259,26 @@ export async function ingestRepositoryDeliveryAssessmentSnapshots(deliveryId: nu
     return evidence
   }
 
+  const refreshCommitAssociations = async (commitSha: string): Promise<AssociatedPullRequest[]> => {
+    const previousSnapshotId = associationSnapshotIdsByCommit.get(commitSha)
+    assertGitHubRateLimitBudget()
+    await getPullRequestForCommit(githubOwner, githubRepoName, commitSha, false, defaultBranch)
+    const refreshedSnapshot = await getLatestCommitAssociatedPrsRawSnapshot(githubOwner, githubRepoName, commitSha)
+    if (
+      !refreshedSnapshot?.paginationComplete ||
+      refreshedSnapshot.githubRepoId !== githubRepoId ||
+      (previousSnapshotId !== undefined && refreshedSnapshot.id <= previousSnapshotId)
+    ) {
+      throw new Error(`Fresh PR-association snapshot was not persisted for commit ${commitSha}`)
+    }
+
+    const refreshedAssociations = parseAssociatedPullRequests(refreshedSnapshot.data)
+    associatedPullRequestsByCommit.set(commitSha, refreshedAssociations)
+    associationSnapshotIdsByCommit.set(commitSha, refreshedSnapshot.id)
+    await markRepositoryCodeDeliveryAssessmentAssociationCompleted(deliveryId, commitSha, refreshedSnapshot.id)
+    return refreshedAssociations
+  }
+
   for (const pullRequest of pullRequestsByNumber.values()) {
     await ensurePullRequest(pullRequest.number)
   }
@@ -270,29 +290,50 @@ export async function ingestRepositoryDeliveryAssessmentSnapshots(deliveryId: nu
     )
     if (!hasRetargetedPullRequest) continue
 
-    const previousSnapshotId = associationSnapshotIdsByCommit.get(commit.sha)
-    assertGitHubRateLimitBudget()
-    await getPullRequestForCommit(githubOwner, githubRepoName, commit.sha, false, defaultBranch)
-    const refreshedSnapshot = await getLatestCommitAssociatedPrsRawSnapshot(githubOwner, githubRepoName, commit.sha)
-    if (
-      !refreshedSnapshot?.paginationComplete ||
-      refreshedSnapshot.githubRepoId !== githubRepoId ||
-      (previousSnapshotId !== undefined && refreshedSnapshot.id <= previousSnapshotId)
-    ) {
-      throw new Error(`Fresh PR-association snapshot was not persisted for retargeted commit ${commit.sha}`)
-    }
-
-    const refreshedAssociations = parseAssociatedPullRequests(refreshedSnapshot.data)
-    associatedPullRequestsByCommit.set(commit.sha, refreshedAssociations)
-    associationSnapshotIdsByCommit.set(commit.sha, refreshedSnapshot.id)
-    await markRepositoryCodeDeliveryAssessmentAssociationCompleted(deliveryId, commit.sha, refreshedSnapshot.id)
-
+    const refreshedAssociations = await refreshCommitAssociations(commit.sha)
     for (const pullRequest of refreshedAssociations) {
       pullRequestsByNumber.set(pullRequest.number, pullRequest)
-      const evidence = await ensurePullRequest(pullRequest.number)
+      let evidence = await ensurePullRequest(pullRequest.number)
+      if (evidence.baseBranch !== pullRequest.baseBranch) {
+        storedPullRequests.delete(pullRequest.number)
+        delete completedPullRequestSnapshotIds[pullRequest.number]
+        evidence = await ensurePullRequest(pullRequest.number)
+      }
       if (evidence.baseBranch !== pullRequest.baseBranch) {
         throw new Error(`PR association base branch is stale for commit ${commit.sha}`)
       }
+    }
+  }
+
+  for (const commit of compareData.commits) {
+    const currentAssociations = associatedPullRequestsByCommit.get(commit.sha) ?? []
+    const hasStaleAssociation = currentAssociations.some(
+      (pullRequest) => storedPullRequests.get(pullRequest.number)?.baseBranch !== pullRequest.baseBranch,
+    )
+    if (!hasStaleAssociation) continue
+
+    const refreshedAssociations = await refreshCommitAssociations(commit.sha)
+    for (const pullRequest of refreshedAssociations) {
+      pullRequestsByNumber.set(pullRequest.number, pullRequest)
+      let evidence = await ensurePullRequest(pullRequest.number)
+      if (evidence.baseBranch !== pullRequest.baseBranch) {
+        storedPullRequests.delete(pullRequest.number)
+        delete completedPullRequestSnapshotIds[pullRequest.number]
+        evidence = await ensurePullRequest(pullRequest.number)
+      }
+      if (evidence.baseBranch !== pullRequest.baseBranch) {
+        throw new Error(`PR association base branch is stale for commit ${commit.sha}`)
+      }
+    }
+  }
+
+  for (const [commitSha, associations] of associatedPullRequestsByCommit) {
+    if (
+      associations.some(
+        (pullRequest) => storedPullRequests.get(pullRequest.number)?.baseBranch !== pullRequest.baseBranch,
+      )
+    ) {
+      throw new Error(`PR association base branch is stale for commit ${commitSha}`)
     }
   }
 

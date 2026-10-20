@@ -81,6 +81,13 @@ describe('repository code delivery assessment sync queue', () => {
       expect.objectContaining({ deliveryId }),
     ])
     expect(await markRepositoryCodeDeliveryAssessmentSyncFailed(deliveryId, 'permanent')).toBe(true)
+    await pool.query(
+      `UPDATE repository_code_delivery_assessment_sync
+       SET next_attempt_at = now()
+       WHERE delivery_id = $1`,
+      [deliveryId],
+    )
+    expect(await claimRepositoryCodeDeliveryAssessmentSyncCandidates(1)).toEqual([])
 
     await enqueueRepositoryCodeDeliveryAssessmentSync(pool, deliveryId)
     const resetState = await pool.query<{ attempt_count: number; failed_permanently: boolean }>(
@@ -112,7 +119,7 @@ describe('repository code delivery assessment sync queue', () => {
     await claimRepositoryCodeDeliveryAssessmentSyncCandidates(1)
     await pool.query(
       `UPDATE repository_code_delivery_assessment_sync
-       SET completed_at = now()
+       SET completed_at = now(), locked_until = NULL
        WHERE delivery_id = $1`,
       [deliveryId],
     )

@@ -77,7 +77,7 @@ export async function claimRepositoryCodeDeliveryAssessmentSyncCandidates(
          WHERE (sync.completed_at IS NULL OR sync.completed_assessment_version < $2)
            AND sync.next_attempt_at <= now()
            AND (sync.locked_until IS NULL OR sync.locked_until < now())
-           AND (sync.failed_permanently = false OR sync.completed_assessment_version < $2)
+           AND sync.failed_permanently = false
            AND repository.code_delivery_tracking = true
          ORDER BY sync.next_attempt_at, sync.delivery_id
          LIMIT $1
@@ -86,7 +86,6 @@ export async function claimRepositoryCodeDeliveryAssessmentSyncCandidates(
        UPDATE repository_code_delivery_assessment_sync sync
        SET attempt_count = sync.attempt_count + 1,
            completed_at = NULL,
-           failed_permanently = false,
            locked_until = now() + interval '30 minutes',
            updated_at = now()
        FROM candidates, repository_code_deliveries delivery, repositories repository
