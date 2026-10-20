@@ -645,7 +645,14 @@ describe('propagateVerificationToSiblings', () => {
       githubOwner: owner,
       githubRepo: repo,
     })
-    await pool.query(`UPDATE deployments SET deployment_source = 'nais_apply' WHERE id = $1`, [optedOutApplySibling])
+    await pool.query(
+      `UPDATE deployments
+       SET nais_deployment_id = NULL,
+           deployment_source = 'nais_apply',
+           deployment_source_id = $2
+       WHERE id = $1`,
+      [optedOutApplySibling, 'nais-apply:opted-out-sibling'],
+    )
     const legacySibling = await seedDeployment(pool, {
       monitoredAppId: legacyApp,
       teamSlug: 'team-a',
