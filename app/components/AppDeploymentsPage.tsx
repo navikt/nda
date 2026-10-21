@@ -3,7 +3,6 @@ import type { ComponentProps } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import {
   DEPLOYMENT_REPOSITORY_STATUS_LABELS,
-  type DeploymentRepositoryStatus,
   type DeploymentRepositorySummary,
   parseDeploymentRepositoryStatus,
 } from '~/lib/deployment-repository-status'
@@ -49,7 +48,6 @@ interface MonorepoInfo {
 export interface AppDeploymentsPageProps {
   view?: DeploymentView
   repositorySummaries?: Record<number, DeploymentRepositorySummary>
-  repositoryCounts?: Record<DeploymentRepositoryStatus, number> | null
   app: MonitoredApplication
   deployments: DeploymentData[]
   total: number
@@ -74,7 +72,6 @@ export interface AppDeploymentsPageProps {
 export function AppDeploymentsPage({
   view = 'application',
   repositorySummaries = {},
-  repositoryCounts,
   app,
   deployments,
   total,
@@ -202,14 +199,6 @@ export function AppDeploymentsPage({
         currentUserGithub={currentUserGithub}
         onFilterChange={updateFilter}
       />
-      {view === 'repository' && repositoryCounts && (
-        <BodyShort size="small" textColor="subtle">
-          Kodedekning før statusfilter:{' '}
-          {Object.entries(DEPLOYMENT_REPOSITORY_STATUS_LABELS)
-            .map(([status, label]) => `${label}: ${repositoryCounts[status as DeploymentRepositoryStatus]}`)
-            .join(' · ')}
-        </BodyShort>
-      )}
 
       <HStack justify="space-between" align="center" wrap>
         <BodyShort textColor="subtle">
