@@ -206,6 +206,7 @@ export function AppDeploymentsPage({
               showEnv={showAllEnvironments}
               currentEnv={app.environment_name}
               searchParams={searchParams}
+              showRepositoryView
             />
           ))
         )}
