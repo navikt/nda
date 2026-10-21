@@ -27,9 +27,8 @@ describe('application deployment repository list', () => {
 
   it('shows coverage, locked intervals and missing links without presenting old status as repository approval', () => {
     const markup = render({ ...RepositoryCoverage.args, errorReasons: { 5: 'Gammel appfeil' } })
-    expect(markup).toContain('Skrivebeskyttet repositoryvisning')
-    expect(markup).toContain('ikke ved')
-    expect(markup).toContain('Kilde- og branchkontroller vises i appbasert vurdering')
+    expect(markup).toMatch(/<h1\b[^>]*>Deployments – repositoryvurdering<\/h1>/)
+    expect(markup).not.toContain('Skrivebeskyttet repositoryvisning')
     expect(markup).toContain('Alle commits dekket: 1')
     expect(markup).toContain('Ufullstendig grunnlag: 1')
     expect(markup).toContain('Mangler leveransekobling: 1')
@@ -48,6 +47,7 @@ describe('application deployment repository list', () => {
 
   it('keeps application statuses and filters unchanged when application view is selected', () => {
     const markup = render({ ...RepositoryCoverage.args, view: 'application' })
+    expect(markup).toMatch(/<h1\b[^>]*>Deployments – appbasert vurdering<\/h1>/)
     expect(markup).not.toContain('Skrivebeskyttet repositoryvisning')
     expect(markup).not.toContain('Låst repositoryintervall')
     expect(markup).toContain('value="manually_approved"')
