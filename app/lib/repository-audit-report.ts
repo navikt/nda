@@ -18,6 +18,8 @@ interface RepositoryAuditDeployment {
     defaultBranch: string | null
     triggerEvent: string | null
     triggerUrl: string | null
+    repositoryAuthorization: { linkId: number; status: string } | null
+    workflowSnapshot: { id: number; fetchedAt: string; runId: number; runAttempt: number | null } | null
   }
 }
 
@@ -81,6 +83,8 @@ type RepositoryAuditBlocker =
   | 'unknown_trigger'
   | 'unknown_branch'
   | 'unauthorized_branch'
+  | 'unknown_repository_authorization'
+  | 'unauthorized_repository'
 
 export function assessRepositoryAuditReadiness(data: RepositoryAuditReportData) {
   const deliveries = new Map(data.deliveries.map((delivery) => [delivery.id, delivery]))
@@ -96,6 +100,9 @@ export function assessRepositoryAuditReadiness(data: RepositoryAuditReportData) 
     else if (delivery.assessment.status === 'no_changes') blockers.push('baseline_required')
 
     const { triggerEvent, branch, defaultBranch } = deployment.source
+    const authorization = deployment.source.repositoryAuthorization
+    if (!authorization) blockers.push('unknown_repository_authorization')
+    else if (authorization.status !== 'active') blockers.push('unauthorized_repository')
     if (!triggerEvent?.trim()) blockers.push('unknown_trigger')
     else if (MANUAL_TRIGGER_EVENTS.includes(triggerEvent)) blockers.push('manual_trigger')
     if (!branch?.trim() || !defaultBranch?.trim()) blockers.push('unknown_branch')

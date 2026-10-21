@@ -14,6 +14,24 @@ const headSha = 'b'.repeat(40)
 const start = new Date('2026-01-01T00:00:00Z')
 const end = new Date('2026-01-31T23:59:59.999Z')
 
+async function seedWorkflow(repoName: string) {
+  await pool.query(
+    `INSERT INTO github_workflow_runs_raw_snapshots (github_repo_id, owner, repo, run_id, api_version, data)
+     VALUES ('123', 'navikt', $1, 100, '2022-11-28', $2::jsonb)`,
+    [
+      repoName,
+      JSON.stringify({
+        id: 100,
+        repository: { id: 123 },
+        head_sha: headSha,
+        head_branch: 'main',
+        event: 'push',
+        run_attempt: 1,
+      }),
+    ],
+  )
+}
+
 beforeAll(() => {
   pool = new Pool({ connectionString: process.env.DATABASE_URL })
 })
@@ -37,6 +55,13 @@ describe('repository audit report selection and evidence', () => {
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: 'navikt',
+      githubRepo: 'historical',
+      githubRepoId: '123',
+    })
+    await seedWorkflow('historical')
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
       githubRepo: 'current',
       githubRepoId: '456',
     })
@@ -54,6 +79,12 @@ describe('repository audit report selection and evidence', () => {
     const first = await createDeployment(appId, start)
     const sameTime = await createDeployment(appId, start)
     const last = await createDeployment(appId, end)
+    await pool.query(
+      `UPDATE deployments SET detected_github_owner = 'navikt', detected_github_repo_name = 'historical',
+         trigger_url = 'https://github.com/navikt/historical/actions/runs/100'
+       WHERE monitored_app_id = $1`,
+      [appId],
+    )
     const excluded = await createDeployment(otherApp, start)
     await createDeployment(appId, new Date(start.getTime() - 1))
     await createDeployment(appId, new Date(end.getTime() + 1))
@@ -94,6 +125,13 @@ describe('repository audit report selection and evidence', () => {
       defaultBranch: 'main',
     })
     const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha })
+    const linkId = await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'test',
+      githubRepoId: '123',
+    })
+    await seedWorkflow('test')
     const deploymentId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-fjord',
@@ -108,6 +146,12 @@ describe('repository audit report selection and evidence', () => {
       'main',
       deploymentId,
     ])
+    await pool.query(
+      `UPDATE deployments SET detected_github_owner = 'navikt', detected_github_repo_name = 'test',
+         trigger_url = 'https://github.com/navikt/test/actions/runs/100', branch_name = 'feature/change'
+       WHERE id = $1`,
+      [deploymentId],
+    )
     await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
     const commit = {
       sha: headSha,
@@ -176,6 +220,16 @@ describe('repository audit report selection and evidence', () => {
     const frozen = reportData.deliveries[0]
     expect(frozen.assessment.status).toBe('approved')
     expect(readiness.isReady).toBe(true)
+    expect(reportData.deployments[0].source).toMatchObject({
+      branch: 'main',
+      repositoryAuthorization: { linkId, status: 'active' },
+      workflowSnapshot: { runId: 100 },
+    })
+    await pool.query(`UPDATE application_repositories SET status = 'pending_approval' WHERE id = $1`, [linkId])
+    const unauthorized = await getRepositoryAuditReportData(appId, start, end)
+    expect(unauthorized.reportData.deliveries[0].assessment.status).toBe('approved')
+    expect(unauthorized.readiness.deployments[0].blockers).toEqual(['unauthorized_repository'])
+    await pool.query(`UPDATE application_repositories SET status = 'active' WHERE id = $1`, [linkId])
     expect(assessRepositoryDeliveryInterval(frozen.evidence)).toEqual(frozen.interval)
     expect(frozen.sources.comparisons.map((source) => source.id)).toEqual([comparisons[0].id])
     expect(frozen.sources.associations.map((source) => source.id)).toEqual([associations[0].id])

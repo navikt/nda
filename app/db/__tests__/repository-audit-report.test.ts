@@ -47,6 +47,25 @@ function deployment(id = 1) {
     github_repo_id: '123',
     github_owner: 'navikt',
     github_repo_name: 'test',
+    detected_github_owner: 'navikt',
+    detected_github_repo_name: 'test',
+    authorization_link_id: 10,
+    authorization_status: 'active',
+  }
+}
+
+function workflowSnapshot() {
+  return {
+    id: 50,
+    fetched_at: assessedAt,
+    data: {
+      id: 1,
+      repository: { id: 123 },
+      head_sha: headSha,
+      head_branch: 'main',
+      event: 'push',
+      run_attempt: 1,
+    },
   }
 }
 
@@ -126,7 +145,9 @@ describe('repository audit report data', () => {
         ? [{ app_name: 'test', team_slug: 'team-fjord', environment_name: 'prod-gcp', assessed_at: assessedAt }]
         : sql.includes('FROM deployments d')
           ? [deployment(), deployment(2)]
-          : [],
+          : sql.includes('FROM github_workflow_runs_raw_snapshots')
+            ? [workflowSnapshot()]
+            : [],
     }))
     getIntervals.mockResolvedValue([evaluatedInterval()])
     getHistory.mockResolvedValue([approval()])
@@ -218,7 +239,9 @@ describe('repository audit report data', () => {
         ? [{ app_name: 'test', team_slug: 'team-fjord', environment_name: 'prod-gcp', assessed_at: assessedAt }]
         : sql.includes('FROM deployments d')
           ? [{ ...deployment(), repository_code_delivery_id: null }]
-          : [],
+          : sql.includes('FROM github_workflow_runs_raw_snapshots')
+            ? [workflowSnapshot()]
+            : [],
     }))
     const result = await getRepositoryAuditReportData(3, periodStart, periodEnd)
     expect(result.reportData.deployments).toHaveLength(1)
@@ -249,6 +272,92 @@ describe('repository audit report data', () => {
     const result = await getRepositoryAuditReportData(3, periodStart, periodEnd)
     expect(result.readiness.deployments[0].blockers).toEqual(['incomplete_coverage'])
   })
+
+  it('uses the deployment workflow branch rather than the saved PR head branch', async () => {
+    const existing = query.getMockImplementation()
+    query.mockImplementation(async (sql: string) =>
+      sql.includes('FROM deployments d')
+        ? { rows: [{ ...deployment(), branch_name: 'feature/change' }] }
+        : existing?.(sql),
+    )
+    const result = await getRepositoryAuditReportData(3, periodStart, periodEnd)
+    expect(result.readiness.isReady).toBe(true)
+    expect(result.reportData.deployments[0].source).toMatchObject({
+      branch: 'main',
+      workflowSnapshot: { id: 50, runId: 1, runAttempt: 1 },
+    })
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('FROM github_workflow_runs_raw_snapshots'), [
+      '123',
+      1,
+      null,
+    ])
+  })
+
+  it.each(['pending_approval', null])(
+    'blocks repository authorization %s independently of approved code',
+    async (status) => {
+      const existing = query.getMockImplementation()
+      query.mockImplementation(async (sql: string) =>
+        sql.includes('FROM deployments d')
+          ? {
+              rows: [
+                { ...deployment(), authorization_link_id: status === null ? null : 10, authorization_status: status },
+              ],
+            }
+          : existing?.(sql),
+      )
+      const result = await getRepositoryAuditReportData(3, periodStart, periodEnd)
+      expect(result.reportData.deliveries[0].assessment.status).toBe('approved')
+      expect(result.readiness.deployments[0].blockers).toEqual([
+        status === null ? 'unknown_repository_authorization' : 'unauthorized_repository',
+      ])
+    },
+  )
+
+  it('selects the explicitly referenced workflow attempt and rejects another attempt', async () => {
+    const existing = query.getMockImplementation()
+    query.mockImplementation(async (sql: string) =>
+      sql.includes('FROM deployments d')
+        ? { rows: [{ ...deployment(), trigger_url: 'https://github.com/navikt/test/actions/runs/1/attempts/2' }] }
+        : existing?.(sql),
+    )
+    const missingAttempt = await getRepositoryAuditReportData(3, periodStart, periodEnd)
+    expect(missingAttempt.readiness.deployments[0].blockers).toEqual(['unknown_trigger', 'unknown_branch'])
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('FROM github_workflow_runs_raw_snapshots'), [
+      '123',
+      1,
+      '2',
+    ])
+    const sourceQuery = query.getMockImplementation()
+    query.mockImplementation(async (sql: string) =>
+      sql.includes('FROM github_workflow_runs_raw_snapshots')
+        ? { rows: [{ ...workflowSnapshot(), data: { ...workflowSnapshot().data, run_attempt: 2 } }] }
+        : sourceQuery?.(sql),
+    )
+    const matchingAttempt = await getRepositoryAuditReportData(3, periodStart, periodEnd)
+    expect(matchingAttempt.readiness.isReady).toBe(true)
+    expect(matchingAttempt.reportData.deployments[0].source.workflowSnapshot?.runAttempt).toBe(2)
+  })
+
+  it.each([
+    null,
+    { ...workflowSnapshot(), data: { ...workflowSnapshot().data, head_sha: baseSha } },
+    { ...workflowSnapshot(), data: { ...workflowSnapshot().data, repository: { id: 456 } } },
+    { ...workflowSnapshot(), data: { ...workflowSnapshot().data, id: 2 } },
+  ])(
+    'does not fall back to PR branch or cached trigger for missing or mismatched workflow evidence %#',
+    async (snapshot) => {
+      const existing = query.getMockImplementation()
+      query.mockImplementation(async (sql: string) =>
+        sql.includes('FROM github_workflow_runs_raw_snapshots')
+          ? { rows: snapshot ? [snapshot] : [] }
+          : existing?.(sql),
+      )
+      const result = await getRepositoryAuditReportData(3, periodStart, periodEnd)
+      expect(result.readiness.deployments[0].blockers).toEqual(['unknown_trigger', 'unknown_branch'])
+      expect(result.reportData.deployments[0].source.workflowSnapshot).toBeNull()
+    },
+  )
 
   it('fails explicitly for an inconsistent repository link', async () => {
     query.mockImplementation(async (sql: string) => ({

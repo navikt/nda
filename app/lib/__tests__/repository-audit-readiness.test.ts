@@ -19,7 +19,14 @@ function report(): RepositoryAuditReportData {
         deployerUsername: null,
         repositoryId: 5,
         deliveryId: 7,
-        source: { branch: 'main', defaultBranch: 'main', triggerEvent: 'push', triggerUrl: null },
+        source: {
+          branch: 'main',
+          defaultBranch: 'main',
+          triggerEvent: 'push',
+          triggerUrl: null,
+          repositoryAuthorization: { linkId: 1, status: 'active' },
+          workflowSnapshot: null,
+        },
       },
     ],
     deliveries: [
@@ -74,11 +81,23 @@ describe('repository audit readiness', () => {
 
   it('retains all independent missing-source and coverage blockers', () => {
     const data = report()
-    data.deployments[0].source = { branch: null, defaultBranch: null, triggerEvent: null, triggerUrl: null }
+    data.deployments[0].source = {
+      branch: null,
+      defaultBranch: null,
+      triggerEvent: null,
+      triggerUrl: null,
+      repositoryAuthorization: null,
+      workflowSnapshot: null,
+    }
     data.deployments[0].deliveryId = null
     const readiness = assessRepositoryAuditReadiness(data)
     expect(readiness.isReady).toBe(false)
-    expect(readiness.deployments[0].blockers).toEqual(['missing_link', 'unknown_trigger', 'unknown_branch'])
+    expect(readiness.deployments[0].blockers).toEqual([
+      'missing_link',
+      'unknown_repository_authorization',
+      'unknown_trigger',
+      'unknown_branch',
+    ])
   })
 
   it('blocks a non-default branch without discarding approved code coverage', () => {
@@ -86,6 +105,12 @@ describe('repository audit readiness', () => {
     data.deployments[0].source.branch = 'feature'
     expect(assessRepositoryAuditReadiness(data).deployments[0].blockers).toEqual(['unauthorized_branch'])
     expect(data.deliveries[0].assessment.status).toBe('approved')
+  })
+
+  it.each(['pending_approval', 'historical'])('blocks %s repository links despite approved code', (status) => {
+    const data = report()
+    data.deployments[0].source.repositoryAuthorization = { linkId: 1, status }
+    expect(assessRepositoryAuditReadiness(data).deployments[0].blockers).toEqual(['unauthorized_repository'])
   })
 
   it('distinguishes an empty period from a period with approved deployments', () => {
