@@ -403,6 +403,7 @@ describe('findExistingReportForPeriod', () => {
   })
 
   const makeReport = (overrides: {
+    assessment_model?: 'application' | 'repository'
     period_type: ReportPeriod['type']
     period_start: Date
     period_end?: Date
@@ -411,6 +412,7 @@ describe('findExistingReportForPeriod', () => {
   }) => ({
     id: 1,
     report_id: 'test-report',
+    assessment_model: overrides.assessment_model ?? 'application',
     period_type: overrides.period_type,
     period_start: overrides.period_start,
     period_end: overrides.period_end ?? new Date(overrides.period_start.getFullYear(), 11, 31),
@@ -422,6 +424,22 @@ describe('findExistingReportForPeriod', () => {
     const reports = [makeReport({ period_type: 'yearly', period_start: new Date(2025, 0, 1) })]
     const period = makePeriod('yearly', new Date(2025, 0, 1))
     expect(findExistingReportForPeriod(reports, period)).toBe(reports[0])
+  })
+
+  it('matches only the selected assessment model for the same period', () => {
+    const reports = [
+      makeReport({
+        assessment_model: 'repository',
+        period_type: 'yearly',
+        period_start: new Date(2025, 0, 1),
+      }),
+      makeReport({ period_type: 'yearly', period_start: new Date(2025, 0, 1) }),
+    ]
+    const period = makePeriod('yearly', new Date(2025, 0, 1))
+
+    expect(findExistingReportForPeriod(reports, period)).toBe(reports[1])
+    expect(findExistingReportForPeriod(reports, period, 'repository')).toBe(reports[0])
+    expect(findExistingReportForPeriod([reports[0]], period)).toBeUndefined()
   })
 
   it('handles period_start as Date object (as returned by node-postgres for DATE columns)', () => {

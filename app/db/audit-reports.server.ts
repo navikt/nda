@@ -1,3 +1,4 @@
+import type { AuditReportAssessmentModel } from '~/lib/audit-report-model'
 import { toDateString } from '~/lib/date-utils'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import { pool } from './connection.server'
@@ -30,6 +31,7 @@ export async function hasActiveReportForPeriod(
   periodType: ReportPeriodType,
   periodStart: Date,
   periodEnd: Date,
+  assessmentModel: AuditReportAssessmentModel = 'application',
 ): Promise<boolean> {
   const result = await pool.query(
     `SELECT 1 FROM audit_reports
@@ -37,10 +39,11 @@ export async function hasActiveReportForPeriod(
        AND period_type = $2
        AND period_start = $3::date
        AND period_end = $4::date
+       AND assessment_model = $5
        AND superseded_at IS NULL
        AND archived_at IS NULL
      LIMIT 1`,
-    [monitoredAppId, periodType, toDateString(periodStart), toDateString(periodEnd)],
+    [monitoredAppId, periodType, toDateString(periodStart), toDateString(periodEnd), assessmentModel],
   )
   return result.rows.length > 0
 }

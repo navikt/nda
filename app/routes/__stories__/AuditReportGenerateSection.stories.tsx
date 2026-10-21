@@ -98,6 +98,7 @@ const notReadyReadiness: AuditReadinessCheck = {
 
 const existingReport: AuditReportSummary = {
   id: 1,
+  assessment_model: 'application',
   report_id: 'AUDIT-2025-test-app-prod-gcp-abcdef12-1a2b3c4d5e6f',
   app_name: 'test-app',
   team_slug: 'testteam',
