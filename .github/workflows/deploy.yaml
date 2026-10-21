@@ -73,6 +73,7 @@ jobs:
 
   build:
     name: Build and push Docker image
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/sandbox'
     runs-on: ubuntu-latest
     permissions:
       contents: read
