@@ -1,4 +1,5 @@
 import { pool } from '~/db/connection.server'
+import type { AuditReportAssessmentModel } from '~/lib/audit-report-model'
 import { toDateString } from '~/lib/date-utils'
 import type { ReportPeriodType } from '~/lib/report-periods'
 
@@ -12,15 +13,28 @@ export async function createReportJob(
   periodLabel: string,
   periodStart: Date,
   periodEnd: Date,
+  assessmentModel: AuditReportAssessmentModel = 'application',
 ): Promise<{ jobId: string; created: boolean; status: string; createdAt: Date; startedAt: Date | null }> {
   const result = await pool.query(
-    `INSERT INTO report_jobs (monitored_app_id, year, period_type, period_label, period_start, period_end, status)
-     VALUES ($1, $2, $3, $4, $5::date, $6::date, 'pending')
+    `INSERT INTO report_jobs (monitored_app_id, year, period_type, period_label, period_start, period_end, assessment_model, status)
+     VALUES ($1, $2, $3, $4, $5::date, $6::date, $7, 'pending')
      ON CONFLICT (monitored_app_id, period_type, period_start, period_end) WHERE status IN ('pending', 'processing')
      DO UPDATE SET status = report_jobs.status
+     WHERE report_jobs.assessment_model = EXCLUDED.assessment_model
      RETURNING job_id, (xmax = 0) AS created, status, created_at, started_at`,
-    [monitoredAppId, year, periodType, periodLabel, toDateString(periodStart), toDateString(periodEnd)],
+    [
+      monitoredAppId,
+      year,
+      periodType,
+      periodLabel,
+      toDateString(periodStart),
+      toDateString(periodEnd),
+      assessmentModel,
+    ],
   )
+  if (result.rows.length === 0) {
+    throw new Error('An in-flight report job already exists for this period with a different assessment model.')
+  }
   return {
     jobId: result.rows[0].job_id,
     created: result.rows[0].created,
@@ -30,7 +44,10 @@ export async function createReportJob(
   }
 }
 
-export async function getReportJobStatus(jobId: string): Promise<{
+export async function getReportJobStatus(
+  jobId: string,
+  assessmentModel: AuditReportAssessmentModel = 'application',
+): Promise<{
   status: string
   error: string | null
   created_at: Date
@@ -40,19 +57,23 @@ export async function getReportJobStatus(jobId: string): Promise<{
   const result = await pool.query(
     `SELECT status, error, created_at, completed_at, monitored_app_id
      FROM report_jobs
-     WHERE job_id = $1`,
-    [jobId],
+     WHERE job_id = $1 AND assessment_model = $2`,
+    [jobId, assessmentModel],
   )
   return result.rows[0] || null
 }
 
-export async function claimReportJob(jobId: string): Promise<boolean> {
+export async function claimReportJob(
+  jobId: string,
+  assessmentModel: AuditReportAssessmentModel = 'application',
+): Promise<boolean> {
   const result = await pool.query(
     `UPDATE report_jobs SET status = 'processing', started_at = NOW()
      WHERE job_id = $1
+       AND assessment_model = $2
        AND (status = 'pending' OR (status = 'processing' AND (started_at IS NULL OR started_at < NOW() - INTERVAL '${STALE_JOB_THRESHOLD_SQL}')))
      RETURNING job_id`,
-    [jobId],
+    [jobId, assessmentModel],
   )
   return result.rowCount === 1
 }
@@ -89,6 +110,7 @@ export async function findInFlightJob(
   monitoredAppId: number,
   periodType: ReportPeriodType,
   periodStart: Date,
+  assessmentModel: AuditReportAssessmentModel = 'application',
 ): Promise<InFlightJob | null> {
   const result = await pool.query<InFlightJob>(
     `SELECT rj.job_id, rj.status, rj.audit_report_id, rj.created_at, rj.started_at
@@ -97,11 +119,15 @@ export async function findInFlightJob(
      WHERE rj.monitored_app_id = $1
        AND rj.period_type = $2
        AND rj.period_start = $3::date
+       AND rj.assessment_model = $4
        AND rj.status IN ('pending', 'processing', 'completed')
-       AND (rj.status != 'completed' OR (ar.id IS NOT NULL AND ar.archived_at IS NULL AND ar.superseded_at IS NULL))
+       AND (rj.status != 'completed' OR (
+         ar.id IS NOT NULL AND ar.assessment_model = rj.assessment_model
+         AND ar.archived_at IS NULL AND ar.superseded_at IS NULL
+       ))
      ORDER BY rj.created_at DESC
      LIMIT 1`,
-    [monitoredAppId, periodType, toDateString(periodStart)],
+    [monitoredAppId, periodType, toDateString(periodStart), assessmentModel],
   )
   return result.rows[0] || null
 }
@@ -129,12 +155,13 @@ interface AppScopedJobStatus {
 export async function getReportJobStatusForApp(
   jobId: string,
   monitoredAppId: number,
+  assessmentModel: AuditReportAssessmentModel = 'application',
 ): Promise<AppScopedJobStatus | null> {
   const result = await pool.query<AppScopedJobStatus>(
     `SELECT job_id, status, error, created_at, completed_at, audit_report_id
      FROM report_jobs
-     WHERE job_id = $1 AND monitored_app_id = $2`,
-    [jobId, monitoredAppId],
+     WHERE job_id = $1 AND monitored_app_id = $2 AND assessment_model = $3`,
+    [jobId, monitoredAppId, assessmentModel],
   )
   return result.rows[0] || null
 }

@@ -80,8 +80,8 @@ export async function saveAuditReport(params: {
         year, period_type, period_label, period_start, period_end,
         total_deployments, pr_approved_count, manually_approved_count,
         unique_deployers, unique_reviewers,
-        report_data, content_hash, generated_by, generated_by_app, change_origin_count
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        report_data, content_hash, generated_by, generated_by_app, change_origin_count, assessment_model
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, 'application')
       RETURNING *`,
       [
         reportId,
@@ -142,6 +142,7 @@ async function supersedeExistingReports(
          superseded_by = $1,
          supersede_reason = $2
      WHERE monitored_app_id = $3
+       AND assessment_model = 'application'
        AND period_type = $4
        AND period_start = $5::date
        AND period_end = $6::date

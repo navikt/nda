@@ -1,3 +1,4 @@
+import type { AuditReportAssessmentModel } from './audit-report-model'
 import { toDateString } from './date-utils'
 
 export type ReportPeriodType = 'yearly' | 'tertiary' | 'quarterly' | 'monthly' | 'custom'
@@ -275,6 +276,7 @@ export function resolvePeriod(
 }
 
 interface ReportForPeriodMatch {
+  assessment_model: AuditReportAssessmentModel
   period_type: ReportPeriodType
   period_start: Date
   period_end: Date
@@ -285,9 +287,11 @@ interface ReportForPeriodMatch {
 export function findExistingReportForPeriod<T extends ReportForPeriodMatch>(
   reports: T[],
   selectedPeriod: ReportPeriod,
+  assessmentModel: AuditReportAssessmentModel = 'application',
 ): T | undefined {
   return reports.find(
     (r) =>
+      r.assessment_model === assessmentModel &&
       r.period_type === selectedPeriod.type &&
       toDateString(r.period_start) === toDateString(selectedPeriod.startDate) &&
       (selectedPeriod.type !== 'custom' || toDateString(r.period_end) === toDateString(selectedPeriod.endDate)) &&

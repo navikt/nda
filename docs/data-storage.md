@@ -6,6 +6,37 @@
 
 ---
 
+## Vurderingsmodell for rapporter
+
+`audit_reports.assessment_model` og `report_jobs.assessment_model` skiller mellom
+`application` og `repository`. Eksisterende rader og innsettinger uten modell får
+`application`. Migreringen endrer ikke `report_data`, innholdshash, dokument-ID
+eller lagrede filer.
+
+Aktive rapporter er unike per applikasjon, vurderingsmodell, periodetype og
+start-/sluttdato. Hver modell kan dermed ha sin egen aktive rapport for samme
+periode. Dagens rapportgenerering skriver eksplisitt `application` og
+erstatter bare aktive applikasjonsbaserte rapporter. Oppslag av rapporter og jobber
+bruker `application` som standard; en annen modell må velges eksplisitt.
+Applikasjonsprosessoren kan ikke overta en repositorybasert jobb.
+
+Jobbkoden beholder dagens konfliktnøkkel og `idx_report_jobs_inflight` i dette
+steget, slik at gammel og ny applikasjonsversjon kan opprette og gjenbruke jobber
+under utrulling. En eksisterende jobb med en annen vurderingsmodell gir en
+eksplisitt feil i stedet for å bli gjenbrukt. Indeksen hindrer foreløpig parallelle
+jobber på tvers av modellene for samme applikasjon og periode.
+
+Før repositorybasert generering aktiveres, må indeksen erstattes med en
+modellavgrenset indeks og `ON CONFLICT` endres tilsvarende. Dette krever et eget
+utrullingssteg; begge unikhetsindeksene skal ikke eksistere samtidig, fordi
+samtidige innsettinger da kan feile på indeksen som ikke er konfliktmålet.
+
+Dette er lagringsgrunnlaget for modellvalget. Repositorybasert databygging,
+rapportklarhet, PDF/Excel og modellvalg i UI/API er ennå ikke aktivert. Den
+repositorybaserte rapporten skal bruke lagret grunnlag ved rapportgenerering,
+inkludert etterkontroll, og fryse vurderingen i rapportinnholdet. Den skal ikke
+påstå at senere godkjenninger forelå ved deployment.
+
 ## Repositoryreferanse på deployments
 
 `deployments.repository_id` er en nullable fremmednøkkel til `repositories.id`. Ved innsetting fylles den bare når deploymentens detekterte owner/name matcher både en repositorykobling for appen og en `repositories`-rad med samme `github_repo_id`. Koblingens godkjenningsstatus påvirker ikke identitetslagringen; verifisering og godkjenning er uendret. Oppslaget bruker ikke appens nåværende repository som fallback og gjør ingen GitHub-kall. Manglende kobling, ID eller navnematch gir `NULL`, inkludert historiske navn som ikke matcher repositoryets nåværende navn.
