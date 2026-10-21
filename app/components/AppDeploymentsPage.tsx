@@ -142,7 +142,9 @@ export function AppDeploymentsPage({
   return (
     <VStack gap="space-32">
       <Heading level="1" size="large">
-        {view === 'repository' ? 'Deployments – repositoryvurdering' : 'Deployments – appbasert vurdering'}
+        {view === 'repository'
+          ? 'Deployments – repositorybasert vurdering'
+          : 'Deployments – applikasjonsbasert vurdering'}
       </Heading>
       <DeploymentViewLinks pathname={pathname} searchParams={viewParams} currentView={view} />
       {monorepo && !showAllEnvironments && (
@@ -181,7 +183,7 @@ export function AppDeploymentsPage({
             : undefined
         }
         statusLabel={view === 'repository' ? 'Kodedekning' : undefined}
-        methodLabel={view === 'repository' ? 'Metode (appbasert)' : undefined}
+        methodLabel={view === 'repository' ? 'Metode (applikasjonsbasert)' : undefined}
         currentPeriod={currentPeriod}
         currentStatus={currentStatus}
         currentMethod={currentMethod}

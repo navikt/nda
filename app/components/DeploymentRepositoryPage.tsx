@@ -68,7 +68,7 @@ export function DeploymentRepositoryPage({ data, actionData }: DeploymentReposit
       </HStack>
       <div>
         <Heading level="1" size="large" spacing>
-          Repositoryvurdering av deployment #{deployment.id}
+          Repositorybasert vurdering av deployment #{deployment.id}
         </Heading>
         <BodyShort>
           {deployment.appName} · {deployment.environmentName} · {formatAuditLogTimestamp(deployment.createdAt)}
@@ -80,28 +80,28 @@ export function DeploymentRepositoryPage({ data, actionData }: DeploymentReposit
       </div>
       <Alert variant="info" size="small">
         Dette er en skrivebeskyttet sammenligning. Repositorydekningen beregnes fra lagret grunnlag nå, ikke ved
-        deploymenttidspunktet. Den endrer ikke gjeldende appbasert status og beviser ikke at koden var godkjent før
-        deployment.
+        deploymenttidspunktet. Den endrer ikke gjeldende applikasjonsbasert status og beviser ikke at koden var godkjent
+        før deployment.
       </Alert>
       <HGrid columns={{ xs: 1, lg: 2 }} gap="space-24">
         <Box padding="space-20" background="raised" borderRadius="8">
           <VStack gap="space-12">
             <Heading level="2" size="small">
-              Appbasert vurdering
+              Applikasjonsbasert vurdering
             </Heading>
             {application.status ? (
               <StatusTag four_eyes_status={application.status} />
             ) : (
-              <BodyShort>Appbasert status mangler.</BodyShort>
+              <BodyShort>Applikasjonsbasert status mangler.</BodyShort>
             )}
             <BodyShort size="small">
               {application.verificationRunAt
                 ? `Intervall fra siste verifiseringskjøring ${formatAuditLogTimestamp(application.verificationRunAt)}:`
-                : 'Ingen appbasert verifiseringskjøring er lagret.'}
+                : 'Ingen applikasjonsbasert verifiseringskjøring er lagret.'}
             </BodyShort>
             <Range range={application.range} />
             <AkselLink as={Link} to={deploymentViewUrl(pathname, searchParams, 'application')}>
-              Åpne appbasert grunnlag og historikk
+              Åpne applikasjonsbasert grunnlag og historikk
             </AkselLink>
           </VStack>
         </Box>
@@ -179,7 +179,7 @@ export function DeploymentRepositoryPage({ data, actionData }: DeploymentReposit
       </HGrid>
       <Alert variant="info" size="small">
         Modellene kan vurdere forskjellige kodeintervaller. Kodedekning er ikke en samlet deploymentgodkjenning og
-        overstyrer ikke kilde- eller branchkontroller. Disse kontrollene må leses i den appbaserte vurderingen.
+        overstyrer ikke kilde- eller branchkontroller. Disse kontrollene må leses i den applikasjonsbaserte vurderingen.
         {deployment.branchName ? ` Registrert branch: ${deployment.branchName}.` : ' Registrert branch er ukjent.'}
       </Alert>
       {link.state === 'linked' && repository && (
