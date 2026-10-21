@@ -102,7 +102,7 @@ spec:
     - name: BUCKET_NAME_PENSJON_DEPLOYMENT_AUDIT_LOGS
       value: nda-logs
     - name: NOM_API_URL
-      value: http://nom-api.nom/graphql
+      value: https://nom-api.intern.nav.no/graphql
     - name: NOM_API_SCOPE
       value: api://prod-gcp.nom.nom-api/.default
     - name: USER_LOOKUP_PROVIDER
@@ -116,10 +116,8 @@ spec:
       rules:
         - application: kiss
     outbound:
-      rules:
-        - application: nom-api
-          namespace: nom
       external:
+        - host: nom-api.intern.nav.no
         - host: api.github.com
         - host: pipelines.actions.githubusercontent.com
         # GitHub Actions log downloads redirect to Azure Blob Storage (productionresultssa0-19)
