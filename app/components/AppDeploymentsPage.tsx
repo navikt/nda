@@ -1,4 +1,4 @@
-import { Alert, BodyShort, Box, Button, HStack, VStack } from '@navikt/ds-react'
+import { BodyShort, Box, Button, Heading, HStack, VStack } from '@navikt/ds-react'
 import type { ComponentProps } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import {
@@ -141,14 +141,10 @@ export function AppDeploymentsPage({
 
   return (
     <VStack gap="space-32">
+      <Heading level="1" size="large">
+        {view === 'repository' ? 'Deployments – repositoryvurdering' : 'Deployments – appbasert vurdering'}
+      </Heading>
       <DeploymentViewLinks pathname={pathname} searchParams={viewParams} currentView={view} />
-      {view === 'repository' && (
-        <Alert variant="info" size="small">
-          Skrivebeskyttet repositoryvisning. Kodedekningen beregnes fra lagret grunnlag nå, ikke ved
-          deploymenttidspunktet. Den endrer ikke appbasert status. Kilde- og branchkontroller vises i appbasert
-          vurdering.
-        </Alert>
-      )}
       {monorepo && !showAllEnvironments && (
         <Box padding="space-16" borderRadius="8" background="neutral-soft">
           <HStack gap="space-8" align="center" justify="space-between" wrap>
