@@ -1,5 +1,6 @@
 import { pool } from '~/db/connection.server'
 import { getLinkedObjectivesForApps } from '~/db/deployment-goal-links.server'
+import { getRepositoryDeploymentsPaginated } from '~/db/deployment-repository-list.server'
 import { type DeploymentFilters, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getDevTeamBySlug, getDevTeamsForApps } from '~/db/dev-teams.server'
 import { getLatestVerificationRanges } from '~/db/github-data/verification-runs.server'
@@ -12,12 +13,16 @@ import {
 } from '~/db/role-assignments.server'
 import { getGithubUserLookups, getUserByIdentifier } from '~/db/user-github-lookups.server'
 import type { UserIdentity } from '~/lib/auth.server'
+import type { DeploymentRepositorySummary } from '~/lib/deployment-repository-status'
+import type { DeploymentView } from '~/lib/deployment-view'
 import { logger } from '~/lib/logger.server'
 import { DEFAULT_PER_PAGE } from '~/lib/pagination'
 import { serializeUserLookups } from '~/lib/user-display'
 import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 
 export interface MultiAppDeploymentsFilters {
+  view?: DeploymentView
+  repositoryStatus?: string
   repositoryId?: number
   groupBySha?: boolean
   page: number
@@ -98,7 +103,7 @@ export async function getMultiAppDeploymentsPageData(
     per_app_audit_start_year: true,
     page: filters.page,
     per_page: filters.perPage ?? DEFAULT_PER_PAGE,
-    four_eyes_status: filters.status,
+    four_eyes_status: filters.view === 'repository' ? undefined : filters.status,
     method: filters.method,
     workflow_trigger_event: filters.triggerEvent,
     workflow_path: filters.workflowPath,
@@ -112,7 +117,14 @@ export async function getMultiAppDeploymentsPageData(
     end_date: filters.endDate,
   }
 
-  const result = await getDeploymentsPaginated(deploymentFilters)
+  const result =
+    filters.view === 'repository'
+      ? await getRepositoryDeploymentsPaginated(deploymentFilters, filters.repositoryStatus)
+      : {
+          ...(await getDeploymentsPaginated(deploymentFilters)),
+          repositorySummaries: {} as Record<number, DeploymentRepositorySummary>,
+          repositoryCounts: null,
+        }
 
   const errorDeploymentIds = result.deployments.filter((d) => d.four_eyes_status === 'error').map((d) => d.id)
 

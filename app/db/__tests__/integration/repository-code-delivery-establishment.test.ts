@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { getRepositoryDeploymentsPaginated } from '../../deployment-repository-list.server'
 import { getDeploymentRepositoryView } from '../../deployment-repository-view.server'
 import { linkDeploymentToRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
 import {
@@ -517,6 +518,39 @@ describe('code delivery tracking start', () => {
 })
 
 describe('deployment repository comparison', () => {
+  it('filters repository coverage before pagination without reusing application status or linking candidates', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('glad-fjord-api')
+    const anchor = await createDeployment({ appId, appName: 'glad-fjord-api', repositoryId, commitSha: SHA_100 })
+    await establish(anchor)
+    const incomplete = await createDeployment({ appId, appName: 'glad-fjord-api', repositoryId, commitSha: SHA_101 })
+    await establish(incomplete, SHA_100)
+    const unlinked = await createDeployment({ appId, appName: 'glad-fjord-api', repositoryId, commitSha: SHA_100 })
+    await pool.query('UPDATE deployments SET four_eyes_status = $1 WHERE monitored_app_id = $2', ['approved', appId])
+    const filters = { monitored_app_ids: [appId], four_eyes_status: 'error', per_page: 1, page: 1 }
+
+    const missing = await getRepositoryDeploymentsPaginated(filters, 'missing_link')
+    expect(missing.deployments.map((deployment) => deployment.id)).toEqual([unlinked])
+    expect(missing.total).toBe(1)
+    expect(missing.repositoryCounts).toEqual({
+      approved: 0,
+      not_approved: 0,
+      incomplete: 1,
+      no_changes: 1,
+      missing_link: 1,
+    })
+    expect(await getLinkedDeliveryId(unlinked)).toBeNull()
+    const pending = await getRepositoryDeploymentsPaginated(filters, 'incomplete')
+    expect(pending.deployments.map((deployment) => deployment.id)).toEqual([incomplete])
+    expect(pending.repositorySummaries[incomplete]).toEqual({
+      status: 'incomplete',
+      range: { baseSha: SHA_100, headSha: SHA_101 },
+    })
+    expect(
+      (await getRepositoryDeploymentsPaginated({ ...filters, commit_sha: SHA_101 })).repositoryCounts,
+    ).toMatchObject({ incomplete: 1, no_changes: 0, missing_link: 0 })
+  })
+
   it('reads stored links across applications without linking an exact SHA candidate during GET', async () => {
     const repositoryId = await createRepository()
     const firstApp = await createApp('glad-fjord-api')

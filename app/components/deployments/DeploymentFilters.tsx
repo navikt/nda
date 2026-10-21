@@ -17,6 +17,9 @@ interface GoalOption {
 }
 
 interface DeploymentFiltersProps {
+  statusOptions?: FilterOption[]
+  statusLabel?: string
+  methodLabel?: string
   currentPeriod: string
   currentStatus: string
   currentMethod: string
@@ -40,6 +43,9 @@ interface DeploymentFiltersProps {
 }
 
 export function DeploymentFilters({
+  statusOptions,
+  statusLabel = 'Status',
+  methodLabel = 'Metode',
   currentPeriod,
   currentStatus,
   currentMethod,
@@ -80,27 +86,37 @@ export function DeploymentFilters({
             </Select>
 
             <Select
-              label="Status"
+              label={statusLabel}
               size="small"
               value={currentStatus}
               onChange={(e) => onFilterChange('status', e.target.value)}
             >
               <option value="">Alle</option>
-              <option value="approved">Godkjent</option>
-              <option value="manually_approved">Manuelt godkjent</option>
-              <option value="not_approved">Ikke godkjent</option>
-              <option value="pending">Venter</option>
-              <option value="legacy">Legacy</option>
-              <option value="legacy_pending">Legacy (venter)</option>
-              <option value="baseline">Baseline</option>
-              <option value="pending_baseline">Baseline (venter)</option>
-              <option value="baseline_action">Baseline (trenger handling)</option>
-              <option value="error">Feil</option>
-              <option value="unknown">Ukjent</option>
+              {statusOptions ? (
+                statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="approved">Godkjent</option>
+                  <option value="manually_approved">Manuelt godkjent</option>
+                  <option value="not_approved">Ikke godkjent</option>
+                  <option value="pending">Venter</option>
+                  <option value="legacy">Legacy</option>
+                  <option value="legacy_pending">Legacy (venter)</option>
+                  <option value="baseline">Baseline</option>
+                  <option value="pending_baseline">Baseline (venter)</option>
+                  <option value="baseline_action">Baseline (trenger handling)</option>
+                  <option value="error">Feil</option>
+                  <option value="unknown">Ukjent</option>
+                </>
+              )}
             </Select>
 
             <Select
-              label="Metode"
+              label={methodLabel}
               size="small"
               value={currentMethod}
               onChange={(e) => onFilterChange('method', e.target.value)}

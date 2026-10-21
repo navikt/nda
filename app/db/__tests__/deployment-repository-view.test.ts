@@ -136,6 +136,7 @@ describe('deployment repository comparison read', () => {
     getHistory.mockResolvedValue([
       {
         sha: headSha,
+        delivery_id: 7,
         status: 'eligible',
         author_login: 'glad-fjord',
         author_nav_ident: 'Z990001',
@@ -149,6 +150,7 @@ describe('deployment repository comparison read', () => {
     getHistory.mockResolvedValue([
       {
         sha: headSha,
+        delivery_id: 7,
         status: 'revoked',
         author_login: 'glad-fjord',
         author_nav_ident: 'Z990001',

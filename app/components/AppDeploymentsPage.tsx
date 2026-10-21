@@ -1,7 +1,15 @@
-import { BodyShort, Box, Button, HStack, VStack } from '@navikt/ds-react'
+import { Alert, BodyShort, Box, Button, HStack, VStack } from '@navikt/ds-react'
 import type { ComponentProps } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import {
+  DEPLOYMENT_REPOSITORY_STATUS_LABELS,
+  type DeploymentRepositoryStatus,
+  type DeploymentRepositorySummary,
+  parseDeploymentRepositoryStatus,
+} from '~/lib/deployment-repository-status'
+import type { DeploymentView } from '~/lib/deployment-view'
 import { DeploymentFilters, DeploymentRow, PaginationControls } from './deployments'
+import { DeploymentViewLinks } from './deployments/DeploymentViewLinks'
 
 type DeploymentData = ComponentProps<typeof DeploymentRow>['deployment']
 type FilterOption = ComponentProps<typeof DeploymentFilters>['deployerOptions'][number]
@@ -39,6 +47,9 @@ interface MonorepoInfo {
 }
 
 export interface AppDeploymentsPageProps {
+  view?: DeploymentView
+  repositorySummaries?: Record<number, DeploymentRepositorySummary>
+  repositoryCounts?: Record<DeploymentRepositoryStatus, number> | null
   app: MonitoredApplication
   deployments: DeploymentData[]
   total: number
@@ -61,6 +72,9 @@ export interface AppDeploymentsPageProps {
 }
 
 export function AppDeploymentsPage({
+  view = 'application',
+  repositorySummaries = {},
+  repositoryCounts,
   app,
   deployments,
   total,
@@ -82,8 +96,14 @@ export function AppDeploymentsPage({
   workflowFileOptions,
 }: AppDeploymentsPageProps) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const pathname = `/team/${app.team_slug}/env/${app.environment_name}/app/${app.app_name}/deployments`
+  const viewParams = new URLSearchParams(searchParams)
+  viewParams.set('page', '1')
 
-  const currentStatus = searchParams.get('status') || ''
+  const currentStatus =
+    view === 'repository'
+      ? (parseDeploymentRepositoryStatus(searchParams.get('repositoryStatus')) ?? '')
+      : searchParams.get('status') || ''
   const currentMethod = searchParams.get('method') || ''
   const currentGoal = searchParams.get('goal') || ''
   const currentDeployer = searchParams.get('deployer') || ''
@@ -95,6 +115,7 @@ export function AppDeploymentsPage({
   const currentTeam = teamParam === 'mine' && !teamOptions.some((o) => o.value === 'mine') ? '' : teamParam
 
   const updateFilter = (key: string, value: string) => {
+    if (key === 'status' && view === 'repository') key = 'repositoryStatus'
     const newParams = new URLSearchParams(searchParams)
     if (value) {
       newParams.set(key, value)
@@ -120,6 +141,14 @@ export function AppDeploymentsPage({
 
   return (
     <VStack gap="space-32">
+      <DeploymentViewLinks pathname={pathname} searchParams={viewParams} currentView={view} />
+      {view === 'repository' && (
+        <Alert variant="info" size="small">
+          Skrivebeskyttet repositoryvisning. Kodedekningen beregnes fra lagret grunnlag nå, ikke ved
+          deploymenttidspunktet. Den endrer ikke appbasert status. Kilde- og branchkontroller vises i appbasert
+          vurdering.
+        </Alert>
+      )}
       {monorepo && !showAllEnvironments && (
         <Box padding="space-16" borderRadius="8" background="neutral-soft">
           <HStack gap="space-8" align="center" justify="space-between" wrap>
@@ -150,6 +179,13 @@ export function AppDeploymentsPage({
       )}
 
       <DeploymentFilters
+        statusOptions={
+          view === 'repository'
+            ? Object.entries(DEPLOYMENT_REPOSITORY_STATUS_LABELS).map(([value, label]) => ({ value, label }))
+            : undefined
+        }
+        statusLabel={view === 'repository' ? 'Kodedekning' : undefined}
+        methodLabel={view === 'repository' ? 'Metode (appbasert)' : undefined}
         currentPeriod={currentPeriod}
         currentStatus={currentStatus}
         currentMethod={currentMethod}
@@ -168,6 +204,14 @@ export function AppDeploymentsPage({
         currentUserGithub={currentUserGithub}
         onFilterChange={updateFilter}
       />
+      {view === 'repository' && repositoryCounts && (
+        <BodyShort size="small" textColor="subtle">
+          Kodedekning før statusfilter:{' '}
+          {Object.entries(DEPLOYMENT_REPOSITORY_STATUS_LABELS)
+            .map(([status, label]) => `${label}: ${repositoryCounts[status as DeploymentRepositoryStatus]}`)
+            .join(' · ')}
+        </BodyShort>
+      )}
 
       <HStack justify="space-between" align="center" wrap>
         <BodyShort textColor="subtle">
@@ -207,6 +251,8 @@ export function AppDeploymentsPage({
               currentEnv={app.environment_name}
               searchParams={searchParams}
               showRepositoryView
+              currentView={view}
+              repositorySummary={view === 'repository' ? repositorySummaries[deployment.id] : undefined}
             />
           ))
         )}
