@@ -5,6 +5,11 @@ import { MethodTag, StatusTag } from '~/components/deployment-tags'
 import { ErrorReasonWithLink } from '~/components/ErrorReasonWithLink'
 import { ExternalLink } from '~/components/ExternalLink'
 import { UserName } from '~/components/UserName'
+import {
+  DEPLOYMENT_REPOSITORY_STATUS_LABELS,
+  type DeploymentRepositorySummary,
+} from '~/lib/deployment-repository-status'
+import type { DeploymentView } from '~/lib/deployment-view'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import type { UserLookupMap } from '~/lib/user-display'
 import type { StoredVerificationResult } from '~/lib/verification/types'
@@ -36,6 +41,8 @@ interface DeploymentData {
 }
 
 interface DeploymentRowProps {
+  repositorySummary?: DeploymentRepositorySummary
+  currentView?: DeploymentView
   comparisonRange?: StoredVerificationResult['comparisonRange']
   deployment: DeploymentData
   userMappings: UserLookupMap
@@ -48,6 +55,8 @@ interface DeploymentRowProps {
 }
 
 export function DeploymentRow({
+  repositorySummary,
+  currentView,
   comparisonRange,
   deployment,
   userMappings,
@@ -61,6 +70,8 @@ export function DeploymentRow({
   const searchStr = searchParams?.toString()
   const detailPath = `/team/${deployment.team_slug}/env/${deployment.environment_name}/app/${deployment.app_name}/deployments/${deployment.id}`
   const detailUrl = `${detailPath}${searchStr ? `?${searchStr}` : ''}`
+  const detailParams = new URLSearchParams(searchParams)
+  detailParams.set('listView', currentView ?? 'application')
 
   return (
     <Box padding="space-20" background="raised" className={styles.stackedListItem}>
@@ -94,11 +105,28 @@ export function DeploymentRow({
             </Show>
           </HStack>
           <HStack gap="space-8" style={{ flexShrink: 0 }}>
-            <MethodTag
-              github_pr_number={deployment.github_pr_number}
-              four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
-            />
-            <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
+            {repositorySummary ? (
+              <Tag
+                variant={
+                  repositorySummary.status === 'not_approved'
+                    ? 'warning'
+                    : repositorySummary.status === 'approved'
+                      ? 'success'
+                      : 'neutral'
+                }
+                size="xsmall"
+              >
+                {DEPLOYMENT_REPOSITORY_STATUS_LABELS[repositorySummary.status]}
+              </Tag>
+            ) : (
+              <>
+                <MethodTag
+                  github_pr_number={deployment.github_pr_number}
+                  four_eyes_status={deployment.four_eyes_status as FourEyesStatus}
+                />
+                <StatusTag four_eyes_status={deployment.four_eyes_status as FourEyesStatus} />
+              </>
+            )}
             {deployment.has_goal_link ? (
               <Tag variant="info" size="xsmall" icon={<LinkIcon aria-hidden />}>
                 Koblet
@@ -169,7 +197,7 @@ export function DeploymentRow({
               </Tag>
             )}
             {showRepositoryView ? (
-              <DeploymentViewLinks pathname={detailPath} searchParams={searchParams ?? new URLSearchParams()} />
+              <DeploymentViewLinks pathname={detailPath} searchParams={detailParams} />
             ) : (
               <Button as={Link} to={detailUrl} variant="tertiary" size="small">
                 Vis
@@ -177,6 +205,14 @@ export function DeploymentRow({
             )}
           </HStack>
         </HStack>
+
+        {repositorySummary && (
+          <Detail textColor="subtle" style={{ overflowWrap: 'anywhere' }}>
+            {repositorySummary.range
+              ? `Låst repositoryintervall: ${repositorySummary.range.baseSha} → ${repositorySummary.range.headSha}`
+              : 'Ingen lagret leveransekobling. Årsak og eventuelt mulig SHA-treff vises i repositoryvurderingen.'}
+          </Detail>
+        )}
 
         {comparisonRange !== undefined && (
           <Detail textColor="subtle" style={{ overflowWrap: 'anywhere' }}>
@@ -191,7 +227,7 @@ export function DeploymentRow({
         )}
 
         {/* Error reason for deployments with error status */}
-        {errorReason && (
+        {errorReason && !repositorySummary && (
           <ErrorReasonWithLink
             errorReason={errorReason}
             githubOwner={deployment.detected_github_owner}

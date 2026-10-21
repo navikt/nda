@@ -15,6 +15,7 @@ const {
   mockGetUserByIdentifier,
   mockGetLinkedObjectivesForApps,
   mockGetLatestVerificationRanges,
+  mockGetRepositoryDeploymentsPaginated,
 } = vi.hoisted(() => ({
   mockGetDeploymentsPaginated: vi.fn(),
   mockGetDevTeamBySlug: vi.fn(),
@@ -26,6 +27,11 @@ const {
   mockGetUserByIdentifier: vi.fn(),
   mockGetLinkedObjectivesForApps: vi.fn(),
   mockGetLatestVerificationRanges: vi.fn(),
+  mockGetRepositoryDeploymentsPaginated: vi.fn(),
+}))
+
+vi.mock('~/db/deployment-repository-list.server', () => ({
+  getRepositoryDeploymentsPaginated: mockGetRepositoryDeploymentsPaginated,
 }))
 
 vi.mock('~/db/github-data/verification-runs.server', () => ({
@@ -107,6 +113,46 @@ describe('getMultiAppDeploymentsPageData', () => {
     expect(calledFilters).not.toHaveProperty('audit_start_year')
     expect(mockGetLatestVerificationRanges).not.toHaveBeenCalled()
     expect(mockGetLinkedObjectivesForApps).toHaveBeenCalledWith([1, 2], undefined)
+  })
+
+  it('uses the repository reader and its independent coverage filter without filtering on application status', async () => {
+    mockGetRepositoryDeploymentsPaginated.mockResolvedValue({
+      deployments: [],
+      total: 3,
+      page: 2,
+      per_page: 1,
+      total_pages: 3,
+      repositorySummaries: {},
+      repositoryCounts: { missing_link: 3 },
+    })
+    const result = await getMultiAppDeploymentsPageData(
+      apps,
+      {
+        view: 'repository',
+        status: 'approved',
+        repositoryStatus: 'missing_link',
+        page: 2,
+        perPage: 1,
+        sha: 'abc',
+        teamFilter: '',
+        method: 'pr',
+      },
+      null,
+    )
+    expect(mockGetDeploymentsPaginated).not.toHaveBeenCalled()
+    expect(mockGetRepositoryDeploymentsPaginated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        monitored_app_ids: [1, 2],
+        four_eyes_status: undefined,
+        page: 2,
+        per_page: 1,
+        commit_sha: 'abc',
+        method: 'pr',
+        per_app_audit_start_year: true,
+      }),
+      'missing_link',
+    )
+    expect(result).toMatchObject({ total: 3, repositoryCounts: { missing_link: 3 } })
   })
 
   it('forwards a provided perPage value to getDeploymentsPaginated', async () => {

@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { APPROVED_STATUSES_SQL, notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
@@ -267,7 +268,10 @@ export async function getDeploymentAppsForRepository(
   return result.rows
 }
 
-export async function getDeploymentsPaginated(filters?: DeploymentFilters): Promise<PaginatedDeployments> {
+export async function getDeploymentsPaginated(
+  filters?: DeploymentFilters,
+  executor: Pick<PoolClient, 'query'> = pool,
+): Promise<PaginatedDeployments> {
   let whereSql = ' WHERE 1=1'
   const params: any[] = []
   let paramIndex = 1
@@ -455,7 +459,7 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     ${goalJoinSql}
     ${whereSql}
   `
-  const countResult = await pool.query(countSql, params)
+  const countResult = await executor.query(countSql, params)
   const total = parseInt(countResult.rows[0].total, 10)
 
   const page = filters?.page || 1
@@ -503,13 +507,13 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
            ORDER BY groups.latest_at DESC, groups.latest_id DESC, d.created_at DESC, d.id DESC`
         : `${goalJoinSql}
            ${whereSql}
-           ORDER BY d.created_at DESC${filters?.repository_id != null ? ', d.id DESC' : ''}
+           ORDER BY d.created_at DESC, d.id DESC
            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`
     }
   `
   params.push(per_page, offset)
 
-  const result = await pool.query(dataSql, params)
+  const result = await executor.query(dataSql, params)
 
   return {
     deployments: result.rows,

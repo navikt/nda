@@ -14,6 +14,7 @@ import { DeploymentViewLinks } from '~/components/deployments/DeploymentViewLink
 import { ExternalLink } from '~/components/ExternalLink'
 import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
+import { deploymentListUrl } from '~/lib/deployment-view'
 import { type FourEyesStatus, isApprovedStatus, isProtectedStatus } from '~/lib/four-eyes-status'
 import { getFourEyesStatus } from '~/lib/status-display'
 import { UNVERIFIED_REASON_LABELS, type UnverifiedReason } from '~/lib/verification/types'
@@ -152,7 +153,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
           )}
           <Button
             as={Link}
-            to={`${appUrl}/deployments${searchParams.toString() ? `?${searchParams.toString()}` : ''}`}
+            to={deploymentListUrl(`${appUrl}/deployments`, searchParams)}
             variant="tertiary"
             size="xsmall"
           >

@@ -2,13 +2,11 @@ import type { UserIdentity } from '~/lib/auth.server'
 import { resolveRepositoryApprovalCapabilities } from '~/lib/authorization.server'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { isFullCommitSha } from '~/lib/git-constants'
-import { assessStoredRepositoryDeliveryApproval } from '~/lib/repository-code-delivery/approval-assessment'
 import { serializeUserLookups } from '~/lib/user-display'
 import { withTransaction } from './connection.server'
 import { getRepositoryCodeDelivery } from './repository-code-deliveries.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
-import { getRepositoryCodeDeliveryIntervalAssessments } from './repository-code-delivery-interval-assessment.server'
-import { getRepositoryManualApprovalCommits } from './repository-manual-approval-commits.server'
+import { getStoredRepositoryDeliveryAssessments } from './repository-delivery-assessments.server'
 import { getGithubUserLookups } from './user-github-lookups.server'
 
 interface DeploymentContext {
@@ -131,27 +129,15 @@ export async function getDeploymentRepositoryView(
       throw new Error(`Deployment ${deploymentId} has an inconsistent repository code delivery link`)
     }
 
-    const [interval] = await getRepositoryCodeDeliveryIntervalAssessments(context.repository.id, [candidate], client)
-    if (!interval) throw new Error(`Missing interval assessment for delivery ${candidate.id}`)
-    const history = await getRepositoryManualApprovalCommits(client, context.repository.id, [candidate.id])
-    const usernames = [
-      ...new Set([
-        ...(deployment.deployer_username ? [deployment.deployer_username] : []),
-        ...interval.assessment.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
-      ]),
-    ]
-    const lookups = await getGithubUserLookups(usernames, client)
-    const assessment = assessStoredRepositoryDeliveryApproval(
-      candidate,
-      interval.assessment,
-      history,
-      new Map(
-        [...lookups].map(([username, lookup]) => [
-          username,
-          lookup.account_deleted_at === null ? lookup.active_nav_ident : null,
-        ]),
-      ),
+    const { assessments, lookups } = await getStoredRepositoryDeliveryAssessments(
+      client,
+      context.repository.id,
+      [candidate],
+      deployment.deployer_username ? [deployment.deployer_username] : [],
     )
+    const evaluated = assessments.get(candidate.id)
+    if (!evaluated) throw new Error(`Missing approval assessment for delivery ${candidate.id}`)
+    const { interval, assessment } = evaluated
     const capabilities = actor
       ? await resolveRepositoryApprovalCapabilities(actor, context.repository.id, client)
       : { canApprove: false }
@@ -171,7 +157,7 @@ export async function getDeploymentRepositoryView(
        ORDER BY d.created_at, d.id LIMIT 20`,
       [context.repository.id, candidate.id],
     )
-    const commits = new Map(interval.assessment.commits.map((commit) => [commit.sha.toLowerCase(), commit]))
+    const commits = new Map(interval.commits.map((commit) => [commit.sha.toLowerCase(), commit]))
     return {
       ...context,
       link: {

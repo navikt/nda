@@ -2,7 +2,7 @@ import { Link as AkselLink, Alert, BodyShort, Box, Heading, HGrid, HStack, Table
 import { Link, useSearchParams } from 'react-router'
 import type { DeploymentRepositoryView } from '~/db/deployment-repository-view.server'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
-import { deploymentViewUrl } from '~/lib/deployment-view'
+import { deploymentListUrl, deploymentViewUrl } from '~/lib/deployment-view'
 import {
   approvalCommitReasonLabel,
   approvalStatusLabel,
@@ -55,8 +55,6 @@ export function DeploymentRepositoryPage({ data, actionData }: DeploymentReposit
   const { deployment, application, repository, link } = data
   const appUrl = `/team/${deployment.teamSlug}/env/${deployment.environmentName}/app/${deployment.appName}`
   const pathname = `${appUrl}/deployments/${deployment.id}`
-  const listParams = new URLSearchParams(searchParams)
-  listParams.delete('view')
   const repositoryUrl = repository ? `/repository/${repository.githubOwner}/${repository.githubRepoName}` : null
 
   return (
@@ -64,7 +62,7 @@ export function DeploymentRepositoryPage({ data, actionData }: DeploymentReposit
       <ActionAlert data={actionData} />
       <HStack gap="space-16" justify="space-between" wrap>
         <DeploymentViewLinks pathname={pathname} searchParams={searchParams} currentView="repository" />
-        <AkselLink as={Link} to={`${appUrl}/deployments${listParams.size ? `?${listParams}` : ''}`}>
+        <AkselLink as={Link} to={deploymentListUrl(`${appUrl}/deployments`, searchParams)}>
           Til deploymentlisten
         </AkselLink>
       </HStack>

@@ -265,6 +265,25 @@ export const Default: Story = {
   args: baseArgs,
 }
 
+export const RepositoryCoverage = {
+  name: 'Repositorydekning',
+  args: {
+    ...baseArgs,
+    view: 'repository',
+    deployments: fixtureDeployments,
+    total: 5,
+    total_pages: 1,
+    repositoryCounts: { approved: 1, not_approved: 1, incomplete: 1, missing_link: 1, no_changes: 1 },
+    repositorySummaries: {
+      1: { status: 'approved', range: { baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) } },
+      2: { status: 'not_approved', range: { baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) } },
+      3: { status: 'incomplete', range: { baseSha: 'c'.repeat(40), headSha: 'd'.repeat(40) } },
+      4: { status: 'missing_link', range: null },
+      5: { status: 'no_changes', range: { baseSha: 'e'.repeat(40), headSha: 'e'.repeat(40) } },
+    },
+  },
+} satisfies Story
+
 export const Empty: Story = {
   name: 'Ingen resultater',
   args: {

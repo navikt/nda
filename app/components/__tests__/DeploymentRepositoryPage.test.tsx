@@ -7,9 +7,11 @@ import { repositoryDeploymentData } from '~/routes/__stories__/DeploymentReposit
 import { DeploymentRepositoryPage } from '../DeploymentRepositoryPage'
 import { DeploymentViewLinks } from '../deployments/DeploymentViewLinks'
 
-function render(data: DeploymentRepositoryView) {
+function render(data: DeploymentRepositoryView, listView?: string) {
   const router = createMemoryRouter([{ path: '*', element: <DeploymentRepositoryPage data={data} /> }], {
-    initialEntries: ['/deployment?view=repository&period=all&page=2&status=not_approved'],
+    initialEntries: [
+      `/deployment?view=repository&period=all&page=2&status=not_approved${listView ? `&listView=${listView}` : ''}`,
+    ],
   })
   return renderToStaticMarkup(<RouterProvider router={router} />)
 }
@@ -28,7 +30,19 @@ describe('repository deployment comparison', () => {
     expect(markup).not.toContain('<form')
     expect(markup).not.toContain('Godkjenn manuelt')
     expect(markup).toContain('view=application&amp;period=all&amp;page=2&amp;status=not_approved')
+    expect(markup).toContain(
+      '/team/team-fjord/env/prod-gcp/app/glad-fjord-api/deployments?view=application&amp;period=all&amp;page=2&amp;status=not_approved',
+    )
   })
+
+  it.each(['application', 'repository'])(
+    'returns to the original %s list, independently of the detail view',
+    (listView) => {
+      expect(render(repositoryDeploymentData, listView)).toContain(
+        `/team/team-fjord/env/prod-gcp/app/glad-fjord-api/deployments?view=${listView}&amp;period=all&amp;page=2&amp;status=not_approved"`,
+      )
+    },
+  )
 
   it('does not use an exact head match as coverage when the stored link is missing', () => {
     const markup = render({
