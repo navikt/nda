@@ -6,7 +6,7 @@ import {
 } from '~/lib/deployment-repository-status'
 import { isFullCommitSha } from '~/lib/git-constants'
 import { withTransaction } from './connection.server'
-import { type DeploymentFilters, type DeploymentWithApp, getDeploymentsPaginated } from './deployments.server'
+import { type DeploymentFilters, type DeploymentWithApp, getDeploymentsBatch } from './deployments.server'
 import { getStoredRepositoryDeliveryAssessments } from './repository-delivery-assessments.server'
 
 async function getDeploymentRepositorySummaries(client: Pick<PoolClient, 'query'>, deploymentIds: number[]) {
@@ -87,28 +87,27 @@ export async function getRepositoryDeploymentsPaginated(filters: DeploymentFilte
     const deployments: DeploymentWithApp[] = []
     const repositorySummaries: Record<number, DeploymentRepositorySummary> = {}
     let matchingCount = 0
-    let batchPage = 1
-    let totalPages: number
+    let afterDeploymentId: number | undefined
+    let batchSize: number
     do {
-      const batch = await getDeploymentsPaginated(
+      const batch = await getDeploymentsBatch(
         {
           ...filters,
           four_eyes_status: undefined,
           group_by_sha: false,
-          page: batchPage,
-          per_page: 100,
         },
         client,
+        afterDeploymentId,
       )
-      totalPages = batch.total_pages
+      batchSize = batch.length
       const summaries =
-        batch.deployments.length > 0
+        batch.length > 0
           ? await getDeploymentRepositorySummaries(
               client,
-              batch.deployments.map((deployment) => deployment.id),
+              batch.map((deployment) => deployment.id),
             )
           : {}
-      for (const deployment of batch.deployments) {
+      for (const deployment of batch) {
         const summary = summaries[deployment.id]
         counts[summary.status]++
         if (status && summary.status !== status) continue
@@ -118,8 +117,8 @@ export async function getRepositoryDeploymentsPaginated(filters: DeploymentFilte
         }
         matchingCount++
       }
-      batchPage++
-    } while (batchPage <= totalPages)
+      afterDeploymentId = batch.at(-1)?.id
+    } while (batchSize === 100)
     return {
       deployments,
       repositorySummaries,

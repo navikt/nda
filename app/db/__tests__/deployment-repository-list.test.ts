@@ -10,7 +10,7 @@ const { query, getDeployments, getIntervals, getHistory, getLookups } = vi.hoist
 vi.mock('../connection.server', () => ({
   withTransaction: (read: (client: { query: typeof query }) => Promise<unknown>) => read({ query }),
 }))
-vi.mock('../deployments.server', () => ({ getDeploymentsPaginated: getDeployments }))
+vi.mock('../deployments.server', () => ({ getDeploymentsBatch: getDeployments }))
 vi.mock('../repository-code-delivery-interval-assessment.server', () => ({
   getRepositoryCodeDeliveryIntervalAssessments: getIntervals,
 }))
@@ -52,7 +52,7 @@ describe('repository deployment list', () => {
         },
       })),
     )
-    getDeployments.mockResolvedValue({ deployments: [{ id: 42 }, { id: 43 }], total_pages: 1 })
+    getDeployments.mockResolvedValue([{ id: 42 }, { id: 43 }])
   })
 
   it('deduplicates shared deliveries and uses one client for evidence, manual history and identities', async () => {
@@ -72,19 +72,19 @@ describe('repository deployment list', () => {
         monitored_app_ids: [3],
         four_eyes_status: undefined,
         group_by_sha: false,
-        per_page: 100,
       }),
       { query },
+      undefined,
     )
     expect(query).toHaveBeenCalledWith('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
   })
 
   it('filters and counts across batches before selecting the requested page', async () => {
-    getDeployments.mockImplementation(async ({ page }) => ({
-      deployments:
-        page === 1 ? Array.from({ length: 100 }, (_, index) => ({ id: index + 1 })) : [{ id: 101 }, { id: 102 }],
-      total_pages: 2,
-    }))
+    getDeployments.mockImplementation(async (_filters, _client, afterId) =>
+      afterId === undefined
+        ? Array.from({ length: 100 }, (_, index) => ({ id: index + 1 }))
+        : [{ id: 101 }, { id: 102 }],
+    )
     query.mockImplementation(async (sql: string, params?: [number[]]) => ({
       rows: sql.includes('FROM deployments')
         ? params?.[0].map((id) =>
@@ -104,10 +104,11 @@ describe('repository deployment list', () => {
       repositorySummaries: { 102: { status: 'missing_link', range: null } },
     })
     expect(result.repositorySummaries).not.toHaveProperty('101')
+    expect(getDeployments).toHaveBeenNthCalledWith(2, expect.any(Object), { query }, 100)
   })
 
   it('does not use a matching SHA or an old approved status without the explicit delivery link', async () => {
-    getDeployments.mockResolvedValue({ deployments: [{ id: 42, four_eyes_status: 'approved' }], total_pages: 1 })
+    getDeployments.mockResolvedValue([{ id: 42, four_eyes_status: 'approved' }])
     query.mockResolvedValue({ rows: [{ ...linked(42), repository_code_delivery_id: null }] })
     const result = await getRepositoryDeploymentsPaginated({}, 'approved')
     expect(result).toMatchObject({ deployments: [], total: 0, repositoryCounts: { missing_link: 1, approved: 0 } })
