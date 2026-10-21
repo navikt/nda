@@ -31,11 +31,53 @@ modellavgrenset indeks og `ON CONFLICT` endres tilsvarende. Dette krever et eget
 utrullingssteg; begge unikhetsindeksene skal ikke eksistere samtidig, fordi
 samtidige innsettinger da kan feile på indeksen som ikke er konfliktmålet.
 
-Dette er lagringsgrunnlaget for modellvalget. Repositorybasert databygging,
-rapportklarhet, PDF/Excel og modellvalg i UI/API er ennå ikke aktivert. Den
-repositorybaserte rapporten skal bruke lagret grunnlag ved rapportgenerering,
-inkludert etterkontroll, og fryse vurderingen i rapportinnholdet. Den skal ikke
-påstå at senere godkjenninger forelå ved deployment.
+### Repositorybasert rapportgrunnlag
+
+`getRepositoryAuditReportData()` bygger et separat, serialiserbart rapportgrunnlag
+for én produksjonsapplikasjon og periode. App, deploymentutvalg, evidens,
+identiteter og manuell historikk leses med samme klient i en read-only
+`REPEATABLE READ`-transaksjon. Utvalget følger samme inklusive periodegrenser og
+revisjonsstartår som dagens rapport, sortert på `(created_at, id)`.
+
+Grunnlaget har formatversjon 1, verifiseringsversjon og vurderingstidspunkt fra
+databasen. Hvert deployment beholder sin eksplisitte leveransekobling og
+deploymentkilde. Hver unik kodeleveranse inkluderer stabil repository-ID,
+GitHub-ID, låst base/head, normalisert GitHub-evidens, vurderingsresultat,
+raw-snapshot-ID-er med hentetidspunkt, author-identiteter med versjoner og
+manuell godkjenningshistorikk med snapshotreferanse, reviewer, registrator og
+begge tidspunkt. Tilbakekalt og identitetsutdatert historikk beholdes, men gir
+ikke dekning. Manglende leveransekobling beholdes som en mangel; samme SHA eller
+appens nåværende repository brukes aldri til å erstatte koblingen.
+
+Hvert deployment lagrer også gjeldende repositorytillatelse for applikasjonen
+med koblings-ID og status. Oppslaget krever samme uforanderlige GitHub-ID og
+deploymentets detekterte owner/name. Manglende kobling er ukjent, og bare status
+`active` gir tillatelse; kodegodkjenning gir ikke repositorytillatelse.
+
+Branch og trigger hentes fra lagret workflow-run-snapshot for deploymentets
+trigger-URL, ikke fra `deployments.branch_name`, som kan inneholde PR-head.
+Snapshotet må matche GitHub-repository-ID, run-ID og deploymentets fulle SHA.
+En eksplisitt `/attempts/N` krever samme run-forsøk. Snapshot-ID, hentetidspunkt,
+run-ID og forsøk kopieres inn i rapportgrunnlaget. Manglende eller avvikende
+evidens gir ukjent branch/trigger uten fallback til PR-data eller HTTP-oppslag.
+
+Vurderingen gjelder lagret grunnlag ved generering, inkludert etterkontroll.
+Den sier ikke at godkjenning forelå ved deployment. Det normaliserte grunnlaget
+kopieres inn i resultatet, slik at senere endringer i snapshots eller
+godkjenningshistorikk ikke omskriver det tidligere resultatet.
+
+`assessRepositoryAuditReadiness()` vurderer rapportklarhet separat fra kodedekning.
+Manglende kobling, ufullstendig dekning og manglende godkjenning blokkerer.
+`base=head` krever avklart baseline og teller ikke som godkjenning av tidligere
+kode. Ukjent eller ikke tillatt repository, manuell workflow-trigger,
+manglende trigger/branchgrunnlag eller avvik fra
+repositoryets gjeldende default branch blokkerer også. Tom periode markeres
+eksplisitt. Kriteriene bruker ikke `four_eyes_status` og endrer ikke dagens
+applikasjonsbaserte rapportklarhet.
+
+Databyggeren er ennå ikke koblet til rapportgenereringen. Den skriver ingen data
+og gjør ingen HTTP-kall. Lagring av repositoryrapport, PDF/Excel og modellvalg i
+UI/API gjenstår.
 
 ## Repositoryreferanse på deployments
 
