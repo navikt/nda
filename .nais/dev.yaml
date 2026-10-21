@@ -100,7 +100,7 @@ spec:
     - name: VERIFICATION_DEBUG
       value: "true"
     - name: BUCKET_NAME_PENSJON_DEPLOYMENT_AUDIT_LOGS
-      value: nda-audit-logs
+      value: nda-logs
     - name: NOM_API_URL
       value: http://nom-api.nom/graphql
     - name: NOM_API_SCOPE
