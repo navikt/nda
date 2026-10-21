@@ -87,6 +87,8 @@ spec:
         - id: loki
 
   env:
+    - name: BASE_URL
+      value: https://nda.ansatt.dev.nav.no
     - name: NODE_ENV
       value: production
     - name: TZ
