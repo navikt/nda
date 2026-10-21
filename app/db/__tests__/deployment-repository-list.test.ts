@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { query, getDeployments, getIntervals, getHistory, getLookups } = vi.hoisted(() => ({
+const { query, getDeployments, getPage, getIntervals, getHistory, getLookups } = vi.hoisted(() => ({
   query: vi.fn(),
   getDeployments: vi.fn(),
+  getPage: vi.fn(),
   getIntervals: vi.fn(),
   getHistory: vi.fn(),
   getLookups: vi.fn(),
@@ -10,7 +11,7 @@ const { query, getDeployments, getIntervals, getHistory, getLookups } = vi.hoist
 vi.mock('../connection.server', () => ({
   withTransaction: (read: (client: { query: typeof query }) => Promise<unknown>) => read({ query }),
 }))
-vi.mock('../deployments.server', () => ({ getDeploymentsBatch: getDeployments }))
+vi.mock('../deployments.server', () => ({ getDeploymentsBatch: getDeployments, getDeploymentsPaginated: getPage }))
 vi.mock('../repository-code-delivery-interval-assessment.server', () => ({
   getRepositoryCodeDeliveryIntervalAssessments: getIntervals,
 }))
@@ -53,13 +54,19 @@ describe('repository deployment list', () => {
       })),
     )
     getDeployments.mockResolvedValue([{ id: 42 }, { id: 43 }])
+    getPage.mockResolvedValue({
+      deployments: [{ id: 42 }, { id: 43 }],
+      total: 200,
+      page: 2,
+      per_page: 2,
+      total_pages: 100,
+    })
   })
 
   it('deduplicates shared deliveries and uses one client for evidence, manual history and identities', async () => {
     const result = await getRepositoryDeploymentsPaginated({ monitored_app_ids: [3], four_eyes_status: 'error' })
     expect(result).toMatchObject({
-      total: 2,
-      repositoryCounts: { approved: 2 },
+      total: 200,
       repositorySummaries: { 42: { status: 'approved', range: { baseSha, headSha } }, 43: { status: 'approved' } },
     })
     expect(getIntervals).toHaveBeenCalledExactlyOnceWith(5, [{ id: 7, base_sha: baseSha, head_sha: headSha }], {
@@ -67,16 +74,25 @@ describe('repository deployment list', () => {
     })
     expect(getHistory).toHaveBeenCalledWith({ query }, 5, [7])
     expect(getLookups).toHaveBeenCalledWith(['glad-fjord'], { query })
-    expect(getDeployments).toHaveBeenCalledWith(
+    expect(getPage).toHaveBeenCalledWith(
       expect.objectContaining({
         monitored_app_ids: [3],
         four_eyes_status: undefined,
         group_by_sha: false,
       }),
       { query },
-      undefined,
     )
+    expect(getDeployments).not.toHaveBeenCalled()
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE d.id = ANY'), [[42, 43]])
     expect(query).toHaveBeenCalledWith('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+  })
+
+  it('does not fetch evidence for an empty unfiltered page', async () => {
+    getPage.mockResolvedValue({ deployments: [], total: 200, page: 101, per_page: 2, total_pages: 100 })
+    const result = await getRepositoryDeploymentsPaginated({ page: 101, per_page: 2 })
+    expect(result).toMatchObject({ total: 200, deployments: [], repositorySummaries: {} })
+    expect(getIntervals).not.toHaveBeenCalled()
+    expect(getDeployments).not.toHaveBeenCalled()
   })
 
   it('filters and counts across batches before selecting the requested page', async () => {
@@ -100,7 +116,6 @@ describe('repository deployment list', () => {
       total: 2,
       page: 2,
       total_pages: 2,
-      repositoryCounts: { approved: 100, missing_link: 2 },
       repositorySummaries: { 102: { status: 'missing_link', range: null } },
     })
     expect(result.repositorySummaries).not.toHaveProperty('101')
@@ -111,7 +126,7 @@ describe('repository deployment list', () => {
     getDeployments.mockResolvedValue([{ id: 42, four_eyes_status: 'approved' }])
     query.mockResolvedValue({ rows: [{ ...linked(42), repository_code_delivery_id: null }] })
     const result = await getRepositoryDeploymentsPaginated({}, 'approved')
-    expect(result).toMatchObject({ deployments: [], total: 0, repositoryCounts: { missing_link: 1, approved: 0 } })
+    expect(result).toMatchObject({ deployments: [], total: 0 })
     expect(getIntervals).not.toHaveBeenCalled()
   })
 
@@ -155,7 +170,7 @@ describe('repository deployment list', () => {
       })),
     )
     const result = await getRepositoryDeploymentsPaginated({})
-    expect(result.repositoryCounts).toMatchObject({ incomplete: 1, no_changes: 1, missing_link: 0 })
+    expect(result.repositorySummaries).toMatchObject({ 42: { status: 'incomplete' }, 43: { status: 'no_changes' } })
   })
 
   it.each([{ delivery_repository_id: 9 }, { commit_sha: 'c'.repeat(40) }, { commit_sha: null }])(
