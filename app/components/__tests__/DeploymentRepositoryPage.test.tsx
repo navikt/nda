@@ -19,7 +19,7 @@ function render(data: DeploymentRepositoryView, listView?: string) {
 describe('repository deployment comparison', () => {
   it('shows both intervals, current coverage and its time limitation without app mutation forms', () => {
     const markup = render(repositoryDeploymentData)
-    expect(markup).toContain('Appbasert vurdering')
+    expect(markup).toContain('Applikasjonsbasert vurdering')
     expect(markup).toContain('Hele intervallet er dekket')
     expect(markup).toContain('ikke ved deploymenttidspunktet')
     expect(markup).toContain('Dekket av manuell godkjenning')
@@ -66,8 +66,8 @@ describe('repository deployment comparison', () => {
       ...repositoryDeploymentData,
       application: { status: null, verificationRunAt: null, range: null },
     })
-    expect(markup).toContain('Appbasert status mangler')
-    expect(markup).toContain('Ingen appbasert verifiseringskjøring er lagret')
+    expect(markup).toContain('Applikasjonsbasert status mangler')
+    expect(markup).toContain('Ingen applikasjonsbasert verifiseringskjøring er lagret')
     expect(markup).toContain('Hele intervallet er dekket')
   })
 

@@ -210,7 +210,7 @@ export function DeploymentRow({
           <Detail textColor="subtle" style={{ overflowWrap: 'anywhere' }}>
             {repositorySummary.range
               ? `Låst repositoryintervall: ${repositorySummary.range.baseSha} → ${repositorySummary.range.headSha}`
-              : 'Ingen lagret leveransekobling. Årsak og eventuelt mulig SHA-treff vises i repositoryvurderingen.'}
+              : 'Ingen lagret leveransekobling. Årsak og eventuelt mulig SHA-treff vises i den repositorybaserte vurderingen.'}
           </Detail>
         )}
 
