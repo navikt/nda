@@ -10,9 +10,11 @@ import { useRef } from 'react'
 import { Form, Link, useNavigation, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
+import { DeploymentViewLinks } from '~/components/deployments/DeploymentViewLinks'
 import { ExternalLink } from '~/components/ExternalLink'
 import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
+import { deploymentListUrl } from '~/lib/deployment-view'
 import { type FourEyesStatus, isApprovedStatus, isProtectedStatus } from '~/lib/four-eyes-status'
 import { getFourEyesStatus } from '~/lib/status-display'
 import { UNVERIFIED_REASON_LABELS, type UnverifiedReason } from '~/lib/verification/types'
@@ -93,6 +95,11 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
 
   return (
     <VStack gap="space-32">
+      <DeploymentViewLinks
+        pathname={`${appUrl}/deployments/${deployment.id}`}
+        searchParams={searchParams}
+        currentView="application"
+      />
       <HStack justify="space-between" gap="space-8">
         <div>
           {(isDebugMode || isAdmin) && (
@@ -146,7 +153,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
           )}
           <Button
             as={Link}
-            to={`${appUrl}/deployments${searchParams.toString() ? `?${searchParams.toString()}` : ''}`}
+            to={deploymentListUrl(`${appUrl}/deployments`, searchParams)}
             variant="tertiary"
             size="xsmall"
           >

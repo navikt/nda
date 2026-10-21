@@ -97,6 +97,75 @@ export async function canApproveDeployment(actor: UserIdentity, monitoredAppId: 
   return teamRoles.some((r) => managingSet.has(r.dev_team_id))
 }
 
+export async function resolveRepositoryApprovalCapabilities(
+  actor: UserIdentity,
+  repositoryId: number,
+  queryable: Queryable = pool,
+): Promise<{ canApprove: boolean; canAccessAdmin: boolean; affectedApps: RepositoryAdminAccess['affectedApps'] }> {
+  const { rows } = await queryable.query<{
+    can_approve: boolean
+    can_access_admin: boolean
+    affected_apps: RepositoryAdminAccess['affectedApps']
+  }>(
+    `WITH active_apps AS (
+       SELECT ma.id, ma.team_slug, ma.app_name, ma.environment_name
+       FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) ar
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id
+       JOIN monitored_applications ma ON ma.id = ar.monitored_app_id AND ma.is_active = true
+       WHERE r.id = $1
+     ), affected_apps AS (
+       SELECT * FROM active_apps
+       UNION
+       SELECT ma.id, ma.team_slug, ma.app_name, ma.environment_name
+       FROM application_repositories ar
+       JOIN repositories r ON r.github_repo_id = ar.github_repo_id AND r.id = $1
+       JOIN monitored_applications ma ON ma.id = ar.monitored_app_id AND ma.is_active = true
+       WHERE ar.status = 'historical'
+     ), managing_teams AS (
+       SELECT dta.dev_team_id, ma.id AS app_id
+       FROM dev_team_applications dta
+       JOIN affected_apps ma ON ma.id = dta.monitored_app_id
+       JOIN dev_teams dt ON dt.id = dta.dev_team_id AND dt.is_active = true
+       WHERE dta.deleted_at IS NULL
+       UNION
+       SELECT dnt.dev_team_id, ma.id AS app_id
+       FROM dev_team_nais_teams dnt
+       JOIN affected_apps ma ON ma.team_slug = dnt.nais_team_slug
+       JOIN dev_teams dt ON dt.id = dnt.dev_team_id AND dt.is_active = true
+       WHERE dnt.deleted_at IS NULL
+     ), actor_roles AS (
+       SELECT dev_team_id, role FROM dev_team_role_assignments
+       WHERE nav_ident = $2 AND deleted_at IS NULL
+     )
+     SELECT ($3 OR EXISTS (
+       SELECT 1 FROM managing_teams mt
+       JOIN active_apps ma ON ma.id = mt.app_id
+       JOIN actor_roles role ON role.dev_team_id = mt.dev_team_id
+     )) AS can_approve,
+     ($3 OR (
+       EXISTS (SELECT 1 FROM affected_apps)
+       AND NOT EXISTS (
+         SELECT 1 FROM affected_apps ma WHERE NOT EXISTS (
+           SELECT 1 FROM managing_teams mt
+           JOIN actor_roles role ON role.dev_team_id = mt.dev_team_id
+           WHERE mt.app_id = ma.id AND role.role IN ('tech_lead', 'produktleder')
+         )
+       )
+     )) AS can_access_admin,
+     COALESCE((
+       SELECT jsonb_agg(jsonb_build_object(
+         'id', id, 'app_name', app_name, 'team_slug', team_slug, 'environment_name', environment_name
+       ) ORDER BY environment_name, team_slug, app_name) FROM affected_apps
+     ), '[]'::jsonb) AS affected_apps`,
+    [repositoryId, actor.navIdent, isEntraAdmin(actor)],
+  )
+  return {
+    canApprove: rows[0].can_approve,
+    canAccessAdmin: rows[0].can_access_admin,
+    affectedApps: rows[0].affected_apps,
+  }
+}
+
 async function isTeamLeaderOfManagingTeam(
   actor: UserIdentity,
   monitoredAppId: number,

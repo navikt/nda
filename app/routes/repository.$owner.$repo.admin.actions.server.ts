@@ -271,7 +271,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       return fail('Datoen må være mellom 2000 og i dag')
     }
     if (getFormString(formData, 'confirm') !== 'true') {
-      return fail('Du må bekrefte at registrerte leveranser slettes')
+      return fail('Du må bekrefte at registreringen nullstilles')
     }
 
     const result = await restartCodeDeliveryTracking({
@@ -283,6 +283,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     })
 
     if (!result.ok) {
+      if (result.reason === 'has_approval_snapshots') {
+        return fail('Registreringen kan ikke startes på nytt fordi repositoryet har lagrede godkjenningsgrunnlag')
+      }
       if (result.reason === 'not_earlier') {
         return fail('Datoen må være tidligere enn nåværende startdato')
       }

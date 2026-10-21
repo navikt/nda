@@ -1,6 +1,7 @@
 import { pool } from '~/db/connection.server'
 import { heartbeatSyncJob, isSyncJobCancelled, updateSyncJobProgress } from '~/db/sync-jobs.server'
 import { getWorkflowTriggerConfig, WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION } from '~/lib/github'
+import type { WorkflowRunResolution } from '~/lib/github/git.server'
 import { logger } from '~/lib/logger.server'
 import type { VerificationInput } from '../types'
 
@@ -15,6 +16,7 @@ export async function fetchWorkflowTriggerConfig(
   repo: string,
   triggerUrl: string | null | undefined,
   options?: FetchOptions,
+  resolvedWorkflowRun?: WorkflowRunResolution,
 ): Promise<VerificationInput['workflowTrigger']> {
   if (!triggerUrl) return undefined
 
@@ -23,7 +25,10 @@ export async function fetchWorkflowTriggerConfig(
     if (cached) return cached
   }
 
-  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+  const workflowTrigger =
+    resolvedWorkflowRun === undefined
+      ? await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+      : resolvedWorkflowRun.workflowTriggerConfig
   return workflowTrigger ?? undefined
 }
 
@@ -47,11 +52,15 @@ export async function backfillWorkflowTriggerConfig(
   repo: string,
   triggerUrl: string | null | undefined,
   currentConfig?: VerificationInput['workflowTrigger'] | null,
+  resolvedWorkflowRun?: WorkflowRunResolution,
 ): Promise<boolean> {
   if (!triggerUrl) return false
   if (currentConfig?.schemaVersion === WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION) return false
 
-  const workflowTrigger = await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+  const workflowTrigger =
+    resolvedWorkflowRun === undefined
+      ? await getWorkflowTriggerConfig(owner, repo, triggerUrl)
+      : resolvedWorkflowRun.workflowTriggerConfig
   if (!workflowTrigger) return false
 
   await pool.query(`UPDATE deployments SET workflow_trigger_config = $1::jsonb WHERE id = $2`, [

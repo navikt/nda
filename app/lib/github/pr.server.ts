@@ -31,18 +31,52 @@ interface PullRequestLookupResult {
   allAssociatedPrs: Array<{ number: number; baseBranch: string }>
 }
 
+export interface PullRequestBranchReference {
+  number: number
+  baseBranch: string
+  baseSha: string
+  headBranch: string
+  headSha: string
+  mergedAt: string | null
+  mergeCommitSha: string | null
+}
+
+export async function getPullRequestsForHeadBranch(
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<PullRequestBranchReference[]> {
+  const client = getGitHubClient()
+  const pullRequests = await client.paginate(client.pulls.list, {
+    owner,
+    repo,
+    head: `${owner}:${branch}`,
+    state: 'all',
+    per_page: 100,
+  })
+  return pullRequests.map((pullRequest) => ({
+    number: pullRequest.number,
+    baseBranch: pullRequest.base.ref,
+    baseSha: pullRequest.base.sha,
+    headBranch: pullRequest.head.ref,
+    headSha: pullRequest.head.sha,
+    mergedAt: pullRequest.merged_at,
+    mergeCommitSha: pullRequest.merge_commit_sha,
+  }))
+}
+
 async function archiveCommitAssociatedPrsRawSnapshot(
   owner: string,
   repo: string,
   sha: string,
   data: unknown,
-  headers: Record<string, unknown>,
+  apiVersion: ApiVersionMetadata,
+  paginationComplete: boolean,
 ): Promise<void> {
   try {
     const githubRepoId = await getRepositoryId(owner, repo)
     if (githubRepoId === null) return
-    const apiVersion = captureApiVersionMetadata(headers, null)
-    await saveCommitAssociatedPrsRawSnapshot(owner, repo, githubRepoId, sha, data, apiVersion)
+    await saveCommitAssociatedPrsRawSnapshot(owner, repo, githubRepoId, sha, data, apiVersion, paginationComplete)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.warn(`⚠️ Failed to archive commit-associated PRs for ${sha.substring(0, 7)} in ${owner}/${repo}:`, {
@@ -82,26 +116,39 @@ export async function getPullRequestForCommit(
       `🔎 Searching for PRs associated with commit ${sha} in ${owner}/${repo}${baseBranch ? ` (base: ${baseBranch})` : ''}`,
     )
 
-    const response = await client.repos.listPullRequestsAssociatedWithCommit({
+    let apiVersion: ApiVersionMetadata | null = null
+    const associatedPullRequests = await client.paginate(
+      client.repos.listPullRequestsAssociatedWithCommit,
+      { owner, repo, commit_sha: sha, per_page: 100 },
+      (response) => {
+        apiVersion = captureApiVersionMetadata(response.headers, apiVersion)
+        return response.data
+      },
+    )
+
+    await archiveCommitAssociatedPrsRawSnapshot(
       owner,
       repo,
-      commit_sha: sha,
-    })
+      sha,
+      associatedPullRequests,
+      apiVersion ?? { apiVersion: 'unknown', apiDeprecatedAt: null, apiSunsetAt: null },
+      true,
+    )
 
-    await archiveCommitAssociatedPrsRawSnapshot(owner, repo, sha, response.data, response.headers)
+    logger.info(`📊 Found ${associatedPullRequests.length} PR(s) associated with commit ${sha}`)
 
-    logger.info(`📊 Found ${response.data.length} PR(s) associated with commit ${sha}`)
+    const allAssociatedPrs = associatedPullRequests.map((pr) => ({ number: pr.number, baseBranch: pr.base.ref }))
 
-    const allAssociatedPrs = response.data.map((pr) => ({ number: pr.number, baseBranch: pr.base.ref }))
-
-    if (response.data.length === 0) {
+    if (associatedPullRequests.length === 0) {
       logger.info(`❌ No PRs found for commit ${sha}`)
       return { pr: null, allAssociatedPrs }
     }
 
-    const filteredPRs = baseBranch ? response.data.filter((pr) => pr.base.ref === baseBranch) : response.data
+    const filteredPRs = baseBranch
+      ? associatedPullRequests.filter((pr) => pr.base.ref === baseBranch)
+      : associatedPullRequests
 
-    if (baseBranch && filteredPRs.length !== response.data.length) {
+    if (baseBranch && filteredPRs.length !== associatedPullRequests.length) {
       logger.info(`   🔍 Filtered to ${filteredPRs.length} PR(s) targeting ${baseBranch}`)
     }
 

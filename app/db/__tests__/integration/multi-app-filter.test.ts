@@ -1,6 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { getDeploymentsPaginated } from '~/db/deployments.server'
+import { getDeploymentsBatch, getDeploymentsPaginated } from '~/db/deployments.server'
 import { APPROVED_STATUSES } from '~/lib/four-eyes-status'
 import {
   seedApp,
@@ -27,6 +27,37 @@ afterEach(async () => {
 })
 
 describe('getDeploymentsPaginated with monitored_app_ids', () => {
+  it('reads cursor batches without skipping deployments with equal, microsecond-precision timestamps', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'glad-fjord', environment: 'prod' })
+    const otherAppId = await seedApp(pool, { teamSlug: 'team-elv', appName: 'rask-elv', environment: 'prod' })
+    const ids: number[] = []
+    for (let index = 0; index < 102; index++) {
+      ids.push(await seedDeployment(pool, { monitoredAppId: appId, teamSlug: 'team-fjord', environment: 'prod' }))
+    }
+    await pool.query(`UPDATE deployments SET created_at = '2026-10-01T10:00:00.123456Z' WHERE monitored_app_id = $1`, [
+      appId,
+    ])
+    await seedDeployment(pool, { monitoredAppId: otherAppId, teamSlug: 'team-elv', environment: 'prod' })
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+      const filters = { monitored_app_ids: [appId] }
+      const first = await getDeploymentsBatch(filters, client)
+      const second = await getDeploymentsBatch(filters, client, first.at(-1)?.id)
+      const last = await getDeploymentsBatch(filters, client, second.at(-1)?.id)
+      expect(first).toHaveLength(100)
+      expect(second).toHaveLength(2)
+      expect(last).toEqual([])
+      expect([...first, ...second].map((deployment) => deployment.id)).toEqual(ids.reverse())
+    } finally {
+      try {
+        await client.query('ROLLBACK')
+      } finally {
+        client.release()
+      }
+    }
+  })
+
   it('returns deployments from multiple apps', async () => {
     const app1 = await seedApp(pool, { teamSlug: 'team', appName: 'app-1', environment: 'prod' })
     const app2 = await seedApp(pool, { teamSlug: 'team', appName: 'app-2', environment: 'prod' })

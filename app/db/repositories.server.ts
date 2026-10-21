@@ -600,6 +600,18 @@ async function applyRepositorySettingsPatch(
       patch.codeDeliveryTracking,
       repository.id,
     ])
+    if (patch.codeDeliveryTracking) {
+      await client.query(
+        `INSERT INTO repository_code_delivery_assessment_sync (delivery_id)
+         SELECT delivery.id
+         FROM repository_code_deliveries delivery
+         JOIN repositories repository ON repository.id = delivery.repository_id
+         WHERE repository.id = $1
+           AND repository.code_delivery_tracking_since IS NOT NULL
+         ON CONFLICT (delivery_id) DO NOTHING`,
+        [repository.id],
+      )
+    }
     await recordRepoConfigAuditLog(
       {
         repositoryId: repository.id,

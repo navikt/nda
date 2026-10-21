@@ -11,11 +11,11 @@
   },
   "dependencies": {
     "@fontsource/source-sans-pro": "^5.3.0",
-    "astro": "^7.3.5"
+    "astro": "^7.3.8"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@types/node": "^24.19.1",
+    "@types/node": "^24.19.2",
     "typescript": "^6.0.3"
   }
 }

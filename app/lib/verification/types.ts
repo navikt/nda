@@ -221,6 +221,7 @@ export interface CommitAssociatedPrsRawSnapshot {
   apiDeprecatedAt: string | null
   apiSunsetAt: string | null
   fetchedAt: Date
+  paginationComplete: boolean
   data: unknown
 }
 

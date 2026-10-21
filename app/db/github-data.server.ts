@@ -247,10 +247,10 @@ export async function getAllLatestPrRawSnapshots(
          SELECT github_repo_id
          FROM github_pr_raw_snapshots
          WHERE owner = $1 AND repo = $2 AND pr_number = $3
-         ORDER BY fetched_at DESC
+         ORDER BY fetched_at DESC, id DESC
          LIMIT 1
        )
-     ORDER BY data_type, fetched_at DESC`,
+     ORDER BY data_type, fetched_at DESC, id DESC`,
     [owner, repo, prNumber],
   )
 
@@ -559,7 +559,10 @@ export {
   getLatestDefinitiveChecksRawSnapshot,
   saveChecksRawSnapshot,
 } from './github-data/checks-raw-snapshots.server'
-export { saveCommitAssociatedPrsRawSnapshot } from './github-data/commit-associated-prs-raw-snapshots.server'
+export {
+  getLatestCommitAssociatedPrsRawSnapshot,
+  saveCommitAssociatedPrsRawSnapshot,
+} from './github-data/commit-associated-prs-raw-snapshots.server'
 export { saveCommitRawSnapshot } from './github-data/commit-raw-snapshots.server'
 export {
   type GitHubDataStats,
@@ -572,4 +575,7 @@ export {
 } from './github-data/compare-stats.server'
 export { savePrWindowRawSnapshot } from './github-data/pr-window-raw-snapshots.server'
 export { getLatestVerificationRun, saveVerificationRun } from './github-data/verification-runs.server'
-export { saveWorkflowRunRawSnapshot } from './github-data/workflow-run-raw-snapshots.server'
+export {
+  getWorkflowRunRawSnapshotData,
+  saveWorkflowRunRawSnapshot,
+} from './github-data/workflow-run-raw-snapshots.server'

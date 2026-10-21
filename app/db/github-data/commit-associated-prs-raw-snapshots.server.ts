@@ -9,11 +9,12 @@ export async function saveCommitAssociatedPrsRawSnapshot(
   sha: string,
   rawData: unknown,
   apiVersion: ApiVersionMetadata,
+  paginationComplete: boolean,
 ): Promise<number> {
   const result = await pool.query(
     `INSERT INTO github_commit_associated_prs_raw_snapshots
-       (github_repo_id, owner, repo, sha, api_version, api_deprecated_at, api_sunset_at, data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (github_repo_id, owner, repo, sha, api_version, api_deprecated_at, api_sunset_at, data, pagination_complete)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id`,
     [
       githubRepoId,
@@ -24,6 +25,7 @@ export async function saveCommitAssociatedPrsRawSnapshot(
       apiVersion.apiDeprecatedAt,
       apiVersion.apiSunsetAt,
       JSON.stringify(rawData),
+      paginationComplete,
     ],
   )
   return result.rows[0].id
@@ -35,17 +37,18 @@ export async function getLatestCommitAssociatedPrsRawSnapshot(
   sha: string,
 ): Promise<CommitAssociatedPrsRawSnapshot | null> {
   const result = await pool.query(
-    `SELECT id, owner, repo, github_repo_id, sha, api_version, api_deprecated_at, api_sunset_at, fetched_at, data
+    `SELECT id, owner, repo, github_repo_id, sha, api_version, api_deprecated_at, api_sunset_at, fetched_at,
+            data, pagination_complete
      FROM github_commit_associated_prs_raw_snapshots
      WHERE owner = $1 AND repo = $2 AND sha = $3
        AND github_repo_id = (
          SELECT github_repo_id
          FROM github_commit_associated_prs_raw_snapshots
          WHERE owner = $1 AND repo = $2 AND sha = $3
-         ORDER BY fetched_at DESC
+         ORDER BY fetched_at DESC, id DESC
          LIMIT 1
        )
-     ORDER BY fetched_at DESC
+     ORDER BY fetched_at DESC, id DESC
      LIMIT 1`,
     [owner, repo, sha],
   )
@@ -65,6 +68,7 @@ export async function getLatestCommitAssociatedPrsRawSnapshot(
     apiDeprecatedAt: row.api_deprecated_at ? new Date(row.api_deprecated_at).toISOString() : null,
     apiSunsetAt: row.api_sunset_at ? new Date(row.api_sunset_at).toISOString() : null,
     fetchedAt: row.fetched_at,
+    paginationComplete: row.pagination_complete === true,
     data: row.data,
   }
 }

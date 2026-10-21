@@ -9,6 +9,7 @@ import { propagateVerificationToSiblings } from '~/db/monorepo.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { type DeploymentCapabilities, resolveDeploymentCapabilities } from '~/lib/authorization.server'
+import { getDeploymentView } from '~/lib/deployment-view'
 import { getFormString } from '~/lib/form-validators'
 import { isProtectedStatus } from '~/lib/four-eyes-status'
 import { logger } from '~/lib/logger.server'
@@ -49,6 +50,9 @@ export async function action({
   params: Record<string, string | undefined>
   url: URL
 }): Promise<ActionResult | null> {
+  if (getDeploymentView(url.searchParams.get('view')) === 'repository') {
+    return { error: 'Repositoryvisningen er skrivebeskyttet. Bruk den felles repositorygodkjenningen.' }
+  }
   const deploymentId = parseInt(params.id ?? '', 10)
   if (!Number.isFinite(deploymentId)) {
     throw new Response('Ugyldig deployment-ID', { status: 400 })

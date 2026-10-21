@@ -3,6 +3,7 @@ import { AppDeploymentsPage } from '~/components/AppDeploymentsPage'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
 import { getMonorepoSiblings } from '~/db/monorepo.server'
 import { getUserIdentity } from '~/lib/auth.server'
+import { getDeploymentView } from '~/lib/deployment-view'
 import { getMultiAppDeploymentsPageData } from '~/lib/deployments/multi-app-deployments.server'
 import { parsePerPage } from '~/lib/pagination'
 import { requireTeamEnvAppParams } from '~/lib/route-params.server'
@@ -21,7 +22,12 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     throw new Response('Application not found', { status: 404 })
   }
 
-  const page = parseInt(url.searchParams.get('page') || '1', 10)
+  const pageParam = url.searchParams.get('page') || '1'
+  const page = /^\d+$/.test(pageParam) ? Number(pageParam) : Number.NaN
+  if (!Number.isFinite(page) || !Number.isSafeInteger(page) || page <= 0) {
+    throw new Response('Invalid page', { status: 400 })
+  }
+  const view = getDeploymentView(url.searchParams.get('view'))
   const perPage = parsePerPage(url.searchParams.get('perPage'))
   const status = url.searchParams.get('status') || undefined
   const method = url.searchParams.get('method') as 'pr' | 'direct_push' | 'legacy' | undefined
@@ -61,6 +67,8 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     apps,
     {
       page,
+      view,
+      repositoryStatus: url.searchParams.get('repositoryStatus') || undefined,
       perPage,
       status,
       method: method && ['pr', 'direct_push', 'legacy'].includes(method) ? method : undefined,
@@ -83,6 +91,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   }
 
   return {
+    view,
     app,
     hasMonorepoSiblings,
     showAllEnvironments: useMultiApp,

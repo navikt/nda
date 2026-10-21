@@ -76,6 +76,7 @@ export default [
     route('admin/snapshot-cleanup', 'routes/admin/snapshot-cleanup.tsx'),
     route('admin/verification-diffs', 'routes/admin/verification-diffs.tsx'),
     route('admin/workflow-triggers', 'routes/admin/workflow-triggers.tsx'),
+    route('admin/repository-id-backfill-coverage', 'routes/admin/repository-id-backfill-coverage.tsx'),
     route('admin/workflow-patterns', 'routes/admin/workflow-patterns.tsx'),
     route('admin/validate-monitored-apps', 'routes/admin/validate-monitored-apps.tsx'),
     route('admin/title-mismatches', 'routes/admin/title-mismatches-redirect.ts'),
@@ -107,10 +108,20 @@ export default [
     route('sections/:slug', 'routes/sections.$slug.tsx'),
     route('team/:team/env/:env/app/:app/admin/deviations', 'routes/team/$team.env.$env.app.$app.admin.deviations.tsx'),
     route('repository/:owner/:repo', 'routes/repository.$owner.$repo.tsx'),
+    route('repository/:owner/:repo/approvals', 'routes/repository.$owner.$repo.approvals.tsx'),
+    route('repository/:owner/:repo/approvals/:deliveryId', 'routes/repository.$owner.$repo.approvals.$deliveryId.tsx'),
     route('repository/:owner/:repo/admin', 'routes/repository.$owner.$repo.admin.tsx'),
     route(
       'repository/:owner/:repo/admin/verification-diff',
       'routes/repository.$owner.$repo.admin.verification-diff.tsx',
+    ),
+    route(
+      'repository/:owner/:repo/admin/code-deliveries/export',
+      'routes/repository.$owner.$repo.admin.code-deliveries.export.ts',
+    ),
+    route(
+      'repository/:owner/:repo/admin/code-deliveries/:deliveryId',
+      'routes/repository.$owner.$repo.admin.code-deliveries.$deliveryId.tsx',
     ),
     route('repository/:owner/:repo/admin/sync-job/:jobId', 'routes/repository.$owner.$repo.admin.sync-job.$jobId.tsx'),
     route('repository/:owner/:repo/admin/status-history', 'routes/repository.$owner.$repo.admin.status-history.tsx'),

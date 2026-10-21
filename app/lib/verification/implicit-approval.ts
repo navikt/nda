@@ -11,10 +11,11 @@ export function isBaseBranchMergeCommit(message: string, baseBranch = 'main', pa
   if (parentShas !== undefined && parentShas.length < 2) {
     return false
   }
+  const escapedBaseBranch = baseBranch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const patterns = [
-    new RegExp(`^Merge branch '${baseBranch}' into`, 'i'),
-    new RegExp(`^Merge branch '${baseBranch === 'main' ? 'master' : 'main'}' into`, 'i'),
-    new RegExp(`^Merge remote-tracking branch 'origin/${baseBranch}' into`, 'i'),
+    new RegExp(`^Merge branch '${escapedBaseBranch}' into`, 'i'),
+    new RegExp(`^Merge branch '${escapedBaseBranch === 'main' ? 'master' : 'main'}' into`, 'i'),
+    new RegExp(`^Merge remote-tracking branch 'origin/${escapedBaseBranch}' into`, 'i'),
   ]
   return patterns.some((pattern) => pattern.test(message))
 }

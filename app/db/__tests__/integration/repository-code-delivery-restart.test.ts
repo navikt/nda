@@ -100,10 +100,92 @@ async function counts(repositoryId: number) {
 }
 
 describe('restartCodeDeliveryTracking', () => {
+  it('preserves all tracking state when an immutable approval snapshot exists', async () => {
+    const repositoryId = await createRepository('2099')
+    await seedRegisteredState(repositoryId)
+    const before = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+      repositoryId,
+    ])
+    await pool.query(
+      `INSERT INTO repository_approval_snapshots
+       (delivery_id, repository_id, base_sha, head_sha, schema_version, evaluator_version, evidence, evidence_hash)
+       SELECT id, repository_id, base_sha, head_sha, 1, 1, '{}'::jsonb, 'test'
+       FROM repository_code_deliveries WHERE repository_id = $1`,
+      [repositoryId],
+    )
+    expect(
+      await restartCodeDeliveryTracking({
+        repositoryId,
+        since: SINCE,
+        changedByNavIdent: adminActor.navIdent,
+        actor: adminActor,
+      }),
+    ).toEqual({ ok: false, reason: 'has_approval_snapshots' })
+    expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
+    const { rows } = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+      repositoryId,
+    ])
+    expect(rows[0].code_delivery_tracking_since).toEqual(before.rows[0].code_delivery_tracking_since)
+    const audit = await pool.query('SELECT * FROM repo_config_audit_log WHERE repository_id = $1', [repositoryId])
+    expect(audit.rows).toEqual([])
+    const snapshots = await pool.query('SELECT id FROM repository_approval_snapshots WHERE repository_id = $1', [
+      repositoryId,
+    ])
+    expect(snapshots.rows).toHaveLength(1)
+  })
+
+  it('waits for a concurrent snapshot and then refuses restart without deleting state', async () => {
+    const repositoryId = await createRepository('2098')
+    await seedRegisteredState(repositoryId)
+    const client = await pool.connect()
+    let restart: ReturnType<typeof restartCodeDeliveryTracking> | undefined
+    try {
+      await client.query('BEGIN')
+      await client.query('SELECT id FROM repository_code_deliveries WHERE repository_id = $1 FOR SHARE', [repositoryId])
+      restart = restartCodeDeliveryTracking({
+        repositoryId,
+        since: SINCE,
+        changedByNavIdent: adminActor.navIdent,
+        actor: adminActor,
+      })
+      const deadline = Date.now() + 5000
+      let blocked = false
+      while (Date.now() < deadline) {
+        const { rows } = await pool.query<{ blocked: boolean }>(
+          `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+             WHERE wait_event_type = 'Lock'
+               AND query LIKE '%SELECT id FROM repository_code_deliveries%FOR UPDATE%') AS blocked`,
+        )
+        if (rows[0].blocked) {
+          blocked = true
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      await client.query(
+        `INSERT INTO repository_approval_snapshots
+           (delivery_id, repository_id, base_sha, head_sha, schema_version, evaluator_version, evidence, evidence_hash)
+           SELECT id, repository_id, base_sha, head_sha, 1, 1, '{}'::jsonb, 'test'
+           FROM repository_code_deliveries WHERE repository_id = $1`,
+        [repositoryId],
+      )
+      await client.query('COMMIT')
+      expect(await restart).toEqual({ ok: false, reason: 'has_approval_snapshots' })
+      expect(blocked).toBe(true)
+      expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
+    } finally {
+      try {
+        await client.query('ROLLBACK')
+      } finally {
+        client.release()
+        await restart
+      }
+    }
+  })
+
   it('clears registered state for the repository, moves since and writes an audit log entry', async () => {
     const repositoryId = await createRepository('2000')
     await seedRegisteredState(repositoryId)
-
     const result = await restartCodeDeliveryTracking({
       repositoryId,
       since: SINCE,
@@ -111,7 +193,6 @@ describe('restartCodeDeliveryTracking', () => {
       changedByName: 'Glad Fjord',
       actor: adminActor,
     })
-
     expect(result).toEqual({
       ok: true,
       since: SINCE,

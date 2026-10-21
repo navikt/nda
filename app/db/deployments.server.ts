@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { APPROVED_STATUSES_SQL, notApprovedWhereClause, PENDING_STATUSES_SQL } from '~/lib/four-eyes-status'
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
@@ -267,7 +268,7 @@ export async function getDeploymentAppsForRepository(
   return result.rows
 }
 
-export async function getDeploymentsPaginated(filters?: DeploymentFilters): Promise<PaginatedDeployments> {
+function deploymentFilterSql(filters?: DeploymentFilters) {
   let whereSql = ' WHERE 1=1'
   const params: any[] = []
   let paramIndex = 1
@@ -446,6 +447,52 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     }
   }
 
+  return { whereSql, params, paramIndex, goalJoinSql }
+}
+
+function deploymentSelectSql() {
+  return `SELECT d.*,
+      ${TITLE_COALESCE_SQL} AS title,
+      ma.team_slug, ma.environment_name, ma.app_name,
+      ${effectiveDefaultBranchSql('ma')} AS default_branch,
+      EXISTS (SELECT 1 FROM deployment_goal_links WHERE deployment_id = d.id AND is_active = true AND (objective_id IS NOT NULL OR key_result_id IS NOT NULL)) AS has_goal_link
+    FROM deployments d
+    JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+    LEFT JOIN commits c ON c.sha = d.commit_sha
+      AND c.repo_owner = d.detected_github_owner
+      AND c.repo_name = d.detected_github_repo_name`
+}
+
+export async function getDeploymentsBatch(
+  filters: DeploymentFilters,
+  executor: Pick<PoolClient, 'query'>,
+  afterDeploymentId?: number,
+): Promise<DeploymentWithApp[]> {
+  const { whereSql, params, paramIndex, goalJoinSql } = deploymentFilterSql(filters)
+  const cursorSql =
+    afterDeploymentId === undefined
+      ? ''
+      : `AND (d.created_at, d.id) < (
+        SELECT created_at, id FROM deployments WHERE id = $${paramIndex}
+      )`
+  if (afterDeploymentId !== undefined) params.push(afterDeploymentId)
+  params.push(100)
+  const result = await executor.query<DeploymentWithApp>(
+    `${deploymentSelectSql()}
+     ${goalJoinSql}
+     ${whereSql} ${cursorSql}
+     ORDER BY d.created_at DESC, d.id DESC
+     LIMIT $${params.length}`,
+    params,
+  )
+  return result.rows
+}
+
+export async function getDeploymentsPaginated(
+  filters?: DeploymentFilters,
+  executor: Pick<PoolClient, 'query'> = pool,
+): Promise<PaginatedDeployments> {
+  const { whereSql, params, paramIndex, goalJoinSql } = deploymentFilterSql(filters)
   const groupBySha = filters?.repository_id != null && filters.group_by_sha === true
   const groupKeySql = "COALESCE(NULLIF(d.commit_sha, ''), 'deployment:' || d.id::text)"
   const countSql = `
@@ -455,7 +502,7 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
     ${goalJoinSql}
     ${whereSql}
   `
-  const countResult = await pool.query(countSql, params)
+  const countResult = await executor.query(countSql, params)
   const total = parseInt(countResult.rows[0].total, 10)
 
   const page = filters?.page || 1
@@ -483,19 +530,7 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
 
   const dataSql = `
     ${groupPageSql}
-    SELECT 
-      d.*,
-      ${TITLE_COALESCE_SQL} AS title,
-      ma.team_slug,
-      ma.environment_name,
-      ma.app_name,
-      ${effectiveDefaultBranchSql('ma')} AS default_branch,
-      EXISTS (SELECT 1 FROM deployment_goal_links WHERE deployment_id = d.id AND is_active = true AND (objective_id IS NOT NULL OR key_result_id IS NOT NULL)) AS has_goal_link
-    FROM deployments d
-    JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-    LEFT JOIN commits c ON c.sha = d.commit_sha
-      AND c.repo_owner = d.detected_github_owner
-      AND c.repo_name = d.detected_github_repo_name
+    ${deploymentSelectSql()}
     ${
       groupBySha
         ? `JOIN matching_deployments matching ON matching.id = d.id
@@ -503,13 +538,13 @@ export async function getDeploymentsPaginated(filters?: DeploymentFilters): Prom
            ORDER BY groups.latest_at DESC, groups.latest_id DESC, d.created_at DESC, d.id DESC`
         : `${goalJoinSql}
            ${whereSql}
-           ORDER BY d.created_at DESC${filters?.repository_id != null ? ', d.id DESC' : ''}
+           ORDER BY d.created_at DESC, d.id DESC
            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`
     }
   `
   params.push(per_page, offset)
 
-  const result = await pool.query(dataSql, params)
+  const result = await executor.query(dataSql, params)
 
   return {
     deployments: result.rows,

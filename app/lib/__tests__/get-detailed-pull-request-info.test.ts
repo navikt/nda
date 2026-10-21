@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockPullsGet = vi.fn()
+const mockPullsList = vi.fn()
 const mockPullsListReviews = vi.fn()
 const mockPullsListCommits = vi.fn()
 const mockIssuesListComments = vi.fn()
@@ -11,6 +12,7 @@ vi.mock('~/lib/github/client.server', () => ({
   getGitHubClient: () => ({
     pulls: {
       get: mockPullsGet,
+      list: mockPullsList,
       listReviews: mockPullsListReviews,
       listCommits: mockPullsListCommits,
       listReviewComments: mockPullsListReviewComments,
@@ -30,11 +32,12 @@ vi.mock('~/lib/logger.server', () => ({
   },
 }))
 
-import { getDetailedPullRequestInfo } from '~/lib/github/pr.server'
+import { getDetailedPullRequestInfo, getPullRequestsForHeadBranch } from '~/lib/github/pr.server'
 
 describe('getDetailedPullRequestInfo', () => {
   beforeEach(() => {
     mockPullsGet.mockReset()
+    mockPullsList.mockReset()
     mockPullsListReviews.mockReset()
     mockPullsListCommits.mockReset()
     mockIssuesListComments.mockReset()
@@ -282,5 +285,36 @@ describe('getDetailedPullRequestInfo', () => {
     const result = await getDetailedPullRequestInfo('navikt', 'nda', 1)
 
     expect(result).toBeNull()
+  })
+
+  it('lists pull requests for a head branch with branch and merge metadata', async () => {
+    mockPaginate.mockResolvedValue([
+      {
+        number: 42,
+        base: { ref: 'main', sha: 'a'.repeat(40) },
+        head: { ref: 'feature/base', sha: 'b'.repeat(40) },
+        merged_at: '2026-10-01T12:00:00Z',
+        merge_commit_sha: 'c'.repeat(40),
+      },
+    ])
+
+    await expect(getPullRequestsForHeadBranch('example-org', 'sample-repo', 'feature/base')).resolves.toEqual([
+      {
+        number: 42,
+        baseBranch: 'main',
+        baseSha: 'a'.repeat(40),
+        headBranch: 'feature/base',
+        headSha: 'b'.repeat(40),
+        mergedAt: '2026-10-01T12:00:00Z',
+        mergeCommitSha: 'c'.repeat(40),
+      },
+    ])
+    expect(mockPaginate).toHaveBeenCalledWith(mockPullsList, {
+      owner: 'example-org',
+      repo: 'sample-repo',
+      head: 'example-org:feature/base',
+      state: 'all',
+      per_page: 100,
+    })
   })
 })

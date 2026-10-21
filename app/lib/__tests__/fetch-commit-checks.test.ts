@@ -325,6 +325,78 @@ describe('refreshCommitChecksOnly', () => {
     expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined, 555)
   })
 
+  it('preserves a valid cached check_suite_id when the resolved workflow run has no trigger config', async () => {
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: null,
+      checks: [],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
+
+    await refreshCommitChecksOnly(
+      1,
+      'navikt',
+      'nda',
+      'a'.repeat(40),
+      null,
+      'https://github.com/navikt/nda/actions/runs/1',
+      {
+        workflowPath: '.github/workflows/deploy.yml',
+        triggerEvent: 'push',
+        checkSuiteId: 555,
+        schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+      },
+      { workflowTriggerConfig: null, branchName: null },
+    )
+
+    expect(mockGetWorkflowTriggerConfig).not.toHaveBeenCalled()
+    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined, 555)
+  })
+
+  it('uses a resolved workflow-run config when the cached config is stale', async () => {
+    mockGetChecksForCommit.mockResolvedValueOnce({
+      checks_passed: null,
+      checks: [],
+      rawSnapshot: { schemaVersion: 1, checkRuns: [] },
+      rawCheckRuns: [],
+      apiVersion: { apiVersion: '2022-11-28', apiDeprecatedAt: null, apiSunsetAt: null },
+      matchedSha: 'a'.repeat(40),
+      matchedCheckSuiteId: null,
+      isDefinitive: true,
+    })
+
+    await refreshCommitChecksOnly(
+      1,
+      'navikt',
+      'nda',
+      'a'.repeat(40),
+      null,
+      'https://github.com/navikt/nda/actions/runs/1',
+      {
+        workflowPath: '.github/workflows/deploy.yml',
+        triggerEvent: 'push',
+        checkSuiteId: 111,
+        schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION - 1,
+      },
+      {
+        workflowTriggerConfig: {
+          workflowPath: '.github/workflows/deploy.yml',
+          triggerEvent: 'push',
+          checkSuiteId: 888,
+          schemaVersion: WORKFLOW_TRIGGER_CONFIG_SCHEMA_VERSION,
+        },
+        branchName: 'main',
+      },
+    )
+
+    expect(mockGetWorkflowTriggerConfig).not.toHaveBeenCalled()
+    expect(mockGetChecksForCommit).toHaveBeenCalledWith('navikt', 'nda', 'a'.repeat(40), undefined, 888)
+  })
+
   it('resolves the check_suite_id via GitHub when the cached workflow_trigger_config is stale or missing', async () => {
     mockGetChecksForCommit.mockResolvedValueOnce({
       checks_passed: null,
