@@ -291,6 +291,8 @@ CREATE INDEX IF NOT EXISTS idx_user_github_accounts_active
 CREATE TABLE IF NOT EXISTS audit_reports (
   id SERIAL PRIMARY KEY,
   report_id TEXT UNIQUE NOT NULL,
+  assessment_model TEXT NOT NULL DEFAULT 'application'
+    CHECK (assessment_model IN ('application', 'repository')),
   monitored_app_id INTEGER REFERENCES monitored_applications(id) ON DELETE CASCADE,
   app_name TEXT NOT NULL,
   team_slug TEXT NOT NULL,
@@ -327,7 +329,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_reports_app ON audit_reports(monitored_app_
 CREATE INDEX IF NOT EXISTS idx_audit_reports_year ON audit_reports(year);
 CREATE INDEX IF NOT EXISTS idx_audit_reports_report_id ON audit_reports(report_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_reports_active_period
-  ON audit_reports(monitored_app_id, period_type, period_start, period_end)
+  ON audit_reports(monitored_app_id, assessment_model, period_type, period_start, period_end)
   WHERE superseded_at IS NULL AND archived_at IS NULL;
 
 -- Audit report file attachments (pdf, xlsx) — child of audit_reports
@@ -342,6 +344,8 @@ CREATE TABLE IF NOT EXISTS audit_report_files (
 CREATE TABLE IF NOT EXISTS report_jobs (
   id                 SERIAL PRIMARY KEY,
   job_id             UUID         UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+  assessment_model   TEXT         NOT NULL DEFAULT 'application'
+                       CHECK (assessment_model IN ('application', 'repository')),
   monitored_app_id   INTEGER      REFERENCES monitored_applications(id) ON DELETE CASCADE,
   year               INTEGER      NOT NULL,
   status             TEXT         NOT NULL DEFAULT 'pending', -- pending, processing, completed, failed
