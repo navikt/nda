@@ -3,8 +3,6 @@ name: Build and Deploy
 on:
   pull_request:
   push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -74,7 +72,6 @@ jobs:
         run: pnpm run test:integration
 
   build:
-    if: github.ref == 'refs/heads/main'
     name: Build and push Docker image
     runs-on: ubuntu-latest
     permissions:
@@ -109,4 +106,22 @@ jobs:
         env:
           CLUSTER: prod-gcp
           RESOURCE: .nais/prod.yaml
+          VAR: image=${{ needs.build.outputs.image }}
+
+  deploy-dev:
+    if: github.ref == 'refs/heads/sandbox'    
+    name: Deploy to dev-gcp
+    needs: [lint-and-typecheck, unit-tests, integration-tests, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Deploy to dev-gcp
+        uses: nais/deploy/actions/deploy@7ad7c2b833e1db74a80954e3ee6bb6ac060a8ae7 # pinned
+        env:
+          CLUSTER: dev-gcp
+          RESOURCE: .nais/dev.yaml
           VAR: image=${{ needs.build.outputs.image }}
