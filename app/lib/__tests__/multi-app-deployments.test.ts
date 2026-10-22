@@ -123,7 +123,6 @@ describe('getMultiAppDeploymentsPageData', () => {
       per_page: 1,
       total_pages: 3,
       repositorySummaries: {},
-      repositoryCounts: { missing_link: 3 },
     })
     const result = await getMultiAppDeploymentsPageData(
       apps,
@@ -152,7 +151,7 @@ describe('getMultiAppDeploymentsPageData', () => {
       }),
       'missing_link',
     )
-    expect(result).toMatchObject({ total: 3, repositoryCounts: { missing_link: 3 } })
+    expect(result).toMatchObject({ total: 3 })
   })
 
   it('forwards a provided perPage value to getDeploymentsPaginated', async () => {

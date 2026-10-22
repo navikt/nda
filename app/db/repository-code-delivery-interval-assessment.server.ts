@@ -12,6 +12,13 @@ import type { PrCommit, PrReview } from '~/lib/verification/types'
 import { isImplicitApprovalMode } from '~/lib/verification/types'
 import { withTransaction } from './connection.server'
 
+interface IntervalSnapshotSources {
+  comparisons: Array<{ id: number; fetchedAt: string }>
+  associations: Array<{ id: number; fetchedAt: string }>
+  pullRequests: Array<{ id: number; fetchedAt: string }>
+  stackComparisons: Array<{ id: number; fetchedAt: string }>
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -236,6 +243,7 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
     assessment: RepositoryDeliveryIntervalAssessment
     pullRequestNumbers: number[]
     evidence: Parameters<typeof assessRepositoryDeliveryInterval>[0]
+    sources: IntervalSnapshotSources
   }>
 > {
   if (deliveries.length === 0) return []
@@ -257,11 +265,16 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   const implicitApprovalMode = repository.implicit_approval_mode
 
   const deliveryIds = deliveries.map((delivery) => delivery.id)
-  const { rows: compareRows } = await client.query<{ delivery_id: number; data: unknown }>(
-    `SELECT delivery.id AS delivery_id, snapshot.data
+  const { rows: compareRows } = await client.query<{
+    delivery_id: number
+    data: unknown
+    id: number | null
+    fetched_at: Date | null
+  }>(
+    `SELECT delivery.id AS delivery_id, snapshot.data, snapshot.id, snapshot.fetched_at
      FROM repository_code_deliveries delivery
      LEFT JOIN LATERAL (
-       SELECT data
+       SELECT id, fetched_at, data
        FROM github_compare_raw_snapshots
        WHERE github_repo_id = $1
          AND lower(base_sha) = lower(delivery.base_sha)
@@ -282,8 +295,8 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   const { rows: associatedRows } =
     commitShas.length === 0
       ? { rows: [] }
-      : await client.query<{ sha: string; data: unknown; pagination_complete: boolean }>(
-          `SELECT DISTINCT ON (sha) sha, data, pagination_complete
+      : await client.query<{ sha: string; data: unknown; pagination_complete: boolean; id: number; fetched_at: Date }>(
+          `SELECT DISTINCT ON (sha) sha, data, pagination_complete, id, fetched_at
            FROM github_commit_associated_prs_raw_snapshots
            WHERE github_repo_id = $1
              AND sha = ANY($2::text[])
@@ -331,8 +344,14 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   const { rows: pullRequestRows } =
     pullRequestNumbers.length === 0
       ? { rows: [] }
-      : await client.query<{ pr_number: number; data_type: 'pr' | 'reviews' | 'commits'; data: unknown }>(
-          `SELECT DISTINCT ON (pr_number, data_type) pr_number, data_type, data
+      : await client.query<{
+          pr_number: number
+          data_type: 'pr' | 'reviews' | 'commits'
+          data: unknown
+          id: number
+          fetched_at: Date
+        }>(
+          `SELECT DISTINCT ON (pr_number, data_type) pr_number, data_type, data, id, fetched_at
            FROM github_pr_raw_snapshots
            WHERE github_repo_id = $1
              AND pr_number = ANY($2::int[])
@@ -376,9 +395,9 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
   const { rows: stackAncestryRows } =
     stackAncestryPairs.length === 0
       ? { rows: [] }
-      : await client.query<{ base_sha: string; head_sha: string; data: unknown }>(
+      : await client.query<{ base_sha: string; head_sha: string; data: unknown; id: number; fetched_at: Date }>(
           `SELECT DISTINCT ON (lower(snapshot.base_sha), lower(snapshot.head_sha))
-                  snapshot.base_sha, snapshot.head_sha, snapshot.data
+                  snapshot.base_sha, snapshot.head_sha, snapshot.data, snapshot.id, snapshot.fetched_at
            FROM github_compare_raw_snapshots snapshot
            WHERE snapshot.github_repo_id = $1
              AND (lower(snapshot.base_sha), lower(snapshot.head_sha)) IN (
@@ -415,7 +434,10 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
       ]),
     ]
     const associatedPullRequestsByCommit = Object.fromEntries(
-      (compare?.commits ?? []).map((commit) => [commit.sha, associatedPullRequestsBySha.get(commit.sha)]),
+      (compare?.commits ?? []).flatMap((commit) => {
+        const associations = associatedPullRequestsBySha.get(commit.sha)
+        return associations ? [[commit.sha, associations]] : []
+      }),
     )
     const deliveryPullRequestsByNumber = Object.fromEntries(
       pullRequestNumbers.map((pullRequestNumber) => [pullRequestNumber, pullRequestsByNumber[pullRequestNumber]]),
@@ -443,11 +465,34 @@ async function getRepositoryCodeDeliveryIntervalAssessmentsInTransaction(
       stackAncestryByPullRequestNumber,
     }
     const assessment = assessRepositoryDeliveryInterval(evidence)
+    const comparison = compareRows.find((row) => row.delivery_id === delivery.id)
+    const deliveryShas = new Set(compare?.commits.map((commit) => commit.sha) ?? [])
+    const ancestryPairs = new Set(
+      stackAncestryPairs
+        .filter((pair) => pair.deliveryId === delivery.id)
+        .map((pair) => `${pair.baseSha.toLowerCase()}:${pair.headSha.toLowerCase()}`),
+    )
+    const snapshotReference = (row: { id: number; fetched_at: Date }) => ({
+      id: row.id,
+      fetchedAt: row.fetched_at.toISOString(),
+    })
+    const sources: IntervalSnapshotSources = {
+      comparisons:
+        comparison?.id != null && comparison.fetched_at
+          ? [{ id: comparison.id, fetchedAt: comparison.fetched_at.toISOString() }]
+          : [],
+      associations: associatedRows.filter((row) => deliveryShas.has(row.sha)).map(snapshotReference),
+      pullRequests: pullRequestRows.filter((row) => pullRequestNumbers.includes(row.pr_number)).map(snapshotReference),
+      stackComparisons: stackAncestryRows
+        .filter((row) => ancestryPairs.has(`${row.base_sha.toLowerCase()}:${row.head_sha.toLowerCase()}`))
+        .map(snapshotReference),
+    }
     return {
       deliveryId: delivery.id,
       assessment,
       pullRequestNumbers,
       evidence,
+      sources,
     }
   })
 }
@@ -462,6 +507,7 @@ export async function getRepositoryCodeDeliveryIntervalAssessments(
     assessment: RepositoryDeliveryIntervalAssessment
     pullRequestNumbers: number[]
     evidence: Parameters<typeof assessRepositoryDeliveryInterval>[0]
+    sources: IntervalSnapshotSources
   }>
 > {
   if (deliveries.length === 0) return []

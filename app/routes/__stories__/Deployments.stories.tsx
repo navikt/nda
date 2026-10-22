@@ -273,7 +273,6 @@ export const RepositoryCoverage = {
     deployments: fixtureDeployments,
     total: 5,
     total_pages: 1,
-    repositoryCounts: { approved: 1, not_approved: 1, incomplete: 1, missing_link: 1, no_changes: 1 },
     repositorySummaries: {
       1: { status: 'approved', range: { baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) } },
       2: { status: 'not_approved', range: { baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) } },

@@ -3,7 +3,7 @@ import { DeploymentRepositoryPage } from '~/components/DeploymentRepositoryPage'
 import type { DeploymentRepositoryView } from '~/db/deployment-repository-view.server'
 
 const meta: Meta<typeof DeploymentRepositoryPage> = {
-  title: 'Features/Deployments/Repositoryvurdering',
+  title: 'Features/Deployments/Repositorybasert vurdering',
   component: DeploymentRepositoryPage,
   excludeStories: ['repositoryDeploymentData'],
 }

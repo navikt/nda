@@ -1,10 +1,13 @@
+import type { AuditReportAssessmentModel } from '~/lib/audit-report-model'
 import type { ReportPeriodType } from '~/lib/report-periods'
+import type { RepositoryAuditReportData } from '~/lib/repository-audit-report'
 import type { AuditReportData } from '../audit-reports.server'
 import { pool } from '../connection.server'
 
 export interface AuditReport {
   id: number
   report_id: string
+  assessment_model: AuditReportAssessmentModel
   monitored_app_id: number
   app_name: string
   team_slug: string
@@ -20,7 +23,7 @@ export interface AuditReport {
   manually_approved_count: number
   unique_deployers: number
   unique_reviewers: number
-  report_data: AuditReportData
+  report_data: AuditReportData | RepositoryAuditReportData
   content_hash: string
   generated_at: Date
   generated_by: string | null
@@ -35,6 +38,7 @@ export interface AuditReport {
 export interface AuditReportSummary {
   id: number
   report_id: string
+  assessment_model: AuditReportAssessmentModel
   app_name: string
   team_slug: string
   environment_name: string
@@ -62,45 +66,55 @@ export async function getAuditReportById(id: number): Promise<AuditReport | null
   return result.rows[0] || null
 }
 
-export async function getAllAuditReports(): Promise<AuditReportSummary[]> {
+export async function getAllAuditReports(
+  assessmentModel: AuditReportAssessmentModel = 'application',
+): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
+    `SELECT id, report_id, assessment_model, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
             superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
             ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
+     WHERE assessment_model = $1
      ORDER BY generated_at DESC`,
+    [assessmentModel],
   )
   return result.rows
 }
 
-export async function getAuditReportsForApp(monitoredAppId: number): Promise<AuditReportSummary[]> {
+export async function getAuditReportsForApp(
+  monitoredAppId: number,
+  assessmentModel: AuditReportAssessmentModel = 'application',
+): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
+    `SELECT id, report_id, assessment_model, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
             superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
             ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
-     WHERE monitored_app_id = $1 AND archived_at IS NULL AND superseded_at IS NULL
+     WHERE monitored_app_id = $1 AND assessment_model = $2 AND archived_at IS NULL AND superseded_at IS NULL
      ORDER BY year DESC, period_start DESC`,
-    [monitoredAppId],
+    [monitoredAppId, assessmentModel],
   )
   return result.rows
 }
 
-export async function getAuditReportsForAppAdmin(monitoredAppId: number): Promise<AuditReportSummary[]> {
+export async function getAuditReportsForAppAdmin(
+  monitoredAppId: number,
+  assessmentModel: AuditReportAssessmentModel = 'application',
+): Promise<AuditReportSummary[]> {
   const result = await pool.query<AuditReportSummary>(
-    `SELECT id, report_id, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
+    `SELECT id, report_id, assessment_model, app_name, team_slug, environment_name, year, period_type, period_label, period_start, period_end,
             total_deployments, pr_approved_count, manually_approved_count, generated_at,
             archived_at, archived_by, archive_reason,
             superseded_at, superseded_by, supersede_reason, superseded_by_report_id,
             ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
-     WHERE monitored_app_id = $1
+     WHERE monitored_app_id = $1 AND assessment_model = $2
      ORDER BY year DESC, period_start DESC`,
-    [monitoredAppId],
+    [monitoredAppId, assessmentModel],
   )
   return result.rows
 }

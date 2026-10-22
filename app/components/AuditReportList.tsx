@@ -1,10 +1,12 @@
 import { BodyShort, Box, Button, Detail, HStack, Label, Modal, Textarea, VStack } from '@navikt/ds-react'
 import { useEffect, useRef, useState } from 'react'
 import { Form, Link, useFetcher } from 'react-router'
+import { AUDIT_REPORT_MODEL_LABELS, type AuditReportAssessmentModel } from '~/lib/audit-report-model'
 
 export interface AuditReportItem {
   id: number
   report_id: string
+  assessment_model?: AuditReportAssessmentModel
   period_label: string
   archived_at: Date | null
   archived_by: string | null
@@ -47,6 +49,7 @@ export function AuditReportList({
               <VStack gap="space-4">
                 <HStack gap="space-16" align="center" wrap>
                   <BodyShort weight="semibold">{report.period_label}</BodyShort>
+                  <Detail>{AUDIT_REPORT_MODEL_LABELS[report.assessment_model ?? 'application']}</Detail>
                   <Detail textColor="subtle">{report.report_id}</Detail>
                   <HStack gap="space-8">
                     <Link to={`/admin/audit-reports/${report.id}/view`} target="_blank" rel="noopener noreferrer">

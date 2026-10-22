@@ -18,6 +18,37 @@ const meta: Meta<typeof AuditReportGenerateSection> = {
 export default meta
 type Story = StoryObj<typeof AuditReportGenerateSection>
 
+export const RepositoryReady: Story = {
+  args: {
+    initialAssessmentModel: 'repository',
+    readinessAssessmentModel: 'repository',
+    readinessPeriodKey: 'yearly:2025-01-01',
+    repositoryReadiness: {
+      isReady: true,
+      noDeployments: false,
+      totalDeployments: 2,
+      deployments: [
+        { deploymentId: 1, blockers: [] },
+        { deploymentId: 2, blockers: [] },
+      ],
+    },
+  },
+}
+
+export const RepositoryBlocked: Story = {
+  args: {
+    initialAssessmentModel: 'repository',
+    readinessAssessmentModel: 'repository',
+    readinessPeriodKey: 'yearly:2025-01-01',
+    repositoryReadiness: {
+      isReady: false,
+      noDeployments: false,
+      totalDeployments: 1,
+      deployments: [{ deploymentId: 1, blockers: ['unauthorized_repository', 'unknown_trigger', 'baseline_required'] }],
+    },
+  },
+}
+
 const readyReadiness: AuditReadinessCheck = {
   is_ready: true,
   no_deployments: false,
@@ -98,6 +129,7 @@ const notReadyReadiness: AuditReadinessCheck = {
 
 const existingReport: AuditReportSummary = {
   id: 1,
+  assessment_model: 'application',
   report_id: 'AUDIT-2025-test-app-prod-gcp-abcdef12-1a2b3c4d5e6f',
   app_name: 'test-app',
   team_slug: 'testteam',

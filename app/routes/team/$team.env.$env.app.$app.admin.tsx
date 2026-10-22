@@ -10,6 +10,7 @@ import { getAppConfigAuditLog } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
 import { getEffectiveSettingsForApp, getRepositoryById } from '~/db/repositories.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
+import type { AuditReportAssessmentModel } from '~/lib/audit-report-model'
 import { requireAppAdminAccess, resolveRepositoryAdminAccess } from '~/lib/authorization.server'
 import type { UserLookupMap } from '~/lib/user-display'
 import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
@@ -31,11 +32,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const isProdApp = app.environment_name.startsWith('prod-')
 
-  const [effectiveSettings, recentConfigChanges, auditReports] = await Promise.all([
+  const [effectiveSettings, recentConfigChanges, applicationReports, repositoryReports] = await Promise.all([
     getEffectiveSettingsForApp(app.id),
     getAppConfigAuditLog(app.id, { limit: 10 }),
     getAuditReportsForAppAdmin(app.id),
+    getAuditReportsForAppAdmin(app.id, 'repository'),
   ])
+  const auditReports = [...applicationReports, ...repositoryReports]
   const auditStartYear = effectiveSettings.auditStartYear
   const repositoryId = effectiveSettings.repositoryId
   const repositoryRow = repositoryId !== null ? await getRepositoryById(repositoryId) : null
@@ -96,6 +99,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
 
   const jobFetcher = useFetcher<{ status: string; error?: string }>()
   const [pendingJobId, setPendingJobId] = useState<string | null>(null)
+  const [pendingJobModel, setPendingJobModel] = useState<AuditReportAssessmentModel>('application')
   const [jobError, setJobError] = useState<string | null>(null)
   const [jobCompleted, setJobCompleted] = useState(false)
 
@@ -112,10 +116,11 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
   useEffect(() => {
     if (actionData?.jobStarted) {
       setPendingJobId(actionData.jobStarted)
+      setPendingJobModel(actionData.jobAssessmentModel ?? 'application')
       setJobError(null)
       setJobCompleted(false)
     }
-  }, [actionData?.jobStarted])
+  }, [actionData?.jobStarted, actionData?.jobAssessmentModel])
 
   const jobFetcherLoadRef = useRef(jobFetcher.load)
   jobFetcherLoadRef.current = jobFetcher.load
@@ -123,14 +128,15 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
   useEffect(() => {
     if (!pendingJobId) return
 
-    const load = () => jobFetcherLoadRef.current(`/api/reports/status?jobId=${pendingJobId}`)
+    const load = () =>
+      jobFetcherLoadRef.current(`/api/reports/status?jobId=${pendingJobId}&assessmentModel=${pendingJobModel}`)
 
     load()
 
     const interval = setInterval(load, 2000)
 
     return () => clearInterval(interval)
-  }, [pendingJobId])
+  }, [pendingJobId, pendingJobModel])
 
   useEffect(() => {
     if (!jobFetcher.data || !pendingJobId) return
@@ -209,6 +215,8 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
               auditReports={auditReports}
               auditStartYear={auditStartYear ?? undefined}
               readinessData={readinessData}
+              repositoryReadiness={actionData?.repositoryReadiness}
+              readinessAssessmentModel={actionData?.readinessAssessmentModel}
               readinessPeriodKey={readinessPeriodKey}
               readinessUserMappings={readinessUserMappings}
               isCheckingReadiness={isSubmitting && navigation.formData?.get('action') === 'check_readiness'}
