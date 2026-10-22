@@ -1,5 +1,6 @@
 import { data } from 'react-router'
 import { getReportJobStatus } from '~/db/report-jobs.server'
+import { isAuditReportAssessmentModel } from '~/lib/audit-report-model'
 import { requireUser } from '~/lib/auth.server'
 import { canAccessAppAdmin } from '~/lib/authorization.server'
 import type { Route } from './+types/reports.status'
@@ -13,7 +14,11 @@ export async function loader({ request, url }: Route.LoaderArgs) {
     return data({ error: 'Missing jobId' }, { status: 400 })
   }
 
-  const job = await getReportJobStatus(jobId)
+  const assessmentModel = url.searchParams.get('assessmentModel') ?? 'application'
+  if (!isAuditReportAssessmentModel(assessmentModel)) {
+    return data({ error: 'Invalid assessmentModel' }, { status: 400 })
+  }
+  const job = await getReportJobStatus(jobId, assessmentModel)
 
   if (!job) {
     return data({ error: 'Job not found' }, { status: 404 })

@@ -46,7 +46,10 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
   const repositoriesPromise = getRepositoriesByAppId(app.id)
   const effectiveSettingsPromise = getEffectiveSettingsForApp(app.id)
   const alertsPromise = getUnresolvedAlertsByApp(app.id)
-  const auditReportsPromise = getAuditReportsForApp(app.id)
+  const auditReportsPromise = Promise.all([
+    getAuditReportsForApp(app.id),
+    getAuditReportsForApp(app.id, 'repository'),
+  ]).then(([applicationReports, repositoryReports]) => [...applicationReports, ...repositoryReports])
   const monorepoPromise = getMonorepoSiblings(app.id)
   const devTeamsPromise = getDevTeamsForApp(app.id, team)
   const latestSyncJobPromise = getLatestSyncJob(app.id, 'nais_sync')

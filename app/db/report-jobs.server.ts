@@ -6,6 +6,12 @@ import type { ReportPeriodType } from '~/lib/report-periods'
 const STALE_JOB_THRESHOLD_MS = 5 * 60 * 1000
 const STALE_JOB_THRESHOLD_SQL = `${STALE_JOB_THRESHOLD_MS} milliseconds`
 
+export class ReportJobModelConflictError extends Error {
+  constructor() {
+    super('An in-flight report job already exists for this period with a different assessment model.')
+  }
+}
+
 export async function createReportJob(
   monitoredAppId: number,
   year: number,
@@ -15,6 +21,22 @@ export async function createReportJob(
   periodEnd: Date,
   assessmentModel: AuditReportAssessmentModel = 'application',
 ): Promise<{ jobId: string; created: boolean; status: string; createdAt: Date; startedAt: Date | null }> {
+  await pool.query(
+    `UPDATE report_jobs
+     SET status = 'failed',
+         error = 'Report job expired before another assessment model was requested.',
+         completed_at = NOW()
+     WHERE monitored_app_id = $1
+       AND period_type = $2
+       AND period_start = $3::date
+       AND period_end = $4::date
+       AND assessment_model <> $5
+       AND (
+         (status = 'pending' AND created_at < NOW() - INTERVAL '${STALE_JOB_THRESHOLD_SQL}')
+         OR (status = 'processing' AND (started_at IS NULL OR started_at < NOW() - INTERVAL '${STALE_JOB_THRESHOLD_SQL}'))
+       )`,
+    [monitoredAppId, periodType, toDateString(periodStart), toDateString(periodEnd), assessmentModel],
+  )
   const result = await pool.query(
     `INSERT INTO report_jobs (monitored_app_id, year, period_type, period_label, period_start, period_end, assessment_model, status)
      VALUES ($1, $2, $3, $4, $5::date, $6::date, $7, 'pending')
@@ -33,7 +55,7 @@ export async function createReportJob(
     ],
   )
   if (result.rows.length === 0) {
-    throw new Error('An in-flight report job already exists for this period with a different assessment model.')
+    throw new ReportJobModelConflictError()
   }
   return {
     jobId: result.rows[0].job_id,

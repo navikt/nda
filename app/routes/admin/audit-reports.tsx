@@ -16,6 +16,7 @@ import {
 import { Link, useLoaderData } from 'react-router'
 import { getAllAuditReports } from '~/db/audit-reports.server'
 import { getAllUsersWithAccounts } from '~/db/user-github-lookups.server'
+import { AUDIT_REPORT_MODEL_LABELS } from '~/lib/audit-report-model'
 import { requireAdmin } from '~/lib/auth.server'
 import styles from '~/styles/common.module.css'
 import type { Route } from './+types/audit-reports'
@@ -23,7 +24,14 @@ import type { Route } from './+types/audit-reports'
 export async function loader({ request }: Route.LoaderArgs) {
   await requireAdmin(request)
 
-  const [reports, userMappings] = await Promise.all([getAllAuditReports(), getAllUsersWithAccounts()])
+  const [applicationReports, repositoryReports, userMappings] = await Promise.all([
+    getAllAuditReports(),
+    getAllAuditReports('repository'),
+    getAllUsersWithAccounts(),
+  ])
+  const reports = [...applicationReports, ...repositoryReports].sort(
+    (a, b) => b.generated_at.getTime() - a.generated_at.getTime(),
+  )
 
   const displayNameMap: Record<string, string> = Object.fromEntries(
     userMappings.map((u) => [u.nav_ident.toUpperCase(), u.display_name]),
@@ -126,13 +134,18 @@ export default function AdminAuditReports() {
                             <Detail>{report.environment_name}</Detail>
                           </VStack>
                         </Table.DataCell>
-                        <Table.DataCell>{report.period_label || report.year}</Table.DataCell>
+                        <Table.DataCell>
+                          {report.period_label || report.year}
+                          <Detail>{AUDIT_REPORT_MODEL_LABELS[report.assessment_model]}</Detail>
+                        </Table.DataCell>
                         <Table.DataCell>
                           <VStack gap="space-2">
                             <BodyShort size="small">{report.total_deployments} totalt</BodyShort>
-                            <Detail>
-                              {report.pr_approved_count} PR, {report.manually_approved_count} manuell
-                            </Detail>
+                            {report.assessment_model === 'application' && (
+                              <Detail>
+                                {report.pr_approved_count} PR, {report.manually_approved_count} manuell
+                              </Detail>
+                            )}
                           </VStack>
                         </Table.DataCell>
                         <Table.DataCell>{formatDateTime(report.generated_at)}</Table.DataCell>
@@ -200,6 +213,7 @@ export default function AdminAuditReports() {
                             <Detail>
                               {report.environment_name} • {report.period_label || report.year}
                             </Detail>
+                            <Detail>{AUDIT_REPORT_MODEL_LABELS[report.assessment_model]}</Detail>
                           </div>
                           <Tag variant="success" size="small">
                             {report.total_deployments} deployments

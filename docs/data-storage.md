@@ -15,8 +15,8 @@ eller lagrede filer.
 
 Aktive rapporter er unike per applikasjon, vurderingsmodell, periodetype og
 start-/sluttdato. Hver modell kan dermed ha sin egen aktive rapport for samme
-periode. Dagens rapportgenerering skriver eksplisitt `application` og
-erstatter bare aktive applikasjonsbaserte rapporter. Oppslag av rapporter og jobber
+periode. Rapportgenereringen lagrer valgt modell og erstatter bare aktive
+rapporter med samme modell. Oppslag av rapporter og jobber
 bruker `application` som standard; en annen modell må velges eksplisitt.
 Applikasjonsprosessoren kan ikke overta en repositorybasert jobb.
 
@@ -26,10 +26,20 @@ under utrulling. En eksisterende jobb med en annen vurderingsmodell gir en
 eksplisitt feil i stedet for å bli gjenbrukt. Indeksen hindrer foreløpig parallelle
 jobber på tvers av modellene for samme applikasjon og periode.
 
-Før repositorybasert generering aktiveres, må indeksen erstattes med en
-modellavgrenset indeks og `ON CONFLICT` endres tilsvarende. Dette krever et eget
-utrullingssteg; begge unikhetsindeksene skal ikke eksistere samtidig, fordi
-samtidige innsettinger da kan feile på indeksen som ikke er konfliktmålet.
+Ved modellkonflikt returnerer M2M-generering HTTP 409 i vanlig JSON-feilformat.
+Før oppretting markeres utdaterte jobber fra den andre modellen som feilet med
+feilårsak og avslutningstidspunkt. Dette bruker samme femminuttersgrense som
+overtaking av jobber: `created_at` for ventende jobber og `started_at` for
+påbegynte jobber; manglende `started_at` regnes som utdatert.
+Ferske jobber og jobber fra samme modell endres ikke.
+
+Repositorybasert generering bruker foreløpig samme jobbunikhet. Begge modeller
+kan ha aktive rapporter, men bare én modell kan genereres om gangen for samme
+applikasjon og periode. Hvis parallell generering skal tillates senere, må
+indeksen erstattes med en modellavgrenset indeks og `ON CONFLICT` endres tilsvarende.
+Dette krever et eget utrullingssteg; begge unikhetsindeksene skal ikke eksistere
+samtidig, fordi samtidige innsettinger da kan feile på indeksen som ikke er
+konfliktmålet.
 
 ### Repositorybasert rapportgrunnlag
 
@@ -75,9 +85,19 @@ repositoryets gjeldende default branch blokkerer også. Tom periode markeres
 eksplisitt. Kriteriene bruker ikke `four_eyes_status` og endrer ikke dagens
 applikasjonsbaserte rapportklarhet.
 
-Databyggeren er ennå ikke koblet til rapportgenereringen. Den skriver ingen data
-og gjør ingen HTTP-kall. Lagring av repositoryrapport, PDF/Excel og modellvalg i
-UI/API gjenstår.
+Appens administrasjonsside tilbyr modellvalg ved kontroll og generering.
+Repositoryjobben leser grunnlaget og kontrollerer rapportklarheten på nytt før
+lagring. Det samme frosne grunnlaget brukes til innholdshash, PDF og Excel.
+Erstatning av rapporter avgrenses til valgt modell. Rapportlister merker modellen;
+eksisterende rapportfiler og applikasjonsrapportens format beholdes uendret.
+
+Repositoryrapportens PDF og Excel har egne seksjoner for deploymentkilde,
+kodeintervall, commitdekning, PR-evidens, manuell historikk, kildereferanser og
+identitetsversjoner. Historikkens kontroll- og registreringstidspunkt beholdes,
+og rapporten opplyser at vurderingen gjelder evidens ved generering.
+Applikasjonsmodellens PR-/manuell-tellinger brukes ikke som oppsummering av
+repositorydekning. M2M-API-et beholder applikasjonsbasert standard og kontrakt;
+repositorygenerering tilbys foreløpig bare i brukergrensesnittet.
 
 ## Repositoryreferanse på deployments
 
