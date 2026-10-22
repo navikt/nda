@@ -15,6 +15,11 @@ import {
 import { useEffect, useState } from 'react'
 import { Form, Link } from 'react-router'
 import type { AuditReadinessCheck, AuditReportSummary } from '~/db/audit-reports.server'
+import {
+  AUDIT_REPORT_MODEL_LABELS,
+  type AuditReportAssessmentModel,
+  isAuditReportAssessmentModel,
+} from '~/lib/audit-report-model'
 import { toDateString } from '~/lib/date-utils'
 import { getFourEyesStatusLabel } from '~/lib/four-eyes-status'
 import {
@@ -25,6 +30,7 @@ import {
   type ReportPeriod,
   type ReportPeriodType,
 } from '~/lib/report-periods'
+import { REPOSITORY_AUDIT_BLOCKER_LABELS, type RepositoryAuditReadiness } from '~/lib/repository-audit-report'
 import type { UserLookupMap } from '~/lib/user-display'
 import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 import { UserName } from './UserName'
@@ -35,6 +41,9 @@ interface AuditReportGenerateSectionProps {
   auditReports: AuditReportSummary[]
   auditStartYear?: number
   readinessData?: AuditReadinessCheck
+  repositoryReadiness?: RepositoryAuditReadiness
+  readinessAssessmentModel?: AuditReportAssessmentModel
+  initialAssessmentModel?: AuditReportAssessmentModel
   readinessPeriodKey?: string
   readinessUserMappings: UserLookupMap
   isCheckingReadiness: boolean
@@ -52,6 +61,9 @@ export function AuditReportGenerateSection({
   auditReports,
   auditStartYear,
   readinessData,
+  repositoryReadiness,
+  readinessAssessmentModel = 'application',
+  initialAssessmentModel = 'application',
   readinessPeriodKey,
   readinessUserMappings,
   isCheckingReadiness,
@@ -59,6 +71,7 @@ export function AuditReportGenerateSection({
   pendingJobId,
 }: AuditReportGenerateSectionProps) {
   const [periodType, setPeriodType] = useState<ReportPeriodType>('yearly')
+  const [assessmentModel, setAssessmentModel] = useState(initialAssessmentModel)
   const availablePeriods = getCompletedPeriods(periodType, new Date(), auditStartYear)
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0)
 
@@ -95,7 +108,9 @@ export function AuditReportGenerateSection({
     return availablePeriods[selectedPeriodIndex] || availablePeriods[0]
   })()
 
-  const existingReportForPeriod = selectedPeriod ? findExistingReportForPeriod(auditReports, selectedPeriod) : undefined
+  const existingReportForPeriod = selectedPeriod
+    ? findExistingReportForPeriod(auditReports, selectedPeriod, assessmentModel)
+    : undefined
   const [supersedeReason, setSupersedeReason] = useState('')
 
   const currentPeriodKey = selectedPeriod
@@ -106,9 +121,12 @@ export function AuditReportGenerateSection({
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset side-effect on period change
   useEffect(() => {
     setSupersedeReason('')
-  }, [currentPeriodKey])
+  }, [currentPeriodKey, assessmentModel])
 
-  const readinessMatchesPeriod = readinessPeriodKey === currentPeriodKey
+  const readinessMatchesPeriod = readinessPeriodKey === currentPeriodKey && readinessAssessmentModel === assessmentModel
+  const isReady = assessmentModel === 'repository' ? repositoryReadiness?.isReady : readinessData?.is_ready
+  const noDeployments =
+    assessmentModel === 'repository' ? repositoryReadiness?.noDeployments : readinessData?.no_deployments
 
   return (
     <Form method="post">
@@ -125,6 +143,21 @@ export function AuditReportGenerateSection({
       <VStack gap="space-16">
         {/* Steg 1: Velg periode og kontroller grunnlag */}
         <HStack gap="space-16" align="end" wrap>
+          <Select
+            label="Vurderingsmodell"
+            name="assessment_model"
+            value={assessmentModel}
+            size="small"
+            onChange={(event) => {
+              if (isAuditReportAssessmentModel(event.target.value)) setAssessmentModel(event.target.value)
+            }}
+          >
+            {Object.entries(AUDIT_REPORT_MODEL_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
           <Select
             label="Rapporttype"
             value={periodType}
@@ -229,12 +262,21 @@ export function AuditReportGenerateSection({
         </HStack>
 
         {/* Steg 2: Readiness-resultat */}
-        {readinessData && readinessMatchesPeriod && (
+        {assessmentModel === 'repository' && (
+          <BodyShort size="small">
+            Rapporten gjelder denne applikasjonen og perioden. Kodedekningen vurderes på repositorynivå med lagret
+            evidens ved generering, inkludert etterkontroll.
+          </BodyShort>
+        )}
+        {assessmentModel === 'repository' && repositoryReadiness && readinessMatchesPeriod && (
+          <RepositoryReadinessResult readiness={repositoryReadiness} appUrl={appUrl} />
+        )}
+        {assessmentModel === 'application' && readinessData && readinessMatchesPeriod && (
           <ReadinessResult readinessData={readinessData} appUrl={appUrl} userMappings={readinessUserMappings} />
         )}
 
         {/* Steg 3: Generer/Erstatt rapport (bare når klar) */}
-        {readinessData?.is_ready && readinessMatchesPeriod && (
+        {isReady && readinessMatchesPeriod && (
           <GenerateAction
             selectedPeriod={selectedPeriod}
             existingReportForPeriod={existingReportForPeriod}
@@ -242,11 +284,40 @@ export function AuditReportGenerateSection({
             onSupersedeReasonChange={setSupersedeReason}
             isGeneratingReport={isGeneratingReport}
             pendingJobId={pendingJobId}
-            noDeployments={readinessData.no_deployments}
+            noDeployments={noDeployments ?? false}
           />
         )}
       </VStack>
     </Form>
+  )
+}
+
+function RepositoryReadinessResult({ readiness, appUrl }: { readiness: RepositoryAuditReadiness; appUrl: string }) {
+  return (
+    <Box padding="space-16" borderRadius="4" background={readiness.isReady ? 'success-soft' : 'warning-soft'}>
+      <VStack gap="space-8">
+        <Heading size="xsmall" level="3">
+          {readiness.isReady
+            ? readiness.noDeployments
+              ? 'Klar for nullrapport'
+              : 'Klar for leveranserapport'
+            : 'Ikke klar'}
+        </Heading>
+        <BodyShort size="small">{readiness.totalDeployments} deployments i perioden.</BodyShort>
+        {readiness.deployments
+          .filter((deployment) => deployment.blockers.length > 0)
+          .map((deployment) => (
+            <div key={deployment.deploymentId}>
+              <AkselLink as={Link} to={`${appUrl}/deployments/${deployment.deploymentId}?view=repository`}>
+                Deployment {deployment.deploymentId}
+              </AkselLink>
+              <BodyShort size="small">
+                {deployment.blockers.map((blocker) => REPOSITORY_AUDIT_BLOCKER_LABELS[blocker]).join(' · ')}
+              </BodyShort>
+            </div>
+          ))}
+      </VStack>
+    </Box>
   )
 }
 

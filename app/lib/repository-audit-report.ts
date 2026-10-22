@@ -86,6 +86,21 @@ type RepositoryAuditBlocker =
   | 'unknown_repository_authorization'
   | 'unauthorized_repository'
 
+export const REPOSITORY_AUDIT_BLOCKER_LABELS: Record<RepositoryAuditBlocker, string> = {
+  missing_link: 'Mangler kobling til kodeleveranse',
+  incomplete_coverage: 'Ufullstendig kodedekning',
+  missing_approval: 'Mangler kodegodkjenning',
+  baseline_required: 'Tomt kodeintervall krever avklart baseline',
+  manual_trigger: 'Manuelt trigget workflow',
+  unknown_trigger: 'Ukjent workflow-trigger',
+  unknown_branch: 'Ukjent branchgrunnlag',
+  unauthorized_branch: 'Deployment er ikke fra default branch',
+  unknown_repository_authorization: 'Ukjent repositorytillatelse',
+  unauthorized_repository: 'Repository er ikke tillatt for applikasjonen',
+}
+
+export type RepositoryAuditReadiness = ReturnType<typeof assessRepositoryAuditReadiness>
+
 export function assessRepositoryAuditReadiness(data: RepositoryAuditReportData) {
   const deliveries = new Map(data.deliveries.map((delivery) => [delivery.id, delivery]))
   const deployments = data.deployments.map((deployment) => {

@@ -1,6 +1,6 @@
 import { getReportSummaryById, hasActiveReportForPeriod } from '~/db/audit-reports.server'
 import { getMonitoredApplicationByIdentity } from '~/db/monitored-applications.server'
-import { createReportJob, findInFlightJob, isStaleJob } from '~/db/report-jobs.server'
+import { createReportJob, findInFlightJob, isStaleJob, ReportJobModelConflictError } from '~/db/report-jobs.server'
 import { getEffectiveAuditStartYear } from '~/db/repositories.server'
 import { buildAppMetadata } from '~/lib/api/app-metadata.server'
 import { jsonError, validateProdEnvironment } from '~/lib/api/errors'
@@ -100,14 +100,22 @@ export async function action({ request, params }: Route.ActionArgs) {
     throw jsonError('An active report already exists for this period. Provide "reason" to supersede it.', 409)
   }
 
-  const job = await createReportJob(
-    monitoredApp.id,
-    period.year,
-    period.type,
-    period.label,
-    period.startDate,
-    period.endDate,
-  )
+  let job: Awaited<ReturnType<typeof createReportJob>>
+  try {
+    job = await createReportJob(
+      monitoredApp.id,
+      period.year,
+      period.type,
+      period.label,
+      period.startDate,
+      period.endDate,
+    )
+  } catch (err) {
+    if (err instanceof ReportJobModelConflictError) {
+      throw jsonError('A report job for another assessment model is already running for this period. Retry later.', 409)
+    }
+    throw err
+  }
 
   if (!job.created) {
     const appMetadata = await buildAppMetadata(monitoredApp, auditStartYear)

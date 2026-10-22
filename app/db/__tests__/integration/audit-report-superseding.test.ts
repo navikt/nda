@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { RepositoryAuditReportData } from '~/lib/repository-audit-report'
 import {
   archiveAuditReport,
   getActiveReportsForAppM2M,
@@ -42,6 +43,54 @@ const minimalReportData = {
 }
 
 describe('audit report superseding', () => {
+  it('persists and replaces repository reports without superseding application reports', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'test', environment: 'prod-gcp' })
+    const params = {
+      monitoredAppId: appId,
+      appName: 'test',
+      teamSlug: 'team-fjord',
+      environmentName: 'prod-gcp',
+      repository: '',
+      year: 2025,
+      periodType: 'yearly' as const,
+      periodLabel: '2025',
+      periodStart: new Date('2025-01-01'),
+      periodEnd: new Date('2025-12-31'),
+      generatedBy: 'Z990001',
+    }
+    const data: RepositoryAuditReportData = {
+      schemaVersion: 1,
+      verificationSchemaVersion: 5,
+      assessmentModel: 'repository',
+      assessmentTime: 'generation',
+      assessedAt: '2026-01-01T00:00:00Z',
+      app: { id: appId, name: 'test', team: 'team-fjord', environment: 'prod-gcp' },
+      period: { start: params.periodStart.toISOString(), end: params.periodEnd.toISOString() },
+      deployments: [],
+      deliveries: [],
+    }
+    const application = await saveAuditReport({ ...params, reportData: minimalReportData })
+    const repository = await saveAuditReport({ ...params, reportData: data })
+    expect(repository.assessment_model).toBe('repository')
+    expect(repository.report_data).toEqual(data)
+    expect(repository.content_hash).not.toBe(application.content_hash)
+    await expect(saveAuditReport({ ...params, reportData: data })).rejects.toThrow('An active report already exists')
+
+    const replacement = await saveAuditReport({
+      ...params,
+      reportData: { ...data, assessedAt: '2026-01-02T00:00:00Z' },
+      supersedeReason: 'Oppdatert evidens',
+    })
+    expect((await getAuditReportsForApp(appId)).map((report) => report.id)).toEqual([application.id])
+    expect((await getAuditReportsForApp(appId, 'repository')).map((report) => report.id)).toEqual([replacement.id])
+    const { rows } = await pool.query('SELECT superseded_by_report_id, report_data FROM audit_reports WHERE id = $1', [
+      repository.id,
+    ])
+    expect(rows[0]).toEqual({ superseded_by_report_id: replacement.id, report_data: data })
+    await archiveAuditReport(replacement.id, appId, 'Z990001', 'Arkivert')
+    expect(await getAuditReportsForApp(appId, 'repository')).toEqual([])
+  })
+
   it('keeps repository reports separate from application report replacement and retrieval', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-fss' })
     const periodStart = new Date('2025-01-01')

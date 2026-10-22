@@ -1,5 +1,6 @@
 import type { AuditReportAssessmentModel } from '~/lib/audit-report-model'
 import type { ReportPeriodType } from '~/lib/report-periods'
+import type { RepositoryAuditReportData } from '~/lib/repository-audit-report'
 import type { AuditReportData } from '../audit-reports.server'
 import { pool } from '../connection.server'
 
@@ -22,7 +23,7 @@ export interface AuditReport {
   manually_approved_count: number
   unique_deployers: number
   unique_reviewers: number
-  report_data: AuditReportData
+  report_data: AuditReportData | RepositoryAuditReportData
   content_hash: string
   generated_at: Date
   generated_by: string | null

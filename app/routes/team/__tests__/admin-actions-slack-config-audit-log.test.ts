@@ -12,6 +12,7 @@ const {
   mockHasActiveReportForPeriod,
   mockCreateReportJob,
   mockProcessReportJobAsync,
+  mockGetRepositoryAuditReportData,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockCanAccessAppAdmin: vi.fn(),
@@ -23,9 +24,13 @@ const {
   mockHasActiveReportForPeriod: vi.fn(),
   mockCreateReportJob: vi.fn(),
   mockProcessReportJobAsync: vi.fn(),
+  mockGetRepositoryAuditReportData: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({ requireUser: mockRequireUser }))
+vi.mock('~/db/audit-reports/repository-data.server', () => ({
+  getRepositoryAuditReportData: mockGetRepositoryAuditReportData,
+}))
 
 vi.mock('~/lib/authorization.server', () => ({ canAccessAppAdmin: mockCanAccessAppAdmin }))
 
@@ -57,6 +62,7 @@ vi.mock('~/db/repositories.server', () => ({
 vi.mock('~/db/report-jobs.server', () => ({
   createReportJob: mockCreateReportJob,
   isStaleJob: vi.fn(),
+  ReportJobModelConflictError: class extends Error {},
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
@@ -433,6 +439,80 @@ describe('admin actions - audit report scope validation', () => {
 
     expect(mockCheckAuditReadiness).toHaveBeenCalledWith(42, expect.any(Date), expect.any(Date))
     expect(result).toMatchObject({ readiness: expect.objectContaining({ is_ready: true, no_deployments: true }) })
+  })
+
+  it('checks repository readiness without invoking application readiness', async () => {
+    const readiness = { isReady: true, noDeployments: true, totalDeployments: 0, deployments: [] }
+    mockGetRepositoryAuditReportData.mockResolvedValue({ readiness })
+    const action = await getAction()
+    const result = await action({
+      request: buildRequest({
+        action: 'check_readiness',
+        app_id: '42',
+        assessment_model: 'repository',
+        period_type: 'yearly',
+        period_start: '2025-01-01',
+        period_end: '2025-12-31',
+      }),
+      params: {},
+    })
+    expect(result).toMatchObject({ repositoryReadiness: readiness, readinessAssessmentModel: 'repository' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])('only starts a repository job when repository readiness is %s', async (isReady) => {
+    mockGetRepositoryAuditReportData.mockResolvedValue({
+      readiness: { isReady, noDeployments: false, totalDeployments: 1, deployments: [] },
+    })
+    mockHasActiveReportForPeriod.mockResolvedValue(false)
+    mockCreateReportJob.mockResolvedValue({ created: true, jobId: 'repository-job', status: 'pending' })
+    const action = await getAction()
+    const result = await action({
+      request: buildRequest({
+        action: 'generate_report',
+        app_id: '42',
+        assessment_model: 'repository',
+        period_type: 'yearly',
+        period_start: '2025-01-01',
+        period_end: '2025-12-31',
+      }),
+      params: {},
+    })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+    if (isReady) {
+      expect(result).toEqual({ jobStarted: 'repository-job', jobAssessmentModel: 'repository' })
+      expect(mockHasActiveReportForPeriod).toHaveBeenCalledWith(
+        42,
+        'yearly',
+        expect.any(Date),
+        expect.any(Date),
+        'repository',
+      )
+      expect(mockCreateReportJob).toHaveBeenCalledWith(
+        42,
+        2025,
+        'yearly',
+        '2025',
+        expect.any(Date),
+        expect.any(Date),
+        'repository',
+      )
+      expect(mockProcessReportJobAsync).toHaveBeenCalledWith(expect.objectContaining({ assessmentModel: 'repository' }))
+    } else {
+      expect(result).toMatchObject({ error: expect.stringContaining('repositorygrunnlaget') })
+      expect(mockCreateReportJob).not.toHaveBeenCalled()
+    }
+  })
+
+  it('rejects an unsupported assessment model before reading report data', async () => {
+    const action = await getAction()
+    expect(
+      await action({
+        request: buildRequest({ action: 'check_readiness', app_id: '42', assessment_model: 'mixed' }),
+        params: {},
+      }),
+    ).toEqual({ error: 'Ugyldig vurderingsmodell' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
   })
 
   it('rejects generate_report when periodStart is after periodEnd without creating a job', async () => {
