@@ -142,6 +142,39 @@ describe('repository report exports', () => {
     ])
   })
 
+  it('counts eligible reviewers from a stacked pull request used for approved interval coverage', () => {
+    const props = repositoryReportFixture()
+    const delivery = props.reportData.deliveries[0]
+    const pullRequest = delivery.evidence.pullRequestsByNumber[42]
+    if (!pullRequest) throw new Error('Missing fixture pull request')
+    const stackedPullRequestNumber = 43
+    const stackedPullRequest = {
+      ...pullRequest,
+      number: stackedPullRequestNumber,
+      baseBranch: 'feature/base',
+      authorLogin: 'gladfjord',
+      reviews: [
+        {
+          id: 6,
+          username: 'stacked-reviewer',
+          state: 'APPROVED' as const,
+          submittedAt: '2026-01-17T00:00:00Z',
+          body: null,
+          commitId: pullRequest.headSha,
+        },
+      ],
+    }
+    delivery.evidence.pullRequestsByNumber[stackedPullRequestNumber] = stackedPullRequest
+    delivery.interval.commits[0].status = 'covered'
+    delivery.interval.commits[0].reason = 'approved_review'
+    delivery.interval.commits[0].pullRequestNumber = stackedPullRequestNumber
+
+    expect(buildRepositoryReportSummary(props).values).toContainEqual([
+      'Unike reviewers',
+      '2 GitHub-kontoer / 1 NAV-ident',
+    ])
+  })
+
   it('counts commit authors even when they have no identity mapping', () => {
     const props = repositoryReportFixture()
     expect(buildRepositoryReportSummary(props).values).toContainEqual(['Unike bidragsytere', '1 person'])

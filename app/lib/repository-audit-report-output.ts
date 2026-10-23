@@ -168,12 +168,22 @@ function appendDeliverySection(sections: ReportSection[], section: ReportSection
 
 function eligibleGithubReviewers(delivery: RepositoryAuditReportData['deliveries'][number]): string[] {
   const { evidence } = delivery
+  const coveredPullRequestNumbers = new Set(
+    delivery.interval.commits
+      .filter(
+        (commit) =>
+          commit.status === 'covered' &&
+          (commit.reason === 'approved_review' || commit.reason === 'implicit_approval') &&
+          commit.pullRequestNumber !== null,
+      )
+      .map((commit) => commit.pullRequestNumber),
+  )
   return Object.values(evidence.pullRequestsByNumber).flatMap((pullRequest) => {
     const commits = pullRequest?.commits
     const reviews = pullRequest?.reviews
     if (
       !pullRequest ||
-      pullRequest.baseBranch !== evidence.defaultBranch ||
+      (pullRequest.baseBranch !== evidence.defaultBranch && !coveredPullRequestNumbers.has(pullRequest.number)) ||
       pullRequest.headSha === null ||
       pullRequest.commitCount === null ||
       !commits ||
