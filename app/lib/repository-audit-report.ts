@@ -8,9 +8,17 @@ import { MANUAL_TRIGGER_EVENTS } from './workflow-trigger-label'
 interface RepositoryAuditDeployment {
   id: number
   naisDeploymentId: string
+  title: string | null
   createdAt: string
   commitSha: string | null
+  pullRequestNumber: number | null
   deployerUsername: string | null
+  goalLinks: Array<{
+    objectiveTitle: string
+    keyResultTitle: string | null
+    teamName: string
+    periodLabel: string
+  }>
   repositoryId: number | null
   deliveryId: number | null
   source: {
@@ -63,15 +71,34 @@ interface RepositoryAuditDelivery {
 }
 
 export interface RepositoryAuditReportData {
-  schemaVersion: 1
+  schemaVersion: 2
   verificationSchemaVersion: number
   assessmentModel: 'repository'
   assessmentTime: 'generation'
   assessedAt: string
-  app: { id: number; name: string; team: string; environment: string }
+  app: { id: number; name: string; team: string; environment: string; testRequirement: string }
   period: { start: string; end: string }
   deployments: RepositoryAuditDeployment[]
   deliveries: RepositoryAuditDelivery[]
+  deviations: Array<{
+    id: number
+    deploymentId: number
+    date: string
+    commitSha: string | null
+    title: string | null
+    githubOwner: string | null
+    githubRepoName: string | null
+    reason: string
+    breachType: string | null
+    intent: string | null
+    severity: string | null
+    followUpRole: string | null
+    registeredBy: string
+    registeredByName: string | null
+    resolvedAt: string | null
+    resolutionNote: string | null
+  }>
+  userDisplayNames: Record<string, string>
 }
 
 type RepositoryAuditBlocker =

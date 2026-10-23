@@ -4,19 +4,29 @@ import type { RepositoryReportOutputProps } from '../../repository-audit-report-
 export function repositoryReportFixture(): RepositoryReportOutputProps {
   const headSha = 'b'.repeat(40)
   const data: RepositoryAuditReportData = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     verificationSchemaVersion: 5,
     assessmentModel: 'repository',
     assessmentTime: 'generation',
     assessedAt: '2026-02-01T00:00:00Z',
-    app: { id: 1, name: 'test', team: 'team-fjord', environment: 'prod-gcp' },
+    app: { id: 1, name: 'test', team: 'team-fjord', environment: 'prod-gcp', testRequirement: 'unit_tests' },
     period: { start: '2026-01-01T00:00:00Z', end: '2026-01-31T23:59:59Z' },
     deployments: [1, 2].map((id) => ({
       id,
       naisDeploymentId: `nais-${id}`,
+      title: 'Rett visning',
       createdAt: `2026-01-${14 + id}T00:00:00Z`,
       commitSha: headSha,
+      pullRequestNumber: null,
       deployerUsername: 'gladfjord',
+      goalLinks: [
+        {
+          teamName: 'Team Fjord',
+          periodLabel: '2026-1',
+          objectiveTitle: 'Trygg leveranse',
+          keyResultTitle: 'Godkjent kode',
+        },
+      ],
       repositoryId: 5,
       deliveryId: 7,
       source: {
@@ -70,7 +80,49 @@ export function repositoryReportFixture(): RepositoryReportOutputProps {
           defaultBranch: 'main',
           implicitApprovalMode: 'off',
           associatedPullRequestsByCommit: {},
-          pullRequestsByNumber: {},
+          pullRequestsByNumber: {
+            42: {
+              number: 42,
+              baseBranch: 'main',
+              authorLogin: 'gladfjord',
+              mergedByLogin: 'raskelv',
+              mergeCommitSha: headSha,
+              mergedAt: '2026-01-18T00:00:00Z',
+              headBranch: 'feature/report',
+              headSha,
+              commitCount: 1,
+              commits: [
+                {
+                  sha: headSha,
+                  message: 'Rett visning',
+                  authorUsername: 'gladfjord',
+                  authorLogin: 'gladfjord',
+                  authorDate: '2026-01-16T00:00:00Z',
+                  committerDate: '2026-01-16T00:00:00Z',
+                  isMergeCommit: false,
+                  parentShas: ['a'.repeat(40)],
+                },
+              ],
+              reviews: [
+                {
+                  id: 1,
+                  username: 'raskelv',
+                  state: 'APPROVED',
+                  submittedAt: '2026-01-17T00:00:00Z',
+                  body: null,
+                  commitId: headSha,
+                },
+                {
+                  id: 2,
+                  username: 'fjellbris',
+                  state: 'DISMISSED',
+                  submittedAt: '2026-01-18T00:00:00Z',
+                  body: null,
+                  commitId: headSha,
+                },
+              ],
+            },
+          },
         },
         sources: {
           comparisons: [{ id: 10, fetchedAt: '2026-01-16T01:00:00Z' }],
@@ -78,7 +130,15 @@ export function repositoryReportFixture(): RepositoryReportOutputProps {
           pullRequests: [],
           stackComparisons: [],
         },
-        authorIdentities: [],
+        authorIdentities: [
+          {
+            githubUsername: 'gladfjord',
+            activeNavIdent: 'Z990001',
+            accountIdentityVersion: '1',
+            userIdentityVersion: '1',
+            accountDeletedAt: null,
+          },
+        ],
         manualApprovals: [
           {
             id: 20,
@@ -96,6 +156,34 @@ export function repositoryReportFixture(): RepositoryReportOutputProps {
         ],
       },
     ],
+    deviations: [
+      {
+        id: 90,
+        deploymentId: 1,
+        date: '2026-01-16T00:00:00Z',
+        commitSha: headSha,
+        title: 'Rett visning',
+        githubOwner: 'navikt',
+        githubRepoName: 'test',
+        reason: 'Direkte push uten forhåndsgodkjenning',
+        breachType: 'Manglende godkjenning',
+        intent: 'accidental',
+        severity: 'medium',
+        followUpRole: 'delivery_lead',
+        registeredBy: 'Z990003',
+        registeredByName: 'Glad Fjord',
+        resolvedAt: null,
+        resolutionNote: null,
+      },
+    ],
+    userDisplayNames: {
+      gladfjord: 'Glad Fjord',
+      raskelv: 'Rask Elv',
+      fjellbris: 'Fjell Bris',
+      Z990001: 'Glad Fjord',
+      Z990002: 'Rask Elv',
+      Z990003: 'Fjell Bris',
+    },
   }
   return {
     appName: data.app.name,

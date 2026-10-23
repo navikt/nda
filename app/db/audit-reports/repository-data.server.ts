@@ -9,8 +9,10 @@ import { getStoredRepositoryDeliveryAssessments } from '../repository-delivery-a
 interface DeploymentRow {
   id: number
   nais_deployment_id: string
+  title: string | null
   created_at: Date
   commit_sha: string | null
+  github_pr_number: number | null
   deployer_username: string | null
   repository_id: number | null
   repository_code_delivery_id: number | null
@@ -51,9 +53,10 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
       app_name: string
       team_slug: string
       environment_name: string
+      test_requirement: string
       assessed_at: Date
     }>(
-      `SELECT app_name, team_slug, environment_name, transaction_timestamp() AS assessed_at
+      `SELECT app_name, team_slug, environment_name, test_requirement, transaction_timestamp() AS assessed_at
        FROM monitored_applications WHERE id = $1`,
       [monitoredAppId],
     )
@@ -63,7 +66,7 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
       throw new Error('Repository audit reports require a production environment')
     }
     const { rows } = await client.query<DeploymentRow>(
-      `SELECT d.id, d.nais_deployment_id, d.created_at, d.commit_sha, d.deployer_username,
+      `SELECT d.id, d.nais_deployment_id, d.title, d.created_at, d.commit_sha, d.github_pr_number, d.deployer_username,
               d.repository_id, d.repository_code_delivery_id, d.trigger_url,
               r.github_repo_id, r.github_owner, r.github_repo_name, r.default_branch,
               d.detected_github_owner, d.detected_github_repo_name,
@@ -83,6 +86,90 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
        WHERE d.monitored_app_id = $1 AND d.created_at >= $2 AND d.created_at <= $3
          AND ${AUDIT_START_YEAR_FILTER}
        ORDER BY d.created_at ASC, d.id ASC`,
+      [monitoredAppId, periodStart, periodEnd],
+    )
+    const deploymentIds = rows.map((row) => row.id)
+    const goalLinksByDeployment = new Map<number, RepositoryAuditReportData['deployments'][number]['goalLinks']>()
+    if (deploymentIds.length > 0) {
+      const { rows: goalLinks } = await client.query<{
+        deployment_id: number
+        objective_title: string | null
+        key_result_title: string | null
+        team_name: string | null
+        period_label: string | null
+      }>(
+        `SELECT dgl.deployment_id,
+                COALESCE(bo.title, bo_via_kr.title) AS objective_title,
+                bkr.title AS key_result_title,
+                dt.name AS team_name,
+                COALESCE(b.period_label, b_via_kr.period_label) AS period_label
+         FROM deployment_goal_links dgl
+         LEFT JOIN board_objectives bo ON bo.id = dgl.objective_id
+         LEFT JOIN board_key_results bkr ON bkr.id = dgl.key_result_id
+         LEFT JOIN board_objectives bo_via_kr ON bo_via_kr.id = bkr.objective_id
+         LEFT JOIN boards b ON b.id = bo.board_id
+         LEFT JOIN boards b_via_kr ON b_via_kr.id = bo_via_kr.board_id
+         LEFT JOIN dev_teams dt ON dt.id = COALESCE(b.dev_team_id, b_via_kr.dev_team_id)
+         WHERE dgl.deployment_id = ANY($1)
+           AND dgl.is_active = true
+           AND (dgl.objective_id IS NOT NULL OR dgl.key_result_id IS NOT NULL)
+         ORDER BY dgl.deployment_id, dgl.created_at ASC`,
+        [deploymentIds],
+      )
+      for (const link of goalLinks) {
+        if (!link.objective_title || !link.team_name || !link.period_label) continue
+        const links = goalLinksByDeployment.get(link.deployment_id) ?? []
+        links.push({
+          objectiveTitle: link.objective_title,
+          keyResultTitle: link.key_result_title,
+          teamName: link.team_name,
+          periodLabel: link.period_label,
+        })
+        goalLinksByDeployment.set(link.deployment_id, links)
+      }
+    }
+    const { rows: deviations } = await client.query<{
+      id: number
+      deployment_id: number
+      date: Date
+      commit_sha: string | null
+      title: string | null
+      github_owner: string | null
+      github_repo_name: string | null
+      reason: string
+      breach_type: string | null
+      intent: string | null
+      severity: string | null
+      follow_up_role: string | null
+      registered_by: string
+      registered_by_name: string | null
+      resolved_at: Date | null
+      resolution_note: string | null
+    }>(
+      `SELECT dd.id,
+              dd.deployment_id,
+              dd.created_at AS date,
+              d.commit_sha,
+              d.title,
+              COALESCE(r.github_owner, d.detected_github_owner) AS github_owner,
+              COALESCE(r.github_repo_name, d.detected_github_repo_name) AS github_repo_name,
+              dd.reason,
+              dd.breach_type,
+              dd.intent,
+              dd.severity,
+              dd.follow_up_role,
+              dd.registered_by,
+              dd.registered_by_name,
+              dd.resolved_at,
+              dd.resolution_note
+       FROM deployment_deviations dd
+       JOIN deployments d ON d.id = dd.deployment_id
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+       LEFT JOIN repositories r ON r.id = d.repository_id
+       WHERE d.monitored_app_id = $1
+         AND dd.created_at >= $2 AND dd.created_at <= $3
+         AND ${AUDIT_START_YEAR_FILTER}
+       ORDER BY dd.created_at ASC, dd.id ASC`,
       [monitoredAppId, periodStart, periodEnd],
     )
     const repositories = new Map<number, Map<number, DeploymentRow>>()
@@ -169,12 +256,18 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
       workflowSources.set(row.id, source)
     }
     const report: RepositoryAuditReportData = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       verificationSchemaVersion: CURRENT_SCHEMA_VERSION,
       assessmentModel: 'repository',
       assessmentTime: 'generation',
       assessedAt: app.assessed_at.toISOString(),
-      app: { id: monitoredAppId, name: app.app_name, team: app.team_slug, environment: app.environment_name },
+      app: {
+        id: monitoredAppId,
+        name: app.app_name,
+        team: app.team_slug,
+        environment: app.environment_name,
+        testRequirement: app.test_requirement,
+      },
       period: { start: periodStart.toISOString(), end: periodEnd.toISOString() },
       deployments: rows.map((row) => {
         const source = workflowSources.get(row.id)
@@ -182,22 +275,58 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
         return {
           id: row.id,
           naisDeploymentId: row.nais_deployment_id,
+          title: row.title,
           createdAt: row.created_at.toISOString(),
           commitSha: row.commit_sha,
+          pullRequestNumber: row.github_pr_number,
           deployerUsername: row.deployer_username,
+          goalLinks: goalLinksByDeployment.get(row.id) ?? [],
           repositoryId: row.repository_id,
           deliveryId: row.repository_code_delivery_id,
           source,
         }
       }),
       deliveries: [],
+      deviations: deviations.map((deviation) => ({
+        id: deviation.id,
+        deploymentId: deviation.deployment_id,
+        date: deviation.date.toISOString(),
+        commitSha: deviation.commit_sha,
+        title: deviation.title,
+        githubOwner: deviation.github_owner,
+        githubRepoName: deviation.github_repo_name,
+        reason: deviation.reason,
+        breachType: deviation.breach_type,
+        intent: deviation.intent,
+        severity: deviation.severity,
+        followUpRole: deviation.follow_up_role,
+        registeredBy: deviation.registered_by,
+        registeredByName: deviation.registered_by_name,
+        resolvedAt: deviation.resolved_at?.toISOString() ?? null,
+        resolutionNote: deviation.resolution_note,
+      })),
+      userDisplayNames: {},
     }
+    const navIdents = new Set<string>()
+    const userDisplayNames: Record<string, string> = {}
     for (const [repositoryId, deliveries] of repositories) {
       const intervals = [...deliveries].map(([id, row]) => {
         if (!row.base_sha || !row.head_sha) throw new Error(`Missing interval for delivery ${id}`)
         return { id, base_sha: row.base_sha, head_sha: row.head_sha }
       })
-      const { assessments, lookups } = await getStoredRepositoryDeliveryAssessments(client, repositoryId, intervals)
+      const deployerUsernames = rows.flatMap((row) =>
+        row.repository_id === repositoryId && row.deployer_username ? [row.deployer_username] : [],
+      )
+      const { assessments, lookups } = await getStoredRepositoryDeliveryAssessments(
+        client,
+        repositoryId,
+        intervals,
+        deployerUsernames,
+      )
+      for (const [username, lookup] of lookups) {
+        if (lookup.display_name) userDisplayNames[username.toLowerCase()] = lookup.display_name
+        if (lookup.nav_ident) navIdents.add(lookup.nav_ident.toUpperCase())
+      }
       for (const [id, row] of deliveries) {
         const evaluated = assessments.get(id)
         if (
@@ -213,7 +342,7 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
         const authors = new Set(
           evaluated.interval.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
         )
-        report.deliveries.push({
+        const reportDelivery = {
           id,
           repositoryId,
           githubRepoId: row.github_repo_id,
@@ -247,9 +376,31 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
             documentation: approval.review_documentation,
             status: approval.status,
           })),
-        })
+        }
+        report.deliveries.push(reportDelivery)
+        for (const identity of reportDelivery.authorIdentities) {
+          if (identity.activeNavIdent) navIdents.add(identity.activeNavIdent.toUpperCase())
+        }
+        for (const approval of reportDelivery.manualApprovals) {
+          navIdents.add(approval.reviewerNavIdent.toUpperCase())
+          navIdents.add(approval.registeredByNavIdent.toUpperCase())
+          if (approval.authorNavIdent) navIdents.add(approval.authorNavIdent.toUpperCase())
+        }
       }
     }
+    for (const deviation of report.deviations) {
+      navIdents.add(deviation.registeredBy.toUpperCase())
+    }
+    if (navIdents.size > 0) {
+      const { rows: users } = await client.query<{ nav_ident: string; display_name: string }>(
+        `SELECT nav_ident, display_name
+         FROM users
+         WHERE nav_ident = ANY($1) AND deleted_at IS NULL`,
+        [[...navIdents]],
+      )
+      for (const user of users) userDisplayNames[user.nav_ident.toUpperCase()] = user.display_name
+    }
+    report.userDisplayNames = userDisplayNames
     return { reportData: report, readiness: assessRepositoryAuditReadiness(report) }
   })
 }

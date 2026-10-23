@@ -59,15 +59,23 @@ describe('audit report superseding', () => {
       generatedBy: 'Z990001',
     }
     const data: RepositoryAuditReportData = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       verificationSchemaVersion: 5,
       assessmentModel: 'repository',
       assessmentTime: 'generation',
       assessedAt: '2026-01-01T00:00:00Z',
-      app: { id: appId, name: 'test', team: 'team-fjord', environment: 'prod-gcp' },
+      app: {
+        id: appId,
+        name: 'test',
+        team: 'team-fjord',
+        environment: 'prod-gcp',
+        testRequirement: 'none',
+      },
       period: { start: params.periodStart.toISOString(), end: params.periodEnd.toISOString() },
       deployments: [],
       deliveries: [],
+      deviations: [],
+      userDisplayNames: {},
     }
     const application = await saveAuditReport({ ...params, reportData: minimalReportData })
     const repository = await saveAuditReport({ ...params, reportData: data })

@@ -32,8 +32,10 @@ function deployment(id = 1) {
   return {
     id,
     nais_deployment_id: `nais-${id}`,
+    title: 'Deployment title',
     created_at: new Date('2026-01-15T12:00:00Z'),
     commit_sha: headSha,
+    github_pr_number: null,
     deployer_username: 'glad-fjord',
     repository_id: 5,
     repository_code_delivery_id: 7,
@@ -142,7 +144,15 @@ describe('repository audit report data', () => {
     vi.clearAllMocks()
     query.mockImplementation(async (sql: string) => ({
       rows: sql.includes('FROM monitored_applications WHERE')
-        ? [{ app_name: 'test', team_slug: 'team-fjord', environment_name: 'prod-gcp', assessed_at: assessedAt }]
+        ? [
+            {
+              app_name: 'test',
+              team_slug: 'team-fjord',
+              environment_name: 'prod-gcp',
+              test_requirement: 'unit_tests',
+              assessed_at: assessedAt,
+            },
+          ]
         : sql.includes('FROM deployments d')
           ? [deployment(), deployment(2)]
           : sql.includes('FROM github_workflow_runs_raw_snapshots')
@@ -158,6 +168,7 @@ describe('repository audit report data', () => {
           {
             github_username: 'glad-fjord',
             active_nav_ident: 'Z990001',
+            display_name: 'Glad Fjord',
             account_identity_version: '10',
             user_identity_version: '20',
             account_deleted_at: null,
@@ -176,6 +187,7 @@ describe('repository audit report data', () => {
       assessmentModel: 'repository',
       assessmentTime: 'generation',
       assessedAt: assessedAt.toISOString(),
+      app: { testRequirement: 'unit_tests' },
       deliveries: [
         {
           id: 7,
@@ -205,6 +217,7 @@ describe('repository audit report data', () => {
         },
       ],
     })
+    expect(reportData.deployments[0]).toMatchObject({ title: 'Deployment title', goalLinks: [] })
     expect(JSON.parse(JSON.stringify(reportData))).toEqual(reportData)
     const delivery = reportData.deliveries[0]
     const replay = assessStoredRepositoryDeliveryApproval(
@@ -236,7 +249,15 @@ describe('repository audit report data', () => {
   it('keeps missing links without looking up a same-SHA candidate', async () => {
     query.mockImplementation(async (sql: string) => ({
       rows: sql.includes('FROM monitored_applications WHERE')
-        ? [{ app_name: 'test', team_slug: 'team-fjord', environment_name: 'prod-gcp', assessed_at: assessedAt }]
+        ? [
+            {
+              app_name: 'test',
+              team_slug: 'team-fjord',
+              environment_name: 'prod-gcp',
+              test_requirement: 'none',
+              assessed_at: assessedAt,
+            },
+          ]
         : sql.includes('FROM deployments d')
           ? [{ ...deployment(), repository_code_delivery_id: null }]
           : sql.includes('FROM github_workflow_runs_raw_snapshots')
@@ -248,6 +269,67 @@ describe('repository audit report data', () => {
     expect(result.reportData.deliveries).toEqual([])
     expect(result.readiness.deployments[0].blockers).toEqual(['missing_link'])
     expect(getIntervals).not.toHaveBeenCalled()
+  })
+
+  it('freezes deviations and deployment context in repository report data', async () => {
+    const existing = query.getMockImplementation()
+    query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('FROM deployment_goal_links dgl')) {
+        return {
+          rows: [
+            {
+              deployment_id: 1,
+              objective_title: 'Trygg leveranse',
+              key_result_title: 'Godkjent kode',
+              team_name: 'Team Fjord',
+              period_label: '2026-1',
+            },
+          ],
+        }
+      }
+      if (sql.includes('FROM deployment_deviations dd')) {
+        return {
+          rows: [
+            {
+              id: 90,
+              deployment_id: 1,
+              date: new Date('2026-01-16T12:00:00Z'),
+              commit_sha: headSha,
+              title: 'Deployment title',
+              github_owner: 'navikt',
+              github_repo_name: 'test',
+              reason: 'Direkte push uten forhåndsgodkjenning',
+              breach_type: 'Manglende godkjenning',
+              intent: 'accidental',
+              severity: 'medium',
+              follow_up_role: 'delivery_lead',
+              registered_by: 'Z990003',
+              registered_by_name: 'Fjell Bris',
+              resolved_at: new Date('2026-01-17T12:00:00Z'),
+              resolution_note: 'Fulgt opp',
+            },
+          ],
+        }
+      }
+      return existing?.(sql, params)
+    })
+    const { reportData } = await getRepositoryAuditReportData(3, periodStart, periodEnd)
+    expect(reportData.deployments[0].goalLinks).toEqual([
+      {
+        objectiveTitle: 'Trygg leveranse',
+        keyResultTitle: 'Godkjent kode',
+        teamName: 'Team Fjord',
+        periodLabel: '2026-1',
+      },
+    ])
+    expect(reportData.deviations[0]).toMatchObject({
+      id: 90,
+      deploymentId: 1,
+      reason: 'Direkte push uten forhåndsgodkjenning',
+      resolvedAt: '2026-01-17T12:00:00.000Z',
+      resolutionNote: 'Fulgt opp',
+    })
+    expect(reportData.userDisplayNames['glad-fjord']).toBe('Glad Fjord')
   })
 
   it.each(['revoked', 'identity_or_interval_changed'])(
@@ -362,7 +444,15 @@ describe('repository audit report data', () => {
   it('fails explicitly for an inconsistent repository link', async () => {
     query.mockImplementation(async (sql: string) => ({
       rows: sql.includes('FROM monitored_applications WHERE')
-        ? [{ app_name: 'test', team_slug: 'team-fjord', environment_name: 'prod-gcp', assessed_at: assessedAt }]
+        ? [
+            {
+              app_name: 'test',
+              team_slug: 'team-fjord',
+              environment_name: 'prod-gcp',
+              test_requirement: 'none',
+              assessed_at: assessedAt,
+            },
+          ]
         : sql.includes('FROM deployments d')
           ? [{ ...deployment(), delivery_repository_id: 6 }]
           : [],
