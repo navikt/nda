@@ -109,6 +109,8 @@ spec:
       value: api://prod-gcp.nom.nom-api/.default
     - name: USER_LOOKUP_PROVIDER
       value: nom
+    - name: NDA_ADMIN_GROUP_IDS
+      value: "1e97cbc6-0687-4d23-aebd-c611035279c1"
 
   envFrom:
     - secret: nais-deployment-audit
