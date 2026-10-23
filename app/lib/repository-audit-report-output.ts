@@ -9,6 +9,7 @@ import { assessRepositoryAuditReadiness, type RepositoryAuditReportData } from '
 import { approvalCommitReasonLabel, approvalStatusLabel } from './repository-code-delivery/approval-assessment-display'
 import { assessmentReasonLabel } from './repository-code-delivery/interval-assessment-display'
 import { IMPLICIT_APPROVAL_MODE_LABELS, isImplicitApprovalMode } from './verification/types'
+import { verifyFourEyesFromPrData } from './verification/verify'
 import { getWorkflowTriggerLabel } from './workflow-trigger-label'
 
 export interface RepositoryReportOutputProps {
@@ -165,6 +166,39 @@ function appendDeliverySection(sections: ReportSection[], section: ReportSection
   })
 }
 
+function eligibleGithubReviewers(delivery: RepositoryAuditReportData['deliveries'][number]): string[] {
+  const { evidence } = delivery
+  return Object.values(evidence.pullRequestsByNumber).flatMap((pullRequest) => {
+    const commits = pullRequest?.commits
+    const reviews = pullRequest?.reviews
+    if (
+      !pullRequest ||
+      pullRequest.baseBranch !== evidence.defaultBranch ||
+      pullRequest.headSha === null ||
+      pullRequest.commitCount === null ||
+      !commits ||
+      !reviews ||
+      pullRequest.commitCount !== commits.length ||
+      commits[commits.length - 1]?.sha !== pullRequest.headSha
+    ) {
+      return []
+    }
+
+    return reviews.flatMap((review) => {
+      if (review.state !== 'APPROVED') return []
+      const result = verifyFourEyesFromPrData({
+        reviewers: [review],
+        commits,
+        baseBranch: pullRequest.baseBranch,
+        mergedBy: pullRequest.mergedByLogin,
+        prCreator: pullRequest.authorLogin ?? undefined,
+        implicitApprovalMode: evidence.implicitApprovalMode,
+      })
+      return result.hasFourEyes ? [review.username.trim().toLowerCase()] : []
+    })
+  })
+}
+
 export function buildRepositoryReportSummary(props: RepositoryReportOutputProps): RepositoryReportSummary {
   const { reportData } = props
   const deviations = reportData.deviations ?? []
@@ -182,17 +216,7 @@ export function buildRepositoryReportSummary(props: RepositoryReportOutputProps)
       ].filter(Boolean),
     ),
   )
-  const githubReviewers = new Set(
-    reportData.deliveries
-      .flatMap((delivery) =>
-        Object.values(delivery.evidence.pullRequestsByNumber).flatMap((pullRequest) =>
-          (pullRequest?.reviews ?? [])
-            .filter((review) => review.state.toUpperCase() === 'APPROVED')
-            .map((review) => review.username.trim().toLowerCase()),
-        ),
-      )
-      .filter(Boolean),
-  )
+  const githubReviewers = new Set(reportData.deliveries.flatMap(eligibleGithubReviewers).filter(Boolean))
   const manualReviewers = new Set(
     reportData.deliveries
       .flatMap((delivery) =>

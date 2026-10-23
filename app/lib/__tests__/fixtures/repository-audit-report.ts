@@ -91,7 +91,18 @@ export function repositoryReportFixture(): RepositoryReportOutputProps {
               headBranch: 'feature/report',
               headSha,
               commitCount: 1,
-              commits: [],
+              commits: [
+                {
+                  sha: headSha,
+                  message: 'Rett visning',
+                  authorUsername: 'gladfjord',
+                  authorLogin: 'gladfjord',
+                  authorDate: '2026-01-16T00:00:00Z',
+                  committerDate: '2026-01-16T00:00:00Z',
+                  isMergeCommit: false,
+                  parentShas: ['a'.repeat(40)],
+                },
+              ],
               reviews: [
                 {
                   id: 1,

@@ -258,11 +258,7 @@ function EvidenceTables({ props, sections }: { props: RepositoryReportOutputProp
             ))}
           </View>
           {section.rows.map((row, rowIndex) => (
-            <View
-              key={JSON.stringify(row)}
-              style={[styles.tableRow, rowIndex % 2 === 1 ? styles.tableRowAlt : {}]}
-              wrap={false}
-            >
+            <View key={JSON.stringify(row)} style={[styles.tableRow, rowIndex % 2 === 1 ? styles.tableRowAlt : {}]}>
               {row.map((value, columnIndex) => (
                 <Text
                   key={section.headers[columnIndex]}

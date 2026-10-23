@@ -62,6 +62,86 @@ describe('repository report exports', () => {
     ])
   })
 
+  it('counts only eligible approvals after the last commit from another author', () => {
+    const props = repositoryReportFixture()
+    const pullRequest = props.reportData.deliveries[0].evidence.pullRequestsByNumber[42]
+    if (!pullRequest) throw new Error('Missing fixture pull request')
+    const existingCommit = pullRequest.commits?.[0]
+    const headSha = pullRequest.headSha
+    if (!existingCommit || !headSha) throw new Error('Missing fixture pull request commits')
+    pullRequest.commits = [
+      {
+        ...existingCommit,
+        sha: 'a'.repeat(40),
+        authorDate: '2026-01-15T00:00:00Z',
+        committerDate: '2026-01-15T00:00:00Z',
+      },
+      {
+        ...existingCommit,
+        sha: headSha,
+        authorDate: '2026-01-16T00:00:00Z',
+        committerDate: '2026-01-16T00:00:00Z',
+      },
+    ]
+    pullRequest.commitCount = 2
+    pullRequest.reviews = [
+      {
+        id: 3,
+        username: 'stale-reviewer',
+        state: 'APPROVED',
+        submittedAt: '2026-01-15T12:00:00Z',
+        body: null,
+        commitId: pullRequest.commits[0].sha,
+      },
+      {
+        id: 4,
+        username: 'gladfjord',
+        state: 'APPROVED',
+        submittedAt: '2026-01-17T00:00:00Z',
+        body: null,
+        commitId: headSha,
+      },
+      {
+        id: 5,
+        username: 'valid-reviewer',
+        state: 'APPROVED',
+        submittedAt: '2026-01-17T00:00:00Z',
+        body: null,
+        commitId: headSha,
+      },
+    ]
+
+    expect(buildRepositoryReportSummary(props).values).toContainEqual([
+      'Unike reviewers',
+      '1 GitHub-konto / 1 NAV-ident',
+    ])
+  })
+
+  it('counts approvals that qualify through configured implicit approval', () => {
+    const props = repositoryReportFixture()
+    const delivery = props.reportData.deliveries[0]
+    delivery.evidence.implicitApprovalMode = 'all'
+    const pullRequest = delivery.evidence.pullRequestsByNumber[42]
+    if (!pullRequest) throw new Error('Missing fixture pull request')
+    const latestCommit = pullRequest.commits?.[0]
+    if (!latestCommit) throw new Error('Missing fixture pull request commits')
+    pullRequest.reviews = [
+      {
+        id: 3,
+        username: 'implicit-reviewer',
+        state: 'APPROVED',
+        submittedAt: '2026-01-15T12:00:00Z',
+        body: null,
+        commitId: latestCommit.sha,
+      },
+    ]
+
+    expect(buildRepositoryReportSummary(props).values).toContainEqual([
+      'Unike reviewers',
+      '1 GitHub-konto / 1 NAV-ident',
+    ])
+  })
+
   it('counts commit authors even when they have no identity mapping', () => {
     const props = repositoryReportFixture()
     expect(buildRepositoryReportSummary(props).values).toContainEqual(['Unike bidragsytere', '1 person'])
@@ -129,14 +209,30 @@ describe('repository report exports', () => {
       naisDeploymentId: `nais-${index + 1}`,
     }))
     const longMessage = 'Lang commitbeskrivelse '.repeat(300)
+    const newlineHeavyMessage = 'Linje\n'.repeat(100)
     const longDeviation = 'Lang avviksbeskrivelse '.repeat(300)
-    props.reportData.deliveries[0].interval.commits[0].message = longMessage
+    const delivery = props.reportData.deliveries[0]
+    const firstCommit = delivery.interval.commits[0]
+    if (!firstCommit) throw new Error('Missing fixture interval commit')
+    firstCommit.message = longMessage
+    delivery.interval.commits.push({ ...firstCommit, sha: 'd'.repeat(40), message: newlineHeavyMessage })
+    delivery.interval.totalCommits = 2
+    delivery.interval.listedCommits = 2
+    delivery.interval.summary = { covered: 0, notCovered: 2, unknown: 0 }
+    delivery.assessment.commits.push({
+      sha: 'd'.repeat(40),
+      status: 'covered',
+      reason: 'manual_approval',
+    })
+    delivery.assessment.totalCommits = 2
+    delivery.assessment.listedCommits = 2
     props.reportData.deviations[0].reason = longDeviation
     const warn = vi.spyOn(console, 'warn')
     try {
       const pdf = await generateRepositoryAuditReportPdf(props)
       expect(pdf.subarray(0, 5).toString()).toBe('%PDF-')
       expect(warn.mock.calls.flat().join(' ')).not.toContain('bigger than available page height')
+      expect(warn.mock.calls.flat().join(' ')).not.toContain('Node of type VIEW')
       const workbook = new ExcelJS.Workbook()
       await workbook.xlsx.load(Uint8Array.from(await generateRepositoryAuditReportExcel(props)).buffer)
       expect(workbook.getWorksheet('Commits')?.getCell(3, 3).value).toBe(longMessage)
