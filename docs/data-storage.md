@@ -49,15 +49,17 @@ identiteter og manuell historikk leses med samme klient i en read-only
 `REPEATABLE READ`-transaksjon. Utvalget følger samme inklusive periodegrenser og
 revisjonsstartår som dagens rapport, sortert på `(created_at, id)`.
 
-Grunnlaget har formatversjon 1, verifiseringsversjon og vurderingstidspunkt fra
-databasen. Hvert deployment beholder sin eksplisitte leveransekobling og
-deploymentkilde. Hver unik kodeleveranse inkluderer stabil repository-ID,
-GitHub-ID, låst base/head, normalisert GitHub-evidens, vurderingsresultat,
-raw-snapshot-ID-er med hentetidspunkt, author-identiteter med versjoner og
-manuell godkjenningshistorikk med snapshotreferanse, reviewer, registrator og
-begge tidspunkt. Tilbakekalt og identitetsutdatert historikk beholdes, men gir
-ikke dekning. Manglende leveransekobling beholdes som en mangel; samme SHA eller
-appens nåværende repository brukes aldri til å erstatte koblingen.
+Grunnlaget har formatversjon 2, verifiseringsversjon og vurderingstidspunkt fra
+databasen. Hvert deployment beholder sin eksplisitte leveransekobling,
+deploymentkilde, tittel, endringsopphav og eventuelle testkrav. Hver unik
+kodeleveranse inkluderer stabil repository-ID, GitHub-ID, låst base/head,
+normalisert GitHub-evidens, vurderingsresultat, raw-snapshot-ID-er med
+hentetidspunkt, author-identiteter med versjoner og manuell
+godkjenningshistorikk med snapshotreferanse, reviewer, registrator og begge
+tidspunkt. Reviewer-visningsnavn og avvik for perioden fryses også i grunnlaget.
+Tilbakekalt og identitetsutdatert historikk beholdes, men gir ikke dekning.
+Manglende leveransekobling beholdes som en mangel; samme SHA eller appens
+nåværende repository brukes aldri til å erstatte koblingen.
 
 Hvert deployment lagrer også gjeldende repositorytillatelse for applikasjonen
 med koblings-ID og status. Oppslaget krever samme uforanderlige GitHub-ID og

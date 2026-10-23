@@ -1,7 +1,11 @@
 import ExcelJS from 'exceljs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { generateRepositoryAuditReportExcel } from '../repository-audit-report-excel.server'
-import { buildRepositoryReportSections } from '../repository-audit-report-output'
+import {
+  buildRepositoryReportSections,
+  buildRepositoryReportSummary,
+  REPOSITORY_REPORT_SECTION_INTRODUCTIONS,
+} from '../repository-audit-report-output'
 import { generateRepositoryAuditReportPdf } from '../repository-audit-report-pdf'
 import { repositoryReportFixture } from './fixtures/repository-audit-report'
 
@@ -12,28 +16,134 @@ describe('repository report exports', () => {
     expect(sections.find((section) => section.title === 'Deployments')?.rows).toHaveLength(2)
     expect(sections.find((section) => section.title === 'Commits')?.rows).toHaveLength(1)
     const history = sections.find((section) => section.title === 'Manuell historikk')
-    expect(history?.rows[0]).toContain('2026-01-20T00:00:00Z\n2026-01-21T00:00:00Z')
+    expect(history?.rows[0]).toContain('20.01.2026, 01:00\n21.01.2026, 01:00')
     expect(JSON.stringify(sections)).toContain('inkludert etterkontroll')
     expect(JSON.stringify(sections)).toContain(props.reportData.deliveries[0].baseSha)
     expect(JSON.stringify(sections)).toContain('50')
+    expect(sections.find((section) => section.title === 'Deployments')?.rows[0][0]).toContain('15.01.2026')
+    expect(sections.find((section) => section.title === 'Deployments')?.rows[0][0]).toContain('Glad Fjord')
+    expect(sections.find((section) => section.title === 'Deployments')?.rows[0][3]).toContain('Triggered via push')
+    expect(sections.find((section) => section.title === 'Deployments')?.rows[0][4]).toContain('Aktiv')
+    expect(JSON.stringify(sections.find((section) => section.title === 'Kodeleveranser')?.rows)).toContain(
+      'Hele intervallet er dekket',
+    )
+    expect(JSON.stringify(sections.find((section) => section.title === 'Commits')?.rows)).toContain(
+      'Dekket av manuell godkjenning',
+    )
+    expect(JSON.stringify(sections.find((section) => section.title === 'PR-evidens')?.rows)).toContain(
+      'Review trukket tilbake',
+    )
+    expect(sections.find((section) => section.title === 'PR-evidens')?.rows[0][2]).toBe('Glad Fjord / Rask Elv')
+    expect(sections.find((section) => section.title === 'Kilder')?.rows[0][1]).toBe('Sammenligning')
+    expect(JSON.stringify(sections.find((section) => section.title === 'Manuell historikk')?.rows)).toContain('Gyldig')
+    expect(sections.find((section) => section.title === 'Identiteter')?.rows[0][4]).toBe('Nei')
+    expect(buildRepositoryReportSummary(props).values).toContainEqual([
+      'Unike reviewers',
+      '1 GitHub-konto / 1 NAV-ident',
+    ])
+    expect(sections.find((section) => section.title === 'Avvik')?.rows[0][2]).toContain(
+      'Direkte push uten forhåndsgodkjenning',
+    )
+    expect(buildRepositoryReportSummary(props).values).toContainEqual(['Registrerte avvik', '1 (1 åpne)'])
+    expect(sections.find((section) => section.title === 'Deployments')?.rows[0][1]).toContain('Endringsopphav')
+    expect(sections.find((section) => section.title === 'Deployments')?.cellLinks?.[0]?.[0]).toContain('/deployments/1')
+    expect(sections.find((section) => section.title === 'Sammendrag')?.rows).toContainEqual([
+      'Repository',
+      'navikt/test',
+    ])
+  })
+
+  it('excludes revoked manual approvals and dismissed reviews from reviewer counts', () => {
+    const props = repositoryReportFixture()
+    props.reportData.deliveries[0].manualApprovals[0].status = 'revoked'
+    expect(buildRepositoryReportSummary(props).values).toContainEqual([
+      'Unike reviewers',
+      '1 GitHub-konto / 0 NAV-identer',
+    ])
+  })
+
+  it('counts commit authors even when they have no identity mapping', () => {
+    const props = repositoryReportFixture()
+    expect(buildRepositoryReportSummary(props).values).toContainEqual(['Unike bidragsytere', '1 person'])
+
+    props.reportData.deliveries[0].interval.commits[0].authorLogin = null
+    props.reportData.deliveries[0].interval.commits[0].authorUsername = 'unmapped-user'
+    props.reportData.deliveries[0].authorIdentities = []
+    expect(buildRepositoryReportSummary(props).values).toContainEqual(['Unike bidragsytere', '1 person'])
   })
 
   it('produces a readable workbook with frozen evidence and no legacy deployment-method counts', async () => {
     const workbook = new ExcelJS.Workbook()
     const bytes = await generateRepositoryAuditReportExcel(repositoryReportFixture())
     await workbook.xlsx.load(Uint8Array.from(bytes).buffer)
-    expect(workbook.getWorksheet('Deployments')?.rowCount).toBe(3)
-    expect(workbook.getWorksheet('Commits')?.rowCount).toBe(2)
-    expect(workbook.getWorksheet('Manuell historikk')?.getRow(2).values).toContain(
-      '2026-01-20T00:00:00Z\n2026-01-21T00:00:00Z',
+    expect(workbook.getWorksheet('Deployments')?.rowCount).toBe(4)
+    expect(workbook.getWorksheet('Deployments')?.getRow(1).getCell(1).value).toContain('listet separat')
+    expect(workbook.getWorksheet('Deployments')?.getRow(2).values).toContain('Deployment / tidspunkt')
+    expect(workbook.getWorksheet('Commits')?.rowCount).toBe(3)
+    expect(workbook.getWorksheet('Manuell historikk')?.getRow(3).values).toContain(
+      '20.01.2026, 01:00\n21.01.2026, 01:00',
+    )
+    expect(JSON.stringify(workbook.getWorksheet('Sammendrag')?.getSheetValues())).toContain(
+      'Rapporten gjelder applikasjonens deployments',
     )
     expect(JSON.stringify(workbook.getWorksheet('Sammendrag')?.getSheetValues())).not.toContain('Via Pull Request')
+    expect(JSON.stringify(workbook.getWorksheet('Sammendrag')?.getSheetValues())).toContain('Unike reviewers')
+    expect(JSON.stringify(workbook.getWorksheet('Sammendrag')?.getSheetValues())).toContain('navikt/test')
+    expect(workbook.getWorksheet('Avvik')?.getCell(3, 3).value).toContain('Direkte push uten forhåndsgodkjenning')
+    expect(workbook.getWorksheet('Deployments')?.getCell(3, 1).value).toMatchObject({
+      text: expect.stringContaining('1 / nais-1'),
+      hyperlink: expect.stringContaining('/deployments/1'),
+    })
+    expect(workbook.getWorksheet('Commits')?.getCell(3, 2).value).toMatchObject({
+      hyperlink: expect.stringContaining(`/commit/${'b'.repeat(40)}`),
+    })
+    expect(workbook.getWorksheet('PR-evidens')?.getCell(3, 2).value).toMatchObject({
+      text: expect.stringContaining('#42'),
+      hyperlink: expect.stringContaining('/pull/42'),
+    })
+    for (const [sheetName, introduction] of Object.entries(REPOSITORY_REPORT_SECTION_INTRODUCTIONS)) {
+      expect(workbook.getWorksheet(sheetName)?.getRow(1).getCell(1).value).toBe(introduction)
+    }
   })
 
-  it('renders a PDF without fetching current evidence or remote fonts', async () => {
+  it('does not create spreadsheet hyperlinks for non-HTTP deployment sources', async () => {
+    const props = repositoryReportFixture()
+    props.reportData.deployments[0].source.triggerUrl = 'javascript:alert(1)'
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Uint8Array.from(await generateRepositoryAuditReportExcel(props)).buffer)
+    expect(typeof workbook.getWorksheet('Deployments')?.getCell(3, 4).value).toBe('string')
+  })
+
+  it('renders a PDF with stored report data', async () => {
     const pdf = await generateRepositoryAuditReportPdf(repositoryReportFixture())
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-')
     expect(pdf.length).toBeGreaterThan(1000)
+  })
+
+  it('renders multi-page deployment and long commit evidence without overflow warnings', async () => {
+    const props = repositoryReportFixture()
+    const deployment = props.reportData.deployments[0]
+    props.reportData.deployments = Array.from({ length: 40 }, (_, index) => ({
+      ...deployment,
+      id: index + 1,
+      naisDeploymentId: `nais-${index + 1}`,
+    }))
+    const longMessage = 'Lang commitbeskrivelse '.repeat(300)
+    const longDeviation = 'Lang avviksbeskrivelse '.repeat(300)
+    props.reportData.deliveries[0].interval.commits[0].message = longMessage
+    props.reportData.deviations[0].reason = longDeviation
+    const warn = vi.spyOn(console, 'warn')
+    try {
+      const pdf = await generateRepositoryAuditReportPdf(props)
+      expect(pdf.subarray(0, 5).toString()).toBe('%PDF-')
+      expect(warn.mock.calls.flat().join(' ')).not.toContain('bigger than available page height')
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(Uint8Array.from(await generateRepositoryAuditReportExcel(props)).buffer)
+      expect(workbook.getWorksheet('Commits')?.getCell(3, 3).value).toBe(longMessage)
+      expect(workbook.getWorksheet('Avvik')?.getCell(3, 3).value).toContain(longDeviation)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('supports an explicitly empty period', async () => {
@@ -42,6 +152,7 @@ describe('repository report exports', () => {
     props.reportData.deliveries = []
     expect(JSON.stringify(buildRepositoryReportSections(props))).toContain('Ingen deployments registrert')
     expect(await generateRepositoryAuditReportExcel(props)).toBeInstanceOf(Buffer)
+    expect(await generateRepositoryAuditReportPdf(props)).toBeInstanceOf(Buffer)
   })
 
   it('rejects exports if any deployment no longer satisfies readiness', async () => {

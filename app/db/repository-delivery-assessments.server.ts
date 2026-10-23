@@ -22,6 +22,17 @@ export async function getStoredRepositoryDeliveryAssessments(
       ...intervals.flatMap(({ assessment }) =>
         assessment.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
       ),
+      ...intervals.flatMap(({ evidence }) =>
+        Object.values(evidence?.pullRequestsByNumber ?? {}).flatMap((pullRequest) =>
+          pullRequest
+            ? [
+                pullRequest.authorLogin,
+                pullRequest.mergedByLogin,
+                ...(pullRequest.reviews ?? []).map((review) => review.username),
+              ].filter((username): username is string => typeof username === 'string' && username.length > 0)
+            : [],
+        ),
+      ),
     ]),
   ]
   const lookups = await getGithubUserLookups(usernames, client)

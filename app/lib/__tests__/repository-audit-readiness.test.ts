@@ -3,20 +3,23 @@ import { assessRepositoryAuditReadiness, type RepositoryAuditReportData } from '
 
 function report(): RepositoryAuditReportData {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     verificationSchemaVersion: 5,
     assessmentModel: 'repository',
     assessmentTime: 'generation',
     assessedAt: '2026-02-01T00:00:00Z',
-    app: { id: 1, name: 'test', team: 'team-fjord', environment: 'prod-gcp' },
+    app: { id: 1, name: 'test', team: 'team-fjord', environment: 'prod-gcp', testRequirement: 'none' },
     period: { start: '2026-01-01T00:00:00Z', end: '2026-01-31T23:59:59Z' },
     deployments: [
       {
         id: 1,
         naisDeploymentId: 'nais-1',
+        title: 'Test deployment',
         createdAt: '2026-01-15T00:00:00Z',
         commitSha: 'b'.repeat(40),
+        pullRequestNumber: null,
         deployerUsername: null,
+        goalLinks: [],
         repositoryId: 5,
         deliveryId: 7,
         source: {
@@ -61,6 +64,8 @@ function report(): RepositoryAuditReportData {
         manualApprovals: [],
       },
     ],
+    deviations: [],
+    userDisplayNames: {},
   }
 }
 

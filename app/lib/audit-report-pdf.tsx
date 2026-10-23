@@ -1,5 +1,4 @@
-import { join } from 'node:path'
-import { Document, Font, Link, Page, renderToBuffer, Text, View } from '@react-pdf/renderer'
+import { Document, Link, Page, renderToBuffer, Text, View } from '@react-pdf/renderer'
 import type {
   AdminResetEntry,
   AuditReportData,
@@ -23,35 +22,12 @@ import {
   type DeviationSeverity,
 } from '~/lib/deviation-constants'
 import { formatPercentages } from '~/lib/format-percentages'
+import { registerAuditReportFonts } from './audit-report-pdf/fonts'
 import { styles } from './audit-report-pdf/styles'
 
-const fontBasePath =
-  typeof window === 'undefined' && process.env.NODE_ENV === 'production' ? join(process.cwd(), 'fonts') : null
+registerAuditReportFonts()
 
-Font.register({
-  family: 'Source Sans Pro',
-  fonts: [
-    {
-      src: fontBasePath
-        ? join(fontBasePath, 'source-sans-3-regular.ttf')
-        : 'https://cdn.jsdelivr.net/fontsource/fonts/source-sans-pro@latest/latin-400-normal.ttf',
-      fontWeight: 400,
-    },
-    {
-      src: fontBasePath
-        ? join(fontBasePath, 'source-sans-3-italic.ttf')
-        : 'https://cdn.jsdelivr.net/fontsource/fonts/source-sans-pro@latest/latin-400-italic.ttf',
-      fontWeight: 400,
-      fontStyle: 'italic',
-    },
-    {
-      src: fontBasePath
-        ? join(fontBasePath, 'source-sans-3-semibold.ttf')
-        : 'https://cdn.jsdelivr.net/fontsource/fonts/source-sans-pro@latest/latin-600-normal.ttf',
-      fontWeight: 600,
-    },
-  ],
-})
+const pageStyle = process.env.NODE_ENV === 'test' ? { ...styles.page, fontFamily: 'Helvetica' } : styles.page
 
 interface AuditReportPdfProps {
   appName: string
@@ -148,7 +124,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
   return (
     <Document>
       {/* Page 1: Summary */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" style={pageStyle}>
         <View style={styles.header}>
           <Text style={styles.title}>RAPPORT OM ETTERLEVELSE</Text>
           <Text style={styles.subtitle}>Leveranser</Text>
@@ -264,7 +240,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
       </Page>
 
       {/* Godkjenningsmetoder page */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" style={pageStyle}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Godkjenningsmetoder (fire øyne-prinsipp)</Text>
           <View style={styles.methodologyBox}>
@@ -331,7 +307,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
       </Page>
 
       {/* Security methodology page */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" style={pageStyle}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Sikkerhet og dataintegritet</Text>
 
@@ -403,7 +379,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
       </Page>
 
       {/* Final page: Verification */}
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" style={pageStyle}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Verifisering</Text>
           <View style={styles.methodologyBox}>
@@ -439,7 +415,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
         }
 
         return (
-          <Page key={monthKey} size="A4" style={styles.page}>
+          <Page key={monthKey} size="A4" style={pageStyle}>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>
                 Deployments - {formatMonthName(monthKey)} ({monthDeployments.length} stk)
@@ -573,7 +549,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
 
       {/* Appendix: Manual approvals (if any) */}
       {reportData.manual_approvals.length > 0 && (
-        <Page size="A4" style={styles.page}>
+        <Page size="A4" style={pageStyle}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Godkjenninger i NDA ({reportData.manual_approvals.length})</Text>
             <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>{MANUAL_APPROVALS_INTRO}</Text>
@@ -636,7 +612,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
       )}
 
       {reportData.deviations && reportData.deviations.length > 0 && (
-        <Page size="A4" style={styles.page}>
+        <Page size="A4" style={pageStyle}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Avvik ({reportData.deviations.length})</Text>
             <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>{DEVIATIONS_INTRO}</Text>
@@ -701,7 +677,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
         </Page>
       )}
       {reportData.admin_resets && reportData.admin_resets.length > 0 && (
-        <Page size="A4" style={styles.page}>
+        <Page size="A4" style={pageStyle}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>
               Tilbakestillinger av verifisering ({reportData.admin_resets.length})
@@ -726,7 +702,7 @@ export function AuditReportPdfDocument(props: AuditReportPdfProps) {
         </Page>
       )}
       {reportData.unverified_commit_deployments && reportData.unverified_commit_deployments.length > 0 && (
-        <Page size="A4" style={styles.page}>
+        <Page size="A4" style={pageStyle}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>
               Ikke-godkjente commits ({reportData.unverified_commit_deployments.length} deployments)
