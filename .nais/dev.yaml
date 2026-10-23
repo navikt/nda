@@ -45,6 +45,7 @@ spec:
       claims:
         groups:
           - id: 1e97cbc6-0687-4d23-aebd-c611035279c1  # pensjon-revisjon (admin)
+          - id: 07fce15d-6861-49fa-9378-d1f90d294843  # nais-team-proaktiv (admin)
         extra:
           - "NAVident"
       replyURLs:
@@ -110,7 +111,7 @@ spec:
     - name: USER_LOOKUP_PROVIDER
       value: nom
     - name: NDA_ADMIN_GROUP_IDS
-      value: "1e97cbc6-0687-4d23-aebd-c611035279c1"
+      value: "1e97cbc6-0687-4d23-aebd-c611035279c1, 07fce15d-6861-49fa-9378-d1f90d294843"
 
   envFrom:
     - secret: nais-deployment-audit
