@@ -17,14 +17,11 @@ registerAuditReportFonts()
 
 const pageStyle = process.env.NODE_ENV === 'test' ? { ...styles.page, fontFamily: 'Helvetica' } : styles.page
 
-function RepositoryReportHeader({ subtitle, fixed = false }: { subtitle: string; fixed?: boolean }) {
+function RepositoryReportHeader({ subtitle }: { subtitle: string }) {
   return (
-    <View
-      style={fixed ? [styles.header, { position: 'absolute', top: 40, left: 40, right: 40 }] : styles.header}
-      fixed={fixed}
-    >
+    <View style={styles.header}>
       <Text style={styles.title}>RAPPORT OM ETTERLEVELSE</Text>
-      <Text style={styles.subtitle}>Leveranser · Repositorybasert vurdering · {subtitle}</Text>
+      <Text style={styles.subtitle}>{subtitle}</Text>
     </View>
   )
 }
@@ -62,7 +59,7 @@ function CoverPage({
 
   return (
     <Page size="A4" style={pageStyle}>
-      <RepositoryReportHeader subtitle="Sammendrag" />
+      <RepositoryReportHeader subtitle="Leveranser" />
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Dokumentinformasjon</Text>
         <View style={styles.infoGrid}>
@@ -100,6 +97,15 @@ function CoverPage({
           dokumenterer ikke at godkjenningen forelå før deployment.
         </Text>
       </View>
+      <View style={styles.methodologyBox}>
+        <Text style={styles.methodologyTitle}>Vurderingsgrunnlag</Text>
+        {summary.context.map(([label, value]) => (
+          <View key={label} style={{ marginBottom: 6 }}>
+            <Text style={styles.infoLabel}>{label}</Text>
+            <Text style={styles.methodologyText}>{value}</Text>
+          </View>
+        ))}
+      </View>
       {reportData.deployments.length === 0 && (
         <View style={styles.noticeBox}>
           <Text style={styles.noticeTitle}>Ingen deployments i perioden</Text>
@@ -120,57 +126,50 @@ function MethodologyPage({ props }: { props: RepositoryReportOutputProps }) {
   const testRequirement = reportData.app.testRequirement ?? 'none'
   return (
     <Page size="A4" style={pageStyle}>
-      <RepositoryReportHeader subtitle="Vurderingsgrunnlag" />
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Slik vurderes leveransen</Text>
+        <Text style={styles.sectionTitle}>Godkjenningsmetoder (fire øyne-prinsipp)</Text>
         <View style={styles.methodologyBox}>
-          <Text style={styles.methodologyTitle}>A. Avgrensning av kodeleveransen</Text>
+          <Text style={styles.methodologyTitle}>A. Pull request-godkjenning</Text>
           <Text style={styles.methodologyText}>
-            En leveranse er avgrenset av lagret base- og head-SHA for repositoryet. Base er eksklusiv og head er
-            inklusiv. Hver unik kodeleveranse vurderes én gang; deployments viser hvilke utrullinger som bruker den.
+            • Pull request må være godkjent av minst én annen person enn siste relevante commit-forfatter.
+          </Text>
+          <Text style={styles.methodologyText}>
+            • Godkjenningen må gjelde siste relevante commit. Godkjenninger før senere commits teller ikke.
+          </Text>
+          <Text style={styles.methodologyText}>
+            • Godkjente stacked pull requests kan dekke commits når stacken når default branch. Konfigurert implisitt
+            godkjenning vises i kodeleveransens evidens.
           </Text>
         </View>
         <View style={styles.methodologyBox}>
-          <Text style={styles.methodologyTitle}>B. Kodedekning</Text>
+          <Text style={styles.methodologyTitle}>B. Manuell godkjenning (etterkontroll)</Text>
           <Text style={styles.methodologyText}>
-            Commits i intervallet må ha dokumentert dekning gjennom godkjent pull request eller gyldig manuell
-            godkjenning. Ufullstendig GitHub-historikk, ukjent identitet eller manglende godkjenning gir ikke full
-            dekning.
+            • En manuell kontroll må dekke kodeintervallet og være knyttet til godkjennerens registrerte identitet.
           </Text>
-          <Text style={styles.methodologyText}>For pull request-godkjenning gjelder fireøyne-prinsippet:</Text>
-          <Text style={styles.methodologyText}>• PR-en må være godkjent av minst én annen person.</Text>
-          <Text style={styles.methodologyText}>• Godkjenningen må være gitt etter siste relevante commit.</Text>
-          <Text style={styles.methodologyText}>• Siste commit-forfatter kan ikke være godkjenneren.</Text>
           <Text style={styles.methodologyText}>
-            Repositoryets innstilling for implisitt godkjenning kan godkjenne PR-er som oppfyller konfigurert regelverk;
-            innstillingen vises i kodeleveransens evidens.
+            • Kontrolltidspunkt, registreringstidspunkt og dokumentasjon vises. Tilbakekalt eller endret historikk
+            teller ikke som gyldig dekning.
           </Text>
         </View>
         <View style={styles.methodologyBox}>
-          <Text style={styles.methodologyTitle}>C. Deploymentkilde og repositorytillatelse</Text>
+          <Text style={styles.methodologyTitle}>C. Repositorybasert kodeleveranse</Text>
           <Text style={styles.methodologyText}>
-            Rapporten kontrollerer applikasjonens repositorykobling og lagret workflow-run-kilde. Workflowens branch,
-            trigger og snapshot må samsvare med deploymentets repository, run og commit. Ukjent eller avvikende
-            kildegrunnlag blokkerer godkjenning.
+            En kodeleveranse er avgrenset av lagret base- og head-SHA. Base er eksklusiv og head er inklusiv. Hver
+            kodeleveranse vurderes én gang, selv om flere deployments bruker den. Commits må ha full dekning fra
+            godkjent pull request eller gyldig manuell godkjenning.
           </Text>
         </View>
         <View style={styles.methodologyBox}>
-          <Text style={styles.methodologyTitle}>D. Manuell etterkontroll</Text>
+          <Text style={styles.methodologyTitle}>D. Deploymentkilde og repositorytillatelse</Text>
           <Text style={styles.methodologyText}>
-            Manuelle godkjenninger viser både tidspunktet kontrollen ble utført og tidspunktet den ble registrert.
-            Tilbakekalt eller identitetsutdatert historikk vises som sporbarhet, men teller ikke som gyldig dekning.
-          </Text>
-        </View>
-        <View style={styles.methodologyBox}>
-          <Text style={styles.methodologyTitle}>E. Baseline</Text>
-          <Text style={styles.methodologyText}>
-            Et tomt intervall der base og head er like dokumenterer ikke godkjenning av tidligere kode. Slike tilfeller
-            krever avklart baseline og blokkerer rapportgenerering inntil grunnlaget er avklart.
+            Workflowens repository, branch, trigger, run og snapshot må samsvare med deploymentet. Repositoryet må være
+            tillatt for applikasjonen, og deploymentet må komme fra default branch. Ukjent eller avvikende kildegrunnlag
+            blokkerer rapportgenerering.
           </Text>
         </View>
         {testRequirement !== 'none' && (
           <View style={styles.methodologyBox}>
-            <Text style={styles.methodologyTitle}>F. Testkrav før leveranse</Text>
+            <Text style={styles.methodologyTitle}>E. Testkrav før leveranse</Text>
             <Text style={styles.methodologyText}>
               {testRequirement === 'unit_tests'
                 ? 'Applikasjonen er konfigurert med krav om at enhetstester må være vellykket før en leveranse kan gjennomføres.'
@@ -180,10 +179,13 @@ function MethodologyPage({ props }: { props: RepositoryReportOutputProps }) {
             </Text>
           </View>
         )}
-        <Text style={styles.methodologyText}>
-          Rapportens modellversjoner: format {reportData.schemaVersion}, verifisering{' '}
-          {reportData.verificationSchemaVersion}.
-        </Text>
+        <View style={styles.methodologyBox}>
+          <Text style={styles.methodologyTitle}>F. Baseline</Text>
+          <Text style={styles.methodologyText}>
+            Et tomt kodeintervall dokumenterer ikke godkjenning av tidligere kode. Baseline eller kodeintervaller uten
+            endringer må avklares separat og kan ikke brukes som godkjent kodeleveranse i denne rapporten.
+          </Text>
+        </View>
       </View>
       <RepositoryReportFooter props={props} />
       <PageNumber />
@@ -194,7 +196,6 @@ function MethodologyPage({ props }: { props: RepositoryReportOutputProps }) {
 function VerificationPage({ props }: { props: RepositoryReportOutputProps }) {
   return (
     <Page size="A4" style={pageStyle}>
-      <RepositoryReportHeader subtitle="Sikkerhet og dataintegritet" />
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Sikkerhet og dataintegritet</Text>
         {[
@@ -220,16 +221,266 @@ function VerificationPage({ props }: { props: RepositoryReportOutputProps }) {
             <Text style={styles.methodologyText}>{text}</Text>
           </View>
         ))}
+      </View>
+      <RepositoryReportFooter props={props} />
+      <PageNumber />
+    </Page>
+  )
+}
+
+function DataSourcesPage({ props }: { props: RepositoryReportOutputProps }) {
+  return (
+    <Page size="A4" style={pageStyle}>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Verifisering</Text>
         <View style={styles.methodologyBox}>
+          <Text style={styles.methodologyText}>
+            Dette dokumentet er generert automatisk av Deployment Audit System. Rapporten viser lagret evidens på
+            genereringstidspunktet, og senere endringer i kildedata påvirker ikke dokumentet.
+          </Text>
           <Text style={styles.methodologyText}>Datagrunnlag hentet fra:</Text>
           <Text style={styles.methodologyText}>• Nais Console API (deployments)</Text>
           <Text style={styles.methodologyText}>
-            • Lagrede GitHub-snapshots (commits, pull requests, reviews og workflow runs)
+            • Lagrede GitHub-snapshots (repositories, commits, pull requests, reviews, workflow runs og
+            stack-sammenligninger)
           </Text>
           <Text style={styles.methodologyText}>
-            • Intern database (repositorykoblinger, identiteter og manuelle godkjenninger)
+            • Intern database (repositorykoblinger, identiteter, manuelle godkjenninger og avvik)
+          </Text>
+          <Text style={[styles.methodologyText, { marginTop: 8 }]}>
+            Rapportens modellversjoner: format {props.reportData.schemaVersion}, verifisering{' '}
+            {props.reportData.verificationSchemaVersion}. Data kan verifiseres mot originalkildene ved behov.
           </Text>
         </View>
+      </View>
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>Dokument-ID: {props.reportId}</Text>
+        <Text style={styles.hashText}>SHA256: {props.contentHash}</Text>
+      </View>
+      <PageNumber />
+    </Page>
+  )
+}
+
+function repositoryMonthKey(date: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Oslo',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date(date))
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000'
+  const month = parts.find((part) => part.type === 'month')?.value ?? '00'
+  return `${year}-${month}`
+}
+
+function repositoryMonthName(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('nb-NO', {
+    timeZone: 'UTC',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function DeploymentPages({ props, sections }: { props: RepositoryReportOutputProps; sections: ReportSection[] }) {
+  const section = sections.find((item) => item.title === 'Deployments')
+  if (!section) return null
+  const deployments = props.reportData.deployments.flatMap((deployment, index) => {
+    const row = section.rows[index]
+    return row ? [{ deployment, row, index }] : []
+  })
+  const deploymentsByMonth = new Map<string, typeof deployments>()
+  for (const item of deployments) {
+    const monthKey = repositoryMonthKey(item.deployment.createdAt)
+    const monthDeployments = deploymentsByMonth.get(monthKey) ?? []
+    monthDeployments.push(item)
+    deploymentsByMonth.set(monthKey, monthDeployments)
+  }
+  let runningTotal = 0
+
+  return Array.from(deploymentsByMonth.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([monthKey, monthDeployments]) => {
+      const monthOffset = runningTotal
+      runningTotal += monthDeployments.length
+      return (
+        <Page key={monthKey} size="A4" style={[pageStyle, { paddingBottom: 100 }]}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Deployments - {repositoryMonthName(monthKey)} ({monthDeployments.length} stk)
+            </Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeader} fixed>
+                <Text style={[styles.tableHeaderCell, styles.r1col1]}>#</Text>
+                <Text style={[styles.tableHeaderCell, styles.r1col2]}>Dato</Text>
+                <Text style={[styles.tableHeaderCell, styles.r1col3]}>Tittel</Text>
+              </View>
+              <View
+                style={[
+                  styles.tableHeader,
+                  { borderTopLeftRadius: 0, borderTopRightRadius: 0, backgroundColor: '#F0EDEB' },
+                ]}
+                fixed
+              >
+                <Text style={[styles.tableHeaderCell, styles.r2col1]} />
+                <Text style={[styles.tableHeaderCell, styles.r2col2]}>Commit</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col3]}>Leveranse</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col4]}>Branch / PR</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col5]}>Trigger</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col6]}>Deployer</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col7]}>Repo. tillatelse</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col8]}>Nais ID / workflow</Text>
+              </View>
+              {monthDeployments.map(({ deployment, row, index }, monthIndex) => {
+                const deploymentDate = formatRepositoryReportDate(deployment.createdAt)
+                const [deploymentTitle, ...changeOriginLines] = row[1].split('\n')
+                const changeOrigin = changeOriginLines.join('\n')
+                const [deliveryId, commitSha] = row[2].split('\n')
+                const [branch, trigger] = row[3].split('\n')
+                const [authorization, workflowRun, snapshotDate] = row[4].split('\n')
+                const deploymentUrl = section.cellLinks?.[index]?.[0]
+                const commitUrl = section.cellLinks?.[index]?.[2]
+                const triggerUrl = section.cellLinks?.[index]?.[3]
+                const delivery = props.reportData.deliveries.find((item) => item.id === deployment.deliveryId)
+                const pullRequestUrl =
+                  deployment.pullRequestNumber && delivery
+                    ? `https://github.com/${delivery.githubOwner}/${delivery.githubRepoName}/pull/${deployment.pullRequestNumber}`
+                    : null
+                return (
+                  <View
+                    key={deployment.id}
+                    style={[styles.deploymentCard, monthIndex % 2 === 1 ? styles.deploymentCardAlt : {}]}
+                  >
+                    <View style={styles.deploymentRow1}>
+                      <Text style={[styles.tableCell, styles.r1col1]}>
+                        {deploymentUrl && isHttpUrl(deploymentUrl) ? (
+                          <Link src={deploymentUrl} style={styles.link}>
+                            {String(monthOffset + monthIndex + 1)}
+                          </Link>
+                        ) : (
+                          String(monthOffset + monthIndex + 1)
+                        )}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.r1col2]}>{deploymentDate}</Text>
+                      <Text style={[styles.tableCell, styles.r1col3, { fontWeight: 600 }]}>
+                        {deploymentTitle || 'Ukjent'}
+                        {'\n'}
+                        <Text style={{ fontSize: 6, color: '#888888', fontWeight: 400 }}>
+                          Deployment-ID {deployment.id}
+                        </Text>
+                      </Text>
+                    </View>
+                    <View style={styles.deploymentRow2}>
+                      <Text style={styles.r2col1} />
+                      <Text style={[styles.tableCell, styles.r2col2]}>
+                        {commitSha && commitUrl && isHttpUrl(commitUrl) ? (
+                          <Link src={commitUrl} style={styles.link}>
+                            {commitSha.slice(0, 7)}
+                          </Link>
+                        ) : (
+                          'Ukjent'
+                        )}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.r2col3]}>Leveranse {deliveryId}</Text>
+                      <Text style={[styles.tableCell, styles.r2col4]}>
+                        {branch}
+                        {deployment.pullRequestNumber && (
+                          <>
+                            {'\n'}
+                            {pullRequestUrl ? (
+                              <Link src={pullRequestUrl} style={styles.link}>
+                                PR #{deployment.pullRequestNumber}
+                              </Link>
+                            ) : (
+                              `PR #${deployment.pullRequestNumber}`
+                            )}
+                          </>
+                        )}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.r2col5]}>
+                        {triggerUrl && isHttpUrl(triggerUrl) ? (
+                          <Link src={triggerUrl} style={styles.link}>
+                            {trigger}
+                          </Link>
+                        ) : (
+                          trigger
+                        )}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.r2col6]}>
+                        {row[0].split('\n')[2]?.replace('Deployer: ', '') ?? 'Ukjent'}
+                      </Text>
+                      <Text style={[styles.tableCell, styles.r2col7]}>{authorization}</Text>
+                      <Text style={[styles.tableCell, styles.r2col8, { fontSize: 6, color: '#888888' }]}>
+                        {deployment.naisDeploymentId}
+                        {'\n'}
+                        {workflowRun}
+                        {'\n'}
+                        Hentet {snapshotDate}
+                      </Text>
+                    </View>
+                    {changeOrigin && (
+                      <View style={styles.deploymentRow3}>
+                        <Text style={styles.r2col1} />
+                        <Text style={[styles.tableCell, { width: '95%', fontStyle: 'italic', color: '#595959' }]}>
+                          {changeOrigin}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )
+              })}
+            </View>
+          </View>
+          <RepositoryReportFooter props={props} />
+          <PageNumber />
+        </Page>
+      )
+    })
+}
+
+function EvidenceCards({
+  props,
+  section,
+  title,
+  introduction,
+}: {
+  props: RepositoryReportOutputProps
+  section: ReportSection | undefined
+  title: string
+  introduction: string
+}) {
+  if (!section || section.rows.length === 0) return null
+  return (
+    <Page size="A4" style={[pageStyle, { paddingBottom: 100 }]}>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>
+          {title} ({section.rows.length})
+        </Text>
+        <Text style={{ fontSize: 9, color: '#595959', marginBottom: 10 }}>{introduction}</Text>
+        {section.rows.map((row, rowIndex) => (
+          <View key={JSON.stringify(row)} style={styles.manualBox}>
+            {row.map((value, columnIndex) => {
+              const url = section.cellLinks?.[rowIndex]?.[columnIndex]
+              const displayValue = formatPdfCell(value, section.headers[columnIndex])
+              return (
+                <View key={section.headers[columnIndex]}>
+                  <Text style={columnIndex === 0 ? styles.manualTitle : styles.manualDetail}>
+                    {columnIndex === 0
+                      ? `${section.title === 'Manuell historikk' ? 'Kodeleveranse' : 'Deployment'} `
+                      : `${section.headers[columnIndex]}: `}
+                    {url && isHttpUrl(url) ? (
+                      <Link src={url} style={styles.link}>
+                        {displayValue}
+                      </Link>
+                    ) : (
+                      displayValue
+                    )}
+                  </Text>
+                </View>
+              )
+            })}
+          </View>
+        ))}
       </View>
       <RepositoryReportFooter props={props} />
       <PageNumber />
@@ -238,50 +489,54 @@ function VerificationPage({ props }: { props: RepositoryReportOutputProps }) {
 }
 
 function EvidenceTables({ props, sections }: { props: RepositoryReportOutputProps; sections: ReportSection[] }) {
-  return sections.map((section) => {
-    const widths = columnWidths(section)
-    return (
-      <Page key={section.title} size="A4" style={[pageStyle, { paddingTop: 120, paddingBottom: 100 }]}>
-        <RepositoryReportHeader subtitle={section.title} fixed />
-        <Text style={[styles.methodologyText, { marginBottom: 10 }]}>
-          {REPOSITORY_REPORT_SECTION_INTRODUCTIONS[section.title] ?? 'Evidens i repositorybasert rapportgrunnlag.'}
-        </Text>
-        <Text style={[styles.methodologyText, { marginBottom: 10 }]}>
-          Lange celleverdier forkortes i PDF-en. Full tekst finnes i Excel-vedlegget.
-        </Text>
-        <View style={styles.table}>
-          <View style={styles.tableHeader} fixed>
-            {section.headers.map((header, index) => (
-              <Text key={header} style={[styles.tableHeaderCell, { width: `${widths[index]}%` }]}>
-                {header}
-              </Text>
-            ))}
-          </View>
-          {section.rows.map((row, rowIndex) => (
-            <View key={JSON.stringify(row)} style={[styles.tableRow, rowIndex % 2 === 1 ? styles.tableRowAlt : {}]}>
-              {row.map((value, columnIndex) => (
-                <Text
-                  key={section.headers[columnIndex]}
-                  style={[styles.tableCell, { width: `${widths[columnIndex]}%`, paddingRight: 5 }]}
-                >
-                  {section.cellLinks?.[rowIndex]?.[columnIndex] &&
-                  isHttpUrl(section.cellLinks[rowIndex][columnIndex]) ? (
-                    <Link src={section.cellLinks[rowIndex][columnIndex]} style={styles.link}>
-                      {formatPdfCell(value, section.headers[columnIndex]) || '—'}
-                    </Link>
-                  ) : (
-                    formatPdfCell(value, section.headers[columnIndex]) || '—'
-                  )}
-                </Text>
+  return sections
+    .filter((section) => !['Sammendrag', 'Deployments', 'Manuell historikk', 'Avvik'].includes(section.title))
+    .map((section) => {
+      const widths = columnWidths(section)
+      return (
+        <Page key={section.title} size="A4" style={[pageStyle, { paddingBottom: 100 }]}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <Text style={[styles.methodologyText, { marginBottom: 10 }]}>
+              {REPOSITORY_REPORT_SECTION_INTRODUCTIONS[section.title] ?? 'Evidens i repositorybasert rapportgrunnlag.'}
+            </Text>
+            <Text style={[styles.methodologyText, { marginBottom: 10 }]}>
+              Lange celleverdier forkortes i PDF-en. Full tekst finnes i Excel-vedlegget.
+            </Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeader} fixed>
+                {section.headers.map((header, index) => (
+                  <Text key={header} style={[styles.tableHeaderCell, { width: `${widths[index]}%` }]}>
+                    {header}
+                  </Text>
+                ))}
+              </View>
+              {section.rows.map((row, rowIndex) => (
+                <View key={JSON.stringify(row)} style={[styles.tableRow, rowIndex % 2 === 1 ? styles.tableRowAlt : {}]}>
+                  {row.map((value, columnIndex) => (
+                    <Text
+                      key={section.headers[columnIndex]}
+                      style={[styles.tableCell, { width: `${widths[columnIndex]}%`, paddingRight: 5 }]}
+                    >
+                      {section.cellLinks?.[rowIndex]?.[columnIndex] &&
+                      isHttpUrl(section.cellLinks[rowIndex][columnIndex]) ? (
+                        <Link src={section.cellLinks[rowIndex][columnIndex]} style={styles.link}>
+                          {formatPdfCell(value, section.headers[columnIndex]) || '—'}
+                        </Link>
+                      ) : (
+                        formatPdfCell(value, section.headers[columnIndex]) || '—'
+                      )}
+                    </Text>
+                  ))}
+                </View>
               ))}
             </View>
-          ))}
-        </View>
-        <RepositoryReportFooter props={props} />
-        <PageNumber />
-      </Page>
-    )
-  })
+          </View>
+          <RepositoryReportFooter props={props} />
+          <PageNumber />
+        </Page>
+      )
+    })
 }
 
 function columnWidths(section: ReportSection): number[] {
@@ -315,10 +570,21 @@ function createRepositoryAuditReportDocument(
       <CoverPage props={props} summary={summary} />
       <MethodologyPage props={props} />
       <VerificationPage props={props} />
-      <EvidenceTables
+      <DataSourcesPage props={props} />
+      <DeploymentPages props={props} sections={sections} />
+      <EvidenceCards
         props={props}
-        sections={sections.filter((section) => section.title !== 'Sammendrag' && section.rows.length > 0)}
+        section={sections.find((section) => section.title === 'Manuell historikk')}
+        title="Godkjenninger i NDA"
+        introduction={REPOSITORY_REPORT_SECTION_INTRODUCTIONS['Manuell historikk']}
       />
+      <EvidenceCards
+        props={props}
+        section={sections.find((section) => section.title === 'Avvik')}
+        title="Avvik"
+        introduction={REPOSITORY_REPORT_SECTION_INTRODUCTIONS.Avvik}
+      />
+      <EvidenceTables props={props} sections={sections.filter((section) => section.rows.length > 0)} />
     </Document>
   )
 }

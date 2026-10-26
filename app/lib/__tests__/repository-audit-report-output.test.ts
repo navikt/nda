@@ -241,9 +241,17 @@ describe('repository report exports', () => {
       id: index + 1,
       naisDeploymentId: `nais-${index + 1}`,
     }))
+    const firstGoalLink = deployment.goalLinks[0]
+    if (!firstGoalLink) throw new Error('Missing fixture deployment goal link')
+    props.reportData.deployments[0].goalLinks = Array.from({ length: 40 }, (_, index) => ({
+      ...firstGoalLink,
+      objectiveTitle: `Mål ${index}\n${'Lang målbeskrivelse '.repeat(8)}`,
+      keyResultTitle: `Resultat ${index}\n${'Lang resultatbeskrivelse '.repeat(8)}`,
+    }))
     const longMessage = 'Lang commitbeskrivelse '.repeat(300)
     const newlineHeavyMessage = 'Linje\n'.repeat(100)
     const longDeviation = 'Lang avviksbeskrivelse '.repeat(300)
+    props.reportData.deliveries[0].manualApprovals[0].documentation = newlineHeavyMessage
     const delivery = props.reportData.deliveries[0]
     const firstCommit = delivery.interval.commits[0]
     if (!firstCommit) throw new Error('Missing fixture interval commit')
@@ -266,6 +274,9 @@ describe('repository report exports', () => {
       expect(pdf.subarray(0, 5).toString()).toBe('%PDF-')
       expect(warn.mock.calls.flat().join(' ')).not.toContain('bigger than available page height')
       expect(warn.mock.calls.flat().join(' ')).not.toContain('Node of type VIEW')
+      const deploymentRows = buildRepositoryReportSections(props).find((section) => section.title === 'Deployments')
+      expect(deploymentRows?.rows[0]?.[1]).toContain('Mål 39\n')
+      expect(deploymentRows?.rows[0]?.[1]).toContain('Resultat 39\n')
       const workbook = new ExcelJS.Workbook()
       await workbook.xlsx.load(Uint8Array.from(await generateRepositoryAuditReportExcel(props)).buffer)
       expect(workbook.getWorksheet('Commits')?.getCell(3, 3).value).toBe(longMessage)
