@@ -3,7 +3,12 @@ import { isAdminSuppressed } from './admin-elevation.server'
 import { isJwtValidationConfigured, validateToken } from './jwt-validation.server'
 import { logger } from './logger.server'
 
-const FALLBACK_GROUP_ADMIN = '1e97cbc6-0687-4d23-aebd-c611035279c1'
+function getGroupIds(envVar: string): string[] {
+  return (process.env[envVar] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
 
 type UserRole = 'admin' | 'user'
 
@@ -42,10 +47,11 @@ async function getRoleFromGroups(groups: string[] | undefined): Promise<UserRole
     const sections = await getSectionsForEntraGroups(groups)
     if (sections.some((s) => s.role === 'admin')) return 'admin'
   } catch (error) {
-    logger.warn(`Could not resolve sections from DB, falling back to hardcoded admin group: ${error}`)
+    logger.warn(`Could not resolve sections from DB, falling back to NDA_ADMIN_GROUP_IDS: ${error}`)
   }
 
-  if (groups.includes(FALLBACK_GROUP_ADMIN)) return 'admin'
+  const adminGroupIds = getGroupIds('NDA_ADMIN_GROUP_IDS')
+  if (groups.some((g) => adminGroupIds.includes(g))) return 'admin'
   return 'user'
 }
 
