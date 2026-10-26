@@ -240,9 +240,9 @@ export async function propagateVerificationToSiblings(
        AND d.four_eyes_status = ANY($3::text[])
        AND (d.created_at, d.id) > (SELECT created_at, id FROM deployments WHERE id = $4)
        AND ${repositoryDeploymentSql(`(
-         SELECT r.id
+         SELECT source_repository.id
          FROM deployments d
-         JOIN repositories r ON ${repositoryDeploymentSql('r.id')}
+         JOIN repositories source_repository ON ${repositoryDeploymentSql('source_repository.id')}
          WHERE d.id = $4 AND d.monitored_app_id = $5
        )`)}
        AND (

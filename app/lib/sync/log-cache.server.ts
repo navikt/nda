@@ -10,6 +10,8 @@ interface CheckToCache {
   deployment_id: number
   owner: string
   repo: string
+  archive_owner: string
+  archive_repo: string
   check_id: number
   check_name: string
   column: ChecksColumn
@@ -108,7 +110,10 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
   }>(
     `
     SELECT d.id, d.github_pr_data, d.commit_checks_data, d.deployment_source, r.github_repo_id,
-           ar.github_owner || '/' || ar.github_repo_name as repository_full_name
+           CASE WHEN d.deployment_source = 'nais_apply'
+             THEN d.detected_github_owner || '/' || d.detected_github_repo_name
+             ELSE ar.github_owner || '/' || ar.github_repo_name
+           END as repository_full_name
     FROM deployments d
     JOIN monitored_applications ma ON d.monitored_app_id = ma.id
     LEFT JOIN repositories r ON r.id = d.repository_id AND d.deployment_source = 'nais_apply'
@@ -128,6 +133,12 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
   const identities = new Map<string, Promise<Awaited<ReturnType<typeof getRepositoryIdentityById>>>>()
 
   for (const row of result.rows) {
+    const [archiveOwner, archiveRepo] = row.repository_full_name?.split('/') ?? []
+    if (!archiveOwner || !archiveRepo) {
+      logger.warn('Cannot resolve archive key for check logs; leaving logs uncached', { deploymentId: row.id })
+      diagnostics.skippedNoRepo++
+      continue
+    }
     let repositoryFullName = row.repository_full_name
     if (row.deployment_source === 'nais_apply') {
       repositoryFullName = null
@@ -184,6 +195,8 @@ async function getUncachedChecks(monitoredAppId: number): Promise<{
           deployment_id: row.id,
           owner,
           repo,
+          archive_owner: archiveOwner,
+          archive_repo: archiveRepo,
           check_id: check.id,
           check_name: check.name,
           column,
@@ -210,7 +223,7 @@ export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheck
 
   for (const check of checks) {
     try {
-      if (await logExists(check.owner, check.repo, check.check_id)) {
+      if (await logExists(check.archive_owner, check.archive_repo, check.check_id)) {
         await markLogCached(check.deployment_id, check.check_id, check.column)
         cached++
         continue
@@ -222,7 +235,7 @@ export async function cacheCheckLogs(monitoredAppId: number): Promise<CacheCheck
         job_id: check.check_id,
       })
 
-      await uploadLog(check.owner, check.repo, check.check_id, response.data as string)
+      await uploadLog(check.archive_owner, check.archive_repo, check.check_id, response.data as string)
       await markLogCached(check.deployment_id, check.check_id, check.column)
       cached++
     } catch (error) {

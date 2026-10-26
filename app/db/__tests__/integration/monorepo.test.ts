@@ -469,6 +469,48 @@ describe('propagateVerificationToSiblings', () => {
     await seedRepository(pool, { githubRepoId: '1001', githubOwner: owner, githubRepoName: repo })
   })
 
+  it('resolves a legacy source through its app link without shadowing the source repository alias', async () => {
+    const sourceApp = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
+    const targetApp = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-fss' })
+    await seedRepository(pool, {
+      githubRepoId: '2002',
+      githubOwner: owner,
+      githubRepoName: 'unrelated-repository',
+    })
+    for (const appId of [sourceApp, targetApp]) {
+      await seedApplicationRepository(pool, {
+        monitoredAppId: appId,
+        githubOwner: owner,
+        githubRepo: 'former-name',
+        githubRepoId: '1001',
+      })
+    }
+    const source = await seedDeployment(pool, {
+      monitoredAppId: sourceApp,
+      teamSlug: 'team-a',
+      environment: 'prod-gcp',
+      commitSha: 'a'.repeat(40),
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: 'former-name',
+    })
+    const target = await seedDeployment(pool, {
+      monitoredAppId: targetApp,
+      teamSlug: 'team-a',
+      environment: 'prod-fss',
+      commitSha: 'a'.repeat(40),
+      fourEyesStatus: 'pending',
+      githubOwner: owner,
+      githubRepo: 'former-name',
+    })
+    await pool.query('UPDATE deployments SET repository_id = NULL WHERE id = ANY($1::int[])', [[source, target]])
+
+    await expect(propagateVerificationToSiblings(source, 'approved', 'a'.repeat(40), sourceApp)).resolves.toBe(1)
+
+    const { rows } = await pool.query('SELECT four_eyes_status FROM deployments WHERE id = $1', [target])
+    expect(rows[0].four_eyes_status).toBe('verified_via_sibling')
+  })
+
   it.each(['nais_deployment', 'nais_apply'] as const)(
     'does not propagate across immutable repositories from a %s source when an Apply claim name has been reused',
     async (sourceType) => {
