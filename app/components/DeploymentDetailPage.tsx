@@ -459,7 +459,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
       {deployment.resources && deployment.resources.length > 0 && (
         <div>
           <Heading size="small" level="3" spacing>
-            Kubernetes Resources
+            {deployment.deployment_source === 'nais_apply' ? 'Nais Apply-endringer' : 'Kubernetes Resources'}
           </Heading>
           <HStack gap="space-8" wrap>
             {deployment.resources.map((resource: { kind: string; name: string }) => (

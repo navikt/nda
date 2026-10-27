@@ -6,6 +6,18 @@ vi.mock('~/db/deployments.server', () => ({
   updateDeploymentFourEyes: vi.fn(),
 }))
 
+const { mockPoolQuery, mockRefreshCommitChecksOnly, mockGetRepositoryIdentityById, mockParseWorkflowRunUrl } =
+  vi.hoisted(() => ({
+    mockPoolQuery: vi.fn(),
+    mockRefreshCommitChecksOnly: vi.fn(),
+    mockGetRepositoryIdentityById: vi.fn(),
+    mockParseWorkflowRunUrl: vi.fn(),
+  }))
+
+vi.mock('~/db/connection.server', () => ({
+  pool: { query: mockPoolQuery },
+}))
+
 vi.mock('~/db/sync-jobs.server', () => ({
   isAppBlockedByRunningJob: vi.fn(async () => false),
   VERIFICATION_DIFF_CONFLICT_GROUP: ['reverify_app', 'refresh_missing_approver', 'reverify_all', 'github_verify'],
@@ -13,6 +25,11 @@ vi.mock('~/db/sync-jobs.server', () => ({
 
 vi.mock('~/lib/verification', () => ({
   runVerification: vi.fn(),
+  refreshCommitChecksOnly: mockRefreshCommitChecksOnly,
+}))
+vi.mock('~/lib/github/git.server', () => ({
+  getRepositoryIdentityById: mockGetRepositoryIdentityById,
+  parseWorkflowRunUrl: mockParseWorkflowRunUrl,
 }))
 
 vi.mock('~/lib/logger.server', () => ({
@@ -33,7 +50,7 @@ import { getAllDeployments, getDeploymentById, updateDeploymentFourEyes } from '
 import { isAppBlockedByRunningJob } from '~/db/sync-jobs.server'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
 import { getCurrentJobId } from '~/lib/logger.server'
-import { verifyDeploymentsFourEyes } from '~/lib/sync/github-verify.server'
+import { reverifyPendingChecks, verifyDeploymentsFourEyes } from '~/lib/sync/github-verify.server'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from '~/lib/sync/goal-keyword-sync.server'
 import { runVerification } from '~/lib/verification'
 
@@ -68,6 +85,20 @@ describe('verifyDeploymentsFourEyes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
+    mockPoolQuery.mockReset()
+    mockRefreshCommitChecksOnly.mockReset().mockResolvedValue({})
+    mockGetRepositoryIdentityById.mockReset().mockResolvedValue({
+      id: 12345,
+      owner: 'navikt',
+      name: 'current-name',
+    })
+    mockParseWorkflowRunUrl.mockReset().mockImplementation((url: string | null, owner: string, repo: string) => {
+      const match = url?.match(/^https:\/\/github[.]com\/([^/]+)\/([^/]+)\/actions\/runs\/([0-9]+)$/i)
+      if (!match || match[1].toLowerCase() !== owner.toLowerCase() || match[2].toLowerCase() !== repo.toLowerCase()) {
+        return null
+      }
+      return { owner: match[1], repo: match[2], runId: Number(match[3]) }
+    })
   })
 
   afterEach(() => {
@@ -237,6 +268,47 @@ describe('verifyDeploymentsFourEyes', () => {
 
     expect(mockRunVerification).not.toHaveBeenCalled()
     expect(result.skipped).toBe(1)
+  })
+
+  it('refreshes Apply checks with the canonical repository name from its immutable association', async () => {
+    mockPoolQuery.mockResolvedValue({
+      rows: [
+        {
+          id: 12,
+          commit_sha: 'a'.repeat(40),
+          deployment_source: 'nais_apply',
+          github_repo_id: '12345',
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'current-name',
+          claim_github_owner: 'navikt',
+          claim_github_repo_name: 'old-name',
+          github_pr_number: 456,
+          trigger_url: 'https://github.com/navikt/old-name/actions/runs/123',
+          workflow_trigger_config: null,
+        },
+      ],
+    })
+
+    const resultPromise = reverifyPendingChecks(10)
+    await vi.advanceTimersByTimeAsync(100)
+    const result = await resultPromise
+
+    expect(mockPoolQuery.mock.calls[0][0]).toContain('LEFT JOIN repositories r ON r.id = d.repository_id')
+    expect(mockPoolQuery.mock.calls[0][0]).toContain(
+      "(d.deployment_source != 'nais_apply' OR (d.repository_id IS NOT NULL AND r.id IS NOT NULL))",
+    )
+    expect(mockRefreshCommitChecksOnly).toHaveBeenCalledWith(
+      12,
+      'navikt',
+      'current-name',
+      'a'.repeat(40),
+      456,
+      'https://github.com/navikt/current-name/actions/runs/123',
+      null,
+      undefined,
+      '12345',
+    )
+    expect(result).toEqual({ fetched: 1, errors: 0 })
   })
 
   it('marks refs/ SHA as legacy', async () => {

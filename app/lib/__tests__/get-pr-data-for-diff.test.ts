@@ -4,6 +4,7 @@ vi.mock('~/db/github-data.server', () => ({
   getAllLatestPrSnapshots: vi.fn(),
   getAllLatestPrRawSnapshots: vi.fn(),
   getLatestCommitSnapshot: vi.fn(),
+  getLatestCommitAssociatedPrsRawSnapshot: vi.fn(),
   saveCommitSnapshot: vi.fn(),
   savePrRawSnapshotsBatch: vi.fn(),
 }))
@@ -79,6 +80,35 @@ describe('getPrDataForDiff', () => {
     expect(result?.metadata.title).toBe('Some PR')
     expect(result?.reviews).toHaveLength(1)
     expect(result?.commits).toHaveLength(1)
+    expect(mockGetAllLatestPrSnapshots).not.toHaveBeenCalled()
+  })
+
+  it('does not use cached PR data belonging to a repository that reused the current name', async () => {
+    const formerRepositorySnapshots = new Map()
+    formerRepositorySnapshots.set('pr', rawSnapshot(rawPr))
+    formerRepositorySnapshots.set('reviews', rawSnapshot([]))
+    formerRepositorySnapshots.set('commits', rawSnapshot([]))
+    mockGetAllLatestPrRawSnapshots.mockImplementation(
+      async (_owner: string, _repo: string, _prNumber: number, githubRepoId?: number | string) =>
+        githubRepoId === 999 ? new Map() : formerRepositorySnapshots,
+    )
+
+    const legacyMap = new Map()
+    legacyMap.set('metadata', {
+      data: { title: 'Former repository PR', base_branch: 'main', merged_at: '2026-01-02T00:00:00Z' },
+    })
+    legacyMap.set('reviews', {
+      data: [{ username: 'former-reviewer', state: 'APPROVED', submitted_at: '2026-01-01T11:00:00Z' }],
+    })
+    legacyMap.set('commits', {
+      data: [{ sha: 'former-c1', message: 'former feat', author: { username: 'user1' }, date: '2026-01-01T10:00:00Z' }],
+    })
+    mockGetAllLatestPrSnapshots.mockResolvedValue(legacyMap)
+
+    const result = await getPrDataForDiff('navikt', 'nda', 100, 999)
+
+    expect(result).toBeNull()
+    expect(mockGetAllLatestPrRawSnapshots).toHaveBeenCalledWith('navikt', 'nda', 100, 999)
     expect(mockGetAllLatestPrSnapshots).not.toHaveBeenCalled()
   })
 

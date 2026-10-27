@@ -10,16 +10,21 @@ export async function saveWorkflowRunRawSnapshot(
   rawData: unknown,
   apiVersion: ApiVersionMetadata,
 ): Promise<number> {
+  const runAttempt =
+    rawData && typeof rawData === 'object' && 'run_attempt' in rawData && typeof rawData.run_attempt === 'number'
+      ? rawData.run_attempt
+      : null
   const result = await pool.query(
     `INSERT INTO github_workflow_runs_raw_snapshots
-       (github_repo_id, owner, repo, run_id, api_version, api_deprecated_at, api_sunset_at, data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (github_repo_id, owner, repo, run_id, run_attempt, api_version, api_deprecated_at, api_sunset_at, data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING id`,
     [
       githubRepoId,
       owner,
       repo,
       runId,
+      runAttempt,
       apiVersion.apiVersion,
       apiVersion.apiDeprecatedAt,
       apiVersion.apiSunsetAt,
@@ -44,16 +49,51 @@ export async function hasWorkflowRunRawSnapshot(githubRepoId: number | string, r
 export async function getWorkflowRunRawSnapshotData(
   githubRepoId: number | string,
   runId: number,
+  runAttempt?: number,
 ): Promise<unknown | null> {
   const result = await pool.query<{ data: unknown }>(
     `SELECT data
      FROM github_workflow_runs_raw_snapshots
      WHERE github_repo_id = $1 AND run_id = $2
-     ORDER BY fetched_at DESC
+       AND ($3::bigint IS NULL OR run_attempt = $3)
+     ORDER BY run_attempt DESC NULLS LAST, fetched_at DESC
      LIMIT 1`,
-    [githubRepoId, runId],
+    [githubRepoId, runId, runAttempt ?? null],
   )
   return result.rows[0]?.data ?? null
+}
+
+export async function hasRecentWorkflowRunAttemptShaFailure(
+  githubRepoId: number | string,
+  runId: number,
+  runAttempt: number,
+): Promise<boolean> {
+  const result = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM github_workflow_run_attempt_sha_failures
+       WHERE github_repo_id = $1
+         AND run_id = $2
+         AND run_attempt = $3
+         AND checked_at > CURRENT_TIMESTAMP - INTERVAL '24 hours'
+     ) AS exists`,
+    [githubRepoId, runId, runAttempt],
+  )
+  return result.rows[0].exists
+}
+
+export async function recordWorkflowRunAttemptShaFailure(
+  githubRepoId: number | string,
+  runId: number,
+  runAttempt: number,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO github_workflow_run_attempt_sha_failures (github_repo_id, run_id, run_attempt)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (github_repo_id, run_id, run_attempt)
+     DO UPDATE SET checked_at = CURRENT_TIMESTAMP`,
+    [githubRepoId, runId, runAttempt],
+  )
 }
 
 export async function getLatestWorkflowRunRawSnapshot(
@@ -69,10 +109,10 @@ export async function getLatestWorkflowRunRawSnapshot(
          SELECT github_repo_id
          FROM github_workflow_runs_raw_snapshots
          WHERE owner = $1 AND repo = $2 AND run_id = $3
-         ORDER BY fetched_at DESC
+         ORDER BY run_attempt DESC NULLS LAST, fetched_at DESC
          LIMIT 1
        )
-     ORDER BY fetched_at DESC
+     ORDER BY run_attempt DESC NULLS LAST, fetched_at DESC
      LIMIT 1`,
     [owner, repo, runId],
   )

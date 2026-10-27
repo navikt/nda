@@ -10,21 +10,127 @@ import {
   getDeploymentByNaisId,
   getLatestDeploymentForApp,
 } from '~/db/deployments.server'
+import type { MonitoredApplication } from '~/db/monitored-applications.server'
 import {
   getMonitoredApplicationById,
   getMonitoredApplicationByIdentity,
   markInitialNaisHistorySynced,
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
+import {
+  getNaisApplyActivitySyncState,
+  markNaisApplyActivitySyncComplete,
+  markNaisApplyActivitySyncFailure,
+  saveNaisApplyActivityEvents,
+} from '~/db/nais-apply-activity.server'
 import { getCurrentJobId, logger } from '~/lib/logger.server'
 import {
   fetchApplicationDeployments,
+  fetchApplicationUpdatedActivityPage,
   fetchNewDeployments,
   NaisDeploymentEnumerationError,
   NaisResourceNotFoundError,
 } from '~/lib/nais.server'
 import { syncDefaultBranchForApp } from './default-branch-sync.server'
+import { materializeNaisApplyDeployments } from './nais-apply-materialize.server'
 import { parseRepository } from './repo-parser'
+
+const NAIS_APPLY_ACTIVITY_OVERLAP_MS = 7 * 24 * 60 * 60 * 1000
+
+export async function syncNaisApplyActivityFromNais(monitoredAppId: number): Promise<number> {
+  const monitoredApp = await getMonitoredApplicationById(monitoredAppId)
+  if (!monitoredApp) {
+    throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
+  }
+  if (!monitoredApp.nais_apply_enabled) {
+    return 0
+  }
+
+  try {
+    return await syncNaisApplyActivityForApp(monitoredApp)
+  } catch (error) {
+    try {
+      await markNaisApplyActivitySyncFailure(monitoredAppId, error instanceof Error ? error.message : String(error))
+    } catch (statusError) {
+      throw new AggregateError(
+        [error, statusError],
+        `Nais Apply sync failed and its error state could not be saved for application ${monitoredAppId}`,
+      )
+    }
+    throw error
+  }
+}
+
+async function syncNaisApplyActivityForApp(monitoredApp: MonitoredApplication): Promise<number> {
+  const monitoredAppId = monitoredApp.id
+  const previousState = await getNaisApplyActivitySyncState(monitoredAppId)
+  const initialHistoryComplete = previousState?.initial_history_synced_at != null
+  const lastSuccessfulSyncAt = previousState?.last_synced_at
+  const from =
+    initialHistoryComplete && lastSuccessfulSyncAt
+      ? new Date(lastSuccessfulSyncAt.getTime() - NAIS_APPLY_ACTIVITY_OVERLAP_MS).toISOString()
+      : null
+  const requestedCursors = new Set<string>()
+  let after: string | null = null
+  let latestActivityCreatedAt: Date | null = null
+  let insertedCount = 0
+
+  while (true) {
+    const page = await fetchApplicationUpdatedActivityPage(
+      monitoredApp.team_slug,
+      monitoredApp.environment_name,
+      monitoredApp.app_name,
+      after,
+      from,
+    )
+
+    for (const activity of page.nodes) {
+      if (activity.teamSlug !== monitoredApp.team_slug || activity.resourceName !== monitoredApp.app_name) {
+        throw new Error(`Unexpected Nais activity resource for monitored application ${monitoredAppId}`)
+      }
+      if (activity.environmentName !== null && activity.environmentName !== monitoredApp.environment_name) {
+        throw new Error(`Unexpected Nais activity environment for monitored application ${monitoredAppId}`)
+      }
+      const createdAt = new Date(activity.createdAt)
+      if (!Number.isFinite(createdAt.getTime())) {
+        throw new Error(`Invalid Nais activity timestamp for monitored application ${monitoredAppId}`)
+      }
+      if (!latestActivityCreatedAt || createdAt > latestActivityCreatedAt) {
+        latestActivityCreatedAt = createdAt
+      }
+    }
+
+    insertedCount += await saveNaisApplyActivityEvents(monitoredAppId, page.nodes)
+
+    if (!page.pageInfo.hasNextPage) {
+      break
+    }
+
+    const endCursor = page.pageInfo.endCursor?.trim()
+    if (!endCursor) {
+      throw new Error(`Nais activity page is missing its cursor for monitored application ${monitoredAppId}`)
+    }
+    if (requestedCursors.has(endCursor)) {
+      throw new Error(`Nais activity pagination repeated a cursor for monitored application ${monitoredAppId}`)
+    }
+    requestedCursors.add(endCursor)
+    after = endCursor
+  }
+
+  const materializedCount = await materializeNaisApplyDeployments(monitoredAppId, {
+    suppressNotifications: !initialHistoryComplete,
+    fullHistory: !initialHistoryComplete,
+  })
+  await markNaisApplyActivitySyncComplete(monitoredAppId, latestActivityCreatedAt, !initialHistoryComplete)
+  logger.info('✅ Nais Apply activity sync complete', {
+    monitoredAppId,
+    insertedCount,
+    materializedCount,
+    initialHistoryComplete: !initialHistoryComplete,
+    from,
+  })
+  return insertedCount
+}
 
 async function markNaisResourceStatus<T>(
   monitoredAppId: number,

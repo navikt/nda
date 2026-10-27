@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 vi.mock('~/db/github-data.server', () => ({
   getLatestCommitSnapshot: vi.fn(),
+  getLatestCommitAssociatedPrsRawSnapshot: vi.fn(),
   getAllLatestPrSnapshots: vi.fn(),
   getAllLatestPrRawSnapshots: vi.fn(),
   saveCommitSnapshot: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('~/lib/logger.server', () => ({
 import {
   getAllLatestPrRawSnapshots,
   getAllLatestPrSnapshots,
+  getLatestCommitAssociatedPrsRawSnapshot,
   getLatestCommitSnapshot,
   saveCommitSnapshot,
 } from '~/db/github-data.server'
@@ -52,6 +54,7 @@ import type { CompareData } from '~/lib/verification/types'
 import { CURRENT_SCHEMA_VERSION } from '~/lib/verification/types'
 
 const mockGetCommitSnapshot = getLatestCommitSnapshot as Mock
+const mockGetCommitAssociatedPrsRawSnapshot = getLatestCommitAssociatedPrsRawSnapshot as Mock
 const mockGetPrForCommit = getPullRequestForCommit as Mock
 const mockSaveCommitSnapshot = saveCommitSnapshot as Mock
 const mockGetDetailedPrInfo = getDetailedPullRequestInfo as Mock
@@ -156,6 +159,31 @@ describe('findPrForCommit stale cache handling', () => {
 
     const result = await buildCommitsBetweenFromCache('navikt', 'repo', 'main', compareData)
 
+    expect(mockGetPrForCommit).not.toHaveBeenCalled()
+    expect(result[0].pr).toBeNull()
+  })
+
+  it('does not read name-scoped commit associations for an Apply repository', async () => {
+    const compareData = makeCompareData([
+      {
+        sha: 'abc123',
+        message: 'Merge pull request #100 from navikt/feature-branch',
+        authorUsername: 'user1',
+        authorDate: '2026-04-27T16:00:00Z',
+        committerDate: '2026-04-27T16:00:00Z',
+        parentShas: ['parent1', 'parent2'],
+        isMergeCommit: true,
+        htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
+      },
+    ])
+
+    const result = await buildCommitsBetweenFromCache('navikt', 'repo', 'main', compareData, {
+      cacheOnly: true,
+      githubRepoId: 999,
+    })
+
+    expect(mockGetCommitSnapshot).not.toHaveBeenCalled()
+    expect(mockGetCommitAssociatedPrsRawSnapshot).toHaveBeenCalledWith('navikt', 'repo', 'abc123', 999)
     expect(mockGetPrForCommit).not.toHaveBeenCalled()
     expect(result[0].pr).toBeNull()
   })

@@ -8,6 +8,7 @@ import { NotFoundInNaisNotice } from '~/components/NotFoundInNaisNotice'
 import { ReactivateAppNotice } from '~/components/ReactivateAppNotice'
 import { getAppConfigAuditLog } from '~/db/app-settings.server'
 import { getAuditReportsForAppAdmin } from '~/db/audit-reports.server'
+import { getNaisApplyActivitySyncState } from '~/db/nais-apply-activity.server'
 import { getEffectiveSettingsForApp, getRepositoryById } from '~/db/repositories.server'
 import { getUsersByIdentifiers } from '~/db/user-github-lookups.server'
 import type { AuditReportAssessmentModel } from '~/lib/audit-report-model'
@@ -15,6 +16,7 @@ import { requireAppAdminAccess, resolveRepositoryAdminAccess } from '~/lib/autho
 import type { UserLookupMap } from '~/lib/user-display'
 import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
 import { DeployNotificationSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DeployNotificationSettings'
+import { NaisApplySettings } from '~/routes/team/$team.env.$env.app.$app.admin/NaisApplySettings'
 import { RecentConfigChanges } from '~/routes/team/$team.env.$env.app.$app.admin/RecentConfigChanges'
 import { ReminderSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ReminderSettings'
 import { SlackConfigSettings } from '~/routes/team/$team.env.$env.app.$app.admin/SlackConfigSettings'
@@ -32,12 +34,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   const isProdApp = app.environment_name.startsWith('prod-')
 
-  const [effectiveSettings, recentConfigChanges, applicationReports, repositoryReports] = await Promise.all([
-    getEffectiveSettingsForApp(app.id),
-    getAppConfigAuditLog(app.id, { limit: 10 }),
-    getAuditReportsForAppAdmin(app.id),
-    getAuditReportsForAppAdmin(app.id, 'repository'),
-  ])
+  const [effectiveSettings, recentConfigChanges, applicationReports, repositoryReports, naisApplySyncState] =
+    await Promise.all([
+      getEffectiveSettingsForApp(app.id),
+      getAppConfigAuditLog(app.id, { limit: 10 }),
+      getAuditReportsForAppAdmin(app.id),
+      getAuditReportsForAppAdmin(app.id, 'repository'),
+      getNaisApplyActivitySyncState(app.id),
+    ])
   const auditReports = [...applicationReports, ...repositoryReports]
   const auditStartYear = effectiveSettings.auditStartYear
   const repositoryId = effectiveSettings.repositoryId
@@ -75,6 +79,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     canAccessRepoAdminPage,
     recentConfigChanges,
     auditReports,
+    naisApplySyncState: {
+      initialHistorySyncedAt: naisApplySyncState?.initial_history_synced_at?.toISOString() ?? null,
+      lastSyncedAt: naisApplySyncState?.last_synced_at?.toISOString() ?? null,
+      hasError: Boolean(naisApplySyncState?.last_error),
+    },
     isProdApp,
     displayNameMap,
   }
@@ -90,6 +99,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
     canAccessRepoAdminPage,
     recentConfigChanges,
     auditReports,
+    naisApplySyncState,
     isProdApp,
     displayNameMap,
   } = loaderData
@@ -269,6 +279,8 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
       <SlackConfigSettings app={app} />
 
       <DeployNotificationSettings app={app} />
+
+      <NaisApplySettings appId={app.id} enabled={app.nais_apply_enabled} syncState={naisApplySyncState} />
 
       <ReminderSettings app={app} />
 

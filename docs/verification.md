@@ -75,7 +75,8 @@ Leveransedetaljsiden viser i tillegg en **skrivebeskyttet forhåndsvurdering av 
 
 | Kilde | Hva hentes | Når |
 |-------|-----------|-----|
-| **Nais API** | Deployments (app, tidspunkt, commit-SHA, miljø) | Periodisk hvert 5. minutt |
+| **Nais API** | Legacy deployments (app, tidspunkt, commit-SHA, miljø) | Periodisk hvert 5. minutt |
+| **Nais API (Nais Apply)** | `spec.image`-endringer fra aktivitetsloggen for apper med eksplisitt opt-in; GitHub-run `head_sha` hentes og kontrolleres mot repository-ID og run attempt | Periodisk, separat per opt-in-app |
 | **GitHub API** | Commits mellom deployments, PR-metadata, reviews, godkjenninger, check runs | Ved verifisering av hvert deployment |
 | **GitHub API (repo metadata)** | `default_branch` for hver overvåket app | Periodisk, maks én gang per app per 24 timer |
 
@@ -94,14 +95,23 @@ I praksis betyr dette:
 ### Prosessflyt på overordnet nivå
 
 ```
-Nais API → Nye deployments oppdages → Lagres i database (status: "Venter")
+Nais API → Legacy deployments og opt-in Nais Apply-endringer oppdages → Lagres med kildeidentitet
                                             ↓
-                                    GitHub API → Hent commits og PR-data
+                                    Apply uten verifiserbar SHA → "Ikke sporbar" (kan ikke auto-godkjennes)
+                                    GitHub API → Hent commits og PR-data for verifiserbare SHA-er
                                             ↓
                                     Verifiseringslogikk → Bestem status
                                             ↓
                                     Resultat lagres i database
 ```
+
+Nais Apply-aktiviteter uten `environmentName` lagres rått, men materialiseres ikke som leveranser. Flere image-endringer grupperes bare når `repositoryID`, `runID`, `runAttempt` og `checkRunID` identifiserer samme GitHub Actions-jobb og den nye image-verdien er lik. Hendelser uten en komplett grupperingsnøkkel beholdes som separate leveranser; lik actor eller tidsnærhet er ikke nok til å slå dem sammen. `workflowSha` brukes aldri som levert commit-SHA. Hvis Actions-run-data ikke kan bekrefte repository-ID, run attempt og `head_sha`, opprettes leveransen med status `unverifiable`, som er ikke-godkjent og ikke automatisk verifiserbar.
+
+Den første komplette Apply-historikksynken undertrykker Slack-varsler for materialiserte Apply-leveranser. Nye hendelser fra senere pollinger følger eksisterende Slack-varslingsinnstillinger.
+
+Apply-logghenting bruker deploymentets repository-ID til å finne gjeldende GitHub-navn. Loggarkivet bruker deploymentets opprinnelige repositorynavn som nøkkel ved både lagring og lesing, slik at rename ikke endrer arkivnøkkelen. Uavklart identitet blir ikke markert som ferdig cachet. Søskenpropagering avgrenses til kildedeploymentets repository, og cachet reverifisering og diff-forhåndsvurdering bruker faktisk repositorystatus, også for historiske koblinger.
+
+Etter førstegangsinnhentingen materialiseres bare nye aktiviteter og aktiviteter med uavklart GitHub-SHA eller repositorytilknytning som er klare for nytt forsøk etter fem minutter. Ferdigbehandlet historikk materialiseres ikke på nytt ved hver polling. Eldre medlemmer av berørte bildegrupper hentes inn slik at forsinkede hendelser fortsatt kan korrigere gruppens første tidspunkt. Behandlingsstatus lagres først etter at materialisering og tilhørende varsler er fullført, slik at avbrutte forsøk kan gjenopptas.
 
 ---
 
@@ -462,7 +472,8 @@ Alle identitetssammenligninger i disse sjekkene (selvgodkjenning, dependabot-onl
 |-----|--------|-------------------|
 | [`app/lib/sync/scheduler.server.ts`](../app/lib/sync/scheduler.server.ts) | Periodisk kjøring av alle jobber | `startPeriodicSync`, `runPeriodicSync` |
 | [`app/lib/sync/github-verify.server.ts`](../app/lib/sync/github-verify.server.ts) | Batch-verifisering av deployments | `verifyDeploymentsFourEyes`, `verifySingleDeployment` |
-| [`app/lib/sync/nais-sync.server.ts`](../app/lib/sync/nais-sync.server.ts) | Henter deployments fra Nais API | `syncNewDeploymentsFromNais` |
+| [`app/lib/sync/nais-sync.server.ts`](../app/lib/sync/nais-sync.server.ts) | Henter legacy deployments og opt-in Nais Apply-aktiviteter fra Nais API | `syncNewDeploymentsFromNais`, `syncNaisApplyActivityFromNais` |
+| [`app/lib/sync/nais-apply-materialize.server.ts`](../app/lib/sync/nais-apply-materialize.server.ts) | Grupperer image-hendelser med GitHub-claims og oppretter Apply-leveranser | `materializeNaisApplyDeployments` |
 
 ### Statuser og kategorisering
 
