@@ -4,6 +4,7 @@ import { styles } from './audit-report-pdf/styles'
 import {
   buildRepositoryReportSections,
   buildRepositoryReportSummary,
+  filterRepositoryReportSectionsForExport,
   formatRepositoryReportDate,
   formatRepositoryReportDateTime,
   isHttpUrl,
@@ -208,12 +209,12 @@ function VerificationPage({ props }: { props: RepositoryReportOutputProps }) {
             'Workflow-run-snapshot må samsvare med repository-ID, run-ID og full commit-SHA. Run-forsøk kontrolleres når det er angitt i deploymentets kilde-URL.',
           ],
           [
-            '3. Frosset rapportgrunnlag',
-            'Normalisert evidens, godkjenningshistorikk, identitetsversjoner og kildereferanser lagres sammen med rapporten. Senere oppdateringer av rådata endrer ikke rapporten.',
+            '3. Lagret rapport',
+            'Rapportgrunnlaget lagres sammen med genererte PDF- og Excel-filer, rapportmetadata og hash av rapportgrunnlaget. Senere oppdateringer av kildedata endrer ikke det lagrede rapportgrunnlaget eller rapportfilene.',
           ],
           [
             '4. Etterprøvbarhet',
-            'PDF-en inneholder dokument-ID, genereringstidspunkt og SHA256-hash. Excel-vedlegget viser kildesnapshottene som inngår i vurderingen.',
+            'PDF-en inneholder dokument-ID, genereringstidspunkt og SHA256-hash. Lenkene i deploymenttabellen åpner repositoryvisningen for videre oppfølging. Visningen viser gjeldende vurdering, som kan endres etter rapportgenerering.',
           ],
         ].map(([title, text]) => (
           <View key={title} style={styles.methodologyBox}>
@@ -235,7 +236,7 @@ function DataSourcesPage({ props }: { props: RepositoryReportOutputProps }) {
         <Text style={styles.sectionTitle}>Verifisering</Text>
         <View style={styles.methodologyBox}>
           <Text style={styles.methodologyText}>
-            Dette dokumentet er generert automatisk av Deployment Audit System. Rapporten viser lagret evidens på
+            Dette dokumentet er generert automatisk av Deployment Audit System. Rapporten viser vurderingen på
             genereringstidspunktet, og senere endringer i kildedata påvirker ikke dokumentet.
           </Text>
           <Text style={styles.methodologyText}>Datagrunnlag hentet fra:</Text>
@@ -488,71 +489,6 @@ function EvidenceCards({
   )
 }
 
-function EvidenceTables({ props, sections }: { props: RepositoryReportOutputProps; sections: ReportSection[] }) {
-  return sections
-    .filter((section) => !['Sammendrag', 'Deployments', 'Manuell historikk', 'Avvik'].includes(section.title))
-    .map((section) => {
-      const widths = columnWidths(section)
-      return (
-        <Page key={section.title} size="A4" style={[pageStyle, { paddingBottom: 100 }]}>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text style={[styles.methodologyText, { marginBottom: 10 }]}>
-              {REPOSITORY_REPORT_SECTION_INTRODUCTIONS[section.title] ?? 'Evidens i repositorybasert rapportgrunnlag.'}
-            </Text>
-            <Text style={[styles.methodologyText, { marginBottom: 10 }]}>
-              Lange celleverdier forkortes i PDF-en. Full tekst finnes i Excel-vedlegget.
-            </Text>
-            <View style={styles.table}>
-              <View style={styles.tableHeader} fixed>
-                {section.headers.map((header, index) => (
-                  <Text key={header} style={[styles.tableHeaderCell, { width: `${widths[index]}%` }]}>
-                    {header}
-                  </Text>
-                ))}
-              </View>
-              {section.rows.map((row, rowIndex) => (
-                <View key={JSON.stringify(row)} style={[styles.tableRow, rowIndex % 2 === 1 ? styles.tableRowAlt : {}]}>
-                  {row.map((value, columnIndex) => (
-                    <Text
-                      key={section.headers[columnIndex]}
-                      style={[styles.tableCell, { width: `${widths[columnIndex]}%`, paddingRight: 5 }]}
-                    >
-                      {section.cellLinks?.[rowIndex]?.[columnIndex] &&
-                      isHttpUrl(section.cellLinks[rowIndex][columnIndex]) ? (
-                        <Link src={section.cellLinks[rowIndex][columnIndex]} style={styles.link}>
-                          {formatPdfCell(value, section.headers[columnIndex]) || '—'}
-                        </Link>
-                      ) : (
-                        formatPdfCell(value, section.headers[columnIndex]) || '—'
-                      )}
-                    </Text>
-                  ))}
-                </View>
-              ))}
-            </View>
-          </View>
-          <RepositoryReportFooter props={props} />
-          <PageNumber />
-        </Page>
-      )
-    })
-}
-
-function columnWidths(section: ReportSection): number[] {
-  const widths: Record<string, number[]> = {
-    Deployments: [18, 24, 13, 20, 25],
-    Kodeleveranser: [15, 22, 63],
-    Commits: [10, 17, 24, 39, 10],
-    'PR-evidens': [12, 22, 22, 25, 19],
-    'Manuell historikk': [12, 22, 20, 20, 26],
-    Kilder: [12, 25, 63],
-    Identiteter: [12, 24, 16, 20, 28],
-    Avvik: [16, 18, 40, 26],
-  }
-  return widths[section.title] ?? section.headers.map(() => 100 / section.headers.length)
-}
-
 function formatPdfCell(value: string, header: string): string {
   const displayValue = header.toLowerCase().includes('sha')
     ? value.replaceAll(/[0-9a-f]{40}/gi, (sha) => `${sha.slice(0, 12)}…`)
@@ -584,13 +520,12 @@ function createRepositoryAuditReportDocument(
         title="Avvik"
         introduction={REPOSITORY_REPORT_SECTION_INTRODUCTIONS.Avvik}
       />
-      <EvidenceTables props={props} sections={sections.filter((section) => section.rows.length > 0)} />
     </Document>
   )
 }
 
 export async function generateRepositoryAuditReportPdf(props: RepositoryReportOutputProps): Promise<Buffer> {
   const summary = buildRepositoryReportSummary(props)
-  const sections = buildRepositoryReportSections(props, summary)
+  const sections = filterRepositoryReportSectionsForExport(buildRepositoryReportSections(props, summary))
   return renderToBuffer(createRepositoryAuditReportDocument(props, sections, summary))
 }
