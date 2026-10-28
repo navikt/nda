@@ -23,8 +23,8 @@ COPY . .
 RUN pnpm run build
 
 # Compile TypeScript startup script and custom server to JavaScript
-RUN pnpm exec tsc scripts/start-prod.ts --outDir scripts --module nodenext --moduleResolution nodenext --target es2022
-RUN pnpm exec tsc server.ts auth-middleware.ts app/lib/security-headers.ts --module nodenext --moduleResolution nodenext --target es2022 --esModuleInterop
+RUN pnpm exec tsc --ignoreConfig scripts/start-prod.ts --outDir scripts --module nodenext --moduleResolution nodenext --target es2022
+RUN pnpm exec tsc --ignoreConfig server.ts auth-middleware.ts app/lib/security-headers.ts --module nodenext --moduleResolution nodenext --target es2022 --esModuleInterop
 
 # Download fonts for PDF generation (react-pdf requires TTF format)
 RUN mkdir -p /app/fonts && \
