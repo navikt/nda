@@ -4,6 +4,7 @@ import { generateRepositoryAuditReportExcel } from '../repository-audit-report-e
 import {
   buildRepositoryReportSections,
   buildRepositoryReportSummary,
+  filterRepositoryReportSectionsForExport,
   REPOSITORY_REPORT_SECTION_INTRODUCTIONS,
 } from '../repository-audit-report-output'
 import { generateRepositoryAuditReportPdf } from '../repository-audit-report-pdf'
@@ -13,6 +14,12 @@ describe('repository report exports', () => {
   it('keeps deployment rows separate from shared code evidence and preserves after-control dates', () => {
     const props = repositoryReportFixture()
     const sections = buildRepositoryReportSections(props)
+    expect(filterRepositoryReportSectionsForExport(sections).map((section) => section.title)).toEqual([
+      'Sammendrag',
+      'Deployments',
+      'Manuell historikk',
+      'Avvik',
+    ])
     expect(sections.find((section) => section.title === 'Deployments')?.rows).toHaveLength(2)
     expect(sections.find((section) => section.title === 'Commits')?.rows).toHaveLength(1)
     const history = sections.find((section) => section.title === 'Manuell historikk')
@@ -46,7 +53,9 @@ describe('repository report exports', () => {
     )
     expect(buildRepositoryReportSummary(props).values).toContainEqual(['Registrerte avvik', '1 (1 åpne)'])
     expect(sections.find((section) => section.title === 'Deployments')?.rows[0][1]).toContain('Endringsopphav')
-    expect(sections.find((section) => section.title === 'Deployments')?.cellLinks?.[0]?.[0]).toContain('/deployments/1')
+    expect(sections.find((section) => section.title === 'Deployments')?.cellLinks?.[0]?.[0]).toContain(
+      '/deployments/1?view=repository',
+    )
     expect(sections.find((section) => section.title === 'Sammendrag')?.rows).toContainEqual([
       'Repository',
       'navikt/test',
@@ -192,7 +201,12 @@ describe('repository report exports', () => {
     expect(workbook.getWorksheet('Deployments')?.rowCount).toBe(4)
     expect(workbook.getWorksheet('Deployments')?.getRow(1).getCell(1).value).toContain('listet separat')
     expect(workbook.getWorksheet('Deployments')?.getRow(2).values).toContain('Deployment / tidspunkt')
-    expect(workbook.getWorksheet('Commits')?.rowCount).toBe(3)
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      'Sammendrag',
+      'Deployments',
+      'Manuell historikk',
+      'Avvik',
+    ])
     expect(workbook.getWorksheet('Manuell historikk')?.getRow(3).values).toContain(
       '20.01.2026, 01:00\n21.01.2026, 01:00',
     )
@@ -205,16 +219,14 @@ describe('repository report exports', () => {
     expect(workbook.getWorksheet('Avvik')?.getCell(3, 3).value).toContain('Direkte push uten forhåndsgodkjenning')
     expect(workbook.getWorksheet('Deployments')?.getCell(3, 1).value).toMatchObject({
       text: expect.stringContaining('1 / nais-1'),
-      hyperlink: expect.stringContaining('/deployments/1'),
+      hyperlink: expect.stringContaining('/deployments/1?view=repository'),
     })
-    expect(workbook.getWorksheet('Commits')?.getCell(3, 2).value).toMatchObject({
-      hyperlink: expect.stringContaining(`/commit/${'b'.repeat(40)}`),
+    expect(workbook.getWorksheet('Avvik')?.getCell(3, 1).value).toMatchObject({
+      hyperlink: expect.stringContaining('/deployments/1?view=repository'),
     })
-    expect(workbook.getWorksheet('PR-evidens')?.getCell(3, 2).value).toMatchObject({
-      text: expect.stringContaining('#42'),
-      hyperlink: expect.stringContaining('/pull/42'),
-    })
-    for (const [sheetName, introduction] of Object.entries(REPOSITORY_REPORT_SECTION_INTRODUCTIONS)) {
+    for (const [sheetName, introduction] of Object.entries(REPOSITORY_REPORT_SECTION_INTRODUCTIONS).filter(
+      ([sheetName]) => ['Deployments', 'Manuell historikk', 'Avvik'].includes(sheetName),
+    )) {
       expect(workbook.getWorksheet(sheetName)?.getRow(1).getCell(1).value).toBe(introduction)
     }
   })
@@ -233,7 +245,7 @@ describe('repository report exports', () => {
     expect(pdf.length).toBeGreaterThan(1000)
   })
 
-  it('renders multi-page deployment and long commit evidence without overflow warnings', async () => {
+  it('renders many deployments and long goal and approval evidence without overflow warnings', async () => {
     const props = repositoryReportFixture()
     const deployment = props.reportData.deployments[0]
     props.reportData.deployments = Array.from({ length: 40 }, (_, index) => ({
@@ -248,25 +260,9 @@ describe('repository report exports', () => {
       objectiveTitle: `Mål ${index}\n${'Lang målbeskrivelse '.repeat(8)}`,
       keyResultTitle: `Resultat ${index}\n${'Lang resultatbeskrivelse '.repeat(8)}`,
     }))
-    const longMessage = 'Lang commitbeskrivelse '.repeat(300)
     const newlineHeavyMessage = 'Linje\n'.repeat(100)
     const longDeviation = 'Lang avviksbeskrivelse '.repeat(300)
     props.reportData.deliveries[0].manualApprovals[0].documentation = newlineHeavyMessage
-    const delivery = props.reportData.deliveries[0]
-    const firstCommit = delivery.interval.commits[0]
-    if (!firstCommit) throw new Error('Missing fixture interval commit')
-    firstCommit.message = longMessage
-    delivery.interval.commits.push({ ...firstCommit, sha: 'd'.repeat(40), message: newlineHeavyMessage })
-    delivery.interval.totalCommits = 2
-    delivery.interval.listedCommits = 2
-    delivery.interval.summary = { covered: 0, notCovered: 2, unknown: 0 }
-    delivery.assessment.commits.push({
-      sha: 'd'.repeat(40),
-      status: 'covered',
-      reason: 'manual_approval',
-    })
-    delivery.assessment.totalCommits = 2
-    delivery.assessment.listedCommits = 2
     props.reportData.deviations[0].reason = longDeviation
     const warn = vi.spyOn(console, 'warn')
     try {
@@ -279,7 +275,7 @@ describe('repository report exports', () => {
       expect(deploymentRows?.rows[0]?.[1]).toContain('Resultat 39\n')
       const workbook = new ExcelJS.Workbook()
       await workbook.xlsx.load(Uint8Array.from(await generateRepositoryAuditReportExcel(props)).buffer)
-      expect(workbook.getWorksheet('Commits')?.getCell(3, 3).value).toBe(longMessage)
+      expect(workbook.getWorksheet('Commits')).toBeUndefined()
       expect(workbook.getWorksheet('Avvik')?.getCell(3, 3).value).toContain(longDeviation)
     } finally {
       warn.mockRestore()

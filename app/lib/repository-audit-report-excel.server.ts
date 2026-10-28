@@ -3,6 +3,7 @@ import { addIntroRow, applyDataRow, applyHeaderRow } from './audit-report-excel/
 import {
   buildRepositoryReportSections,
   buildRepositoryReportSummary,
+  filterRepositoryReportSectionsForExport,
   isHttpUrl,
   REPOSITORY_REPORT_INTRO,
   REPOSITORY_REPORT_SECTION_INTRODUCTIONS,
@@ -41,7 +42,9 @@ export async function generateRepositoryAuditReportExcel(props: RepositoryReport
   workbook.created = props.generatedAt
   const summary = buildRepositoryReportSummary(props)
   addSummarySheet(workbook, summary)
-  for (const section of buildRepositoryReportSections(props, summary).filter((item) => item.title !== 'Sammendrag')) {
+  for (const section of filterRepositoryReportSectionsForExport(buildRepositoryReportSections(props, summary)).filter(
+    (item) => item.title !== 'Sammendrag',
+  )) {
     const sheet = workbook.addWorksheet(section.title)
     sheet.columns = section.headers.map((header) => ({ width: Math.max(18, Math.min(40, header.length + 8)) }))
     addIntroRow(

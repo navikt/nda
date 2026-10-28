@@ -32,12 +32,28 @@ export interface ReportSection {
   cellLinks?: Record<number, Record<number, string>>
 }
 
+const OMITTED_REPOSITORY_REPORT_DETAIL_SECTIONS = new Set([
+  'Kodeleveranser',
+  'Commits',
+  'PR-evidens',
+  'Kilder',
+  'Identiteter',
+])
+
+export function filterRepositoryReportSectionsForExport(sections: ReportSection[]): ReportSection[] {
+  return sections.filter((section) => !OMITTED_REPOSITORY_REPORT_DETAIL_SECTIONS.has(section.title))
+}
+
 export function isHttpUrl(value: string): boolean {
   try {
     return ['http:', 'https:'].includes(new URL(value).protocol)
   } catch {
     return false
   }
+}
+
+function repositoryDeploymentUrl(props: RepositoryReportOutputProps, deploymentId: number): string {
+  return `${ndaDeploymentUrl(props.teamSlug, props.environmentName, props.appName, deploymentId)}?view=repository`
 }
 
 export const REPOSITORY_REPORT_SECTION_INTRODUCTIONS: Record<string, string> = {
@@ -357,7 +373,7 @@ export function buildRepositoryReportSections(
       `Kobling ${deployment.source.repositoryAuthorization?.linkId ?? 'ukjent'}: ${formatRepositoryAuthorization(deployment.source.repositoryAuthorization?.status)}\nSnapshot ${deployment.source.workflowSnapshot?.id ?? 'ukjent'}, run ${deployment.source.workflowSnapshot?.runId ?? 'ukjent'}, forsøk ${deployment.source.workflowSnapshot?.runAttempt ?? 'ukjent'}\n${formatRepositoryReportDateTime(deployment.source.workflowSnapshot?.fetchedAt)}`,
     ])
     const links: Record<number, string> = {
-      0: ndaDeploymentUrl(props.teamSlug, props.environmentName, props.appName, deployment.id),
+      0: repositoryDeploymentUrl(props, deployment.id),
     }
     if (delivery && deployment.commitSha) {
       links[2] = `https://github.com/${delivery.githubOwner}/${delivery.githubRepoName}/commit/${deployment.commitSha}`
@@ -483,7 +499,7 @@ export function buildRepositoryReportSections(
     const cellLinks: Record<number, Record<number, string>> = {}
     const rows = deviations.map((deviation, index) => {
       const links: Record<number, string> = {
-        0: ndaDeploymentUrl(props.teamSlug, props.environmentName, props.appName, deviation.deploymentId),
+        0: repositoryDeploymentUrl(props, deviation.deploymentId),
       }
       if (deviation.commitSha && deviation.githubOwner && deviation.githubRepoName) {
         links[1] = `https://github.com/${deviation.githubOwner}/${deviation.githubRepoName}/commit/${deviation.commitSha}`
