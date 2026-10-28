@@ -22,7 +22,7 @@ export function DeploymentViewLinks({
           size="small"
           aria-current={currentView === view ? 'page' : undefined}
         >
-          {view === 'application' ? 'Appbasert vurdering' : 'Repositoryvurdering'}
+          {view === 'application' ? 'Applikasjonsbasert vurdering' : 'Repositorybasert vurdering'}
         </Button>
       ))}
     </HStack>

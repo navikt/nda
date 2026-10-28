@@ -9,6 +9,7 @@ const {
   mockGetAppConfigAuditLog,
   mockGetAuditReportsForAppAdmin,
   mockGetUsersByIdentifiers,
+  mockGetNaisApplyActivitySyncState,
 } = vi.hoisted(() => ({
   mockRequireAppAdminAccess: vi.fn(),
   mockCanAccessRepositorySettingsAdmin: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockGetAppConfigAuditLog: vi.fn(),
   mockGetAuditReportsForAppAdmin: vi.fn(),
   mockGetUsersByIdentifiers: vi.fn(),
+  mockGetNaisApplyActivitySyncState: vi.fn(),
 }))
 
 vi.mock('~/lib/authorization.server', () => ({
@@ -28,6 +30,10 @@ vi.mock('~/lib/authorization.server', () => ({
 
 vi.mock('~/db/app-settings.server', () => ({
   getAppConfigAuditLog: mockGetAppConfigAuditLog,
+}))
+
+vi.mock('~/db/nais-apply-activity.server', () => ({
+  getNaisApplyActivitySyncState: mockGetNaisApplyActivitySyncState,
 }))
 
 vi.mock('~/db/repositories.server', () => ({
@@ -74,6 +80,7 @@ describe('admin loader - scoped user lookups (no org-wide directory leak)', () =
     mockGetRepositoryById.mockResolvedValue(null)
     mockGetAppConfigAuditLog.mockResolvedValue([])
     mockGetUsersByIdentifiers.mockResolvedValue(new Map())
+    mockGetNaisApplyActivitySyncState.mockResolvedValue(null)
   })
 
   it("only looks up nav_idents referenced by this app's audit reports, not the entire org", async () => {
@@ -132,6 +139,7 @@ describe('admin loader - repository-admin capability gating', () => {
     mockGetAppConfigAuditLog.mockResolvedValue([])
     mockGetAuditReportsForAppAdmin.mockResolvedValue([])
     mockGetUsersByIdentifiers.mockResolvedValue(new Map())
+    mockGetNaisApplyActivitySyncState.mockResolvedValue(null)
   })
 
   it('exposes canAccessRepoAdminPage as false when the app has no linked repository', async () => {

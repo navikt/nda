@@ -2,6 +2,16 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 vi.mock('~/db/repositories.server', () => ({
   getEffectiveSettingsForApp: vi.fn(),
+  getEffectiveSettingsForRepository: vi.fn(),
+  getRepositoryIdByGithubRepoId: vi.fn().mockResolvedValue(123),
+}))
+
+const { mockGetRepositoryIdentityById } = vi.hoisted(() => ({
+  mockGetRepositoryIdentityById: vi.fn(),
+}))
+
+vi.mock('~/lib/github/git.server', () => ({
+  getRepositoryIdentityById: mockGetRepositoryIdentityById,
 }))
 
 vi.mock('~/db/monorepo.server', () => ({
@@ -57,7 +67,11 @@ vi.mock('~/lib/verification/verify', () => ({
 
 import { findRepositoryForApp } from '~/db/application-repositories.server'
 import { pool } from '~/db/connection.server'
-import { getEffectiveSettingsForApp } from '~/db/repositories.server'
+import {
+  getEffectiveSettingsForApp,
+  getEffectiveSettingsForRepository,
+  getRepositoryIdByGithubRepoId,
+} from '~/db/repositories.server'
 import { getCompareSnapshotForCommit, getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
 import {
   buildCommitsBetweenFromCache,
@@ -74,6 +88,8 @@ const mockGetCompareSnapshot = getCompareSnapshotForCommit as Mock
 const mockGetPreviousDeployment = getPreviousDeploymentForDiff as Mock
 const mockFindRepositoryForApp = findRepositoryForApp as Mock
 const mockGetEffectiveSettings = getEffectiveSettingsForApp as Mock
+const mockGetEffectiveSettingsForRepository = getEffectiveSettingsForRepository as Mock
+const mockGetCanonicalRepositoryId = getRepositoryIdByGithubRepoId as Mock
 const mockFetchVerificationData = fetchVerificationData as Mock
 const mockFindPrForCommit = findPrForCommit as Mock
 const mockGetPrDataForDiff = getPrDataForDiff as Mock
@@ -89,6 +105,12 @@ describe('reverifyDeployment cache base validation', () => {
       effectiveOwner: 'navikt',
       effectiveRepo: 'repo',
       isRedirected: false,
+    })
+    mockGetRepositoryIdentityById.mockResolvedValue({
+      id: 123,
+      owner: 'navikt',
+      name: 'repo',
+      defaultBranch: 'main',
     })
   })
 
@@ -206,6 +228,51 @@ describe('reverifyDeployment cache base validation', () => {
     )
   })
 
+  it('marks cached reverification as failed when canonical repository metadata is missing', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 14,
+          commit_sha: 'head-missing-metadata',
+          four_eyes_status: 'approved',
+          github_pr_number: null,
+          environment_name: 'prod-fss',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'repo',
+          default_branch: 'master',
+          audit_start_year: 2026,
+        },
+      ],
+    })
+    mockFindRepositoryForApp.mockResolvedValue({
+      repository: { github_repo_id: '123', status: 'active' },
+      effectiveOwner: 'navikt',
+      effectiveRepo: 'repo',
+      isRedirected: false,
+    })
+    mockGetCanonicalRepositoryId.mockResolvedValueOnce(null)
+    mockGetEffectiveSettings.mockResolvedValue({
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head-missing-metadata',
+      data: { commits: [] },
+    })
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockFindPrForCommit.mockResolvedValue({ prNumber: null, mismatchedBaseBranches: [], mismatchedPrNumbers: [] })
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+    mockUpdateDeploymentVerification.mockResolvedValue(false)
+
+    await reverifyDeployment(14)
+
+    expect(mockGetPreviousDeployment).not.toHaveBeenCalled()
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ previousDeployment: null, previousDeploymentLookupFailed: true }),
+    )
+  })
+
   it('reports prBackfilled and persists via updateDeploymentVerification when status is unchanged but PR is newly discovered', async () => {
     mockPoolQuery.mockResolvedValueOnce({
       rows: [
@@ -262,6 +329,108 @@ describe('reverifyDeployment cache base validation', () => {
       newStatus: 'approved',
     })
   })
+
+  it('uses the current default branch for an Apply repository when reverifying cached data', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 15,
+          commit_sha: 'head789',
+          four_eyes_status: 'unverified_commits',
+          github_pr_number: null,
+          environment_name: 'prod-gcp',
+          monitored_app_id: 99,
+          detected_github_owner: 'navikt',
+          detected_github_repo_name: 'old-repo-name',
+          deployment_source: 'nais_apply',
+          repository_id: 7,
+          default_branch: 'master',
+          audit_start_year: 2026,
+        },
+      ],
+    })
+    mockGetEffectiveSettingsForRepository.mockResolvedValue({
+      repositoryId: 7,
+      auditStartYear: null,
+      implicitApprovalSettings: { mode: 'off' },
+      defaultBranch: 'master',
+    })
+    mockGetCompareSnapshot.mockResolvedValue({
+      base_sha: 'head789',
+      data: { commits: [] },
+    })
+    mockGetPreviousDeployment.mockResolvedValue(null)
+    mockFindPrForCommit.mockResolvedValue({
+      prNumber: null,
+      mismatchedBaseBranches: [],
+      mismatchedPrNumbers: [],
+    })
+    mockBuildCommitsBetween.mockResolvedValue([])
+    mockVerifyDeployment.mockReturnValue({ status: 'approved', unverifiedCommits: [] })
+    mockUpdateDeploymentVerification.mockResolvedValue(true)
+
+    await reverifyDeployment(15)
+
+    expect(mockGetRepositoryIdentityById).toHaveBeenCalledWith(123)
+    expect(mockGetCompareSnapshot).toHaveBeenCalledWith('navikt', 'repo', 'head789', null)
+    expect(mockBuildCommitsBetween).toHaveBeenCalledWith(
+      'navikt',
+      'repo',
+      'main',
+      { commits: [] },
+      {
+        cacheOnly: true,
+        githubRepoId: '123',
+      },
+    )
+    expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ baseBranch: 'main' }))
+  })
+
+  it.each(['historical', 'pending_approval', 'unknown'] as const)(
+    'preserves %s repository status in cached reverification',
+    async (status) => {
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [
+          {
+            id: 16,
+            commit_sha: 'head789',
+            four_eyes_status: 'approved',
+            github_pr_number: 100,
+            environment_name: 'prod-gcp',
+            monitored_app_id: 99,
+            detected_github_owner: 'navikt',
+            detected_github_repo_name: 'old-repo',
+            repository_id: 123,
+            deployment_source: 'nais_apply',
+          },
+        ],
+      })
+      mockFindRepositoryForApp.mockResolvedValue({
+        repository: { github_repo_id: '123', status: status === 'unknown' ? undefined : status },
+      })
+      mockGetEffectiveSettingsForRepository.mockResolvedValue({ implicitApprovalSettings: { mode: 'off' } })
+      mockGetPreviousDeployment.mockResolvedValue(null)
+      mockGetCompareSnapshot.mockResolvedValue({ base_sha: 'head789', data: { commits: [] } })
+      mockGetPrDataForDiff.mockResolvedValue({
+        metadata: { title: 'Reviewed change', baseBranch: 'main' },
+        reviews: [{ username: 'glad-fjord', state: 'APPROVED' }],
+        commits: [{ sha: 'head789', message: 'Change' }],
+      })
+      mockBuildCommitsBetween.mockResolvedValue([])
+      mockVerifyDeployment.mockImplementation((input) => ({
+        status: input.repositoryStatus === 'active' ? 'approved' : 'unauthorized_repository',
+        unverifiedCommits: [],
+      }))
+      mockUpdateDeploymentVerification.mockResolvedValue(true)
+
+      const result = await reverifyDeployment(16)
+
+      expect(mockVerifyDeployment).toHaveBeenCalledWith(expect.objectContaining({ repositoryStatus: status }))
+      expect(result?.newStatus).toBe('unauthorized_repository')
+      expect(mockFetchVerificationData).not.toHaveBeenCalled()
+      mockVerifyDeployment.mockReset()
+    },
+  )
 
   it('does not report prBackfilled when the deployment update affects zero rows (e.g. status became protected mid-flight)', async () => {
     mockPoolQuery.mockResolvedValueOnce({

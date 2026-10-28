@@ -1,3 +1,4 @@
+import type { AuditReportAssessmentModel } from '~/lib/audit-report-model'
 import { toDateString } from '~/lib/date-utils'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import { pool } from '../connection.server'
@@ -5,6 +6,7 @@ import { pool } from '../connection.server'
 interface M2MAuditReportRow {
   id: number
   report_id: string
+  assessment_model: AuditReportAssessmentModel
   period_type: ReportPeriodType
   period_label: string
   period_start: Date
@@ -20,18 +22,21 @@ interface M2MAuditReportRow {
   formats: string[]
 }
 
-export async function getActiveReportsForAppM2M(monitoredAppId: number): Promise<M2MAuditReportRow[]> {
+export async function getActiveReportsForAppM2M(
+  monitoredAppId: number,
+  assessmentModel: AuditReportAssessmentModel = 'application',
+): Promise<M2MAuditReportRow[]> {
   const result = await pool.query<M2MAuditReportRow>(
-    `SELECT id, report_id, period_type, period_label, period_start, period_end,
+    `SELECT id, report_id, assessment_model, period_type, period_label, period_start, period_end,
             generated_at, generated_by, generated_by_app,
             total_deployments, pr_approved_count, manually_approved_count,
             change_origin_count, content_hash,
             ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
-     WHERE monitored_app_id = $1 AND archived_at IS NULL AND superseded_at IS NULL
+     WHERE monitored_app_id = $1 AND assessment_model = $2 AND archived_at IS NULL AND superseded_at IS NULL
        AND EXISTS (SELECT 1 FROM audit_report_files arf WHERE arf.audit_report_id = audit_reports.id AND arf.format = 'pdf')
      ORDER BY period_start DESC`,
-    [monitoredAppId],
+    [monitoredAppId, assessmentModel],
   )
   return result.rows
 }
@@ -40,9 +45,10 @@ export async function getActiveReportsForPeriodM2M(
   monitoredAppId: number,
   periodType: ReportPeriodType,
   periodStart: Date,
+  assessmentModel: AuditReportAssessmentModel = 'application',
 ): Promise<M2MAuditReportRow[]> {
   const result = await pool.query<M2MAuditReportRow>(
-    `SELECT id, report_id, period_type, period_label, period_start, period_end,
+    `SELECT id, report_id, assessment_model, period_type, period_label, period_start, period_end,
             generated_at, generated_by, generated_by_app,
             total_deployments, pr_approved_count, manually_approved_count,
             change_origin_count, content_hash,
@@ -51,10 +57,11 @@ export async function getActiveReportsForPeriodM2M(
      WHERE monitored_app_id = $1
        AND period_type = $2
        AND period_start = $3::date
+       AND assessment_model = $4
        AND archived_at IS NULL AND superseded_at IS NULL
        AND EXISTS (SELECT 1 FROM audit_report_files arf WHERE arf.audit_report_id = audit_reports.id AND arf.format = 'pdf')
      ORDER BY generated_at DESC`,
-    [monitoredAppId, periodType, toDateString(periodStart)],
+    [monitoredAppId, periodType, toDateString(periodStart), assessmentModel],
   )
   return result.rows
 }
@@ -62,26 +69,30 @@ export async function getActiveReportsForPeriodM2M(
 export async function getReportByReportIdForApp(
   reportId: string,
   monitoredAppId: number,
+  assessmentModel: AuditReportAssessmentModel = 'application',
 ): Promise<{ id: number; report_id: string; archived_at: Date | null } | null> {
   const result = await pool.query(
     `SELECT id, report_id, archived_at
      FROM audit_reports
-     WHERE report_id = $1 AND monitored_app_id = $2`,
-    [reportId, monitoredAppId],
+     WHERE report_id = $1 AND monitored_app_id = $2 AND assessment_model = $3`,
+    [reportId, monitoredAppId, assessmentModel],
   )
   return result.rows[0] || null
 }
 
-export async function getReportSummaryById(reportId: number): Promise<M2MAuditReportRow | null> {
+export async function getReportSummaryById(
+  reportId: number,
+  assessmentModel: AuditReportAssessmentModel = 'application',
+): Promise<M2MAuditReportRow | null> {
   const result = await pool.query<M2MAuditReportRow>(
-    `SELECT id, report_id, period_type, period_label, period_start, period_end,
+    `SELECT id, report_id, assessment_model, period_type, period_label, period_start, period_end,
             generated_at, generated_by, generated_by_app,
             total_deployments, pr_approved_count, manually_approved_count,
             change_origin_count, content_hash,
             ARRAY(SELECT format FROM audit_report_files WHERE audit_report_id = audit_reports.id ORDER BY format) AS formats
      FROM audit_reports
-     WHERE id = $1`,
-    [reportId],
+     WHERE id = $1 AND assessment_model = $2`,
+    [reportId, assessmentModel],
   )
   return result.rows[0] || null
 }

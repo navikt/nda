@@ -6,6 +6,101 @@
 
 ---
 
+## Vurderingsmodell for rapporter
+
+`audit_reports.assessment_model` og `report_jobs.assessment_model` skiller mellom
+`application` og `repository`. Eksisterende rader og innsettinger uten modell får
+`application`. Migreringen endrer ikke `report_data`, innholdshash, dokument-ID
+eller lagrede filer.
+
+Aktive rapporter er unike per applikasjon, vurderingsmodell, periodetype og
+start-/sluttdato. Hver modell kan dermed ha sin egen aktive rapport for samme
+periode. Rapportgenereringen lagrer valgt modell og erstatter bare aktive
+rapporter med samme modell. Oppslag av rapporter og jobber
+bruker `application` som standard; en annen modell må velges eksplisitt.
+Applikasjonsprosessoren kan ikke overta en repositorybasert jobb.
+
+Jobbkoden beholder dagens konfliktnøkkel og `idx_report_jobs_inflight` i dette
+steget, slik at gammel og ny applikasjonsversjon kan opprette og gjenbruke jobber
+under utrulling. En eksisterende jobb med en annen vurderingsmodell gir en
+eksplisitt feil i stedet for å bli gjenbrukt. Indeksen hindrer foreløpig parallelle
+jobber på tvers av modellene for samme applikasjon og periode.
+
+Ved modellkonflikt returnerer M2M-generering HTTP 409 i vanlig JSON-feilformat.
+Før oppretting markeres utdaterte jobber fra den andre modellen som feilet med
+feilårsak og avslutningstidspunkt. Dette bruker samme femminuttersgrense som
+overtaking av jobber: `created_at` for ventende jobber og `started_at` for
+påbegynte jobber; manglende `started_at` regnes som utdatert.
+Ferske jobber og jobber fra samme modell endres ikke.
+
+Repositorybasert generering bruker foreløpig samme jobbunikhet. Begge modeller
+kan ha aktive rapporter, men bare én modell kan genereres om gangen for samme
+applikasjon og periode. Hvis parallell generering skal tillates senere, må
+indeksen erstattes med en modellavgrenset indeks og `ON CONFLICT` endres tilsvarende.
+Dette krever et eget utrullingssteg; begge unikhetsindeksene skal ikke eksistere
+samtidig, fordi samtidige innsettinger da kan feile på indeksen som ikke er
+konfliktmålet.
+
+### Repositorybasert rapportgrunnlag
+
+`getRepositoryAuditReportData()` bygger et separat, serialiserbart rapportgrunnlag
+for én produksjonsapplikasjon og periode. App, deploymentutvalg, evidens,
+identiteter og manuell historikk leses med samme klient i en read-only
+`REPEATABLE READ`-transaksjon. Utvalget følger samme inklusive periodegrenser og
+revisjonsstartår som dagens rapport, sortert på `(created_at, id)`.
+
+Grunnlaget har formatversjon 2, verifiseringsversjon og vurderingstidspunkt fra
+databasen. Hvert deployment beholder sin eksplisitte leveransekobling,
+deploymentkilde, tittel, endringsopphav og eventuelle testkrav. Hver unik
+kodeleveranse inkluderer stabil repository-ID, GitHub-ID, låst base/head,
+normalisert GitHub-evidens, vurderingsresultat, raw-snapshot-ID-er med
+hentetidspunkt, author-identiteter med versjoner og manuell
+godkjenningshistorikk med snapshotreferanse, reviewer, registrator og begge
+tidspunkt. Reviewer-visningsnavn og avvik for perioden fryses også i grunnlaget.
+Tilbakekalt og identitetsutdatert historikk beholdes, men gir ikke dekning.
+Manglende leveransekobling beholdes som en mangel; samme SHA eller appens
+nåværende repository brukes aldri til å erstatte koblingen.
+
+Hvert deployment lagrer også gjeldende repositorytillatelse for applikasjonen
+med koblings-ID og status. Oppslaget krever samme uforanderlige GitHub-ID og
+deploymentets detekterte owner/name. Manglende kobling er ukjent, og bare status
+`active` gir tillatelse; kodegodkjenning gir ikke repositorytillatelse.
+
+Branch og trigger hentes fra lagret workflow-run-snapshot for deploymentets
+trigger-URL, ikke fra `deployments.branch_name`, som kan inneholde PR-head.
+Snapshotet må matche GitHub-repository-ID, run-ID og deploymentets fulle SHA.
+En eksplisitt `/attempts/N` krever samme run-forsøk. Snapshot-ID, hentetidspunkt,
+run-ID og forsøk kopieres inn i rapportgrunnlaget. Manglende eller avvikende
+evidens gir ukjent branch/trigger uten fallback til PR-data eller HTTP-oppslag.
+
+Vurderingen gjelder lagret grunnlag ved generering, inkludert etterkontroll.
+Den sier ikke at godkjenning forelå ved deployment. Det normaliserte grunnlaget
+kopieres inn i resultatet, slik at senere endringer i snapshots eller
+godkjenningshistorikk ikke omskriver det tidligere resultatet.
+
+`assessRepositoryAuditReadiness()` vurderer rapportklarhet separat fra kodedekning.
+Manglende kobling, ufullstendig dekning og manglende godkjenning blokkerer.
+`base=head` krever avklart baseline og teller ikke som godkjenning av tidligere
+kode. Ukjent eller ikke tillatt repository, manuell workflow-trigger,
+manglende trigger/branchgrunnlag eller avvik fra
+repositoryets gjeldende default branch blokkerer også. Tom periode markeres
+eksplisitt. Kriteriene bruker ikke `four_eyes_status` og endrer ikke dagens
+applikasjonsbaserte rapportklarhet.
+
+Appens administrasjonsside tilbyr modellvalg ved kontroll og generering.
+Repositoryjobben leser grunnlaget og kontrollerer rapportklarheten på nytt før
+lagring. Det samme frosne grunnlaget brukes til innholdshash, PDF og Excel.
+Erstatning av rapporter avgrenses til valgt modell. Rapportlister merker modellen;
+eksisterende rapportfiler og applikasjonsrapportens format beholdes uendret.
+
+Repositoryrapportens PDF og Excel har egne seksjoner for deploymentkilde,
+kodeintervall, commitdekning, PR-evidens, manuell historikk, kildereferanser og
+identitetsversjoner. Historikkens kontroll- og registreringstidspunkt beholdes,
+og rapporten opplyser at vurderingen gjelder evidens ved generering.
+Applikasjonsmodellens PR-/manuell-tellinger brukes ikke som oppsummering av
+repositorydekning. M2M-API-et beholder applikasjonsbasert standard og kontrakt;
+repositorygenerering tilbys foreløpig bare i brukergrensesnittet.
+
 ## Repositoryreferanse på deployments
 
 `deployments.repository_id` er en nullable fremmednøkkel til `repositories.id`. Ved innsetting fylles den bare når deploymentens detekterte owner/name matcher både en repositorykobling for appen og en `repositories`-rad med samme `github_repo_id`. Koblingens godkjenningsstatus påvirker ikke identitetslagringen; verifisering og godkjenning er uendret. Oppslaget bruker ikke appens nåværende repository som fallback og gjør ingen GitHub-kall. Manglende kobling, ID eller navnematch gir `NULL`, inkludert historiske navn som ikke matcher repositoryets nåværende navn.

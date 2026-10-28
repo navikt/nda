@@ -59,11 +59,11 @@ Når forelder-PR-en merges først, kan barnets merge-commit i stedet dokumentere
 
 Adminlisten for kodeleveranser viser oppfølging basert på samme forhåndsvurdering som detaljsiden: **Trenger manuell godkjenning**, **Ufullstendig grunnlag**, **Alle commits dekket** eller **Anker – ingen kodeendringer**. Gyldige manuelle delgodkjenninger teller med, mens tilbakekalte godkjenninger og endret author, identitet eller leveranseintervall ikke gir dekning. Manglende evidens eller identitetskobling skilles fra kjent manglende godkjenning. Administratorer med godkjenningsrettigheter får lenke til godkjenningssiden for leveranser med fullstendig grunnlag og udekkede commits.
 
-Appens deploymentliste har separate lenker til **Appbasert vurdering** og **Repositoryvurdering** av samme deployment. Detalj-URL-en bruker `view=application` eller `view=repository`; uten parameter, eller med ukjent verdi, beholdes appvisningen. Visningsvalget endrer ikke gjeldende godkjenningsmodell. Den gamle `/deployments/:id`-inngangen videresender med parameterne bevart.
+Applikasjonens deploymentliste har separate lenker til **Applikasjonsbasert vurdering** og **Repositorybasert vurdering** av samme deployment. Detalj-URL-en bruker `view=application` eller `view=repository`; uten parameter, eller med ukjent verdi, beholdes applikasjonsvisningen. Visningsvalget endrer ikke gjeldende godkjenningsmodell. Den gamle `/deployments/:id`-inngangen videresender med parameterne bevart.
 
 Appens deploymentliste støtter også `view=application|repository`, med appvisning som standard. Listen beholder én rad per deployment i begge modeller. Repositoryvisningen bruker samme intervall- og godkjenningsvurdering som detaljsiden og skiller **Alle commits dekket**, **Udekkede commits**, **Ufullstendig grunnlag**, **Mangler leveransekobling** og **Anker – ingen kodeendringer**. Anker betyr ikke at tidligere kode er godkjent. Statusfilteret bruker `repositoryStatus` i repositoryvisningen og `status` i appvisningen; begge beholdes ved bytte av visning, mens sidenummeret nullstilles. Appstatus brukes aldri til å filtrere repositorydekning. Øvrige filtre avgrenser deploymenthendelsene som før; metodefilteret beskriver fortsatt appmodellens metadata, ikke repositoryets reviewdekning. Detaljlenker og tilbake-lenker beholder visning og filtre.
 
-Repositoryvisningen teller kategoriene innenfor øvrige valgte filtre før kodedekningsfilter og paginering. Den leser deployments i puljer på 100 i én skrivebeskyttet repeatable-read-transaksjon og vurderer hver unike koblede leveranse per pulje samlet per repository på samme forbindelse. Puljene bruker cursor på `(created_at, id)` uten gjentatte totaltellinger eller økende OFFSET. Cursorens tidspunkt hentes direkte fra den siste deploymentraden i databasen, slik at tidsstempelpresisjon ikke tapes i JavaScript. Hele utvalget må vurderes for korrekte kategoriantall og paginering; dette gjør ikke GitHub-kall eller lagrer statuser. Bare den valgte sidens sammendrag sendes til klienten. Det gjøres ingen automatisk kobling fra SHA-treff. Kilde- og branchkontroller inngår ikke i kodedekningsmerket og henvises til den separate appvurderingen. Repositoryvisningen er fortsatt en sammenligning av tilgjengelig grunnlag nå og aktiverer ikke ny modell i rapporter, varsler eller godkjenningshandlinger.
+Uten kodedekningsfilter bruker repositoryvisningen ordinær databasepaginering og vurderer bare deploymentene på valgt side. Med kodedekningsfilter må hele utvalget vurderes for korrekt antall treff og paginering. Da leses deployments i puljer på 100 med cursor på `(created_at, id)` uten gjentatte totaltellinger eller økende OFFSET. Cursorens tidspunkt hentes direkte fra databasen uten tap av presisjon i JavaScript. Begge lesemåter bruker én skrivebeskyttet repeatable-read-transaksjon og vurderer unike koblede leveranser samlet per repository på samme forbindelse. Det beregnes ikke separate kategoriantall. Bare den valgte sidens sammendrag sendes til klienten. Lesingen gjør ikke GitHub-kall, lagrer ikke statuser og kobler ikke automatisk fra SHA-treff. Kilde- og branchkontroller inngår ikke i kodedekningsmerket og henvises til den separate applikasjonsbaserte vurderingen. Repositoryvisningen sammenligner tilgjengelig grunnlag nå og aktiverer ikke ny modell i rapporter, varsler eller godkjenningshandlinger.
 
 Repositoryvisningen bruker en egen lesetjeneste og den lagrede `repository_code_delivery_id`-koblingen, med kontroll av repository-ID og full head-SHA. Den viser appmodellens siste lagrede sammenligningsintervall ved siden av repositoryleveransens låste intervall, som kan ha en annen base. Kodedekning beregnes med samme vurdering som repositoryets adminvisning, inkludert gyldige manuelle delgodkjenninger. Den gjelder tilgjengelig grunnlag nå, ikke dekning ved deploymenttidspunktet. Kilde- og branchkontroller overstyres ikke; de leses i appvurderingen. Ingen samlet ny deploymentstatus beregnes.
 
@@ -75,7 +75,8 @@ Leveransedetaljsiden viser i tillegg en **skrivebeskyttet forhåndsvurdering av 
 
 | Kilde | Hva hentes | Når |
 |-------|-----------|-----|
-| **Nais API** | Deployments (app, tidspunkt, commit-SHA, miljø) | Periodisk hvert 5. minutt |
+| **Nais API** | Legacy deployments (app, tidspunkt, commit-SHA, miljø) | Periodisk hvert 5. minutt |
+| **Nais API (Nais Apply)** | `spec.image`-endringer fra aktivitetsloggen for apper med eksplisitt opt-in; GitHub-run `head_sha` hentes og kontrolleres mot repository-ID og run attempt | Periodisk, separat per opt-in-app |
 | **GitHub API** | Commits mellom deployments, PR-metadata, reviews, godkjenninger, check runs | Ved verifisering av hvert deployment |
 | **GitHub API (repo metadata)** | `default_branch` for hver overvåket app | Periodisk, maks én gang per app per 24 timer |
 
@@ -94,14 +95,23 @@ I praksis betyr dette:
 ### Prosessflyt på overordnet nivå
 
 ```
-Nais API → Nye deployments oppdages → Lagres i database (status: "Venter")
+Nais API → Legacy deployments og opt-in Nais Apply-endringer oppdages → Lagres med kildeidentitet
                                             ↓
-                                    GitHub API → Hent commits og PR-data
+                                    Apply uten verifiserbar SHA → "Ikke sporbar" (kan ikke auto-godkjennes)
+                                    GitHub API → Hent commits og PR-data for verifiserbare SHA-er
                                             ↓
                                     Verifiseringslogikk → Bestem status
                                             ↓
                                     Resultat lagres i database
 ```
+
+Nais Apply-aktiviteter uten `environmentName` lagres rått, men materialiseres ikke som leveranser. Flere image-endringer grupperes bare når `repositoryID`, `runID`, `runAttempt` og `checkRunID` identifiserer samme GitHub Actions-jobb og den nye image-verdien er lik. Hendelser uten en komplett grupperingsnøkkel beholdes som separate leveranser; lik actor eller tidsnærhet er ikke nok til å slå dem sammen. `workflowSha` brukes aldri som levert commit-SHA. Hvis Actions-run-data ikke kan bekrefte repository-ID, run attempt og `head_sha`, opprettes leveransen med status `unverifiable`, som er ikke-godkjent og ikke automatisk verifiserbar.
+
+Den første komplette Apply-historikksynken undertrykker Slack-varsler for materialiserte Apply-leveranser. Nye hendelser fra senere pollinger følger eksisterende Slack-varslingsinnstillinger.
+
+Apply-logghenting bruker deploymentets repository-ID til å finne gjeldende GitHub-navn. Loggarkivet bruker deploymentets opprinnelige repositorynavn som nøkkel ved både lagring og lesing, slik at rename ikke endrer arkivnøkkelen. Uavklart identitet blir ikke markert som ferdig cachet. Søskenpropagering avgrenses til kildedeploymentets repository, og cachet reverifisering og diff-forhåndsvurdering bruker faktisk repositorystatus, også for historiske koblinger.
+
+Etter førstegangsinnhentingen materialiseres bare nye aktiviteter og aktiviteter med uavklart GitHub-SHA eller repositorytilknytning som er klare for nytt forsøk etter fem minutter. Ferdigbehandlet historikk materialiseres ikke på nytt ved hver polling. Eldre medlemmer av berørte bildegrupper hentes inn slik at forsinkede hendelser fortsatt kan korrigere gruppens første tidspunkt. Behandlingsstatus lagres først etter at materialisering og tilhørende varsler er fullført, slik at avbrutte forsøk kan gjenopptas.
 
 ---
 
@@ -462,7 +472,8 @@ Alle identitetssammenligninger i disse sjekkene (selvgodkjenning, dependabot-onl
 |-----|--------|-------------------|
 | [`app/lib/sync/scheduler.server.ts`](../app/lib/sync/scheduler.server.ts) | Periodisk kjøring av alle jobber | `startPeriodicSync`, `runPeriodicSync` |
 | [`app/lib/sync/github-verify.server.ts`](../app/lib/sync/github-verify.server.ts) | Batch-verifisering av deployments | `verifyDeploymentsFourEyes`, `verifySingleDeployment` |
-| [`app/lib/sync/nais-sync.server.ts`](../app/lib/sync/nais-sync.server.ts) | Henter deployments fra Nais API | `syncNewDeploymentsFromNais` |
+| [`app/lib/sync/nais-sync.server.ts`](../app/lib/sync/nais-sync.server.ts) | Henter legacy deployments og opt-in Nais Apply-aktiviteter fra Nais API | `syncNewDeploymentsFromNais`, `syncNaisApplyActivityFromNais` |
+| [`app/lib/sync/nais-apply-materialize.server.ts`](../app/lib/sync/nais-apply-materialize.server.ts) | Grupperer image-hendelser med GitHub-claims og oppretter Apply-leveranser | `materializeNaisApplyDeployments` |
 
 ### Statuser og kategorisering
 

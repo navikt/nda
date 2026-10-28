@@ -12,6 +12,8 @@ const {
   mockHasActiveReportForPeriod,
   mockCreateReportJob,
   mockProcessReportJobAsync,
+  mockGetRepositoryAuditReportData,
+  mockTransactionClientQuery,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockCanAccessAppAdmin: vi.fn(),
@@ -23,9 +25,14 @@ const {
   mockHasActiveReportForPeriod: vi.fn(),
   mockCreateReportJob: vi.fn(),
   mockProcessReportJobAsync: vi.fn(),
+  mockGetRepositoryAuditReportData: vi.fn(),
+  mockTransactionClientQuery: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({ requireUser: mockRequireUser }))
+vi.mock('~/db/audit-reports/repository-data.server', () => ({
+  getRepositoryAuditReportData: mockGetRepositoryAuditReportData,
+}))
 
 vi.mock('~/lib/authorization.server', () => ({ canAccessAppAdmin: mockCanAccessAppAdmin }))
 
@@ -41,7 +48,7 @@ vi.mock('~/db/audit-reports.server', () => ({
 }))
 
 vi.mock('~/db/connection.server', () => ({
-  withTransaction: async (fn: (client: unknown) => Promise<unknown>) => fn({}),
+  withTransaction: async (fn: (client: unknown) => Promise<unknown>) => fn({ query: mockTransactionClientQuery }),
 }))
 
 vi.mock('~/db/monitored-applications.server', () => ({
@@ -57,6 +64,7 @@ vi.mock('~/db/repositories.server', () => ({
 vi.mock('~/db/report-jobs.server', () => ({
   createReportJob: mockCreateReportJob,
   isStaleJob: vi.fn(),
+  ReportJobModelConflictError: class extends Error {},
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
@@ -106,6 +114,7 @@ describe('admin actions - Slack config toggles', () => {
     mockGetMonitoredApplicationById.mockReset()
     mockUpdateMonitoredApplication.mockReset()
     mockRecordAppConfigAuditLog.mockReset()
+    mockTransactionClientQuery.mockReset().mockResolvedValue({ rows: [] })
     mockRequireUser.mockResolvedValue({ navIdent: 'Z990001', name: 'Glad Fjord', role: 'admin', isActualAdmin: true })
     mockCanAccessAppAdmin.mockResolvedValue(true)
     mockUpdateMonitoredApplication.mockResolvedValue(undefined)
@@ -220,6 +229,100 @@ describe('admin actions - Slack config toggles', () => {
       }),
       expect.anything(),
     )
+  })
+
+  it('records an audit log entry when Nais Apply is enabled for an app', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({ nais_apply_enabled: false })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_nais_apply_setting',
+        app_id: '42',
+        nais_apply_enabled: 'true',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ success: 'Nais Apply-innstilling oppdatert!' })
+    expect(mockTransactionClientQuery).toHaveBeenCalledWith(
+      'SELECT id FROM monitored_applications WHERE id = $1 FOR UPDATE',
+      [42],
+    )
+    expect(mockTransactionClientQuery.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGetMonitoredApplicationById.mock.invocationCallOrder[0],
+    )
+    expect(mockUpdateMonitoredApplication).toHaveBeenCalledWith(42, { nais_apply_enabled: true }, expect.anything())
+    expect(mockRecordAppConfigAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        monitoredAppId: 42,
+        settingKey: 'nais_apply_enabled',
+        oldValue: { enabled: false },
+        newValue: { enabled: true },
+        changedByNavIdent: 'Z990001',
+        changedByName: 'Glad Fjord',
+      }),
+      expect.anything(),
+    )
+  })
+
+  it('turns Nais Apply off when the switch is unchecked', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({ nais_apply_enabled: true })
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_nais_apply_setting',
+        app_id: '42',
+        nais_apply_enabled: 'false',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ success: 'Nais Apply-innstilling oppdatert!' })
+    expect(mockUpdateMonitoredApplication).toHaveBeenCalledWith(42, { nais_apply_enabled: false }, expect.anything())
+    expect(mockRecordAppConfigAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settingKey: 'nais_apply_enabled',
+        oldValue: { enabled: true },
+        newValue: { enabled: false },
+      }),
+      expect.anything(),
+    )
+  })
+
+  it('does not audit the Nais Apply setting when it is unchanged', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue({ nais_apply_enabled: false })
+    const action = await getAction()
+
+    await action({
+      request: buildRequest({
+        action: 'update_nais_apply_setting',
+        app_id: '42',
+        nais_apply_enabled: 'false',
+      }),
+      params: {},
+    })
+
+    expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('returns an error and does not update or log when the app is not found (Nais Apply)', async () => {
+    mockGetMonitoredApplicationById.mockResolvedValue(null)
+    const action = await getAction()
+
+    const result = await action({
+      request: buildRequest({
+        action: 'update_nais_apply_setting',
+        app_id: '42',
+        nais_apply_enabled: 'true',
+      }),
+      params: {},
+    })
+
+    expect(result).toEqual({ error: 'Fant ikke applikasjonen' })
+    expect(mockUpdateMonitoredApplication).not.toHaveBeenCalled()
+    expect(mockRecordAppConfigAuditLog).not.toHaveBeenCalled()
   })
 
   it('returns an error and does not update or log when the app is not found (approval config)', async () => {
@@ -433,6 +536,80 @@ describe('admin actions - audit report scope validation', () => {
 
     expect(mockCheckAuditReadiness).toHaveBeenCalledWith(42, expect.any(Date), expect.any(Date))
     expect(result).toMatchObject({ readiness: expect.objectContaining({ is_ready: true, no_deployments: true }) })
+  })
+
+  it('checks repository readiness without invoking application readiness', async () => {
+    const readiness = { isReady: true, noDeployments: true, totalDeployments: 0, deployments: [] }
+    mockGetRepositoryAuditReportData.mockResolvedValue({ readiness })
+    const action = await getAction()
+    const result = await action({
+      request: buildRequest({
+        action: 'check_readiness',
+        app_id: '42',
+        assessment_model: 'repository',
+        period_type: 'yearly',
+        period_start: '2025-01-01',
+        period_end: '2025-12-31',
+      }),
+      params: {},
+    })
+    expect(result).toMatchObject({ repositoryReadiness: readiness, readinessAssessmentModel: 'repository' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])('only starts a repository job when repository readiness is %s', async (isReady) => {
+    mockGetRepositoryAuditReportData.mockResolvedValue({
+      readiness: { isReady, noDeployments: false, totalDeployments: 1, deployments: [] },
+    })
+    mockHasActiveReportForPeriod.mockResolvedValue(false)
+    mockCreateReportJob.mockResolvedValue({ created: true, jobId: 'repository-job', status: 'pending' })
+    const action = await getAction()
+    const result = await action({
+      request: buildRequest({
+        action: 'generate_report',
+        app_id: '42',
+        assessment_model: 'repository',
+        period_type: 'yearly',
+        period_start: '2025-01-01',
+        period_end: '2025-12-31',
+      }),
+      params: {},
+    })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
+    if (isReady) {
+      expect(result).toEqual({ jobStarted: 'repository-job', jobAssessmentModel: 'repository' })
+      expect(mockHasActiveReportForPeriod).toHaveBeenCalledWith(
+        42,
+        'yearly',
+        expect.any(Date),
+        expect.any(Date),
+        'repository',
+      )
+      expect(mockCreateReportJob).toHaveBeenCalledWith(
+        42,
+        2025,
+        'yearly',
+        '2025',
+        expect.any(Date),
+        expect.any(Date),
+        'repository',
+      )
+      expect(mockProcessReportJobAsync).toHaveBeenCalledWith(expect.objectContaining({ assessmentModel: 'repository' }))
+    } else {
+      expect(result).toMatchObject({ error: expect.stringContaining('repositorygrunnlaget') })
+      expect(mockCreateReportJob).not.toHaveBeenCalled()
+    }
+  })
+
+  it('rejects an unsupported assessment model before reading report data', async () => {
+    const action = await getAction()
+    expect(
+      await action({
+        request: buildRequest({ action: 'check_readiness', app_id: '42', assessment_model: 'mixed' }),
+        params: {},
+      }),
+    ).toEqual({ error: 'Ugyldig vurderingsmodell' })
+    expect(mockCheckAuditReadiness).not.toHaveBeenCalled()
   })
 
   it('rejects generate_report when periodStart is after periodEnd without creating a job', async () => {

@@ -1,12 +1,13 @@
 import type { PoolClient } from 'pg'
-import {
-  type DeploymentRepositoryStatus,
-  type DeploymentRepositorySummary,
-  parseDeploymentRepositoryStatus,
-} from '~/lib/deployment-repository-status'
+import { type DeploymentRepositorySummary, parseDeploymentRepositoryStatus } from '~/lib/deployment-repository-status'
 import { isFullCommitSha } from '~/lib/git-constants'
 import { withTransaction } from './connection.server'
-import { type DeploymentFilters, type DeploymentWithApp, getDeploymentsBatch } from './deployments.server'
+import {
+  type DeploymentFilters,
+  type DeploymentWithApp,
+  getDeploymentsBatch,
+  getDeploymentsPaginated,
+} from './deployments.server'
 import { getStoredRepositoryDeliveryAssessments } from './repository-delivery-assessments.server'
 
 async function getDeploymentRepositorySummaries(client: Pick<PoolClient, 'query'>, deploymentIds: number[]) {
@@ -77,12 +78,17 @@ export async function getRepositoryDeploymentsPaginated(filters: DeploymentFilte
     const page = filters.page ?? 1
     const perPage = filters.per_page ?? 20
     const status = parseDeploymentRepositoryStatus(repositoryStatus)
-    const counts: Record<DeploymentRepositoryStatus, number> = {
-      approved: 0,
-      not_approved: 0,
-      incomplete: 0,
-      missing_link: 0,
-      no_changes: 0,
+    const deploymentFilters = { ...filters, four_eyes_status: undefined, group_by_sha: false }
+    if (!status) {
+      const result = await getDeploymentsPaginated(deploymentFilters, client)
+      const repositorySummaries =
+        result.deployments.length > 0
+          ? await getDeploymentRepositorySummaries(
+              client,
+              result.deployments.map((deployment) => deployment.id),
+            )
+          : {}
+      return { ...result, repositorySummaries }
     }
     const deployments: DeploymentWithApp[] = []
     const repositorySummaries: Record<number, DeploymentRepositorySummary> = {}
@@ -90,15 +96,7 @@ export async function getRepositoryDeploymentsPaginated(filters: DeploymentFilte
     let afterDeploymentId: number | undefined
     let batchSize: number
     do {
-      const batch = await getDeploymentsBatch(
-        {
-          ...filters,
-          four_eyes_status: undefined,
-          group_by_sha: false,
-        },
-        client,
-        afterDeploymentId,
-      )
+      const batch = await getDeploymentsBatch(deploymentFilters, client, afterDeploymentId)
       batchSize = batch.length
       const summaries =
         batch.length > 0
@@ -109,8 +107,7 @@ export async function getRepositoryDeploymentsPaginated(filters: DeploymentFilte
           : {}
       for (const deployment of batch) {
         const summary = summaries[deployment.id]
-        counts[summary.status]++
-        if (status && summary.status !== status) continue
+        if (summary.status !== status) continue
         if (matchingCount >= (page - 1) * perPage && deployments.length < perPage) {
           deployments.push(deployment)
           repositorySummaries[deployment.id] = summary
@@ -122,7 +119,6 @@ export async function getRepositoryDeploymentsPaginated(filters: DeploymentFilte
     return {
       deployments,
       repositorySummaries,
-      repositoryCounts: counts,
       total: matchingCount,
       page,
       per_page: perPage,

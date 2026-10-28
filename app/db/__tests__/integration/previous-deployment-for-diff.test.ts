@@ -1,7 +1,29 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
-import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
+import { findRootApprovedSiblingForCommit } from '~/lib/verification/fetch-data/previous-deployment.server'
+import {
+  seedApp,
+  seedApplicationRepository as seedApplicationRepositoryRow,
+  seedDeployment,
+  seedRepository,
+  truncateAllTables,
+} from './helpers'
+
+async function seedApplicationRepository(
+  pool: Pool,
+  options: Parameters<typeof seedApplicationRepositoryRow>[1],
+): Promise<number> {
+  if (options.githubRepoId) {
+    await pool.query(
+      `INSERT INTO repositories (github_repo_id, github_owner, github_repo_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (github_repo_id) DO NOTHING`,
+      [options.githubRepoId, options.githubOwner, options.githubRepo],
+    )
+  }
+  return seedApplicationRepositoryRow(pool, options)
+}
 
 let pool: Pool
 
@@ -27,13 +49,13 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'pensjon-app',
       environment: 'prod-gcp',
     })
+    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: owner,
       githubRepo: repo,
       githubRepoId: '9001',
     })
-    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
     const olderId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'pensjonselvbetjening',
@@ -63,13 +85,13 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'pensjon-app',
       environment: 'prod-gcp',
     })
+    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: owner,
       githubRepo: repo,
       githubRepoId: '9001',
     })
-    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2026 })
     const firstId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'pensjonselvbetjening',
@@ -92,6 +114,174 @@ describe('getPreviousDeploymentForDiff', () => {
     const prev = await getPreviousDeploymentForDiff(secondId, '9001')
     expect(prev).not.toBeNull()
     expect(prev?.id).toBe(firstId)
+  })
+
+  it('finds previous deployment by immutable repository ID when claims use an old name', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'pensjon-app',
+      environment: 'prod-gcp',
+    })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '9001',
+      githubOwner: owner,
+      githubRepoName: 'renamed-repository',
+      auditStartYear: 2026,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: 'renamed-repository',
+      githubRepoId: '9001',
+    })
+    const previousId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'old1234aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      createdAt: new Date('2025-12-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'new5678bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      createdAt: new Date('2026-01-15T13:57:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = ANY($2::int[])', [
+      repositoryId,
+      [previousId, currentId],
+    ])
+
+    const previous = await getPreviousDeploymentForDiff(currentId, '9001')
+
+    expect(previous?.id).toBe(previousId)
+  })
+
+  it('does not reuse another repository deployment as a diff base or approved root', async () => {
+    const appId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'multi-repo-app',
+      environment: 'prod-gcp',
+    })
+    const repositoryAId = await seedRepository(pool, {
+      githubRepoId: '9001',
+      githubOwner: owner,
+      githubRepoName: repo,
+    })
+    const repositoryBId = await seedRepository(pool, {
+      githubRepoId: '9002',
+      githubOwner: owner,
+      githubRepoName: 'other-repo',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9001',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: owner,
+      githubRepo: 'other-repo',
+      githubRepoId: '9002',
+      status: 'historical',
+    })
+    const otherRepositoryDeploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'same-repository-commit',
+      createdAt: new Date('2026-01-01T10:00:00Z'),
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [
+      repositoryBId,
+      otherRepositoryDeploymentId,
+    ])
+    const currentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha: 'current-repository-commit',
+      createdAt: new Date('2026-02-01T10:00:00Z'),
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryAId, currentId])
+
+    expect(await getPreviousDeploymentForDiff(currentId, '9001')).toBeNull()
+    expect(await findRootApprovedSiblingForCommit('same-repository-commit', '9001', currentId)).toBeNull()
+  })
+
+  it('does not select a later approved delivery as the root for a backfilled Apply delivery', async () => {
+    const approvedAppId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'approved-app',
+      environment: 'prod-gcp',
+    })
+    const applyAppId = await seedApp(pool, {
+      teamSlug: 'pensjonselvbetjening',
+      appName: 'apply-app',
+      environment: 'prod-gcp',
+    })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [applyAppId])
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '9001',
+      githubOwner: owner,
+      githubRepoName: repo,
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: approvedAppId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9001',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: applyAppId,
+      githubOwner: owner,
+      githubRepo: repo,
+      githubRepoId: '9001',
+    })
+    const commitSha = 'e'.repeat(40)
+    const laterApprovedId = await seedDeployment(pool, {
+      monitoredAppId: approvedAppId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha,
+      createdAt: new Date('2026-01-20T10:00:00Z'),
+      fourEyesStatus: 'approved',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryId, laterApprovedId])
+    const backfilledApplyId = await seedDeployment(pool, {
+      monitoredAppId: applyAppId,
+      teamSlug: 'pensjonselvbetjening',
+      environment: 'prod-gcp',
+      commitSha,
+      createdAt: new Date('2026-01-10T10:00:00Z'),
+      fourEyesStatus: 'pending',
+      githubOwner: owner,
+      githubRepo: repo,
+    })
+    await pool.query(
+      `UPDATE deployments
+       SET deployment_source = 'nais_apply',
+           nais_deployment_id = NULL,
+           deployment_source_id = '9001:12345',
+           repository_id = $2
+       WHERE id = $1`,
+      [backfilledApplyId, repositoryId],
+    )
+
+    expect(await findRootApprovedSiblingForCommit(commitSha, '9001', backfilledApplyId)).toBeNull()
   })
 
   it('skips legacy and legacy_pending deployments', async () => {
@@ -267,6 +457,7 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'sibling-app',
       environment: 'prod-gcp',
     })
+    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2020 })
     await seedApplicationRepository(pool, {
       monitoredAppId: actingAppId,
       githubOwner: owner,
@@ -279,7 +470,6 @@ describe('getPreviousDeploymentForDiff', () => {
       githubRepo: repo,
       githubRepoId: '9001',
     })
-    await seedRepository(pool, { githubRepoId: '9001', githubOwner: owner, githubRepoName: repo, auditStartYear: 2020 })
     const siblingDeploymentId = await seedDeployment(pool, {
       monitoredAppId: siblingAppId,
       teamSlug: 'pensjonselvbetjening',

@@ -2,6 +2,7 @@ import type { GitHubPRData } from '~/db/deployments.server'
 import {
   getAllLatestPrRawSnapshots,
   getAllLatestPrSnapshots,
+  getLatestCommitAssociatedPrsRawSnapshot,
   getLatestCommitSnapshot,
   saveCommitSnapshot,
   savePrRawSnapshotsBatch,
@@ -50,8 +51,9 @@ async function getDerivedPrDataFromRawSnapshots(
   owner: string,
   repo: string,
   prNumber: number,
+  githubRepoId?: number | string,
 ): Promise<GitHubPRData | null> {
-  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
+  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber, githubRepoId)
   return derivePrDataFromRawSnapshots(rawSnapshots)
 }
 
@@ -81,9 +83,11 @@ export async function getCachedPrData(
   repo: string,
   prNumber: number,
   requiredLegacyTypes: LegacyPrDataType[] = [],
+  githubRepoId?: number | string,
 ): Promise<GitHubPRData | null> {
-  const fromRaw = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+  const fromRaw = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber, githubRepoId)
   if (fromRaw) return fromRaw
+  if (githubRepoId != null) return null
   return getLegacyPrData(owner, repo, prNumber, requiredLegacyTypes)
 }
 
@@ -91,8 +95,9 @@ export async function getPrDataForDiff(
   owner: string,
   repo: string,
   prNumber: number,
+  githubRepoId?: number | string,
 ): Promise<{ metadata: PrMetadata; reviews: PrReview[]; commits: PrCommit[] } | null> {
-  const prData = await getCachedPrData(owner, repo, prNumber, ['reviews', 'commits'])
+  const prData = await getCachedPrData(owner, repo, prNumber, ['reviews', 'commits'], githubRepoId)
   if (!prData) return null
   const { metadata, reviews, commits } = mapPrDataToVerificationTypes(prNumber, prData)
   return { metadata, reviews, commits }
@@ -141,8 +146,9 @@ async function refreshMutablePrData(
   prNumber: number,
   includeComments: boolean = true,
   includeReviews: boolean = true,
+  githubRepoId?: number | string,
 ): Promise<GitHubPRData | null> {
-  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
+  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber, githubRepoId)
   const prSnapshot = rawSnapshots.get('pr')
   if (!prSnapshot) return null
 
@@ -151,11 +157,16 @@ async function refreshMutablePrData(
 
   await persistMutablePrSnapshots(owner, repo, prNumber, fetched.githubRepoId, fetched)
 
-  return getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+  return getDerivedPrDataFromRawSnapshots(owner, repo, prNumber, githubRepoId)
 }
 
-export async function refreshDisplayData(owner: string, repo: string, prNumber: number): Promise<GitHubPRData | null> {
-  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber)
+export async function refreshDisplayData(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  githubRepoId?: number | string,
+): Promise<GitHubPRData | null> {
+  const rawSnapshots = await getAllLatestPrRawSnapshots(owner, repo, prNumber, githubRepoId)
   const prSnapshot = rawSnapshots.get('pr')
   if (!prSnapshot) return null
 
@@ -167,12 +178,13 @@ export async function refreshDisplayData(owner: string, repo: string, prNumber: 
     { dataType: 'comments', data: fetched.issueComments },
   ])
 
-  return getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+  return getDerivedPrDataFromRawSnapshots(owner, repo, prNumber, githubRepoId)
 }
 
 export interface FetchOptions {
   forceRefresh?: boolean
   refreshDisplayData?: boolean
+  githubRepoId?: number | string
   dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[]
   includeComments?: boolean
   includeReviews?: boolean
@@ -195,14 +207,14 @@ export async function fetchDeployedPrData(
     repo,
     commitSha,
     baseBranch,
-    { forceRefresh: options?.forceRefresh },
+    { forceRefresh: options?.forceRefresh, githubRepoId: options?.githubRepoId },
   )
   if (!prNumber) {
     return { deployedPr: null, mismatchedBaseBranches, mismatchedPrNumbers, derivedFromRaw: false }
   }
 
   if (options?.refreshDisplayData) {
-    const refreshed = await refreshDisplayData(owner, repo, prNumber)
+    const refreshed = await refreshDisplayData(owner, repo, prNumber, options?.githubRepoId)
     if (refreshed) {
       const mapped = mapPrDataToVerificationTypes(prNumber, refreshed)
       return {
@@ -221,9 +233,12 @@ export async function fetchDeployedPrData(
   }
 
   if (!options?.forceRefresh) {
-    const fromRaw = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+    const fromRaw = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber, options?.githubRepoId)
     const cachedPrData =
-      fromRaw ?? (await getLegacyPrData(owner, repo, prNumber, ['reviews', 'commits', 'checks', 'comments']))
+      fromRaw ??
+      (options?.githubRepoId == null
+        ? await getLegacyPrData(owner, repo, prNumber, ['reviews', 'commits', 'checks', 'comments'])
+        : null)
     if (cachedPrData) {
       const mapped = mapPrDataToVerificationTypes(prNumber, cachedPrData)
       return {
@@ -248,6 +263,7 @@ export async function fetchDeployedPrData(
     options?.forceRefresh ?? false,
     options?.includeComments ?? true,
     options?.includeReviews ?? true,
+    options?.githubRepoId,
   )
 
   return {
@@ -271,11 +287,12 @@ export async function fetchOrRefreshMergedPrData(
   forceRefresh: boolean,
   includeComments: boolean = true,
   includeReviews: boolean = true,
+  githubRepoId?: number | string,
 ): Promise<{ metadata: PrMetadata; reviews: PrReview[]; commits: PrCommit[] }> {
   if (forceRefresh) {
-    const cachedPrData = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber)
+    const cachedPrData = await getDerivedPrDataFromRawSnapshots(owner, repo, prNumber, githubRepoId)
     if (cachedPrData?.merged_at) {
-      const refreshed = await refreshMutablePrData(owner, repo, prNumber, includeComments, includeReviews)
+      const refreshed = await refreshMutablePrData(owner, repo, prNumber, includeComments, includeReviews, githubRepoId)
       if (refreshed) {
         return mapPrDataToVerificationTypes(prNumber, refreshed)
       }
@@ -405,7 +422,7 @@ export async function findPrForCommit(
   repo: string,
   commitSha: string,
   baseBranch?: string,
-  options?: { cacheOnly?: boolean; forceRefresh?: boolean },
+  options?: { cacheOnly?: boolean; forceRefresh?: boolean; githubRepoId?: number | string },
 ): Promise<{
   prNumber: number | null
   mismatchedBaseBranches: string[]
@@ -414,26 +431,38 @@ export async function findPrForCommit(
   const cacheOnly = options?.cacheOnly ?? false
   const forceRefresh = options?.forceRefresh ?? false
 
-  // See app/db/migrations/1787679200000_add-github-commit-associated-prs-raw-snapshots.sql
-  if (!forceRefresh) {
+  let cachedPrs: Array<{ number: number; baseBranch: string }> | null = null
+  if (!forceRefresh && options?.githubRepoId != null) {
+    const cached = await getLatestCommitAssociatedPrsRawSnapshot(owner, repo, commitSha, options.githubRepoId)
+    if (cached?.paginationComplete && Array.isArray(cached.data)) {
+      cachedPrs = cached.data.flatMap((entry: { number?: unknown; base?: { ref?: unknown } }) =>
+        typeof entry.number === 'number' && typeof entry.base?.ref === 'string'
+          ? [{ number: entry.number, baseBranch: entry.base.ref }]
+          : [],
+      )
+    }
+  } else if (!forceRefresh) {
     const cached = await getLatestCommitSnapshot(owner, repo, commitSha, 'prs')
     if (cached && cached.schemaVersion >= CURRENT_SCHEMA_VERSION) {
-      const prs = (cached.data as { prs: Array<{ number: number; baseBranch: string }> }).prs
-      const matchingPrs = baseBranch ? prs.filter((pr) => pr.baseBranch === baseBranch) : prs
-      const mismatchedPrs = baseBranch ? prs.filter((pr) => pr.baseBranch !== baseBranch) : []
-      if (matchingPrs.length > 0) {
-        return {
-          prNumber: matchingPrs[0].number,
-          mismatchedBaseBranches: mismatchedPrs.map((p) => p.baseBranch),
-          mismatchedPrNumbers: mismatchedPrs.map((p) => p.number),
-        }
+      cachedPrs = (cached.data as { prs: Array<{ number: number; baseBranch: string }> }).prs
+    }
+  }
+
+  if (cachedPrs) {
+    const matchingPrs = baseBranch ? cachedPrs.filter((pr) => pr.baseBranch === baseBranch) : cachedPrs
+    const mismatchedPrs = baseBranch ? cachedPrs.filter((pr) => pr.baseBranch !== baseBranch) : []
+    if (matchingPrs.length > 0) {
+      return {
+        prNumber: matchingPrs[0].number,
+        mismatchedBaseBranches: mismatchedPrs.map((p) => p.baseBranch),
+        mismatchedPrNumbers: mismatchedPrs.map((p) => p.number),
       }
-      if (cacheOnly || prs.length === 0) {
-        return {
-          prNumber: null,
-          mismatchedBaseBranches: mismatchedPrs.map((p) => p.baseBranch),
-          mismatchedPrNumbers: mismatchedPrs.map((p) => p.number),
-        }
+    }
+    if (cacheOnly || cachedPrs.length === 0) {
+      return {
+        prNumber: null,
+        mismatchedBaseBranches: mismatchedPrs.map((p) => p.baseBranch),
+        mismatchedPrNumbers: mismatchedPrs.map((p) => p.number),
       }
     }
   }

@@ -1,9 +1,8 @@
-import { Alert, BodyShort, Box, Button, HStack, VStack } from '@navikt/ds-react'
+import { BodyShort, Box, Button, Heading, HStack, VStack } from '@navikt/ds-react'
 import type { ComponentProps } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import {
   DEPLOYMENT_REPOSITORY_STATUS_LABELS,
-  type DeploymentRepositoryStatus,
   type DeploymentRepositorySummary,
   parseDeploymentRepositoryStatus,
 } from '~/lib/deployment-repository-status'
@@ -49,7 +48,6 @@ interface MonorepoInfo {
 export interface AppDeploymentsPageProps {
   view?: DeploymentView
   repositorySummaries?: Record<number, DeploymentRepositorySummary>
-  repositoryCounts?: Record<DeploymentRepositoryStatus, number> | null
   app: MonitoredApplication
   deployments: DeploymentData[]
   total: number
@@ -74,7 +72,6 @@ export interface AppDeploymentsPageProps {
 export function AppDeploymentsPage({
   view = 'application',
   repositorySummaries = {},
-  repositoryCounts,
   app,
   deployments,
   total,
@@ -141,14 +138,12 @@ export function AppDeploymentsPage({
 
   return (
     <VStack gap="space-32">
+      <Heading level="1" size="large">
+        {view === 'repository'
+          ? 'Deployments – repositorybasert vurdering'
+          : 'Deployments – applikasjonsbasert vurdering'}
+      </Heading>
       <DeploymentViewLinks pathname={pathname} searchParams={viewParams} currentView={view} />
-      {view === 'repository' && (
-        <Alert variant="info" size="small">
-          Skrivebeskyttet repositoryvisning. Kodedekningen beregnes fra lagret grunnlag nå, ikke ved
-          deploymenttidspunktet. Den endrer ikke appbasert status. Kilde- og branchkontroller vises i appbasert
-          vurdering.
-        </Alert>
-      )}
       {monorepo && !showAllEnvironments && (
         <Box padding="space-16" borderRadius="8" background="neutral-soft">
           <HStack gap="space-8" align="center" justify="space-between" wrap>
@@ -185,7 +180,7 @@ export function AppDeploymentsPage({
             : undefined
         }
         statusLabel={view === 'repository' ? 'Kodedekning' : undefined}
-        methodLabel={view === 'repository' ? 'Metode (appbasert)' : undefined}
+        methodLabel={view === 'repository' ? 'Metode (applikasjonsbasert)' : undefined}
         currentPeriod={currentPeriod}
         currentStatus={currentStatus}
         currentMethod={currentMethod}
@@ -204,14 +199,6 @@ export function AppDeploymentsPage({
         currentUserGithub={currentUserGithub}
         onFilterChange={updateFilter}
       />
-      {view === 'repository' && repositoryCounts && (
-        <BodyShort size="small" textColor="subtle">
-          Kodedekning før statusfilter:{' '}
-          {Object.entries(DEPLOYMENT_REPOSITORY_STATUS_LABELS)
-            .map(([status, label]) => `${label}: ${repositoryCounts[status as DeploymentRepositoryStatus]}`)
-            .join(' · ')}
-        </BodyShort>
-      )}
 
       <HStack justify="space-between" align="center" wrap>
         <BodyShort textColor="subtle">

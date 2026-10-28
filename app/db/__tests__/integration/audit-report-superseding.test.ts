@@ -1,10 +1,18 @@
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { RepositoryAuditReportData } from '~/lib/repository-audit-report'
 import {
+  archiveAuditReport,
+  getActiveReportsForAppM2M,
+  getActiveReportsForPeriodM2M,
+  getAllAuditReports,
   getAuditReportsForApp,
   getAuditReportsForAppAdmin,
+  getReportByReportIdForApp,
+  getReportSummaryById,
   hasActiveReportForPeriod,
   saveAuditReport,
+  saveAuditReportFile,
 } from '../../audit-reports.server'
 import { seedApp, truncateAllTables } from './helpers'
 
@@ -35,6 +43,150 @@ const minimalReportData = {
 }
 
 describe('audit report superseding', () => {
+  it('persists and replaces repository reports without superseding application reports', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'test', environment: 'prod-gcp' })
+    const params = {
+      monitoredAppId: appId,
+      appName: 'test',
+      teamSlug: 'team-fjord',
+      environmentName: 'prod-gcp',
+      repository: '',
+      year: 2025,
+      periodType: 'yearly' as const,
+      periodLabel: '2025',
+      periodStart: new Date('2025-01-01'),
+      periodEnd: new Date('2025-12-31'),
+      generatedBy: 'Z990001',
+    }
+    const data: RepositoryAuditReportData = {
+      schemaVersion: 2,
+      verificationSchemaVersion: 5,
+      assessmentModel: 'repository',
+      assessmentTime: 'generation',
+      assessedAt: '2026-01-01T00:00:00Z',
+      app: {
+        id: appId,
+        name: 'test',
+        team: 'team-fjord',
+        environment: 'prod-gcp',
+        testRequirement: 'none',
+      },
+      period: { start: params.periodStart.toISOString(), end: params.periodEnd.toISOString() },
+      deployments: [],
+      deliveries: [],
+      deviations: [],
+      userDisplayNames: {},
+    }
+    const application = await saveAuditReport({ ...params, reportData: minimalReportData })
+    const repository = await saveAuditReport({ ...params, reportData: data })
+    expect(repository.assessment_model).toBe('repository')
+    expect(repository.report_data).toEqual(data)
+    expect(repository.content_hash).not.toBe(application.content_hash)
+    await expect(saveAuditReport({ ...params, reportData: data })).rejects.toThrow('An active report already exists')
+
+    const replacement = await saveAuditReport({
+      ...params,
+      reportData: { ...data, assessedAt: '2026-01-02T00:00:00Z' },
+      supersedeReason: 'Oppdatert evidens',
+    })
+    expect((await getAuditReportsForApp(appId)).map((report) => report.id)).toEqual([application.id])
+    expect((await getAuditReportsForApp(appId, 'repository')).map((report) => report.id)).toEqual([replacement.id])
+    const { rows } = await pool.query('SELECT superseded_by_report_id, report_data FROM audit_reports WHERE id = $1', [
+      repository.id,
+    ])
+    expect(rows[0]).toEqual({ superseded_by_report_id: replacement.id, report_data: data })
+    await archiveAuditReport(replacement.id, appId, 'Z990001', 'Arkivert')
+    expect(await getAuditReportsForApp(appId, 'repository')).toEqual([])
+  })
+
+  it('keeps repository reports separate from application report replacement and retrieval', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-fss' })
+    const periodStart = new Date('2025-01-01')
+    const periodEnd = new Date('2025-12-31')
+    const params = {
+      monitoredAppId: appId,
+      appName: 'app-a',
+      teamSlug: 'team-a',
+      environmentName: 'prod-fss',
+      repository: 'navikt/app-a',
+      year: 2025,
+      periodType: 'yearly' as const,
+      periodLabel: 'Årsrapport 2025',
+      periodStart,
+      periodEnd,
+      reportData: minimalReportData,
+      generatedBy: 'Z990001',
+    }
+    const original = await saveAuditReport(params)
+    expect(original.assessment_model).toBe('application')
+    expect(await hasActiveReportForPeriod(appId, 'yearly', periodStart, periodEnd, 'repository')).toBe(false)
+
+    const { rows: repositoryReports } = await pool.query<{ id: number; report_id: string }>(
+      `INSERT INTO audit_reports (
+         report_id, monitored_app_id, app_name, team_slug, environment_name, repository,
+         year, period_type, period_label, period_start, period_end,
+         total_deployments, pr_approved_count, manually_approved_count, unique_deployers, unique_reviewers,
+         report_data, content_hash, assessment_model
+       )
+       SELECT 'repository-report', monitored_app_id, app_name, team_slug, environment_name, repository,
+              year, period_type, period_label, period_start, period_end,
+              0, 0, 0, 0, 0, '{}', 'repository-hash', 'repository'
+       FROM audit_reports WHERE id = $1
+       RETURNING id, report_id`,
+      [original.id],
+    )
+    const repositoryReport = repositoryReports[0]
+    await saveAuditReportFile(repositoryReport.id, 'pdf', Buffer.from('repository-pdf'))
+    await saveAuditReportFile(original.id, 'pdf', Buffer.from('original-pdf'))
+
+    expect(await hasActiveReportForPeriod(appId, 'yearly', periodStart, periodEnd, 'repository')).toBe(true)
+    expect((await getAuditReportsForApp(appId)).map((r) => r.id)).toEqual([original.id])
+    expect((await getAuditReportsForApp(appId, 'repository')).map((r) => r.id)).toEqual([repositoryReport.id])
+    expect((await getAuditReportsForAppAdmin(appId)).map((r) => r.id)).toEqual([original.id])
+    expect((await getAllAuditReports()).map((r) => r.id)).toEqual([original.id])
+    expect((await getAllAuditReports('repository')).map((r) => r.id)).toEqual([repositoryReport.id])
+    expect((await getActiveReportsForAppM2M(appId)).map((r) => r.id)).toEqual([original.id])
+    expect((await getActiveReportsForPeriodM2M(appId, 'yearly', periodStart)).map((r) => r.id)).toEqual([original.id])
+    expect((await getActiveReportsForAppM2M(appId, 'repository')).map((r) => r.id)).toEqual([repositoryReport.id])
+    expect((await getActiveReportsForPeriodM2M(appId, 'yearly', periodStart, 'repository')).map((r) => r.id)).toEqual([
+      repositoryReport.id,
+    ])
+    expect(await getReportByReportIdForApp(repositoryReport.report_id, appId)).toBeNull()
+    expect(await getReportByReportIdForApp(repositoryReport.report_id, appId, 'repository')).toMatchObject({
+      id: repositoryReport.id,
+    })
+    expect(await getReportSummaryById(repositoryReport.id)).toBeNull()
+    expect(await getReportSummaryById(repositoryReport.id, 'repository')).toMatchObject({
+      assessment_model: 'repository',
+    })
+
+    await expect(saveAuditReport(params)).rejects.toThrow('An active report already exists')
+    const replacement = await saveAuditReport({ ...params, supersedeReason: 'Oppdatert grunnlag' })
+    const { rows } = await pool.query(
+      `SELECT id, assessment_model, superseded_at, superseded_by_report_id, report_data, content_hash
+       FROM audit_reports WHERE monitored_app_id = $1 ORDER BY id`,
+      [appId],
+    )
+    expect(rows[0]).toMatchObject({
+      superseded_by_report_id: replacement.id,
+      report_data: original.report_data,
+      content_hash: original.content_hash,
+    })
+    expect(rows[1]).toMatchObject({
+      id: repositoryReport.id,
+      assessment_model: 'repository',
+      superseded_at: null,
+      superseded_by_report_id: null,
+      report_data: {},
+      content_hash: 'repository-hash',
+    })
+    expect((await getAuditReportsForAppAdmin(appId, 'repository')).map((r) => r.id)).toEqual([repositoryReport.id])
+    expect(await archiveAuditReport(repositoryReport.id, appId, 'Z990001', 'Arkiverer rapport')).toBe(true)
+    expect(await getAuditReportsForApp(appId, 'repository')).toEqual([])
+    expect(await getActiveReportsForAppM2M(appId, 'repository')).toEqual([])
+    expect(await getActiveReportsForPeriodM2M(appId, 'yearly', periodStart, 'repository')).toEqual([])
+  })
+
   it('marks old report as superseded when saving a new report for the same period', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-fss' })
 

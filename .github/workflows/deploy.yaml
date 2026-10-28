@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - sandbox
 
 permissions:
   contents: read
@@ -74,8 +75,8 @@ jobs:
         run: pnpm run test:integration
 
   build:
-    if: github.ref == 'refs/heads/main'
     name: Build and push Docker image
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/sandbox'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,7 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: nais/docker-build-push@bfe52e3ad6d0e96fd1056a03acb7b619aaffb39d # v0
+      - uses: nais/docker-build-push@dd7421d5068057a020ca46ead966c26190c516b1 # v0
         id: docker-push
         with:
           team: pensjon-revisjon
@@ -105,8 +106,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Deploy to prod-gcp
-        uses: nais/deploy/actions/deploy@7ad7c2b833e1db74a80954e3ee6bb6ac060a8ae7 # pinned
+        uses: nais/deploy/actions/deploy@1064e26587ab2794266a35f477387e561899a7ef # pinned
         env:
           CLUSTER: prod-gcp
           RESOURCE: .nais/prod.yaml
+          VAR: image=${{ needs.build.outputs.image }}
+
+  deploy-dev:
+    if: github.ref == 'refs/heads/sandbox'    
+    name: Deploy to dev-gcp
+    needs: [lint-and-typecheck, unit-tests, integration-tests, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Deploy to dev-gcp
+        uses: nais/deploy/actions/deploy@1064e26587ab2794266a35f477387e561899a7ef # pinned
+        env:
+          CLUSTER: dev-gcp
+          RESOURCE: .nais/dev.yaml
           VAR: image=${{ needs.build.outputs.image }}

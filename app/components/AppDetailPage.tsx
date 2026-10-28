@@ -75,6 +75,7 @@ export interface AppDetailAlert {
 interface AppDetailAuditReport {
   id: number
   report_id: string
+  assessment_model?: 'application' | 'repository'
   year: number
   total_deployments: number
   pr_approved_count: number
@@ -418,7 +419,9 @@ export function AppDetailPage({ loaderData, actionData, canAccessAdmin, canAcces
                         </HStack>
                         <Detail textColor="subtle">
                           Generert: {new Date(report.generated_at).toLocaleDateString('nb-NO')} •{' '}
-                          {report.pr_approved_count} PR, {report.manually_approved_count} manuell
+                          {report.assessment_model === 'repository'
+                            ? 'Repositorybasert vurdering'
+                            : `${report.pr_approved_count} PR, ${report.manually_approved_count} manuell`}
                         </Detail>
                         <Detail textColor="subtle">Dokument-ID: {report.report_id}</Detail>
                       </VStack>

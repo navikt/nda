@@ -532,13 +532,6 @@ describe('deployment repository comparison', () => {
     const missing = await getRepositoryDeploymentsPaginated(filters, 'missing_link')
     expect(missing.deployments.map((deployment) => deployment.id)).toEqual([unlinked])
     expect(missing.total).toBe(1)
-    expect(missing.repositoryCounts).toEqual({
-      approved: 0,
-      not_approved: 0,
-      incomplete: 1,
-      no_changes: 1,
-      missing_link: 1,
-    })
     expect(await getLinkedDeliveryId(unlinked)).toBeNull()
     const pending = await getRepositoryDeploymentsPaginated(filters, 'incomplete')
     expect(pending.deployments.map((deployment) => deployment.id)).toEqual([incomplete])
@@ -546,9 +539,9 @@ describe('deployment repository comparison', () => {
       status: 'incomplete',
       range: { baseSha: SHA_100, headSha: SHA_101 },
     })
-    expect(
-      (await getRepositoryDeploymentsPaginated({ ...filters, commit_sha: SHA_101 })).repositoryCounts,
-    ).toMatchObject({ incomplete: 1, no_changes: 0, missing_link: 0 })
+    const shaFiltered = await getRepositoryDeploymentsPaginated({ ...filters, commit_sha: SHA_101 })
+    expect(shaFiltered.total).toBe(1)
+    expect(shaFiltered.repositorySummaries[incomplete].status).toBe('incomplete')
   })
 
   it('reads stored links across applications without linking an exact SHA candidate during GET', async () => {

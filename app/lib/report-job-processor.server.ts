@@ -1,3 +1,4 @@
+import { getRepositoryAuditReportData } from '~/db/audit-reports/repository-data.server'
 import {
   archiveAuditReport,
   buildReportData,
@@ -7,9 +8,12 @@ import {
 } from '~/db/audit-reports.server'
 import { claimReportJob, setReportJobAuditReportId, updateReportJobStatus } from '~/db/report-jobs.server'
 import { generateAuditReportExcel } from '~/lib/audit-report-excel.server'
+import type { AuditReportAssessmentModel } from '~/lib/audit-report-model'
 import { generateAuditReportPdf } from '~/lib/audit-report-pdf'
 import { logger } from '~/lib/logger.server'
 import type { ReportPeriodType } from '~/lib/report-periods'
+import { generateRepositoryAuditReportExcel } from '~/lib/repository-audit-report-excel.server'
+import { generateRepositoryAuditReportPdf } from '~/lib/repository-audit-report-pdf'
 
 interface ReportJobParams {
   jobId: string
@@ -22,6 +26,7 @@ interface ReportJobParams {
   generatedBy?: string
   generatedByApp?: string
   supersedeReason?: string
+  assessmentModel?: AuditReportAssessmentModel
 }
 
 export async function processReportJobAsync(params: ReportJobParams) {
@@ -36,23 +41,24 @@ export async function processReportJobAsync(params: ReportJobParams) {
     generatedBy,
     generatedByApp,
     supersedeReason,
+    assessmentModel = 'application',
   } = params
   let reportId: number | null = null
   try {
-    const claimed = await claimReportJob(jobId)
+    const claimed = await claimReportJob(jobId, assessmentModel)
     if (!claimed) {
       return
     }
 
-    const rawData = await getAuditReportData(appId, periodStart, periodEnd)
-    const reportData = buildReportData(rawData)
+    const data = await loadReportData(appId, periodStart, periodEnd, assessmentModel)
+    const { reportData } = data
 
     const report = await saveAuditReport({
       monitoredAppId: appId,
-      appName: rawData.app.app_name,
-      teamSlug: rawData.app.team_slug,
-      environmentName: rawData.app.environment_name,
-      repository: rawData.repository,
+      appName: data.appName,
+      teamSlug: data.teamSlug,
+      environmentName: data.environmentName,
+      repository: data.repository,
       year,
       periodType,
       periodLabel,
@@ -77,19 +83,26 @@ export async function processReportJobAsync(params: ReportJobParams) {
       periodLabel: report.period_label,
       periodStart: new Date(report.period_start),
       periodEnd: new Date(report.period_end),
-      reportData: report.report_data,
       contentHash: report.content_hash,
       reportId: report.report_id,
       generatedAt: new Date(report.generated_at),
     }
 
-    const [pdfResult, excelResult] = await Promise.allSettled([
-      generateAuditReportPdf({
-        ...reportProps,
-        testRequirement: rawData.app.test_requirement as 'none' | 'unit_tests' | 'integration_tests',
-      }),
-      generateAuditReportExcel(reportProps),
-    ])
+    const [pdfResult, excelResult] = await Promise.allSettled(
+      'assessmentModel' in reportData
+        ? [
+            generateRepositoryAuditReportPdf({ ...reportProps, reportData }),
+            generateRepositoryAuditReportExcel({ ...reportProps, reportData }),
+          ]
+        : [
+            generateAuditReportPdf({
+              ...reportProps,
+              reportData,
+              testRequirement: data.testRequirement,
+            }),
+            generateAuditReportExcel({ ...reportProps, reportData }),
+          ],
+    )
 
     if (pdfResult.status === 'rejected') throw pdfResult.reason
     const pdfBuffer = pdfResult.value
@@ -121,5 +134,29 @@ export async function processReportJobAsync(params: ReportJobParams) {
     }
 
     throw err
+  }
+}
+
+async function loadReportData(appId: number, periodStart: Date, periodEnd: Date, model: AuditReportAssessmentModel) {
+  if (model === 'repository') {
+    const { reportData, readiness } = await getRepositoryAuditReportData(appId, periodStart, periodEnd)
+    if (!readiness.isReady) throw new Error('Repository report is not ready for generation.')
+    return {
+      reportData,
+      appName: reportData.app.name,
+      teamSlug: reportData.app.team,
+      environmentName: reportData.app.environment,
+      repository: [...new Set(reportData.deliveries.map((d) => `${d.githubOwner}/${d.githubRepoName}`))].join(', '),
+      testRequirement: undefined,
+    }
+  }
+  const rawData = await getAuditReportData(appId, periodStart, periodEnd)
+  return {
+    reportData: buildReportData(rawData),
+    appName: rawData.app.app_name,
+    teamSlug: rawData.app.team_slug,
+    environmentName: rawData.app.environment_name,
+    repository: rawData.repository,
+    testRequirement: rawData.app.test_requirement as 'none' | 'unit_tests' | 'integration_tests',
   }
 }

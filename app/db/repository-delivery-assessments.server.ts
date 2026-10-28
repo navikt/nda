@@ -22,6 +22,17 @@ export async function getStoredRepositoryDeliveryAssessments(
       ...intervals.flatMap(({ assessment }) =>
         assessment.commits.flatMap((commit) => (commit.authorLogin ? [commit.authorLogin] : [])),
       ),
+      ...intervals.flatMap(({ evidence }) =>
+        Object.values(evidence?.pullRequestsByNumber ?? {}).flatMap((pullRequest) =>
+          pullRequest
+            ? [
+                pullRequest.authorLogin,
+                pullRequest.mergedByLogin,
+                ...(pullRequest.reviews ?? []).map((review) => review.username),
+              ].filter((username): username is string => typeof username === 'string' && username.length > 0)
+            : [],
+        ),
+      ),
     ]),
   ]
   const lookups = await getGithubUserLookups(usernames, client)
@@ -31,21 +42,21 @@ export async function getStoredRepositoryDeliveryAssessments(
       lookup.account_deleted_at === null ? lookup.active_nav_ident : null,
     ]),
   )
-  const intervalsById = new Map(intervals.map((interval) => [interval.deliveryId, interval.assessment]))
+  const intervalsById = new Map(intervals.map((interval) => [interval.deliveryId, interval]))
   const assessments = new Map(
     deliveries.map((delivery) => {
-      const interval = intervalsById.get(delivery.id)
-      if (!interval) throw new Error(`Missing interval assessment for delivery ${delivery.id}`)
+      const evaluated = intervalsById.get(delivery.id)
+      if (!evaluated) throw new Error(`Missing interval assessment for delivery ${delivery.id}`)
+      const interval = evaluated.assessment
+      const manualApprovals = history.filter((approval) => approval.delivery_id === delivery.id)
       return [
         delivery.id,
         {
           interval,
-          assessment: assessStoredRepositoryDeliveryApproval(
-            delivery,
-            interval,
-            history.filter((approval) => approval.delivery_id === delivery.id),
-            identities,
-          ),
+          evidence: evaluated.evidence,
+          sources: evaluated.sources,
+          manualApprovals,
+          assessment: assessStoredRepositoryDeliveryApproval(delivery, interval, manualApprovals, identities),
         },
       ] as const
     }),

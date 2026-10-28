@@ -123,7 +123,6 @@ export async function getMultiAppDeploymentsPageData(
       : {
           ...(await getDeploymentsPaginated(deploymentFilters)),
           repositorySummaries: {} as Record<number, DeploymentRepositorySummary>,
-          repositoryCounts: null,
         }
 
   const errorDeploymentIds = result.deployments.filter((d) => d.four_eyes_status === 'error').map((d) => d.id)

@@ -4,11 +4,12 @@ import { toDateString } from '~/lib/date-utils'
 import { isDependabotUser } from '~/lib/dependabot'
 import type { ReportPeriodType } from '~/lib/report-periods'
 import { generateReportId } from '~/lib/report-periods'
+import { assessRepositoryAuditReadiness, type RepositoryAuditReportData } from '~/lib/repository-audit-report'
 import { pool } from '../../connection.server'
 import type { AuditReport } from '../admin-retrieval.server'
 import type { AuditReportData } from './types'
 
-function calculateReportHash(reportData: AuditReportData): string {
+function calculateReportHash(reportData: AuditReportData | RepositoryAuditReportData): string {
   const json = JSON.stringify(reportData)
   return createHash('sha256').update(json).digest('hex')
 }
@@ -24,7 +25,7 @@ export async function saveAuditReport(params: {
   periodLabel: string
   periodStart: Date
   periodEnd: Date
-  reportData: AuditReportData
+  reportData: AuditReportData | RepositoryAuditReportData
   generatedBy?: string
   generatedByApp?: string
   supersedeReason?: string
@@ -46,15 +47,22 @@ export async function saveAuditReport(params: {
     supersedeReason,
   } = params
 
+  const repositoryData = 'assessmentModel' in reportData ? reportData : null
+  if (repositoryData && !assessRepositoryAuditReadiness(repositoryData).isReady) {
+    throw new Error('Repository report is not ready for generation.')
+  }
+  const assessmentModel = repositoryData ? 'repository' : 'application'
   const contentHash = calculateReportHash(reportData)
   const reportId = generateReportId(periodType, periodLabel, appName, environmentName, contentHash)
 
-  const prApprovedCount = reportData.deployments.filter((d) => d.method === 'pr').length
-  const manuallyApprovedCount = reportData.deployments.filter((d) => d.method === 'manual').length
-
-  const changeOriginCount = reportData.deployments.filter(
-    (d) => d.goal_links && d.goal_links.length > 0 && !isDependabotUser(d.pr_author),
-  ).length
+  const applicationData = 'assessmentModel' in reportData ? null : reportData
+  const prApprovedCount = applicationData?.deployments.filter((d) => d.method === 'pr').length ?? 0
+  const manuallyApprovedCount = applicationData?.deployments.filter((d) => d.method === 'manual').length ?? 0
+  const changeOriginCount = applicationData
+    ? applicationData.deployments.filter(
+        (d) => d.goal_links && d.goal_links.length > 0 && !isDependabotUser(d.pr_author),
+      ).length
+    : null
 
   const client = await pool.connect()
   try {
@@ -66,6 +74,7 @@ export async function saveAuditReport(params: {
       periodType,
       periodStart,
       periodEnd,
+      assessmentModel,
       generatedBy ?? generatedByApp,
       supersedeReason,
     )
@@ -80,8 +89,8 @@ export async function saveAuditReport(params: {
         year, period_type, period_label, period_start, period_end,
         total_deployments, pr_approved_count, manually_approved_count,
         unique_deployers, unique_reviewers,
-        report_data, content_hash, generated_by, generated_by_app, change_origin_count
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        report_data, content_hash, generated_by, generated_by_app, change_origin_count, assessment_model
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       RETURNING *`,
       [
         reportId,
@@ -98,13 +107,15 @@ export async function saveAuditReport(params: {
         reportData.deployments.length,
         prApprovedCount,
         manuallyApprovedCount,
-        reportData.contributors.length,
-        reportData.reviewers.length,
+        applicationData?.contributors.length ??
+          new Set(repositoryData?.deployments.map((d) => d.deployerUsername).filter(Boolean)).size,
+        applicationData?.reviewers.length ?? 0,
         JSON.stringify(reportData),
         contentHash,
         generatedBy || null,
         generatedByApp || null,
         changeOriginCount,
+        assessmentModel,
       ],
     )
 
@@ -133,6 +144,7 @@ async function supersedeExistingReports(
   periodType: ReportPeriodType,
   periodStart: Date,
   periodEnd: Date,
+  assessmentModel: 'application' | 'repository',
   supersededBy?: string,
   supersedeReason?: string,
 ): Promise<number[]> {
@@ -142,6 +154,7 @@ async function supersedeExistingReports(
          superseded_by = $1,
          supersede_reason = $2
      WHERE monitored_app_id = $3
+       AND assessment_model = $7
        AND period_type = $4
        AND period_start = $5::date
        AND period_end = $6::date
@@ -155,6 +168,7 @@ async function supersedeExistingReports(
       periodType,
       toDateString(periodStart),
       toDateString(periodEnd),
+      assessmentModel,
     ],
   )
   return result.rows.map((r) => r.id)

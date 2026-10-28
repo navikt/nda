@@ -67,6 +67,7 @@ export async function checkAuditReadiness(
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.monitored_app_id = $1
+       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.created_at >= $2
        AND d.created_at <= $3
        AND ma.environment_name IN ('prod-fss', 'prod-gcp')

@@ -13,6 +13,7 @@ import {
   getDeployerDeploymentsPaginated,
   getDeployerMonthlyStats,
   getDeploymentCountByDeployer,
+  upsertNaisApplyDeployment,
 } from '../../deployments.server'
 import { createDeviation, getDeviationsByAppId, getDeviationsForPeriod } from '../../deviations.server'
 import {
@@ -283,7 +284,60 @@ describe('audit_start_year filter — Dependabot link query', () => {
     const ids = await getUnlinkedDependabotDeploymentIds('alice')
     expect(ids).toEqual([postId])
   })
+
+  it('utelater Apply-deployments for apper med Apply deaktivert, men beholder legacy og aktivert Apply', async () => {
+    const legacyAppId = await seedApp(pool, { teamSlug: 'team-a', appName: 'legacy-app', environment: 'prod' })
+    const disabledApplyAppId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'disabled-apply-app',
+      environment: 'prod',
+    })
+    const enabledApplyAppId = await seedApp(pool, {
+      teamSlug: 'team-a',
+      appName: 'enabled-apply-app',
+      environment: 'prod',
+    })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [enabledApplyAppId])
+
+    const legacyId = await seedDeployment(pool, {
+      monitoredAppId: legacyAppId,
+      teamSlug: 'team-a',
+      environment: 'prod',
+      createdAt: POST_YEAR,
+      deployerUsername: 'alice',
+      githubPrData: { creator: { username: 'dependabot[bot]' } },
+    })
+
+    const disabledApplyId = await createDependabotApplyDeployment(disabledApplyAppId, 'disabled-apply')
+    const enabledApplyId = await createDependabotApplyDeployment(enabledApplyAppId, 'enabled-apply')
+
+    const ids = await getUnlinkedDependabotDeploymentIds('alice')
+    expect(ids.sort((a, b) => a - b)).toEqual([legacyId, enabledApplyId].sort((a, b) => a - b))
+    expect(ids).not.toContain(disabledApplyId)
+  })
 })
+
+async function createDependabotApplyDeployment(monitoredApplicationId: number, sourceId: string): Promise<number> {
+  const deployment = await upsertNaisApplyDeployment({
+    monitoredApplicationId,
+    sourceId,
+    createdAt: POST_YEAR,
+    teamSlug: 'team-a',
+    environmentName: 'prod',
+    appName: sourceId,
+    title: sourceId,
+    deployerUsername: 'alice',
+    commitSha: 'a'.repeat(40),
+    triggerUrl: null,
+    detectedGithubOwner: null,
+    detectedGithubRepoName: null,
+  })
+  await pool.query('UPDATE deployments SET github_pr_data = $2::jsonb WHERE id = $1', [
+    deployment.id,
+    JSON.stringify({ creator: { username: 'dependabot[bot]' } }),
+  ])
+  return deployment.id
+}
 
 describe('audit_start_year filter — deviations queries', () => {
   it('getDeviationsByAppId ekskluderer avvik knyttet til pre-revisjons-deployments', async () => {
@@ -328,6 +382,43 @@ describe('audit_start_year filter — deviations queries', () => {
     const result = await getDeviationsForPeriod(appId, new Date('2024-01-01'), new Date('2027-01-01'))
     expect(result).toHaveLength(1)
     expect(result[0].reason).toBe('post')
+  })
+
+  it('getDeviationsForPeriod excludes Apply deviations while the app opt-in is off', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod' })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'app-a',
+      githubRepoId: '20001',
+    })
+    await seedRepository(pool, {
+      githubRepoId: '20001',
+      githubOwner: 'navikt',
+      githubRepoName: 'app-a',
+    })
+    const deployment = await upsertNaisApplyDeployment({
+      monitoredApplicationId: appId,
+      sourceId: 'nais-apply:deviation-opt-out',
+      createdAt: POST_YEAR,
+      teamSlug: 'team-a',
+      environmentName: 'prod',
+      appName: 'app-a',
+      title: 'Nais Apply: registry/image:latest',
+      deployerUsername: 'developer',
+      commitSha: 'a'.repeat(40),
+      triggerUrl: null,
+      detectedGithubOwner: 'navikt',
+      detectedGithubRepoName: 'app-a',
+      detectedGithubRepositoryId: '20001',
+    })
+    await createDeviation({ deployment_id: deployment.id, reason: 'Apply deviation', registered_by: 'tester' })
+    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = false WHERE id = $1', [appId])
+
+    const result = await getDeviationsForPeriod(appId, new Date('2024-01-01'), new Date('2027-01-01'))
+
+    expect(result).toHaveLength(0)
   })
 })
 

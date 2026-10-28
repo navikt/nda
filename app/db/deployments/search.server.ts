@@ -21,7 +21,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
               ma.team_slug, ma.environment_name, ma.app_name
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-       WHERE d.nais_deployment_id ILIKE $1
+       WHERE d.nais_deployment_id ILIKE $1 AND d.deployment_source = 'nais_deployment'
        ORDER BY d.created_at DESC
        LIMIT $2`,
       [`${trimmedQuery}%`, limit],
@@ -38,6 +38,31 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
     return results
   }
 
+  if (/^nais-apply:/i.test(trimmedQuery)) {
+    const applyResult = await pool.query(
+      `SELECT d.id, d.deployment_source_id, d.commit_sha, d.deployer_username, d.created_at,
+              ma.team_slug, ma.environment_name, ma.app_name
+       FROM deployments d
+       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+       WHERE d.deployment_source = 'nais_apply'
+         AND ma.nais_apply_enabled = true
+         AND d.deployment_source_id ILIKE $1
+       ORDER BY d.created_at DESC
+       LIMIT $2`,
+      [`${trimmedQuery}%`, limit],
+    )
+    for (const row of applyResult.rows) {
+      results.push({
+        type: 'deployment',
+        id: row.id,
+        url: `/team/${row.team_slug}/env/${row.environment_name}/app/${row.app_name}/deployments/${row.id}`,
+        title: `Nais Apply • ${row.app_name}`,
+        subtitle: `${row.deployment_source_id.substring(0, 40)}...`,
+      })
+    }
+    return results
+  }
+
   if (/^\d+$/.test(trimmedQuery)) {
     const deploymentId = parseInt(trimmedQuery, 10)
     const result = await pool.query(
@@ -45,7 +70,8 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
               ma.team_slug, ma.environment_name, ma.app_name
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-       WHERE d.id = $1`,
+       WHERE d.id = $1
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
       [deploymentId],
     )
     if (result.rows.length > 0) {
@@ -71,6 +97,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE d.commit_sha ILIKE $1
+         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        ORDER BY d.created_at DESC
        LIMIT $2`,
       [`${trimmedQuery}%`, limit],
@@ -95,12 +122,14 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
               u.display_name, uga.nav_ident, u.slack_member_id,
               COUNT(*) as deployment_count
        FROM deployments d
-       LEFT JOIN user_github_accounts uga ON LOWER(d.deployer_username) = uga.github_username AND uga.deleted_at IS NULL
-       LEFT JOIN users u ON uga.nav_ident = u.nav_ident AND u.deleted_at IS NULL
-       WHERE d.deployer_username ILIKE $1
-          OR u.display_name ILIKE $1
-          OR uga.nav_ident ILIKE $1
-          OR u.slack_member_id ILIKE $1
+      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
+      LEFT JOIN user_github_accounts uga ON LOWER(d.deployer_username) = uga.github_username AND uga.deleted_at IS NULL
+      LEFT JOIN users u ON uga.nav_ident = u.nav_ident AND u.deleted_at IS NULL
+      WHERE (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
+        AND (d.deployer_username ILIKE $1
+         OR u.display_name ILIKE $1
+         OR uga.nav_ident ILIKE $1
+         OR u.slack_member_id ILIKE $1)
        GROUP BY d.deployer_username, u.display_name, uga.nav_ident, u.slack_member_id
        ORDER BY deployment_count DESC
        LIMIT $2`,

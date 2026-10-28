@@ -1,4 +1,5 @@
 import { recordAppConfigAuditLog } from '~/db/app-settings.server'
+import { getRepositoryAuditReportData } from '~/db/audit-reports/repository-data.server'
 import {
   archiveAuditReport,
   checkAuditReadiness,
@@ -11,10 +12,11 @@ import {
   getMonitoredApplicationByIdentity,
   updateMonitoredApplication,
 } from '~/db/monitored-applications.server'
-import { createReportJob, isStaleJob } from '~/db/report-jobs.server'
+import { createReportJob, isStaleJob, ReportJobModelConflictError } from '~/db/report-jobs.server'
 import { getEffectiveAuditStartYear } from '~/db/repositories.server'
 import { getGithubUserLookups } from '~/db/user-github-lookups.server'
 import { PROD_ENVIRONMENTS } from '~/lib/api/errors'
+import { isAuditReportAssessmentModel } from '~/lib/audit-report-model'
 import { requireUser } from '~/lib/auth.server'
 import { canAccessAppAdmin } from '~/lib/authorization.server'
 import { endOfDay, parseLocalDate } from '~/lib/date-utils'
@@ -183,6 +185,13 @@ export async function action({ request }: { request: Request; params: Record<str
   const formData = await request.formData()
   const action = formData.get('action') as string
   const appId = parseInt(formData.get('app_id') as string, 10)
+  const assessmentModel = getFormString(formData, 'assessment_model') ?? 'application'
+  if (
+    (action === 'check_readiness' || action === 'generate_report') &&
+    !isAuditReportAssessmentModel(assessmentModel)
+  ) {
+    return { error: 'Ugyldig vurderingsmodell' }
+  }
 
   if (action === 'send_reminder') {
     const teamSlug = getFormString(formData, 'team_slug')
@@ -213,6 +222,43 @@ export async function action({ request }: { request: Request; params: Record<str
     return { success: 'Testkrav oppdatert!' }
   }
 
+  if (action === 'update_nais_apply_setting') {
+    const enabled = formData.get('nais_apply_enabled') === 'true'
+
+    try {
+      await withTransaction(async (client) => {
+        await client.query('SELECT id FROM monitored_applications WHERE id = $1 FOR UPDATE', [appId])
+        const currentApp = await getMonitoredApplicationById(appId, client)
+        if (!currentApp) {
+          throw new AppNotFoundError()
+        }
+
+        await updateMonitoredApplication(appId, { nais_apply_enabled: enabled }, client)
+
+        if (currentApp.nais_apply_enabled !== enabled) {
+          await recordAppConfigAuditLog(
+            {
+              monitoredAppId: appId,
+              settingKey: 'nais_apply_enabled',
+              oldValue: { enabled: currentApp.nais_apply_enabled },
+              newValue: { enabled },
+              changedByNavIdent: user.navIdent,
+              changedByName: user.name,
+            },
+            client,
+          )
+        }
+      })
+    } catch (err) {
+      if (err instanceof AppNotFoundError) {
+        return { error: 'Fant ikke applikasjonen' }
+      }
+      throw err
+    }
+
+    return { success: 'Nais Apply-innstilling oppdatert!' }
+  }
+
   if (action === 'check_readiness') {
     const periodStart = formData.get('period_start') as string
     const periodEnd = formData.get('period_end') as string
@@ -239,6 +285,17 @@ export async function action({ request }: { request: Request; params: Record<str
     }
     const { periodStart: resolvedStart, periodEnd: resolvedEnd } = resolved.period
 
+    if (assessmentModel === 'repository') {
+      const { readiness } = await getRepositoryAuditReportData(appId, resolvedStart, resolvedEnd)
+      return {
+        repositoryReadiness: readiness,
+        readinessAssessmentModel: 'repository' as const,
+        readinessPeriodKey:
+          periodTypeRaw === 'custom'
+            ? `${periodTypeRaw}:${periodStart}:${periodEnd}`
+            : `${periodTypeRaw}:${periodStart}`,
+      }
+    }
     const readiness = await checkAuditReadiness(appId, resolvedStart, resolvedEnd)
 
     const deployerUsernames = [
@@ -251,7 +308,12 @@ export async function action({ request }: { request: Request; params: Record<str
     const readinessPeriodKey =
       periodTypeRaw === 'custom' ? `${periodTypeRaw}:${periodStart}:${periodEnd}` : `${periodTypeRaw}:${periodStart}`
 
-    return { readiness, readinessPeriodKey, userMappings: serializeUserLookups(userMappings) }
+    return {
+      readiness,
+      readinessPeriodKey,
+      readinessAssessmentModel: 'application' as const,
+      userMappings: serializeUserLookups(userMappings),
+    }
   }
 
   if (action === 'generate_report') {
@@ -287,39 +349,56 @@ export async function action({ request }: { request: Request; params: Record<str
     }
     const { periodType, periodLabel, year, periodStart, periodEnd } = resolved.period
 
-    const hasExisting = await hasActiveReportForPeriod(appId, periodType, periodStart, periodEnd)
+    if (!isAuditReportAssessmentModel(assessmentModel)) return { error: 'Ugyldig vurderingsmodell' }
+    const hasExisting = await hasActiveReportForPeriod(appId, periodType, periodStart, periodEnd, assessmentModel)
     if (hasExisting && !supersedeReason) {
       return { error: 'Du må oppgi en begrunnelse når du erstatter en eksisterende rapport.' }
     }
 
-    const readiness = await checkAuditReadiness(appId, periodStart, periodEnd)
-    if (!readiness.is_ready) {
-      const reasons: string[] = []
-      if (readiness.pending_count > 0) {
-        reasons.push(`${readiness.pending_count} deployments mangler godkjenning`)
+    if (assessmentModel === 'repository') {
+      const { readiness } = await getRepositoryAuditReportData(appId, periodStart, periodEnd)
+      if (!readiness.isReady) {
+        return {
+          error: 'Kan ikke generere rapport: repositorygrunnlaget oppfyller ikke rapportkravene.',
+          repositoryReadiness: readiness,
+          readinessAssessmentModel: 'repository' as const,
+          readinessPeriodKey:
+            periodType === 'custom'
+              ? `${periodType}:${periodStartStr}:${periodEndStr}`
+              : `${periodType}:${periodStartStr}`,
+        }
       }
-      if (readiness.unverifiable_count > 0) {
-        reasons.push(`${readiness.unverifiable_count} deployments mangler repository-info og kan ikke verifiseres`)
-      }
-      if (readiness.missing_approver_count > 0) {
-        reasons.push(`${readiness.missing_approver_count} godkjente deployments mangler godkjenner-data`)
-      }
-      if (readiness.manual_trigger_count > 0) {
-        reasons.push(`${readiness.manual_trigger_count} deployments ble manuelt trigget i GitHub Actions`)
-      }
-      return {
-        error: `Kan ikke generere rapport: ${reasons.join('; ')}.`,
-        readiness,
-        readinessPeriodKey:
-          periodType === 'custom'
-            ? `${periodType}:${periodStartStr}:${periodEndStr}`
-            : `${periodType}:${periodStartStr}`,
+    } else {
+      const readiness = await checkAuditReadiness(appId, periodStart, periodEnd)
+      if (!readiness.is_ready) {
+        const reasons: string[] = []
+        if (readiness.pending_count > 0) {
+          reasons.push(`${readiness.pending_count} deployments mangler godkjenning`)
+        }
+        if (readiness.unverifiable_count > 0) {
+          reasons.push(`${readiness.unverifiable_count} deployments mangler repository-info og kan ikke verifiseres`)
+        }
+        if (readiness.missing_approver_count > 0) {
+          reasons.push(`${readiness.missing_approver_count} godkjente deployments mangler godkjenner-data`)
+        }
+        if (readiness.manual_trigger_count > 0) {
+          reasons.push(`${readiness.manual_trigger_count} deployments ble manuelt trigget i GitHub Actions`)
+        }
+        return {
+          error: `Kan ikke generere rapport: ${reasons.join('; ')}.`,
+          readiness,
+          readinessAssessmentModel: 'application' as const,
+          readinessPeriodKey:
+            periodType === 'custom'
+              ? `${periodType}:${periodStartStr}:${periodEndStr}`
+              : `${periodType}:${periodStartStr}`,
+        }
       }
     }
 
     let jobId: string
     try {
-      const job = await createReportJob(appId, year, periodType, periodLabel, periodStart, periodEnd)
+      const job = await createReportJob(appId, year, periodType, periodLabel, periodStart, periodEnd, assessmentModel)
       jobId = job.jobId
       if (!job.created) {
         if (isStaleJob({ status: job.status, created_at: job.createdAt, started_at: job.startedAt })) {
@@ -333,14 +412,20 @@ export async function action({ request }: { request: Request; params: Record<str
             periodEnd,
             generatedBy: user.navIdent,
             supersedeReason,
+            assessmentModel,
           }).catch((err) => {
             logger.error(`Stale job re-trigger failed for ${job.jobId}:`, err)
           })
         }
-        return { jobStarted: jobId }
+        return { jobStarted: jobId, jobAssessmentModel: assessmentModel }
       }
     } catch (err) {
       logger.error('Failed to create report job', err)
+      if (err instanceof ReportJobModelConflictError) {
+        return {
+          error: 'En rapportjobb for en annen vurderingsmodell kjører allerede for perioden. Vent til den er ferdig.',
+        }
+      }
       return { error: 'Kunne ikke opprette rapportjobb. Sjekk serverloggen for detaljer.' }
     }
 
@@ -354,11 +439,12 @@ export async function action({ request }: { request: Request; params: Record<str
       periodEnd,
       generatedBy: user.navIdent,
       supersedeReason,
+      assessmentModel,
     }).catch((err) => {
       logger.error(`Report job ${jobId} failed:`, err)
     })
 
-    return { jobStarted: jobId }
+    return { jobStarted: jobId, jobAssessmentModel: assessmentModel }
   }
 
   if (action === 'update_slack_config') {
