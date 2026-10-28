@@ -2,6 +2,7 @@ import { Document, Link, Page, renderToBuffer, Text, View } from '@react-pdf/ren
 import { registerAuditReportFonts } from './audit-report-pdf/fonts'
 import { styles } from './audit-report-pdf/styles'
 import {
+  buildRepositoryDeploymentApproval,
   buildRepositoryReportSections,
   buildRepositoryReportSummary,
   filterRepositoryReportSectionsForExport,
@@ -325,28 +326,21 @@ function DeploymentPages({ props, sections }: { props: RepositoryReportOutputPro
               >
                 <Text style={[styles.tableHeaderCell, styles.r2col1]} />
                 <Text style={[styles.tableHeaderCell, styles.r2col2]}>Commit</Text>
-                <Text style={[styles.tableHeaderCell, styles.r2col3]}>Leveranse</Text>
-                <Text style={[styles.tableHeaderCell, styles.r2col4]}>Branch / PR</Text>
-                <Text style={[styles.tableHeaderCell, styles.r2col5]}>Trigger</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col3]}>Metode</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col4]}>Referanse</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col5]}>PR-forf.</Text>
                 <Text style={[styles.tableHeaderCell, styles.r2col6]}>Deployer</Text>
-                <Text style={[styles.tableHeaderCell, styles.r2col7]}>Repo. tillatelse</Text>
-                <Text style={[styles.tableHeaderCell, styles.r2col8]}>Nais ID / workflow</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col7]}>Godkjenner</Text>
+                <Text style={[styles.tableHeaderCell, styles.r2col8]}>Nais ID</Text>
               </View>
               {monthDeployments.map(({ deployment, row, index }, monthIndex) => {
                 const deploymentDate = formatRepositoryReportDate(deployment.createdAt)
                 const [deploymentTitle, ...changeOriginLines] = row[1].split('\n')
                 const changeOrigin = changeOriginLines.join('\n')
-                const [deliveryId, commitSha] = row[2].split('\n')
-                const [branch, trigger] = row[3].split('\n')
-                const [authorization, workflowRun, snapshotDate] = row[4].split('\n')
+                const commitSha = deployment.commitSha
+                const approval = buildRepositoryDeploymentApproval(props.reportData, deployment.deliveryId)
                 const deploymentUrl = section.cellLinks?.[index]?.[0]
                 const commitUrl = section.cellLinks?.[index]?.[2]
-                const triggerUrl = section.cellLinks?.[index]?.[3]
-                const delivery = props.reportData.deliveries.find((item) => item.id === deployment.deliveryId)
-                const pullRequestUrl =
-                  deployment.pullRequestNumber && delivery
-                    ? `https://github.com/${delivery.githubOwner}/${delivery.githubRepoName}/pull/${deployment.pullRequestNumber}`
-                    : null
                 return (
                   <View
                     key={deployment.id}
@@ -382,41 +376,28 @@ function DeploymentPages({ props, sections }: { props: RepositoryReportOutputPro
                           'Ukjent'
                         )}
                       </Text>
-                      <Text style={[styles.tableCell, styles.r2col3]}>Leveranse {deliveryId}</Text>
+                      <Text style={[styles.tableCell, styles.r2col3]}>{approval.method}</Text>
                       <Text style={[styles.tableCell, styles.r2col4]}>
-                        {branch}
-                        {deployment.pullRequestNumber && (
-                          <>
-                            {'\n'}
-                            {pullRequestUrl ? (
-                              <Link src={pullRequestUrl} style={styles.link}>
-                                PR #{deployment.pullRequestNumber}
+                        {approval.references.map((reference, referenceIndex) => (
+                          <Text key={reference.label}>
+                            {referenceIndex > 0 ? '\n' : ''}
+                            {reference.url ? (
+                              <Link src={reference.url} style={styles.link}>
+                                {reference.label}
                               </Link>
                             ) : (
-                              `PR #${deployment.pullRequestNumber}`
+                              reference.label
                             )}
-                          </>
-                        )}
+                          </Text>
+                        ))}
                       </Text>
-                      <Text style={[styles.tableCell, styles.r2col5]}>
-                        {triggerUrl && isHttpUrl(triggerUrl) ? (
-                          <Link src={triggerUrl} style={styles.link}>
-                            {trigger}
-                          </Link>
-                        ) : (
-                          trigger
-                        )}
-                      </Text>
+                      <Text style={[styles.tableCell, styles.r2col5]}>{approval.authors}</Text>
                       <Text style={[styles.tableCell, styles.r2col6]}>
                         {row[0].split('\n')[2]?.replace('Deployer: ', '') ?? 'Ukjent'}
                       </Text>
-                      <Text style={[styles.tableCell, styles.r2col7]}>{authorization}</Text>
+                      <Text style={[styles.tableCell, styles.r2col7]}>{approval.approvers}</Text>
                       <Text style={[styles.tableCell, styles.r2col8, { fontSize: 6, color: '#888888' }]}>
                         {deployment.naisDeploymentId}
-                        {'\n'}
-                        {workflowRun}
-                        {'\n'}
-                        Hentet {snapshotDate}
                       </Text>
                     </View>
                     {changeOrigin && (

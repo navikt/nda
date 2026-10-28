@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs'
 import { describe, expect, it, vi } from 'vitest'
 import { generateRepositoryAuditReportExcel } from '../repository-audit-report-excel.server'
 import {
+  buildRepositoryDeploymentApproval,
   buildRepositoryReportSections,
   buildRepositoryReportSummary,
   filterRepositoryReportSectionsForExport,
@@ -11,6 +12,89 @@ import { generateRepositoryAuditReportPdf } from '../repository-audit-report-pdf
 import { repositoryReportFixture } from './fixtures/repository-audit-report'
 
 describe('repository report exports', () => {
+  it('shows only manual evidence used to approve the delivery', () => {
+    const props = repositoryReportFixture()
+    const approval = buildRepositoryDeploymentApproval(props.reportData, 7)
+    expect(approval).toEqual({
+      method: 'Manuell',
+      references: [{ label: 'Manuell #20', url: null }],
+      authors: '—',
+      approvers: 'Rask Elv',
+    })
+    props.reportData.deliveries[0].manualApprovals[0].status = 'revoked'
+    expect(buildRepositoryDeploymentApproval(props.reportData, 7).approvers).toBe('—')
+  })
+
+  it('includes multiple PRs and manual approvals covering the interval', () => {
+    const props = repositoryReportFixture()
+    const delivery = props.reportData.deliveries[0]
+    const pr = delivery.evidence.pullRequestsByNumber[42]
+    if (!pr) throw new Error('Missing fixture pull request')
+    delivery.evidence.pullRequestsByNumber[43] = {
+      ...pr,
+      number: 43,
+      authorLogin: 'fjellbris',
+    }
+    for (const [number, sha] of [
+      [42, 'c'.repeat(40)],
+      [43, 'd'.repeat(40)],
+    ] as const) {
+      delivery.assessment.commits.push({ sha, status: 'covered', reason: 'approved_pr' })
+      delivery.interval.commits.push({
+        ...delivery.interval.commits[0],
+        sha,
+        pullRequestNumber: number,
+        status: 'covered',
+        reason: 'approved_review',
+      })
+    }
+    const approval = buildRepositoryDeploymentApproval(props.reportData, 7)
+    expect(approval.method).toBe('PR + Manuell')
+    expect(approval.references.map((reference) => reference.label)).toEqual(['PR #42', 'PR #43', 'Manuell #20'])
+    expect(approval.authors).toBe('Glad Fjord\nFjell Bris')
+    expect(approval.approvers).toBe('Rask Elv')
+    expect(approval.references[0].url).toBe('https://github.com/navikt/test/pull/42')
+  })
+
+  it('includes the merger when approval depends on implicit approval', () => {
+    const props = repositoryReportFixture()
+    const delivery = props.reportData.deliveries[0]
+    const pr = delivery.evidence.pullRequestsByNumber[42]
+    if (!pr?.reviews) throw new Error('Missing fixture pull request')
+    delivery.evidence.implicitApprovalMode = 'all'
+    pr.mergedByLogin = 'fjellbris'
+    pr.reviews[0].submittedAt = '2026-01-15T00:00:00Z'
+    pr.reviews[0].commitId = 'a'.repeat(40)
+    delivery.assessment.commits[0].reason = 'approved_pr'
+    delivery.interval.commits[0].status = 'covered'
+    delivery.interval.commits[0].reason = 'implicit_approval'
+    delivery.interval.commits[0].pullRequestNumber = 42
+
+    expect(buildRepositoryDeploymentApproval(props.reportData, 7).approvers).toBe('Rask Elv\nFjell Bris')
+  })
+
+  it('excludes stale reviews when a current review covers a PR with implicit approval enabled', () => {
+    const props = repositoryReportFixture()
+    const delivery = props.reportData.deliveries[0]
+    const pr = delivery.evidence.pullRequestsByNumber[42]
+    if (!pr?.reviews) throw new Error('Missing fixture pull request')
+    delivery.evidence.implicitApprovalMode = 'all'
+    pr.mergedByLogin = 'fjellbris'
+    pr.reviews.push({
+      ...pr.reviews[0],
+      id: 3,
+      username: 'stale-reviewer',
+      submittedAt: '2026-01-15T00:00:00Z',
+      commitId: 'a'.repeat(40),
+    })
+    delivery.assessment.commits[0].reason = 'approved_pr'
+    delivery.interval.commits[0].status = 'covered'
+    delivery.interval.commits[0].reason = 'approved_review'
+    delivery.interval.commits[0].pullRequestNumber = 42
+
+    expect(buildRepositoryDeploymentApproval(props.reportData, 7).approvers).toBe('Rask Elv')
+  })
+
   it('keeps deployment rows separate from shared code evidence and preserves after-control dates', () => {
     const props = repositoryReportFixture()
     const sections = buildRepositoryReportSections(props)

@@ -225,6 +225,85 @@ function eligibleGithubReviewers(delivery: RepositoryAuditReportData['deliveries
   })
 }
 
+export function buildRepositoryDeploymentApproval(reportData: RepositoryAuditReportData, deliveryId: number | null) {
+  const delivery = reportData.deliveries.find((item) => item.id === deliveryId)
+  if (!delivery) {
+    throw new Error(`Missing report delivery ${deliveryId}`)
+  }
+  const prCommits = delivery.assessment.commits.filter(
+    (commit) => commit.status === 'covered' && commit.reason === 'approved_pr',
+  )
+  const pullRequestNumbers = new Set(
+    prCommits.flatMap((commit) => {
+      const intervalCommit = delivery.interval.commits.find((item) => item.sha === commit.sha)
+      return intervalCommit?.pullRequestNumber == null ? [] : [intervalCommit.pullRequestNumber]
+    }),
+  )
+  const manualCommits = new Set(
+    delivery.assessment.commits
+      .filter((commit) => commit.status === 'covered' && commit.reason === 'manual_approval')
+      .map((commit) => commit.sha.toLowerCase()),
+  )
+  const approvals = delivery.manualApprovals.filter(
+    (approval) =>
+      approval.status === 'eligible' &&
+      manualCommits.has(approval.sha.toLowerCase()) &&
+      approval.authorNavIdent !== null &&
+      approval.reviewerNavIdent.toLowerCase() !== approval.authorNavIdent.toLowerCase() &&
+      delivery.authorIdentities.some(
+        (identity) =>
+          identity.githubUsername.toLowerCase() === approval.authorLogin?.toLowerCase() &&
+          identity.activeNavIdent === approval.authorNavIdent,
+      ),
+  )
+  const names = (identities: Array<string | null | undefined>) =>
+    [...new Set(identities.map((identity) => displayName(reportData, identity)))].join('\n') || '—'
+  const githubApprovers = Array.from(pullRequestNumbers).flatMap((number) => {
+    const pr = delivery.evidence.pullRequestsByNumber[number]
+    if (!pr?.commits || !pr.reviews) return []
+    const result = verifyFourEyesFromPrData({
+      reviewers: pr.reviews,
+      commits: pr.commits,
+      baseBranch: pr.baseBranch,
+      mergedBy: pr.mergedByLogin,
+      prCreator: pr.authorLogin ?? undefined,
+      implicitApprovalMode: delivery.evidence.implicitApprovalMode,
+    })
+    if (!result.hasFourEyes) return []
+    if (result.method === 'implicit') {
+      return [
+        ...pr.reviews.filter((review) => review.state === 'APPROVED').map((review) => review.username),
+        ...(pr.mergedByLogin ? [pr.mergedByLogin] : []),
+      ]
+    }
+    return pr.reviews.flatMap((review) => {
+      const reviewResult = verifyFourEyesFromPrData({
+        reviewers: [review],
+        commits: pr.commits ?? [],
+        baseBranch: pr.baseBranch,
+        implicitApprovalMode: 'off',
+      })
+      return reviewResult.hasFourEyes ? [review.username] : []
+    })
+  })
+  return {
+    method:
+      [prCommits.length > 0 ? 'PR' : null, manualCommits.size > 0 ? 'Manuell' : null].filter(Boolean).join(' + ') ||
+      'Ukjent',
+    references: [
+      ...Array.from(pullRequestNumbers).map((number) => ({
+        label: `PR #${number}`,
+        url: `https://github.com/${delivery.githubOwner}/${delivery.githubRepoName}/pull/${number}`,
+      })),
+      ...approvals.map((approval) => ({ label: `Manuell #${approval.id}`, url: null })),
+    ],
+    authors: names(
+      Array.from(pullRequestNumbers).map((number) => delivery.evidence.pullRequestsByNumber[number]?.authorLogin),
+    ),
+    approvers: names([...githubApprovers, ...approvals.map((approval) => approval.reviewerNavIdent)]),
+  }
+}
+
 export function buildRepositoryReportSummary(props: RepositoryReportOutputProps): RepositoryReportSummary {
   const { reportData } = props
   const deviations = reportData.deviations ?? []
