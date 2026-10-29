@@ -25,6 +25,40 @@ describe('repository report exports', () => {
     expect(buildRepositoryDeploymentApproval(props.reportData, 7).approvers).toBe('—')
   })
 
+  it('excludes manual evidence for a different commit author even if that identity remains in the delivery', () => {
+    const props = repositoryReportFixture()
+    const delivery = props.reportData.deliveries[0]
+    delivery.manualApprovals.push({
+      ...delivery.manualApprovals[0],
+      id: 21,
+      authorLogin: 'fjellbris',
+      authorNavIdent: 'Z990003',
+      reviewerNavIdent: 'Z990004',
+    })
+    delivery.authorIdentities.push({
+      ...delivery.authorIdentities[0],
+      githubUsername: 'fjellbris',
+      activeNavIdent: 'Z990003',
+    })
+
+    const approval = buildRepositoryDeploymentApproval(props.reportData, 7)
+    expect(approval.references).toEqual([{ label: 'Manuell #20', url: null }])
+    expect(approval.approvers).toBe('Rask Elv')
+  })
+
+  it('shows a single manual reference when one approval covers multiple commits', () => {
+    const props = repositoryReportFixture()
+    const delivery = props.reportData.deliveries[0]
+    const sha = 'c'.repeat(40)
+    delivery.interval.commits.push({ ...delivery.interval.commits[0], sha })
+    delivery.assessment.commits.push({ sha, status: 'covered', reason: 'manual_approval' })
+    delivery.manualApprovals.push({ ...delivery.manualApprovals[0], sha })
+
+    const approval = buildRepositoryDeploymentApproval(props.reportData, 7)
+    expect(approval.references).toEqual([{ label: 'Manuell #20', url: null }])
+    expect(approval.approvers).toBe('Rask Elv')
+  })
+
   it('includes multiple PRs and manual approvals covering the interval', () => {
     const props = repositoryReportFixture()
     const delivery = props.reportData.deliveries[0]

@@ -248,6 +248,11 @@ export function buildRepositoryDeploymentApproval(reportData: RepositoryAuditRep
     (approval) =>
       approval.status === 'eligible' &&
       manualCommits.has(approval.sha.toLowerCase()) &&
+      delivery.interval.commits.some(
+        (commit) =>
+          commit.sha.toLowerCase() === approval.sha.toLowerCase() &&
+          commit.authorLogin?.toLowerCase() === approval.authorLogin?.toLowerCase(),
+      ) &&
       approval.authorNavIdent !== null &&
       approval.reviewerNavIdent.toLowerCase() !== approval.authorNavIdent.toLowerCase() &&
       delivery.authorIdentities.some(
@@ -295,7 +300,10 @@ export function buildRepositoryDeploymentApproval(reportData: RepositoryAuditRep
         label: `PR #${number}`,
         url: `https://github.com/${delivery.githubOwner}/${delivery.githubRepoName}/pull/${number}`,
       })),
-      ...approvals.map((approval) => ({ label: `Manuell #${approval.id}`, url: null })),
+      ...Array.from(new Set(approvals.map((approval) => approval.id))).map((id) => ({
+        label: `Manuell #${id}`,
+        url: null,
+      })),
     ],
     authors: names(
       Array.from(pullRequestNumbers).map((number) => delivery.evidence.pullRequestsByNumber[number]?.authorLogin),
