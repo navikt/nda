@@ -1,3 +1,4 @@
+import { Window } from 'happy-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
@@ -18,9 +19,12 @@ describe('application deployment repository list', () => {
     'shows one view link per deployment following the selected %s model and preserving list context',
     (view) => {
       const markup = render({ ...RepositoryCoverage.args, view })
-      const links = [...markup.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/g)]
-        .filter((match) => match[2].replace(/<[^>]*>/g, '') === 'Vis')
-        .map((match) => new URL(match[1].replaceAll('&amp;', '&'), 'https://nda.example'))
+      const window = new Window()
+      const document = new window.DOMParser().parseFromString(markup, 'text/html')
+      const anchors = Array.from(document.querySelectorAll('a[href]'))
+      const links = anchors
+        .filter((anchor) => anchor.textContent === 'Vis')
+        .map((anchor) => new URL(anchor.getAttribute('href') ?? '', 'https://nda.example'))
       expect(links).toHaveLength(RepositoryCoverage.args.deployments.length)
       for (const link of links) {
         expect(link.pathname).toMatch(/\/deployments\/\d+$/)
@@ -31,7 +35,7 @@ describe('application deployment repository list', () => {
         expect(link.searchParams.get('status')).toBe('error')
         expect(link.searchParams.get('repositoryStatus')).toBe('incomplete')
       }
-      const detailLinks = [...markup.matchAll(/href="([^"]*\/deployments\/\d+\?[^"]*)"/g)]
+      const detailLinks = anchors.filter((anchor) => /\/deployments\/\d+\?/.test(anchor.getAttribute('href') ?? ''))
       expect(detailLinks).toHaveLength(links.length)
     },
   )
