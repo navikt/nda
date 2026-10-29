@@ -15,6 +15,28 @@ function render(props: AppDeploymentsPageProps) {
 
 describe('application deployment repository list', () => {
   it.each(['application', 'repository'] as const)(
+    'shows one view link per deployment following the selected %s model and preserving list context',
+    (view) => {
+      const markup = render({ ...RepositoryCoverage.args, view })
+      const links = [...markup.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/g)]
+        .filter((match) => match[2].replace(/<[^>]*>/g, '') === 'Vis')
+        .map((match) => new URL(match[1].replaceAll('&amp;', '&'), 'https://nda.example'))
+      expect(links).toHaveLength(RepositoryCoverage.args.deployments.length)
+      for (const link of links) {
+        expect(link.pathname).toMatch(/\/deployments\/\d+$/)
+        expect(link.searchParams.get('view')).toBe(view)
+        expect(link.searchParams.get('listView')).toBe(view)
+        expect(link.searchParams.get('period')).toBe('all')
+        expect(link.searchParams.get('page')).toBe('2')
+        expect(link.searchParams.get('status')).toBe('error')
+        expect(link.searchParams.get('repositoryStatus')).toBe('incomplete')
+      }
+      const detailLinks = [...markup.matchAll(/href="([^"]*\/deployments\/\d+\?[^"]*)"/g)]
+      expect(detailLinks).toHaveLength(links.length)
+    },
+  )
+
+  it.each(['application', 'repository'] as const)(
     'marks only the list switcher as the current page in %s view',
     (view) => {
       const markup = render({ ...RepositoryCoverage.args, view })
