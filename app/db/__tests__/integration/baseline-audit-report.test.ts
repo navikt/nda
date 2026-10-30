@@ -157,7 +157,6 @@ describe('repository resolution for zero-deployment audit report', () => {
 describe('renamed Apply deployments in audit reports', () => {
   it('uses the persisted verified commit list when only a transformed comparison cache exists', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-g', appName: 'app-g', environment: 'prod-gcp' })
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
     const repositoryId = await seedRepository(pool, {
       githubRepoId: '7001',
       githubOwner: 'navikt',
@@ -221,7 +220,6 @@ describe('renamed Apply deployments in audit reports', () => {
 
   it('uses snapshots scoped to the immutable repository ID instead of the claim-time name', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-g', appName: 'app-g', environment: 'prod-gcp' })
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
 
     const repositoryId = await seedRepository(pool, {
       githubRepoId: '7001',

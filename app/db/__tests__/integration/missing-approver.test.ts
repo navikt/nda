@@ -357,9 +357,8 @@ describe('missing approver detection — getAllApprovedDeploymentsMissingApprove
 })
 
 describe('missing approver refreshes and summaries include Apply', () => {
-  it('includes Apply deliveries even when the old opt-in flag is false', async () => {
+  it('includes Apply deliveries without an opt-in setting', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-optout', appName: 'app-optout', environment: 'prod-gcp' })
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
     const applyDeploymentId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-optout',
@@ -377,7 +376,6 @@ describe('missing approver refreshes and summaries include Apply', () => {
        WHERE id = $1`,
       [applyDeploymentId],
     )
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = false WHERE id = $1', [appId])
 
     expect(await getApprovedDeploymentsMissingApproverForApps([appId])).toEqual([
       expect.objectContaining({ id: applyDeploymentId }),
