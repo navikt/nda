@@ -374,7 +374,7 @@ describe('audit_start_year filter — deviations queries', () => {
     expect(result[0].reason).toBe('post')
   })
 
-  it('getDeviationsForPeriod includes Apply deviations even when the old opt-in flag is false', async () => {
+  it('getDeviationsForPeriod includes Apply deviations without an opt-in setting', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod' })
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
@@ -403,7 +403,6 @@ describe('audit_start_year filter — deviations queries', () => {
       detectedGithubRepositoryId: '20001',
     })
     await createDeviation({ deployment_id: deployment.id, reason: 'Apply deviation', registered_by: 'tester' })
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = false WHERE id = $1', [appId])
 
     const result = await getDeviationsForPeriod(appId, new Date('2024-01-01'), new Date('2027-01-01'))
 

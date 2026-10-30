@@ -83,7 +83,7 @@ vi.mock('../default-branch-sync.server', () => ({ syncDefaultBranchForApp }))
 import { NaisDeploymentEnumerationError } from '~/lib/nais.server'
 import { syncNaisApplyActivityFromNais, syncNewDeploymentsFromNais } from '../nais-sync.server'
 
-const monitoredApp: MonitoredApplication & { nais_apply_enabled: boolean } = {
+const monitoredApp: MonitoredApplication = {
   id: 7,
   team_slug: 'team-a',
   environment_name: 'prod-gcp',
@@ -103,7 +103,6 @@ const monitoredApp: MonitoredApplication & { nais_apply_enabled: boolean } = {
   slack_deploy_channel_id: null,
   slack_deploy_notify_enabled: false,
   slack_deploy_notify_enabled_at: null,
-  nais_apply_enabled: false,
   not_found_in_nais_at: null,
   initial_nais_history_synced_at: null,
   created_at: new Date('2026-01-01T00:00:00Z'),
@@ -418,7 +417,7 @@ describe('syncNaisApplyActivityFromNais', () => {
     vi.mocked(markNaisApplyActivitySyncFailure).mockResolvedValue(undefined)
   })
 
-  it('fetches all available history even when the old opt-in flag is false', async () => {
+  it('fetches all available history without an opt-in setting', async () => {
     const firstActivity = {
       id: 'activity-1',
       createdAt: '2026-10-13T10:00:00Z',
