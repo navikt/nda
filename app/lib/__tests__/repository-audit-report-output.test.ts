@@ -12,6 +12,28 @@ import { generateRepositoryAuditReportPdf } from '../repository-audit-report-pdf
 import { repositoryReportFixture } from './fixtures/repository-audit-report'
 
 describe('repository report exports', () => {
+  it('uses the Apply source ID in shared report sections and Excel while preserving legacy IDs', async () => {
+    const props = repositoryReportFixture()
+    props.reportData.deployments[0].naisDeploymentId = null
+    props.reportData.deployments[0].deploymentSourceId = 'nais-apply:123:1:1:2:image'
+
+    const sections = buildRepositoryReportSections(props)
+    const deployments = sections.find((section) => section.title === 'Deployments')
+    expect(deployments?.rows[0][0]).toContain('1 / nais-apply:123:1:1:2:image')
+    expect(deployments?.rows[1][0]).toContain('2 / nais-2')
+
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Uint8Array.from(await generateRepositoryAuditReportExcel(props)).buffer)
+    expect(workbook.getWorksheet('Deployments')?.getCell(3, 1).value).toMatchObject({
+      text: expect.stringContaining('1 / nais-apply:123:1:1:2:image'),
+    })
+    expect(workbook.getWorksheet('Deployments')?.getCell(4, 1).value).toMatchObject({
+      text: expect.stringContaining('2 / nais-2'),
+    })
+    const pdf = await generateRepositoryAuditReportPdf(props)
+    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-')
+  })
+
   it('shows only manual evidence used to approve the delivery', () => {
     const props = repositoryReportFixture()
     const approval = buildRepositoryDeploymentApproval(props.reportData, 7)

@@ -43,6 +43,9 @@ konfliktmålet.
 
 ### Repositorybasert rapportgrunnlag
 
+Repositoryrapportene lagrer Apply-kilde-ID som `deploymentSourceId` og viser den i
+PDF og Excel. Legacy-leveranser og eldre rapportgrunnlag bruker `naisDeploymentId`.
+
 `getRepositoryAuditReportData()` bygger et separat, serialiserbart rapportgrunnlag
 for én produksjonsapplikasjon og periode. App, deploymentutvalg, evidens,
 identiteter og manuell historikk leses med samme klient i en read-only

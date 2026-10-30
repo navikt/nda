@@ -7,7 +7,8 @@ import { MANUAL_TRIGGER_EVENTS } from './workflow-trigger-label'
 
 interface RepositoryAuditDeployment {
   id: number
-  naisDeploymentId: string
+  naisDeploymentId: string | null
+  deploymentSourceId?: string | null
   title: string | null
   createdAt: string
   commitSha: string | null

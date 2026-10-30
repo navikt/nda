@@ -8,7 +8,8 @@ import { getStoredRepositoryDeliveryAssessments } from '../repository-delivery-a
 
 interface DeploymentRow {
   id: number
-  nais_deployment_id: string
+  nais_deployment_id: string | null
+  deployment_source_id: string | null
   title: string | null
   created_at: Date
   commit_sha: string | null
@@ -66,7 +67,7 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
       throw new Error('Repository audit reports require a production environment')
     }
     const { rows } = await client.query<DeploymentRow>(
-      `SELECT d.id, d.nais_deployment_id, d.title, d.created_at, d.commit_sha, d.github_pr_number, d.deployer_username,
+      `SELECT d.id, d.nais_deployment_id, d.deployment_source_id, d.title, d.created_at, d.commit_sha, d.github_pr_number, d.deployer_username,
               d.repository_id, d.repository_code_delivery_id, d.trigger_url,
               r.github_repo_id, r.github_owner, r.github_repo_name, r.default_branch,
               d.detected_github_owner, d.detected_github_repo_name,
@@ -275,6 +276,7 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
         return {
           id: row.id,
           naisDeploymentId: row.nais_deployment_id,
+          deploymentSourceId: row.deployment_source_id,
           title: row.title,
           createdAt: row.created_at.toISOString(),
           commitSha: row.commit_sha,

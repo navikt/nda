@@ -397,7 +397,7 @@ function DeploymentPages({ props, sections }: { props: RepositoryReportOutputPro
                       </Text>
                       <Text style={[styles.tableCell, styles.r2col7]}>{approval.approvers}</Text>
                       <Text style={[styles.tableCell, styles.r2col8, { fontSize: 6, color: '#888888' }]}>
-                        {deployment.naisDeploymentId}
+                        {deployment.deploymentSourceId ?? deployment.naisDeploymentId ?? 'Ukjent'}
                       </Text>
                     </View>
                     {changeOrigin && (

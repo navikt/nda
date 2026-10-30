@@ -28,10 +28,11 @@ const periodStart = new Date('2026-01-01T00:00:00Z')
 const periodEnd = new Date('2026-01-31T23:59:59.999Z')
 const assessedAt = new Date('2026-02-10T12:00:00Z')
 
-function deployment(id = 1) {
+function deployment(id = 1, sourceId: string | null = null) {
   return {
     id,
-    nais_deployment_id: `nais-${id}`,
+    nais_deployment_id: sourceId === null ? `nais-${id}` : null,
+    deployment_source_id: sourceId,
     title: 'Deployment title',
     created_at: new Date('2026-01-15T12:00:00Z'),
     commit_sha: headSha,
@@ -140,8 +141,11 @@ function approval() {
 }
 
 describe('repository audit report data', () => {
+  let deployments: ReturnType<typeof deployment>[]
+
   beforeEach(() => {
     vi.clearAllMocks()
+    deployments = [deployment(), deployment(2)]
     query.mockImplementation(async (sql: string) => ({
       rows: sql.includes('FROM monitored_applications WHERE')
         ? [
@@ -154,7 +158,7 @@ describe('repository audit report data', () => {
             },
           ]
         : sql.includes('FROM deployments d')
-          ? [deployment(), deployment(2)]
+          ? deployments
           : sql.includes('FROM github_workflow_runs_raw_snapshots')
             ? [workflowSnapshot()]
             : [],
@@ -176,6 +180,18 @@ describe('repository audit report data', () => {
         ],
       ]),
     )
+  })
+
+  it('preserves Apply source IDs alongside legacy deployment IDs', async () => {
+    deployments = [deployment(), deployment(2, 'nais-apply:123:1:1:2:image')]
+
+    const { reportData } = await getRepositoryAuditReportData(3, periodStart, periodEnd)
+
+    expect(reportData.deployments).toMatchObject([
+      { naisDeploymentId: 'nais-1', deploymentSourceId: null },
+      { naisDeploymentId: null, deploymentSourceId: 'nais-apply:123:1:1:2:image' },
+    ])
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('d.deployment_source_id'), [3, periodStart, periodEnd])
   })
 
   it('freezes mixed PR/manual coverage once per linked delivery, including post-deployment approval', async () => {
@@ -217,7 +233,12 @@ describe('repository audit report data', () => {
         },
       ],
     })
-    expect(reportData.deployments[0]).toMatchObject({ title: 'Deployment title', goalLinks: [] })
+    expect(reportData.deployments[0]).toMatchObject({
+      title: 'Deployment title',
+      goalLinks: [],
+      naisDeploymentId: 'nais-1',
+      deploymentSourceId: null,
+    })
     expect(JSON.parse(JSON.stringify(reportData))).toEqual(reportData)
     const delivery = reportData.deliveries[0]
     const replay = assessStoredRepositoryDeliveryApproval(
