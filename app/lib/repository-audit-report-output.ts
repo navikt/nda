@@ -453,7 +453,7 @@ export function buildRepositoryReportSections(
       )
       .join('; ')
     deploymentSection.rows.push([
-      `${deployment.id} / ${deployment.naisDeploymentId}\n${formatRepositoryReportDateTime(deployment.createdAt)}\nDeployer: ${displayName(reportData, deployment.deployerUsername)}`,
+      `${deployment.id} / ${deployment.deploymentSourceId ?? deployment.naisDeploymentId ?? 'Ukjent'}\n${formatRepositoryReportDateTime(deployment.createdAt)}\nDeployer: ${displayName(reportData, deployment.deployerUsername)}`,
       `${deploymentTitle}${goalLinks ? `\nEndringsopphav: ${goalLinks}` : ''}`,
       `${deployment.deliveryId ?? 'Ukjent'}\n${deployment.commitSha ?? 'Ukjent'}`,
       `${deployment.source.branch ?? 'Ukjent'} / ${deployment.source.defaultBranch ?? 'Ukjent'}\n${deployment.source.triggerEvent ? getWorkflowTriggerLabel(deployment.source.triggerEvent) : 'Ukjent'}`,
