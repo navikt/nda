@@ -464,9 +464,10 @@ describe('getMonorepoSiblings', () => {
 describe('propagateVerificationToSiblings', () => {
   const owner = 'navikt'
   const repo = 'monorepo-example'
+  let repositoryId: number
 
   beforeEach(async () => {
-    await seedRepository(pool, { githubRepoId: '1001', githubOwner: owner, githubRepoName: repo })
+    repositoryId = await seedRepository(pool, { githubRepoId: '1001', githubOwner: owner, githubRepoName: repo })
   })
 
   it('resolves a legacy source through its app link without shadowing the source repository alias', async () => {
@@ -713,11 +714,6 @@ describe('propagateVerificationToSiblings', () => {
   })
 
   it('propagates to Apply and legacy siblings even when the old opt-in flag is false', async () => {
-    const repositoryId = await seedRepository(pool, {
-      githubRepoId: '1001',
-      githubOwner: owner,
-      githubRepoName: repo,
-    })
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
       monitoredAppId: app1,
