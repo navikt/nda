@@ -31,7 +31,6 @@ export async function findRootApprovedSiblingForCommit(
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $1)')}
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.commit_sha = $2
        AND (d.created_at, d.id) <= (SELECT created_at, id FROM deployments WHERE id = $3)
        AND d.four_eyes_status IN (${ROOT_APPROVED_STATUSES_SQL})
@@ -133,7 +132,6 @@ async function logZeroCandidateDiagnostics(
        FROM deployments d
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = $1
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $2)
        ORDER BY d.created_at DESC, d.id DESC
        LIMIT 5`,
@@ -175,8 +173,7 @@ async function logZeroCandidateDiagnostics(
            ($3::date IS NULL OR d.created_at >= $3::date) AS passes_audit_start_year
          FROM deployments d
          JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-         WHERE d.id = $1
-           AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
+         WHERE d.id = $1`,
         [nearest.id, githubRepoId, auditStartDate],
       )
       logger.warn('getPreviousDeployment: predicate-by-predicate check on nearest older same-app deployment', {
@@ -212,7 +209,6 @@ async function queryCandidates(
     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
     WHERE (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
       AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $2)')}
-      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       AND d.commit_sha IS NOT NULL
       AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
       AND d.four_eyes_status NOT IN (${UNAUTHORIZED_STATUSES_SQL})

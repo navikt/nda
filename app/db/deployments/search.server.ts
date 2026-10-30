@@ -45,7 +45,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE d.deployment_source = 'nais_apply'
-         AND ma.nais_apply_enabled = true
          AND d.deployment_source_id ILIKE $1
        ORDER BY d.created_at DESC
        LIMIT $2`,
@@ -70,8 +69,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
               ma.team_slug, ma.environment_name, ma.app_name
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
-       WHERE d.id = $1
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
+       WHERE d.id = $1`,
       [deploymentId],
     )
     if (result.rows.length > 0) {
@@ -97,7 +95,6 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE d.commit_sha ILIKE $1
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        ORDER BY d.created_at DESC
        LIMIT $2`,
       [`${trimmedQuery}%`, limit],
@@ -125,8 +122,7 @@ export async function searchDeployments(query: string, limit = 10): Promise<Sear
       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
       LEFT JOIN user_github_accounts uga ON LOWER(d.deployer_username) = uga.github_username AND uga.deleted_at IS NULL
       LEFT JOIN users u ON uga.nav_ident = u.nav_ident AND u.deleted_at IS NULL
-      WHERE (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
-        AND (d.deployer_username ILIKE $1
+      WHERE (d.deployer_username ILIKE $1
          OR u.display_name ILIKE $1
          OR uga.nav_ident ILIKE $1
          OR u.slack_member_id ILIKE $1)

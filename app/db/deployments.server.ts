@@ -277,7 +277,7 @@ export async function getDeploymentAppsForRepository(
 }
 
 function deploymentFilterSql(filters?: DeploymentFilters) {
-  let whereSql = " WHERE (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)"
+  let whereSql = ' WHERE TRUE'
   const params: any[] = []
   let paramIndex = 1
 
@@ -589,8 +589,7 @@ export async function getDeploymentById(id: number): Promise<DeploymentWithApp |
     LEFT JOIN commits c ON c.sha = d.commit_sha
       AND c.repo_owner = d.detected_github_owner
       AND c.repo_name = d.detected_github_repo_name
-    WHERE d.id = $1
-      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
+    WHERE d.id = $1`,
     [id],
   )
   const row = result.rows[0] || null

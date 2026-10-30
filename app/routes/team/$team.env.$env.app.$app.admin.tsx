@@ -16,7 +16,7 @@ import { requireAppAdminAccess, resolveRepositoryAdminAccess } from '~/lib/autho
 import type { UserLookupMap } from '~/lib/user-display'
 import { Avvik } from '~/routes/team/$team.env.$env.app.$app.admin/Avvik'
 import { DeployNotificationSettings } from '~/routes/team/$team.env.$env.app.$app.admin/DeployNotificationSettings'
-import { NaisApplySettings } from '~/routes/team/$team.env.$env.app.$app.admin/NaisApplySettings'
+import { NaisApplyStatus } from '~/routes/team/$team.env.$env.app.$app.admin/NaisApplyStatus'
 import { RecentConfigChanges } from '~/routes/team/$team.env.$env.app.$app.admin/RecentConfigChanges'
 import { ReminderSettings } from '~/routes/team/$team.env.$env.app.$app.admin/ReminderSettings'
 import { SlackConfigSettings } from '~/routes/team/$team.env.$env.app.$app.admin/SlackConfigSettings'
@@ -280,7 +280,7 @@ export default function AppAdmin({ loaderData, actionData }: Route.ComponentProp
 
       <DeployNotificationSettings app={app} />
 
-      <NaisApplySettings appId={app.id} enabled={app.nais_apply_enabled} syncState={naisApplySyncState} />
+      <NaisApplyStatus syncState={naisApplySyncState} />
 
       <ReminderSettings app={app} />
 

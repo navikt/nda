@@ -25,7 +25,7 @@ describe('findRootApprovedSiblingForCommit', () => {
     const [query] = mockPoolQuery.mock.calls[0]
     expect(query).toContain("d.four_eyes_status IN ('approved'")
     expect(query).not.toContain("'verified_via_sibling'")
-    expect(query).toContain("(d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)")
+    expect(query).not.toContain('nais_apply_enabled')
     expect(query).toContain('d.repository_id = (SELECT id FROM repositories WHERE github_repo_id = $1)')
     expect(query).toContain("d.deployment_source != 'nais_apply'")
   })
@@ -58,14 +58,12 @@ describe('findRootApprovedSiblingForCommit', () => {
     expect(result).toBeNull()
   })
 
-  it('excludes opted-out Apply deployments from previous-deployment candidates', async () => {
+  it('includes Apply deployments among previous-deployment candidates', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] })
 
     await getPreviousDeployment(999, 'navikt', 'nda', 'repo-1', null, 'sha-current')
 
-    expect(mockPoolQuery.mock.calls[0][0]).toContain(
-      "(d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)",
-    )
+    expect(mockPoolQuery.mock.calls[0][0]).not.toContain('nais_apply_enabled')
   })
 })
 

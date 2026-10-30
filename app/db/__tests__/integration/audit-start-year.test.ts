@@ -285,7 +285,7 @@ describe('audit_start_year filter — Dependabot link query', () => {
     expect(ids).toEqual([postId])
   })
 
-  it('utelater Apply-deployments for apper med Apply deaktivert, men beholder legacy og aktivert Apply', async () => {
+  it('includes legacy and Apply deployments regardless of the old opt-in flag', async () => {
     const legacyAppId = await seedApp(pool, { teamSlug: 'team-a', appName: 'legacy-app', environment: 'prod' })
     const disabledApplyAppId = await seedApp(pool, {
       teamSlug: 'team-a',
@@ -312,8 +312,7 @@ describe('audit_start_year filter — Dependabot link query', () => {
     const enabledApplyId = await createDependabotApplyDeployment(enabledApplyAppId, 'enabled-apply')
 
     const ids = await getUnlinkedDependabotDeploymentIds('alice')
-    expect(ids.sort((a, b) => a - b)).toEqual([legacyId, enabledApplyId].sort((a, b) => a - b))
-    expect(ids).not.toContain(disabledApplyId)
+    expect(ids.sort((a, b) => a - b)).toEqual([legacyId, disabledApplyId, enabledApplyId].sort((a, b) => a - b))
   })
 })
 
@@ -384,7 +383,7 @@ describe('audit_start_year filter — deviations queries', () => {
     expect(result[0].reason).toBe('post')
   })
 
-  it('getDeviationsForPeriod excludes Apply deviations while the app opt-in is off', async () => {
+  it('getDeviationsForPeriod includes Apply deviations even when the old opt-in flag is false', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod' })
     await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
     await seedApplicationRepository(pool, {
@@ -418,7 +417,7 @@ describe('audit_start_year filter — deviations queries', () => {
 
     const result = await getDeviationsForPeriod(appId, new Date('2024-01-01'), new Date('2027-01-01'))
 
-    expect(result).toHaveLength(0)
+    expect(result).toEqual([expect.objectContaining({ reason: 'Apply deviation' })])
   })
 })
 

@@ -90,7 +90,6 @@ export async function getNextDeployment(
      JOIN monitored_applications nav_app ON nav_app.id = nav_dep.monitored_app_id
      CROSS JOIN deployments curr_dep
      WHERE nav_dep.monitored_app_id = $1
-       AND (nav_dep.deployment_source != 'nais_apply' OR nav_app.nais_apply_enabled = true)
        AND curr_dep.id = $2
        AND nav_dep.created_at > curr_dep.created_at
        ${whereClause}
@@ -116,7 +115,6 @@ export async function getPreviousDeploymentForNav(
      JOIN monitored_applications nav_app ON nav_app.id = nav_dep.monitored_app_id
      CROSS JOIN deployments curr_dep
      WHERE nav_dep.monitored_app_id = $1
-       AND (nav_dep.deployment_source != 'nais_apply' OR nav_app.nais_apply_enabled = true)
        AND curr_dep.id = $2
        AND nav_dep.created_at < curr_dep.created_at
        ${whereClause}
@@ -136,7 +134,6 @@ export async function getPreviousDeploymentForDiff(
      JOIN monitored_applications prev_app ON prev_app.id = prev.monitored_app_id
      CROSS JOIN deployments curr
      WHERE prev.monitored_app_id = $1
-       AND (prev.deployment_source != 'nais_apply' OR prev_app.nais_apply_enabled = true)
        AND curr.id = $2
        AND prev.created_at < curr.created_at
        AND prev.commit_sha IS NOT NULL

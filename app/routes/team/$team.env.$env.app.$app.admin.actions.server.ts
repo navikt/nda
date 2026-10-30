@@ -222,43 +222,6 @@ export async function action({ request }: { request: Request; params: Record<str
     return { success: 'Testkrav oppdatert!' }
   }
 
-  if (action === 'update_nais_apply_setting') {
-    const enabled = formData.get('nais_apply_enabled') === 'true'
-
-    try {
-      await withTransaction(async (client) => {
-        await client.query('SELECT id FROM monitored_applications WHERE id = $1 FOR UPDATE', [appId])
-        const currentApp = await getMonitoredApplicationById(appId, client)
-        if (!currentApp) {
-          throw new AppNotFoundError()
-        }
-
-        await updateMonitoredApplication(appId, { nais_apply_enabled: enabled }, client)
-
-        if (currentApp.nais_apply_enabled !== enabled) {
-          await recordAppConfigAuditLog(
-            {
-              monitoredAppId: appId,
-              settingKey: 'nais_apply_enabled',
-              oldValue: { enabled: currentApp.nais_apply_enabled },
-              newValue: { enabled },
-              changedByNavIdent: user.navIdent,
-              changedByName: user.name,
-            },
-            client,
-          )
-        }
-      })
-    } catch (err) {
-      if (err instanceof AppNotFoundError) {
-        return { error: 'Fant ikke applikasjonen' }
-      }
-      throw err
-    }
-
-    return { success: 'Nais Apply-innstilling oppdatert!' }
-  }
-
   if (action === 'check_readiness') {
     const periodStart = formData.get('period_start') as string
     const periodEnd = formData.get('period_end') as string

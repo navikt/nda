@@ -356,8 +356,8 @@ describe('missing approver detection — getAllApprovedDeploymentsMissingApprove
   })
 })
 
-describe('missing approver refreshes and summaries respect Apply opt-out', () => {
-  it('excludes Apply deliveries from scoped, global, and summary lookups when the app opts out', async () => {
+describe('missing approver refreshes and summaries include Apply', () => {
+  it('includes Apply deliveries even when the old opt-in flag is false', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-optout', appName: 'app-optout', environment: 'prod-gcp' })
     await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
     const applyDeploymentId = await seedDeployment(pool, {
@@ -379,9 +379,23 @@ describe('missing approver refreshes and summaries respect Apply opt-out', () =>
     )
     await pool.query('UPDATE monitored_applications SET nais_apply_enabled = false WHERE id = $1', [appId])
 
-    expect(await getApprovedDeploymentsMissingApproverForApps([appId])).toEqual([])
-    expect(await getAllApprovedDeploymentsMissingApprover()).toEqual([])
-    expect(await getMissingApproverSummary()).toEqual({ total: 0, byApp: [] })
+    expect(await getApprovedDeploymentsMissingApproverForApps([appId])).toEqual([
+      expect.objectContaining({ id: applyDeploymentId }),
+    ])
+    expect(await getAllApprovedDeploymentsMissingApprover()).toEqual([
+      expect.objectContaining({ id: applyDeploymentId }),
+    ])
+    expect(await getMissingApproverSummary()).toMatchObject({
+      total: 1,
+      byApp: [
+        expect.objectContaining({
+          team_slug: 'team-optout',
+          environment_name: 'prod-gcp',
+          app_name: 'app-optout',
+          count: 1,
+        }),
+      ],
+    })
   })
 })
 

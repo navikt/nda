@@ -83,7 +83,7 @@ vi.mock('../default-branch-sync.server', () => ({ syncDefaultBranchForApp }))
 import { NaisDeploymentEnumerationError } from '~/lib/nais.server'
 import { syncNaisApplyActivityFromNais, syncNewDeploymentsFromNais } from '../nais-sync.server'
 
-const monitoredApp: MonitoredApplication = {
+const monitoredApp: MonitoredApplication & { nais_apply_enabled: boolean } = {
   id: 7,
   team_slug: 'team-a',
   environment_name: 'prod-gcp',
@@ -411,14 +411,14 @@ describe('syncNewDeploymentsFromNais initial full sync', () => {
 describe('syncNaisApplyActivityFromNais', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(getMonitoredApplicationById).mockResolvedValue({ ...monitoredApp, nais_apply_enabled: true })
+    vi.mocked(getMonitoredApplicationById).mockResolvedValue(monitoredApp)
     vi.mocked(getNaisApplyActivitySyncState).mockResolvedValue(null)
     vi.mocked(saveNaisApplyActivityEvents).mockResolvedValue(1)
     vi.mocked(markNaisApplyActivitySyncComplete).mockResolvedValue(undefined)
     vi.mocked(markNaisApplyActivitySyncFailure).mockResolvedValue(undefined)
   })
 
-  it('fetches all available history page by page on the initial sync', async () => {
+  it('fetches all available history even when the old opt-in flag is false', async () => {
     const firstActivity = {
       id: 'activity-1',
       createdAt: '2026-10-13T10:00:00Z',
@@ -504,16 +504,6 @@ describe('syncNaisApplyActivityFromNais', () => {
     await expect(syncNaisApplyActivityFromNais(monitoredApp.id)).rejects.toBe(error)
 
     expect(markNaisApplyActivitySyncFailure).toHaveBeenCalledWith(monitoredApp.id, error.message)
-    expect(markNaisApplyActivitySyncComplete).not.toHaveBeenCalled()
-  })
-
-  it('does not query the activity log when opt-in is disabled', async () => {
-    vi.mocked(getMonitoredApplicationById).mockResolvedValue(monitoredApp)
-
-    await expect(syncNaisApplyActivityFromNais(monitoredApp.id)).resolves.toBe(0)
-
-    expect(getNaisApplyActivitySyncState).not.toHaveBeenCalled()
-    expect(fetchApplicationUpdatedActivityPage).not.toHaveBeenCalled()
     expect(markNaisApplyActivitySyncComplete).not.toHaveBeenCalled()
   })
 

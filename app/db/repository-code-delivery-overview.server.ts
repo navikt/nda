@@ -311,11 +311,9 @@ export async function listRepositoryCodeDeliveryExportRows(
        FROM deployments linked
        JOIN monitored_applications linked_app ON linked_app.id = linked.monitored_app_id
        WHERE linked.repository_code_delivery_id = c.id
-         AND (linked.deployment_source != 'nais_apply' OR linked_app.nais_apply_enabled = true)
      ) delivery_first ON true
      LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
      WHERE d.repository_id = $1
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ($2::int[] IS NULL OR d.id = ANY($2::int[]))
      ORDER BY d.created_at ASC, d.id ASC`,
     [repositoryId, deploymentIds ?? null],
@@ -360,7 +358,6 @@ export async function listRepositoryCodeDeliveryAncestryEvidence(
         OR (lower(s.base_sha) = lower(d.commit_sha) AND lower(s.head_sha) = lower(c.head_sha))
       )
      WHERE r.id = $1
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND u.reason IN ('ancestry_unknown', 'ancestry_diverged', 'ancestry_behind')
        AND ($2::int[] IS NULL OR d.id = ANY($2::int[]))
        AND ($3::int[] IS NULL OR c.id = ANY($3::int[]))
@@ -477,32 +474,21 @@ async function listNearbyCodeDeliveries(
       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
       JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
       WHERE d.repository_id = $1
-        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
         AND u.resolved_at IS NULL
          AND ($2::int IS NULL OR d.id = $2)
      ),
      delivery_timeline AS (
        SELECT c.id, c.base_sha, c.head_sha, c.created_at AS registered_at,
               first_deployment.first_deployment_id, first_deployment.first_deployed_at,
-              count(d.id) FILTER (
-                WHERE d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true
-              )::int AS deployment_count
+              count(d.id)::int AS deployment_count
        FROM repository_code_deliveries c
        LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id
-         AND (
-           d.deployment_source != 'nais_apply'
-           OR EXISTS (
-             SELECT 1 FROM monitored_applications ma
-             WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
-           )
-         )
        LEFT JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        LEFT JOIN LATERAL (
          SELECT deployment.id AS first_deployment_id, deployment.created_at AS first_deployed_at
          FROM deployments deployment
          JOIN monitored_applications deployment_app ON deployment_app.id = deployment.monitored_app_id
          WHERE deployment.repository_code_delivery_id = c.id
-           AND (deployment.deployment_source != 'nais_apply' OR deployment_app.nais_apply_enabled = true)
          ORDER BY deployment.created_at, deployment.id
          LIMIT 1
        ) first_deployment ON true
@@ -591,7 +577,6 @@ async function listWorkflowRunSnapshots(
          'i'
        ) AS parsed(run_parts)
        WHERE d.repository_id = $1 AND d.id = ANY($2::int[])
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND (
            (
              lower(parsed.run_parts[1]) = lower(r.github_owner)
@@ -707,7 +692,6 @@ async function getRepositoryCodeDeliveryExportDataForTarget(
        FROM deployments
        JOIN monitored_applications ma ON ma.id = deployments.monitored_app_id
        WHERE deployments.repository_id = $1
-         AND (deployments.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND (deployments.id = ANY($2::int[]) OR deployments.repository_code_delivery_id = ANY($3::int[]))
        ORDER BY deployments.created_at, deployments.id`,
       [repositoryId, unresolvedDeploymentIds, includedDeliveryIds],
@@ -836,7 +820,6 @@ async function getRepositoryHistoryReadinessFromClient(
        JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
        LEFT JOIN deployments d
          ON d.monitored_app_id = ma.id
-        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        GROUP BY ma.id
        ORDER BY ma.is_active DESC, ma.environment_name, ma.team_slug, ma.app_name`,
     [repositoryId],
@@ -862,8 +845,7 @@ async function getRepositoryHistoryReadinessFromClient(
        FROM deployments d
        JOIN repositories r ON r.id = d.repository_id
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-       WHERE r.id = $1
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
+       WHERE r.id = $1`,
     [repositoryId],
   )
 
@@ -903,7 +885,6 @@ export async function getRepositoryCodeDeliveryOverview(
        FROM deployments d
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.repository_id = $1
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND d.repository_code_delivery_id IS NOT NULL`,
       [repositoryId],
     ),
@@ -914,7 +895,6 @@ export async function getRepositoryCodeDeliveryOverview(
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
        WHERE d.repository_id = $1
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND r.code_delivery_tracking = true
          AND r.code_delivery_tracking_since IS NOT NULL
          AND d.created_at >= r.code_delivery_tracking_since
@@ -929,7 +909,6 @@ export async function getRepositoryCodeDeliveryOverview(
        JOIN deployments d ON d.id = u.deployment_id
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.repository_id = $1
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND u.resolved_at IS NULL
        GROUP BY u.reason`,
       [repositoryId],
@@ -977,13 +956,6 @@ export async function listRepositoryCodeDeliveries(
             COALESCE(array_agg(DISTINCT d.app_name ORDER BY d.app_name) FILTER (WHERE d.id IS NOT NULL), '{}') AS app_names
      FROM repository_code_deliveries c
      LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id
-       AND (
-         d.deployment_source != 'nais_apply'
-         OR EXISTS (
-           SELECT 1 FROM monitored_applications ma
-           WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
-         )
-       )
      WHERE c.repository_id = $1
      GROUP BY c.id
      ORDER BY ${orderBy}
@@ -1050,8 +1022,7 @@ export async function getRepositoryCodeDeliveryEvidence(
        FROM deployments d
       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
-      WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
-        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
+      WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2`,
       [repositoryId, deliveryId],
     )
     const totalEvidenceEntries = countRows[0].count
@@ -1079,7 +1050,6 @@ export async function getRepositoryCodeDeliveryEvidence(
       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
       WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
-        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        ORDER BY d.created_at, d.id, vr.run_at, vr.id
        LIMIT $3 OFFSET $4`,
       [

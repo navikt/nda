@@ -86,7 +86,6 @@ async function fetchWorkflowRunSnapshotsForRepository(
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      JOIN repositories r ON r.id = $1
      WHERE ${repositoryDeploymentSql('$1')}
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND (d.deployment_source != 'nais_apply' OR d.repository_id = r.id)
        AND d.detected_github_owner IS NOT NULL
        AND d.detected_github_repo_name IS NOT NULL
@@ -277,7 +276,6 @@ const ORDERED_DEPLOYMENTS_SELECT = (
       FROM deployments d
       JOIN monitored_applications ma
         ON d.monitored_app_id = ma.id
-        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
       LEFT JOIN repositories r ON r.id = d.repository_id`
 
 const SNAPSHOT_JOIN_AND_ORDER = `

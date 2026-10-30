@@ -42,7 +42,6 @@ export async function getDeploymentsForDiffComputation(monitoredAppId: number): 
       FROM deployments d
       JOIN monitored_applications ma ON d.monitored_app_id = ma.id
       WHERE d.monitored_app_id = $1
-        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
         AND d.commit_sha IS NOT NULL
         AND d.detected_github_owner IS NOT NULL
         AND d.detected_github_repo_name IS NOT NULL
@@ -84,7 +83,6 @@ export async function getVerificationDiffsForRepository(
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE vd.repository_id = $1
        AND d.monitored_app_id = ANY($2)
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
      ORDER BY d.created_at DESC`,
     [repositoryId, monitoredAppIds],
   )
@@ -106,7 +104,6 @@ export async function getPreviousDeploymentForDiff(
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $2)')}
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND (d.created_at, d.id) < (SELECT created_at, id FROM deployments WHERE id = $1)
        AND d.commit_sha IS NOT NULL
        AND d.four_eyes_status NOT IN (${NON_DIFFABLE_STATUSES_SQL})
@@ -180,7 +177,6 @@ export async function findDeploymentIdsMissingApprover(deploymentIds: number[]):
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE d.id = ANY($1)
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${MISSING_APPROVER_CONDITIONS}`,
     [deploymentIds],
   )
@@ -206,7 +202,6 @@ export async function getApprovedDeploymentsMissingApproverForApps(
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE d.monitored_app_id = ANY($1)
        AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${MISSING_APPROVER_CONDITIONS}
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY d.created_at DESC`,
@@ -226,7 +221,6 @@ export async function getAllApprovedDeploymentsMissingApprover(): Promise<Global
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE ma.is_active = true
        AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${MISSING_APPROVER_CONDITIONS}
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY d.team_slug, d.app_name, d.created_at DESC`,
@@ -251,7 +245,6 @@ export async function getMissingApproverSummary(): Promise<{
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE ma.is_active = true
        AND COALESCE(d.four_eyes_status, 'unknown') IN (${APPROVED_STATUSES_SQL})
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${MISSING_APPROVER_CONDITIONS}
        AND ${AUDIT_START_YEAR_FILTER}
      GROUP BY d.team_slug, d.environment_name, d.app_name

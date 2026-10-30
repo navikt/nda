@@ -464,9 +464,10 @@ describe('getMonorepoSiblings', () => {
 describe('propagateVerificationToSiblings', () => {
   const owner = 'navikt'
   const repo = 'monorepo-example'
+  let repositoryId: number
 
   beforeEach(async () => {
-    await seedRepository(pool, { githubRepoId: '1001', githubOwner: owner, githubRepoName: repo })
+    repositoryId = await seedRepository(pool, { githubRepoId: '1001', githubOwner: owner, githubRepoName: repo })
   })
 
   it('resolves a legacy source through its app link without shadowing the source repository alias', async () => {
@@ -712,7 +713,7 @@ describe('propagateVerificationToSiblings', () => {
     expect(rows[0].four_eyes_status).toBe('pending')
   })
 
-  it('should skip opted-out Apply siblings while still propagating to legacy siblings', async () => {
+  it('propagates to Apply and legacy siblings even when the old opt-in flag is false', async () => {
     const app1 = await seedApp(pool, { teamSlug: 'team-a', appName: 'svc', environment: 'prod-gcp' })
     await seedApplicationRepository(pool, {
       monitoredAppId: app1,
@@ -759,9 +760,10 @@ describe('propagateVerificationToSiblings', () => {
       `UPDATE deployments
        SET nais_deployment_id = NULL,
            deployment_source = 'nais_apply',
-           deployment_source_id = $2
+           deployment_source_id = $2,
+           repository_id = $3
        WHERE id = $1`,
-      [optedOutApplySibling, 'nais-apply:opted-out-sibling'],
+      [optedOutApplySibling, 'nais-apply:opted-out-sibling', repositoryId],
     )
     const legacySibling = await seedDeployment(pool, {
       monitoredAppId: legacyApp,
@@ -773,14 +775,14 @@ describe('propagateVerificationToSiblings', () => {
       githubRepo: repo,
     })
 
-    await expect(propagateVerificationToSiblings(source, 'approved', commitSha, app1)).resolves.toBe(1)
+    await expect(propagateVerificationToSiblings(source, 'approved', commitSha, app1)).resolves.toBe(2)
 
     const { rows } = await pool.query(
       `SELECT id, four_eyes_status FROM deployments WHERE id = ANY($1::int[]) ORDER BY id`,
       [[optedOutApplySibling, legacySibling]],
     )
     expect(rows).toEqual([
-      { id: optedOutApplySibling, four_eyes_status: 'pending' },
+      { id: optedOutApplySibling, four_eyes_status: 'verified_via_sibling' },
       { id: legacySibling, four_eyes_status: 'verified_via_sibling' },
     ])
   })
