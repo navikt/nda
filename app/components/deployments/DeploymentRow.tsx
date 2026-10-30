@@ -9,13 +9,12 @@ import {
   DEPLOYMENT_REPOSITORY_STATUS_LABELS,
   type DeploymentRepositorySummary,
 } from '~/lib/deployment-repository-status'
-import type { DeploymentView } from '~/lib/deployment-view'
+import { type DeploymentView, deploymentViewUrl } from '~/lib/deployment-view'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import type { UserLookupMap } from '~/lib/user-display'
 import type { StoredVerificationResult } from '~/lib/verification/types'
 import { getWorkflowTriggerLabel } from '~/lib/workflow-trigger-label'
 import styles from '~/styles/common.module.css'
-import { DeploymentViewLinks } from './DeploymentViewLinks'
 
 interface DeploymentData {
   id: number
@@ -196,13 +195,18 @@ export function DeploymentRow({
                 {getWorkflowTriggerLabel(deployment.workflow_trigger_config.triggerEvent)}
               </Tag>
             )}
-            {showRepositoryView ? (
-              <DeploymentViewLinks pathname={detailPath} searchParams={detailParams} />
-            ) : (
-              <Button as={Link} to={detailUrl} variant="tertiary" size="small">
-                Vis
-              </Button>
-            )}
+            <Button
+              as={Link}
+              to={
+                showRepositoryView
+                  ? deploymentViewUrl(detailPath, detailParams, currentView ?? 'application')
+                  : detailUrl
+              }
+              variant="tertiary"
+              size="small"
+            >
+              Vis
+            </Button>
           </HStack>
         </HStack>
 
