@@ -48,7 +48,7 @@ vi.mock('~/lib/logger.server', () => ({ logger: { info: vi.fn(), warn: vi.fn(), 
 
 import { materializeNaisApplyDeployments } from '../nais-apply-materialize.server'
 
-const monitoredApp: MonitoredApplication & { nais_apply_enabled: boolean } = {
+const monitoredApp: MonitoredApplication = {
   id: 7,
   team_slug: 'team-a',
   environment_name: 'prod-gcp',
@@ -68,7 +68,6 @@ const monitoredApp: MonitoredApplication & { nais_apply_enabled: boolean } = {
   slack_deploy_channel_id: null,
   slack_deploy_notify_enabled: false,
   slack_deploy_notify_enabled_at: null,
-  nais_apply_enabled: false,
   not_found_in_nais_at: null,
   initial_nais_history_synced_at: null,
   created_at: new Date('2026-01-01T00:00:00Z'),
@@ -415,7 +414,7 @@ describe('materializeNaisApplyDeployments', () => {
     expect(upsertNaisApplyDeployment).not.toHaveBeenCalled()
   })
 
-  it('materializes activities even when the old opt-in flag is false', async () => {
+  it('materializes activities without an opt-in setting', async () => {
     vi.mocked(getMonitoredApplicationById).mockResolvedValueOnce(monitoredApp).mockResolvedValueOnce(monitoredApp)
     vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:sha1')])
 
