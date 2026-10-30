@@ -62,7 +62,6 @@ export async function getUnmappedContributors(
        FROM deployments d
        JOIN monitored_applications ma ON d.monitored_app_id = ma.id
        WHERE ma.is_active = true
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND (ma.team_slug = ANY($1::text[]) OR ma.id = ANY($2::int[]))
          AND d.deployer_username IS NOT NULL
          AND d.deployer_username != ''
@@ -135,7 +134,6 @@ export async function getDevTeamAppsWithIssues(
         SUM(CASE WHEN ${baselineActionSql('d')} THEN 1 ELSE 0 END) as baseline_action_count
       FROM deployments d
       WHERE d.monitored_app_id = ma.id
-        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
         AND d.created_at >= make_date(COALESCE(${effectiveAuditStartYearSql('ma')}, 1), 1, 1)
     ) dep ON true
     LEFT JOIN LATERAL (
@@ -144,7 +142,6 @@ export async function getDevTeamAppsWithIssues(
       LEFT JOIN deployments d ON d.id = ra.deployment_id
       WHERE ra.monitored_app_id = ma.id
         AND ra.resolved_at IS NULL
-        AND (d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
     ) alerts ON true
     WHERE ma.is_active = true
       AND (ma.team_slug = ANY($3::text[]) OR ma.id = ANY($4::int[]))
@@ -168,7 +165,6 @@ async function _getRecentDeploymentsForHomeTab(limit = 10): Promise<DeploymentWi
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE ma.is_active = true
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
      ORDER BY d.created_at DESC
      LIMIT $1`,
     [limit],
@@ -182,7 +178,6 @@ export async function getPersonalDeploymentsMissingGoalLinks(githubUsername: str
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE ma.is_active = true
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.created_at >= make_date(COALESCE(${effectiveAuditStartYearSql('ma')}, 1), 1, 1)
        AND ${userDeploymentMatchSql(1)}
        AND NOT EXISTS (

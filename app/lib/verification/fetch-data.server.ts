@@ -44,20 +44,15 @@ export async function fetchVerificationData(
   const deploymentResult = await pool.query<{
     deployment_source: string
     repository_id: number | null
-    nais_apply_enabled: boolean
   }>(
-    `SELECT d.deployment_source, d.repository_id, COALESCE(ma.nais_apply_enabled, false) AS nais_apply_enabled
+    `SELECT d.deployment_source, d.repository_id
      FROM deployments d
-     LEFT JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      WHERE d.id = $1`,
     [deploymentId],
   )
   const deployment = deploymentResult.rows[0]
   if (!deployment) {
     throw new Error(`Deployment ${deploymentId} not found`)
-  }
-  if (deployment.deployment_source === 'nais_apply' && !deployment.nais_apply_enabled) {
-    throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} while Apply is disabled for its app`)
   }
   if (deployment.deployment_source === 'nais_apply' && deployment.repository_id === null) {
     throw new Error(`Cannot verify Nais Apply deployment ${deploymentId} without an immutable repository association`)
@@ -162,7 +157,6 @@ export async function fetchVerificationData(
        FROM deployments d
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $3)')}
          AND d.id != $1
          AND d.commit_sha = $2
@@ -198,7 +192,6 @@ export async function fetchVerificationData(
        FROM deployments d
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE d.monitored_app_id = (SELECT monitored_app_id FROM deployments WHERE id = $1)
-         AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
          AND ${repositoryDeploymentSql('(SELECT id FROM repositories WHERE github_repo_id = $2)')}
          AND d.id != $1
          AND d.four_eyes_status IN (${APPROVED_STATUSES_SQL})

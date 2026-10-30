@@ -153,17 +153,15 @@ describe('fetchVerificationData for renamed Apply repositories', () => {
     expect(isCommitOnBranch).not.toHaveBeenCalled()
   })
 
-  it('rejects Apply verification after the app has opted out', async () => {
+  it('verifies Apply deployments even when the old opt-in flag is false', async () => {
     poolQuery.mockResolvedValueOnce({
       rows: [{ deployment_source: 'nais_apply', repository_id: 77, nais_apply_enabled: false }],
     })
 
-    await expect(
-      fetchVerificationData(100, 'a'.repeat(40), 'navikt/current-name', 'prod-gcp', 'main', 7),
-    ).rejects.toThrow('while Apply is disabled')
+    await fetchVerificationData(100, 'a'.repeat(40), 'navikt/current-name', 'prod-gcp', 'main', 7)
 
-    expect(findRepositoryForApp).not.toHaveBeenCalled()
-    expect(isCommitOnBranch).not.toHaveBeenCalled()
+    expect(findRepositoryForApp).toHaveBeenCalled()
+    expect(isCommitOnBranch).toHaveBeenCalled()
   })
 
   it('uses the GitHub default branch for the immutable Apply repository, not the caller app branch', async () => {

@@ -11,24 +11,22 @@ import { getDevTeamAppsWithIssues } from '../deployments/home.server'
 import { getUnapprovedDeployments } from '../deployments/notifications.server'
 import { getAllAlertCounts } from '../monitored-applications.server'
 
-const applyVisibilityPredicate = "(d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)"
-
-describe('Nais Apply opt-out reads', () => {
+describe('Nais Apply always-on reads', () => {
   beforeEach(() => {
     poolQuery.mockReset().mockResolvedValue({ rows: [] })
   })
 
-  it('hides Apply alerts from all-app badges and issues aggregates', async () => {
+  it('includes Apply alerts in all-app badges and issues aggregates', async () => {
     await getAllAlertCounts()
     await getDevTeamAppsWithIssues(['team-a'])
 
     expect(poolQuery).toHaveBeenCalledTimes(2)
     for (const [query] of poolQuery.mock.calls) {
-      expect(query).toContain("d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true")
+      expect(query).not.toContain('nais_apply_enabled')
     }
   })
 
-  it('excludes opted-out Apply deliveries from audit readiness and scheduled reminders', async () => {
+  it('includes Apply deliveries in audit readiness and preserves reminder suppression', async () => {
     const start = new Date('2026-01-01T00:00:00Z')
     const end = new Date('2026-12-31T23:59:59Z')
 
@@ -36,12 +34,12 @@ describe('Nais Apply opt-out reads', () => {
     await getUnapprovedDeployments(7)
 
     expect(poolQuery).toHaveBeenCalledTimes(2)
-    expect(poolQuery.mock.calls[0][0]).toContain(applyVisibilityPredicate)
-    expect(poolQuery.mock.calls[1][0]).toContain(applyVisibilityPredicate)
+    expect(poolQuery.mock.calls[0][0]).not.toContain('nais_apply_enabled')
+    expect(poolQuery.mock.calls[1][0]).not.toContain('nais_apply_enabled')
     expect(poolQuery.mock.calls[1][0]).toContain('d.slack_notifications_suppressed_at IS NULL')
   })
 
-  it('excludes opted-out Apply deliveries from section, team and batch dashboard aggregates', async () => {
+  it('includes Apply deliveries in section, team and batch dashboard aggregates', async () => {
     await getSectionOverallStats(1)
     await getSectionDashboardStats(1)
     await getDevTeamSummaryStats(['team-a'])
@@ -50,7 +48,7 @@ describe('Nais Apply opt-out reads', () => {
 
     expect(poolQuery).toHaveBeenCalledTimes(5)
     for (const [query] of poolQuery.mock.calls) {
-      expect(query).toContain(applyVisibilityPredicate)
+      expect(query).not.toContain('nais_apply_enabled')
     }
   })
 })

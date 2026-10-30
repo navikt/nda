@@ -28,7 +28,6 @@ export async function claimDeploymentForSlackNotification(
        AND EXISTS (
          SELECT 1 FROM monitored_applications ma
          WHERE ma.id = deployments.monitored_app_id
-           AND (deployments.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        )
      RETURNING *`,
     [messageTs, channelId, deploymentId],
@@ -53,7 +52,6 @@ async function _getDeploymentsNeedingSlackNotification(limit = 50): Promise<Depl
        AND ma.slack_notifications_enabled = true
        AND ma.slack_channel_id IS NOT NULL
        AND ma.slack_notifications_enabled_at IS NOT NULL
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.slack_notifications_suppressed_at IS NULL
        AND d.created_at >= ma.slack_notifications_enabled_at
        AND d.created_at > NOW() - INTERVAL '7 days'
@@ -76,7 +74,6 @@ export async function claimDeploymentForDeployNotify(
        AND EXISTS (
          SELECT 1 FROM monitored_applications ma
          WHERE ma.id = deployments.monitored_app_id
-           AND (deployments.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        )
      RETURNING *`,
     [messageTs, deploymentId],
@@ -102,7 +99,6 @@ export async function getDeploymentsNeedingDeployNotify(limit = 50): Promise<Dep
        AND ma.slack_deploy_notify_enabled = true
        AND ma.slack_deploy_channel_id IS NOT NULL
        AND ma.slack_deploy_notify_enabled_at IS NOT NULL
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.slack_notifications_suppressed_at IS NULL
        AND d.created_at >= ma.slack_deploy_notify_enabled_at
        AND COALESCE(d.four_eyes_status, 'unknown') != ALL($2::text[])
@@ -134,7 +130,6 @@ export async function getUnapprovedDeployments(monitoredAppId: number): Promise<
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.monitored_app_id = $1
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND d.slack_notifications_suppressed_at IS NULL
        AND d.four_eyes_status = ANY($2)
        AND ${AUDIT_START_YEAR_FILTER}

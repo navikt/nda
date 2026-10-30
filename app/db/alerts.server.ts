@@ -144,7 +144,6 @@ export async function getAlertCountsByApp(): Promise<Map<number, number>> {
     LEFT JOIN deployments d ON d.id = ra.deployment_id
     JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
     WHERE ra.resolved_at IS NULL
-      AND (d.id IS NULL OR d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
     GROUP BY ra.monitored_app_id
   `)
   const map = new Map<number, number>()
@@ -172,7 +171,6 @@ export async function getUnresolvedAlertsByApp(monitoredAppId: number): Promise<
     JOIN deployments d ON ra.deployment_id = d.id
     WHERE ra.resolved_at IS NULL
       AND ra.monitored_app_id = $1
-      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
     ORDER BY ra.created_at DESC`,
     [monitoredAppId],
   )

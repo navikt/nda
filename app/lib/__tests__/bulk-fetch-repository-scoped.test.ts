@@ -136,9 +136,7 @@ describe('fetchVerificationDataForRepository', () => {
     expect(query).toContain('application_repositories')
     expect(query).toContain("ar.status IN ('active', 'historical')")
     expect(query).toContain('r.id = $1')
-    expect(query).toContain(
-      "JOIN monitored_applications ma\n        ON d.monitored_app_id = ma.id\n        AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)",
-    )
+    expect(query).toContain('JOIN monitored_applications ma\n        ON d.monitored_app_id = ma.id')
     expect(query).not.toContain("WHERE (d.deployment_source != 'nais_apply'")
     expect(params).toEqual([42])
   })

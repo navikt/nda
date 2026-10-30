@@ -114,7 +114,6 @@ export async function getDeviationsForPeriod(
      JOIN deployments d ON dd.deployment_id = d.id
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE d.monitored_app_id = $1 AND dd.created_at >= $2 AND dd.created_at <= $3
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY dd.created_at ASC`,
     [monitoredAppId, startDate, endDate],

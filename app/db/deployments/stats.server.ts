@@ -85,8 +85,7 @@ export async function getPendingVerificationCount(monitoredAppId: number): Promi
       COUNT(*) as total
     FROM deployments d
     JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-    WHERE d.monitored_app_id = $1
-      AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)`,
+    WHERE d.monitored_app_id = $1`,
     [monitoredAppId, statusesToVerify],
   )
 
@@ -147,13 +146,6 @@ export async function getAppDeploymentStatsBatch(
       MAX(created_at) as last_deployment
     FROM deployments
     WHERE monitored_app_id = ANY($1)
-      AND (
-        deployments.deployment_source != 'nais_apply'
-        OR EXISTS (
-          SELECT 1 FROM monitored_applications ma
-          WHERE ma.id = deployments.monitored_app_id AND ma.nais_apply_enabled = true
-        )
-      )
       ${auditYearFilter} ${dateFilter}
     GROUP BY monitored_app_id`,
       baseParams,
@@ -162,13 +154,6 @@ export async function getAppDeploymentStatsBatch(
       `SELECT monitored_app_id, COUNT(*) AS baseline_action_count
      FROM deployments
      WHERE monitored_app_id = ANY($1)
-       AND (
-         deployments.deployment_source != 'nais_apply'
-         OR EXISTS (
-           SELECT 1 FROM monitored_applications ma
-           WHERE ma.id = deployments.monitored_app_id AND ma.nais_apply_enabled = true
-         )
-       )
        ${auditYearFilter}
        AND ${baselineActionSql('deployments')}
      GROUP BY monitored_app_id`,
@@ -178,13 +163,6 @@ export async function getAppDeploymentStatsBatch(
       `SELECT DISTINCT ON (monitored_app_id) monitored_app_id, id
      FROM deployments
      WHERE monitored_app_id = ANY($1)
-       AND (
-         deployments.deployment_source != 'nais_apply'
-         OR EXISTS (
-           SELECT 1 FROM monitored_applications ma
-           WHERE ma.id = deployments.monitored_app_id AND ma.nais_apply_enabled = true
-         )
-       )
      ORDER BY monitored_app_id, created_at DESC`,
       [appIds],
     ),

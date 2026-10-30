@@ -245,13 +245,6 @@ export async function propagateVerificationToSiblings(
          JOIN repositories source_repository ON ${repositoryDeploymentSql('source_repository.id')}
          WHERE d.id = $4 AND d.monitored_app_id = $5
        )`)}
-       AND (
-         d.deployment_source != 'nais_apply'
-         OR EXISTS (
-           SELECT 1 FROM monitored_applications ma
-           WHERE ma.id = d.monitored_app_id AND ma.nais_apply_enabled = true
-         )
-       )
        AND d.monitored_app_id IN (
          SELECT ar.monitored_app_id FROM application_repositories ar
          JOIN monitored_applications ma ON ma.id = ar.monitored_app_id

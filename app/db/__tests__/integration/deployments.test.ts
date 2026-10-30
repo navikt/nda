@@ -486,7 +486,7 @@ describe('deployment queries', () => {
     })
   })
 
-  it('hides stored Apply deployments from listings and notifications while the app opt-in is off', async () => {
+  it('includes stored Apply deployments in listings and notifications without opt-in', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
     await pool.query(
       `UPDATE monitored_applications
@@ -511,17 +511,10 @@ describe('deployment queries', () => {
       detectedGithubRepoName: null,
     })
 
-    await expect(getDeploymentById(deployment.id)).resolves.toBeNull()
-    await expect(getDeploymentsPaginated({ monitored_app_id: appId })).resolves.toMatchObject({
-      deployments: [],
-      total: 0,
-    })
-    await expect(getDeploymentsNeedingDeployNotify()).resolves.toEqual([])
     await expect(pool.query('SELECT id FROM deployments WHERE id = $1', [deployment.id])).resolves.toMatchObject({
       rows: [{ id: deployment.id }],
     })
 
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = TRUE WHERE id = $1', [appId])
     await expect(getDeploymentById(deployment.id)).resolves.toMatchObject({ id: deployment.id })
     await expect(getDeploymentsPaginated({ monitored_app_id: appId })).resolves.toMatchObject({
       deployments: [expect.objectContaining({ id: deployment.id })],

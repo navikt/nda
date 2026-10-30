@@ -48,7 +48,7 @@ vi.mock('~/lib/logger.server', () => ({ logger: { info: vi.fn(), warn: vi.fn(), 
 
 import { materializeNaisApplyDeployments } from '../nais-apply-materialize.server'
 
-const monitoredApp: MonitoredApplication = {
+const monitoredApp: MonitoredApplication & { nais_apply_enabled: boolean } = {
   id: 7,
   team_slug: 'team-a',
   environment_name: 'prod-gcp',
@@ -68,7 +68,7 @@ const monitoredApp: MonitoredApplication = {
   slack_deploy_channel_id: null,
   slack_deploy_notify_enabled: false,
   slack_deploy_notify_enabled_at: null,
-  nais_apply_enabled: true,
+  nais_apply_enabled: false,
   not_found_in_nais_at: null,
   initial_nais_history_synced_at: null,
   created_at: new Date('2026-01-01T00:00:00Z'),
@@ -415,17 +415,13 @@ describe('materializeNaisApplyDeployments', () => {
     expect(upsertNaisApplyDeployment).not.toHaveBeenCalled()
   })
 
-  it('aborts materialization if Nais Apply is disabled while activities are being loaded', async () => {
-    vi.mocked(getMonitoredApplicationById)
-      .mockResolvedValueOnce(monitoredApp)
-      .mockResolvedValueOnce({ ...monitoredApp, nais_apply_enabled: false })
+  it('materializes activities even when the old opt-in flag is false', async () => {
+    vi.mocked(getMonitoredApplicationById).mockResolvedValueOnce(monitoredApp).mockResolvedValueOnce(monitoredApp)
     vi.mocked(getNaisApplyActivityEvents).mockResolvedValue([makeActivity('activity-1', 'registry/image:sha1')])
 
-    await expect(materializeNaisApplyDeployments(monitoredApp.id)).rejects.toThrow(
-      `Nais Apply is disabled for application ${monitoredApp.id}`,
-    )
-    expect(upsertNaisApplyRepository).not.toHaveBeenCalled()
-    expect(upsertNaisApplyDeployment).not.toHaveBeenCalled()
+    await expect(materializeNaisApplyDeployments(monitoredApp.id)).resolves.toBe(1)
+    expect(upsertNaisApplyRepository).toHaveBeenCalled()
+    expect(upsertNaisApplyDeployment).toHaveBeenCalled()
   })
 
   it('does not group different images from the same check run', async () => {

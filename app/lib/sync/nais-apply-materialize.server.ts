@@ -187,12 +187,10 @@ export async function materializeNaisApplyDeployments(
 ): Promise<number> {
   const app = await getMonitoredApplicationById(monitoredAppId)
   if (!app) throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
-  if (!app.nais_apply_enabled) throw new Error(`Nais Apply is disabled for application ${monitoredAppId}`)
 
   const events = await getNaisApplyActivityEvents(monitoredAppId, { fullHistory: options.fullHistory ?? false })
   const latestApp = await getMonitoredApplicationById(monitoredAppId)
   if (!latestApp) throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
-  if (!latestApp.nais_apply_enabled) throw new Error(`Nais Apply is disabled for application ${monitoredAppId}`)
   const eligibleEvents = events.filter((event) => {
     if (event.environmentName === latestApp.environment_name) return true
     logger.warn('Skipping Nais Apply activity without matching environment', {

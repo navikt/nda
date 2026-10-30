@@ -42,10 +42,6 @@ export async function syncNaisApplyActivityFromNais(monitoredAppId: number): Pro
   if (!monitoredApp) {
     throw new Error(`Application not found in monitored applications: ${monitoredAppId}`)
   }
-  if (!monitoredApp.nais_apply_enabled) {
-    return 0
-  }
-
   try {
     return await syncNaisApplyActivityForApp(monitoredApp)
   } catch (error) {

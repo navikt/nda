@@ -11,7 +11,6 @@ export async function getDeploymentCountByDeployer(deployerUsername: string): Pr
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE ${userDeploymentMatchSql(1)}
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${AUDIT_START_YEAR_FILTER}`,
     [deployerUsername],
   )
@@ -32,7 +31,6 @@ export async function getDeployerMonthlyStats(
   endDate?: Date | null,
 ): Promise<DeployerMonthlyStats[]> {
   let whereSql = `WHERE ${userDeploymentMatchSql(1)}
-    AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
     AND ${AUDIT_START_YEAR_FILTER}`
   const params: (string | Date)[] = [deployerUsername]
   let paramIndex = 2
@@ -107,7 +105,6 @@ export async function getDeployerDeploymentsPaginated(
   const offset = (page - 1) * perPage
 
   let whereSql = `WHERE ${userDeploymentMatchSql(1)}
-    AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
     AND ${AUDIT_START_YEAR_FILTER}`
   const countParams: (string | Date | number)[] = [deployerUsername]
   let paramIndex = 2
@@ -197,7 +194,6 @@ export async function getDeployerApps(deployerUsername: string): Promise<string[
      FROM deployments d
      JOIN monitored_applications ma ON d.monitored_app_id = ma.id
      WHERE ${userDeploymentMatchSql(1)}
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND ${AUDIT_START_YEAR_FILTER}
      ORDER BY ma.app_name`,
     [deployerUsername],

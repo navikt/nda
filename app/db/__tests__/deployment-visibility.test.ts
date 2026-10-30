@@ -21,24 +21,22 @@ import {
   getVerificationDiffsForRepository,
 } from '../verification-diff.server'
 
-const applyVisibilityPredicate = "(d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)"
-
-describe('Apply opt-out deployment visibility', () => {
+describe('Apply deployment visibility', () => {
   beforeEach(() => {
     poolQuery.mockReset().mockResolvedValue({ rows: [{ count: 0 }] })
   })
 
-  it('excludes opted-out Apply deployments from deployment navigation', async () => {
+  it('includes Apply deployments in deployment navigation', async () => {
     await getNextDeployment(1, 7)
     await getPreviousDeploymentForNav(1, 7)
 
     expect(poolQuery).toHaveBeenCalledTimes(2)
     for (const [query] of poolQuery.mock.calls) {
-      expect(query).toContain("(nav_dep.deployment_source != 'nais_apply' OR nav_app.nais_apply_enabled = true)")
+      expect(query).not.toContain('nais_apply_enabled')
     }
   })
 
-  it('excludes opted-out Apply deployments from deployer totals and lists', async () => {
+  it('includes Apply deployments in deployer totals and lists', async () => {
     await getDeploymentCountByDeployer('developer')
     await getDeployerMonthlyStats('developer')
     await getDeployerDeploymentsPaginated('developer')
@@ -46,22 +44,20 @@ describe('Apply opt-out deployment visibility', () => {
 
     expect(poolQuery).toHaveBeenCalledTimes(5)
     for (const [query] of poolQuery.mock.calls) {
-      expect(query).toContain(applyVisibilityPredicate)
+      expect(query).not.toContain('nais_apply_enabled')
     }
   })
 
-  it('excludes opted-out Apply deployments from verification diff selection and history', async () => {
+  it('includes Apply deployments in verification diff selection and history', async () => {
     await getDeploymentsForDiffComputation(7)
     await getPreviousDeploymentForDiff(1, '12345')
     await getVerificationDiffsForRepository(42, [7])
     await getPreviousDeploymentForNavDiff(1, 7)
 
     expect(poolQuery).toHaveBeenCalledTimes(4)
-    expect(poolQuery.mock.calls[0][0]).toContain(applyVisibilityPredicate)
-    expect(poolQuery.mock.calls[1][0]).toContain(applyVisibilityPredicate)
-    expect(poolQuery.mock.calls[2][0]).toContain(applyVisibilityPredicate)
-    expect(poolQuery.mock.calls[3][0]).toContain(
-      "(prev.deployment_source != 'nais_apply' OR prev_app.nais_apply_enabled = true)",
-    )
+    expect(poolQuery.mock.calls[0][0]).not.toContain('nais_apply_enabled')
+    expect(poolQuery.mock.calls[1][0]).not.toContain('nais_apply_enabled')
+    expect(poolQuery.mock.calls[2][0]).not.toContain('nais_apply_enabled')
+    expect(poolQuery.mock.calls[3][0]).not.toContain('nais_apply_enabled')
   })
 })

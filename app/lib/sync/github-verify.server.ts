@@ -72,7 +72,6 @@ export async function reverifyPendingChecks(
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      LEFT JOIN repositories r ON r.id = d.repository_id
      WHERE d.monitored_app_id = $1
-       AND (d.deployment_source != 'nais_apply' OR ma.nais_apply_enabled = true)
        AND (d.deployment_source != 'nais_apply' OR (d.repository_id IS NOT NULL AND r.id IS NOT NULL))
        AND d.commit_checks_checked_at IS NULL
        AND d.detected_github_owner IS NOT NULL
