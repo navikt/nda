@@ -1,4 +1,4 @@
-import { Link as AkselLink, Alert, BodyShort, Box, Heading, HGrid, HStack, Table, Tag, VStack } from '@navikt/ds-react'
+import { Link as AkselLink, BodyShort, Box, Heading, HStack, Table, Tag, VStack } from '@navikt/ds-react'
 import { Link, useSearchParams } from 'react-router'
 import type { DeploymentDetailLoaderData } from '~/components/DeploymentDetailPage'
 import type { DeploymentRepositoryView } from '~/db/deployment-repository-view.server'
@@ -9,13 +9,11 @@ import {
   approvalStatusLabel,
 } from '~/lib/repository-code-delivery/approval-assessment-display'
 import { UNRESOLVED_REASON_DESCRIPTIONS } from '~/lib/repository-code-delivery/unresolved-reasons'
-import { DeliveryCommitsSection } from '~/routes/deployments/$id/DeliveryCommitsSection'
 import type { DeploymentDetailsGridProps } from '~/routes/deployments/$id/DeploymentDetailsGrid'
 import { DeploymentDetailsGrid } from '~/routes/deployments/$id/DeploymentDetailsGrid'
 import type { PrDetailsAccordionProps } from '~/routes/deployments/$id/PrDetailsAccordion'
 import { PrDetailsAccordion } from '~/routes/deployments/$id/PrDetailsAccordion'
 import { ActionAlert } from './ActionAlert'
-import { StatusTag } from './deployment-tags'
 import { DeploymentViewLinks } from './deployments/DeploymentViewLinks'
 import { ExternalLink } from './ExternalLink'
 import { UserName } from './UserName'
@@ -32,7 +30,6 @@ type DeploymentPresentation = DeploymentDetailsGridProps['deployment'] &
   Pick<DeploymentDetailLoaderData['deployment'], 'created_at' | 'github_pr_number' | 'github_pr_url' | 'github_pr_data'>
 export type DeploymentRepositoryDetails = {
   deployment: DeploymentPresentation
-  deliveryCommits: DeploymentDetailLoaderData['deliveryCommits']
   displayTitle: DeploymentDetailLoaderData['displayTitle']
   previousDeploymentForDiff: DeploymentDetailLoaderData['previousDeploymentForDiff']
   previousDeploymentForDiffLabel?: string
@@ -72,7 +69,7 @@ function Range({ range }: { range: { baseSha: string; headSha: string } | null }
 
 export function DeploymentRepositoryPage({ data, deploymentDetails, actionData }: DeploymentRepositoryPageProps) {
   const [searchParams] = useSearchParams()
-  const { deployment, application, repository, link } = data
+  const { deployment, repository, link } = data
   const appUrl = `/team/${deployment.teamSlug}/env/${deployment.environmentName}/app/${deployment.appName}`
   const pathname = `${appUrl}/deployments/${deployment.id}`
   const repositoryUrl = repository ? `/repository/${repository.githubOwner}/${repository.githubRepoName}` : null
@@ -109,120 +106,77 @@ export function DeploymentRepositoryPage({ data, deploymentDetails, actionData }
           )}
         </BodyShort>
       </div>
-      <Alert variant="info" size="small">
-        Dette er en skrivebeskyttet sammenligning. Repositorydekningen beregnes fra lagret grunnlag nå, ikke ved
-        deploymenttidspunktet. Den endrer ikke gjeldende applikasjonsbasert status og beviser ikke at koden var godkjent
-        før deployment.
-      </Alert>
-      <HGrid columns={{ xs: 1, lg: 2 }} gap="space-24">
-        <Box padding="space-20" background="raised" borderRadius="8">
-          <VStack gap="space-12">
-            <Heading level="2" size="small">
-              Applikasjonsbasert vurdering
-            </Heading>
-            {application.status ? (
-              <StatusTag four_eyes_status={application.status} />
-            ) : (
-              <BodyShort>Applikasjonsbasert status mangler.</BodyShort>
-            )}
-            <BodyShort size="small">
-              {application.verificationRunAt
-                ? `Intervall fra siste verifiseringskjøring ${formatAuditLogTimestamp(application.verificationRunAt)}:`
-                : 'Ingen applikasjonsbasert verifiseringskjøring er lagret.'}
+      <Box padding="space-20" background="raised" borderRadius="8">
+        <VStack gap="space-12">
+          <Heading level="2" size="small">
+            Repositorybasert vurdering
+          </Heading>
+          {repository && (
+            <BodyShort>
+              {repository.githubOwner}/{repository.githubRepoName}
             </BodyShort>
-            <Range range={application.range} />
-            {application.range &&
-              application.range.headSha === deploymentDetails.deployment.commit_sha &&
-              deploymentDetails.deliveryCommits && (
-                <DeliveryCommitsSection
-                  deliveryCommits={deploymentDetails.deliveryCommits}
-                  userMappings={deploymentDetails.userMappings}
-                  heading="Commits i applikasjonsintervallet"
-                  description="Disse committene hører til intervallet for applikasjonsvurderingen ovenfor."
-                />
+          )}
+          {link.state === 'missing' ? (
+            <>
+              <Tag data-color="warning" variant="outline" size="small">
+                Ingen tilknyttet repositoryleveranse
+              </Tag>
+              <BodyShort>{missingLinkDescription(link)}</BodyShort>
+              {link.candidate && (
+                <BodyShort>
+                  Leveranse #{link.candidate.id} har samme repository og head-SHA, men er ikke koblet til dette
+                  deploymentet. Den brukes derfor ikke som vurderingsgrunnlag.
+                </BodyShort>
               )}
-            <AkselLink as={Link} to={deploymentViewUrl(pathname, searchParams, 'application')}>
-              Åpne applikasjonsbasert grunnlag og historikk
-            </AkselLink>
-          </VStack>
-        </Box>
-        <Box padding="space-20" background="raised" borderRadius="8">
-          <VStack gap="space-12">
-            <Heading level="2" size="small">
-              Repositorydekning nå
-            </Heading>
-            {repository && (
-              <BodyShort>
-                {repository.githubOwner}/{repository.githubRepoName}
-              </BodyShort>
-            )}
-            {link.state === 'missing' ? (
-              <>
-                <Tag data-color="warning" variant="outline" size="small">
-                  Ingen tilknyttet repositoryleveranse
-                </Tag>
-                <BodyShort>{missingLinkDescription(link)}</BodyShort>
-                {link.candidate && (
-                  <BodyShort>
-                    Leveranse #{link.candidate.id} har samme repository og head-SHA, men er ikke koblet til dette
-                    deploymentet. Den brukes derfor ikke som vurderingsgrunnlag.
-                  </BodyShort>
-                )}
-              </>
-            ) : (
-              <>
-                <Tag
-                  data-color={
-                    link.assessment.status === 'approved'
-                      ? 'success'
-                      : link.assessment.status === 'no_changes'
-                        ? 'neutral'
-                        : 'warning'
-                  }
-                  variant="outline"
-                  size="small"
+            </>
+          ) : (
+            <>
+              <Tag
+                data-color={
+                  link.assessment.status === 'approved'
+                    ? 'success'
+                    : link.assessment.status === 'no_changes'
+                      ? 'neutral'
+                      : 'warning'
+                }
+                variant="outline"
+                size="small"
+              >
+                {approvalStatusLabel(link.assessment.status)}
+              </Tag>
+              <BodyShort size="small">Leveranse #{link.delivery.id} · låst kodeintervall:</BodyShort>
+              <Range range={link.delivery} />
+              {link.assessment.status === 'no_changes' && (
+                <BodyShort>
+                  Dette er et historikkanker uten kodeendringer, ikke en godkjenning av tidligere kode.
+                </BodyShort>
+              )}
+              {link.assessment.status === 'incomplete' && (
+                <BodyShort>
+                  Grunnlaget er ufullstendig. Det betyr ikke at review mangler eller at koden er godkjent.
+                </BodyShort>
+              )}
+              {link.assessment.totalCommits === null ? (
+                <BodyShort size="small">
+                  {link.assessment.listedCommits} commits vurdert; totalt antall er ukjent.
+                </BodyShort>
+              ) : (
+                <BodyShort size="small">
+                  {link.assessment.listedCommits} av {link.assessment.totalCommits} commits vurdert.
+                </BodyShort>
+              )}
+              {repository && link.canApprove && link.assessment.status === 'not_approved' && (
+                <AkselLink
+                  as={Link}
+                  to={`${repositoryUrl}/approvals/${link.delivery.id}?repositoryId=${repository.id}`}
                 >
-                  {approvalStatusLabel(link.assessment.status)}
-                </Tag>
-                <BodyShort size="small">Leveranse #{link.delivery.id} · låst kodeintervall:</BodyShort>
-                <Range range={link.delivery} />
-                {link.assessment.status === 'no_changes' && (
-                  <BodyShort>
-                    Dette er et historikkanker uten kodeendringer, ikke en godkjenning av tidligere kode.
-                  </BodyShort>
-                )}
-                {link.assessment.status === 'incomplete' && (
-                  <BodyShort>
-                    Grunnlaget er ufullstendig. Det betyr ikke at review mangler eller at koden er godkjent.
-                  </BodyShort>
-                )}
-                {link.assessment.totalCommits === null ? (
-                  <BodyShort size="small">
-                    {link.assessment.listedCommits} commits vurdert; totalt antall er ukjent.
-                  </BodyShort>
-                ) : (
-                  <BodyShort size="small">
-                    {link.assessment.listedCommits} av {link.assessment.totalCommits} commits vurdert.
-                  </BodyShort>
-                )}
-                {repository && link.canApprove && link.assessment.status === 'not_approved' && (
-                  <AkselLink
-                    as={Link}
-                    to={`${repositoryUrl}/approvals/${link.delivery.id}?repositoryId=${repository.id}`}
-                  >
-                    Åpne felles repositorygodkjenning
-                  </AkselLink>
-                )}
-              </>
-            )}
-          </VStack>
-        </Box>
-      </HGrid>
-      <Alert variant="info" size="small">
-        Modellene kan vurdere forskjellige kodeintervaller. Kodedekning er ikke en samlet deploymentgodkjenning og
-        overstyrer ikke kilde- eller branchkontroller. Disse kontrollene må leses i den applikasjonsbaserte vurderingen.
-        {deployment.branchName ? ` Registrert branch: ${deployment.branchName}.` : ' Registrert branch er ukjent.'}
-      </Alert>
+                  Åpne felles repositorygodkjenning
+                </AkselLink>
+              )}
+            </>
+          )}
+        </VStack>
+      </Box>
       {link.state === 'linked' && repository && (
         <>
           {link.commits.length > 0 && (

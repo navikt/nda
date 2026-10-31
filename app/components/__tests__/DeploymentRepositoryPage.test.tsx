@@ -48,7 +48,6 @@ describe('repository deployment comparison', () => {
       undefined,
       {
         ...repositoryDeploymentDetailsData,
-        deliveryCommits: null,
         deployment: {
           ...repositoryDeploymentDetailsData.deployment,
           detected_github_owner: owner,
@@ -65,23 +64,21 @@ describe('repository deployment comparison', () => {
     expect(markup).toContain('Kopier SHA')
   })
 
-  it('shows both intervals, current coverage and its time limitation without app mutation forms', () => {
+  it('shows only repository assessment and commits, retaining shared details and view navigation', () => {
     const markup = render(repositoryDeploymentData)
-    expect(markup).toContain('Applikasjonsbasert vurdering')
+    expect(markup).toContain('Repositorybasert vurdering')
     expect(markup).toContain('Hele intervallet er dekket')
-    expect(markup).toContain('ikke ved deploymenttidspunktet')
     expect(markup).toContain('Dekket av manuell godkjenning')
-    expect(markup).toContain('a'.repeat(40))
     expect(markup).toContain('b'.repeat(40))
     expect(markup).toContain('Rask Elv')
     expect(markup).toContain('glad-fjord-web')
     expect(markup).toContain('feat: Repository delivery')
-    expect(markup).toContain('Commits i applikasjonsintervallet (2)')
+    expect(markup).toContain('Dekning per commit')
     expect(markup).toContain('Commit SHA')
     expect(markup).toContain('Nais Deployment ID')
     expect(markup).not.toContain('Neste')
-    expect(markup).toContain('Disse committene hører til intervallet for applikasjonsvurderingen ovenfor.')
-    expect(markup).toContain('Intervall fra siste verifiseringskjøring')
+    expect(markup).toContain('Endringer i repositoryleveransen')
+    expect(markup).toContain(`/compare/${'b'.repeat(40)}...${'c'.repeat(40)}`)
     expect(markup).not.toContain('<form')
     expect(markup).not.toContain('Godkjenn manuelt')
     expect(markup).toContain('view=application&amp;period=all&amp;page=2&amp;status=not_approved')
@@ -116,16 +113,6 @@ describe('repository deployment comparison', () => {
     expect(markup).not.toContain('/approvals/')
   })
 
-  it('shows missing application assessment independently of available repository coverage', () => {
-    const markup = render({
-      ...repositoryDeploymentData,
-      application: { status: null, verificationRunAt: null, range: null },
-    })
-    expect(markup).toContain('Applikasjonsbasert status mangler')
-    expect(markup).toContain('Ingen applikasjonsbasert verifiseringskjøring er lagret')
-    expect(markup).toContain('Hele intervallet er dekket')
-  })
-
   it('offers a separate repository approval link only for known missing coverage and sufficient rights', () => {
     if (repositoryDeploymentData.link.state !== 'linked') throw new Error('Expected a linked fixture')
     const data: DeploymentRepositoryView = {
@@ -157,26 +144,6 @@ describe('repository deployment comparison', () => {
     expect(params.get('view')).toBe('repository')
   })
 
-  it('does not show the application commit list when the interval head differs from the deployment', () => {
-    const markup = render(repositoryDeploymentData)
-    const unmatchedData: DeploymentRepositoryView = {
-      ...repositoryDeploymentData,
-      application: {
-        ...repositoryDeploymentData.application,
-        range: { baseSha: 'a'.repeat(40), headSha: 'd'.repeat(40) },
-      },
-    }
-    const router = createMemoryRouter([
-      {
-        path: '*',
-        element: <DeploymentRepositoryPage data={unmatchedData} deploymentDetails={repositoryDeploymentDetailsData} />,
-      },
-    ])
-    const unmatchedMarkup = renderToStaticMarkup(<RouterProvider router={router} />)
-    expect(markup).toContain('Commits i applikasjonsintervallet')
-    expect(unmatchedMarkup).not.toContain('Commits i applikasjonsintervallet')
-  })
-
   it('leaves application detail rendering on the unchanged page component', () => {
     const router = createMemoryRouter([
       {
@@ -186,7 +153,6 @@ describe('repository deployment comparison', () => {
     ])
     const markup = renderToStaticMarkup(<RouterProvider router={router} />)
     expect(markup).toContain('Commits i denne leveransen (2)')
-    expect(markup).not.toContain('Commits i applikasjonsintervallet')
     expect(markup).toContain('Endringer siden forrige leveranse')
     expect(markup).toContain('Denne leveransen består av 2 commits, 1 fra bot og 1 fra menneske.')
   })

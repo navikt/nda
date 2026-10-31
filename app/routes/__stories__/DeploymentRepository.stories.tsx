@@ -103,7 +103,6 @@ export const repositoryDeploymentData: DeploymentRepositoryView = {
 export const repositoryDeploymentDetailsData: Pick<
   DeploymentRepositoryDetails,
   | 'deployment'
-  | 'deliveryCommits'
   | 'displayTitle'
   | 'previousDeploymentForDiff'
   | 'previousDeploymentForDiffLabel'
@@ -133,28 +132,10 @@ export const repositoryDeploymentDetailsData: Pick<
         }
       : null,
   },
-  deliveryCommits: [
-    {
-      sha: 'd'.repeat(40),
-      message: 'chore: update repository configuration',
-      authorUsername: 'glad-fjord',
-      htmlUrl: `https://github.com/navikt/glad-fjord/commit/${'d'.repeat(40)}`,
-      isBot: false,
-      botDisplayName: null,
-    },
-    {
-      sha: repositoryDeploymentData.deployment.commitSha ?? '',
-      message: 'feat: Repository delivery',
-      authorUsername: 'rask-elv',
-      htmlUrl: `https://github.com/navikt/glad-fjord/commit/${repositoryDeploymentData.deployment.commitSha ?? ''}`,
-      isBot: false,
-      botDisplayName: null,
-    },
-  ],
   displayTitle: 'feat: Repository delivery',
-  previousDeploymentForDiff: { commit_sha: 'a'.repeat(40) },
-  previousDeploymentForDiffLabel: 'Endringer i lagret applikasjonsintervall',
-  sameCommitMessage: 'Det lagrede applikasjonsintervallet inneholder ingen endringer (samme commit).',
+  previousDeploymentForDiff: { commit_sha: 'b'.repeat(40) },
+  previousDeploymentForDiffLabel: 'Endringer i repositoryleveransen',
+  sameCommitMessage: 'Repositoryleveransen inneholder ingen endringer (samme commit).',
   userMappings: {
     'glad-fjord': { display_name: 'Glad Fjord' },
     'rask-elv': { display_name: 'Rask Elv' },
@@ -168,7 +149,7 @@ export const repositoryDeploymentDetailsData: Pick<
   workflowTrigger: null,
 }
 
-export const UlikeIntervaller: Story = {
+export const Godkjent: Story = {
   args: { data: repositoryDeploymentData, deploymentDetails: repositoryDeploymentDetailsData },
 }
 
@@ -217,20 +198,6 @@ export const UfullstendigGrunnlag: Story = {
         deploymentCount: 0,
         canApprove: false,
       },
-    },
-  },
-}
-
-export const ManglerAppvurdering: Story = {
-  args: {
-    deploymentDetails: {
-      ...repositoryDeploymentDetailsData,
-      previousDeploymentForDiff: null,
-      deliveryCommits: null,
-    },
-    data: {
-      ...repositoryDeploymentData,
-      application: { status: null, verificationRunAt: null, range: null },
     },
   },
 }
