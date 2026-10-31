@@ -108,7 +108,7 @@ describe('deployment repository comparison read', () => {
     getLookups.mockResolvedValue(
       new Map([['glad-fjord', { nav_ident: 'Z990001', active_nav_ident: 'Z990001', account_deleted_at: null }]]),
     )
-    capabilities.mockResolvedValue({ canApprove: true })
+    capabilities.mockResolvedValue({ canApprove: true, canAccessAdmin: true })
   })
 
   it('uses the stored link and shared approval evaluator without losing the distinct application range', async () => {
@@ -212,6 +212,34 @@ describe('deployment repository comparison read', () => {
     expect((await getDeploymentRepositoryView(42, null, 3))?.link).toMatchObject({
       state: 'linked',
       assessment: { status: 'incomplete' },
+    })
+  })
+  it('preserves the specific PR evidence reason and admin capability without changing either assessment', async () => {
+    getIntervals.mockResolvedValue([
+      {
+        deliveryId: 7,
+        assessment: {
+          ...interval,
+          state: 'incomplete',
+          commits: [
+            {
+              ...interval.commits[0],
+              status: 'unknown',
+              reason: 'missing_pull_request_snapshot',
+              pullRequestNumber: 123,
+            },
+          ],
+        },
+      },
+    ])
+    const data = await getDeploymentRepositoryView(42, { navIdent: 'Z990002' } as UserIdentity, 3)
+    expect(data).toMatchObject({
+      application: { status: 'unverified_commits' },
+      link: {
+        assessment: { status: 'incomplete', commits: [{ reason: 'unknown_pr_coverage' }] },
+        commits: [{ prReason: 'missing_pull_request_snapshot', pullRequestNumber: 123 }],
+        canAccessAdmin: true,
+      },
     })
   })
 

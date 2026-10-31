@@ -8,6 +8,7 @@ import {
   approvalCommitReasonLabel,
   approvalStatusLabel,
 } from '~/lib/repository-code-delivery/approval-assessment-display'
+import { assessmentReasonLabel } from '~/lib/repository-code-delivery/interval-assessment-display'
 import { UNRESOLVED_REASON_DESCRIPTIONS } from '~/lib/repository-code-delivery/unresolved-reasons'
 import type { DeploymentDetailsGridProps } from '~/routes/deployments/$id/DeploymentDetailsGrid'
 import { DeploymentDetailsGrid } from '~/routes/deployments/$id/DeploymentDetailsGrid'
@@ -25,6 +26,60 @@ export interface DeploymentRepositoryPageProps {
 }
 
 type MissingLink = Extract<DeploymentRepositoryView['link'], { state: 'missing' }>
+type LinkedDelivery = Extract<DeploymentRepositoryView['link'], { state: 'linked' }>
+type AssessedCommit = LinkedDelivery['commits'][number]
+
+function commitReason(commit: AssessedCommit): string {
+  return commit.reason === 'unknown_pr_coverage' && commit.prReason
+    ? assessmentReasonLabel(commit.prReason)
+    : approvalCommitReasonLabel(commit.reason)
+}
+
+function resolutionGuidance(commit: AssessedCommit): string {
+  if (commit.reason === 'unknown_commit_author' || commit.reason === 'unknown_approver_identity') {
+    return 'Be en administrator kontrollere GitHub-kontoens kobling til NAV-ident.'
+  }
+  if (commit.reason === 'unknown_pr_coverage') {
+    if (commit.prReason === 'unknown_default_branch') {
+      return 'Be en administrator kontrollere repositoryets registrerte default-branch.'
+    }
+    return 'Kontroller PR-grunnlaget og innlesingsstatusen for leveransen. Manglende eller utdaterte GitHub-data må hentes inn på nytt.'
+  }
+  return 'Be en administrator kontrollere leveranseintervallet og den innleste commit-historikken.'
+}
+
+function AssessmentSummary({ link }: { link: LinkedDelivery }) {
+  const covered = link.assessment.commits.filter((commit) => commit.status === 'covered').length
+  const notCovered = link.assessment.commits.filter((commit) => commit.status === 'not_covered').length
+  const unknown = link.assessment.commits.filter((commit) => commit.status === 'unknown').length
+  const unresolved = link.commits.filter((commit) => commit.status === 'unknown')
+  const reasons = [...new Map(unresolved.map((commit) => [commitReason(commit), commit])).values()]
+  return (
+    <VStack gap="space-8">
+      <BodyShort size="small">
+        {covered} commits dekket · {notCovered} commits krever godkjenning · {unknown} commits har uavklart grunnlag.
+      </BodyShort>
+      {link.assessment.omittedCommits > 0 && (
+        <BodyShort size="small">{link.assessment.omittedCommits} commits mangler i det innleste grunnlaget.</BodyShort>
+      )}
+      {link.assessment.totalCommits === null && (
+        <BodyShort size="small">
+          Totalt antall commits i intervallet er ukjent. Commit-historikken må hentes inn.
+        </BodyShort>
+      )}
+      {link.assessment.status === 'incomplete' && reasons.length === 0 && link.assessment.totalCommits !== null && (
+        <BodyShort size="small">
+          Commit-historikken er ufullstendig. Kontroller innlesingen av leveranseintervallet.
+        </BodyShort>
+      )}
+      {reasons.map((commit) => (
+        <BodyShort key={commitReason(commit)} size="small">
+          {commitReason(commit)}. {resolutionGuidance(commit)}
+        </BodyShort>
+      ))}
+    </VStack>
+  )
+}
 type DeploymentPresentation = DeploymentDetailsGridProps['deployment'] &
   PrDetailsAccordionProps['deployment'] &
   Pick<DeploymentDetailLoaderData['deployment'], 'created_at' | 'github_pr_number' | 'github_pr_url' | 'github_pr_data'>
@@ -142,7 +197,9 @@ export function DeploymentRepositoryPage({ data, deploymentDetails, actionData }
                 variant="outline"
                 size="small"
               >
-                {approvalStatusLabel(link.assessment.status)}
+                {link.assessment.status === 'incomplete'
+                  ? 'Uavklart grunnlag'
+                  : approvalStatusLabel(link.assessment.status)}
               </Tag>
               <BodyShort size="small">Leveranse #{link.delivery.id} · låst kodeintervall:</BodyShort>
               <Range range={link.delivery} />
@@ -151,19 +208,14 @@ export function DeploymentRepositoryPage({ data, deploymentDetails, actionData }
                   Dette er et historikkanker uten kodeendringer, ikke en godkjenning av tidligere kode.
                 </BodyShort>
               )}
-              {link.assessment.status === 'incomplete' && (
-                <BodyShort>
-                  Grunnlaget er ufullstendig. Det betyr ikke at review mangler eller at koden er godkjent.
-                </BodyShort>
-              )}
-              {link.assessment.totalCommits === null ? (
-                <BodyShort size="small">
-                  {link.assessment.listedCommits} commits vurdert; totalt antall er ukjent.
-                </BodyShort>
-              ) : (
-                <BodyShort size="small">
-                  {link.assessment.listedCommits} av {link.assessment.totalCommits} commits vurdert.
-                </BodyShort>
+              <AssessmentSummary link={link} />
+              {repository && link.canAccessAdmin && link.assessment.status === 'incomplete' && (
+                <AkselLink
+                  as={Link}
+                  to={`${repositoryUrl}/admin/code-deliveries/${link.delivery.id}?repositoryId=${repository.id}`}
+                >
+                  Se review-grunnlag og innlesingsstatus
+                </AkselLink>
               )}
               {repository && link.canApprove && link.assessment.status === 'not_approved' && (
                 <AkselLink
@@ -218,7 +270,7 @@ export function DeploymentRepositoryPage({ data, deploymentDetails, actionData }
                           'Ingen dokumentert PR-dekning'
                         )}
                       </Table.DataCell>
-                      <Table.DataCell>{approvalCommitReasonLabel(commit.reason)}</Table.DataCell>
+                      <Table.DataCell>{commitReason(commit)}</Table.DataCell>
                     </Table.Row>
                   ))}
                 </Table.Body>
