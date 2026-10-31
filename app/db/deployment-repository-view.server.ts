@@ -2,6 +2,7 @@ import type { UserIdentity } from '~/lib/auth.server'
 import { resolveRepositoryApprovalCapabilities } from '~/lib/authorization.server'
 import type { FourEyesStatus } from '~/lib/four-eyes-status'
 import { isFullCommitSha } from '~/lib/git-constants'
+import { isRepositoryBotAuthor } from '~/lib/repository-code-delivery/approval-assessment-display'
 import { serializeUserLookups } from '~/lib/user-display'
 import { withTransaction } from './connection.server'
 import { getRepositoryCodeDelivery } from './repository-code-deliveries.server'
@@ -169,7 +170,11 @@ export async function getDeploymentRepositoryView(
           authorLogin: commits.get(commit.sha.toLowerCase())?.authorLogin ?? null,
           pullRequestNumber: commits.get(commit.sha.toLowerCase())?.pullRequestNumber ?? null,
           prReason:
-            commit.reason === 'unknown_pr_coverage' ? (commits.get(commit.sha.toLowerCase())?.reason ?? null) : null,
+            commit.reason === 'unknown_pr_coverage' ||
+            (commit.reason === 'unknown_commit_author' &&
+              isRepositoryBotAuthor(commits.get(commit.sha.toLowerCase())?.authorLogin))
+              ? (commits.get(commit.sha.toLowerCase())?.reason ?? null)
+              : null,
         })),
         deployments: deployments.map(({ total: _total, ...row }) => row),
         deploymentCount: deployments[0]?.total ?? 0,

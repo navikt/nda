@@ -178,6 +178,28 @@ describe('repository deployment comparison', () => {
     expect(markup).not.toContain('/approvals/')
   })
 
+  it.each(['dependabot[bot]', 'dependabot', 'renovate[bot]'])(
+    'explains rejected PR coverage for %s instead of requesting a person mapping',
+    (authorLogin) => {
+      if (repositoryDeploymentData.link.state !== 'linked') throw new Error('Expected a linked fixture')
+      const commit = { sha: 'c'.repeat(40), status: 'unknown' as const, reason: 'unknown_commit_author' as const }
+      const markup = render({
+        ...repositoryDeploymentData,
+        link: {
+          ...repositoryDeploymentData.link,
+          assessment: { status: 'incomplete', totalCommits: 1, listedCommits: 1, omittedCommits: 0, commits: [commit] },
+          commits: [{ ...commit, authorLogin, pullRequestNumber: 264, prReason: 'approval_before_last_commit' }],
+          canApprove: true,
+        },
+      })
+      expect(markup).toContain('Botcommit uten PR-dekning: Godkjenningen kom før siste commit i PR-en')
+      expect(markup).toContain('Botkontoer skal ikke kobles til NAV-ident')
+      expect(markup).toContain('repositoryets innstilling for implisitt godkjenning')
+      expect(markup).not.toContain('Be en administrator kontrollere GitHub-kontoens kobling')
+      expect(markup).not.toContain('/approvals/')
+    },
+  )
+
   it('explains incomplete history even when there are no commit rows to provide a reason', () => {
     if (repositoryDeploymentData.link.state !== 'linked') throw new Error('Expected a linked fixture')
     const markup = render({
