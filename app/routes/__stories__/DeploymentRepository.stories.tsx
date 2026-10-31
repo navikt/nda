@@ -77,6 +77,7 @@ export const repositoryDeploymentData: DeploymentRepositoryView = {
         reason: 'manual_approval',
         authorLogin: 'rask-elv',
         pullRequestNumber: null,
+        prReason: null,
       },
     ],
     deployments: [
@@ -97,6 +98,7 @@ export const repositoryDeploymentData: DeploymentRepositoryView = {
     ],
     deploymentCount: 2,
     canApprove: false,
+    canAccessAdmin: false,
   },
 }
 
@@ -197,6 +199,42 @@ export const UfullstendigGrunnlag: Story = {
         deployments: [],
         deploymentCount: 0,
         canApprove: false,
+        canAccessAdmin: true,
+      },
+    },
+  },
+}
+
+export const ManglerPrGrunnlag: Story = {
+  args: {
+    deploymentDetails: repositoryDeploymentDetailsData,
+    data: {
+      ...repositoryDeploymentData,
+      link: {
+        ...repositoryDeploymentData.link,
+        state: 'linked',
+        delivery: { id: 7, baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) },
+        assessment: {
+          status: 'incomplete',
+          totalCommits: 1,
+          listedCommits: 1,
+          omittedCommits: 0,
+          commits: [{ sha: 'c'.repeat(40), status: 'unknown', reason: 'unknown_pr_coverage' }],
+        },
+        commits: [
+          {
+            sha: 'c'.repeat(40),
+            status: 'unknown',
+            reason: 'unknown_pr_coverage',
+            prReason: 'missing_pull_request_snapshot',
+            authorLogin: 'rask-elv',
+            pullRequestNumber: 123,
+          },
+        ],
+        deployments: [],
+        deploymentCount: 0,
+        canApprove: false,
+        canAccessAdmin: true,
       },
     },
   },

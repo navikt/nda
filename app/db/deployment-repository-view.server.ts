@@ -140,7 +140,7 @@ export async function getDeploymentRepositoryView(
     const { interval, assessment } = evaluated
     const capabilities = actor
       ? await resolveRepositoryApprovalCapabilities(actor, context.repository.id, client)
-      : { canApprove: false }
+      : { canApprove: false, canAccessAdmin: false }
     const { rows: deployments } = await client.query<{
       id: number
       teamSlug: string
@@ -168,10 +168,13 @@ export async function getDeploymentRepositoryView(
           ...commit,
           authorLogin: commits.get(commit.sha.toLowerCase())?.authorLogin ?? null,
           pullRequestNumber: commits.get(commit.sha.toLowerCase())?.pullRequestNumber ?? null,
+          prReason:
+            commit.reason === 'unknown_pr_coverage' ? (commits.get(commit.sha.toLowerCase())?.reason ?? null) : null,
         })),
         deployments: deployments.map(({ total: _total, ...row }) => row),
         deploymentCount: deployments[0]?.total ?? 0,
         canApprove: capabilities.canApprove,
+        canAccessAdmin: capabilities.canAccessAdmin,
       },
       deployerUsername: deployment.deployer_username,
       userMappings: serializeUserLookups(lookups),

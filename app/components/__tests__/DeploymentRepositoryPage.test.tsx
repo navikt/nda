@@ -131,6 +131,66 @@ describe('repository deployment comparison', () => {
     ).not.toContain('/approvals/')
   })
 
+  it('shows specific missing PR evidence, separates unresolved commits from missing approval and links admins to diagnostics', () => {
+    if (repositoryDeploymentData.link.state !== 'linked') throw new Error('Expected a linked fixture')
+    const commits = [
+      { sha: 'c'.repeat(40), status: 'unknown' as const, reason: 'unknown_pr_coverage' as const },
+      { sha: 'd'.repeat(40), status: 'not_covered' as const, reason: 'missing_approval' as const },
+    ]
+    const data: DeploymentRepositoryView = {
+      ...repositoryDeploymentData,
+      link: {
+        ...repositoryDeploymentData.link,
+        assessment: { status: 'incomplete', totalCommits: 2, listedCommits: 2, omittedCommits: 0, commits },
+        commits: commits.map((commit) => ({
+          ...commit,
+          authorLogin: 'rask-elv',
+          pullRequestNumber: 123,
+          prReason: commit.status === 'unknown' ? 'missing_pull_request_snapshot' : null,
+        })),
+        canAccessAdmin: true,
+      },
+    }
+    const markup = render(data)
+    expect(markup).toContain('Uavklart grunnlag')
+    expect(markup).toContain('0 commits dekket · 1 commits krever godkjenning · 1 commits har uavklart grunnlag')
+    expect(markup).toContain('Snapshot av PR, commits eller reviews mangler')
+    expect(markup).toContain('Manglende eller utdaterte GitHub-data må hentes inn på nytt')
+    expect(markup).toContain('/pull/123')
+    expect(markup).toContain('/admin/code-deliveries/7?repositoryId=5')
+    expect(render({ ...data, link: { ...data.link, canAccessAdmin: false } })).not.toContain('/admin/code-deliveries/')
+  })
+
+  it('explains missing identities without directing the user to manually approve unknown evidence', () => {
+    if (repositoryDeploymentData.link.state !== 'linked') throw new Error('Expected a linked fixture')
+    const commit = { sha: 'c'.repeat(40), status: 'unknown' as const, reason: 'unknown_commit_author' as const }
+    const markup = render({
+      ...repositoryDeploymentData,
+      link: {
+        ...repositoryDeploymentData.link,
+        assessment: { status: 'incomplete', totalCommits: 1, listedCommits: 1, omittedCommits: 0, commits: [commit] },
+        commits: [{ ...commit, authorLogin: 'rask-elv', pullRequestNumber: null, prReason: null }],
+        canApprove: true,
+      },
+    })
+    expect(markup).toContain('Commit author mangler verifisert GitHub-konto eller kobling til NAV-ident')
+    expect(markup).toContain('Be en administrator kontrollere GitHub-kontoens kobling til NAV-ident')
+    expect(markup).not.toContain('/approvals/')
+  })
+
+  it('explains incomplete history even when there are no commit rows to provide a reason', () => {
+    if (repositoryDeploymentData.link.state !== 'linked') throw new Error('Expected a linked fixture')
+    const markup = render({
+      ...repositoryDeploymentData,
+      link: {
+        ...repositoryDeploymentData.link,
+        assessment: { status: 'incomplete', totalCommits: null, listedCommits: 0, omittedCommits: 0, commits: [] },
+        commits: [],
+      },
+    })
+    expect(markup).toContain('Totalt antall commits i intervallet er ukjent. Commit-historikken må hentes inn.')
+  })
+
   it('keeps both links on the same deployment and preserves filters without mutating the original params', () => {
     const params = new URLSearchParams('period=last-week&page=3&view=repository')
     const pathname = '/team/team-fjord/env/prod-gcp/app/glad-fjord/deployments/42'
