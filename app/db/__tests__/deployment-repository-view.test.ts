@@ -243,6 +243,32 @@ describe('deployment repository comparison read', () => {
     })
   })
 
+  it('preserves the rejected PR reason for bot authors without changing approval status', async () => {
+    getIntervals.mockResolvedValue([
+      {
+        deliveryId: 7,
+        assessment: {
+          ...interval,
+          commits: [
+            {
+              ...interval.commits[0],
+              authorLogin: 'dependabot[bot]',
+              authorUsername: 'dependabot[bot]',
+              reason: 'approval_before_last_commit',
+              pullRequestNumber: 264,
+            },
+          ],
+        },
+      },
+    ])
+    getLookups.mockResolvedValue(new Map())
+    const data = await getDeploymentRepositoryView(42, null, 3)
+    expect(data?.link).toMatchObject({
+      assessment: { status: 'incomplete', commits: [{ status: 'unknown', reason: 'unknown_commit_author' }] },
+      commits: [{ authorLogin: 'dependabot[bot]', prReason: 'approval_before_last_commit', pullRequestNumber: 264 }],
+    })
+  })
+
   it('does not substitute an older or malformed application range', async () => {
     setContext({ verification_base_sha: 'invalid' })
     expect((await getDeploymentRepositoryView(42, null, 3))?.application.range).toBeNull()

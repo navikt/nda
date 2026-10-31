@@ -1,4 +1,10 @@
+import { isGitHubBot } from '~/lib/github-bots'
 import type { RepositoryDeliveryApprovalAssessment } from './approval-assessment'
+
+export function isRepositoryBotAuthor(username: string | null | undefined): boolean {
+  const normalized = username?.toLowerCase()
+  return normalized === 'dependabot' || isGitHubBot(normalized)
+}
 
 export function approvalStatusLabel(status: RepositoryDeliveryApprovalAssessment['status']): string {
   if (status === 'approved') return 'Hele intervallet er dekket'

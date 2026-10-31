@@ -7,6 +7,7 @@ import { deploymentListUrl, deploymentViewUrl } from '~/lib/deployment-view'
 import {
   approvalCommitReasonLabel,
   approvalStatusLabel,
+  isRepositoryBotAuthor,
 } from '~/lib/repository-code-delivery/approval-assessment-display'
 import { assessmentReasonLabel } from '~/lib/repository-code-delivery/interval-assessment-display'
 import { UNRESOLVED_REASON_DESCRIPTIONS } from '~/lib/repository-code-delivery/unresolved-reasons'
@@ -30,12 +31,20 @@ type LinkedDelivery = Extract<DeploymentRepositoryView['link'], { state: 'linked
 type AssessedCommit = LinkedDelivery['commits'][number]
 
 function commitReason(commit: AssessedCommit): string {
+  if (commit.reason === 'unknown_commit_author' && isRepositoryBotAuthor(commit.authorLogin)) {
+    return commit.prReason
+      ? `Botcommit uten PR-dekning: ${assessmentReasonLabel(commit.prReason)}`
+      : 'Botcommit uten dokumentert PR-dekning'
+  }
   return commit.reason === 'unknown_pr_coverage' && commit.prReason
     ? assessmentReasonLabel(commit.prReason)
     : approvalCommitReasonLabel(commit.reason)
 }
 
 function resolutionGuidance(commit: AssessedCommit): string {
+  if (commit.reason === 'unknown_commit_author' && isRepositoryBotAuthor(commit.authorLogin)) {
+    return 'Botkontoer skal ikke kobles til NAV-ident. Kontroller PR-godkjenningen og repositoryets innstilling for implisitt godkjenning.'
+  }
   if (commit.reason === 'unknown_commit_author' || commit.reason === 'unknown_approver_identity') {
     return 'Be en administrator kontrollere GitHub-kontoens kobling til NAV-ident.'
   }
