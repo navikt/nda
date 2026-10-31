@@ -419,7 +419,6 @@ describe('deployment queries', () => {
 
   it('rejects verification of an Apply deployment with no stored repository association', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-1', appName: 'my-app', environment: 'prod-gcp' })
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
     const deploymentId = await seedDeployment(pool, {
       monitoredAppId: appId,
       teamSlug: 'team-1',

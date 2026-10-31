@@ -33,6 +33,7 @@ describe('Apply deployment visibility', () => {
     expect(poolQuery).toHaveBeenCalledTimes(2)
     for (const [query] of poolQuery.mock.calls) {
       expect(query).not.toContain('nais_apply_enabled')
+      expect(query).not.toContain('JOIN monitored_applications')
     }
   })
 
@@ -59,5 +60,6 @@ describe('Apply deployment visibility', () => {
     expect(poolQuery.mock.calls[1][0]).not.toContain('nais_apply_enabled')
     expect(poolQuery.mock.calls[2][0]).not.toContain('nais_apply_enabled')
     expect(poolQuery.mock.calls[3][0]).not.toContain('nais_apply_enabled')
+    expect(poolQuery.mock.calls[3][0]).not.toContain('JOIN monitored_applications')
   })
 })
