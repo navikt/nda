@@ -27,6 +27,7 @@ export type DeploymentDetailsGridProps = {
   previousDeploymentForDiff: LoaderData['previousDeploymentForDiff']
   previousDeploymentForDiffLabel?: string
   sameCommitMessage?: string
+  requireRepositoryIdentity?: boolean
   workflowTrigger: LoaderData['workflowTrigger']
 }
 
@@ -36,11 +37,13 @@ export function DeploymentDetailsGrid({
   previousDeploymentForDiff,
   previousDeploymentForDiffLabel = 'Endringer siden forrige leveranse',
   sameCommitMessage = 'Denne leveransen er identisk med forrige leveranse (samme commit)',
+  requireRepositoryIdentity = false,
   workflowTrigger,
 }: DeploymentDetailsGridProps) {
   const hasPreviousCommit = Boolean(previousDeploymentForDiff?.commit_sha)
   const isSameCommit = hasPreviousCommit && previousDeploymentForDiff?.commit_sha === deployment.commit_sha
   const canLinkToDiff = deployment.detected_github_owner && deployment.detected_github_repo_name
+  const canLinkToRepository = !requireRepositoryIdentity || Boolean(canLinkToDiff)
 
   return (
     <>
@@ -85,12 +88,18 @@ export function DeploymentDetailsGrid({
           <HStack gap="space-8" align="center">
             <BodyShort>
               {deployment.commit_sha ? (
-                <ExternalLink
-                  href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/commit/${deployment.commit_sha}`}
-                  style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-                >
-                  {deployment.commit_sha.substring(0, 7)}
-                </ExternalLink>
+                canLinkToRepository ? (
+                  <ExternalLink
+                    href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/commit/${deployment.commit_sha}`}
+                    style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+                  >
+                    {deployment.commit_sha.substring(0, 7)}
+                  </ExternalLink>
+                ) : (
+                  <span style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                    {deployment.commit_sha.substring(0, 7)}
+                  </span>
+                )
               ) : (
                 <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>(ukjent)</span>
               )}
@@ -103,12 +112,16 @@ export function DeploymentDetailsGrid({
           <VStack gap="space-4">
             <Detail>Branch</Detail>
             <BodyShort>
-              <ExternalLink
-                href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/tree/${encodeURIComponent(deployment.branch_name)}`}
-                style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-              >
-                {deployment.branch_name}
-              </ExternalLink>
+              {canLinkToRepository ? (
+                <ExternalLink
+                  href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/tree/${encodeURIComponent(deployment.branch_name)}`}
+                  style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+                >
+                  {deployment.branch_name}
+                </ExternalLink>
+              ) : (
+                <span style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>{deployment.branch_name}</span>
+              )}
             </BodyShort>
           </VStack>
         )}
@@ -119,12 +132,16 @@ export function DeploymentDetailsGrid({
             <BodyShort>
               {deployment.parent_commits.map((parent, index) => (
                 <span key={parent.sha}>
-                  <ExternalLink
-                    href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/commit/${parent.sha}`}
-                    style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-                  >
-                    {parent.sha.substring(0, 7)}
-                  </ExternalLink>
+                  {canLinkToRepository ? (
+                    <ExternalLink
+                      href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/commit/${parent.sha}`}
+                      style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+                    >
+                      {parent.sha.substring(0, 7)}
+                    </ExternalLink>
+                  ) : (
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>{parent.sha.substring(0, 7)}</span>
+                  )}
                   {index < (deployment.parent_commits?.length ?? 0) - 1 && ', '}
                 </span>
               ))}
@@ -256,11 +273,15 @@ export function DeploymentDetailsGrid({
               <VStack gap="space-4">
                 <Detail>Merge commit</Detail>
                 <BodyShort>
-                  <ExternalLink
-                    href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/commit/${deployment.github_pr_data.merge_commit_sha}`}
-                  >
-                    {deployment.github_pr_data.merge_commit_sha.substring(0, 7)}
-                  </ExternalLink>
+                  {canLinkToRepository ? (
+                    <ExternalLink
+                      href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/commit/${deployment.github_pr_data.merge_commit_sha}`}
+                    >
+                      {deployment.github_pr_data.merge_commit_sha.substring(0, 7)}
+                    </ExternalLink>
+                  ) : (
+                    deployment.github_pr_data.merge_commit_sha.substring(0, 7)
+                  )}
                 </BodyShort>
               </VStack>
             )}

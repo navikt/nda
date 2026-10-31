@@ -102,6 +102,7 @@ describe('deployment view dispatch', () => {
       commit_sha: 'a'.repeat(40),
       detected_github_owner: 'navikt',
       detected_github_repo_name: 'old-name',
+      deployer_username: 'Z990001',
       github_pr_number: 42,
       github_pr_data: {
         creator: { username: 'pr-creator' },
@@ -129,7 +130,10 @@ describe('deployment view dispatch', () => {
     }))
     getPreviousDeploymentForDiff.mockResolvedValue({ commit_sha: 'd'.repeat(40) })
     getUsersByIdentifiers.mockResolvedValue(
-      new Map([['pr-creator', { display_name: 'Rask Elv', nav_ident: 'Z990001' }]]),
+      new Map([
+        ['pr-creator', { display_name: 'Rask Elv', nav_ident: 'Z990002' }],
+        ['Z990001', { display_name: 'Glad Fjord', nav_ident: 'Z990001' }],
+      ]),
     )
 
     const result = await loader(args('?view=repository'))
@@ -146,14 +150,20 @@ describe('deployment view dispatch', () => {
         'pr-commit-author',
         'comment-author',
         'interval-author',
+        'Z990001',
       ]),
     )
     expect(result.deploymentDetails.userMappings).toMatchObject({
       deployer: { display_name: 'Glad Fjord' },
       'pr-creator': { display_name: 'Rask Elv' },
+      Z990001: { display_name: 'Glad Fjord' },
     })
     expect(result.deploymentDetails.previousDeploymentForDiff).toEqual({ commit_sha: 'b'.repeat(40) })
     expect(result.deploymentDetails.deliveryCommits).toHaveLength(1)
+    expect(result.deploymentDetails.deployment).toMatchObject({
+      detected_github_owner: 'navikt',
+      detected_github_repo_name: 'current-name',
+    })
     expect(getCompareSnapshot).toHaveBeenCalledTimes(2)
     expect(getCompareSnapshot).toHaveBeenCalledWith('navikt', 'old-name', 'a'.repeat(40))
     expect(getCompareSnapshot).toHaveBeenCalledWith('navikt', 'current-name', 'a'.repeat(40), 'b'.repeat(40))

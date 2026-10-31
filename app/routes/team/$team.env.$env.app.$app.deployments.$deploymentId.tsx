@@ -139,6 +139,7 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       if (username) githubUsernames.add(username)
     }
     const prDetails = deploymentDetails.github_pr_data
+    addUsername(deploymentDetails.deployer_username)
     addUsername(prDetails?.creator?.username)
     addUsername(prDetails?.merger?.username)
     for (const assignee of prDetails?.assignees ?? []) addUsername(assignee.username)
@@ -159,8 +160,9 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       branch_name: deploymentDetails.branch_name,
       trigger_url: deploymentDetails.trigger_url,
       parent_commits: deploymentDetails.parent_commits,
-      detected_github_owner: deploymentDetails.detected_github_owner,
-      detected_github_repo_name: deploymentDetails.detected_github_repo_name,
+      detected_github_owner: repositoryView.repository?.githubOwner ?? deploymentDetails.detected_github_owner,
+      detected_github_repo_name:
+        repositoryView.repository?.githubRepoName ?? deploymentDetails.detected_github_repo_name,
       github_pr_number: deploymentDetails.github_pr_number,
       github_pr_url: deploymentDetails.github_pr_url,
       github_pr_data: deploymentDetails.github_pr_data,

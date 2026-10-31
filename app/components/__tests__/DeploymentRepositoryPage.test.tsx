@@ -34,6 +34,37 @@ function render(
 }
 
 describe('repository deployment comparison', () => {
+  it.each([
+    [null, null],
+    ['navikt', null],
+    [null, 'glad-fjord'],
+  ])('shows repository-dependent details as text when identity is incomplete (%s/%s)', (owner, repo) => {
+    const markup = render(
+      {
+        ...repositoryDeploymentData,
+        repository: null,
+        link: { state: 'missing', reason: 'missing_repository', unresolvedReason: null, candidate: null },
+      },
+      undefined,
+      {
+        ...repositoryDeploymentDetailsData,
+        deliveryCommits: null,
+        deployment: {
+          ...repositoryDeploymentDetailsData.deployment,
+          detected_github_owner: owner,
+          detected_github_repo_name: repo,
+          parent_commits: [{ sha: 'e'.repeat(40) }, { sha: 'f'.repeat(40) }],
+        },
+      },
+    )
+    expect(markup.match(/href="https:\/\/github.com\/[^"]*(?:null|undefined)[^"]*"/g) ?? []).toEqual([])
+    expect(markup).toContain('ccccccc')
+    expect(markup).toContain('eeeeeee')
+    expect(markup).toContain('fffffff')
+    expect(markup).toContain('main')
+    expect(markup).toContain('Kopier SHA')
+  })
+
   it('shows both intervals, current coverage and its time limitation without app mutation forms', () => {
     const markup = render(repositoryDeploymentData)
     expect(markup).toContain('Applikasjonsbasert vurdering')

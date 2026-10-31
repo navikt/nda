@@ -303,6 +303,7 @@ export function DeploymentRepositoryPage({ data, deploymentDetails, actionData }
         previousDeploymentForDiff={deploymentDetails.previousDeploymentForDiff}
         previousDeploymentForDiffLabel={deploymentDetails.previousDeploymentForDiffLabel}
         sameCommitMessage={deploymentDetails.sameCommitMessage}
+        requireRepositoryIdentity
         workflowTrigger={deploymentDetails.workflowTrigger}
       />
       {(deploymentDetails.deployment.github_pr_data || deploymentDetails.deployment.commit_checks_data) && (
