@@ -152,7 +152,6 @@ it('does not associate Apply rows without a verified repository ID through a nam
     githubRepo: 'repo-a',
     githubRepoId: '123',
   })
-  await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
   await upsertNaisApplyDeployment({
     monitoredApplicationId: appId,
     sourceId: 'nais-apply:unverified-repository',

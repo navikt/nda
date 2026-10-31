@@ -8,9 +8,25 @@ import type { Route } from '../+types/$id'
 type LoaderData = Route.ComponentProps['loaderData']
 
 export type DeploymentDetailsGridProps = {
-  deployment: LoaderData['deployment']
+  deployment: Pick<
+    LoaderData['deployment'],
+    | 'commit_sha'
+    | 'detected_github_owner'
+    | 'detected_github_repo_name'
+    | 'deployer_username'
+    | 'branch_name'
+    | 'parent_commits'
+    | 'trigger_url'
+    | 'deployment_source'
+    | 'deployment_source_id'
+    | 'nais_deployment_id'
+    | 'commit_checks_data'
+    | 'github_pr_data'
+  >
   userMappings: LoaderData['userMappings']
   previousDeploymentForDiff: LoaderData['previousDeploymentForDiff']
+  previousDeploymentForDiffLabel?: string
+  sameCommitMessage?: string
   workflowTrigger: LoaderData['workflowTrigger']
 }
 
@@ -18,6 +34,8 @@ export function DeploymentDetailsGrid({
   deployment,
   userMappings,
   previousDeploymentForDiff,
+  previousDeploymentForDiffLabel = 'Endringer siden forrige leveranse',
+  sameCommitMessage = 'Denne leveransen er identisk med forrige leveranse (samme commit)',
   workflowTrigger,
 }: DeploymentDetailsGridProps) {
   const hasPreviousCommit = Boolean(previousDeploymentForDiff?.commit_sha)
@@ -39,14 +57,14 @@ export function DeploymentDetailsGrid({
 
         {hasPreviousCommit && (
           <VStack gap="space-4">
-            <Detail>Endringer siden forrige leveranse</Detail>
+            <Detail>{previousDeploymentForDiffLabel}</Detail>
             <BodyShort>
               {!deployment.commit_sha ? (
                 <span style={{ color: 'var(--ax-text-neutral-subtle)' }}>
                   Endringer utilgjengelig (mangler commit-SHA for denne leveransen)
                 </span>
               ) : isSameCommit ? (
-                'Denne leveransen er identisk med forrige leveranse (samme commit)'
+                sameCommitMessage
               ) : canLinkToDiff ? (
                 <ExternalLink
                   href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/compare/${previousDeploymentForDiff?.commit_sha}...${deployment.commit_sha}`}

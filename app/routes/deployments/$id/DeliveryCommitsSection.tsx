@@ -8,9 +8,16 @@ type LoaderData = Route.ComponentProps['loaderData']
 export type DeliveryCommitsSectionProps = {
   deliveryCommits: LoaderData['deliveryCommits']
   userMappings: LoaderData['userMappings']
+  heading?: string
+  description?: string
 }
 
-export function DeliveryCommitsSection({ deliveryCommits, userMappings }: DeliveryCommitsSectionProps) {
+export function DeliveryCommitsSection({
+  deliveryCommits,
+  userMappings,
+  heading = 'Commits i denne leveransen',
+  description,
+}: DeliveryCommitsSectionProps) {
   if (!deliveryCommits || deliveryCommits.length < 2) return null
 
   const botCount = deliveryCommits.filter((c) => c.isBot).length
@@ -18,12 +25,13 @@ export function DeliveryCommitsSection({ deliveryCommits, userMappings }: Delive
 
   return (
     <VStack gap="space-8">
-      <ReadMore header={`Commits i denne leveransen (${deliveryCommits.length})`}>
+      <ReadMore header={`${heading} (${deliveryCommits.length})`}>
         <VStack gap="space-8">
           <BodyShort size="small">
-            {`Denne leveransen består av ${deliveryCommits.length} commits${
-              botCount > 0 && humanCount > 0 ? `, ${botCount} fra bot og ${humanCount} fra menneske.` : '.'
-            }`}
+            {description ??
+              `Denne leveransen består av ${deliveryCommits.length} commits${
+                botCount > 0 && humanCount > 0 ? `, ${botCount} fra bot og ${humanCount} fra menneske.` : '.'
+              }`}
           </BodyShort>
           <ul style={{ margin: 0, paddingLeft: 'var(--ax-space-24)' }}>
             {deliveryCommits.map((commit) => (

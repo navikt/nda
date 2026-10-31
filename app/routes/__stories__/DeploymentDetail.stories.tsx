@@ -157,7 +157,7 @@ const baseDeployment: DeploymentDetailLoaderData['deployment'] = {
   github_pr_data: baseGithubPrData as NonNullable<DeploymentDetailLoaderData['deployment']['github_pr_data']>,
 }
 
-const baseLoaderData: DeploymentDetailLoaderData = {
+export const deploymentDetailsData: DeploymentDetailLoaderData = {
   deployment: baseDeployment,
   deliveryCommits: [
     {
@@ -315,10 +315,12 @@ const baseLoaderData: DeploymentDetailLoaderData = {
     schemaVersion: 1,
   },
 }
+const baseLoaderData = deploymentDetailsData
 
 const meta: Meta<typeof DeploymentDetailPage> = {
   title: 'Pages/DeploymentDetail',
   component: DeploymentDetailPage,
+  excludeStories: ['deploymentDetailsData'],
   decorators: [
     (Story) => (
       <div style={{ maxWidth: '1200px' }}>

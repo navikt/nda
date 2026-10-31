@@ -87,7 +87,6 @@ export async function getNextDeployment(
 
   const result = await pool.query(
     `SELECT nav_dep.* FROM deployments nav_dep
-     JOIN monitored_applications nav_app ON nav_app.id = nav_dep.monitored_app_id
      CROSS JOIN deployments curr_dep
      WHERE nav_dep.monitored_app_id = $1
        AND curr_dep.id = $2
@@ -112,7 +111,6 @@ export async function getPreviousDeploymentForNav(
 
   const result = await pool.query(
     `SELECT nav_dep.* FROM deployments nav_dep
-     JOIN monitored_applications nav_app ON nav_app.id = nav_dep.monitored_app_id
      CROSS JOIN deployments curr_dep
      WHERE nav_dep.monitored_app_id = $1
        AND curr_dep.id = $2
@@ -131,7 +129,6 @@ export async function getPreviousDeploymentForDiff(
   monitoredAppId: number,
 ): Promise<{ commit_sha: string } | null> {
   const sql = `SELECT prev.commit_sha FROM deployments prev
-     JOIN monitored_applications prev_app ON prev_app.id = prev.monitored_app_id
      CROSS JOIN deployments curr
      WHERE prev.monitored_app_id = $1
        AND curr.id = $2

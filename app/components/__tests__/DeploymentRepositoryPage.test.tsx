@@ -1,18 +1,35 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
+import { DeploymentDetailPage } from '~/components/DeploymentDetailPage'
 import type { DeploymentRepositoryView } from '~/db/deployment-repository-view.server'
 import { deploymentViewUrl } from '~/lib/deployment-view'
-import { repositoryDeploymentData } from '~/routes/__stories__/DeploymentRepository.stories'
+import { deploymentDetailsData } from '~/routes/__stories__/DeploymentDetail.stories'
+import {
+  repositoryDeploymentData,
+  repositoryDeploymentDetailsData,
+} from '~/routes/__stories__/DeploymentRepository.stories'
 import { DeploymentRepositoryPage } from '../DeploymentRepositoryPage'
 import { DeploymentViewLinks } from '../deployments/DeploymentViewLinks'
 
-function render(data: DeploymentRepositoryView, listView?: string) {
-  const router = createMemoryRouter([{ path: '*', element: <DeploymentRepositoryPage data={data} /> }], {
-    initialEntries: [
-      `/deployment?view=repository&period=all&page=2&status=not_approved${listView ? `&listView=${listView}` : ''}`,
+function render(
+  data: DeploymentRepositoryView,
+  listView?: string,
+  deploymentDetails = repositoryDeploymentDetailsData,
+) {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: <DeploymentRepositoryPage data={data} deploymentDetails={deploymentDetails} />,
+      },
     ],
-  })
+    {
+      initialEntries: [
+        `/deployment?view=repository&period=all&page=2&status=not_approved${listView ? `&listView=${listView}` : ''}`,
+      ],
+    },
+  )
   return renderToStaticMarkup(<RouterProvider router={router} />)
 }
 
@@ -27,6 +44,13 @@ describe('repository deployment comparison', () => {
     expect(markup).toContain('b'.repeat(40))
     expect(markup).toContain('Rask Elv')
     expect(markup).toContain('glad-fjord-web')
+    expect(markup).toContain('feat: Repository delivery')
+    expect(markup).toContain('Commits i applikasjonsintervallet (2)')
+    expect(markup).toContain('Commit SHA')
+    expect(markup).toContain('Nais Deployment ID')
+    expect(markup).not.toContain('Neste')
+    expect(markup).toContain('Disse committene hører til intervallet for applikasjonsvurderingen ovenfor.')
+    expect(markup).toContain('Intervall fra siste verifiseringskjøring')
     expect(markup).not.toContain('<form')
     expect(markup).not.toContain('Godkjenn manuelt')
     expect(markup).toContain('view=application&amp;period=all&amp;page=2&amp;status=not_approved')
@@ -100,5 +124,39 @@ describe('repository deployment comparison', () => {
     expect(markup).toContain(`${pathname}?period=last-week&amp;page=3&amp;view=repository`)
     expect(deploymentViewUrl(pathname, params, 'application')).toContain('view=application')
     expect(params.get('view')).toBe('repository')
+  })
+
+  it('does not show the application commit list when the interval head differs from the deployment', () => {
+    const markup = render(repositoryDeploymentData)
+    const unmatchedData: DeploymentRepositoryView = {
+      ...repositoryDeploymentData,
+      application: {
+        ...repositoryDeploymentData.application,
+        range: { baseSha: 'a'.repeat(40), headSha: 'd'.repeat(40) },
+      },
+    }
+    const router = createMemoryRouter([
+      {
+        path: '*',
+        element: <DeploymentRepositoryPage data={unmatchedData} deploymentDetails={repositoryDeploymentDetailsData} />,
+      },
+    ])
+    const unmatchedMarkup = renderToStaticMarkup(<RouterProvider router={router} />)
+    expect(markup).toContain('Commits i applikasjonsintervallet')
+    expect(unmatchedMarkup).not.toContain('Commits i applikasjonsintervallet')
+  })
+
+  it('leaves application detail rendering on the unchanged page component', () => {
+    const router = createMemoryRouter([
+      {
+        path: '*',
+        element: <DeploymentDetailPage loaderData={deploymentDetailsData} />,
+      },
+    ])
+    const markup = renderToStaticMarkup(<RouterProvider router={router} />)
+    expect(markup).toContain('Commits i denne leveransen (2)')
+    expect(markup).not.toContain('Commits i applikasjonsintervallet')
+    expect(markup).toContain('Endringer siden forrige leveranse')
+    expect(markup).toContain('Denne leveransen består av 2 commits, 1 fra bot og 1 fra menneske.')
   })
 })

@@ -129,6 +129,7 @@ describe('deployment repository comparison read', () => {
     expect(capabilities).not.toHaveBeenCalled()
     expect(query).toHaveBeenCalledWith('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
     expect(query).toHaveBeenCalledWith(expect.stringContaining('d.monitored_app_id = $2'), [42, 3])
+    expect(query.mock.calls.map(([sql]) => sql).join('\n')).not.toContain('nais_apply_enabled')
     expect(JSON.stringify(data)).not.toContain('Skal ikke returneres')
   })
 
