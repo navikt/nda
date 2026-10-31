@@ -231,7 +231,6 @@ describe('getPreviousDeploymentForDiff', () => {
       appName: 'apply-app',
       environment: 'prod-gcp',
     })
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [applyAppId])
     const repositoryId = await seedRepository(pool, {
       githubRepoId: '9001',
       githubOwner: owner,

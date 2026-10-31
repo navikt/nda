@@ -531,7 +531,6 @@ describe('propagateVerificationToSiblings', () => {
         githubRepoName: 'renamed-repository',
       })
       const { rows: sourceRepositories } = await pool.query('SELECT id FROM repositories WHERE github_repo_id = 1001')
-      await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [targetApp])
       const source = await seedDeployment(pool, {
         monitoredAppId: sourceApp,
         teamSlug: 'team-a',

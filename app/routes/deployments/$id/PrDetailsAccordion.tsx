@@ -17,9 +17,12 @@ import { getUserDisplayName } from '~/lib/user-display'
 import type { Route } from '../+types/$id'
 
 type LoaderData = Route.ComponentProps['loaderData']
-type Deployment = LoaderData['deployment']
-type GithubPrData = NonNullable<Deployment['github_pr_data']>
-type CommitChecksData = NonNullable<Deployment['commit_checks_data']>
+type GithubPrData = NonNullable<LoaderData['deployment']['github_pr_data']>
+type CommitChecksData = NonNullable<LoaderData['deployment']['commit_checks_data']>
+type Deployment = Pick<LoaderData['deployment'], 'detected_github_owner' | 'detected_github_repo_name'> & {
+  github_pr_data: GithubPrData | null
+  commit_checks_data?: CommitChecksData | null
+}
 
 export type PrDetailsAccordionProps = {
   deployment: Deployment

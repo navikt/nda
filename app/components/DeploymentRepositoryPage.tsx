@@ -1,5 +1,6 @@
 import { Link as AkselLink, Alert, BodyShort, Box, Heading, HGrid, HStack, Table, Tag, VStack } from '@navikt/ds-react'
 import { Link, useSearchParams } from 'react-router'
+import type { DeploymentDetailLoaderData } from '~/components/DeploymentDetailPage'
 import type { DeploymentRepositoryView } from '~/db/deployment-repository-view.server'
 import { formatAuditLogTimestamp } from '~/lib/app-config-audit-log-display'
 import { deploymentListUrl, deploymentViewUrl } from '~/lib/deployment-view'
@@ -8,6 +9,11 @@ import {
   approvalStatusLabel,
 } from '~/lib/repository-code-delivery/approval-assessment-display'
 import { UNRESOLVED_REASON_DESCRIPTIONS } from '~/lib/repository-code-delivery/unresolved-reasons'
+import { DeliveryCommitsSection } from '~/routes/deployments/$id/DeliveryCommitsSection'
+import type { DeploymentDetailsGridProps } from '~/routes/deployments/$id/DeploymentDetailsGrid'
+import { DeploymentDetailsGrid } from '~/routes/deployments/$id/DeploymentDetailsGrid'
+import type { PrDetailsAccordionProps } from '~/routes/deployments/$id/PrDetailsAccordion'
+import { PrDetailsAccordion } from '~/routes/deployments/$id/PrDetailsAccordion'
 import { ActionAlert } from './ActionAlert'
 import { StatusTag } from './deployment-tags'
 import { DeploymentViewLinks } from './deployments/DeploymentViewLinks'
@@ -16,10 +22,24 @@ import { UserName } from './UserName'
 
 export interface DeploymentRepositoryPageProps {
   data: DeploymentRepositoryView
+  deploymentDetails: DeploymentRepositoryDetails
   actionData?: { error?: string } | null
 }
 
 type MissingLink = Extract<DeploymentRepositoryView['link'], { state: 'missing' }>
+type DeploymentPresentation = DeploymentDetailsGridProps['deployment'] &
+  PrDetailsAccordionProps['deployment'] &
+  Pick<DeploymentDetailLoaderData['deployment'], 'created_at' | 'github_pr_number' | 'github_pr_url' | 'github_pr_data'>
+export type DeploymentRepositoryDetails = {
+  deployment: DeploymentPresentation
+  deliveryCommits: DeploymentDetailLoaderData['deliveryCommits']
+  displayTitle: DeploymentDetailLoaderData['displayTitle']
+  previousDeploymentForDiff: DeploymentDetailLoaderData['previousDeploymentForDiff']
+  previousDeploymentForDiffLabel?: string
+  sameCommitMessage?: string
+  userMappings: DeploymentDetailLoaderData['userMappings']
+  workflowTrigger: DeploymentDetailLoaderData['workflowTrigger']
+}
 
 function missingLinkDescription(link: MissingLink): string {
   if (link.reason === 'unresolved' && link.unresolvedReason) {
@@ -50,13 +70,16 @@ function Range({ range }: { range: { baseSha: string; headSha: string } | null }
   )
 }
 
-export function DeploymentRepositoryPage({ data, actionData }: DeploymentRepositoryPageProps) {
+export function DeploymentRepositoryPage({ data, deploymentDetails, actionData }: DeploymentRepositoryPageProps) {
   const [searchParams] = useSearchParams()
   const { deployment, application, repository, link } = data
   const appUrl = `/team/${deployment.teamSlug}/env/${deployment.environmentName}/app/${deployment.appName}`
   const pathname = `${appUrl}/deployments/${deployment.id}`
   const repositoryUrl = repository ? `/repository/${repository.githubOwner}/${repository.githubRepoName}` : null
-
+  const deploymentTitle =
+    deploymentDetails.displayTitle ||
+    deploymentDetails.deployment.github_pr_data?.title ||
+    `${deployment.appName} @ ${deployment.environmentName}`
   return (
     <VStack gap="space-24">
       <ActionAlert data={actionData} />
@@ -68,15 +91,23 @@ export function DeploymentRepositoryPage({ data, actionData }: DeploymentReposit
       </HStack>
       <div>
         <Heading level="1" size="large" spacing>
-          Repositorybasert vurdering av deployment #{deployment.id}
+          {deploymentTitle}
         </Heading>
-        <BodyShort>
-          {deployment.appName} · {deployment.environmentName} · {formatAuditLogTimestamp(deployment.createdAt)}
+        <BodyShort textColor="subtle">
+          {new Date(deploymentDetails.deployment.created_at).toLocaleString('no-NO', {
+            dateStyle: 'long',
+            timeStyle: 'short',
+          })}
+          {deploymentDetails.deployment.github_pr_number && deploymentDetails.deployment.github_pr_url && (
+            <>
+              {' '}
+              via{' '}
+              <ExternalLink href={deploymentDetails.deployment.github_pr_url}>
+                #{deploymentDetails.deployment.github_pr_number}
+              </ExternalLink>
+            </>
+          )}
         </BodyShort>
-        <BodyShort size="small">
-          Deployet av <UserName username={data.deployerUsername} userMappings={data.userMappings} />
-        </BodyShort>
-        <BodyShort size="small">Deploymentets SHA: {deployment.commitSha ?? 'Ukjent'}</BodyShort>
       </div>
       <Alert variant="info" size="small">
         Dette er en skrivebeskyttet sammenligning. Repositorydekningen beregnes fra lagret grunnlag nå, ikke ved
@@ -100,6 +131,16 @@ export function DeploymentRepositoryPage({ data, actionData }: DeploymentReposit
                 : 'Ingen applikasjonsbasert verifiseringskjøring er lagret.'}
             </BodyShort>
             <Range range={application.range} />
+            {application.range &&
+              application.range.headSha === deploymentDetails.deployment.commit_sha &&
+              deploymentDetails.deliveryCommits && (
+                <DeliveryCommitsSection
+                  deliveryCommits={deploymentDetails.deliveryCommits}
+                  userMappings={deploymentDetails.userMappings}
+                  heading="Commits i applikasjonsintervallet"
+                  description="Disse committene hører til intervallet for applikasjonsvurderingen ovenfor."
+                />
+              )}
             <AkselLink as={Link} to={deploymentViewUrl(pathname, searchParams, 'application')}>
               Åpne applikasjonsbasert grunnlag og historikk
             </AkselLink>
@@ -255,6 +296,23 @@ export function DeploymentRepositoryPage({ data, actionData }: DeploymentReposit
             </VStack>
           </div>
         </>
+      )}
+      <DeploymentDetailsGrid
+        deployment={deploymentDetails.deployment}
+        userMappings={deploymentDetails.userMappings}
+        previousDeploymentForDiff={deploymentDetails.previousDeploymentForDiff}
+        previousDeploymentForDiffLabel={deploymentDetails.previousDeploymentForDiffLabel}
+        sameCommitMessage={deploymentDetails.sameCommitMessage}
+        requireRepositoryIdentity
+        workflowTrigger={deploymentDetails.workflowTrigger}
+      />
+      {(deploymentDetails.deployment.github_pr_data || deploymentDetails.deployment.commit_checks_data) && (
+        <PrDetailsAccordion
+          deployment={deploymentDetails.deployment}
+          githubPrData={deploymentDetails.deployment.github_pr_data}
+          commitChecksData={deploymentDetails.deployment.commit_checks_data}
+          userMappings={deploymentDetails.userMappings}
+        />
       )}
     </VStack>
   )

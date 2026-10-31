@@ -285,19 +285,10 @@ describe('audit_start_year filter — Dependabot link query', () => {
     expect(ids).toEqual([postId])
   })
 
-  it('includes legacy and Apply deployments regardless of the old opt-in flag', async () => {
+  it('includes legacy and Apply deployments', async () => {
     const legacyAppId = await seedApp(pool, { teamSlug: 'team-a', appName: 'legacy-app', environment: 'prod' })
-    const disabledApplyAppId = await seedApp(pool, {
-      teamSlug: 'team-a',
-      appName: 'disabled-apply-app',
-      environment: 'prod',
-    })
-    const enabledApplyAppId = await seedApp(pool, {
-      teamSlug: 'team-a',
-      appName: 'enabled-apply-app',
-      environment: 'prod',
-    })
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [enabledApplyAppId])
+    const firstApplyAppId = await seedApp(pool, { teamSlug: 'team-a', appName: 'apply-app-one', environment: 'prod' })
+    const secondApplyAppId = await seedApp(pool, { teamSlug: 'team-a', appName: 'apply-app-two', environment: 'prod' })
 
     const legacyId = await seedDeployment(pool, {
       monitoredAppId: legacyAppId,
@@ -308,11 +299,11 @@ describe('audit_start_year filter — Dependabot link query', () => {
       githubPrData: { creator: { username: 'dependabot[bot]' } },
     })
 
-    const disabledApplyId = await createDependabotApplyDeployment(disabledApplyAppId, 'disabled-apply')
-    const enabledApplyId = await createDependabotApplyDeployment(enabledApplyAppId, 'enabled-apply')
+    const firstApplyId = await createDependabotApplyDeployment(firstApplyAppId, 'apply-one')
+    const secondApplyId = await createDependabotApplyDeployment(secondApplyAppId, 'apply-two')
 
     const ids = await getUnlinkedDependabotDeploymentIds('alice')
-    expect(ids.sort((a, b) => a - b)).toEqual([legacyId, disabledApplyId, enabledApplyId].sort((a, b) => a - b))
+    expect(ids.sort((a, b) => a - b)).toEqual([legacyId, firstApplyId, secondApplyId].sort((a, b) => a - b))
   })
 })
 
@@ -385,7 +376,6 @@ describe('audit_start_year filter — deviations queries', () => {
 
   it('getDeviationsForPeriod includes Apply deviations even when the old opt-in flag is false', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod' })
-    await pool.query('UPDATE monitored_applications SET nais_apply_enabled = true WHERE id = $1', [appId])
     await seedApplicationRepository(pool, {
       monitoredAppId: appId,
       githubOwner: 'navikt',
