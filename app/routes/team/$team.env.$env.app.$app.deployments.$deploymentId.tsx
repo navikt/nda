@@ -8,7 +8,6 @@ import { getCompareSnapshotForCommit } from '~/db/verification-diff.server'
 import { getUserIdentity } from '~/lib/auth.server'
 import { computeDisplayTitle, isExclusivelyThisPr } from '~/lib/delivery-title'
 import { getDeploymentView } from '~/lib/deployment-view'
-import { getBotDisplayName, isGitHubBot } from '~/lib/github-bots'
 import { requireParams } from '~/lib/route-params.server'
 import { serializeUserLookups } from '~/lib/user-display'
 import { getPrDataForDiff } from '~/lib/verification'
@@ -45,9 +44,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       throw new Response('Deployment not found', { status: 404 })
     }
 
-    const applicationRange = repositoryView.application.range
-    const applicationIntervalMatchesDeployment =
-      applicationRange?.headSha === deploymentDetails.commit_sha && Boolean(deploymentDetails.commit_sha)
     const repositoryIdentity =
       deploymentDetails.commit_sha &&
       deploymentDetails.detected_github_owner &&
@@ -56,20 +52,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
             commitSha: deploymentDetails.commit_sha,
             owner: deploymentDetails.detected_github_owner,
             repo: deploymentDetails.detected_github_repo_name,
-          }
-        : null
-    const applicationRangeOwner = repositoryView.repository?.githubOwner ?? repositoryIdentity?.owner
-    const applicationRangeRepo = repositoryView.repository?.githubRepoName ?? repositoryIdentity?.repo
-    const applicationRangeRepositoryIdentity =
-      applicationIntervalMatchesDeployment &&
-      applicationRange &&
-      deploymentDetails.commit_sha &&
-      applicationRangeOwner &&
-      applicationRangeRepo
-        ? {
-            commitSha: deploymentDetails.commit_sha,
-            owner: applicationRangeOwner,
-            repo: applicationRangeRepo,
           }
         : null
     const latestCompareSnapshot =
@@ -86,47 +68,9 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       latestCompareSnapshot.base_sha === previousDeploymentForDiff.commit_sha
         ? (latestCompareSnapshot.data as CompareData).commits.map((commit) => commit.sha)
         : []
-    const [currentApplicationRangeSnapshot, prData] = await Promise.all([
-      applicationRangeRepositoryIdentity && applicationRange
-        ? repositoryIdentity?.owner === applicationRangeRepositoryIdentity.owner &&
-          repositoryIdentity.repo === applicationRangeRepositoryIdentity.repo &&
-          latestCompareSnapshot?.base_sha === applicationRange.baseSha
-          ? latestCompareSnapshot
-          : getCompareSnapshotForCommit(
-              applicationRangeRepositoryIdentity.owner,
-              applicationRangeRepositoryIdentity.repo,
-              applicationRangeRepositoryIdentity.commitSha,
-              applicationRange.baseSha,
-            )
-        : Promise.resolve(null),
+    const prData =
       applicationTitleCommitShas.length > 1 && deploymentDetails.github_pr_number && repositoryIdentity
-        ? getPrDataForDiff(repositoryIdentity.owner, repositoryIdentity.repo, deploymentDetails.github_pr_number)
-        : Promise.resolve(null),
-    ])
-    const applicationRangeSnapshot =
-      !currentApplicationRangeSnapshot &&
-      applicationRangeRepositoryIdentity &&
-      applicationRange &&
-      repositoryIdentity &&
-      (repositoryIdentity.owner !== applicationRangeRepositoryIdentity.owner ||
-        repositoryIdentity.repo !== applicationRangeRepositoryIdentity.repo)
-        ? await getCompareSnapshotForCommit(
-            repositoryIdentity.owner,
-            repositoryIdentity.repo,
-            repositoryIdentity.commitSha,
-            applicationRange.baseSha,
-          )
-        : currentApplicationRangeSnapshot
-    const deliveryCommits =
-      applicationRangeSnapshot && applicationRange && applicationRangeSnapshot.base_sha === applicationRange.baseSha
-        ? (applicationRangeSnapshot.data as CompareData).commits.map((commit) => ({
-            sha: commit.sha,
-            message: commit.message,
-            authorUsername: commit.authorUsername,
-            htmlUrl: commit.htmlUrl,
-            isBot: isGitHubBot(commit.authorUsername),
-            botDisplayName: getBotDisplayName(commit.authorUsername),
-          }))
+        ? await getPrDataForDiff(repositoryIdentity.owner, repositoryIdentity.repo, deploymentDetails.github_pr_number)
         : null
     const prCommitShas = prData ? new Set(prData.commits.map((commit) => commit.sha)) : null
     const displayTitle = computeDisplayTitle(
@@ -147,7 +91,6 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
     for (const reviewer of prDetails?.requested_reviewers ?? []) addUsername(reviewer.username)
     for (const commit of prDetails?.commits ?? []) addUsername(commit.author?.username)
     for (const comment of prDetails?.comments ?? []) addUsername(comment.user?.username)
-    for (const commit of deliveryCommits ?? []) addUsername(commit.authorUsername)
     const additionalUserMappings = serializeUserLookups(await getUsersByIdentifiers([...githubUsernames]))
     const userMappings = { ...repositoryView.userMappings, ...additionalUserMappings }
     const deploymentPresentation = {
@@ -174,13 +117,11 @@ export async function loader({ params, request, url }: Route.LoaderArgs) {
       repositoryView,
       deploymentDetails: {
         deployment: deploymentPresentation,
-        deliveryCommits,
         displayTitle,
-        previousDeploymentForDiff: applicationIntervalMatchesDeployment
-          ? { commit_sha: applicationRange.baseSha }
-          : null,
-        previousDeploymentForDiffLabel: 'Endringer i lagret applikasjonsintervall',
-        sameCommitMessage: 'Det lagrede applikasjonsintervallet inneholder ingen endringer (samme commit).',
+        previousDeploymentForDiff:
+          repositoryView.link.state === 'linked' ? { commit_sha: repositoryView.link.delivery.baseSha } : null,
+        previousDeploymentForDiffLabel: 'Endringer i repositoryleveransen',
+        sameCommitMessage: 'Repositoryleveransen inneholder ingen endringer (samme commit).',
         userMappings,
         workflowTrigger: deploymentDetails.workflow_trigger_config,
       },

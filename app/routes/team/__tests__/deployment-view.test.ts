@@ -55,6 +55,7 @@ describe('deployment view dispatch', () => {
     getPreviousDeploymentForDiff.mockResolvedValue(null)
     getRepositoryView.mockResolvedValue({
       deployment: { id: 42 },
+      link: { state: 'missing' },
       application: { range: null },
       userMappings: {},
     })
@@ -89,9 +90,10 @@ describe('deployment view dispatch', () => {
     expect(applicationLoader).not.toHaveBeenCalled()
   })
 
-  it('uses the current repository identity for stored interval commits after a repository rename', async () => {
+  it('uses current repository identity and its locked interval after a rename', async () => {
     getRepositoryView.mockResolvedValue({
       deployment: { id: 42 },
+      link: { state: 'linked', delivery: { baseSha: 'c'.repeat(40), headSha: 'a'.repeat(40) } },
       application: { range: { baseSha: 'b'.repeat(40), headSha: 'a'.repeat(40) } },
       repository: { githubOwner: 'navikt', githubRepoName: 'current-name' },
       userMappings: { deployer: { display_name: 'Glad Fjord' } },
@@ -149,7 +151,6 @@ describe('deployment view dispatch', () => {
         'requested-reviewer',
         'pr-commit-author',
         'comment-author',
-        'interval-author',
         'Z990001',
       ]),
     )
@@ -158,75 +159,19 @@ describe('deployment view dispatch', () => {
       'pr-creator': { display_name: 'Rask Elv' },
       Z990001: { display_name: 'Glad Fjord' },
     })
-    expect(result.deploymentDetails.previousDeploymentForDiff).toEqual({ commit_sha: 'b'.repeat(40) })
-    expect(result.deploymentDetails.deliveryCommits).toHaveLength(1)
+    expect(result.deploymentDetails.previousDeploymentForDiff).toEqual({ commit_sha: 'c'.repeat(40) })
     expect(result.deploymentDetails.deployment).toMatchObject({
       detected_github_owner: 'navikt',
       detected_github_repo_name: 'current-name',
     })
-    expect(getCompareSnapshot).toHaveBeenCalledTimes(2)
+    expect(getCompareSnapshot).toHaveBeenCalledOnce()
     expect(getCompareSnapshot).toHaveBeenCalledWith('navikt', 'old-name', 'a'.repeat(40))
-    expect(getCompareSnapshot).toHaveBeenCalledWith('navikt', 'current-name', 'a'.repeat(40), 'b'.repeat(40))
   })
-
-  it.each([true, false])(
-    'looks for the exact stored interval under the detected name after a rename when the current name misses (snapshot exists: %s)',
-    async (snapshotExists) => {
-      getRepositoryView.mockResolvedValue({
-        deployment: { id: 42 },
-        application: { range: { baseSha: 'b'.repeat(40), headSha: 'a'.repeat(40) } },
-        repository: { githubOwner: 'navikt', githubRepoName: 'current-name' },
-        userMappings: {},
-      })
-      getDeploymentById.mockResolvedValue({
-        id: 42,
-        monitored_app_id: 3,
-        commit_sha: 'a'.repeat(40),
-        title: 'feat: Repository delivery',
-        detected_github_owner: 'navikt',
-        detected_github_repo_name: 'old-name',
-        github_pr_number: null,
-        github_pr_data: null,
-        workflow_trigger_config: null,
-      })
-      getCompareSnapshot.mockImplementation(async (_owner, repo, _sha, expectedBaseSha) =>
-        snapshotExists && repo === 'old-name' && expectedBaseSha === 'b'.repeat(40)
-          ? {
-              base_sha: expectedBaseSha,
-              data: {
-                commits: [
-                  {
-                    sha: 'a'.repeat(40),
-                    message: 'feat: Repository delivery',
-                    authorUsername: 'rask-elv',
-                    htmlUrl: 'https://github.com/navikt/old-name/commit/aaaaaaaa',
-                  },
-                ],
-              },
-            }
-          : null,
-      )
-
-      const result = await loader(args('?view=repository'))
-      if (result instanceof Response || result.view !== 'repository') {
-        throw new Error('Expected repository deployment details')
-      }
-      expect(getCompareSnapshot.mock.calls).toEqual([
-        ['navikt', 'current-name', 'a'.repeat(40), 'b'.repeat(40)],
-        ['navikt', 'old-name', 'a'.repeat(40), 'b'.repeat(40)],
-      ])
-      expect(result.deploymentDetails.displayTitle).toBe('feat: Repository delivery')
-      if (snapshotExists) {
-        expect(result.deploymentDetails.deliveryCommits).toHaveLength(1)
-      } else {
-        expect(result.deploymentDetails.deliveryCommits).toBeNull()
-      }
-    },
-  )
 
   it('uses the application previous-deployment interval for the shared deployment title', async () => {
     getRepositoryView.mockResolvedValue({
       deployment: { id: 42 },
+      link: { state: 'linked', delivery: { baseSha: 'c'.repeat(40), headSha: 'a'.repeat(40) } },
       application: { range: { baseSha: 'b'.repeat(40), headSha: 'a'.repeat(40) } },
       userMappings: {},
     })
@@ -281,14 +226,14 @@ describe('deployment view dispatch', () => {
       throw new Error('Expected repository deployment details')
     }
     expect(result.deploymentDetails.displayTitle).toBe('feat: Repository delivery')
-    expect(result.deploymentDetails.deliveryCommits).toHaveLength(1)
-    expect(result.deploymentDetails.previousDeploymentForDiff).toEqual({ commit_sha: 'b'.repeat(40) })
+    expect(result.deploymentDetails.previousDeploymentForDiff).toEqual({ commit_sha: 'c'.repeat(40) })
     expect(getPrDataForDiff).toHaveBeenCalledWith('navikt', 'glad-fjord', 42)
   })
 
-  it('does not use an application interval as a comparison when its head differs from the deployment', async () => {
+  it('does not offer a comparison when the repository delivery link is missing', async () => {
     getRepositoryView.mockResolvedValue({
       deployment: { id: 42 },
+      link: { state: 'missing' },
       application: { range: { baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40) } },
       userMappings: {},
     })
@@ -321,7 +266,6 @@ describe('deployment view dispatch', () => {
       throw new Error('Expected repository deployment details')
     }
     expect(result.deploymentDetails.previousDeploymentForDiff).toBeNull()
-    expect(result.deploymentDetails.deliveryCommits).toBeNull()
     expect(getCompareSnapshot).toHaveBeenCalledOnce()
     expect(getCompareSnapshot).toHaveBeenCalledWith('navikt', 'glad-fjord', 'a'.repeat(40))
   })
