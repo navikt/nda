@@ -13,6 +13,7 @@ export type RestartCodeDeliveryTrackingResult =
         | 'tracking_disabled'
         | 'not_earlier'
         | 'has_approval_snapshots'
+        | 'has_separate_identities'
     }
   | {
       ok: true
@@ -65,6 +66,16 @@ export async function restartCodeDeliveryTracking(params: {
       [repositoryId],
     )
     if (snapshots[0].exists) return { ok: false, reason: 'has_approval_snapshots' }
+
+    const { rows: identities } = await client.query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM repository_code_delivery_deployment_repositories identity
+         JOIN deployments d ON d.id = identity.deployment_id
+         WHERE identity.repository_id = $1 AND d.repository_id IS NULL
+       ) AS exists`,
+      [repositoryId],
+    )
+    if (identities[0].exists) return { ok: false, reason: 'has_separate_identities' }
 
     const cleared = await client.query(
       `DELETE FROM repository_code_delivery_unresolved

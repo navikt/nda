@@ -1413,6 +1413,22 @@ describe('repository code delivery overview', () => {
     expect((await getRepositoryCodeDeliveryOverview(repositoryId)).awaitingDeploymentCount).toBe(0)
   })
 
+  it('does not count separately identified unlinked history as awaiting the canonical registration queue', async () => {
+    const repositoryId = await createRepository('1050')
+    const canonical = await createDeployment('glad-fjord-api', repositoryId, SHA_1)
+    const separate = await createDeployment('glad-fjord-api', repositoryId, SHA_2)
+    await pool.query('UPDATE deployments SET repository_id = NULL WHERE id = $1', [separate])
+    await pool.query(
+      'INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id) VALUES ($1, $2)',
+      [separate, repositoryId],
+    )
+    await pool.query("UPDATE deployments SET created_at = now() + interval '1 second' WHERE id = ANY($1::int[])", [
+      [canonical, separate],
+    ])
+
+    expect((await getRepositoryCodeDeliveryOverview(repositoryId)).awaitingDeploymentCount).toBe(1)
+  })
+
   it('lists deliveries newest first with anchor flag, deployment count and distinct apps', async () => {
     const repositoryId = await createRepository('1002')
     const first = await createDeployment('app-a', repositoryId, SHA_1)

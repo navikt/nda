@@ -100,6 +100,52 @@ async function counts(repositoryId: number) {
 }
 
 describe('restartCodeDeliveryTracking', () => {
+  it('preserves historical links and all tracking state when separate identities cannot be rebuilt', async () => {
+    const repositoryId = await createRepository('2097')
+    const { linked, unresolved } = await seedRegisteredState(repositoryId)
+    await pool.query(
+      `INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id)
+       VALUES ($1, $3), ($2, $3)`,
+      [linked, unresolved, repositoryId],
+    )
+    await pool.query('UPDATE deployments SET repository_id = NULL WHERE id = ANY($1::int[])', [[linked, unresolved]])
+    const before = await pool.query('SELECT * FROM deployments WHERE id = ANY($1::int[]) ORDER BY id', [
+      [linked, unresolved],
+    ])
+    const trackingBefore = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+      repositoryId,
+    ])
+
+    expect(
+      await restartCodeDeliveryTracking({
+        repositoryId,
+        since: SINCE,
+        changedByNavIdent: adminActor.navIdent,
+        actor: adminActor,
+      }),
+    ).toEqual({ ok: false, reason: 'has_separate_identities' })
+    expect(
+      (await pool.query('SELECT * FROM deployments WHERE id = ANY($1::int[]) ORDER BY id', [[linked, unresolved]]))
+        .rows,
+    ).toEqual(before.rows)
+    expect(
+      (await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [repositoryId])).rows,
+    ).toEqual(trackingBefore.rows)
+    expect(
+      (await pool.query('SELECT id FROM repository_code_deliveries WHERE repository_id = $1', [repositoryId])).rows,
+    ).toHaveLength(1)
+    expect(
+      (
+        await pool.query('SELECT deployment_id FROM repository_code_delivery_unresolved WHERE deployment_id = $1', [
+          unresolved,
+        ])
+      ).rows,
+    ).toEqual([{ deployment_id: unresolved }])
+    expect(
+      (await pool.query('SELECT id FROM repo_config_audit_log WHERE repository_id = $1', [repositoryId])).rows,
+    ).toEqual([])
+  })
+
   it('preserves all tracking state when an immutable approval snapshot exists', async () => {
     const repositoryId = await createRepository('2099')
     await seedRegisteredState(repositoryId)

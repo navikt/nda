@@ -286,6 +286,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       if (result.reason === 'has_approval_snapshots') {
         return fail('Registreringen kan ikke startes på nytt fordi repositoryet har lagrede godkjenningsgrunnlag')
       }
+      if (result.reason === 'has_separate_identities') {
+        return fail(
+          'Registreringen kan ikke startes på nytt i denne versjonen fordi repositoryet har separat historisk identitet',
+        )
+      }
       if (result.reason === 'not_earlier') {
         return fail('Datoen må være tidligere enn nåværende startdato')
       }

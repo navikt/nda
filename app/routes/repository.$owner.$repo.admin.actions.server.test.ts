@@ -464,6 +464,15 @@ describe('repository admin actions - authorization', () => {
       })
     })
 
+    it('explains why separate historical identities prevent restarting in this version', async () => {
+      mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'has_separate_identities' })
+      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+      expect(result).toEqual({
+        error:
+          'Registreringen kan ikke startes på nytt i denne versjonen fordi repositoryet har separat historisk identitet',
+      })
+    })
+
     it('refuses when the actor lacks admin access', async () => {
       mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'unauthorized' })
 

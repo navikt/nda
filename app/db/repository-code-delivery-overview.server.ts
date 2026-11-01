@@ -904,10 +904,10 @@ export async function getRepositoryCodeDeliveryOverview(
     client.query<{ count: number }>(
       `SELECT count(*)::int AS count
        FROM deployments d
-       JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
+       JOIN repositories r ON r.id = d.repository_id
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
-       WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1
+       WHERE d.repository_id = $1
          AND r.code_delivery_tracking = true
          AND r.code_delivery_tracking_since IS NOT NULL
          AND d.created_at >= r.code_delivery_tracking_since

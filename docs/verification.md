@@ -676,6 +676,8 @@ Registreringen er av for alle repoer. Den slås på per repository med `reposito
 
 Repositoryvisninger støtter en separat identitetskobling i `repository_code_delivery_deployment_repositories` når `deployments.repository_id` mangler. Den ordinære ID-en har forrang. Dette gjelder deploymentlister, detaljvisninger, rapporter og godkjenningsgrunnlag, uten å endre appvurderingens repositoryidentitet. Tabellen alene aktiverer ikke registrering av eldre historikk.
 
+Appverifiseringen bruker fortsatt ordinær repositoryidentitet og den eksisterende navnebaserte avgrensningen, ikke den separate koblingen. Ventende-tellingen følger registreringskøens ordinære ID-er. Omstart blokkeres når repositoryet har deployments som bare har separat identitet, fordi denne køen ikke kan gjenoppbygge koblingene.
+
 Forgjengeren til en leveranse finnes etter første koblede deployment `(created_at, id)`, med registreringstidspunkt som reserve for leveranser uten deployments.
 
 Etter hver periodiske synkronisering kjører `syncRepositoryCodeDeliveries` ([`code-delivery-sync.server.ts`](../app/lib/sync/code-delivery-sync.server.ts)) for opptil 100 deployments uten leveranse, sortert per repository etter opprettelsestidspunkt. Feil logges og stopper ikke synkroniseringen.

@@ -1,7 +1,7 @@
 import { APPROVED_STATUSES } from '~/lib/four-eyes-status'
 import { AUDIT_START_YEAR_FILTER } from './audit-start-year'
 import { pool } from './connection.server'
-import { repositoryDeploymentSql } from './repository-deployment-sql'
+import { repositoryViewDeploymentSql } from './repository-deployment-sql'
 import { lowerUsernames, userDeploymentMatchAnySql, userDeploymentMatchSql } from './user-deployment-match'
 
 export interface DeploymentGoalLink {
@@ -72,7 +72,7 @@ export async function getLinkedObjectivesForApps(appIds: number[], repositoryId?
   const repositoryScope =
     repositoryId == null
       ? ''
-      : `AND ${repositoryDeploymentSql('$2')}
+      : `AND ${repositoryViewDeploymentSql('$2')}
          AND d.created_at >= make_date(COALESCE(
            (SELECT audit_start_year FROM repositories WHERE id = $2), 1
          ), 1, 1)`
