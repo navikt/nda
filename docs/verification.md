@@ -684,11 +684,17 @@ Forgjengeren til en ny leveranse finnes etter første koblede deployment for hve
 
 «Bygg registreringen på nytt» er en eksplisitt reparasjonsfunksjon, ikke et krav for å få eldre historikk. Den sletter registrerte leveranser og uavklarte koblinger for repositoryet og lar synken bygge opp hele den lagrede historikken på nytt. Aktiveringstidspunktet beholdes. Reparasjonen krever bekreftelse, kontrollerer administratortilgang på nytt i transaksjonen og skrives til audit-logg. Den blokkeres hvis repositoryet har lagrede `repository_approval_snapshots`. Applikasjonsbaserte godkjenninger, status og rapporter berøres ikke.
 
+### Kontrollert nullstilling
+
+Tilbakeføring til en versjon som ikke kan gjenoppbygge historikken krever kontrollert nullstilling, ikke vanlig «Start på nytt». Registrering og evidenssynk må være deaktivert for berørte repositories, og pågående jobber må være avsluttet før nullstilling og versjonsbytte. Registreringen skal forbli deaktivert til alle pods og workers kjører målversjonen.
+
+Nullstillingen skal skje i en transaksjon med repositoryets administrator- og leveranselåser. Finnes det `repository_approval_snapshots` eller tilhørende manuelle repositorygodkjenninger, avbrytes både nullstilling og tilbakeføring. Godkjenningsgrunnlag og godkjenningshistorikk skal ikke slettes.
+
+Uten godkjenningsgrunnlag kan `deployments.repository_code_delivery_id` frakobles, og repositoryets leveranser, avledede evidenssynkoppføringer, uavklarte oppføringer og separate identitetskoblinger slettes. Nullstillingen skal omfatte alle deployments knyttet til repositoryet, også dem som bare har separat identitet. Startdatoen må være eksplisitt satt for målversjonens registreringskø før registrering aktiveres igjen. Deployments, ordinær repositoryidentitet, appverifisering, GitHub-snapshots, rapporter og audit-logg beholdes.
+
 ### Hvordan det kjøres
 
 Appverifiseringen bruker fortsatt ordinær repositoryidentitet og den eksisterende navnebaserte avgrensningen, ikke den separate koblingen.
-
-Etter aktivering av historiske koblinger må alle lesere støtte separat identitet; rollback til en versjon uten denne støtten er ikke kompatibel.
 
 Commit-lenker i repositoryvisninger bruker repositoryets avklarte navn. PR-numre fra appverifiseringen vises uten lenker fordi de ikke har dokumentert repositorytilhørighet. Appverifiseringens review-snapshots beholder lagret owner/repo som kildeopplysning, men mangler stabil repository-ID og vises derfor uten PR- og commit-lenker.
 
