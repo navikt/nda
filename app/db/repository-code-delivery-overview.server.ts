@@ -15,6 +15,7 @@ import {
 import { REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION } from './repository-code-delivery-assessment-sync.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
 import { getRepositoryCodeDeliveryIntervalAssessments } from './repository-code-delivery-interval-assessment.server'
+import { repositoryCodeDeliveryRepositoryIdSql } from './repository-code-delivery-predecessor-sql'
 
 export interface RepositoryCodeDeliveryOverview {
   deliveryCount: number
@@ -309,7 +310,7 @@ export async function listRepositoryCodeDeliveryExportRows(
             r.code_delivery_tracking_since AS tracking_since, r.default_branch
      FROM deployments d
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     JOIN repositories r ON r.id = d.repository_id
+     JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
      LEFT JOIN repository_code_deliveries c ON c.id = d.repository_code_delivery_id
      LEFT JOIN LATERAL (
        SELECT min(linked.created_at) AS first_deployed_at
@@ -318,7 +319,7 @@ export async function listRepositoryCodeDeliveryExportRows(
        WHERE linked.repository_code_delivery_id = c.id
      ) delivery_first ON true
      LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
-     WHERE d.repository_id = $1
+     WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1
        AND ($2::int[] IS NULL OR d.id = ANY($2::int[]))
      ORDER BY d.created_at ASC, d.id ASC`,
     [repositoryId, deploymentIds ?? null],
@@ -354,7 +355,7 @@ export async function listRepositoryCodeDeliveryAncestryEvidence(
      FROM repository_code_delivery_unresolved u
      JOIN deployments d ON d.id = u.deployment_id
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-     JOIN repositories r ON r.id = d.repository_id
+     JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
      JOIN repository_code_deliveries c ON c.repository_id = r.id
      JOIN github_compare_raw_snapshots s
        ON s.github_repo_id = r.github_repo_id
@@ -478,7 +479,7 @@ async function listNearbyCodeDeliveries(
        FROM deployments d
       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
       JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id
-      WHERE d.repository_id = $1
+      WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1
         AND u.resolved_at IS NULL
          AND ($2::int IS NULL OR d.id = $2)
      ),
@@ -574,14 +575,14 @@ async function listWorkflowRunSnapshots(
     `WITH selected_deployments AS (
        SELECT d.id, parsed.run_parts
        FROM deployments d
-       JOIN repositories r ON r.id = d.repository_id
+       JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        CROSS JOIN LATERAL regexp_match(
          d.trigger_url,
          '^https://github[.]com/([^/?#]+)/([^/?#]+)/actions/runs/([0-9]+)(?:[/?#].*)?$',
          'i'
        ) AS parsed(run_parts)
-       WHERE d.repository_id = $1 AND d.id = ANY($2::int[])
+       WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1 AND d.id = ANY($2::int[])
          AND (
            (
              lower(parsed.run_parts[1]) = lower(r.github_owner)
@@ -693,12 +694,12 @@ async function getRepositoryCodeDeliveryExportDataForTarget(
       id: number
       repository_code_delivery_id: number | null
     }>(
-      `SELECT deployments.id, deployments.repository_code_delivery_id
-       FROM deployments
-       JOIN monitored_applications ma ON ma.id = deployments.monitored_app_id
-       WHERE deployments.repository_id = $1
-         AND (deployments.id = ANY($2::int[]) OR deployments.repository_code_delivery_id = ANY($3::int[]))
-       ORDER BY deployments.created_at, deployments.id`,
+      `SELECT d.id, d.repository_code_delivery_id
+       FROM deployments d
+       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
+       WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1
+         AND (d.id = ANY($2::int[]) OR d.repository_code_delivery_id = ANY($3::int[]))
+       ORDER BY d.created_at, d.id`,
       [repositoryId, unresolvedDeploymentIds, includedDeliveryIds],
     )
     const includedDeploymentIds = includedDeploymentRows.map((row) => row.id)
@@ -821,12 +822,12 @@ async function getRepositoryHistoryReadinessFromClient(
        SELECT ma.team_slug, ma.environment_name, ma.app_name, ma.is_active,
               ma.initial_nais_history_synced_at,
               count(d.id)::int AS deployment_count,
-              count(d.id) FILTER (WHERE d.repository_id = $1)::int AS repository_deployment_count,
-              count(d.id) FILTER (WHERE d.repository_id IS NULL)::int AS unassigned_deployment_count,
-              count(d.id) FILTER (WHERE d.repository_id IS NOT NULL AND d.repository_id <> $1)::int
+              count(d.id) FILTER (WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1)::int AS repository_deployment_count,
+              count(d.id) FILTER (WHERE ${repositoryCodeDeliveryRepositoryIdSql} IS NULL)::int AS unassigned_deployment_count,
+              count(d.id) FILTER (WHERE ${repositoryCodeDeliveryRepositoryIdSql} IS NOT NULL AND ${repositoryCodeDeliveryRepositoryIdSql} <> $1)::int
                 AS other_repository_deployment_count,
               count(d.id) FILTER (
-                WHERE d.repository_id = $1 AND (d.commit_sha IS NULL OR d.commit_sha !~ '^[0-9a-fA-F]{40}$')
+                WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1 AND (d.commit_sha IS NULL OR d.commit_sha !~ '^[0-9a-fA-F]{40}$')
               )::int AS repository_deployments_missing_sha
        FROM repository_apps ra
        JOIN monitored_applications ma ON ma.id = ra.monitored_app_id
@@ -855,7 +856,7 @@ async function getRepositoryHistoryReadinessFromClient(
                 )
               )::int AS deployments_without_known_app_link
        FROM deployments d
-       JOIN repositories r ON r.id = d.repository_id
+       JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        WHERE r.id = $1`,
     [repositoryId],
@@ -896,20 +897,18 @@ export async function getRepositoryCodeDeliveryOverview(
       `SELECT count(*)::int AS count
        FROM deployments d
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-       WHERE d.repository_id = $1
+       WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1
          AND d.repository_code_delivery_id IS NOT NULL`,
       [repositoryId],
     ),
     client.query<{ count: number }>(
       `SELECT count(*)::int AS count
        FROM deployments d
-       JOIN repositories r ON r.id = d.repository_id
+       JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
-       WHERE d.repository_id = $1
+       WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1
          AND r.code_delivery_tracking = true
-         AND r.code_delivery_tracking_since IS NOT NULL
-         AND d.created_at >= r.code_delivery_tracking_since
          AND d.repository_code_delivery_id IS NULL
          AND d.commit_sha ~ '^[0-9a-fA-F]{40}$'
          AND u.deployment_id IS NULL`,
@@ -920,7 +919,7 @@ export async function getRepositoryCodeDeliveryOverview(
        FROM repository_code_delivery_unresolved u
        JOIN deployments d ON d.id = u.deployment_id
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-       WHERE d.repository_id = $1
+       WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1
          AND u.resolved_at IS NULL
        GROUP BY u.reason`,
       [repositoryId],
@@ -989,7 +988,7 @@ export async function getRepositoryCodeDeliveryEvidence(
     >(
       `SELECT c.id, c.base_sha, c.head_sha, c.created_at,
               (SELECT min(d.created_at) FROM deployments d
-               WHERE d.repository_id = c.repository_id AND d.repository_code_delivery_id = c.id) AS first_deployed_at,
+               WHERE ${repositoryCodeDeliveryRepositoryIdSql} = c.repository_id AND d.repository_code_delivery_id = c.id) AS first_deployed_at,
               jsonb_build_object(
                 'status', CASE
                   WHEN sync.completed_at IS NOT NULL
@@ -1034,7 +1033,7 @@ export async function getRepositoryCodeDeliveryEvidence(
        FROM deployments d
       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
-      WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2`,
+      WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1 AND d.repository_code_delivery_id = $2`,
       [repositoryId, deliveryId],
     )
     const totalEvidenceEntries = countRows[0].count
@@ -1061,7 +1060,7 @@ export async function getRepositoryCodeDeliveryEvidence(
        FROM deployments d
       JOIN monitored_applications ma ON ma.id = d.monitored_app_id
       LEFT JOIN verification_runs vr ON vr.deployment_id = d.id
-      WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
+      WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1 AND d.repository_code_delivery_id = $2
        ORDER BY d.created_at, d.id, vr.run_at, vr.id
        LIMIT $3 OFFSET $4`,
       [
@@ -1172,7 +1171,7 @@ export async function listOpenUnresolvedCodeDeployments(
             d.detected_github_owner, d.detected_github_repo_name, d.created_at AS deployed_at, u.reason, u.created_at AS first_seen_at, u.updated_at AS last_attempt_at
      FROM repository_code_delivery_unresolved u
      JOIN deployments d ON d.id = u.deployment_id
-     WHERE d.repository_id = $1 AND u.resolved_at IS NULL
+     WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1 AND u.resolved_at IS NULL
      ORDER BY u.updated_at DESC, d.id DESC
      LIMIT $2`,
     [repositoryId, limit],

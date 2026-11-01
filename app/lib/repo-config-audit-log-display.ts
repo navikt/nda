@@ -36,6 +36,7 @@ function formatRepoSettingValue(settingKey: string, value: Record<string, unknow
   }
 
   if (settingKey === REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING_RESTART) {
+    if (value.history === 'all') return 'hele den lagrede historikken'
     const since = value.since
     if (typeof since !== 'string') return 'ikke satt'
     const date = new Date(since)
