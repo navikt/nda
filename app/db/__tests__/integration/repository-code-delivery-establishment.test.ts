@@ -838,7 +838,12 @@ describe('resolveHistoricalDeploymentRepositoryIds', () => {
       deploymentId,
     ])
     if (options.source) {
-      await pool.query('UPDATE deployments SET deployment_source = $1 WHERE id = $2', [options.source, deploymentId])
+      await pool.query(
+        `UPDATE deployments
+         SET deployment_source = $1, nais_deployment_id = NULL, deployment_source_id = $3
+         WHERE id = $2`,
+        [options.source, deploymentId, `apply:${deploymentId}`],
+      )
     }
     if (options.snapshot !== null) {
       await pool.query(

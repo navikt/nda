@@ -666,7 +666,7 @@ Gaten avgjøres av den delte helperen `pendingBaselineAutoVerifyEligibleSql`/`ge
 
 > **Status**: Registrering uten effekt på godkjenning. Ingen fire-øyne-status, rapport, API eller varsel leser denne modellen. `verify.ts` er uendret.
 
-Som første steg mot repositorysentrisk godkjenning kobles deployments til en **kodeleveranse**: en rad i `repository_code_deliveries` med repository, base-SHA og head-SHA. Flere deployments av samme SHA, på tvers av apper og miljøer, peker til samme leveranse.
+Deployments kobles til en **kodeleveranse**: en rad i `repository_code_deliveries` med repository, base-SHA og head-SHA. Flere deployments av samme SHA, på tvers av apper og miljøer, peker til samme leveranse.
 
 ### Opt-in
 
@@ -680,9 +680,7 @@ Den separate identiteten brukes også i deploymentlistens repositoryvurdering, r
 
 Nyere deployments holdes utenfor registreringskøen mens eldre lagret historikk i samme repository har bekreftet workflow-run-identitet, men fortsatt venter på separat kobling. Før et nytt intervall låses, kontrolleres også at denne eldre historikken er registrert eller har en eksplisitt uavklart kobling. Kontrollen skjer under repositorylåsen og bruker `(created_at, id)`, slik at flere identitetspuljer eller parallelle workers ikke kan registrere nyere intervaller foran ventende eldre historikk. Historikk uten tilstrekkelig identitetsbevis sperrer ikke registreringen på ubestemt tid.
 
-Forgjengeren til en ny leveranse finnes etter første koblede deployment for hver leveranse, med `(created_at, id)` som rekkefølge; leveranser uten deployments bruker registreringstidspunktet. Dermed kan eldre leveranser innlemmes uten at de blir neste base for nyere deployments bare fordi de ble satt inn sist. Låste intervaller, leveranse-ID-er, eksisterende koblinger og repositorygodkjenningsgrunnlag endres ikke. En allerede låst førstegangsleveranse beholder sitt selvintervall også når eldre historikk kommer til. Forgjengeren kontrolleres igjen under repositorylåsen før opprettelse, slik at endret grunnlag krever et nytt forsøk. Uavklarte `ancestry_behind`-oppføringer forsøkes på nytt etter en time, også hvis en gammel worker skrev dem under utrulling.
-
-Full historikkregistrering rulles ut i to steg uten ny databasetrigger eller worker-markør. Første steg (#970) innfører kronologisk forgjengeroppslag og beholder dagens datogrense. Andre steg åpner for hele historikken og separat identitetskobling. Før andre steg merges og deployes, må første steg være i produksjon og alle workers med den gamle «siste innsatte ID»-regelen være avsluttet. Da kan første og andre steg kjøre samtidig under rullerende utrulling uten at historiske innsettinger blir brukt som feil base av gammel kode. Etter at historikkregistreringen er åpnet, må rollback ikke gå til en versjon eldre enn første steg.
+Forgjengeren til en ny leveranse finnes etter første koblede deployment for hver leveranse, med `(created_at, id)` som rekkefølge; leveranser uten deployments bruker registreringstidspunktet. Dermed kan eldre leveranser innlemmes uten at de blir neste base for nyere deployments bare fordi de ble satt inn sist. Låste intervaller, leveranse-ID-er, eksisterende koblinger og repositorygodkjenningsgrunnlag endres ikke. En allerede låst førstegangsleveranse beholder sitt selvintervall også når eldre historikk kommer til. Forgjengeren kontrolleres igjen under repositorylåsen før opprettelse, slik at endret grunnlag krever et nytt forsøk. Uavklarte `ancestry_behind`-oppføringer forsøkes på nytt etter en time.
 
 «Bygg registreringen på nytt» er en eksplisitt reparasjonsfunksjon, ikke et krav for å få eldre historikk. Den sletter registrerte leveranser og uavklarte koblinger for repositoryet og lar synken bygge opp hele den lagrede historikken på nytt. Aktiveringstidspunktet beholdes. Reparasjonen krever bekreftelse, kontrollerer administratortilgang på nytt i transaksjonen og skrives til audit-logg. Den blokkeres hvis repositoryet har lagrede `repository_approval_snapshots`. Applikasjonsbaserte godkjenninger, status og rapporter berøres ikke.
 
@@ -705,7 +703,7 @@ For hvert deployment:
 
 ### Ny vurdering av uavklarte
 
-Uavklarte deployments vurderes ikke på nytt hver kjøring. Unntaket er `ancestry_unknown` og `source_unknown`, som prøves på nytt etter én time, siden de kan skyldes en midlertidig GitHub-feil. `ancestry_diverged`, `ancestry_behind` og `source_unauthorized` krever senere avklaring.
+Uavklarte deployments vurderes ikke på nytt hver kjøring. `ancestry_unknown` og `source_unknown` prøves på nytt etter én time, siden de kan skyldes en midlertidig GitHub-feil. `ancestry_behind` prøves også på nytt etter én time, siden registrering av eldre historikk kan gi en annen forgjenger. `ancestry_diverged` og `source_unauthorized` krever senere avklaring.
 
 ### Ikke med ennå
 
