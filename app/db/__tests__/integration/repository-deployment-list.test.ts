@@ -313,6 +313,14 @@ it('keeps separately identified history visible without changing app verificatio
 
   const list = await getDeploymentsPaginated({ repository_id: repositoryId })
   expect(list.deployments.map((deployment) => deployment.id).sort()).toEqual([older, current].sort())
+  const repositoryList = await getRepositoryDeploymentsPaginated({ repository_id: repositoryId })
+  expect(repositoryList.repositorySummaries[older].repository).toEqual({
+    githubOwner: 'navikt',
+    githubRepoName: 'renamed-repo',
+  })
+  expect(repositoryList.deployments.find((deployment) => deployment.id === older)?.detected_github_repo_name).toBe(
+    'reused-name',
+  )
   expect(await getPreviousDeploymentForDiff(current, '123')).toBeNull()
   expect(await getPreviousDeployment(current, 'navikt', 'renamed-repo', '123', null, currentSha)).toBeNull()
   expect(await findRootApprovedSiblingForCommit(olderSha, '123', current)).toBeNull()

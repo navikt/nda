@@ -100,6 +100,37 @@ async function counts(repositoryId: number) {
 }
 
 describe('restartCodeDeliveryTracking', () => {
+  it.each(['linked', 'unresolved'] as const)(
+    'preserves canonical %s history that predates the requested rebuild date',
+    async (kind) => {
+      const repositoryId = await createRepository('2096')
+      const state = await seedRegisteredState(repositoryId)
+      await pool.query('UPDATE deployments SET created_at = $1 WHERE id = $2', [
+        new Date('2023-01-01T00:00:00Z'),
+        state[kind],
+      ])
+      const before = await counts(repositoryId)
+      const tracking = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+        repositoryId,
+      ])
+      expect(
+        await restartCodeDeliveryTracking({
+          repositoryId,
+          since: SINCE,
+          changedByNavIdent: adminActor.navIdent,
+          actor: adminActor,
+        }),
+      ).toEqual({ ok: false, reason: 'has_history_before_since' })
+      expect(await counts(repositoryId)).toEqual(before)
+      expect(
+        (await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [repositoryId])).rows,
+      ).toEqual(tracking.rows)
+      expect(
+        (await pool.query('SELECT id FROM repo_config_audit_log WHERE repository_id = $1', [repositoryId])).rows,
+      ).toEqual([])
+    },
+  )
+
   it('preserves historical links and all tracking state when separate identities cannot be rebuilt', async () => {
     const repositoryId = await createRepository('2097')
     const { linked, unresolved } = await seedRegisteredState(repositoryId)

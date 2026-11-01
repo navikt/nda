@@ -464,6 +464,14 @@ describe('repository admin actions - authorization', () => {
       })
     })
 
+    it('explains why history before the requested date prevents restarting', async () => {
+      mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'has_history_before_since' })
+      expect(await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))).toEqual({
+        error:
+          'Registreringen kan ikke startes på nytt fra denne datoen fordi eldre registrert historikk ville gått tapt',
+      })
+    })
+
     it('explains why separate historical identities prevent restarting in this version', async () => {
       mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'has_separate_identities' })
       const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))

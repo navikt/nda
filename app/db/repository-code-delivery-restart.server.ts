@@ -14,6 +14,7 @@ export type RestartCodeDeliveryTrackingResult =
         | 'not_earlier'
         | 'has_approval_snapshots'
         | 'has_separate_identities'
+        | 'has_history_before_since'
     }
   | {
       ok: true
@@ -76,6 +77,25 @@ export async function restartCodeDeliveryTracking(params: {
       [repositoryId],
     )
     if (identities[0].exists) return { ok: false, reason: 'has_separate_identities' }
+
+    const { rows: history } = await client.query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM deployments d
+         WHERE d.created_at < $2
+           AND (
+             d.repository_code_delivery_id IN (
+               SELECT id FROM repository_code_deliveries WHERE repository_id = $1
+             )
+             OR (
+               d.repository_id = $1 AND EXISTS (
+                 SELECT 1 FROM repository_code_delivery_unresolved u WHERE u.deployment_id = d.id
+               )
+             )
+           )
+       ) AS exists`,
+      [repositoryId, since],
+    )
+    if (history[0].exists) return { ok: false, reason: 'has_history_before_since' }
 
     const cleared = await client.query(
       `DELETE FROM repository_code_delivery_unresolved

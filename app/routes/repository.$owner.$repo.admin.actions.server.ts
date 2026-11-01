@@ -294,6 +294,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       if (result.reason === 'not_earlier') {
         return fail('Datoen må være tidligere enn nåværende startdato')
       }
+      if (result.reason === 'has_history_before_since') {
+        return fail(
+          'Registreringen kan ikke startes på nytt fra denne datoen fordi eldre registrert historikk ville gått tapt',
+        )
+      }
       if (result.reason === 'tracking_disabled') {
         return fail('Registreringen må være på for å starte på nytt')
       }
