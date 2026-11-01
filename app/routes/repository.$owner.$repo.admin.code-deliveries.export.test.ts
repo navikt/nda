@@ -78,6 +78,7 @@ function makeExportData() {
     ],
     deliveryTarget: null,
     implicitApprovalMode: 'off' as const,
+    repositoryAssessments: [],
     prSnapshots: [],
     commitSnapshots: [],
     workflowRunSnapshots: [],
@@ -119,6 +120,30 @@ describe('repository code delivery export loader', () => {
     })
   })
 
+  it('includes repository evidence independently of application snapshots and live evidence', async () => {
+    const repositoryAssessments = [
+      {
+        deliveryId: 12,
+        intervalAssessment: { commits: [{ reason: 'approval_before_last_commit' }] },
+        approvalAssessment: { status: 'incomplete', commits: [{ reason: 'unknown_commit_author' }] },
+        evaluationInput: { implicitApprovalMode: 'off' },
+        snapshots: { pullRequests: [{ id: 123, data_type: 'reviews', data: [] }] },
+        assessmentSync: { failed_permanently: true },
+      },
+    ]
+    mockGetDeliveryExportData.mockResolvedValue({
+      ...makeExportData(),
+      deliveryTarget: { deliveryId: 12, includedDeploymentIds: [] },
+      repositoryAssessments,
+    })
+    const response = await loader({ params, request: makeRequest('?deliveryId=12') } as never)
+    const body = JSON.parse(await response.text())
+    expect(body.repositoryAssessments).toEqual(repositoryAssessments)
+    expect(body.prSnapshots).toEqual([])
+    expect(body.verificationRuns).toEqual([])
+    expect(body.liveGitHubEvidence.status).toBe('not_needed')
+  })
+
   it('returns a JSON attachment for the authorized repository', async () => {
     const response = await loader({
       params,
@@ -132,7 +157,7 @@ describe('repository code delivery export loader', () => {
     )
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(JSON.parse(await response.text())).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       repository: {
         id: 5,
         githubRepositoryId: '67890',

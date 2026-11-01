@@ -15,6 +15,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
           auditStartYear: 2026,
         },
         implicitApprovalMode: 'dependabot_only',
+        repositoryAssessments: [],
         historyReadiness: {
           applications: [],
           repositoryDeploymentCount: 1,
@@ -175,7 +176,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
     )
     const parsed = JSON.parse(json)
 
-    expect(parsed.schemaVersion).toBe(5)
+    expect(parsed.schemaVersion).toBe(6)
     expect(parsed.exportedAt).toBe('2026-10-14T11:00:00.000Z')
     expect(parsed.repository.githubRepositoryId).toBe('12345')
     expect(parsed.implicitApprovalMode).toBe('dependabot_only')
@@ -245,6 +246,7 @@ describe('createRepositoryCodeDeliveryJson', () => {
           auditStartYear: null,
         },
         implicitApprovalMode: 'off',
+        repositoryAssessments: [],
         historyReadiness: {
           applications: [],
           repositoryDeploymentCount: 0,

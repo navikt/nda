@@ -1,3 +1,4 @@
+import type { RepositoryAssessmentDiagnostic } from '~/db/repository-assessment-diagnostic.server'
 import type {
   RepositoryCodeDeliveryAncestryEvidence,
   RepositoryCodeDeliveryDiagnosticDeliveryTarget,
@@ -15,7 +16,8 @@ import type { RepositoryDiagnosticGitHubEvidence } from '~/lib/github/repository
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 
 export interface RepositoryCodeDeliveryExport {
-  schemaVersion: 5
+  schemaVersion: 6
+  repositoryAssessments: RepositoryAssessmentDiagnostic
   exportedAt: string
   repository: {
     id: number
@@ -51,7 +53,7 @@ export function createRepositoryCodeDeliveryJson(
 ): string {
   const deliveryScoped = data.deliveryTarget !== null
   const exportData: RepositoryCodeDeliveryExport = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     exportedAt: exportedAt.toISOString(),
     ...data,
     interpretationNotes: [
@@ -60,6 +62,9 @@ export function createRepositoryCodeDeliveryJson(
       'Nais initial history sync completion does not prove that GitHub ancestry or repository linkage is complete.',
       'Verification runs include every stored run for the included deployments. The result is the persisted decision evidence as recorded at run time; it is not recomputed from current settings or GitHub data.',
       'PR and commit snapshots include only snapshot IDs referenced by included verification runs. Workflow-run snapshots include archived versions referenced by trigger URLs on included deployments.',
+      'repositoryAssessments contains current repository interval and approval evaluations for the included deliveries, not persisted application verification decisions. evaluationInput records the settings and normalized evidence used by the repository evaluator.',
+      'repositoryAssessments snapshots are the exact raw snapshots referenced by the interval evaluator, including comparison, commit-to-PR associations, PR metadata, commits, reviews and stack comparisons. They are separate from application prSnapshots and commitSnapshots and from liveGitHubEvidence.',
+      'Repository assessments, author identities, manual approval history and assessmentSync are read in the same repeatable-read snapshot as the export. A null assessmentSync means no queue record exists; empty snapshot lists mean no referenced snapshots were available, not that no review exists on GitHub.',
       'liveGitHubEvidence is fetched from GitHub when the export is generated and includes current PR metadata, review records, and workflow job/step outcomes for PRs and workflow runs referenced by the bounded diagnostic. It is not the verification decision stored at deployment time. Each item records its fetch status; missing or failed live evidence must not be interpreted as an empty review or job history.',
       'Workflow evidence discovered from a deployment trigger URL records the contributing deployment IDs. URLs that specify an Actions attempt fetch only that attempt; URLs without an attempt fetch jobs across all attempts, each with its runAttempt value.',
       'GitHub 404/410 responses are recorded as not_found and do not prove that a review or workflow run never existed; GitHub may also return 404 when the authenticated integration cannot access a resource.',
