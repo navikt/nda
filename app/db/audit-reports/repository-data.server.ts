@@ -4,6 +4,7 @@ import { assessRepositoryAuditReadiness, type RepositoryAuditReportData } from '
 import { CURRENT_SCHEMA_VERSION } from '~/lib/verification/types'
 import { AUDIT_START_YEAR_FILTER } from '../audit-start-year'
 import { withTransaction } from '../connection.server'
+import { repositoryCodeDeliveryRepositoryIdSql } from '../repository-code-delivery-predecessor-sql'
 import { getStoredRepositoryDeliveryAssessments } from '../repository-delivery-assessments.server'
 
 interface DeploymentRow {
@@ -68,14 +69,14 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
     }
     const { rows } = await client.query<DeploymentRow>(
       `SELECT d.id, d.nais_deployment_id, d.deployment_source_id, d.title, d.created_at, d.commit_sha, d.github_pr_number, d.deployer_username,
-              d.repository_id, d.repository_code_delivery_id, d.trigger_url,
+              ${repositoryCodeDeliveryRepositoryIdSql} AS repository_id, d.repository_code_delivery_id, d.trigger_url,
               r.github_repo_id, r.github_owner, r.github_repo_name, r.default_branch,
               d.detected_github_owner, d.detected_github_repo_name,
               ar.id AS authorization_link_id, ar.status AS authorization_status,
               cd.repository_id AS delivery_repository_id, cd.base_sha, cd.head_sha
        FROM deployments d
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-       LEFT JOIN repositories r ON r.id = d.repository_id
+       LEFT JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
        LEFT JOIN LATERAL (
          SELECT id, status FROM application_repositories
          WHERE monitored_app_id = d.monitored_app_id AND github_repo_id = r.github_repo_id
@@ -166,7 +167,7 @@ export async function getRepositoryAuditReportData(monitoredAppId: number, perio
        FROM deployment_deviations dd
        JOIN deployments d ON d.id = dd.deployment_id
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-       LEFT JOIN repositories r ON r.id = d.repository_id
+       LEFT JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
        WHERE d.monitored_app_id = $1
          AND dd.created_at >= $2 AND dd.created_at <= $3
          AND ${AUDIT_START_YEAR_FILTER}

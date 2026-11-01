@@ -8,6 +8,7 @@ import {
   getDeploymentsBatch,
   getDeploymentsPaginated,
 } from './deployments.server'
+import { repositoryCodeDeliveryRepositoryIdSql } from './repository-code-delivery-predecessor-sql'
 import { getStoredRepositoryDeliveryAssessments } from './repository-delivery-assessments.server'
 
 async function getDeploymentRepositorySummaries(client: Pick<PoolClient, 'query'>, deploymentIds: number[]) {
@@ -20,7 +21,7 @@ async function getDeploymentRepositorySummaries(client: Pick<PoolClient, 'query'
     base_sha: string | null
     head_sha: string | null
   }>(
-    `SELECT d.id, d.repository_id, d.repository_code_delivery_id, d.commit_sha,
+    `SELECT d.id, ${repositoryCodeDeliveryRepositoryIdSql} AS repository_id, d.repository_code_delivery_id, d.commit_sha,
             cd.repository_id AS delivery_repository_id, cd.base_sha, cd.head_sha
      FROM deployments d
      LEFT JOIN repository_code_deliveries cd ON cd.id = d.repository_code_delivery_id

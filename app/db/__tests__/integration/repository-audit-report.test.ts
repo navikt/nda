@@ -43,78 +43,91 @@ afterEach(async () => {
 })
 
 describe('repository audit report selection and evidence', () => {
-  it('preserves exact app/period selection and never substitutes an unlinked same-SHA delivery', async () => {
-    const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'test', environment: 'prod-gcp' })
-    const otherApp = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'other', environment: 'prod-gcp' })
-    const repositoryId = await seedRepository(pool, {
-      githubRepoId: '123',
-      githubOwner: 'navikt',
-      githubRepoName: 'historical',
-      defaultBranch: 'main',
-    })
-    await seedApplicationRepository(pool, {
-      monitoredAppId: appId,
-      githubOwner: 'navikt',
-      githubRepo: 'historical',
-      githubRepoId: '123',
-    })
-    await seedWorkflow('historical')
-    await seedApplicationRepository(pool, {
-      monitoredAppId: appId,
-      githubOwner: 'navikt',
-      githubRepo: 'current',
-      githubRepoId: '456',
-    })
-    const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha })
-    const createDeployment = (monitoredAppId: number, createdAt: Date) =>
-      seedDeployment(pool, {
-        monitoredAppId,
-        teamSlug: 'team-fjord',
-        environment: 'prod-gcp',
-        commitSha: headSha,
-        createdAt,
-        fourEyesStatus: 'approved',
-        workflowTriggerConfig: { triggerEvent: 'push' },
+  it.each(['canonical', 'delivery_only'] as const)(
+    'preserves app/period selection with %s identity and never substitutes an unlinked same-SHA delivery',
+    async (identity) => {
+      const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'test', environment: 'prod-gcp' })
+      const otherApp = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'other', environment: 'prod-gcp' })
+      const repositoryId = await seedRepository(pool, {
+        githubRepoId: '123',
+        githubOwner: 'navikt',
+        githubRepoName: 'historical',
+        defaultBranch: 'main',
       })
-    const first = await createDeployment(appId, start)
-    const sameTime = await createDeployment(appId, start)
-    const last = await createDeployment(appId, end)
-    await pool.query(
-      `UPDATE deployments SET detected_github_owner = 'navikt', detected_github_repo_name = 'historical',
+      await seedApplicationRepository(pool, {
+        monitoredAppId: appId,
+        githubOwner: 'navikt',
+        githubRepo: 'historical',
+        githubRepoId: '123',
+      })
+      await seedWorkflow('historical')
+      await seedApplicationRepository(pool, {
+        monitoredAppId: appId,
+        githubOwner: 'navikt',
+        githubRepo: 'current',
+        githubRepoId: '456',
+      })
+      const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha })
+      const createDeployment = (monitoredAppId: number, createdAt: Date) =>
+        seedDeployment(pool, {
+          monitoredAppId,
+          teamSlug: 'team-fjord',
+          environment: 'prod-gcp',
+          commitSha: headSha,
+          createdAt,
+          fourEyesStatus: 'approved',
+          workflowTriggerConfig: { triggerEvent: 'push' },
+        })
+      const first = await createDeployment(appId, start)
+      const sameTime = await createDeployment(appId, start)
+      const last = await createDeployment(appId, end)
+      await pool.query(
+        `UPDATE deployments SET detected_github_owner = 'navikt', detected_github_repo_name = 'historical',
          trigger_url = 'https://github.com/navikt/historical/actions/runs/100'
        WHERE monitored_app_id = $1`,
-      [appId],
-    )
-    const excluded = await createDeployment(otherApp, start)
-    await createDeployment(appId, new Date(start.getTime() - 1))
-    await createDeployment(appId, new Date(end.getTime() + 1))
-    await pool.query('UPDATE deployments SET repository_id = $1, branch_name = $2 WHERE id = ANY($3::int[])', [
-      repositoryId,
-      'main',
-      [first, sameTime, last, excluded],
-    ])
-    await linkDeploymentToRepositoryCodeDelivery(first, delivery.id)
-    await linkDeploymentToRepositoryCodeDelivery(sameTime, delivery.id)
+        [appId],
+      )
+      const excluded = await createDeployment(otherApp, start)
+      await createDeployment(appId, new Date(start.getTime() - 1))
+      await createDeployment(appId, new Date(end.getTime() + 1))
+      await pool.query('UPDATE deployments SET repository_id = $1, branch_name = $2 WHERE id = ANY($3::int[])', [
+        repositoryId,
+        'main',
+        [first, sameTime, last, excluded],
+      ])
+      if (identity === 'delivery_only') {
+        await pool.query(
+          `INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id)
+         SELECT id, repository_id FROM deployments WHERE id = ANY($1::int[])`,
+          [[first, sameTime, last, excluded]],
+        )
+        await pool.query('UPDATE deployments SET repository_id = NULL WHERE id = ANY($1::int[])', [
+          [first, sameTime, last, excluded],
+        ])
+      }
+      await linkDeploymentToRepositoryCodeDelivery(first, delivery.id)
+      await linkDeploymentToRepositoryCodeDelivery(sameTime, delivery.id)
 
-    const result = await getRepositoryAuditReportData(appId, start, end)
-    expect(result.reportData.deployments.map((deployment) => deployment.id)).toEqual([first, sameTime, last])
-    expect(result.reportData.deliveries).toHaveLength(1)
-    expect(result.reportData.deliveries[0]).toMatchObject({
-      repositoryId,
-      githubRepoId: '123',
-      githubRepoName: 'historical',
-      assessment: { status: 'incomplete' },
-    })
-    expect(result.readiness.deployments).toEqual([
-      { deploymentId: first, blockers: ['incomplete_coverage'] },
-      { deploymentId: sameTime, blockers: ['incomplete_coverage'] },
-      { deploymentId: last, blockers: ['missing_link'] },
-    ])
-    const { rows } = await pool.query('SELECT repository_code_delivery_id FROM deployments WHERE id = $1', [last])
-    expect(rows[0].repository_code_delivery_id).toBeNull()
-    const { rows: reports } = await pool.query('SELECT count(*)::int AS count FROM audit_reports')
-    expect(reports[0].count).toBe(0)
-  })
+      const result = await getRepositoryAuditReportData(appId, start, end)
+      expect(result.reportData.deployments.map((deployment) => deployment.id)).toEqual([first, sameTime, last])
+      expect(result.reportData.deliveries).toHaveLength(1)
+      expect(result.reportData.deliveries[0]).toMatchObject({
+        repositoryId,
+        githubRepoId: '123',
+        githubRepoName: 'historical',
+        assessment: { status: 'incomplete' },
+      })
+      expect(result.readiness.deployments).toEqual([
+        { deploymentId: first, blockers: ['incomplete_coverage'] },
+        { deploymentId: sameTime, blockers: ['incomplete_coverage'] },
+        { deploymentId: last, blockers: ['missing_link'] },
+      ])
+      const { rows } = await pool.query('SELECT repository_code_delivery_id FROM deployments WHERE id = $1', [last])
+      expect(rows[0].repository_code_delivery_id).toBeNull()
+      const { rows: reports } = await pool.query('SELECT count(*)::int AS count FROM audit_reports')
+      expect(reports[0].count).toBe(0)
+    },
+  )
 
   it('freezes replayable evidence and exact raw snapshot references without mixing repository identities', async () => {
     const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'test', environment: 'prod-gcp' })

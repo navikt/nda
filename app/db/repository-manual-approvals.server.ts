@@ -13,6 +13,7 @@ import {
 } from '~/lib/repository-manual-approval'
 import { withTransaction } from './connection.server'
 import { getRepositoryCodeDeliveryIntervalAssessments } from './repository-code-delivery-interval-assessment.server'
+import { repositoryCodeDeliveryRepositoryIdSql } from './repository-code-delivery-predecessor-sql'
 import { getRepositoryManualApprovalCommits } from './repository-manual-approval-commits.server'
 
 type Evidence = Parameters<typeof assessRepositoryDeliveryInterval>[0]
@@ -861,7 +862,7 @@ export async function getRepositoryApprovalPage(actor: UserIdentity, repositoryI
     }>(
       `SELECT c.id, c.base_sha, c.head_sha, min(d.created_at) AS first_deployed_at
        FROM repository_code_deliveries c
-       LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id AND d.repository_id = c.repository_id
+       LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id AND ${repositoryCodeDeliveryRepositoryIdSql} = c.repository_id
        WHERE c.repository_id = $1 AND c.id = $2 GROUP BY c.id`,
       [repositoryId, deliveryId],
     )
@@ -913,7 +914,7 @@ export async function getRepositoryApprovalDeliveries(actor: UserIdentity, repos
     const { rows } = await client.query<{ id: number; baseSha: string; headSha: string; firstDeployedAt: Date | null }>(
       `SELECT c.id, c.base_sha AS "baseSha", c.head_sha AS "headSha", min(d.created_at) AS "firstDeployedAt"
        FROM repository_code_deliveries c
-       LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id AND d.repository_id = c.repository_id
+       LEFT JOIN deployments d ON d.repository_code_delivery_id = c.id AND ${repositoryCodeDeliveryRepositoryIdSql} = c.repository_id
        WHERE c.repository_id = $1 GROUP BY c.id ORDER BY c.id DESC LIMIT 51 OFFSET $2`,
       [repositoryId, (page - 1) * 50],
     )
