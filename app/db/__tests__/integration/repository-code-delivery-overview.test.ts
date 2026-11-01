@@ -1153,83 +1153,113 @@ describe('repository code delivery overview', () => {
     expect(exportData?.implicitApprovalMode).toBe('all')
   })
 
-  it('exports exactly one delivery and every deployment linked to it', async () => {
-    const repositoryId = await createRepository('1020')
-    const otherRepositoryId = await createRepository('1021')
-    const delivery = await createRepositoryCodeDelivery({
-      repositoryId,
-      baseSha: SHA_1,
-      headSha: SHA_2,
-    })
-    const deployments: number[] = []
-    for (const appName of ['diagnostic-app-a', 'diagnostic-app-a', 'diagnostic-app-b', 'diagnostic-app-b']) {
-      deployments.push(await createDeployment(appName, repositoryId, SHA_2))
-    }
-    for (const deploymentId of deployments) {
-      await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
-    }
-    const separateDelivery = await createRepositoryCodeDelivery({
-      repositoryId,
-      baseSha: SHA_2,
-      headSha: SHA_3,
-    })
-    const separateDeployment = await createDeployment('diagnostic-separate-app', repositoryId, SHA_3)
-    await linkDeploymentToRepositoryCodeDelivery(separateDeployment, separateDelivery.id)
-    const otherDelivery = await createRepositoryCodeDelivery({
-      repositoryId: otherRepositoryId,
-      baseSha: SHA_3,
-      headSha: SHA_4,
-    })
-    const otherDeployment = await createDeployment('diagnostic-other-app', otherRepositoryId, SHA_4)
-    await linkDeploymentToRepositoryCodeDelivery(otherDeployment, otherDelivery.id)
-    await pool.query(
-      `INSERT INTO verification_runs
+  it.each(['canonical', 'delivery_only'] as const)(
+    'exports exactly one delivery and every linked deployment with %s identity',
+    async (identity) => {
+      const repositoryId = await createRepository('1020')
+      const otherRepositoryId = await createRepository('1021')
+      const delivery = await createRepositoryCodeDelivery({
+        repositoryId,
+        baseSha: SHA_1,
+        headSha: SHA_2,
+      })
+      const deployments: number[] = []
+      for (const appName of ['diagnostic-app-a', 'diagnostic-app-a', 'diagnostic-app-b', 'diagnostic-app-b']) {
+        deployments.push(await createDeployment(appName, repositoryId, SHA_2))
+      }
+      for (const deploymentId of deployments) {
+        if (identity === 'delivery_only') {
+          await pool.query(
+            'INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id) VALUES ($1, $2)',
+            [deploymentId, repositoryId],
+          )
+          await pool.query('UPDATE deployments SET repository_id = NULL WHERE id = $1', [deploymentId])
+        }
+        await linkDeploymentToRepositoryCodeDelivery(deploymentId, delivery.id)
+      }
+      const separateDelivery = await createRepositoryCodeDelivery({
+        repositoryId,
+        baseSha: SHA_2,
+        headSha: SHA_3,
+      })
+      const separateDeployment = await createDeployment('diagnostic-separate-app', repositoryId, SHA_3)
+      await linkDeploymentToRepositoryCodeDelivery(separateDeployment, separateDelivery.id)
+      const otherDelivery = await createRepositoryCodeDelivery({
+        repositoryId: otherRepositoryId,
+        baseSha: SHA_3,
+        headSha: SHA_4,
+      })
+      const otherDeployment = await createDeployment('diagnostic-other-app', otherRepositoryId, SHA_4)
+      await linkDeploymentToRepositoryCodeDelivery(otherDeployment, otherDelivery.id)
+      await pool.query(
+        `INSERT INTO verification_runs
          (deployment_id, schema_version, pr_snapshot_ids, result, status, run_at)
        VALUES ($1, 3, '{}', '{"status":"approved"}', 'approved', '2026-10-14T10:00:00Z')`,
-      [deployments[0]],
-    )
+        [deployments[0]],
+      )
 
-    const exportData = await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, delivery.id)
+      await pool.query('UPDATE deployments SET trigger_url = $1 WHERE id = $2', [
+        'https://github.com/navikt/repo-1020/actions/runs/12345',
+        deployments[0],
+      ])
+      await pool.query(
+        `INSERT INTO github_workflow_runs_raw_snapshots
+         (github_repo_id, owner, repo, run_id, api_version, data)
+         VALUES (1020, 'navikt', 'repo-1020', 12345, '2022-11-28', $1)`,
+        [
+          JSON.stringify({
+            repository: { id: 1020 },
+            head_repository: { id: 1020 },
+            event: 'push',
+            head_sha: SHA_2,
+          }),
+        ],
+      )
+      const exportData = await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, delivery.id)
 
-    expect(exportData.deliveryTarget).toEqual({
-      deliveryId: delivery.id,
-      includedDeploymentIds: expect.arrayContaining(deployments),
-    })
-    expect(exportData.deliveryTarget?.includedDeploymentIds).toHaveLength(4)
-    expect(exportData.deliveries).toMatchObject([
-      {
-        id: delivery.id,
-        base_sha: SHA_1,
-        head_sha: SHA_2,
-        deployment_count: 4,
-        contexts: [],
-      },
-    ])
-    expect(exportData.deployments.map((row) => row.deployment_id)).toEqual(expect.arrayContaining(deployments))
-    expect(exportData.deployments).toHaveLength(4)
-    expect(exportData.deployments.map((row) => row.app_name).sort()).toEqual([
-      'diagnostic-app-a',
-      'diagnostic-app-a',
-      'diagnostic-app-b',
-      'diagnostic-app-b',
-    ])
-    expect(exportData.verificationRuns).toMatchObject([{ deployment_id: deployments[0], status: 'approved' }])
-    expect(exportData.repositoryAssessments).toMatchObject([
-      {
+      expect(exportData.deliveryTarget).toEqual({
         deliveryId: delivery.id,
-        baseSha: delivery.base_sha,
-        headSha: delivery.head_sha,
-        evaluationInput: { implicitApprovalMode: 'off' },
-        assessmentSync: null,
-      },
-    ])
-    expect(exportData.diagnosticTargets).toEqual([])
-    expect(await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, otherDelivery.id)).toMatchObject({
-      deliveryTarget: null,
-      deployments: [],
-      deliveries: [],
-    })
-  })
+        includedDeploymentIds: expect.arrayContaining(deployments),
+      })
+      expect(exportData.deliveryTarget?.includedDeploymentIds).toHaveLength(4)
+      expect(exportData.workflowRunSnapshots).toMatchObject([
+        { run_id: '12345', github_repo_id: '1020', data: { event: 'push', head_sha: SHA_2 } },
+      ])
+      expect(exportData.deliveries).toMatchObject([
+        {
+          id: delivery.id,
+          base_sha: SHA_1,
+          head_sha: SHA_2,
+          deployment_count: 4,
+          contexts: [],
+        },
+      ])
+      expect(exportData.deployments.map((row) => row.deployment_id)).toEqual(expect.arrayContaining(deployments))
+      expect(exportData.deployments).toHaveLength(4)
+      expect(exportData.deployments.map((row) => row.app_name).sort()).toEqual([
+        'diagnostic-app-a',
+        'diagnostic-app-a',
+        'diagnostic-app-b',
+        'diagnostic-app-b',
+      ])
+      expect(exportData.verificationRuns).toMatchObject([{ deployment_id: deployments[0], status: 'approved' }])
+      expect(exportData.repositoryAssessments).toMatchObject([
+        {
+          deliveryId: delivery.id,
+          baseSha: delivery.base_sha,
+          headSha: delivery.head_sha,
+          evaluationInput: { implicitApprovalMode: 'off' },
+          assessmentSync: null,
+        },
+      ])
+      expect(exportData.diagnosticTargets).toEqual([])
+      expect(await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, otherDelivery.id)).toMatchObject({
+        deliveryTarget: null,
+        deployments: [],
+        deliveries: [],
+      })
+    },
+  )
 
   it('includes matching compare snapshots as candidate ancestry evidence without asserting retry linkage', async () => {
     const repositoryId = await createRepository('1011')

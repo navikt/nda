@@ -674,7 +674,9 @@ Registreringen er av for alle repoer. Den slås på per repository med `reposito
 
 ### Hvordan det kjøres
 
-Full historikkregistrering rulles ut i to steg. Første steg innfører kronologisk forgjengeroppslag etter første koblede deployment `(created_at, id)`, med registreringstidspunkt som reserve for leveranser uten deployments. Dagens grense i `code_delivery_tracking_since` beholdes. Før andre steg åpner for eldre historikk, må første steg være i produksjon og alle workers med den gamle «siste innsatte ID»-regelen være avsluttet. Dette krever ingen ny databasetrigger. Etter at andre steg er aktivert, må rollback ikke gå til en versjon eldre enn første steg.
+Repositoryvisninger støtter en separat identitetskobling i `repository_code_delivery_deployment_repositories` når `deployments.repository_id` mangler. Den ordinære ID-en har forrang. Dette gjelder deploymentlister, detaljvisninger, rapporter og godkjenningsgrunnlag, uten å endre appvurderingens repositoryidentitet. Tabellen alene aktiverer ikke registrering av eldre historikk.
+
+Forgjengeren til en leveranse finnes etter første koblede deployment `(created_at, id)`, med registreringstidspunkt som reserve for leveranser uten deployments.
 
 Etter hver periodiske synkronisering kjører `syncRepositoryCodeDeliveries` ([`code-delivery-sync.server.ts`](../app/lib/sync/code-delivery-sync.server.ts)) for opptil 100 deployments uten leveranse, sortert per repository etter opprettelsestidspunkt. Feil logges og stopper ikke synkroniseringen.
 
