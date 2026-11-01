@@ -116,7 +116,6 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: adminActor.navIdent,
         actor: adminActor,
       }),
@@ -144,7 +143,6 @@ describe('restartCodeDeliveryTracking', () => {
       await client.query('SELECT id FROM repository_code_deliveries WHERE repository_id = $1 FOR SHARE', [repositoryId])
       restart = restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: adminActor.navIdent,
         actor: adminActor,
       })
@@ -183,19 +181,20 @@ describe('restartCodeDeliveryTracking', () => {
     }
   })
 
-  it('clears registered state for the repository, moves since and writes an audit log entry', async () => {
+  it('rebuilds registered state without changing the activation date and writes an audit log entry', async () => {
     const repositoryId = await createRepository('2000')
     await seedRegisteredState(repositoryId)
+    const before = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+      repositoryId,
+    ])
     const result = await restartCodeDeliveryTracking({
       repositoryId,
-      since: SINCE,
       changedByNavIdent: 'Z990001',
       changedByName: 'Glad Fjord',
       actor: adminActor,
     })
     expect(result).toEqual({
       ok: true,
-      since: SINCE,
       deletedDeliveries: 1,
       unlinkedDeployments: 1,
       clearedUnresolved: 1,
@@ -205,7 +204,7 @@ describe('restartCodeDeliveryTracking', () => {
       'SELECT code_delivery_tracking_since FROM repositories WHERE id = $1',
       [repositoryId],
     )
-    expect(rows[0].code_delivery_tracking_since).toEqual(SINCE)
+    expect(rows[0].code_delivery_tracking_since).toEqual(before.rows[0].code_delivery_tracking_since)
 
     const log = await pool.query(
       'SELECT changed_by_nav_ident, new_value FROM repo_config_audit_log WHERE repository_id = $1 AND setting_key = $2',
@@ -215,7 +214,7 @@ describe('restartCodeDeliveryTracking', () => {
       {
         changed_by_nav_ident: 'Z990001',
         new_value: {
-          since: SINCE.toISOString(),
+          history: 'all',
           deleted_deliveries: 1,
           unlinked_deployments: 1,
           cleared_unresolved: 1,
@@ -230,7 +229,7 @@ describe('restartCodeDeliveryTracking', () => {
     await seedRegisteredState(repositoryId)
     await seedRegisteredState(otherRepositoryId)
 
-    await restartCodeDeliveryTracking({ repositoryId, since: SINCE, changedByNavIdent: 'Z990001', actor: adminActor })
+    await restartCodeDeliveryTracking({ repositoryId, changedByNavIdent: 'Z990001', actor: adminActor })
 
     expect(await counts(otherRepositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
   })
@@ -242,35 +241,12 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: 'Z990001',
         actor: adminActor,
       }),
     ).toEqual({
       ok: false,
       reason: 'tracking_disabled',
-    })
-    expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
-  })
-
-  it('refuses a date that is not earlier than the current start date', async () => {
-    const repositoryId = await createRepository('2004')
-    await seedRegisteredState(repositoryId)
-    await pool.query('UPDATE repositories SET code_delivery_tracking_since = $1 WHERE id = $2', [
-      new Date('2023-01-01T00:00:00.000Z'),
-      repositoryId,
-    ])
-
-    expect(
-      await restartCodeDeliveryTracking({
-        repositoryId,
-        since: SINCE,
-        changedByNavIdent: 'Z990001',
-        actor: adminActor,
-      }),
-    ).toEqual({
-      ok: false,
-      reason: 'not_earlier',
     })
     expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
   })
@@ -290,7 +266,6 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: outsider.navIdent,
         actor: outsider,
       }),
@@ -304,7 +279,6 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: 'Z990001',
         actor: adminActor,
       }),
@@ -318,7 +292,6 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId: 999999,
-        since: SINCE,
         changedByNavIdent: 'Z990001',
         actor: adminActor,
       }),

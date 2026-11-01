@@ -61,8 +61,11 @@ export async function createRepositoryCodeDelivery(
     throw new Error('Commit SHA must contain exactly 40 hexadecimal characters')
   }
   const { rows } = await executor.query<RepositoryCodeDelivery>(
-    `INSERT INTO repository_code_deliveries (repository_id, base_sha, head_sha)
-     VALUES ($1, $2, $3)
+    `WITH history_worker AS MATERIALIZED (
+       SELECT set_config('nda.code_delivery_history_worker', '1', true)
+     )
+     INSERT INTO repository_code_deliveries (repository_id, base_sha, head_sha)
+     SELECT $1::integer, $2::text, $3::text FROM history_worker
      ON CONFLICT (repository_id, lower(head_sha)) DO NOTHING
      RETURNING id, repository_id, base_sha, head_sha, created_at`,
     [repositoryId, baseSha, headSha],
@@ -104,8 +107,11 @@ export async function linkDeploymentToRepositoryCodeDeliveryInTransaction(
     commit_sha: string | null
     repository_code_delivery_id: number | null
   }>(
-    `SELECT repository_id, commit_sha, repository_code_delivery_id
-     FROM deployments WHERE id = $1 FOR UPDATE`,
+    `SELECT COALESCE(d.repository_id, identity.repository_id) AS repository_id,
+            d.commit_sha, d.repository_code_delivery_id
+     FROM deployments d
+     LEFT JOIN repository_code_delivery_deployment_repositories identity ON identity.deployment_id = d.id
+     WHERE d.id = $1 FOR UPDATE OF d`,
     [deploymentId],
   )
   const deployment = deployments[0]

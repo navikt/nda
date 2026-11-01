@@ -7,6 +7,7 @@ import { serializeUserLookups } from '~/lib/user-display'
 import { withTransaction } from './connection.server'
 import { getRepositoryCodeDelivery } from './repository-code-deliveries.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
+import { repositoryCodeDeliveryRepositoryIdSql } from './repository-code-delivery-predecessor-sql'
 import { getStoredRepositoryDeliveryAssessments } from './repository-delivery-assessments.server'
 import { getGithubUserLookups } from './user-github-lookups.server'
 
@@ -43,14 +44,15 @@ export async function getDeploymentRepositoryView(
     const { rows } = await client.query<DeploymentContext>(
       `SELECT d.id, d.monitored_app_id, ma.team_slug, ma.environment_name, ma.app_name, d.created_at,
               d.commit_sha, d.branch_name, d.deployer_username, d.four_eyes_status,
-              d.repository_id, d.repository_code_delivery_id,
+              COALESCE(d.repository_id, identity.repository_id) AS repository_id, d.repository_code_delivery_id,
               r.github_owner, r.github_repo_name, r.code_delivery_tracking, r.code_delivery_tracking_since,
               u.reason AS unresolved_reason, vr.run_at AS verification_run_at,
               vr.result->'comparisonRange'->>'baseSha' AS verification_base_sha,
               vr.result->'comparisonRange'->>'headSha' AS verification_head_sha
        FROM deployments d
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-       LEFT JOIN repositories r ON r.id = d.repository_id
+       LEFT JOIN repository_code_delivery_deployment_repositories identity ON identity.deployment_id = d.id
+       LEFT JOIN repositories r ON r.id = COALESCE(d.repository_id, identity.repository_id)
        LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
        LEFT JOIN LATERAL (
          SELECT run_at, result FROM verification_runs
@@ -106,10 +108,7 @@ export async function getDeploymentRepositoryView(
             ? ('unresolved' as const)
             : !deployment.code_delivery_tracking
               ? ('tracking_disabled' as const)
-              : deployment.code_delivery_tracking_since &&
-                  deployment.created_at < deployment.code_delivery_tracking_since
-                ? ('before_tracking' as const)
-                : ('unlinked' as const)
+              : ('unlinked' as const)
       const lookups = await getGithubUserLookups(
         deployment.deployer_username ? [deployment.deployer_username] : [],
         client,
@@ -154,7 +153,7 @@ export async function getDeploymentRepositoryView(
               ma.app_name AS "appName", d.created_at AS "createdAt", count(*) OVER ()::int AS total
        FROM deployments d
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
-       WHERE d.repository_id = $1 AND d.repository_code_delivery_id = $2
+       WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1 AND d.repository_code_delivery_id = $2
        ORDER BY d.created_at, d.id LIMIT 20`,
       [context.repository.id, candidate.id],
     )

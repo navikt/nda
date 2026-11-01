@@ -336,7 +336,7 @@ describe('repository admin actions - authorization', () => {
     )
     expect(result).toEqual({
       success: expected
-        ? 'Registrering av kodeleveranser er slått på. Deployments vurderes fra tidspunktet registreringen først ble slått på.'
+        ? 'Registrering av kodeleveranser er slått på. Hele den lagrede deploymenthistorikken registreres i bakgrunnen.'
         : 'Registrering av kodeleveranser er slått av.',
     })
   })
@@ -390,59 +390,33 @@ describe('repository admin actions - authorization', () => {
   })
 
   describe('restart_code_delivery_tracking', () => {
-    function restartForm(values: { since?: string; confirm?: string }) {
+    function restartForm(values: { confirm?: string }) {
       const formData = new FormData()
       formData.set('action', 'restart_code_delivery_tracking')
       formData.set('repository_id', '5')
-      if (values.since !== undefined) formData.set('since', values.since)
       if (values.confirm !== undefined) formData.set('confirm', values.confirm)
       return formData
     }
 
-    it('restarts tracking from the given date and reports what was cleared', async () => {
+    it('rebuilds all stored history without a date and reports what was cleared', async () => {
       mockRestartCodeDeliveryTracking.mockResolvedValue({
         ok: true,
-        since: new Date('2024-01-01T00:00:00.000Z'),
         deletedDeliveries: 3,
         unlinkedDeployments: 7,
         clearedUnresolved: 2,
       })
 
-      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+      const result = await callAction(restartForm({ confirm: 'true' }))
 
-      expect(mockRestartCodeDeliveryTracking).toHaveBeenCalledWith(
-        expect.objectContaining({ repositoryId: 5, since: new Date('2024-01-01T00:00:00.000Z') }),
-      )
+      expect(mockRestartCodeDeliveryTracking).toHaveBeenCalledWith(expect.objectContaining({ repositoryId: 5 }))
       expect(result).toEqual({ success: expect.stringContaining('Slettet 3 leveranser og 2 uavklarte') })
-    })
-
-    it.each([
-      ['missing', undefined],
-      ['empty', ''],
-      ['wrong format', '01.01.2024'],
-      ['impossible date', '2024-02-31'],
-    ])('rejects an invalid date (%s)', async (_label, since) => {
-      const result = await callAction(restartForm({ since, confirm: 'true' }))
-
-      expect(result).toEqual({ error: 'Ugyldig dato' })
-      expect(mockRestartCodeDeliveryTracking).not.toHaveBeenCalled()
-    })
-
-    it.each([
-      ['before 2000', '1999-12-31'],
-      ['in the future', '2999-01-01'],
-    ])('rejects a date out of range (%s)', async (_label, since) => {
-      const result = await callAction(restartForm({ since, confirm: 'true' }))
-
-      expect(result).toEqual({ error: 'Datoen må være mellom 2000 og i dag' })
-      expect(mockRestartCodeDeliveryTracking).not.toHaveBeenCalled()
     })
 
     it.each([
       ['missing', undefined],
       ['false', 'false'],
     ])('requires confirmation (%s)', async (_label, confirm) => {
-      const result = await callAction(restartForm({ since: '2024-01-01', confirm }))
+      const result = await callAction(restartForm({ confirm }))
 
       expect(result).toEqual({ error: 'Du må bekrefte at registreringen nullstilles' })
       expect(mockRestartCodeDeliveryTracking).not.toHaveBeenCalled()
@@ -451,14 +425,14 @@ describe('repository admin actions - authorization', () => {
     it('refuses to restart when tracking is disabled', async () => {
       mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'tracking_disabled' })
 
-      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+      const result = await callAction(restartForm({ confirm: 'true' }))
 
       expect(result).toEqual({ error: 'Registreringen må være på for å starte på nytt' })
     })
 
     it('explains why stored approval snapshots prevent restarting', async () => {
       mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'has_approval_snapshots' })
-      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+      const result = await callAction(restartForm({ confirm: 'true' }))
       expect(result).toEqual({
         error: 'Registreringen kan ikke startes på nytt fordi repositoryet har lagrede godkjenningsgrunnlag',
       })
@@ -467,17 +441,9 @@ describe('repository admin actions - authorization', () => {
     it('refuses when the actor lacks admin access', async () => {
       mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'unauthorized' })
 
-      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
+      const result = await callAction(restartForm({ confirm: 'true' }))
 
       expect(result).toEqual({ error: 'Du har ikke administratortilgang til alle appene i dette repoet' })
-    })
-
-    it('refuses a date that is not earlier than the current start date', async () => {
-      mockRestartCodeDeliveryTracking.mockResolvedValue({ ok: false, reason: 'not_earlier' })
-
-      const result = await callAction(restartForm({ since: '2024-01-01', confirm: 'true' }))
-
-      expect(result).toEqual({ error: 'Datoen må være tidligere enn nåværende startdato' })
     })
   })
 

@@ -2,13 +2,19 @@ import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getRepositoryDeploymentsPaginated } from '../../deployment-repository-list.server'
 import { getDeploymentRepositoryView } from '../../deployment-repository-view.server'
-import { linkDeploymentToRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
+import { getEffectiveSettingsForApp } from '../../repositories.server'
+import {
+  createRepositoryCodeDelivery,
+  linkDeploymentToRepositoryCodeDelivery,
+} from '../../repository-code-deliveries.server'
 import {
   establishCodeDeliveryForDeployment,
   getDeploymentIdsAwaitingCodeDelivery,
   getEstablishmentContext,
+  resolveHistoricalDeploymentRepositoryIds,
 } from '../../repository-code-delivery-establishment.server'
-import { seedApp, seedDeployment, seedRepository, truncateAllTables } from './helpers'
+import { getRepositoryCodeDeliveryOverview } from '../../repository-code-delivery-overview.server'
+import { seedApp, seedApplicationRepository, seedDeployment, seedRepository, truncateAllTables } from './helpers'
 
 const SHA_100 = '1'.repeat(40)
 const SHA_101 = '2'.repeat(40)
@@ -205,7 +211,7 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(await getLinkedDeliveryId(a)).toBe(await getLinkedDeliveryId(b))
   })
 
-  it('reports stale grounds instead of chaining from an unverified head when different SHAs race', async () => {
+  it('does not chain from an unverified chronological predecessor when different SHAs race', async () => {
     const repositoryId = await createRepository()
     const appA = await createApp('app-a')
     const appB = await createApp('app-b')
@@ -214,10 +220,146 @@ describe('establishCodeDeliveryForDeployment', () => {
 
     const results = await Promise.all([establish(a), establish(b)])
 
-    expect(results.map((result) => result.outcome).sort()).toEqual(['created', 'stale_grounds'])
-    expect(await getDeliveries(repositoryId)).toHaveLength(1)
-    const staleDeploymentId = results[0].outcome === 'stale_grounds' ? a : b
-    expect(await getLinkedDeliveryId(staleDeploymentId)).toBeNull()
+    expect(results[0].outcome).toBe('created')
+    expect(['created', 'stale_grounds']).toContain(results[1].outcome)
+    if (results[1].outcome === 'stale_grounds') {
+      expect(await getLinkedDeliveryId(b)).toBeNull()
+    } else {
+      expect(await getLinkedDeliveryId(b)).not.toBeNull()
+      expect((await getDeliveries(repositoryId)).find((delivery) => delivery.head_sha === SHA_102)?.base_sha).toBe(
+        SHA_102,
+      )
+    }
+  })
+
+  it('adds historical deliveries without changing locked intervals or approval snapshots and keeps future progress', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('glad-fjord-api')
+    const current = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_102,
+      createdAt: new Date('2026-10-03T10:00:00Z'),
+    })
+    await establish(current)
+    const locked = (await getDeliveries(repositoryId))[0]
+    const { rows: snapshots } = await pool.query<{ id: number }>(
+      `INSERT INTO repository_approval_snapshots
+       (delivery_id, repository_id, base_sha, head_sha, schema_version, evaluator_version, evidence, evidence_hash)
+       VALUES ($1, $2, $3, $4, 1, 1, '{}'::jsonb, 'unchanged')
+       RETURNING id`,
+      [locked.id, repositoryId, locked.base_sha, locked.head_sha],
+    )
+    const older = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_100,
+      createdAt: new Date('2026-10-01T10:00:00Z'),
+    })
+    const middle = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_101,
+      createdAt: new Date('2026-10-02T10:00:00Z'),
+    })
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([older, middle])
+    expect((await getEstablishmentContext(older))?.latestDeliveryHeadSha).toBeNull()
+    expect((await establish(older)).outcome).toBe('created')
+    expect((await getEstablishmentContext(middle))?.latestDeliveryHeadSha).toBe(SHA_100)
+    expect((await establish(middle, SHA_100)).outcome).toBe('created')
+
+    const next = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: '4'.repeat(40),
+      createdAt: new Date('2026-10-04T10:00:00Z'),
+    })
+    expect((await getEstablishmentContext(next))?.latestDeliveryHeadSha).toBe(SHA_102)
+    expect(await establish(next, SHA_102)).toMatchObject({ outcome: 'created', baseSha: SHA_102 })
+    expect((await getDeliveries(repositoryId)).find((delivery) => delivery.id === locked.id)).toEqual(locked)
+    expect(await getLinkedDeliveryId(current)).toBe(locked.id)
+    const preserved = await pool.query(
+      'SELECT id, delivery_id, evidence_hash FROM repository_approval_snapshots WHERE repository_id = $1',
+      [repositoryId],
+    )
+    expect(preserved.rows).toEqual([{ id: snapshots[0].id, delivery_id: locked.id, evidence_hash: 'unchanged' }])
+  })
+
+  it('uses deployment IDs to order equal timestamps and rejects a base changed by historical backfill', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('glad-fjord-api')
+    const ids = []
+    for (const commitSha of [SHA_100, SHA_101, SHA_102]) {
+      ids.push(
+        await createDeployment({
+          appId,
+          appName: 'glad-fjord-api',
+          repositoryId,
+          commitSha,
+          createdAt: new Date('2026-10-01T10:00:00Z'),
+        }),
+      )
+    }
+    await establish(ids[0])
+    const grounds = await confirmed(ids[2], SHA_100)
+    await establish(ids[1], SHA_100)
+    expect((await getEstablishmentContext(ids[2]))?.latestDeliveryHeadSha).toBe(SHA_101)
+    expect(await establishCodeDeliveryForDeployment(ids[2], grounds)).toEqual({ outcome: 'stale_grounds' })
+    expect(await establish(ids[2], SHA_101)).toMatchObject({ outcome: 'created', baseSha: SHA_101 })
+  })
+
+  it('blocks legacy inserts once the chronological worker takes over, including after repair', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('glad-fjord-api')
+    const current = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_102,
+    })
+    await establish(current)
+    const older = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_100,
+      createdAt: new Date('2024-01-01T10:00:00Z'),
+    })
+    await establish(older)
+    const deliveries = await getDeliveries(repositoryId)
+    await expect(
+      pool.query(
+        `INSERT INTO repository_code_deliveries (repository_id, base_sha, head_sha)
+       VALUES ($1, $2, $3)`,
+        [repositoryId, SHA_100, '4'.repeat(40)],
+      ),
+    ).rejects.toThrow('requires a chronological code delivery worker')
+    expect(await getDeliveries(repositoryId)).toEqual(deliveries)
+    expect(
+      await createRepositoryCodeDelivery(
+        {
+          repositoryId,
+          baseSha: SHA_102,
+          headSha: '4'.repeat(40),
+        },
+        pool,
+      ),
+    ).toMatchObject({ base_sha: SHA_102 })
+    await pool.query('UPDATE deployments SET repository_code_delivery_id = NULL WHERE repository_id = $1', [
+      repositoryId,
+    ])
+    await pool.query('DELETE FROM repository_code_deliveries WHERE repository_id = $1', [repositoryId])
+    await expect(
+      pool.query(
+        `INSERT INTO repository_code_deliveries (repository_id, base_sha, head_sha)
+       VALUES ($1, $2, $2)`,
+        [repositoryId, SHA_100],
+      ),
+    ).rejects.toThrow('requires a chronological code delivery worker')
   })
 
   it('rejects grounds confirmed for a different head SHA than the deployment has', async () => {
@@ -633,7 +775,7 @@ describe('deployment repository comparison', () => {
 describe('getDeploymentIdsAwaitingCodeDelivery', () => {
   const DAY = 24 * 60 * 60 * 1000
 
-  it('returns only newer, unlinked, full-SHA deployments of tracked repositories in creation order', async () => {
+  it('includes older unlinked full-SHA deployments of tracked repositories in chronological order', async () => {
     const repositoryId = await createRepository()
     const untracked = await createRepository({ tracking: false, githubRepoId: '901' })
     const appId = await createApp('app-a')
@@ -672,8 +814,7 @@ describe('getDeploymentIdsAwaitingCodeDelivery', () => {
 
     const ids = await getDeploymentIdsAwaitingCodeDelivery(100)
 
-    expect(ids).toEqual([earlier, later])
-    expect(ids).not.toContain(old)
+    expect(ids).toEqual([old, earlier, later])
   })
 
   it('respects the limit', async () => {
@@ -712,6 +853,237 @@ describe('getDeploymentIdsAwaitingCodeDelivery', () => {
       [diverged, unknownFresh, unknownStale, sourceUnknownStale, unauthorized, behind],
     )
 
-    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([unknownStale, sourceUnknownStale])
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([unknownStale, sourceUnknownStale, behind])
+  })
+})
+
+describe('resolveHistoricalDeploymentRepositoryIds', () => {
+  async function seedLegacyIdentity(
+    options: {
+      status?: 'active' | 'historical' | 'pending_approval'
+      tracking?: boolean
+      snapshot?: Record<string, unknown> | null
+      source?: 'nais_apply'
+    } = {},
+  ) {
+    const repositoryId = await createRepository({ tracking: options.tracking })
+    const appId = await createApp('glad-fjord-api')
+    await seedApplicationRepository(pool, {
+      monitoredAppId: appId,
+      githubOwner: 'navikt',
+      githubRepo: 'repo-900',
+      githubRepoId: '900',
+      status: options.status ?? 'active',
+    })
+    const deploymentId = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-fjord',
+      appName: 'glad-fjord-api',
+      environment: 'prod-gcp',
+      githubOwner: 'navikt',
+      githubRepo: 'repo-900',
+      commitSha: SHA_100,
+      createdAt: new Date('2024-01-01T00:00:00Z'),
+      fourEyesStatus: 'unverified_commits',
+    })
+    await pool.query('UPDATE deployments SET trigger_url = $1 WHERE id = $2', [
+      'https://github.com/navikt/repo-900/actions/runs/123',
+      deploymentId,
+    ])
+    if (options.source) {
+      await pool.query('UPDATE deployments SET deployment_source = $1 WHERE id = $2', [options.source, deploymentId])
+    }
+    if (options.snapshot !== null) {
+      await pool.query(
+        `INSERT INTO github_workflow_runs_raw_snapshots
+         (github_repo_id, owner, repo, run_id, api_version, data)
+         VALUES (900, 'navikt', 'repo-900', 123, '2022-11-28', $1)`,
+        [
+          JSON.stringify({
+            repository: { id: 900 },
+            head_repository: { id: 900 },
+            event: 'push',
+            head_sha: SHA_100,
+            ...options.snapshot,
+          }),
+        ],
+      )
+    }
+    return { repositoryId, appId, deploymentId }
+  }
+
+  it.each(['active', 'historical'] as const)(
+    'stores a proven %s identity separately and preserves application settings and assessment inputs',
+    async (status) => {
+      const { repositoryId, appId, deploymentId } = await seedLegacyIdentity({ status })
+      const before = await pool.query('SELECT * FROM deployments WHERE id = $1', [deploymentId])
+      const settingsBefore = await getEffectiveSettingsForApp(appId)
+      expect(await resolveHistoricalDeploymentRepositoryIds(100)).toBe(1)
+      expect(await resolveHistoricalDeploymentRepositoryIds(100)).toBe(0)
+      expect((await pool.query('SELECT * FROM deployments WHERE id = $1', [deploymentId])).rows).toEqual(before.rows)
+      expect(await getEffectiveSettingsForApp(appId)).toEqual(settingsBefore)
+      expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([deploymentId])
+      expect((await getEstablishmentContext(deploymentId))?.repositoryId).toBe(repositoryId)
+      expect((await establish(deploymentId)).outcome).toBe('created')
+      const after = await pool.query('SELECT repository_id, four_eyes_status FROM deployments WHERE id = $1', [
+        deploymentId,
+      ])
+      expect(after.rows).toEqual([{ repository_id: null, four_eyes_status: 'unverified_commits' }])
+      expect((await getDeploymentRepositoryView(deploymentId, null, appId))?.link).toMatchObject({
+        state: 'linked',
+        deployments: [expect.objectContaining({ id: deploymentId })],
+        deploymentCount: 1,
+      })
+      const list = await getRepositoryDeploymentsPaginated({ monitored_app_ids: [appId] })
+      expect(list.repositorySummaries[deploymentId]).toMatchObject({ range: { baseSha: SHA_100, headSha: SHA_100 } })
+      const filtered = await getRepositoryDeploymentsPaginated(
+        { monitored_app_ids: [appId] },
+        list.repositorySummaries[deploymentId].status,
+      )
+      expect(filtered.deployments.map((deployment) => deployment.id)).toEqual([deploymentId])
+      expect(await getRepositoryCodeDeliveryOverview(repositoryId)).toMatchObject({ linkedDeploymentCount: 1 })
+    },
+  )
+
+  it('waits for older identities across batches before locking newer intervals and rechecks after queue selection', async () => {
+    const { repositoryId, appId, deploymentId: oldest } = await seedLegacyIdentity()
+    const middle = await seedDeployment(pool, {
+      monitoredAppId: appId,
+      teamSlug: 'team-fjord',
+      appName: 'glad-fjord-api',
+      environment: 'prod-gcp',
+      githubOwner: 'navikt',
+      githubRepo: 'repo-900',
+      commitSha: SHA_101,
+      createdAt: new Date('2024-01-02T00:00:00Z'),
+    })
+    await pool.query('UPDATE deployments SET trigger_url = $1 WHERE id = $2', [
+      'https://github.com/navikt/repo-900/actions/runs/124',
+      middle,
+    ])
+    await pool.query(
+      `INSERT INTO github_workflow_runs_raw_snapshots
+       (github_repo_id, owner, repo, run_id, api_version, data)
+       VALUES (900, 'navikt', 'repo-900', 124, '2022-11-28', $1)`,
+      [
+        JSON.stringify({
+          repository: { id: 900 },
+          head_repository: { id: 900 },
+          event: 'push',
+          head_sha: SHA_101,
+        }),
+      ],
+    )
+    const newest = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_102,
+      createdAt: new Date('2024-01-03T00:00:00Z'),
+    })
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([])
+    expect(await resolveHistoricalDeploymentRepositoryIds(1)).toBe(1)
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([oldest])
+    await establish(oldest)
+    expect(await establish(newest, SHA_100)).toEqual({ outcome: 'stale_grounds' })
+    expect(await getLinkedDeliveryId(newest)).toBeNull()
+    expect(await resolveHistoricalDeploymentRepositoryIds(1)).toBe(1)
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([middle, newest])
+    expect(await establish(newest, SHA_100)).toEqual({ outcome: 'stale_grounds' })
+    await establish(middle, SHA_100)
+    expect(await establish(newest, SHA_101)).toMatchObject({ outcome: 'created', baseSha: SHA_101 })
+    expect(await getDeliveries(repositoryId)).toMatchObject([
+      { base_sha: SHA_100, head_sha: SHA_100 },
+      { base_sha: SHA_100, head_sha: SHA_101 },
+      { base_sha: SHA_101, head_sha: SHA_102 },
+    ])
+  })
+
+  it('does not block known history on missing or conflicting identity evidence', async () => {
+    const { repositoryId, appId } = await seedLegacyIdentity({ snapshot: null })
+    const newest = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_102,
+      createdAt: new Date('2024-01-03T00:00:00Z'),
+    })
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([newest])
+    expect(await establish(newest)).toMatchObject({ outcome: 'created' })
+  })
+
+  it.each([false, true])(
+    'links a delivery-only promotion to its existing SHA with intervening delivery=%s',
+    async (intervening) => {
+      const { repositoryId, appId, deploymentId } = await seedLegacyIdentity()
+      await resolveHistoricalDeploymentRepositoryIds(100)
+      await establish(deploymentId)
+      const deliveryId = await getLinkedDeliveryId(deploymentId)
+      if (intervening) {
+        const newer = await createDeployment({
+          appId,
+          appName: 'glad-fjord-api',
+          repositoryId,
+          commitSha: SHA_101,
+          createdAt: new Date('2024-01-02T00:00:00Z'),
+        })
+        await establish(newer, SHA_100)
+      }
+      const promotion = await createDeployment({
+        appId,
+        appName: 'glad-fjord-api',
+        repositoryId: null,
+        commitSha: SHA_100,
+        createdAt: new Date('2024-01-03T00:00:00Z'),
+      })
+      await pool.query(
+        'INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id) VALUES ($1, $2)',
+        [promotion, repositoryId],
+      )
+      expect(await getEstablishmentContext(promotion)).toMatchObject({
+        headHasDelivery: true,
+        latestDeliveryHeadSha: intervening ? SHA_101 : SHA_100,
+      })
+      expect(await establish(promotion, intervening ? SHA_101 : SHA_100)).toEqual({ outcome: 'linked', deliveryId })
+      expect(await getUnresolved(promotion)).toBeNull()
+      expect((await getDeploymentRepositoryView(promotion, null, appId))?.link).toMatchObject({
+        state: 'linked',
+        deployments: [expect.objectContaining({ id: deploymentId }), expect.objectContaining({ id: promotion })],
+        deploymentCount: 2,
+      })
+    },
+  )
+
+  it.each([
+    { label: 'tracking disabled', tracking: false },
+    { label: 'pending link', status: 'pending_approval' as const },
+    { label: 'missing proof', snapshot: null },
+    { label: 'different GitHub repository', snapshot: { repository: { id: 901 } } },
+    { label: 'different SHA', snapshot: { head_sha: SHA_101 } },
+    { label: 'unsupported event', snapshot: { event: 'workflow_dispatch' } },
+    { label: 'different head repository', snapshot: { head_repository: { id: 901 } } },
+    { label: 'Nais Apply', source: 'nais_apply' as const },
+  ])('does not store a delivery identity with $label', async (options) => {
+    const { deploymentId } = await seedLegacyIdentity(options)
+    expect(await resolveHistoricalDeploymentRepositoryIds(100)).toBe(0)
+    expect(
+      (await pool.query('SELECT repository_id FROM deployments WHERE id = $1', [deploymentId])).rows[0].repository_id,
+    ).toBeNull()
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toEqual([])
+  })
+
+  it('rejects a reused repository name even when a workflow snapshot matches', async () => {
+    await seedLegacyIdentity()
+    const otherRepositoryId = await seedRepository(pool, {
+      githubRepoId: '901',
+      githubOwner: 'navikt',
+      githubRepoName: 'other-repo',
+    })
+    await pool.query(
+      `INSERT INTO repository_name_history (repository_id, github_owner, github_repo_name)
+       VALUES ($1, 'navikt', 'repo-900')`,
+      [otherRepositoryId],
+    )
+    expect(await resolveHistoricalDeploymentRepositoryIds(100)).toBe(0)
   })
 })

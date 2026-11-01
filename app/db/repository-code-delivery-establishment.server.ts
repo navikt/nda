@@ -6,6 +6,25 @@ import {
   linkDeploymentToRepositoryCodeDeliveryInTransaction,
 } from './repository-code-deliveries.server'
 import { enqueueRepositoryCodeDeliveryAssessmentSync } from './repository-code-delivery-assessment-sync.server'
+import { repositoryCodeDeliveryPredecessorSql } from './repository-code-delivery-predecessor-sql'
+import { classifiedWorkflowRunDeploymentsCte } from './workflow-run-repository-backfill-coverage.server'
+
+const pendingHistoricalIdentitiesCte = classifiedWorkflowRunDeploymentsCte(`
+  r.code_delivery_tracking AND d.deployment_source != 'nais_apply'
+`)
+
+const olderPendingHistoricalIdentitySql = `
+  EXISTS (
+    SELECT 1 FROM classified pending
+    WHERE pending.classification = 'eligible'
+      AND pending.repository_id = r.id
+      AND (pending.created_at, pending.deployment_id) < (d.created_at, d.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM repository_code_delivery_deployment_repositories identity
+        WHERE identity.deployment_id = pending.deployment_id
+      )
+  )
+`
 
 export type UnresolvedReason =
   | 'ancestry_unknown'
@@ -43,7 +62,10 @@ export async function establishCodeDeliveryForDeployment(
   }
   return withTransaction(async (client) => {
     const { rows: initial } = await client.query<Pick<DeploymentRow, 'repository_id'>>(
-      `SELECT repository_id FROM deployments WHERE id = $1`,
+      `SELECT COALESCE(d.repository_id, identity.repository_id) AS repository_id
+       FROM deployments d
+       LEFT JOIN repository_code_delivery_deployment_repositories identity ON identity.deployment_id = d.id
+       WHERE d.id = $1`,
       [deploymentId],
     )
     if (!initial[0]) throw new Error(`Deployment ${deploymentId} was not found`)
@@ -57,10 +79,18 @@ export async function establishCodeDeliveryForDeployment(
       [repositoryId],
     )
     if (!trackingRows[0]?.code_delivery_tracking) return { outcome: 'skipped', reason: 'tracking_disabled' }
+    await client.query(
+      `UPDATE repositories SET code_delivery_history_worker_required = true
+       WHERE id = $1 AND NOT code_delivery_history_worker_required`,
+      [repositoryId],
+    )
 
     const { rows: deployments } = await client.query<DeploymentRow>(
-      `SELECT repository_id, commit_sha, repository_code_delivery_id
-       FROM deployments WHERE id = $1 FOR UPDATE`,
+      `SELECT COALESCE(d.repository_id, identity.repository_id) AS repository_id,
+              d.commit_sha, d.repository_code_delivery_id
+       FROM deployments d
+       LEFT JOIN repository_code_delivery_deployment_repositories identity ON identity.deployment_id = d.id
+       WHERE d.id = $1 FOR UPDATE OF d`,
       [deploymentId],
     )
     const deployment = deployments[0]
@@ -99,13 +129,31 @@ export async function establishCodeDeliveryForDeployment(
       return { outcome: 'linked', deliveryId: existing.id }
     }
 
-    const { rows: previous } = await client.query<{ head_sha: string }>(
-      `SELECT head_sha FROM repository_code_deliveries
-       WHERE repository_id = $1 ORDER BY id DESC LIMIT 1`,
-      [repositoryId],
+    const { rows: previous } = await client.query<{ head_sha: string | null }>(
+      `SELECT (${repositoryCodeDeliveryPredecessorSql}) AS head_sha
+       FROM deployments d WHERE d.id = $1`,
+      [deploymentId],
     )
     const currentHead = previous[0]?.head_sha ?? null
     if (grounds.baseSha?.toLowerCase() !== currentHead?.toLowerCase()) return { outcome: 'stale_grounds' }
+    const { rows: pendingHistory } = await client.query<{ pending: boolean }>(
+      `${pendingHistoricalIdentitiesCte}
+       SELECT EXISTS (
+         SELECT 1 FROM classified pending
+         JOIN deployments older ON older.id = pending.deployment_id
+         WHERE pending.classification = 'eligible' AND pending.repository_id = r.id
+           AND (pending.created_at, pending.deployment_id) < (d.created_at, d.id)
+           AND older.repository_code_delivery_id IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM repository_code_delivery_unresolved unresolved
+             WHERE unresolved.deployment_id = older.id AND unresolved.resolved_at IS NULL
+           )
+       ) AS pending
+       FROM deployments d JOIN repositories r ON r.id = $2
+       WHERE d.id = $1`,
+      [deploymentId, repositoryId],
+    )
+    if (pendingHistory[0]?.pending) return { outcome: 'stale_grounds' }
     const baseSha = currentHead ?? headSha
     const created = await createRepositoryCodeDelivery({ repositoryId, baseSha, headSha }, client)
     await linkDeploymentToRepositoryCodeDeliveryInTransaction(client, deploymentId, created.id)
@@ -136,13 +184,13 @@ export async function getEstablishmentContext(deploymentId: number): Promise<Est
     latest_delivery_head_sha: string | null
     head_has_delivery: boolean
   }>(
-    `SELECT d.repository_id, r.github_owner, r.github_repo_name, r.github_repo_id, r.default_branch, d.commit_sha,
-            (SELECT c.head_sha FROM repository_code_deliveries c
-             WHERE c.repository_id = d.repository_id ORDER BY c.id DESC LIMIT 1) AS latest_delivery_head_sha,
+    `SELECT r.id AS repository_id, r.github_owner, r.github_repo_name, r.github_repo_id, r.default_branch, d.commit_sha,
+            (${repositoryCodeDeliveryPredecessorSql}) AS latest_delivery_head_sha,
             EXISTS (SELECT 1 FROM repository_code_deliveries c
-                    WHERE c.repository_id = d.repository_id AND lower(c.head_sha) = lower(d.commit_sha)) AS head_has_delivery
+                    WHERE c.repository_id = r.id AND lower(c.head_sha) = lower(d.commit_sha)) AS head_has_delivery
      FROM deployments d
-     JOIN repositories r ON r.id = d.repository_id
+     LEFT JOIN repository_code_delivery_deployment_repositories identity ON identity.deployment_id = d.id
+     JOIN repositories r ON r.id = COALESCE(d.repository_id, identity.repository_id)
      WHERE d.id = $1 AND r.code_delivery_tracking = true`,
     [deploymentId],
   )
@@ -162,21 +210,43 @@ export async function getEstablishmentContext(deploymentId: number): Promise<Est
 
 export async function getDeploymentIdsAwaitingCodeDelivery(limit: number): Promise<number[]> {
   const { rows } = await pool.query<{ id: number }>(
-    `SELECT d.id
+    `${pendingHistoricalIdentitiesCte}
+     SELECT d.id
      FROM deployments d
-     JOIN repositories r ON r.id = d.repository_id
+     LEFT JOIN repository_code_delivery_deployment_repositories identity ON identity.deployment_id = d.id
+     JOIN repositories r ON r.id = COALESCE(d.repository_id, identity.repository_id)
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
      WHERE r.code_delivery_tracking = true
-       AND r.code_delivery_tracking_since IS NOT NULL
-       AND d.created_at >= r.code_delivery_tracking_since
        AND d.repository_code_delivery_id IS NULL
        AND d.commit_sha ~ '^[0-9a-fA-F]{40}$'
+       AND NOT ${olderPendingHistoricalIdentitySql}
        AND (u.deployment_id IS NULL
-            OR (u.reason IN ('ancestry_unknown', 'source_unknown') AND u.updated_at < now() - interval '1 hour'))
-     ORDER BY d.repository_id, d.created_at, d.id
+            OR (u.reason IN ('ancestry_unknown', 'source_unknown', 'ancestry_behind') AND u.updated_at < now() - interval '1 hour'))
+     ORDER BY r.id, d.created_at, d.id
      LIMIT $1`,
     [limit],
   )
   return rows.map((row) => row.id)
+}
+
+export async function resolveHistoricalDeploymentRepositoryIds(limit: number): Promise<number> {
+  const result = await pool.query(
+    `${pendingHistoricalIdentitiesCte}, candidates AS (
+       SELECT DISTINCT deployment_id, repository_id, created_at
+       FROM classified
+       WHERE classification = 'eligible'
+         AND NOT EXISTS (
+           SELECT 1 FROM repository_code_delivery_deployment_repositories identity
+           WHERE identity.deployment_id = classified.deployment_id
+         )
+       ORDER BY created_at, deployment_id
+       LIMIT $1
+     )
+     INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id)
+     SELECT deployment_id, repository_id FROM candidates
+     ON CONFLICT (deployment_id) DO NOTHING`,
+    [limit],
+  )
+  return result.rowCount ?? 0
 }

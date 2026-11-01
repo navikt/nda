@@ -94,7 +94,7 @@ interface PreviewDeploymentRow {
   classification: WorkflowRunBackfillPreviewClassification
 }
 
-function classifiedDeploymentsCte(scopeCondition: string): string {
+export function classifiedWorkflowRunDeploymentsCte(scopeCondition: string): string {
   return `WITH legacy_deployments AS (
        SELECT
          r.id AS repository_id,
@@ -203,7 +203,7 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
   teamSlug: string,
 ): Promise<WorkflowRunRepositoryBackfillCoverage[]> {
   const { rows } = await pool.query<CoverageRow>(
-    `${classifiedDeploymentsCte('ma.team_slug = $1')}
+    `${classifiedWorkflowRunDeploymentsCte('ma.team_slug = $1')}
      , coverage AS (
        SELECT repository_id, github_owner, github_repo_name,
          count(*)::int AS total_legacy_deployments,
@@ -362,7 +362,7 @@ export async function getWorkflowRunRepositoryBackfillPreview(
   repositoryId: number,
 ): Promise<WorkflowRunBackfillPreviewDeployment[]> {
   const { rows } = await pool.query<PreviewDeploymentRow>(
-    `${classifiedDeploymentsCte('r.id = $1')}
+    `${classifiedWorkflowRunDeploymentsCte('r.id = $1')}
      SELECT
        deployment_id,
        team_slug,
@@ -391,7 +391,7 @@ export async function getWorkflowRunRepositoryBackfillPreview(
 
 export async function backfillEligibleWorkflowRunRepositoryIds(repositoryId: number): Promise<number> {
   const { rows } = await pool.query<{ updated: number }>(
-    `${classifiedDeploymentsCte('r.id = $1')},
+    `${classifiedWorkflowRunDeploymentsCte('r.id = $1')},
      updated_deployments AS (
        UPDATE deployments d
        SET repository_id = $1
