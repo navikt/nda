@@ -49,11 +49,9 @@ function CommitLink({ repository, sha }: { repository: { githubOwner: string; gi
 }
 
 function ReviewSnapshot({
-  repository,
   snapshot,
   userMappings,
 }: {
-  repository: { githubOwner: string; githubRepoName: string }
   snapshot: RepositoryCodeDeliveryEvidence['deployments'][number]['verification_runs'][number]['review_snapshots'][number]
   userMappings: UserLookupMap
 }) {
@@ -61,14 +59,14 @@ function ReviewSnapshot({
     <Box padding="space-16" borderRadius="8" background="sunken" borderColor="neutral-subtle" borderWidth="1">
       <VStack gap="space-12">
         <Heading level="4" size="xsmall">
-          <ExternalLink
-            href={`https://github.com/${repository.githubOwner}/${repository.githubRepoName}/pull/${snapshot.pr_number}`}
-          >
-            PR #{snapshot.pr_number}
-          </ExternalLink>
+          PR #{snapshot.pr_number}
         </Heading>
         <BodyShort size="small" textColor="subtle">
           Snapshot hentet {formatAuditLogTimestamp(snapshot.fetched_at)} · {snapshot.source}
+        </BodyShort>
+        <BodyShort size="small" textColor="subtle">
+          Lagret kilde: {snapshot.owner}/{snapshot.repo}. Snapshotten har ikke en stabil repository-ID; PR og
+          review-commits vises derfor uten lenker.
         </BodyShort>
         {!snapshot.github_available ? (
           <Alert variant="warning" size="small">
@@ -108,9 +106,7 @@ function ReviewSnapshot({
                   <Table.DataCell>
                     {review.submittedAt ? formatAuditLogTimestamp(review.submittedAt) : 'Ukjent'}
                   </Table.DataCell>
-                  <Table.DataCell>
-                    {review.commitSha ? <CommitLink repository={repository} sha={review.commitSha} /> : 'Ikke oppgitt'}
-                  </Table.DataCell>
+                  <Table.DataCell>{review.commitSha ? <code>{review.commitSha}</code> : 'Ikke oppgitt'}</Table.DataCell>
                 </Table.Row>
               ))}
             </Table.Body>
@@ -632,8 +628,8 @@ export function RepositoryCodeDeliveryEvidencePage({
                                     Lagret intervall:{' '}
                                     {run.comparison_range ? (
                                       <>
-                                        <CommitLink repository={repository} sha={run.comparison_range.baseSha} /> →{' '}
-                                        <CommitLink repository={repository} sha={run.comparison_range.headSha} />
+                                        <code>{run.comparison_range.baseSha}</code> →{' '}
+                                        <code>{run.comparison_range.headSha}</code>
                                       </>
                                     ) : run.comparison_range_invalid ? (
                                       'lagret, men har ugyldig format'
@@ -657,7 +653,6 @@ export function RepositoryCodeDeliveryEvidencePage({
                                     {run.review_snapshots.map((snapshot) => (
                                       <ReviewSnapshot
                                         key={snapshot.id}
-                                        repository={repository}
                                         snapshot={snapshot}
                                         userMappings={userMappings}
                                       />

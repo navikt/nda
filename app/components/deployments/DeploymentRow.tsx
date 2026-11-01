@@ -40,6 +40,7 @@ interface DeploymentData {
 }
 
 interface DeploymentRowProps {
+  repository?: DeploymentRepositorySummary['repository']
   repositorySummary?: DeploymentRepositorySummary
   currentView?: DeploymentView
   comparisonRange?: StoredVerificationResult['comparisonRange']
@@ -54,6 +55,7 @@ interface DeploymentRowProps {
 }
 
 export function DeploymentRow({
+  repository: resolvedRepository,
   repositorySummary,
   currentView,
   comparisonRange,
@@ -71,13 +73,10 @@ export function DeploymentRow({
   const detailUrl = `${detailPath}${searchStr ? `?${searchStr}` : ''}`
   const detailParams = new URLSearchParams(searchParams)
   detailParams.set('listView', currentView ?? 'application')
-  const repository = repositorySummary?.repository
+  const repository = resolvedRepository ?? repositorySummary?.repository
   const githubOwner = repository?.githubOwner ?? deployment.detected_github_owner
   const githubRepoName = repository?.githubRepoName ?? deployment.detected_github_repo_name
-  const pullRequestUrl =
-    repository && deployment.github_pr_number
-      ? `https://github.com/${repository.githubOwner}/${repository.githubRepoName}/pull/${deployment.github_pr_number}`
-      : deployment.github_pr_url
+  const pullRequestUrl = repository ? null : deployment.github_pr_url
 
   return (
     <Box padding="space-20" background="raised" className={styles.stackedListItem}>

@@ -220,6 +220,8 @@ export interface RepositoryCodeDeliverySummary {
 
 interface RepositoryCodeDeliveryReviewSnapshot {
   id: number
+  owner: string
+  repo: string
   pr_number: number
   schema_version: number
   fetched_at: Date
@@ -1079,6 +1081,8 @@ export async function getRepositoryCodeDeliveryEvidence(
         ? await client.query<{
             verification_run_id: number
             id: number
+            owner: string
+            repo: string
             pr_number: number
             schema_version: number
             fetched_at: Date
@@ -1086,7 +1090,7 @@ export async function getRepositoryCodeDeliveryEvidence(
             github_available: boolean
             data: unknown
           }>(
-            `SELECT vr.id AS verification_run_id, snapshot.id, snapshot.pr_number,
+            `SELECT vr.id AS verification_run_id, snapshot.id, snapshot.owner, snapshot.repo, snapshot.pr_number,
                     snapshot.schema_version, snapshot.fetched_at, snapshot.source,
                     snapshot.github_available, snapshot.data
              FROM verification_runs vr
@@ -1104,6 +1108,8 @@ export async function getRepositoryCodeDeliveryEvidence(
       const snapshots = snapshotsByRunId.get(snapshot.verification_run_id) ?? []
       snapshots.push({
         id: snapshot.id,
+        owner: snapshot.owner,
+        repo: snapshot.repo,
         pr_number: snapshot.pr_number,
         schema_version: snapshot.schema_version,
         fetched_at: snapshot.fetched_at,

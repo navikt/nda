@@ -690,6 +690,8 @@ Appverifiseringen bruker fortsatt ordinær repositoryidentitet og den eksisteren
 
 Etter aktivering av historiske koblinger må alle lesere støtte separat identitet; rollback til en versjon uten denne støtten er ikke kompatibel.
 
+Commit-lenker i repositoryvisninger bruker repositoryets avklarte navn. PR-numre fra appverifiseringen vises uten lenker fordi de ikke har dokumentert repositorytilhørighet. Appverifiseringens review-snapshots beholder lagret owner/repo som kildeopplysning, men mangler stabil repository-ID og vises derfor uten PR- og commit-lenker.
+
 Etter hver periodiske synkronisering kjører `syncRepositoryCodeDeliveries` ([`code-delivery-sync.server.ts`](../app/lib/sync/code-delivery-sync.server.ts)) for opptil 100 deployments uten leveranse, sortert per repository etter opprettelsestidspunkt. Feil logges og stopper ikke synkroniseringen.
 
 For hvert deployment:
