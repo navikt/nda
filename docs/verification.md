@@ -686,6 +686,8 @@ Forgjengeren til en ny leveranse finnes etter første koblede deployment for hve
 
 ### Hvordan det kjøres
 
+Appverifiseringen bruker fortsatt ordinær repositoryidentitet og den eksisterende navnebaserte avgrensningen, ikke den separate koblingen.
+
 Etter hver periodiske synkronisering kjører `syncRepositoryCodeDeliveries` ([`code-delivery-sync.server.ts`](../app/lib/sync/code-delivery-sync.server.ts)) for opptil 100 deployments uten leveranse, sortert per repository etter opprettelsestidspunkt. Feil logges og stopper ikke synkroniseringen.
 
 For hvert deployment:

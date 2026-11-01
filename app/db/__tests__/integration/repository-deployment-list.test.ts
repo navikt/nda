@@ -13,6 +13,11 @@ import {
   createRepositoryCodeDelivery,
   linkDeploymentToRepositoryCodeDelivery,
 } from '~/db/repository-code-deliveries.server'
+import { getPreviousDeploymentForDiff } from '~/db/verification-diff.server'
+import {
+  findRootApprovedSiblingForCommit,
+  getPreviousDeployment,
+} from '~/lib/verification/fetch-data/previous-deployment.server'
 import {
   seedApp,
   seedApplicationRepository,
@@ -262,6 +267,55 @@ it('reads list and detail assessments for delivery links with only separate repo
   expect(
     (await pool.query('SELECT repository_id, four_eyes_status FROM deployments WHERE id = $1', [deploymentId])).rows,
   ).toEqual([{ repository_id: null, four_eyes_status: 'unverified_commits' }])
+})
+
+it('keeps separately identified history visible without changing app verification after repository name reuse', async () => {
+  const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'glad-fjord-api', environment: 'prod-gcp' })
+  const repositoryId = await seedRepository(pool, {
+    githubRepoId: '123',
+    githubOwner: 'navikt',
+    githubRepoName: 'renamed-repo',
+  })
+  await seedRepository(pool, { githubRepoId: '456', githubOwner: 'navikt', githubRepoName: 'reused-name' })
+  await seedApplicationRepository(pool, {
+    monitoredAppId: appId,
+    githubOwner: 'navikt',
+    githubRepo: 'reused-name',
+    githubRepoId: '123',
+    status: 'historical',
+  })
+  const olderSha = 'a'.repeat(40)
+  const currentSha = 'b'.repeat(40)
+  const older = await seedDeployment(pool, {
+    monitoredAppId: appId,
+    teamSlug: 'team-fjord',
+    environment: 'prod-gcp',
+    githubOwner: 'navikt',
+    githubRepo: 'reused-name',
+    commitSha: olderSha,
+    fourEyesStatus: 'approved',
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+  })
+  const current = await seedDeployment(pool, {
+    monitoredAppId: appId,
+    teamSlug: 'team-fjord',
+    environment: 'prod-gcp',
+    githubOwner: 'navikt',
+    githubRepo: 'renamed-repo',
+    commitSha: currentSha,
+    createdAt: new Date('2024-01-02T00:00:00Z'),
+  })
+  await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryId, current])
+  await pool.query(
+    'INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id) VALUES ($1, $2)',
+    [older, repositoryId],
+  )
+
+  const list = await getDeploymentsPaginated({ repository_id: repositoryId })
+  expect(list.deployments.map((deployment) => deployment.id).sort()).toEqual([older, current].sort())
+  expect(await getPreviousDeploymentForDiff(current, '123')).toBeNull()
+  expect(await getPreviousDeployment(current, 'navikt', 'renamed-repo', '123', null, currentSha)).toBeNull()
+  expect(await findRootApprovedSiblingForCommit(olderSha, '123', current)).toBeNull()
 })
 
 it('scopes goal options to repository deployments within its audit boundary without changing unscoped options', async () => {
