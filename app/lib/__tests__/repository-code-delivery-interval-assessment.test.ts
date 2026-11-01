@@ -160,6 +160,94 @@ function parentFirstStack(): Parameters<typeof assessRepositoryDeliveryInterval>
 }
 
 describe('repository code delivery interval assessment', () => {
+  it.each(['off', 'dependabot_only', 'all'] as const)(
+    'accepts review covering the latest Dependabot commit with implicit mode %s',
+    (implicitApprovalMode) => {
+      const result = assess({
+        implicitApprovalMode,
+        pullRequestsByNumber: {
+          42: {
+            ...approvedPullRequest[42],
+            authorLogin: 'dependabot[bot]',
+            commits: [{ ...prCommit, authorLogin: 'dependabot[bot]' }],
+          },
+        },
+      })
+      expect(result.commits[0]).toMatchObject({ status: 'covered', reason: 'approved_review' })
+    },
+  )
+
+  it.each(['dependabot_only', 'all'] as const)(
+    'accepts merged Dependabot-only changes without any approved review in mode %s',
+    (implicitApprovalMode) => {
+      const result = assess({
+        implicitApprovalMode,
+        pullRequestsByNumber: {
+          42: {
+            ...approvedPullRequest[42],
+            authorLogin: 'dependabot[bot]',
+            mergedAt: '2026-10-01T12:00:00Z',
+            commits: [{ ...prCommit, authorLogin: 'dependabot[bot]' }],
+            reviews: [],
+          },
+        },
+      })
+      expect(result.commits[0]).toMatchObject({ status: 'covered', reason: 'implicit_approval' })
+    },
+  )
+
+  it.each(['no_review', 'stale_review'] as const)(
+    'does not implicitly approve Dependabot with mode off (%s)',
+    (reviewState) => {
+      const result = assess({
+        pullRequestsByNumber: {
+          42: {
+            ...approvedPullRequest[42],
+            authorLogin: 'dependabot[bot]',
+            mergedAt: '2026-10-01T12:00:00Z',
+            commits: [{ ...prCommit, authorLogin: 'dependabot[bot]' }],
+            reviews:
+              reviewState === 'no_review'
+                ? []
+                : [
+                    {
+                      ...approvedPullRequest[42].reviews[0],
+                      commitId: '9'.repeat(40),
+                      submittedAt: '2026-10-01T09:00:00Z',
+                    },
+                  ],
+          },
+        },
+      })
+      expect(result.commits[0]).toMatchObject({
+        status: 'not_covered',
+        reason: reviewState === 'no_review' ? 'no_approved_reviews' : 'approval_before_last_commit',
+      })
+    },
+  )
+
+  it.each(['human_commit', 'bot_merger', 'not_merged', 'missing_reviews'] as const)(
+    'rejects implicit Dependabot coverage when %s',
+    (condition) => {
+      const result = assess({
+        implicitApprovalMode: 'dependabot_only',
+        pullRequestsByNumber: {
+          42: {
+            ...approvedPullRequest[42],
+            authorLogin: 'dependabot[bot]',
+            mergedByLogin: condition === 'bot_merger' ? 'dependabot[bot]' : 'rask-elv',
+            mergedAt: condition === 'not_merged' ? null : '2026-10-01T12:00:00Z',
+            commits: [{ ...prCommit, authorLogin: condition === 'human_commit' ? 'glad-fjord' : 'dependabot[bot]' }],
+            reviews: condition === 'missing_reviews' ? null : [],
+          },
+        },
+      })
+      expect(result.commits[0]).toMatchObject({
+        status: condition === 'missing_reviews' ? 'unknown' : 'not_covered',
+      })
+    },
+  )
+
   it('covers a parent-first stack through the stored delivery path to a later default-branch merge', () => {
     const result = assessRepositoryDeliveryInterval(parentFirstStack())
 
