@@ -1,3 +1,4 @@
+import { checkImplicitApproval, getLastCommitAuthor } from '~/lib/verification/implicit-approval'
 import type { ImplicitApprovalMode, PrCommit, PrReview } from '~/lib/verification/types'
 import { verifyFourEyesFromPrData } from '~/lib/verification/verify'
 
@@ -291,6 +292,18 @@ function assessPullRequestCandidate(
       pullRequestNumber,
       result.method === 'implicit' ? 'implicit_approval' : 'approved_review',
     )
+  }
+  if (
+    pullRequest.mergedAt &&
+    checkImplicitApproval({
+      settings: { mode: implicitApprovalMode },
+      prCreator: pullRequest.authorLogin ?? 'unknown',
+      lastCommitAuthor: getLastCommitAuthor(pullRequest.commits),
+      mergedBy: pullRequest.mergedByLogin ?? '',
+      allCommitAuthors: pullRequest.commits.map((prCommit) => prCommit.authorLogin),
+    }).qualifies
+  ) {
+    return coveredCommit(commit, pullRequestNumber, 'implicit_approval')
   }
 
   const reason: RepositoryDeliveryCommitAssessmentReason =
