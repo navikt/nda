@@ -134,10 +134,27 @@ export async function establishCodeDeliveryForDeployment(
     const { rows: pendingHistory } = await client.query<{ pending: boolean }>(
       `${pendingHistoricalIdentitiesCte}
        SELECT EXISTS (
-         SELECT 1 FROM classified pending
-         JOIN deployments older ON older.id = pending.deployment_id
-         WHERE pending.classification = 'eligible' AND pending.repository_id = r.id
-           AND (pending.created_at, pending.deployment_id) < (d.created_at, d.id)
+         SELECT 1 FROM deployments older
+         LEFT JOIN repository_code_delivery_deployment_repositories identity ON identity.deployment_id = older.id
+         WHERE (
+             older.repository_id = r.id
+             OR (
+               older.repository_id IS NULL
+               AND (
+                 identity.repository_id = r.id
+                 OR (
+                   identity.repository_id IS NULL
+                   AND EXISTS (
+                     SELECT 1 FROM classified pending
+                     WHERE pending.deployment_id = older.id
+                       AND pending.classification = 'eligible' AND pending.repository_id = r.id
+                   )
+                 )
+               )
+             )
+           )
+           AND older.commit_sha ~ '^[0-9a-fA-F]{40}$'
+           AND (older.created_at, older.id) < (d.created_at, d.id)
            AND older.repository_code_delivery_id IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM repository_code_delivery_unresolved unresolved

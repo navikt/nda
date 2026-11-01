@@ -2,9 +2,20 @@ export function repositoryDeploymentSql(repositoryIdSql: string): string {
   return `(
     d.repository_id = ${repositoryIdSql}
     OR (
+      d.repository_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM repository_code_delivery_deployment_repositories identity
+        WHERE identity.deployment_id = d.id AND identity.repository_id = ${repositoryIdSql}
+      )
+    )
+    OR (
       d.deployment_source != 'nais_apply'
       AND
       d.repository_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM repository_code_delivery_deployment_repositories identity
+        WHERE identity.deployment_id = d.id
+      )
       AND EXISTS (
         SELECT 1
         FROM application_repositories ar

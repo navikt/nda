@@ -167,6 +167,55 @@ it('does not associate Apply rows without a verified repository ID through a nam
     detectedGithubRepoName: 'repo-a',
   })
 
+  it('prioritizes canonical and separate identities over reused names in repository rows and app options', async () => {
+    const appId = await seedApp(pool, { teamSlug: 'team-a', appName: 'app-a', environment: 'prod-gcp' })
+    const otherAppId = await seedApp(pool, { teamSlug: 'team-b', appName: 'app-b', environment: 'prod-gcp' })
+    const repositoryId = await seedRepository(pool, {
+      githubRepoId: '123',
+      githubOwner: 'navikt',
+      githubRepoName: 'renamed-repo',
+    })
+    const otherRepositoryId = await seedRepository(pool, {
+      githubRepoId: '456',
+      githubOwner: 'navikt',
+      githubRepoName: 'reused-name',
+    })
+    await seedApplicationRepository(pool, {
+      monitoredAppId: otherAppId,
+      githubOwner: 'navikt',
+      githubRepo: 'safe-old-name',
+      githubRepoId: '123',
+      status: 'historical',
+    })
+    const seed = (monitoredAppId: number, name: string) =>
+      seedDeployment(pool, {
+        monitoredAppId,
+        teamSlug: monitoredAppId === appId ? 'team-a' : 'team-b',
+        environment: 'prod-gcp',
+        githubOwner: 'navikt',
+        githubRepo: name,
+      })
+    const separate = await seed(appId, 'reused-name')
+    const canonical = await seed(appId, 'reused-name')
+    const otherCanonical = await seed(otherAppId, 'reused-name')
+    const otherSeparate = await seed(otherAppId, 'safe-old-name')
+    await pool.query(
+      `INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id)
+       VALUES ($1, $5), ($2, $6), ($3, $5), ($4, $6)`,
+      [separate, canonical, otherCanonical, otherSeparate, repositoryId, otherRepositoryId],
+    )
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [repositoryId, canonical])
+    await pool.query('UPDATE deployments SET repository_id = $1 WHERE id = $2', [otherRepositoryId, otherCanonical])
+
+    const result = await getDeploymentsPaginated({ repository_id: repositoryId })
+    expect(result.total).toBe(2)
+    expect(result.deployments.map((deployment) => deployment.id).sort()).toEqual([separate, canonical].sort())
+    expect(await getDeploymentAppsForRepository(repositoryId)).toEqual([{ id: appId, team_slug: 'team-a' }])
+    const other = await getDeploymentsPaginated({ repository_id: otherRepositoryId })
+    expect(other.total).toBe(2)
+    expect(other.deployments.map((deployment) => deployment.id).sort()).toEqual([otherCanonical, otherSeparate].sort())
+  })
+
   const result = await getDeploymentsPaginated({ repository_id: repositoryId })
 
   expect(result.total).toBe(0)

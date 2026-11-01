@@ -203,7 +203,11 @@ describe('establishCodeDeliveryForDeployment', () => {
 
     const results = await Promise.all([establish(a), establish(b)])
 
-    expect(results.map((result) => result.outcome).sort()).toEqual(['created', 'linked'])
+    expect(results[0].outcome).toBe('created')
+    expect(['linked', 'stale_grounds']).toContain(results[1].outcome)
+    if (results[1].outcome === 'stale_grounds') {
+      expect((await establish(b)).outcome).toBe('linked')
+    }
     expect(await getDeliveries(repositoryId)).toHaveLength(1)
     expect(await getLinkedDeliveryId(a)).toBe(await getLinkedDeliveryId(b))
   })
@@ -218,16 +222,80 @@ describe('establishCodeDeliveryForDeployment', () => {
     const results = await Promise.all([establish(a), establish(b)])
 
     expect(results[0].outcome).toBe('created')
-    expect(['created', 'stale_grounds']).toContain(results[1].outcome)
-    if (results[1].outcome === 'stale_grounds') {
-      expect(await getLinkedDeliveryId(b)).toBeNull()
-    } else {
-      expect(await getLinkedDeliveryId(b)).not.toBeNull()
-      expect((await getDeliveries(repositoryId)).find((delivery) => delivery.head_sha === SHA_102)?.base_sha).toBe(
-        SHA_102,
-      )
-    }
+    expect(results[1].outcome).toBe('stale_grounds')
+    expect(await getLinkedDeliveryId(b)).toBeNull()
+    expect(await establish(b, SHA_101)).toMatchObject({ outcome: 'created', baseSha: SHA_101 })
   })
+
+  it.each(['canonical', 'separate'] as const)(
+    'waits for older unregistered %s history before locking a newer interval',
+    async (identity) => {
+      const repositoryId = await createRepository()
+      const appId = await createApp('glad-fjord-api')
+      const older = await createDeployment({
+        appId,
+        appName: 'glad-fjord-api',
+        repositoryId: identity === 'canonical' ? repositoryId : null,
+        commitSha: SHA_100,
+        createdAt: new Date('2024-01-01T00:00:00Z'),
+      })
+      if (identity === 'separate') {
+        await pool.query(
+          'INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id) VALUES ($1, $2)',
+          [older, repositoryId],
+        )
+      }
+      const newer = await createDeployment({
+        appId,
+        appName: 'glad-fjord-api',
+        repositoryId,
+        commitSha: SHA_101,
+        createdAt: new Date('2024-01-02T00:00:00Z'),
+      })
+      const grounds = await confirmed(newer)
+
+      expect(await establishCodeDeliveryForDeployment(newer, grounds)).toEqual({ outcome: 'stale_grounds' })
+      expect(await getDeliveries(repositoryId)).toEqual([])
+      expect(await getLinkedDeliveryId(newer)).toBeNull()
+      expect(await getUnresolved(older)).toBeNull()
+
+      expect((await establish(older)).outcome).toBe('created')
+      expect(await establishCodeDeliveryForDeployment(newer, grounds)).toEqual({ outcome: 'stale_grounds' })
+      expect(await establish(newer, SHA_100)).toMatchObject({ outcome: 'created', baseSha: SHA_100 })
+    },
+  )
+
+  it.each(['canonical', 'separate'] as const)(
+    'does not let explicitly unresolved %s history block a newer interval',
+    async (identity) => {
+      const repositoryId = await createRepository()
+      const appId = await createApp('glad-fjord-api')
+      const older = await createDeployment({
+        appId,
+        appName: 'glad-fjord-api',
+        repositoryId: identity === 'canonical' ? repositoryId : null,
+        commitSha: SHA_100,
+        createdAt: new Date('2024-01-01T00:00:00Z'),
+      })
+      if (identity === 'separate') {
+        await pool.query(
+          'INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id) VALUES ($1, $2)',
+          [older, repositoryId],
+        )
+      }
+      const newer = await createDeployment({
+        appId,
+        appName: 'glad-fjord-api',
+        repositoryId,
+        commitSha: SHA_101,
+        createdAt: new Date('2024-01-02T00:00:00Z'),
+      })
+      await establishUnresolved(older, 'source_unknown')
+
+      expect(await establish(newer)).toMatchObject({ outcome: 'created', baseSha: SHA_101 })
+      expect(await getUnresolved(older)).toEqual({ reason: 'source_unknown', resolved_at: null })
+    },
+  )
 
   it('adds historical deliveries without changing locked intervals or approval snapshots and keeps future progress', async () => {
     const repositoryId = await createRepository()
