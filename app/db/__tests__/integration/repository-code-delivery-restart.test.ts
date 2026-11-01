@@ -100,6 +100,62 @@ async function counts(repositoryId: number) {
 }
 
 describe('restartCodeDeliveryTracking', () => {
+  it('clears delivery state but preserves separate identities for rebuilding the full history', async () => {
+    const repositoryId = await createRepository('2097')
+    const { linked, unresolved } = await seedRegisteredState(repositoryId)
+    await pool.query(
+      `INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id)
+       VALUES ($1, $3), ($2, $3)`,
+      [linked, unresolved, repositoryId],
+    )
+    await pool.query('UPDATE deployments SET repository_id = NULL WHERE id = ANY($1::int[])', [[linked, unresolved]])
+    const before = await pool.query('SELECT * FROM deployments WHERE id = ANY($1::int[]) ORDER BY id', [
+      [linked, unresolved],
+    ])
+    const trackingBefore = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+      repositoryId,
+    ])
+
+    expect(
+      await restartCodeDeliveryTracking({
+        repositoryId,
+        changedByNavIdent: adminActor.navIdent,
+        actor: adminActor,
+      }),
+    ).toEqual({ ok: true, deletedDeliveries: 1, unlinkedDeployments: 1, clearedUnresolved: 1 })
+    expect(
+      (await pool.query('SELECT * FROM deployments WHERE id = ANY($1::int[]) ORDER BY id', [[linked, unresolved]]))
+        .rows,
+    ).toEqual(before.rows.map((row) => ({ ...row, repository_code_delivery_id: null })))
+    expect(
+      (await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [repositoryId])).rows,
+    ).toEqual(trackingBefore.rows)
+    expect(
+      (await pool.query('SELECT id FROM repository_code_deliveries WHERE repository_id = $1', [repositoryId])).rows,
+    ).toHaveLength(0)
+    expect(
+      (
+        await pool.query('SELECT deployment_id FROM repository_code_delivery_unresolved WHERE deployment_id = $1', [
+          unresolved,
+        ])
+      ).rows,
+    ).toEqual([])
+    expect(
+      (await pool.query('SELECT id FROM repo_config_audit_log WHERE repository_id = $1', [repositoryId])).rows,
+    ).toHaveLength(1)
+    expect(
+      (
+        await pool.query(
+          'SELECT deployment_id, repository_id FROM repository_code_delivery_deployment_repositories WHERE repository_id = $1 ORDER BY deployment_id',
+          [repositoryId],
+        )
+      ).rows,
+    ).toEqual([
+      { deployment_id: linked, repository_id: repositoryId },
+      { deployment_id: unresolved, repository_id: repositoryId },
+    ])
+  })
+
   it('preserves all tracking state when an immutable approval snapshot exists', async () => {
     const repositoryId = await createRepository('2099')
     await seedRegisteredState(repositoryId)
@@ -116,7 +172,6 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: adminActor.navIdent,
         actor: adminActor,
       }),
@@ -144,7 +199,6 @@ describe('restartCodeDeliveryTracking', () => {
       await client.query('SELECT id FROM repository_code_deliveries WHERE repository_id = $1 FOR SHARE', [repositoryId])
       restart = restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: adminActor.navIdent,
         actor: adminActor,
       })
@@ -183,19 +237,20 @@ describe('restartCodeDeliveryTracking', () => {
     }
   })
 
-  it('clears registered state for the repository, moves since and writes an audit log entry', async () => {
+  it('rebuilds registered state without changing the activation date and writes an audit log entry', async () => {
     const repositoryId = await createRepository('2000')
     await seedRegisteredState(repositoryId)
+    const before = await pool.query('SELECT code_delivery_tracking_since FROM repositories WHERE id = $1', [
+      repositoryId,
+    ])
     const result = await restartCodeDeliveryTracking({
       repositoryId,
-      since: SINCE,
       changedByNavIdent: 'Z990001',
       changedByName: 'Glad Fjord',
       actor: adminActor,
     })
     expect(result).toEqual({
       ok: true,
-      since: SINCE,
       deletedDeliveries: 1,
       unlinkedDeployments: 1,
       clearedUnresolved: 1,
@@ -205,7 +260,7 @@ describe('restartCodeDeliveryTracking', () => {
       'SELECT code_delivery_tracking_since FROM repositories WHERE id = $1',
       [repositoryId],
     )
-    expect(rows[0].code_delivery_tracking_since).toEqual(SINCE)
+    expect(rows[0].code_delivery_tracking_since).toEqual(before.rows[0].code_delivery_tracking_since)
 
     const log = await pool.query(
       'SELECT changed_by_nav_ident, new_value FROM repo_config_audit_log WHERE repository_id = $1 AND setting_key = $2',
@@ -215,7 +270,7 @@ describe('restartCodeDeliveryTracking', () => {
       {
         changed_by_nav_ident: 'Z990001',
         new_value: {
-          since: SINCE.toISOString(),
+          history: 'all',
           deleted_deliveries: 1,
           unlinked_deployments: 1,
           cleared_unresolved: 1,
@@ -230,7 +285,7 @@ describe('restartCodeDeliveryTracking', () => {
     await seedRegisteredState(repositoryId)
     await seedRegisteredState(otherRepositoryId)
 
-    await restartCodeDeliveryTracking({ repositoryId, since: SINCE, changedByNavIdent: 'Z990001', actor: adminActor })
+    await restartCodeDeliveryTracking({ repositoryId, changedByNavIdent: 'Z990001', actor: adminActor })
 
     expect(await counts(otherRepositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
   })
@@ -242,35 +297,12 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: 'Z990001',
         actor: adminActor,
       }),
     ).toEqual({
       ok: false,
       reason: 'tracking_disabled',
-    })
-    expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
-  })
-
-  it('refuses a date that is not earlier than the current start date', async () => {
-    const repositoryId = await createRepository('2004')
-    await seedRegisteredState(repositoryId)
-    await pool.query('UPDATE repositories SET code_delivery_tracking_since = $1 WHERE id = $2', [
-      new Date('2023-01-01T00:00:00.000Z'),
-      repositoryId,
-    ])
-
-    expect(
-      await restartCodeDeliveryTracking({
-        repositoryId,
-        since: SINCE,
-        changedByNavIdent: 'Z990001',
-        actor: adminActor,
-      }),
-    ).toEqual({
-      ok: false,
-      reason: 'not_earlier',
     })
     expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
   })
@@ -290,7 +322,6 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: outsider.navIdent,
         actor: outsider,
       }),
@@ -304,7 +335,6 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId,
-        since: SINCE,
         changedByNavIdent: 'Z990001',
         actor: adminActor,
       }),
@@ -318,7 +348,6 @@ describe('restartCodeDeliveryTracking', () => {
     expect(
       await restartCodeDeliveryTracking({
         repositoryId: 999999,
-        since: SINCE,
         changedByNavIdent: 'Z990001',
         actor: adminActor,
       }),

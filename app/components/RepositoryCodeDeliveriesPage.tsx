@@ -482,13 +482,7 @@ export function RepositoryCodeDeliveriesPage({
                         </AkselLink>
                       </Table.DataCell>
                       <Table.DataCell>
-                        <CommitLink
-                          repository={{
-                            githubOwner: item.detected_github_owner,
-                            githubRepoName: item.detected_github_repo_name,
-                          }}
-                          sha={item.commit_sha}
-                        />
+                        <CommitLink repository={repository} sha={item.commit_sha} />
                       </Table.DataCell>
                       <Table.DataCell>
                         <BodyShort size="small">{UNRESOLVED_REASON_LABELS[item.reason]}</BodyShort>

@@ -108,10 +108,7 @@ export async function getDeploymentRepositoryView(
             ? ('unresolved' as const)
             : !deployment.code_delivery_tracking
               ? ('tracking_disabled' as const)
-              : deployment.code_delivery_tracking_since &&
-                  deployment.created_at < deployment.code_delivery_tracking_since
-                ? ('before_tracking' as const)
-                : ('unlinked' as const)
+              : ('unlinked' as const)
       const lookups = await getGithubUserLookups(
         deployment.deployer_username ? [deployment.deployer_username] : [],
         client,

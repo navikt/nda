@@ -100,4 +100,14 @@ describe('repoConfigChangeDescription', () => {
       repoConfigChangeDescription(REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING_RESTART, null, { since: 'x' }),
     ).toBe('Omstart av registrering av kodeleveranser: ikke satt → ikke satt')
   })
+
+  it('describes rebuilding the full stored history', () => {
+    expect(
+      repoConfigChangeDescription(
+        REPOSITORY_SETTING_KEYS.CODE_DELIVERY_TRACKING_RESTART,
+        { since: '2026-10-13T08:00:00.000Z' },
+        { history: 'all', deleted_deliveries: 3 },
+      ),
+    ).toContain('→ hele den lagrede historikken')
+  })
 })

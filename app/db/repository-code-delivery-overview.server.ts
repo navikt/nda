@@ -220,6 +220,8 @@ export interface RepositoryCodeDeliverySummary {
 
 interface RepositoryCodeDeliveryReviewSnapshot {
   id: number
+  owner: string
+  repo: string
   pr_number: number
   schema_version: number
   fetched_at: Date
@@ -904,13 +906,11 @@ export async function getRepositoryCodeDeliveryOverview(
     client.query<{ count: number }>(
       `SELECT count(*)::int AS count
        FROM deployments d
-       JOIN repositories r ON r.id = d.repository_id
+       JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
        JOIN monitored_applications ma ON ma.id = d.monitored_app_id
        LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
-       WHERE d.repository_id = $1
+       WHERE ${repositoryCodeDeliveryRepositoryIdSql} = $1
          AND r.code_delivery_tracking = true
-         AND r.code_delivery_tracking_since IS NOT NULL
-         AND d.created_at >= r.code_delivery_tracking_since
          AND d.repository_code_delivery_id IS NULL
          AND d.commit_sha ~ '^[0-9a-fA-F]{40}$'
          AND u.deployment_id IS NULL`,
@@ -1081,6 +1081,8 @@ export async function getRepositoryCodeDeliveryEvidence(
         ? await client.query<{
             verification_run_id: number
             id: number
+            owner: string
+            repo: string
             pr_number: number
             schema_version: number
             fetched_at: Date
@@ -1088,7 +1090,7 @@ export async function getRepositoryCodeDeliveryEvidence(
             github_available: boolean
             data: unknown
           }>(
-            `SELECT vr.id AS verification_run_id, snapshot.id, snapshot.pr_number,
+            `SELECT vr.id AS verification_run_id, snapshot.id, snapshot.owner, snapshot.repo, snapshot.pr_number,
                     snapshot.schema_version, snapshot.fetched_at, snapshot.source,
                     snapshot.github_available, snapshot.data
              FROM verification_runs vr
@@ -1106,6 +1108,8 @@ export async function getRepositoryCodeDeliveryEvidence(
       const snapshots = snapshotsByRunId.get(snapshot.verification_run_id) ?? []
       snapshots.push({
         id: snapshot.id,
+        owner: snapshot.owner,
+        repo: snapshot.repo,
         pr_number: snapshot.pr_number,
         schema_version: snapshot.schema_version,
         fetched_at: snapshot.fetched_at,

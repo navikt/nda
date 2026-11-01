@@ -21,4 +21,5 @@ export function parseDeploymentRepositoryStatus(
 export interface DeploymentRepositorySummary {
   status: DeploymentRepositoryStatus
   range: { baseSha: string; headSha: string } | null
+  repository?: { githubOwner: string; githubRepoName: string }
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getDeploymentIdsAwaitingCodeDelivery = vi.fn()
+const resolveHistoricalDeploymentRepositoryIds = vi.fn()
 const establishCodeDeliveryForDeployment = vi.fn()
 const evaluateEstablishmentGrounds = vi.fn()
 const claimRepositoryCodeDeliveryAssessmentSyncCandidates = vi.fn()
@@ -12,6 +13,7 @@ const ingestRepositoryDeliveryAssessmentSnapshots = vi.fn()
 
 vi.mock('~/db/repository-code-delivery-establishment.server', () => ({
   getDeploymentIdsAwaitingCodeDelivery: (...args: unknown[]) => getDeploymentIdsAwaitingCodeDelivery(...args),
+  resolveHistoricalDeploymentRepositoryIds: (...args: unknown[]) => resolveHistoricalDeploymentRepositoryIds(...args),
   establishCodeDeliveryForDeployment: (...args: unknown[]) => establishCodeDeliveryForDeployment(...args),
 }))
 vi.mock('~/lib/repository-code-delivery/grounds.server', () => ({
@@ -56,6 +58,7 @@ describe('syncRepositoryCodeDeliveries', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     getGitHubRateLimitRemaining.mockReturnValue(null)
+    resolveHistoricalDeploymentRepositoryIds.mockResolvedValue(0)
   })
 
   it('does nothing when no deployments are waiting', async () => {
@@ -64,6 +67,7 @@ describe('syncRepositoryCodeDeliveries', () => {
     const counts = await syncRepositoryCodeDeliveries()
 
     expect(getDeploymentIdsAwaitingCodeDelivery).toHaveBeenCalledWith(CODE_DELIVERY_SYNC_LIMIT)
+    expect(resolveHistoricalDeploymentRepositoryIds).toHaveBeenCalledWith(CODE_DELIVERY_SYNC_LIMIT)
     expect(Object.values(counts).every((count) => count === 0)).toBe(true)
     expect(evaluateEstablishmentGrounds).not.toHaveBeenCalled()
   })
@@ -79,6 +83,18 @@ describe('syncRepositoryCodeDeliveries', () => {
     expect(establishCodeDeliveryForDeployment.mock.calls.map((call) => call[0])).toEqual([3, 1, 2])
     expect(establishCodeDeliveryForDeployment).toHaveBeenCalledWith(3, GROUNDS)
     expect(counts.created).toBe(3)
+  })
+
+  it('resolves historical repository identities before selecting deployments', async () => {
+    resolveHistoricalDeploymentRepositoryIds.mockResolvedValue(2)
+    getDeploymentIdsAwaitingCodeDelivery.mockResolvedValue([1])
+    evaluateEstablishmentGrounds.mockResolvedValue(GROUNDS)
+    establishCodeDeliveryForDeployment.mockResolvedValue({ outcome: 'created', deliveryId: 1 })
+    expect((await syncRepositoryCodeDeliveries(10)).created).toBe(1)
+    expect(resolveHistoricalDeploymentRepositoryIds).toHaveBeenCalledWith(10)
+    expect(resolveHistoricalDeploymentRepositoryIds.mock.invocationCallOrder[0]).toBeLessThan(
+      getDeploymentIdsAwaitingCodeDelivery.mock.invocationCallOrder[0],
+    )
   })
 
   it('counts each outcome and skips deployments without grounds', async () => {

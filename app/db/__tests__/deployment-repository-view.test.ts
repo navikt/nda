@@ -179,7 +179,7 @@ describe('deployment repository comparison read', () => {
     [{ repository_id: null }, 'missing_repository'],
     [{ commit_sha: null }, 'missing_commit_sha'],
     [{ code_delivery_tracking: false }, 'tracking_disabled'],
-    [{ created_at: new Date('2026-09-01T00:00:00Z') }, 'before_tracking'],
+    [{ created_at: new Date('2026-09-01T00:00:00Z') }, 'unlinked'],
   ])('explains missing linkage without inventing a delivery: %s', async (patch, reason) => {
     setContext({ ...patch, repository_code_delivery_id: null })
     getDelivery.mockResolvedValue(null)

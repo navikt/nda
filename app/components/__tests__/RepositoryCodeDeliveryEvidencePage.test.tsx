@@ -2,7 +2,35 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { expect, it } from 'vitest'
 import type { RepositoryCodeDeliveryEvidence } from '~/db/repository-code-delivery-overview.server'
+import { WithStoredReviews } from '~/routes/__stories__/RepositoryCodeDeliveryEvidence.stories'
 import { RepositoryCodeDeliveryEvidencePage } from '../RepositoryCodeDeliveryEvidencePage'
+
+it('retains app snapshot provenance without constructing PR or review commit links', () => {
+  const args = WithStoredReviews.args
+  const router = createMemoryRouter([
+    {
+      path: '*',
+      element: (
+        <RepositoryCodeDeliveryEvidencePage
+          {...args}
+          repository={{ ...args.repository, githubRepoName: 'different-repo' }}
+          manualApprovalHistory={[]}
+        />
+      ),
+    },
+  ])
+  const markup = renderToStaticMarkup(<RouterProvider router={router} />)
+  expect(markup).toContain('Lagret kilde: navikt/glad-fjord')
+  expect(markup).toContain('PR #42')
+  expect(markup).toContain('>PR #42</h4>')
+  const snapshot = markup.slice(
+    markup.indexOf('Lagret kilde:'),
+    markup.indexOf('</table>', markup.indexOf('Lagret kilde:')),
+  )
+  expect(snapshot).not.toContain('/pull/42')
+  expect(snapshot).toContain(`<code>${'2'.repeat(40)}</code>`)
+  expect(snapshot).not.toContain('/commit/')
+})
 
 it('shows saved progress after the first sync attempt is deferred without counting as a failure', () => {
   const delivery: RepositoryCodeDeliveryEvidence = {
