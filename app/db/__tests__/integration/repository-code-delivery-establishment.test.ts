@@ -205,7 +205,7 @@ describe('establishCodeDeliveryForDeployment', () => {
     expect(await getLinkedDeliveryId(a)).toBe(await getLinkedDeliveryId(b))
   })
 
-  it('reports stale grounds instead of chaining from an unverified head when different SHAs race', async () => {
+  it('does not chain from an unverified chronological predecessor when different SHAs race', async () => {
     const repositoryId = await createRepository()
     const appA = await createApp('app-a')
     const appB = await createApp('app-b')
@@ -214,10 +214,49 @@ describe('establishCodeDeliveryForDeployment', () => {
 
     const results = await Promise.all([establish(a), establish(b)])
 
-    expect(results.map((result) => result.outcome).sort()).toEqual(['created', 'stale_grounds'])
-    expect(await getDeliveries(repositoryId)).toHaveLength(1)
-    const staleDeploymentId = results[0].outcome === 'stale_grounds' ? a : b
-    expect(await getLinkedDeliveryId(staleDeploymentId)).toBeNull()
+    expect(results[0].outcome).toBe('created')
+    expect(['created', 'stale_grounds']).toContain(results[1].outcome)
+    if (results[1].outcome === 'stale_grounds') {
+      expect(await getLinkedDeliveryId(b)).toBeNull()
+    } else {
+      expect((await getDeliveries(repositoryId)).find((delivery) => delivery.head_sha === SHA_102)?.base_sha).toBe(
+        SHA_102,
+      )
+    }
+  })
+
+  it('keeps newer progress when an older delivery is inserted later without opening the tracking cutoff', async () => {
+    const repositoryId = await createRepository()
+    const appId = await createApp('glad-fjord-api')
+    const current = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_102,
+      createdAt: new Date('2026-10-03T10:00:00Z'),
+    })
+    await establish(current)
+    const locked = (await getDeliveries(repositoryId))[0]
+    const older = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_100,
+      createdAt: new Date('2026-10-01T10:00:00Z'),
+    })
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).not.toContain(older)
+    expect((await getEstablishmentContext(older))?.latestDeliveryHeadSha).toBeNull()
+    await establish(older)
+    const next = await createDeployment({
+      appId,
+      appName: 'glad-fjord-api',
+      repositoryId,
+      commitSha: SHA_101,
+      createdAt: new Date('2026-10-04T10:00:00Z'),
+    })
+    expect((await getEstablishmentContext(next))?.latestDeliveryHeadSha).toBe(SHA_102)
+    expect(await establish(next, SHA_102)).toMatchObject({ outcome: 'created', baseSha: SHA_102 })
+    expect((await getDeliveries(repositoryId)).find((delivery) => delivery.id === locked.id)).toEqual(locked)
   })
 
   it('rejects grounds confirmed for a different head SHA than the deployment has', async () => {
