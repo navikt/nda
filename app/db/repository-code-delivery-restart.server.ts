@@ -13,8 +13,6 @@ export type RestartCodeDeliveryTrackingResult =
         | 'tracking_disabled'
         | 'not_earlier'
         | 'has_approval_snapshots'
-        | 'has_separate_identities'
-        | 'has_history_before_since'
     }
   | {
       ok: true
@@ -67,45 +65,6 @@ export async function restartCodeDeliveryTracking(params: {
       [repositoryId],
     )
     if (snapshots[0].exists) return { ok: false, reason: 'has_approval_snapshots' }
-
-    await client.query(
-      `SELECT d.id FROM deployments d
-       WHERE d.repository_id = $1
-          OR d.repository_code_delivery_id IN (
-            SELECT id FROM repository_code_deliveries WHERE repository_id = $1
-          )
-       ORDER BY d.id FOR UPDATE OF d`,
-      [repositoryId],
-    )
-
-    const { rows: identities } = await client.query<{ exists: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM repository_code_delivery_deployment_repositories identity
-         JOIN deployments d ON d.id = identity.deployment_id
-         WHERE identity.repository_id = $1 AND d.repository_id IS NULL
-       ) AS exists`,
-      [repositoryId],
-    )
-    if (identities[0].exists) return { ok: false, reason: 'has_separate_identities' }
-
-    const { rows: history } = await client.query<{ exists: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM deployments d
-         WHERE d.created_at < $2
-           AND (
-             d.repository_code_delivery_id IN (
-               SELECT id FROM repository_code_deliveries WHERE repository_id = $1
-             )
-             OR (
-               d.repository_id = $1 AND EXISTS (
-                 SELECT 1 FROM repository_code_delivery_unresolved u WHERE u.deployment_id = d.id
-               )
-             )
-           )
-       ) AS exists`,
-      [repositoryId, since],
-    )
-    if (history[0].exists) return { ok: false, reason: 'has_history_before_since' }
 
     const cleared = await client.query(
       `DELETE FROM repository_code_delivery_unresolved

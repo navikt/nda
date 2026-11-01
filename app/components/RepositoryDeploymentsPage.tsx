@@ -182,7 +182,6 @@ export function RepositoryDeploymentsPage({
                   </Box>
                   {group.deployments.map((deployment) => (
                     <DeploymentRow
-                      repository={{ githubOwner: repository.github_owner, githubRepoName: repository.github_repo_name }}
                       comparisonRange={comparisonRanges[deployment.id] ?? null}
                       key={deployment.id}
                       deployment={deployment}
@@ -200,7 +199,6 @@ export function RepositoryDeploymentsPage({
         ) : (
           deployments.map((deployment) => (
             <DeploymentRow
-              repository={{ githubOwner: repository.github_owner, githubRepoName: repository.github_repo_name }}
               key={deployment.id}
               deployment={deployment}
               userMappings={userMappings}

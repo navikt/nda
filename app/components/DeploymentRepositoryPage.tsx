@@ -159,8 +159,14 @@ export function DeploymentRepositoryPage({ data, deploymentDetails, actionData }
             dateStyle: 'long',
             timeStyle: 'short',
           })}
-          {deploymentDetails.deployment.github_pr_number && (
-            <> PR #{deploymentDetails.deployment.github_pr_number} fra appverifiseringen</>
+          {deploymentDetails.deployment.github_pr_number && deploymentDetails.deployment.github_pr_url && (
+            <>
+              {' '}
+              via{' '}
+              <ExternalLink href={deploymentDetails.deployment.github_pr_url}>
+                #{deploymentDetails.deployment.github_pr_number}
+              </ExternalLink>
+            </>
           )}
         </BodyShort>
       </div>

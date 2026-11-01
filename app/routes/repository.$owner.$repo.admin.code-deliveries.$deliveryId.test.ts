@@ -102,8 +102,6 @@ const evidence = {
           review_snapshots: [
             {
               id: 9,
-              owner: 'navikt',
-              repo: 'glad-fjord',
               pr_number: 42,
               schema_version: 5,
               fetched_at: new Date('2026-10-03T12:00:00Z'),

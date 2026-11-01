@@ -577,7 +577,6 @@ describe('deployment repository comparison', () => {
     expect(pending.repositorySummaries[incomplete]).toEqual({
       status: 'incomplete',
       range: { baseSha: SHA_100, headSha: SHA_101 },
-      repository: { githubOwner: 'navikt', githubRepoName: 'repo-900' },
     })
     const shaFiltered = await getRepositoryDeploymentsPaginated({ ...filters, commit_sha: SHA_101 })
     expect(shaFiltered.total).toBe(1)

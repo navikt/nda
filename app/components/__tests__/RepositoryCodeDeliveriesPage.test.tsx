@@ -48,35 +48,3 @@ it('does not offer approval actions to an admin without approval rights', () => 
 it('explains an empty filter separately from an empty repository', () => {
   expect(renderPage(true, [])).toContain('Ingen leveranser passer til filteret.')
 })
-
-it('uses the selected repository for unresolved commit links even when the detected name was reused', () => {
-  const args = BlandetOppfolging.args as RepositoryCodeDeliveriesPageProps
-  const router = createMemoryRouter([
-    {
-      path: '*',
-      element: (
-        <RepositoryCodeDeliveriesPage
-          {...args}
-          unresolved={[
-            {
-              deployment_id: 99,
-              team_slug: 'team-fjord',
-              environment_name: 'prod-gcp',
-              app_name: 'glad-fjord',
-              commit_sha: 'f'.repeat(40),
-              detected_github_owner: 'navikt',
-              detected_github_repo_name: 'reused-name',
-              deployed_at: '2024-01-01T00:00:00Z',
-              reason: 'source_unknown',
-              first_seen_at: '2024-01-01T00:00:00Z',
-              last_attempt_at: '2024-01-01T00:00:00Z',
-            },
-          ]}
-        />
-      ),
-    },
-  ])
-  const markup = renderToStaticMarkup(<RouterProvider router={router} />)
-  expect(markup).toContain(`https://github.com/navikt/glad-fjord/commit/${'f'.repeat(40)}`)
-  expect(markup).not.toContain('https://github.com/navikt/reused-name/commit/')
-})

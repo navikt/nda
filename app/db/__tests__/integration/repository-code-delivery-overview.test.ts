@@ -209,8 +209,6 @@ describe('repository code delivery overview', () => {
               review_snapshots: [
                 {
                   id: snapshots[0].id,
-                  owner: 'navikt',
-                  repo: 'repo-1015',
                   pr_number: 82,
                   source: 'cached',
                   github_available: true,

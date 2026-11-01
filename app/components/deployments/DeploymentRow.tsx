@@ -40,7 +40,6 @@ interface DeploymentData {
 }
 
 interface DeploymentRowProps {
-  repository?: DeploymentRepositorySummary['repository']
   repositorySummary?: DeploymentRepositorySummary
   currentView?: DeploymentView
   comparisonRange?: StoredVerificationResult['comparisonRange']
@@ -55,7 +54,6 @@ interface DeploymentRowProps {
 }
 
 export function DeploymentRow({
-  repository: resolvedRepository,
   repositorySummary,
   currentView,
   comparisonRange,
@@ -73,10 +71,6 @@ export function DeploymentRow({
   const detailUrl = `${detailPath}${searchStr ? `?${searchStr}` : ''}`
   const detailParams = new URLSearchParams(searchParams)
   detailParams.set('listView', currentView ?? 'application')
-  const repository = resolvedRepository ?? repositorySummary?.repository
-  const githubOwner = repository?.githubOwner ?? deployment.detected_github_owner
-  const githubRepoName = repository?.githubRepoName ?? deployment.detected_github_repo_name
-  const pullRequestUrl = repository ? null : deployment.github_pr_url
 
   return (
     <Box padding="space-20" background="raised" className={styles.stackedListItem}>
@@ -171,7 +165,7 @@ export function DeploymentRow({
             <Detail textColor="subtle">
               {deployment.commit_sha ? (
                 <ExternalLink
-                  href={`https://github.com/${githubOwner}/${githubRepoName}/commit/${deployment.commit_sha}`}
+                  href={`https://github.com/${deployment.detected_github_owner}/${deployment.detected_github_repo_name}/commit/${deployment.commit_sha}`}
                   style={{ fontFamily: 'monospace' }}
                 >
                   {deployment.commit_sha.substring(0, 7)}
@@ -182,8 +176,8 @@ export function DeploymentRow({
             </Detail>
             {deployment.github_pr_number && (
               <Detail textColor="subtle">
-                {pullRequestUrl ? (
-                  <ExternalLink href={pullRequestUrl}>#{deployment.github_pr_number}</ExternalLink>
+                {deployment.github_pr_url ? (
+                  <ExternalLink href={deployment.github_pr_url}>#{deployment.github_pr_number}</ExternalLink>
                 ) : (
                   <>#{deployment.github_pr_number}</>
                 )}

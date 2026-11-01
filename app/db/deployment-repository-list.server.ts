@@ -20,15 +20,11 @@ async function getDeploymentRepositorySummaries(client: Pick<PoolClient, 'query'
     delivery_repository_id: number | null
     base_sha: string | null
     head_sha: string | null
-    github_owner: string | null
-    github_repo_name: string | null
   }>(
     `SELECT d.id, ${repositoryCodeDeliveryRepositoryIdSql} AS repository_id, d.repository_code_delivery_id, d.commit_sha,
-            cd.repository_id AS delivery_repository_id, cd.base_sha, cd.head_sha,
-            r.github_owner, r.github_repo_name
+            cd.repository_id AS delivery_repository_id, cd.base_sha, cd.head_sha
      FROM deployments d
      LEFT JOIN repository_code_deliveries cd ON cd.id = d.repository_code_delivery_id
-     LEFT JOIN repositories r ON r.id = ${repositoryCodeDeliveryRepositoryIdSql}
      WHERE d.id = ANY($1::int[])`,
     [deploymentIds],
   )
@@ -73,11 +69,6 @@ async function getDeploymentRepositorySummaries(client: Pick<PoolClient, 'query'
   }
   for (const id of deploymentIds) {
     if (!summaries[id]) throw new Error(`Missing repository summary for deployment ${id}`)
-  }
-  for (const row of rows) {
-    if (row.github_owner && row.github_repo_name) {
-      summaries[row.id].repository = { githubOwner: row.github_owner, githubRepoName: row.github_repo_name }
-    }
   }
   return summaries
 }
