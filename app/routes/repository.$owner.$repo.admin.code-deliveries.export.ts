@@ -81,6 +81,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     historyReadiness: exportData.historyReadiness,
     implicitApprovalMode: exportData.implicitApprovalMode,
+    repositoryAssessments: exportData.repositoryAssessments,
     deployments: exportData.deployments,
     deliveries: exportData.deliveries,
     ancestryEvidence: {

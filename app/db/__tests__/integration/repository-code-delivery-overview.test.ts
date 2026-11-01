@@ -712,6 +712,23 @@ describe('repository code delivery overview', () => {
         ],
       },
     })
+    const diagnostic = await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, delivery.id)
+    expect(diagnostic.repositoryAssessments).toMatchObject([
+      {
+        deliveryId: delivery.id,
+        intervalAssessment: { state: 'complete', summary: { covered: 3 } },
+        approvalAssessment: { status: 'approved' },
+        assessmentSync: { completed_assessment_version: 1 },
+      },
+    ])
+    expect(diagnostic.repositoryAssessments[0].snapshots.pullRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ pr_number: 234, data_type: 'reviews' }),
+        expect.objectContaining({ pr_number: 234, data_type: 'commits' }),
+        expect.objectContaining({ pr_number: 234, data_type: 'pr' }),
+      ]),
+    )
+    expect(diagnostic.repositoryAssessments[0].snapshots.stackComparisons.length).toBeGreaterThan(0)
   })
 
   it('returns an empty overview for a repository without deliveries', async () => {
@@ -1197,6 +1214,15 @@ describe('repository code delivery overview', () => {
       'diagnostic-app-b',
     ])
     expect(exportData.verificationRuns).toMatchObject([{ deployment_id: deployments[0], status: 'approved' }])
+    expect(exportData.repositoryAssessments).toMatchObject([
+      {
+        deliveryId: delivery.id,
+        baseSha: delivery.base_sha,
+        headSha: delivery.head_sha,
+        evaluationInput: { implicitApprovalMode: 'off' },
+        assessmentSync: null,
+      },
+    ])
     expect(exportData.diagnosticTargets).toEqual([])
     expect(await getRepositoryCodeDeliveryDiagnosticForDelivery(repositoryId, otherDelivery.id)).toMatchObject({
       deliveryTarget: null,

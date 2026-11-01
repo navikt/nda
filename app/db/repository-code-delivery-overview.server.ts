@@ -8,6 +8,10 @@ import {
 import type { RepositoryDeliveryIntervalAssessment } from '~/lib/repository-code-delivery/interval-assessment'
 import type { ImplicitApprovalMode } from '~/lib/verification/types'
 import { pool, withTransaction } from './connection.server'
+import {
+  getRepositoryAssessmentDiagnostic,
+  type RepositoryAssessmentDiagnostic,
+} from './repository-assessment-diagnostic.server'
 import { REPOSITORY_CODE_DELIVERY_ASSESSMENT_VERSION } from './repository-code-delivery-assessment-sync.server'
 import type { UnresolvedReason } from './repository-code-delivery-establishment.server'
 import { getRepositoryCodeDeliveryIntervalAssessments } from './repository-code-delivery-interval-assessment.server'
@@ -155,6 +159,7 @@ export interface RepositoryCodeDeliveryRepositoryAlias {
 }
 
 export interface RepositoryCodeDeliveryExportData {
+  repositoryAssessments: RepositoryAssessmentDiagnostic
   repositoryMetadata: {
     github_repo_id: string
     github_owner: string
@@ -757,6 +762,12 @@ async function getRepositoryCodeDeliveryExportDataForTarget(
       listWorkflowRunSnapshots(repositoryId, includedDeploymentIds, client),
     ])
     const { prSnapshots, commitSnapshots } = await listReferencedRepositorySnapshots(verificationRuns, client)
+    const repositoryAssessments = await getRepositoryAssessmentDiagnostic(
+      client,
+      repositoryId,
+      github_repo_id,
+      deliveries,
+    )
 
     return {
       repositoryMetadata: {
@@ -780,6 +791,7 @@ async function getRepositoryCodeDeliveryExportDataForTarget(
       prSnapshots,
       commitSnapshots,
       workflowRunSnapshots,
+      repositoryAssessments,
     }
   })
 }
