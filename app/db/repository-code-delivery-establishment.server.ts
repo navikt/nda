@@ -6,6 +6,7 @@ import {
   linkDeploymentToRepositoryCodeDeliveryInTransaction,
 } from './repository-code-deliveries.server'
 import { enqueueRepositoryCodeDeliveryAssessmentSync } from './repository-code-delivery-assessment-sync.server'
+import { repositoryCodeDeliveryPredecessorSql } from './repository-code-delivery-predecessor-sql'
 
 export type UnresolvedReason =
   | 'ancestry_unknown'
@@ -99,10 +100,10 @@ export async function establishCodeDeliveryForDeployment(
       return { outcome: 'linked', deliveryId: existing.id }
     }
 
-    const { rows: previous } = await client.query<{ head_sha: string }>(
-      `SELECT head_sha FROM repository_code_deliveries
-       WHERE repository_id = $1 ORDER BY id DESC LIMIT 1`,
-      [repositoryId],
+    const { rows: previous } = await client.query<{ head_sha: string | null }>(
+      `SELECT (${repositoryCodeDeliveryPredecessorSql}) AS head_sha
+       FROM deployments d WHERE d.id = $1`,
+      [deploymentId],
     )
     const currentHead = previous[0]?.head_sha ?? null
     if (grounds.baseSha?.toLowerCase() !== currentHead?.toLowerCase()) return { outcome: 'stale_grounds' }
@@ -137,8 +138,7 @@ export async function getEstablishmentContext(deploymentId: number): Promise<Est
     head_has_delivery: boolean
   }>(
     `SELECT d.repository_id, r.github_owner, r.github_repo_name, r.github_repo_id, r.default_branch, d.commit_sha,
-            (SELECT c.head_sha FROM repository_code_deliveries c
-             WHERE c.repository_id = d.repository_id ORDER BY c.id DESC LIMIT 1) AS latest_delivery_head_sha,
+            (${repositoryCodeDeliveryPredecessorSql}) AS latest_delivery_head_sha,
             EXISTS (SELECT 1 FROM repository_code_deliveries c
                     WHERE c.repository_id = d.repository_id AND lower(c.head_sha) = lower(d.commit_sha)) AS head_has_delivery
      FROM deployments d
