@@ -119,7 +119,7 @@ Nais Apply-aktiviteter uten `environmentName` lagres rått, men materialiseres i
 
 Den første komplette Apply-historikksynken undertrykker Slack-varsler for materialiserte Apply-leveranser. Nye hendelser fra senere pollinger følger eksisterende Slack-varslingsinnstillinger.
 
-Nais Apply synkroniseres parallelt med legacy for alle overvåkede apper og kan ikke slås av separat. Synkstatus og feil vises i appadministrasjonen. Databasefeltet `nais_apply_enabled` beholdes midlertidig for utrulling i to steg, men leses eller oppdateres ikke av applikasjonen. Feltet fjernes i en senere migrering.
+Nais Apply synkroniseres parallelt med legacy for alle overvåkede apper og kan ikke slås av separat. Synkstatus og feil vises i appadministrasjonen.
 
 Apply-logghenting bruker deploymentets repository-ID til å finne gjeldende GitHub-navn. Loggarkivet bruker deploymentets opprinnelige repositorynavn som nøkkel ved både lagring og lesing, slik at rename ikke endrer arkivnøkkelen. Uavklart identitet blir ikke markert som ferdig cachet. Søskenpropagering avgrenses til kildedeploymentets repository, og cachet reverifisering og diff-forhåndsvurdering bruker faktisk repositorystatus, også for historiske koblinger.
 
