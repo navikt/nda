@@ -3,7 +3,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { getRepositoryDeploymentsPaginated } from '../../deployment-repository-list.server'
 import { getDeploymentRepositoryView } from '../../deployment-repository-view.server'
 import { getEffectiveSettingsForApp } from '../../repositories.server'
-import { linkDeploymentToRepositoryCodeDelivery } from '../../repository-code-deliveries.server'
+import {
+  createRepositoryCodeDelivery,
+  linkDeploymentToRepositoryCodeDelivery,
+} from '../../repository-code-deliveries.server'
 import {
   establishCodeDeliveryForDeployment,
   getDeploymentIdsAwaitingCodeDelivery,
@@ -825,7 +828,8 @@ describe('getDeploymentIdsAwaitingCodeDelivery', () => {
     })
     await createDeployment({ appId, appName: 'app-a', repositoryId, commitSha: 'abc123' })
     await createDeployment({ appId, appName: 'app-a', repositoryId: untracked, commitSha: SHA_100 })
-    await establish(linked)
+    const delivery = await createRepositoryCodeDelivery({ repositoryId, baseSha: SHA_101, headSha: SHA_101 })
+    await linkDeploymentToRepositoryCodeDelivery(linked, delivery.id)
 
     const ids = await getDeploymentIdsAwaitingCodeDelivery(100)
 
