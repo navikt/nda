@@ -9,7 +9,7 @@ import {
 import type { WorkflowTriggerConfig } from '~/lib/github'
 import { baselineActionSql } from './baseline-action'
 import { pool } from './connection.server'
-import { repositoryDeploymentSql } from './repository-deployment-sql'
+import { repositoryDeploymentSql, repositoryViewDeploymentSql } from './repository-deployment-sql'
 import { effectiveAuditStartYearSql, effectiveDefaultBranchSql } from './repository-settings-sql'
 import { lowerUsernames, userDeploymentMatchAnySql } from './user-deployment-match'
 
@@ -268,7 +268,7 @@ export async function getDeploymentAppsForRepository(
      FROM monitored_applications ma
      WHERE EXISTS (
        SELECT 1 FROM deployments d
-       WHERE d.monitored_app_id = ma.id AND ${repositoryDeploymentSql('$1')}
+       WHERE d.monitored_app_id = ma.id AND ${repositoryViewDeploymentSql('$1')}
      )
      ORDER BY ma.id`,
     [repositoryId],
@@ -282,7 +282,7 @@ function deploymentFilterSql(filters?: DeploymentFilters) {
   let paramIndex = 1
 
   if (filters?.repository_id != null) {
-    whereSql += ` AND ${repositoryDeploymentSql(`$${paramIndex}`)}
+    whereSql += ` AND ${repositoryViewDeploymentSql(`$${paramIndex}`)}
       AND d.created_at >= make_date(COALESCE(
         (SELECT audit_start_year FROM repositories WHERE id = $${paramIndex}), 1
       ), 1, 1)`

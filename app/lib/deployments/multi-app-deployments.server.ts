@@ -4,7 +4,7 @@ import { getRepositoryDeploymentsPaginated } from '~/db/deployment-repository-li
 import { type DeploymentFilters, getDeploymentsPaginated } from '~/db/deployments.server'
 import { getDevTeamBySlug, getDevTeamsForApps } from '~/db/dev-teams.server'
 import { getLatestVerificationRanges } from '~/db/github-data/verification-runs.server'
-import { repositoryDeploymentSql } from '~/db/repository-deployment-sql'
+import { repositoryViewDeploymentSql } from '~/db/repository-deployment-sql'
 import { effectiveAuditStartYearSql } from '~/db/repository-settings-sql'
 import {
   getDevTeamsForGithubUsernamesByRole,
@@ -47,7 +47,7 @@ export async function getMultiAppDeploymentsPageData(
 ) {
   const appIds = apps.map((a) => a.id)
   const metadataParams = filters.repositoryId == null ? [appIds] : [appIds, filters.repositoryId]
-  const repositoryScope = filters.repositoryId == null ? '' : `AND ${repositoryDeploymentSql('$2')}`
+  const repositoryScope = filters.repositoryId == null ? '' : `AND ${repositoryViewDeploymentSql('$2')}`
   const auditStartYearSql =
     filters.repositoryId == null
       ? effectiveAuditStartYearSql('ma')

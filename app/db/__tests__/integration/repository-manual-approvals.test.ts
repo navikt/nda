@@ -637,30 +637,43 @@ describe('repository manual approval storage', () => {
     expect((await history()).snapshots).toEqual([])
   })
 
-  it('allows review after deployment without updating deployment status or verification history', async () => {
-    const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'glad-fjord', environment: 'prod-gcp' })
-    const deployedAt = new Date('2026-10-17T12:00:00Z')
-    const deploymentId = await seedDeployment(pool, {
-      monitoredAppId: appId,
-      teamSlug: 'team-fjord',
-      environment: 'prod-gcp',
-      commitSha: headSha,
-      createdAt: deployedAt,
-      fourEyesStatus: 'direct_push',
-    })
-    await pool.query('UPDATE deployments SET repository_id = $1, repository_code_delivery_id = $2 WHERE id = $3', [
-      repositoryId,
-      deliveryId,
-      deploymentId,
-    ])
-    const before = await pool.query('SELECT * FROM deployments WHERE id = $1', [deploymentId])
-    const { id } = await approve([firstSha])
-    const page = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
-    expect(page.delivery.first_deployed_at).toEqual(deployedAt)
-    expect(page.manualApprovalHistory).toMatchObject([{ id, reviewedAt }])
-    expect((await pool.query('SELECT * FROM deployments WHERE id = $1', [deploymentId])).rows).toEqual(before.rows)
-    expect((await pool.query('SELECT count(*)::int AS count FROM verification_runs')).rows[0].count).toBe(0)
-  })
+  it.each(['canonical', 'delivery_only'] as const)(
+    'allows review after deployment with %s identity without updating deployment assessment',
+    async (identity) => {
+      const appId = await seedApp(pool, { teamSlug: 'team-fjord', appName: 'glad-fjord', environment: 'prod-gcp' })
+      const deployedAt = new Date('2026-10-17T12:00:00Z')
+      const deploymentId = await seedDeployment(pool, {
+        monitoredAppId: appId,
+        teamSlug: 'team-fjord',
+        environment: 'prod-gcp',
+        commitSha: headSha,
+        createdAt: deployedAt,
+        fourEyesStatus: 'direct_push',
+      })
+      await pool.query('UPDATE deployments SET repository_id = $1, repository_code_delivery_id = $2 WHERE id = $3', [
+        repositoryId,
+        deliveryId,
+        deploymentId,
+      ])
+      if (identity === 'delivery_only') {
+        await pool.query(
+          'INSERT INTO repository_code_delivery_deployment_repositories (deployment_id, repository_id) VALUES ($1, $2)',
+          [deploymentId, repositoryId],
+        )
+        await pool.query('UPDATE deployments SET repository_id = NULL WHERE id = $1', [deploymentId])
+      }
+      const before = await pool.query('SELECT * FROM deployments WHERE id = $1', [deploymentId])
+      const { id } = await approve([firstSha])
+      const page = await getRepositoryApprovalPage(actor, repositoryId, deliveryId)
+      expect(page.delivery.first_deployed_at).toEqual(deployedAt)
+      expect((await getRepositoryApprovalDeliveries(actor, repositoryId, 1)).deliveries).toContainEqual(
+        expect.objectContaining({ id: deliveryId, firstDeployedAt: deployedAt }),
+      )
+      expect(page.manualApprovalHistory).toMatchObject([{ id, reviewedAt }])
+      expect((await pool.query('SELECT * FROM deployments WHERE id = $1', [deploymentId])).rows).toEqual(before.rows)
+      expect((await pool.query('SELECT count(*)::int AS count FROM verification_runs')).rows[0].count).toBe(0)
+    },
+  )
 
   it('retains null documentation for legacy rows without inventing a review description', async () => {
     const snapshot = await createRepositoryApprovalSnapshot(actor, repositoryId, deliveryId)

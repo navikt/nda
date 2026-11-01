@@ -104,8 +104,11 @@ export async function linkDeploymentToRepositoryCodeDeliveryInTransaction(
     commit_sha: string | null
     repository_code_delivery_id: number | null
   }>(
-    `SELECT repository_id, commit_sha, repository_code_delivery_id
-     FROM deployments WHERE id = $1 FOR UPDATE`,
+    `SELECT COALESCE(d.repository_id, identity.repository_id) AS repository_id,
+            d.commit_sha, d.repository_code_delivery_id
+     FROM deployments d
+     LEFT JOIN repository_code_delivery_deployment_repositories identity ON identity.deployment_id = d.id
+     WHERE d.id = $1 FOR UPDATE OF d`,
     [deploymentId],
   )
   const deployment = deployments[0]
