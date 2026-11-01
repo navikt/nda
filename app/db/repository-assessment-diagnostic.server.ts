@@ -53,12 +53,16 @@ export async function getRepositoryAssessmentDiagnostic(
       [repositoryId, deliveries.map((delivery) => delivery.id)],
     ),
   ])
+  const comparisonsById = new Map(comparisons.rows.map((row) => [row.id, row]))
+  const associationsById = new Map(associations.rows.map((row) => [row.id, row]))
+  const pullRequestsById = new Map(pullRequests.rows.map((row) => [row.id, row]))
+  const syncByDeliveryId = new Map(sync.rows.map((row) => [row.delivery_id, row.state]))
   const snapshots = (
-    rows: Array<{ id: number; snapshot: unknown }>,
+    rows: Map<number, { id: number; snapshot: unknown }>,
     references: Array<{ id: number; fetchedAt: string }>,
   ) =>
     references.map((reference) => {
-      const row = rows.find((row) => row.id === reference.id)
+      const row = rows.get(reference.id)
       if (!row) throw new Error(`Missing referenced diagnostic snapshot ${reference.id}`)
       return row.snapshot
     })
@@ -82,12 +86,12 @@ export async function getRepositoryAssessmentDiagnostic(
     manualApprovalHistory: manualApprovals,
     snapshotReferences: sources,
     snapshots: {
-      comparisons: snapshots(comparisons.rows, sources.comparisons),
-      associations: snapshots(associations.rows, sources.associations),
-      pullRequests: snapshots(pullRequests.rows, sources.pullRequests),
-      stackComparisons: snapshots(comparisons.rows, sources.stackComparisons),
+      comparisons: snapshots(comparisonsById, sources.comparisons),
+      associations: snapshots(associationsById, sources.associations),
+      pullRequests: snapshots(pullRequestsById, sources.pullRequests),
+      stackComparisons: snapshots(comparisonsById, sources.stackComparisons),
     },
-    assessmentSync: sync.rows.find((row) => row.delivery_id === delivery.id)?.state ?? null,
+    assessmentSync: syncByDeliveryId.get(delivery.id) ?? null,
   }))
 }
 
