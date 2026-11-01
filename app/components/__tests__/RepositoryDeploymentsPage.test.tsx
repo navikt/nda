@@ -11,8 +11,8 @@ const deployment: RepositoryDeploymentsPageProps['deployments'][number] = {
   commit_sha: 'a'.repeat(40),
   detected_github_owner: 'navikt',
   detected_github_repo_name: 'repo-a',
-  github_pr_number: null,
-  github_pr_url: null,
+  github_pr_number: 42,
+  github_pr_url: 'https://github.com/navikt/repo-a/pull/42',
   github_pr_data: null,
   workflow_trigger_config: null,
   four_eyes_status: 'approved',
@@ -28,7 +28,7 @@ function renderPage(groupBySha: boolean) {
         path: '*',
         element: (
           <RepositoryDeploymentsPage
-            repository={{ id: 1, github_owner: 'navikt', github_repo_name: 'repo-a' }}
+            repository={{ id: 1, github_owner: 'navikt', github_repo_name: 'renamed-repo' }}
             groupBySha={groupBySha}
             comparisonRanges={{ 1: { baseSha: 'b'.repeat(40), headSha: 'a'.repeat(40) } }}
             deployments={[
@@ -80,4 +80,11 @@ it('keeps the default deployment list without group headings', () => {
   expect(markup).not.toContain('Status for viste deployments:')
   expect(markup).not.toContain('Intervall fra siste verifiseringskjøring:')
   expect(markup).not.toContain('Sammenligningsintervall ikke tilgjengelig')
+})
+
+it.each([false, true])('uses resolved commit links without relabeling app PRs in SHA view=%s', (groupBySha) => {
+  const markup = renderPage(groupBySha)
+  expect(markup).toContain(`href="https://github.com/navikt/renamed-repo/commit/${deployment.commit_sha}"`)
+  expect(markup).not.toContain('/pull/42')
+  expect(markup).toContain('#42')
 })

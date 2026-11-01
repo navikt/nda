@@ -40,6 +40,11 @@ describe('DeploymentRow repository links', () => {
     )
     const repo = repositoryView ? 'renamed-repo' : 'reused-name'
     expect(html).toContain(`href="https://github.com/navikt/${repo}/commit/${'a'.repeat(40)}"`)
-    expect(html).toContain(`href="https://github.com/navikt/${repo}/pull/42"`)
+    if (repositoryView) {
+      expect(html).not.toContain('/pull/42')
+      expect(html).toContain('#42')
+    } else {
+      expect(html).toContain(`href="https://github.com/navikt/${repo}/pull/42"`)
+    }
   })
 })

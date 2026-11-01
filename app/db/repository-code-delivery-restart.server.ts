@@ -68,6 +68,16 @@ export async function restartCodeDeliveryTracking(params: {
     )
     if (snapshots[0].exists) return { ok: false, reason: 'has_approval_snapshots' }
 
+    await client.query(
+      `SELECT d.id FROM deployments d
+       WHERE d.repository_id = $1
+          OR d.repository_code_delivery_id IN (
+            SELECT id FROM repository_code_deliveries WHERE repository_id = $1
+          )
+       ORDER BY d.id FOR UPDATE OF d`,
+      [repositoryId],
+    )
+
     const { rows: identities } = await client.query<{ exists: boolean }>(
       `SELECT EXISTS (
          SELECT 1 FROM repository_code_delivery_deployment_repositories identity

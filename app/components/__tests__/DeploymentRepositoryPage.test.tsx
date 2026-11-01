@@ -34,6 +34,18 @@ function render(
 }
 
 describe('repository deployment comparison', () => {
+  it('shows the app PR number without linking it to an unproven repository', () => {
+    const markup = render(repositoryDeploymentData, undefined, {
+      ...repositoryDeploymentDetailsData,
+      deployment: {
+        ...repositoryDeploymentDetailsData.deployment,
+        github_pr_number: 4242,
+        github_pr_url: 'https://github.com/navikt/reused-name/pull/4242',
+      },
+    })
+    expect(markup).toContain('PR #4242 fra appverifiseringen')
+    expect(markup).not.toContain('/pull/4242')
+  })
   it.each([
     [null, null],
     ['navikt', null],

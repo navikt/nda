@@ -101,6 +101,54 @@ async function counts(repositoryId: number) {
 
 describe('restartCodeDeliveryTracking', () => {
   it.each(['linked', 'unresolved'] as const)(
+    'waits for a concurrent timestamp correction before checking %s history',
+    async (kind) => {
+      const repositoryId = await createRepository('2095')
+      const state = await seedRegisteredState(repositoryId)
+      const client = await pool.connect()
+      let restart: ReturnType<typeof restartCodeDeliveryTracking> | undefined
+      try {
+        await client.query('BEGIN')
+        await client.query('UPDATE deployments SET created_at = $1 WHERE id = $2', [
+          new Date('2023-01-01T00:00:00Z'),
+          state[kind],
+        ])
+        restart = restartCodeDeliveryTracking({
+          repositoryId,
+          since: SINCE,
+          changedByNavIdent: adminActor.navIdent,
+          actor: adminActor,
+        })
+        const deadline = Date.now() + 5000
+        let blocked = false
+        while (Date.now() < deadline) {
+          const { rows } = await pool.query<{ blocked: boolean }>(
+            `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+               WHERE wait_event_type = 'Lock'
+                 AND query LIKE '%SELECT d.id FROM deployments d%FOR UPDATE OF d%') AS blocked`,
+          )
+          if (rows[0].blocked) {
+            blocked = true
+            break
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+        await client.query('COMMIT')
+        expect(await restart).toEqual({ ok: false, reason: 'has_history_before_since' })
+        expect(blocked).toBe(true)
+        expect(await counts(repositoryId)).toEqual({ deliveries: 1, unresolved: 1, linked: 1 })
+      } finally {
+        try {
+          await client.query('ROLLBACK')
+        } finally {
+          client.release()
+          await restart
+        }
+      }
+    },
+  )
+
+  it.each(['linked', 'unresolved'] as const)(
     'preserves canonical %s history that predates the requested rebuild date',
     async (kind) => {
       const repositoryId = await createRepository('2096')
