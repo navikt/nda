@@ -225,7 +225,7 @@ describe('establishCodeDeliveryForDeployment', () => {
     }
   })
 
-  it('keeps newer progress when an older delivery is inserted later without opening the tracking cutoff', async () => {
+  it('keeps newer progress when an older delivery is inserted later', async () => {
     const repositoryId = await createRepository()
     const appId = await createApp('glad-fjord-api')
     const current = await createDeployment({
@@ -244,7 +244,7 @@ describe('establishCodeDeliveryForDeployment', () => {
       commitSha: SHA_100,
       createdAt: new Date('2026-10-01T10:00:00Z'),
     })
-    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).not.toContain(older)
+    expect(await getDeploymentIdsAwaitingCodeDelivery(100)).toContain(older)
     expect((await getEstablishmentContext(older))?.latestDeliveryHeadSha).toBeNull()
     await establish(older)
     const next = await createDeployment({
@@ -672,7 +672,7 @@ describe('deployment repository comparison', () => {
 describe('getDeploymentIdsAwaitingCodeDelivery', () => {
   const DAY = 24 * 60 * 60 * 1000
 
-  it('returns only newer, unlinked, full-SHA deployments of tracked repositories in creation order', async () => {
+  it('returns historical and new unlinked full-SHA deployments of tracked repositories in creation order', async () => {
     const repositoryId = await createRepository()
     const untracked = await createRepository({ tracking: false, githubRepoId: '901' })
     const appId = await createApp('app-a')
@@ -711,8 +711,7 @@ describe('getDeploymentIdsAwaitingCodeDelivery', () => {
 
     const ids = await getDeploymentIdsAwaitingCodeDelivery(100)
 
-    expect(ids).toEqual([earlier, later])
-    expect(ids).not.toContain(old)
+    expect(ids).toEqual([old, earlier, later])
   })
 
   it('respects the limit', async () => {

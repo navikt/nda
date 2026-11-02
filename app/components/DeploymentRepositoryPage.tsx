@@ -110,7 +110,6 @@ function missingLinkDescription(link: MissingLink): string {
     missing_repository: 'Deploymentet mangler en stabil repositorykobling.',
     missing_commit_sha: 'Deploymentet mangler en fullstendig commit-SHA.',
     tracking_disabled: 'Registrering av kodeleveranser er ikke aktivert for repositoryet.',
-    before_tracking: 'Deploymentet er fra før registreringen av kodeleveranser startet.',
     unlinked: 'Ingen kobling er registrert. Årsaken er ikke avklart; synken kan fortsatt ha arbeid igjen.',
     unresolved: 'Koblingen til en kodeleveranse er uavklart.',
   }

@@ -168,8 +168,6 @@ export async function getDeploymentIdsAwaitingCodeDelivery(limit: number): Promi
      JOIN monitored_applications ma ON ma.id = d.monitored_app_id
      LEFT JOIN repository_code_delivery_unresolved u ON u.deployment_id = d.id AND u.resolved_at IS NULL
      WHERE r.code_delivery_tracking = true
-       AND r.code_delivery_tracking_since IS NOT NULL
-       AND d.created_at >= r.code_delivery_tracking_since
        AND d.repository_code_delivery_id IS NULL
        AND d.commit_sha ~ '^[0-9a-fA-F]{40}$'
        AND (u.deployment_id IS NULL

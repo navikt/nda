@@ -9,7 +9,6 @@ const {
   mockIsCurrentOrHistoricalNameForRepositoryId,
   mockGetGitHubDataStatsForRepository,
   mockGetLatestSyncJobForRepository,
-  mockGetEarliestDeploymentAtForRepository,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockResolveRepositoryAdminAccess: vi.fn(),
@@ -19,7 +18,6 @@ const {
   mockIsCurrentOrHistoricalNameForRepositoryId: vi.fn(),
   mockGetGitHubDataStatsForRepository: vi.fn(),
   mockGetLatestSyncJobForRepository: vi.fn(),
-  mockGetEarliestDeploymentAtForRepository: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -39,10 +37,6 @@ vi.mock('~/db/repositories.server', () => ({
 
 vi.mock('~/db/github-data.server', () => ({
   getGitHubDataStatsForRepository: mockGetGitHubDataStatsForRepository,
-}))
-
-vi.mock('~/db/repository-code-delivery-restart.server', () => ({
-  getEarliestDeploymentAtForRepository: mockGetEarliestDeploymentAtForRepository,
 }))
 
 vi.mock('~/db/sync-jobs.server', () => ({
@@ -73,7 +67,6 @@ describe('repository admin loader', () => {
     mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: true, affectedApps: [] })
     mockGetRepositoryById.mockResolvedValue(null)
     mockGetRepoConfigAuditLog.mockResolvedValue([])
-    mockGetEarliestDeploymentAtForRepository.mockResolvedValue(null)
     mockIsCurrentOrHistoricalNameForRepositoryId.mockResolvedValue(true)
     mockGetGitHubDataStatsForRepository.mockResolvedValue({
       total: 0,

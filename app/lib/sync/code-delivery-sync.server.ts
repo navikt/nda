@@ -1,3 +1,4 @@
+import { getRepositoryIdsWithCodeDeliveryTracking } from '~/db/repositories.server'
 import {
   claimRepositoryCodeDeliveryAssessmentSyncCandidates,
   deferRepositoryCodeDeliveryAssessmentSync,
@@ -10,6 +11,7 @@ import {
   establishCodeDeliveryForDeployment,
   getDeploymentIdsAwaitingCodeDelivery,
 } from '~/db/repository-code-delivery-establishment.server'
+import { backfillEligibleWorkflowRunRepositoryIds } from '~/db/workflow-run-repository-backfill-coverage.server'
 import { GITHUB_RATE_LIMIT_SAFETY_BUFFER, getGitHubRateLimitRemaining } from '~/lib/github'
 import { logger } from '~/lib/logger.server'
 import {
@@ -33,6 +35,13 @@ export async function syncRepositoryCodeDeliveries(
   limit: number = CODE_DELIVERY_SYNC_LIMIT,
 ): Promise<Record<EstablishmentOutcome['outcome'] | 'failed', number>> {
   const counts = { skipped: 0, unresolved: 0, stale_grounds: 0, already_linked: 0, linked: 0, created: 0, failed: 0 }
+  const repositoryIds = await getRepositoryIdsWithCodeDeliveryTracking()
+  for (const repositoryId of repositoryIds) {
+    const updated = await backfillEligibleWorkflowRunRepositoryIds(repositoryId)
+    if (updated > 0) {
+      logger.info('Repository IDs backfilled before code delivery registration', { repositoryId, updated })
+    }
+  }
   const deploymentIds = await getDeploymentIdsAwaitingCodeDelivery(limit)
 
   for (const deploymentId of deploymentIds) {

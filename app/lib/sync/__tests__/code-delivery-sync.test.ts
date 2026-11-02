@@ -9,6 +9,15 @@ const markRepositoryCodeDeliveryAssessmentSyncCompleted = vi.fn()
 const markRepositoryCodeDeliveryAssessmentSyncFailed = vi.fn()
 const getGitHubRateLimitRemaining = vi.fn()
 const ingestRepositoryDeliveryAssessmentSnapshots = vi.fn()
+const getRepositoryIdsWithCodeDeliveryTracking = vi.fn()
+const backfillEligibleWorkflowRunRepositoryIds = vi.fn()
+
+vi.mock('~/db/repositories.server', () => ({
+  getRepositoryIdsWithCodeDeliveryTracking: () => getRepositoryIdsWithCodeDeliveryTracking(),
+}))
+vi.mock('~/db/workflow-run-repository-backfill-coverage.server', () => ({
+  backfillEligibleWorkflowRunRepositoryIds: (...args: unknown[]) => backfillEligibleWorkflowRunRepositoryIds(...args),
+}))
 
 vi.mock('~/db/repository-code-delivery-establishment.server', () => ({
   getDeploymentIdsAwaitingCodeDelivery: (...args: unknown[]) => getDeploymentIdsAwaitingCodeDelivery(...args),
@@ -56,6 +65,28 @@ describe('syncRepositoryCodeDeliveries', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     getGitHubRateLimitRemaining.mockReturnValue(null)
+    getRepositoryIdsWithCodeDeliveryTracking.mockResolvedValue([])
+  })
+
+  it('backfills tracked repositories before reading deployments awaiting registration', async () => {
+    getRepositoryIdsWithCodeDeliveryTracking.mockResolvedValue([5, 9])
+    backfillEligibleWorkflowRunRepositoryIds.mockResolvedValue(1)
+    getDeploymentIdsAwaitingCodeDelivery.mockImplementation(async () => {
+      expect(backfillEligibleWorkflowRunRepositoryIds.mock.calls).toEqual([[5], [9]])
+      return [3]
+    })
+    evaluateEstablishmentGrounds.mockResolvedValue(GROUNDS)
+    establishCodeDeliveryForDeployment.mockResolvedValue({ outcome: 'linked', deliveryId: 1 })
+
+    expect(await syncRepositoryCodeDeliveries()).toMatchObject({ linked: 1, failed: 0 })
+  })
+
+  it('does not register deliveries if repository backfill fails', async () => {
+    getRepositoryIdsWithCodeDeliveryTracking.mockResolvedValue([5])
+    backfillEligibleWorkflowRunRepositoryIds.mockRejectedValue(new Error('backfill failed'))
+
+    await expect(syncRepositoryCodeDeliveries()).rejects.toThrow('backfill failed')
+    expect(getDeploymentIdsAwaitingCodeDelivery).not.toHaveBeenCalled()
   })
 
   it('does nothing when no deployments are waiting', async () => {
