@@ -42,7 +42,6 @@ const context = {
   github_owner: 'navikt',
   github_repo_name: 'glad-fjord',
   code_delivery_tracking: true,
-  code_delivery_tracking_since: new Date('2026-10-01T00:00:00Z'),
   unresolved_reason: null,
   verification_run_at: new Date('2026-10-20T10:01:00Z'),
   verification_base_sha: 'c'.repeat(40),
@@ -179,7 +178,6 @@ describe('deployment repository comparison read', () => {
     [{ repository_id: null }, 'missing_repository'],
     [{ commit_sha: null }, 'missing_commit_sha'],
     [{ code_delivery_tracking: false }, 'tracking_disabled'],
-    [{ created_at: new Date('2026-09-01T00:00:00Z') }, 'before_tracking'],
   ])('explains missing linkage without inventing a delivery: %s', async (patch, reason) => {
     setContext({ ...patch, repository_code_delivery_id: null })
     getDelivery.mockResolvedValue(null)

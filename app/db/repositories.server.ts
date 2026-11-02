@@ -101,6 +101,13 @@ export async function getRepositoryById(repositoryId: number): Promise<Repositor
   return rows[0] ?? null
 }
 
+export async function getRepositoryIdsWithCodeDeliveryTracking(): Promise<number[]> {
+  const { rows } = await pool.query<{ id: number }>(
+    'SELECT id FROM repositories WHERE code_delivery_tracking = true ORDER BY id',
+  )
+  return rows.map(({ id }) => id)
+}
+
 export async function getRepositoryIdByGithubRepoId(githubRepoId: string): Promise<number | null> {
   const { rows } = await pool.query<{ id: number }>(`SELECT id FROM repositories WHERE github_repo_id = $1`, [
     githubRepoId,
@@ -298,7 +305,7 @@ export async function getRepositoryIdForApp(monitoredAppId: number, client?: Poo
   return rows[0]?.id ?? null
 }
 
-export async function getAppIdsForGithubRepoId(queryable: Queryable, githubRepoId: string): Promise<number[]> {
+async function getAppIdsForGithubRepoId(queryable: Queryable, githubRepoId: string): Promise<number[]> {
   const { rows } = await queryable.query<{ id: number }>(
     `SELECT ma.id
      FROM (${LATEST_ACTIVE_REPOSITORY_LINK_SQL}) latest

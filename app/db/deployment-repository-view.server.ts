@@ -26,7 +26,6 @@ interface DeploymentContext {
   github_owner: string | null
   github_repo_name: string | null
   code_delivery_tracking: boolean | null
-  code_delivery_tracking_since: Date | null
   unresolved_reason: UnresolvedReason | null
   verification_run_at: Date | null
   verification_base_sha: string | null
@@ -44,7 +43,7 @@ export async function getDeploymentRepositoryView(
       `SELECT d.id, d.monitored_app_id, ma.team_slug, ma.environment_name, ma.app_name, d.created_at,
               d.commit_sha, d.branch_name, d.deployer_username, d.four_eyes_status,
               d.repository_id, d.repository_code_delivery_id,
-              r.github_owner, r.github_repo_name, r.code_delivery_tracking, r.code_delivery_tracking_since,
+              r.github_owner, r.github_repo_name, r.code_delivery_tracking,
               u.reason AS unresolved_reason, vr.run_at AS verification_run_at,
               vr.result->'comparisonRange'->>'baseSha' AS verification_base_sha,
               vr.result->'comparisonRange'->>'headSha' AS verification_head_sha
@@ -106,10 +105,7 @@ export async function getDeploymentRepositoryView(
             ? ('unresolved' as const)
             : !deployment.code_delivery_tracking
               ? ('tracking_disabled' as const)
-              : deployment.code_delivery_tracking_since &&
-                  deployment.created_at < deployment.code_delivery_tracking_since
-                ? ('before_tracking' as const)
-                : ('unlinked' as const)
+              : ('unlinked' as const)
       const lookups = await getGithubUserLookups(
         deployment.deployer_username ? [deployment.deployer_username] : [],
         client,
