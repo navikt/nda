@@ -1,4 +1,5 @@
 import {
+  getRepositoryApprovalComparisonExport,
   getRepositoryCodeDeliveryDiagnosticForDelivery,
   getRepositoryCodeDeliveryExportData,
 } from '~/db/repository-code-delivery-overview.server'
@@ -22,6 +23,42 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const requestedDeploymentId = url.searchParams.get('deploymentId')
   const requestedDeliveryId = url.searchParams.get('deliveryId')
+  const scope = url.searchParams.get('scope')
+  if (scope !== null && scope !== 'approval-comparison') {
+    throw new Response('Invalid export scope', { status: 400 })
+  }
+  if (scope === 'approval-comparison') {
+    if (requestedDeploymentId !== null || requestedDeliveryId !== null) {
+      throw new Response('Approval comparison cannot be combined with a deployment or delivery target', { status: 400 })
+    }
+    const chunks = getRepositoryApprovalComparisonExport(repository.id)
+    const first = await chunks.next()
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        if (!first.done) controller.enqueue(encoder.encode(first.value))
+      },
+      async pull(controller) {
+        try {
+          const chunk = await chunks.next()
+          if (chunk.done) controller.close()
+          else controller.enqueue(encoder.encode(chunk.value))
+        } catch (error) {
+          controller.error(error)
+        }
+      },
+      async cancel() {
+        await chunks.return(undefined)
+      },
+    })
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="repository-${repository.id}-approval-comparison.json"`,
+        'Cache-Control': 'no-store',
+      },
+    })
+  }
   if (requestedDeploymentId !== null && requestedDeliveryId !== null) {
     throw new Response('Provide either deploymentId or deliveryId, not both', { status: 400 })
   }

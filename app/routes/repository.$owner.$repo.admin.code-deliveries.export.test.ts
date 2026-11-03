@@ -7,6 +7,7 @@ const {
   mockGetExportData,
   mockGetDeliveryExportData,
   mockFetchDiagnosticEvidence,
+  mockGetApprovalComparison,
 } = vi.hoisted(() => ({
   mockRequireUser: vi.fn(),
   mockResolveRepositoryFromParams: vi.fn(),
@@ -14,6 +15,7 @@ const {
   mockGetExportData: vi.fn(),
   mockGetDeliveryExportData: vi.fn(),
   mockFetchDiagnosticEvidence: vi.fn(),
+  mockGetApprovalComparison: vi.fn(),
 }))
 
 vi.mock('~/lib/auth.server', () => ({
@@ -29,6 +31,7 @@ vi.mock('~/lib/authorization.server', () => ({
 }))
 
 vi.mock('~/db/repository-code-delivery-overview.server', () => ({
+  getRepositoryApprovalComparisonExport: mockGetApprovalComparison,
   getRepositoryCodeDeliveryExportData: mockGetExportData,
   getRepositoryCodeDeliveryDiagnosticForDelivery: mockGetDeliveryExportData,
 }))
@@ -210,6 +213,73 @@ describe('repository code delivery export loader', () => {
     expect(mockGetExportData).not.toHaveBeenCalled()
     expect(mockFetchDiagnosticEvidence).not.toHaveBeenCalled()
   })
+
+  it('exports the complete stored approval comparison without live GitHub requests', async () => {
+    const comparison = {
+      schemaVersion: 1,
+      scope: 'repository_approval_comparison',
+      comparison: [{ deploymentId: 10, applicationStatus: 'manually_approved', repositoryCodeStatus: 'not_approved' }],
+      applicationManualApprovals: [{ deployment_id: 10, approval: { approved_by: 'Z990001' } }],
+    }
+    mockGetApprovalComparison.mockImplementation(async function* () {
+      yield JSON.stringify(comparison)
+    })
+    const response = await loader({
+      params,
+      request: makeRequest('?repositoryId=5&scope=approval-comparison&status=approved&page=2'),
+    } as never)
+    expect(await response.json()).toEqual(comparison)
+    expect(response.headers.get('Content-Disposition')).toBe(
+      'attachment; filename="repository-5-approval-comparison.json"',
+    )
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(mockGetApprovalComparison).toHaveBeenCalledWith(5)
+    expect(mockGetExportData).not.toHaveBeenCalled()
+    expect(mockGetDeliveryExportData).not.toHaveBeenCalled()
+    expect(mockFetchDiagnosticEvidence).not.toHaveBeenCalled()
+  })
+
+  it('rejects unauthorized comparison exports before reading approval history', async () => {
+    mockResolveRepositoryAdminAccess.mockResolvedValue({ authorized: false })
+    await expect(loader({ params, request: makeRequest('?scope=approval-comparison') } as never)).rejects.toMatchObject(
+      { status: 403 },
+    )
+    expect(mockGetApprovalComparison).not.toHaveBeenCalled()
+  })
+
+  it('closes the export iterator when the download is cancelled', async () => {
+    const closed = vi.fn()
+    mockGetApprovalComparison.mockImplementation(async function* () {
+      try {
+        while (true) yield '{"chunk":true}'
+      } finally {
+        closed()
+      }
+    })
+    const response = await loader({ params, request: makeRequest('?scope=approval-comparison') } as never)
+    await response.body?.cancel()
+    expect(closed).toHaveBeenCalledOnce()
+  })
+
+  it('fails the download rather than returning partial data as success when export generation fails', async () => {
+    mockGetApprovalComparison.mockImplementation(async function* () {
+      yield '{"schemaVersion":1'
+      throw new Error('Database export failed')
+    })
+    const response = await loader({ params, request: makeRequest('?scope=approval-comparison') } as never)
+    await expect(response.text()).rejects.toThrow('Database export failed')
+  })
+
+  it.each(['scope=invalid', 'scope=approval-comparison&deliveryId=12', 'scope=approval-comparison&deploymentId=10'])(
+    'rejects invalid or mixed comparison scope: %s',
+    async (search) => {
+      await expect(loader({ params, request: makeRequest(`?${search}`) } as never)).rejects.toMatchObject({
+        status: 400,
+      })
+      expect(mockGetApprovalComparison).not.toHaveBeenCalled()
+      expect(mockFetchDiagnosticEvidence).not.toHaveBeenCalled()
+    },
+  )
 
   it('automatically exports all open unresolved deployments when deploymentId is omitted', async () => {
     mockGetExportData.mockResolvedValue({

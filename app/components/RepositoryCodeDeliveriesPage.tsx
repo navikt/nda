@@ -354,6 +354,19 @@ export function RepositoryCodeDeliveriesPage({
               ))}
             </HStack>
           )}
+          <BodyShort size="small" textColor="subtle">
+            Samlet eksport sammenligner lagret appstatus med dagens repositorydekning for alle lokale deployments og
+            leveranser. Den inkluderer gamle manuelle godkjenninger og lagret vurderingsgrunnlag, uten nye
+            GitHub-oppslag. Valgte filtre og sideinndeling begrenser ikke eksporten.
+          </BodyShort>
+          <Button
+            as="a"
+            href={`/repository/${repository.githubOwner}/${repository.githubRepoName}/admin/code-deliveries/export?repositoryId=${repository.id}&scope=approval-comparison`}
+            size="small"
+            variant="secondary"
+          >
+            Last ned sammenligning av app- og repositorygodkjenning
+          </Button>
         </VStack>
       </Box>
       {deliveryList}

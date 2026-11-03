@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg'
+import { logger } from '~/lib/logger.server'
 import {
   parseRepositoryDeliveryComparisonRange,
   parseRepositoryDeliveryReviews,
@@ -623,6 +624,195 @@ export async function getRepositoryCodeDeliveryDiagnosticForDelivery(
   deliveryId: number,
 ): Promise<RepositoryCodeDeliveryExportData> {
   return getRepositoryCodeDeliveryExportDataForTarget(repositoryId, { deliveryId })
+}
+
+export async function* getRepositoryApprovalComparisonExport(repositoryId: number): AsyncGenerator<string> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    const { rows: repositories } = await client.query<{
+      id: number
+      github_repo_id: string
+      github_owner: string
+      github_repo_name: string
+      audit_start_year: number | null
+      exported_at: Date
+    }>(
+      `SELECT id, github_repo_id, github_owner, github_repo_name, audit_start_year,
+              transaction_timestamp() AS exported_at
+       FROM repositories WHERE id = $1`,
+      [repositoryId],
+    )
+    const repository = repositories[0]
+    if (!repository) throw new Error(`Repository ${repositoryId} not found`)
+    const header = {
+      schemaVersion: 1,
+      scope: 'repository_approval_comparison',
+      exportedAt: repository.exported_at.toISOString(),
+      repository: {
+        id: repository.id,
+        githubRepositoryId: repository.github_repo_id,
+        owner: repository.github_owner,
+        name: repository.github_repo_name,
+        auditStartYear: repository.audit_start_year,
+      },
+      historyReadiness: await getRepositoryHistoryReadinessFromClient(repositoryId, client),
+      interpretationNotes: [
+        'All locally stored deployments assigned to this stable repository ID and all registered deliveries are included, without pagination, status or audit-period filtering. This does not prove complete Nais history; historyReadiness reports known linkage gaps.',
+        'Application status and current repository code coverage are different assessments. A coverage difference is not by itself proof that the complete deployment approval would change.',
+        'All exported data and repository evaluations are read in one repeatable-read database snapshot. No live GitHub calls are made and no approvals or deployment statuses are changed.',
+        'Application manual approval comments include deleted records for historical analysis. Deleted comments must not be treated as current approval evidence.',
+        'Application verification runs and status history are exported as stored. comparisonRange alone does not prove successful comparison or approval of the interval.',
+        'Sibling references may occur in stored verification results or application PR data. Bulk sibling propagation does not persist a source reference; same SHA or a currently approved candidate does not prove which historical approval was used. No source is inferred by this export.',
+        'Repository assessments include current PR and manual coverage, identity eligibility, evaluator input and referenced raw snapshots. They do not import or qualify old application manual approvals.',
+        'prSnapshots and commitSnapshots contain only snapshots referenced by exported application verification runs. Missing snapshot references are not evidence that review never occurred.',
+      ],
+    }
+    yield JSON.stringify(header).slice(0, -1)
+    const deploymentScope = `SELECT d.id FROM deployments d
+      JOIN monitored_applications ma ON ma.id = d.monitored_app_id WHERE d.repository_id = $1`
+    const deliverySql = `SELECT id, base_sha, head_sha, created_at FROM repository_code_deliveries
+      WHERE repository_id = $1 ORDER BY created_at, id`
+    const sections = [
+      [
+        'applicationEvidence',
+        `SELECT d.id AS deployment_id, d.four_eyes_status, d.github_pr_data, d.unverified_commits
+        FROM deployments d WHERE d.id IN (${deploymentScope}) ORDER BY d.created_at, d.id`,
+      ],
+      [
+        'applicationManualApprovals',
+        `SELECT dc.deployment_id, to_jsonb(dc) AS approval FROM deployment_comments dc
+        WHERE dc.deployment_id IN (${deploymentScope}) AND dc.comment_type = 'manual_approval'
+        ORDER BY dc.deployment_id, dc.created_at, dc.id`,
+      ],
+      [
+        'applicationStatusHistory',
+        `SELECT h.deployment_id, to_jsonb(h) AS transition FROM deployment_status_history h
+        WHERE h.deployment_id IN (${deploymentScope}) ORDER BY h.deployment_id, h.created_at, h.id`,
+      ],
+      [
+        'verificationRuns',
+        `SELECT vr.id, vr.deployment_id, vr.run_at, vr.schema_version,
+        vr.pr_snapshot_ids, vr.commit_snapshot_ids, vr.result, vr.status FROM verification_runs vr
+        JOIN deployments d ON d.id = vr.deployment_id WHERE d.id IN (${deploymentScope})
+        ORDER BY d.created_at, d.id, vr.run_at, vr.id`,
+      ],
+      [
+        'prSnapshots',
+        `SELECT id, owner, repo, pr_number, schema_version, fetched_at,
+        data_type, source, github_available, data FROM github_pr_snapshots
+        WHERE id IN (SELECT unnest(pr_snapshot_ids) FROM verification_runs
+          WHERE deployment_id IN (${deploymentScope})) ORDER BY id`,
+      ],
+      [
+        'commitSnapshots',
+        `SELECT id, owner, repo, sha, schema_version, fetched_at,
+        data_type, source, github_available, data FROM github_commit_snapshots
+        WHERE id IN (SELECT unnest(commit_snapshot_ids) FROM verification_runs
+          WHERE deployment_id IN (${deploymentScope})) ORDER BY id`,
+      ],
+      [
+        'repositoryConfigAuditLog',
+        `SELECT id, setting_key, old_value, new_value, changed_by_nav_ident,
+        changed_by_name, change_reason, created_at FROM repo_config_audit_log
+        WHERE repository_id = $1 ORDER BY created_at, id`,
+      ],
+      ['deliveries', deliverySql],
+    ] as const
+    for (const [name, sql] of sections) {
+      yield `,${JSON.stringify(name)}:[`
+      let first = true
+      for await (const rows of exportCursorBatches(client, sql, repositoryId)) {
+        for (const row of rows) {
+          yield `${first ? '' : ','}${JSON.stringify(row)}`
+          first = false
+        }
+      }
+      yield ']'
+    }
+    yield ',"deployments":['
+    let firstDeployment = true
+    for await (const rows of exportCursorBatches<{ id: number }>(
+      client,
+      `${deploymentScope} ORDER BY d.created_at, d.id`,
+      repositoryId,
+    )) {
+      const deployments = await listRepositoryCodeDeliveryExportRows(
+        repositoryId,
+        client,
+        rows.map((row) => row.id),
+      )
+      for (const deployment of deployments) {
+        yield `${firstDeployment ? '' : ','}${JSON.stringify(deployment)}`
+        firstDeployment = false
+      }
+    }
+    yield '],"repositoryAssessments":['
+    let firstAssessment = true
+    const statuses = new Map<number, string>()
+    for await (const rows of exportCursorBatches<{ id: number; base_sha: string; head_sha: string }>(
+      client,
+      deliverySql,
+      repositoryId,
+    )) {
+      const assessments = await getRepositoryAssessmentDiagnostic(client, repositoryId, repository.github_repo_id, rows)
+      for (const assessment of assessments) {
+        statuses.set(assessment.deliveryId, assessment.approvalAssessment.status)
+        yield `${firstAssessment ? '' : ','}${JSON.stringify(assessment)}`
+        firstAssessment = false
+      }
+    }
+    yield '],"comparison":['
+    let firstComparison = true
+    for await (const rows of exportCursorBatches<{
+      deploymentId: number
+      deliveryId: number | null
+      applicationStatus: string | null
+    }>(
+      client,
+      `SELECT d.id AS "deploymentId", d.repository_code_delivery_id AS "deliveryId",
+        d.four_eyes_status AS "applicationStatus" FROM deployments d
+        WHERE d.id IN (${deploymentScope}) ORDER BY d.created_at, d.id`,
+      repositoryId,
+    )) {
+      for (const row of rows) {
+        const status = row.deliveryId === null ? 'missing_link' : statuses.get(row.deliveryId)
+        if (!status) throw new Error(`Missing repository assessment for delivery ${row.deliveryId}`)
+        yield `${firstComparison ? '' : ','}${JSON.stringify({ ...row, repositoryCodeStatus: status })}`
+        firstComparison = false
+      }
+    }
+    await client.query('COMMIT')
+    yield ']}\n'
+  } catch (error) {
+    logger.error('Repository approval comparison export failed', { repositoryId, error })
+    throw error
+  } finally {
+    try {
+      await client.query('ROLLBACK')
+      client.release()
+    } catch (error) {
+      client.release(true)
+      logger.error('Repository approval comparison export cleanup failed', { repositoryId, error })
+    }
+  }
+}
+
+async function* exportCursorBatches<T extends Record<string, unknown>>(
+  client: PoolClient,
+  sql: string,
+  repositoryId: number,
+): AsyncGenerator<T[]> {
+  await client.query(`DECLARE approval_export_cursor NO SCROLL CURSOR FOR ${sql}`, [repositoryId])
+  try {
+    while (true) {
+      const { rows } = await client.query<T>('FETCH FORWARD 100 FROM approval_export_cursor')
+      if (rows.length === 0) break
+      yield rows
+    }
+  } finally {
+    await client.query('CLOSE approval_export_cursor')
+  }
 }
 
 async function getRepositoryCodeDeliveryExportDataForTarget(
