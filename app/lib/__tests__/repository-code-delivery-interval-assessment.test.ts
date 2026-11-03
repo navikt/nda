@@ -76,6 +76,38 @@ function assess(overrides: Partial<Parameters<typeof assessRepositoryDeliveryInt
   })
 }
 
+function dualBranchInput(): Parameters<typeof assessRepositoryDeliveryInterval>[0] {
+  const mergeSha = '2'.repeat(40)
+  return {
+    compare: {
+      ...compare,
+      aheadBy: 2,
+      totalCommits: 2,
+      commits: [
+        ...compare.commits,
+        { ...compare.commits[0], sha: mergeSha, isMergeCommit: true, parentShas: ['0'.repeat(40), commitSha] },
+      ],
+    },
+    defaultBranch: 'main',
+    implicitApprovalMode: 'off',
+    associatedPullRequestsByCommit: {
+      [commitSha]: { complete: true, pullRequests: [{ number: 43, baseBranch: 'sandbox' }] },
+      [mergeSha]: associatedPullRequests[commitSha],
+    },
+    pullRequestsByNumber: {
+      42: { ...approvedPullRequest[42], mergeCommitSha: mergeSha, mergedAt: '2026-10-01T12:00:00Z' },
+      43: {
+        ...approvedPullRequest[42],
+        number: 43,
+        baseBranch: 'sandbox',
+        mergeCommitSha: '3'.repeat(40),
+        mergedAt: '2026-10-01T12:00:00Z',
+      },
+    },
+    stackParentPullRequestNumbersByNumber: { 43: [] },
+  }
+}
+
 function parentFirstStack(): Parameters<typeof assessRepositoryDeliveryInterval>[0] {
   const parentMergeSha = 'a241f12fbf597182791089f45283200807e30c35'
   const childMergeSha = '95acc5e50eb2137ba03c4c7a7f7db43ba63a5952'
@@ -160,6 +192,143 @@ function parentFirstStack(): Parameters<typeof assessRepositoryDeliveryInterval>
 }
 
 describe('repository code delivery interval assessment', () => {
+  it.each(['sandbox_only', 'empty'] as const)(
+    'covers commits through a default-branch merge PR when direct associations are %s',
+    (associations) => {
+      const input = dualBranchInput()
+      if (associations === 'empty') {
+        input.associatedPullRequestsByCommit[commitSha] = { complete: true, pullRequests: [] }
+      }
+
+      expect(assessRepositoryDeliveryInterval(input)).toMatchObject({
+        state: 'complete',
+        summary: { covered: 2, notCovered: 0, unknown: 0 },
+        commits: [
+          { status: 'covered', reason: 'approved_review', pullRequestNumber: 42 },
+          { status: 'covered', pullRequestNumber: 42 },
+        ],
+      })
+    },
+  )
+
+  it('prefers documented default-branch PR coverage over an unresolved sandbox stack', () => {
+    const input = dualBranchInput()
+    delete input.stackParentPullRequestNumbersByNumber
+
+    expect(assessRepositoryDeliveryInterval({ ...input, compare }).commits[0]).toMatchObject({
+      status: 'unknown',
+      reason: 'incomplete_stack_evidence',
+      pullRequestNumber: 43,
+    })
+
+    expect(assessRepositoryDeliveryInterval(input)).toMatchObject({
+      state: 'complete',
+      summary: { covered: 2, notCovered: 0, unknown: 0 },
+      commits: [
+        { status: 'covered', reason: 'approved_review', pullRequestNumber: 42 },
+        { status: 'covered', pullRequestNumber: 42 },
+      ],
+    })
+  })
+
+  it.each([
+    ['no_review', 'not_covered', 'no_approved_reviews'],
+    ['stale_review', 'not_covered', 'approval_before_last_commit'],
+    ['incomplete_pr', 'unknown', 'incomplete_pull_request_snapshot'],
+    ['head_mismatch', 'unknown', 'pull_request_head_mismatch'],
+  ] as const)('checks the covering PR evidence: %s', (scenario, status, reason) => {
+    const input = dualBranchInput()
+    const pr = input.pullRequestsByNumber[42]
+    if (!pr) throw new Error('Missing PR fixture')
+    if (scenario === 'no_review') pr.reviews = []
+    if (scenario === 'stale_review') {
+      pr.reviews = [{ ...approvedPullRequest[42].reviews[0], submittedAt: '2026-10-01T09:00:00Z', commitId: null }]
+    }
+    if (scenario === 'incomplete_pr') pr.commitCount = 2
+    if (scenario === 'head_mismatch') pr.headSha = '9'.repeat(40)
+
+    expect(assessRepositoryDeliveryInterval(input).commits[0]).toMatchObject({
+      status,
+      reason,
+      pullRequestNumber: 42,
+    })
+  })
+
+  it.each([
+    'outside_interval',
+    'unmerged',
+    'wrong_merge_sha',
+    'wrong_base',
+    'wrong_association_base',
+    'commit_not_in_pr',
+    'missing_merge_association',
+    'incomplete_merge_association',
+    'not_a_merge_commit',
+    'incomplete_compare',
+  ] as const)('does not use an unrelated or unproven covering PR: %s', (scenario) => {
+    const input = dualBranchInput()
+    const pr = input.pullRequestsByNumber[42]
+    if (!pr || !input.compare) throw new Error('Missing PR fixture')
+    const mergeCommit = input.compare.commits[1]
+    if (scenario === 'outside_interval') input.compare = compare
+    if (scenario === 'unmerged') pr.mergedAt = null
+    if (scenario === 'wrong_merge_sha') pr.mergeCommitSha = '9'.repeat(40)
+    if (scenario === 'wrong_base') pr.baseBranch = 'sandbox'
+    if (scenario === 'wrong_association_base') {
+      input.associatedPullRequestsByCommit[mergeCommit.sha] = {
+        complete: true,
+        pullRequests: [{ number: 42, baseBranch: 'sandbox' }],
+      }
+    }
+    if (scenario === 'commit_not_in_pr') {
+      pr.commits = [{ ...prCommit, sha: '9'.repeat(40) }]
+      pr.headSha = '9'.repeat(40)
+    }
+    if (scenario === 'missing_merge_association') delete input.associatedPullRequestsByCommit[mergeCommit.sha]
+    if (scenario === 'incomplete_merge_association') {
+      input.associatedPullRequestsByCommit[mergeCommit.sha] = {
+        complete: false,
+        pullRequests: [{ number: 42, baseBranch: 'main' }],
+      }
+    }
+    if (scenario === 'not_a_merge_commit') mergeCommit.parentShas = [commitSha]
+    if (scenario === 'incomplete_compare') input.compare.totalCommits = input.compare.aheadBy = 3
+
+    expect(assessRepositoryDeliveryInterval(input).commits[0]).toMatchObject({
+      status: 'not_covered',
+      reason: 'no_default_branch_pull_request',
+    })
+  })
+
+  it('preserves the direct default-branch candidate instead of overriding its failed review', () => {
+    const input = dualBranchInput()
+    input.associatedPullRequestsByCommit[commitSha] = {
+      complete: true,
+      pullRequests: [{ number: 44, baseBranch: 'main' }],
+    }
+    input.pullRequestsByNumber[44] = { ...approvedPullRequest[42], number: 44, reviews: [] }
+
+    expect(assessRepositoryDeliveryInterval(input).commits[0]).toMatchObject({
+      status: 'not_covered',
+      reason: 'no_approved_reviews',
+      pullRequestNumber: 44,
+    })
+  })
+
+  it.each(['missing', 'incomplete'] as const)(
+    'keeps %s commit associations unknown despite a covering PR',
+    (scenario) => {
+      const input = dualBranchInput()
+      if (scenario === 'missing') delete input.associatedPullRequestsByCommit[commitSha]
+      else input.associatedPullRequestsByCommit[commitSha] = { complete: false, pullRequests: [] }
+
+      expect(assessRepositoryDeliveryInterval(input).commits[0]).toMatchObject({
+        status: 'unknown',
+        reason: 'missing_associated_pull_request_snapshot',
+      })
+    },
+  )
+
   it.each(['off', 'dependabot_only', 'all'] as const)(
     'accepts review covering the latest Dependabot commit with implicit mode %s',
     (implicitApprovalMode) => {
