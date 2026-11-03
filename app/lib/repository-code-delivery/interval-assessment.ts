@@ -364,6 +364,33 @@ export function assessRepositoryDeliveryInterval(input: {
           defaultBranch,
         )
       : new Set<string>()
+  const coveringPullRequestsByCommit = new Map<string, RepositoryDeliveryAssociatedPullRequest[]>()
+  if (
+    completeComparison &&
+    defaultBranch &&
+    new Set(compare.commits.map((commit) => commit.sha)).size === compare.commits.length
+  ) {
+    for (const mergeCommit of compare.commits) {
+      if (!mergeCommit.isMergeCommit || mergeCommit.parentShas.length < 2) continue
+      const associations = input.associatedPullRequestsByCommit[mergeCommit.sha]
+      if (!associations?.complete) continue
+      for (const association of associations.pullRequests) {
+        const pullRequest = input.pullRequestsByNumber[association.number]
+        if (
+          association.baseBranch !== defaultBranch ||
+          pullRequest?.baseBranch !== defaultBranch ||
+          !isMergedPullRequest(pullRequest) ||
+          pullRequest.mergeCommitSha !== mergeCommit.sha
+        )
+          continue
+        for (const prCommit of pullRequest.commits ?? []) {
+          const coveringPullRequests = coveringPullRequestsByCommit.get(prCommit.sha) ?? []
+          coveringPullRequests.push(association)
+          coveringPullRequestsByCommit.set(prCommit.sha, coveringPullRequests)
+        }
+      }
+    }
+  }
   const commits = compare.commits.map((commit) => {
     if (!validComparison) return unknownCommit(commit, 'invalid_comparison_range')
     if (!defaultBranch) return unknownCommit(commit, 'unknown_default_branch')
@@ -396,6 +423,9 @@ export function assessRepositoryDeliveryInterval(input: {
       } else if (stackPath === 'reaches_default_branch') {
         matchingPullRequests.push(pr)
       }
+    }
+    if (matchingPullRequests.length === 0) {
+      matchingPullRequests.push(...(coveringPullRequestsByCommit.get(commit.sha) ?? []))
     }
     if (matchingPullRequests.length === 0) {
       if (unresolvedStackPullRequests.length > 0) {
