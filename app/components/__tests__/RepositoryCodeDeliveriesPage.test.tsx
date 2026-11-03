@@ -48,3 +48,11 @@ it('does not offer approval actions to an admin without approval rights', () => 
 it('explains an empty filter separately from an empty repository', () => {
   expect(renderPage(true, [])).toContain('Ingen leveranser passer til filteret.')
 })
+
+it('offers a repository-wide comparison download even when the delivery list is empty', () => {
+  const markup = renderPage(true, [])
+  expect(markup).toContain(
+    '/repository/navikt/glad-fjord/admin/code-deliveries/export?repositoryId=5&amp;scope=approval-comparison',
+  )
+  expect(markup).toContain('Last ned sammenligning av app- og repositorygodkjenning')
+})
