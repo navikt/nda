@@ -140,7 +140,7 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     await seedWorkflowRun(4, workflowRun({ repository: { id: 123 }, head_repository: { id: 123 } }))
 
     await seed({ runId: 5 })
-    await seedWorkflowRun(5, workflowRun({ event: 'workflow_dispatch' }))
+    await seedWorkflowRun(5, workflowRun({ event: 'pull_request' }))
 
     await seed({ runId: 6 })
     await seedWorkflowRun(6, workflowRun({ head_repository: { id: 123 } }))
@@ -191,14 +191,13 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         githubRepoName: 'repo-backfill',
         deploymentsWithRepositoryId: 0,
         totalLegacyDeployments: 10,
-        eligible: 1,
+        eligible: 2,
         noTriggerUrl: 1,
         invalidTriggerUrl: 2,
         triggerUrlMismatch: 1,
         missingSnapshot: 1,
         repositoryMismatch: 1,
         shaMismatch: 1,
-        unsupportedEvent: 1,
         headRepositoryMismatch: 1,
         backfillJob: null,
       },
@@ -217,7 +216,6 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         missingSnapshot: 0,
         repositoryMismatch: 0,
         shaMismatch: 0,
-        unsupportedEvent: 0,
         headRepositoryMismatch: 0,
         backfillJob: null,
       },
@@ -235,71 +233,74 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         workflowRunId: '10',
       }),
     ])
-    expect(preview.filter((deployment) => deployment.classification === 'eligible')).toHaveLength(2)
+    expect(preview.filter((deployment) => deployment.classification === 'eligible')).toHaveLength(3)
     expect(new Set(preview.map((deployment) => deployment.deploymentId)).size).toBe(preview.length)
 
     const { rows } = await pool.query('SELECT count(*)::int AS count FROM deployments WHERE repository_id IS NULL')
     expect(rows[0].count).toBe(12)
   })
 
-  it('backfills only currently eligible legacy deployments across every linked team', async () => {
-    const repositoryId = await seedRepository(pool, {
-      githubRepoId: REPOSITORY_GITHUB_ID,
-      githubOwner: 'navikt',
-      githubRepoName: 'repo-backfill',
-    })
-    const appA = await seedApp(pool, {
-      teamSlug: 'team-repo-backfill-a',
-      appName: 'repo-backfill-app-a',
-      environment: 'prod-gcp',
-    })
-    const appB = await seedApp(pool, {
-      teamSlug: 'team-repo-backfill-b',
-      appName: 'repo-backfill-app-b',
-      environment: 'dev-gcp',
-    })
-    await seedApplicationRepository(pool, {
-      monitoredAppId: appA,
-      githubOwner: 'navikt',
-      githubRepo: 'repo-backfill',
-      githubRepoId: REPOSITORY_GITHUB_ID,
-    })
-    await seedApplicationRepository(pool, {
-      monitoredAppId: appB,
-      githubOwner: 'navikt',
-      githubRepo: 'repo-backfill',
-      githubRepoId: REPOSITORY_GITHUB_ID,
-    })
+  it.each(['push', 'workflow_dispatch', 'pull_request', 'workflow_run', null])(
+    'backfills matching repository evidence across teams regardless of event: %s',
+    async (event) => {
+      const repositoryId = await seedRepository(pool, {
+        githubRepoId: REPOSITORY_GITHUB_ID,
+        githubOwner: 'navikt',
+        githubRepoName: 'repo-backfill',
+      })
+      const appA = await seedApp(pool, {
+        teamSlug: 'team-repo-backfill-a',
+        appName: 'repo-backfill-app-a',
+        environment: 'prod-gcp',
+      })
+      const appB = await seedApp(pool, {
+        teamSlug: 'team-repo-backfill-b',
+        appName: 'repo-backfill-app-b',
+        environment: 'dev-gcp',
+      })
+      await seedApplicationRepository(pool, {
+        monitoredAppId: appA,
+        githubOwner: 'navikt',
+        githubRepo: 'repo-backfill',
+        githubRepoId: REPOSITORY_GITHUB_ID,
+      })
+      await seedApplicationRepository(pool, {
+        monitoredAppId: appB,
+        githubOwner: 'navikt',
+        githubRepo: 'repo-backfill',
+        githubRepoId: REPOSITORY_GITHUB_ID,
+      })
 
-    const eligibleA = await seedLegacyDeployment({ monitoredAppId: appA, runId: 21 })
-    const eligibleB = await seedLegacyDeployment({ monitoredAppId: appB, runId: 22 })
-    const mismatchedSha = await seedLegacyDeployment({ monitoredAppId: appA, runId: 23 })
-    await seedWorkflowRun(21, workflowRun())
-    await seedWorkflowRun(22, workflowRun())
-    await seedWorkflowRun(23, workflowRun({ head_sha: 'b'.repeat(40) }))
+      const eligibleA = await seedLegacyDeployment({ monitoredAppId: appA, runId: 21 })
+      const eligibleB = await seedLegacyDeployment({ monitoredAppId: appB, runId: 22 })
+      const mismatchedSha = await seedLegacyDeployment({ monitoredAppId: appA, runId: 23 })
+      await seedWorkflowRun(21, workflowRun())
+      await seedWorkflowRun(22, workflowRun({ event }))
+      await seedWorkflowRun(23, workflowRun({ event, head_sha: 'b'.repeat(40) }))
 
-    await expect(backfillEligibleWorkflowRunRepositoryIds(repositoryId)).resolves.toBe(2)
-    await expect(backfillEligibleWorkflowRunRepositoryIds(repositoryId)).resolves.toBe(0)
+      await expect(backfillEligibleWorkflowRunRepositoryIds(repositoryId)).resolves.toBe(2)
+      await expect(backfillEligibleWorkflowRunRepositoryIds(repositoryId)).resolves.toBe(0)
 
-    await pool.query(
-      `INSERT INTO sync_jobs (job_type, repository_id, status, started_at, completed_at)
+      await pool.query(
+        `INSERT INTO sync_jobs (job_type, repository_id, status, started_at, completed_at)
        VALUES ('backfill_github_repo_ids', $1, 'completed', NOW(), NOW())`,
-      [repositoryId],
-    )
-    const coverage = await getWorkflowRunRepositoryBackfillCoverage('team-repo-backfill-a')
-    expect(coverage[0]?.deploymentsWithRepositoryId).toBe(2)
+        [repositoryId],
+      )
+      const coverage = await getWorkflowRunRepositoryBackfillCoverage('team-repo-backfill-a')
+      expect(coverage[0]?.deploymentsWithRepositoryId).toBe(2)
 
-    const { rows } = await pool.query<{ id: number; repository_id: number | null }>(
-      `SELECT id, repository_id
+      const { rows } = await pool.query<{ id: number; repository_id: number | null }>(
+        `SELECT id, repository_id
        FROM deployments
        WHERE id = ANY($1::int[])
        ORDER BY id`,
-      [[eligibleA, eligibleB, mismatchedSha]],
-    )
-    expect(rows).toEqual([
-      { id: eligibleA, repository_id: repositoryId },
-      { id: eligibleB, repository_id: repositoryId },
-      { id: mismatchedSha, repository_id: null },
-    ])
-  })
+        [[eligibleA, eligibleB, mismatchedSha]],
+      )
+      expect(rows).toEqual([
+        { id: eligibleA, repository_id: repositoryId },
+        { id: eligibleB, repository_id: repositoryId },
+        { id: mismatchedSha, repository_id: null },
+      ])
+    },
+  )
 })

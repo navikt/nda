@@ -36,7 +36,6 @@ export const Default: Story = {
         missingSnapshot: 1,
         repositoryMismatch: 1,
         shaMismatch: 1,
-        unsupportedEvent: 1,
         headRepositoryMismatch: 0,
         backfillJob: null,
       },

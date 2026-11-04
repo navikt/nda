@@ -38,7 +38,6 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
           missing_snapshot: 1,
           repository_mismatch: 1,
           sha_mismatch: 1,
-          unsupported_event: 1,
           head_repository_mismatch: 0,
           backfill_job_id: null,
           backfill_job_status: null,
@@ -63,7 +62,6 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         missingSnapshot: 1,
         repositoryMismatch: 1,
         shaMismatch: 1,
-        unsupportedEvent: 1,
         headRepositoryMismatch: 0,
         backfillJob: null,
       },
@@ -105,7 +103,6 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
           missing_snapshot: 0,
           repository_mismatch: 0,
           sha_mismatch: 0,
-          unsupported_event: 0,
           head_repository_mismatch: 0,
           backfill_job_id: 91,
           backfill_job_status: 'completed',
@@ -130,7 +127,6 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
         missingSnapshot: 0,
         repositoryMismatch: 0,
         shaMismatch: 0,
-        unsupportedEvent: 0,
         headRepositoryMismatch: 0,
         backfillJob: {
           id: 91,
@@ -249,7 +245,6 @@ describe('getWorkflowRunRepositoryBackfillCoverage', () => {
     const [query, parameters] = mockPoolQuery.mock.calls[0]
     expect(query).toContain("workflow_run_data->'repository'->>'id' IS DISTINCT FROM github_repo_id::text")
     expect(query).toContain("workflow_run_data->'head_repository'->>'id' IS DISTINCT FROM github_repo_id::text")
-    expect(query).toContain("workflow_run_data->>'event' IS DISTINCT FROM 'push'")
     expect(query).toContain("lower(workflow_run_data->>'head_sha') IS DISTINCT FROM lower(commit_sha)")
     expect(query).toContain("c.classification = 'eligible'")
     expect(query).toContain('d.repository_id IS NULL')

@@ -198,7 +198,6 @@ const classificationLabels: Record<WorkflowRunBackfillPreviewClassification, str
   missing_snapshot: 'Mangler lagret workflow-run-snapshot',
   repository_mismatch: 'Snapshot har et annet eller manglende repository-ID',
   sha_mismatch: 'Commit-SHA stemmer ikke',
-  unsupported_event: 'Eventtypen er ikke push',
   head_repository_mismatch: 'Head repository stemmer ikke',
 }
 
@@ -333,9 +332,9 @@ export function RepositoryIdBackfillCoverage({
             Tallene for deployments uten repository-ID gjelder bare apper knyttet til Nais-teamet{' '}
             <strong>{selectedTeam}</strong>. Antall med repository-ID gjelder alle deployments for repositoryet på tvers
             av team. Et deployment regnes som kandidat bare når workflow-run-snapshotet har samme repository-ID og head
-            repository-ID som repositoryet, samme commit-SHA som deploymentet, og eventtypen er push. Kandidatandelen
-            viser hvor mange av teamets deployments uten repository-ID som oppfyller disse kriteriene. Handlingene i
-            tabellen kjører repositoryomfattende og er ikke begrenset til dette teamet.
+            repository-ID som repositoryet og samme commit-SHA som deploymentet. Kandidatandelen viser hvor mange av
+            teamets deployments uten repository-ID som oppfyller disse kriteriene. Handlingene i tabellen kjører
+            repositoryomfattende og er ikke begrenset til dette teamet.
           </Alert>
 
           <BodyShort>
@@ -370,7 +369,6 @@ export function RepositoryIdBackfillCoverage({
                     `URL-avvik ${repository.triggerUrlMismatch}`,
                     `repository-ID-avvik ${repository.repositoryMismatch}`,
                     `SHA-avvik ${repository.shaMismatch}`,
-                    `event ikke push ${repository.unsupportedEvent}`,
                     `head-repo-avvik ${repository.headRepositoryMismatch}`,
                   ]
                   return (

@@ -22,7 +22,6 @@ export interface WorkflowRunRepositoryBackfillCoverage {
   missingSnapshot: number
   repositoryMismatch: number
   shaMismatch: number
-  unsupportedEvent: number
   headRepositoryMismatch: number
   backfillJob: WorkflowRunRepositoryIdBackfillJob | null
 }
@@ -41,7 +40,6 @@ export type WorkflowRunBackfillPreviewClassification =
   | 'missing_snapshot'
   | 'repository_mismatch'
   | 'sha_mismatch'
-  | 'unsupported_event'
   | 'head_repository_mismatch'
 
 export interface WorkflowRunBackfillPreviewDeployment {
@@ -68,7 +66,6 @@ interface CoverageRow {
   missing_snapshot: number
   repository_mismatch: number
   sha_mismatch: number
-  unsupported_event: number
   head_repository_mismatch: number
   backfill_job_id: number | null
   backfill_job_status: SyncJobStatus | null
@@ -179,7 +176,6 @@ function classifiedDeploymentsCte(scopeCondition: string): string {
            WHEN commit_sha IS NULL
              OR lower(workflow_run_data->>'head_sha') IS DISTINCT FROM lower(commit_sha)
              THEN 'sha_mismatch'
-           WHEN workflow_run_data->>'event' IS DISTINCT FROM 'push' THEN 'unsupported_event'
            WHEN workflow_run_data->'head_repository'->>'id' IS DISTINCT FROM github_repo_id::text
              THEN 'head_repository_mismatch'
            ELSE 'eligible'
@@ -214,7 +210,6 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
          count(*) FILTER (WHERE classification = 'missing_snapshot')::int AS missing_snapshot,
          count(*) FILTER (WHERE classification = 'repository_mismatch')::int AS repository_mismatch,
          count(*) FILTER (WHERE classification = 'sha_mismatch')::int AS sha_mismatch,
-         count(*) FILTER (WHERE classification = 'unsupported_event')::int AS unsupported_event,
          count(*) FILTER (WHERE classification = 'head_repository_mismatch')::int AS head_repository_mismatch
        FROM classified
        GROUP BY repository_id, github_owner, github_repo_name
@@ -251,7 +246,6 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
        COALESCE(coverage.missing_snapshot, 0)::int AS missing_snapshot,
        COALESCE(coverage.repository_mismatch, 0)::int AS repository_mismatch,
        COALESCE(coverage.sha_mismatch, 0)::int AS sha_mismatch,
-       COALESCE(coverage.unsupported_event, 0)::int AS unsupported_event,
        COALESCE(coverage.head_repository_mismatch, 0)::int AS head_repository_mismatch,
        backfill_job.id AS backfill_job_id,
        backfill_job.status AS backfill_job_status,
@@ -292,7 +286,6 @@ export async function getWorkflowRunRepositoryBackfillCoverage(
     missingSnapshot: row.missing_snapshot,
     repositoryMismatch: row.repository_mismatch,
     shaMismatch: row.sha_mismatch,
-    unsupportedEvent: row.unsupported_event,
     headRepositoryMismatch: row.head_repository_mismatch,
     backfillJob:
       row.backfill_job_id === null || row.backfill_job_id === undefined
