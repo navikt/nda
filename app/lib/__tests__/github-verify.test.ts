@@ -58,7 +58,12 @@ vi.mock('~/lib/github', () => ({
 }))
 
 import { getAllDeployments, getDeploymentById, updateDeploymentFourEyes } from '~/db/deployments.server'
-import { getDueSiblingWaiters, getSiblingQueueStats, wakeChangedSiblingWaiters } from '~/db/sibling-verification.server'
+import {
+  getDueSiblingWaiters,
+  getSiblingQueueStats,
+  type SiblingWork,
+  wakeChangedSiblingWaiters,
+} from '~/db/sibling-verification.server'
 import { isAppBlockedByRunningJob } from '~/db/sync-jobs.server'
 import { getGitHubRateLimitRemaining } from '~/lib/github'
 import { getCurrentJobId, logger } from '~/lib/logger.server'
@@ -91,6 +96,23 @@ function makeDeployment(overrides: Record<string, unknown> = {}) {
     monitored_app_id: 10,
     created_at: '2026-01-15T10:00:00Z',
     ...overrides,
+  }
+}
+
+function makeSiblingWork(id = 10): SiblingWork {
+  return {
+    ...makeDeployment(),
+    id,
+    four_eyes_status: 'pending_sibling_resolution',
+    repository_id: 1,
+    verification_repository_id: 1,
+    sibling_wait_candidate_id: 2,
+    sibling_wait_basis: null,
+    sibling_wait_checked_at: null,
+    sibling_next_attempt_at: null,
+    sibling_refresh_after: null,
+    sibling_retry_count: 0,
+    decision_signature: null,
   }
 }
 
@@ -145,6 +167,33 @@ describe('verifyDeploymentsFourEyes', () => {
     expect(wakeChangedSiblingWaiters).toHaveBeenCalledWith(10)
     expect(getDueSiblingWaiters).toHaveBeenCalledWith(10)
     expect(runSiblingVerification).not.toHaveBeenCalled()
+  })
+
+  it.each(['applied', 'unchanged', 'stale', 'deferred'] as const)(
+    'counts only completed sibling attempts in the returned verified total (%s)',
+    async (outcome) => {
+      mockGetAll.mockResolvedValue([])
+      mockIsAppBlockedByRunningJob.mockResolvedValue(false)
+      mockRateLimitRemaining.mockReturnValue(null)
+      vi.mocked(getDueSiblingWaiters).mockResolvedValueOnce([makeSiblingWork()])
+      vi.mocked(runSiblingVerification).mockResolvedValueOnce(outcome)
+      const result = await verifyDeploymentsFourEyes({ monitored_app_id: 10 })
+      expect(result.verified).toBe(outcome === 'applied' || outcome === 'unchanged' ? 1 : 0)
+    },
+  )
+
+  it('adds sibling attempts without reducing the separate ordinary limit', async () => {
+    mockGetAll.mockResolvedValue([makeDeployment({ id: 1 }), makeDeployment({ id: 2 })])
+    mockIsAppBlockedByRunningJob.mockResolvedValue(false)
+    mockRateLimitRemaining.mockReturnValue(null)
+    mockRunVerification.mockResolvedValue({ status: 'approved' })
+    vi.mocked(getDueSiblingWaiters).mockResolvedValueOnce([makeSiblingWork(10), makeSiblingWork(11)])
+    vi.mocked(runSiblingVerification).mockResolvedValueOnce('applied').mockResolvedValueOnce('unchanged')
+    const run = verifyDeploymentsFourEyes({ monitored_app_id: 10, limit: 1 })
+    await vi.runAllTimersAsync()
+    expect(await run).toEqual({ verified: 3, failed: 0, skipped: 0, remaining: 1 })
+    expect(mockRunVerification).toHaveBeenCalledOnce()
+    expect(runSiblingVerification).toHaveBeenCalledTimes(2)
   })
 
   it('surfaces unserviceable waiters with bounded queue diagnostics and no verification calls', async () => {

@@ -94,6 +94,51 @@ it('does no full work for unchanged future waiters and wakes them when the root 
   expect((await getDueSiblingWaiters(waiterApp)).map(({ id }) => id)).toEqual([waiter])
 })
 
+it('delays the first automatic sibling retry after an ordinary verification', async () => {
+  const { waiter, waiterApp, source, sourceApp } = await seedPair()
+  const result: VerificationResult = {
+    status: 'pending_sibling_resolution',
+    hasFourEyes: false,
+    deployedPr: null,
+    unverifiedCommits: [],
+    approvalDetails: { method: null, approvers: [], reason: 'Waiting for sibling' },
+    verifiedAt: new Date(),
+    schemaVersion: 5,
+  }
+  await storeVerificationResult(
+    waiter,
+    result,
+    { prSnapshotIds: [], commitSnapshotIds: [] },
+    {
+      commitSha: 'b'.repeat(40),
+      monitoredAppId: waiterApp,
+      previousDeployment: {
+        id: source,
+        monitoredAppId: sourceApp,
+        commitSha: 'b'.repeat(40),
+        createdAt: '2026-01-01T00:00:00Z',
+        fourEyesStatus: 'unverified_commits',
+      },
+    },
+  )
+  const { rows } = await pool.query(
+    `SELECT sibling_wait_basis, sibling_retry_count,
+       sibling_next_attempt_at >= sibling_wait_checked_at + interval '15 minutes' AS delayed
+     FROM deployments WHERE id = $1`,
+    [waiter],
+  )
+  expect(rows[0]).toEqual({ sibling_wait_basis: null, sibling_retry_count: 0, delayed: true })
+  expect(await wakeChangedSiblingWaiters(waiterApp)).toBe(0)
+  expect(await getDueSiblingWaiters(waiterApp)).toEqual([])
+  expect((await pool.query('SELECT id FROM verification_runs WHERE deployment_id = $1', [waiter])).rows).toHaveLength(1)
+  await pool.query(
+    `UPDATE deployments SET sibling_wait_checked_at = now() - interval '16 minutes',
+       sibling_next_attempt_at = now() - interval '1 minute' WHERE id = $1`,
+    [waiter],
+  )
+  expect((await getDueSiblingWaiters(waiterApp)).map(({ id }) => id)).toEqual([waiter])
+})
+
 it('compares configured branch rather than the live GitHub branch used by Nais Apply', async () => {
   const { waiter, waiterApp } = await seedPair()
   await pool.query(

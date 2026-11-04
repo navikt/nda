@@ -361,6 +361,7 @@ export async function verifyDeploymentsFourEyes(
       dbDurationMs,
       durationMs: Date.now() - siblingStartedAt,
     })
+    verified += siblingStats.applied + siblingStats.unchanged
   }
 
   const remaining = Math.max(0, filtered.length - processedCount)
