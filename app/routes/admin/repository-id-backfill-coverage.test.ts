@@ -203,7 +203,6 @@ describe('repository ID backfill coverage loader', () => {
         missingSnapshot: 2,
         repositoryMismatch: 1,
         shaMismatch: 0,
-        unsupportedEvent: 1,
         headRepositoryMismatch: 0,
       },
     ])

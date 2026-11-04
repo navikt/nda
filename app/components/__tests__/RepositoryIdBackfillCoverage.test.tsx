@@ -78,7 +78,6 @@ function renderCoverage(
                       missingSnapshot: 0,
                       repositoryMismatch: 0,
                       shaMismatch: 0,
-                      unsupportedEvent: 0,
                       headRepositoryMismatch: 0,
                       backfillJob,
                     },
