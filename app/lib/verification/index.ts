@@ -38,7 +38,7 @@ export type { VerificationResult } from './types'
 
 export const isVerificationDebugMode = process.env.VERIFICATION_DEBUG === 'true'
 
-function applyPassthroughFields(result: VerificationResult, input: VerificationInput): void {
+export function applyPassthroughFields(result: VerificationResult, input: VerificationInput): void {
   if (input.branchMismatch) {
     result.branchMismatch = input.branchMismatch
   }

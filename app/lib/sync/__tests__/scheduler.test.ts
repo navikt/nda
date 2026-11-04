@@ -29,6 +29,13 @@ const {
 }))
 
 vi.mock('~/db/connection.server', () => ({ withSyncClient }))
+vi.mock('~/db/sibling-verification.server', () => ({
+  getBlockingSiblingCandidates: vi.fn().mockResolvedValue([]),
+  deferSiblingWork: vi.fn().mockResolvedValue(true),
+}))
+vi.mock('~/lib/verification/sibling-retry.server', () => ({
+  siblingDeferUntil: vi.fn().mockReturnValue(new Date()),
+}))
 vi.mock('~/db/github-data.server', () => ({ cleanupOldSnapshots }))
 vi.mock('~/db/monitored-applications.server', () => ({ getAllMonitoredApplications }))
 vi.mock('~/db/sync-jobs.server', () => ({ cleanupOldSyncJobs, SYNC_INTERVAL_MS: 1000 }))
@@ -46,6 +53,7 @@ vi.mock('../nais-sync.server', () => ({ syncNaisApplyActivityFromNais, syncNewDe
 vi.mock('../with-sync-lock.server', () => ({ withSyncLock }))
 vi.mock('~/lib/slack/client.server', () => ({ sendPendingDeployNotifications: vi.fn().mockResolvedValue(0) }))
 
+import { deferSiblingWork, getBlockingSiblingCandidates } from '~/db/sibling-verification.server'
 import { runPeriodicSync, syncNewDeploymentsWithLock } from '../scheduler.server'
 
 afterEach(() => {
@@ -55,6 +63,7 @@ afterEach(() => {
 describe('syncNewDeploymentsWithLock', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getBlockingSiblingCandidates).mockResolvedValue([])
     vi.mocked(withSyncClient).mockImplementation(async (run) => run())
     vi.mocked(withSyncLock).mockImplementation(async (_type, _appId, _options, run) => ({
       success: true,
@@ -130,5 +139,40 @@ describe('syncNewDeploymentsWithLock', () => {
     expect(verifyDeploymentsFourEyes).toHaveBeenCalledWith({ monitored_app_id: 7, limit: 50 })
     expect(reverifyPendingChecks).toHaveBeenCalledWith(7, 10)
     expect(cacheCheckLogsWithLock).toHaveBeenCalledWith(7)
+  })
+
+  it('selects candidates once globally and forwards them only to their app job', async () => {
+    vi.mocked(getAllMonitoredApplications).mockResolvedValue([
+      { id: 7, team_slug: 'team', environment_name: 'prod', app_name: 'app' } as never,
+      { id: 8, team_slug: 'team', environment_name: 'prod', app_name: 'other' } as never,
+    ])
+    const candidate = { id: 70, monitored_app_id: 7 } as Awaited<
+      ReturnType<typeof getBlockingSiblingCandidates>
+    >[number]
+    vi.mocked(getBlockingSiblingCandidates).mockResolvedValue([candidate])
+    vi.useFakeTimers()
+    const run = runPeriodicSync()
+    await vi.runAllTimersAsync()
+    await run
+    expect(getBlockingSiblingCandidates).toHaveBeenCalledOnce()
+    expect(verifyDeploymentsFourEyes).toHaveBeenCalledWith({ monitored_app_id: 7, limit: 50 }, [candidate])
+    expect(verifyDeploymentsFourEyes).toHaveBeenCalledWith({ monitored_app_id: 8, limit: 50 })
+  })
+
+  it('defers selected candidates when their app verification lease is unavailable', async () => {
+    vi.mocked(getAllMonitoredApplications).mockResolvedValue([
+      { id: 7, team_slug: 'team', environment_name: 'prod', app_name: 'app' } as never,
+    ])
+    const candidate = { id: 70, monitored_app_id: 7 } as Awaited<
+      ReturnType<typeof getBlockingSiblingCandidates>
+    >[number]
+    vi.mocked(getBlockingSiblingCandidates).mockResolvedValue([candidate])
+    vi.mocked(withSyncLock).mockResolvedValue({ locked: true, success: false })
+    vi.useFakeTimers()
+    const run = runPeriodicSync()
+    await vi.runAllTimersAsync()
+    await run
+    expect(deferSiblingWork).toHaveBeenCalledWith(candidate, true, expect.any(Date))
+    expect(verifyDeploymentsFourEyes).not.toHaveBeenCalled()
   })
 })

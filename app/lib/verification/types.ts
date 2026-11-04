@@ -518,6 +518,11 @@ interface VerificationComparisonRange {
 }
 
 export interface StoredVerificationResult extends VerificationResult {
+  siblingSource?: {
+    deploymentId: number
+    monitoredAppId: number | null
+    status: string | null
+  } | null
   comparisonRange: VerificationComparisonRange | null
   comparisonCommitHeadSha: string
   comparisonCommitShas: string[]

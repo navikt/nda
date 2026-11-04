@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { pool } from '~/db/connection.server'
 import { CURRENT_SCHEMA_VERSION, type StoredVerificationResult } from '~/lib/verification/types'
 
@@ -37,8 +38,9 @@ export async function saveVerificationRun(
     prSnapshotIds: number[]
     commitSnapshotIds: number[]
   },
+  executor: Pick<PoolClient, 'query'> = pool,
 ): Promise<number> {
-  const queryResult = await pool.query(
+  const queryResult = await executor.query(
     `INSERT INTO verification_runs 
        (deployment_id, schema_version, pr_snapshot_ids, commit_snapshot_ids, result, status)
      VALUES ($1, $2, $3, $4, $5, $6)
