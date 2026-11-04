@@ -3,6 +3,9 @@ FROM node:24-bookworm-slim AS builder
 
 # Bruk pnpm-versjonen som er pinnet i "packageManager" i package.json
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+# Hindre at "pnpm run build" kjører en ny pnpm install som trigger lefthook. Lefthook feiler da git ikke er installert i imaget.
+ENV PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false
+
 RUN corepack enable
 
 WORKDIR /app
