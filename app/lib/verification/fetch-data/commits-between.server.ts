@@ -161,7 +161,12 @@ export async function buildCommitsBetweenFromCache(
       repo,
       commit.sha,
       baseBranch,
-      { cacheOnly, forceRefresh: options?.forceRefresh, githubRepoId: options?.githubRepoId },
+      {
+        cacheOnly,
+        forceRefresh: options?.forceRefresh,
+        githubRepoId: options?.githubRepoId,
+        failOnPrRefreshError: options?.failOnPrRefreshError,
+      },
     )
 
     let prData: VerificationInput['commitsBetween'][0]['pr'] = null

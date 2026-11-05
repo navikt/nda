@@ -208,7 +208,11 @@ export async function fetchDeployedPrData(
     repo,
     commitSha,
     baseBranch,
-    { forceRefresh: options?.forceRefresh, githubRepoId: options?.githubRepoId },
+    {
+      forceRefresh: options?.forceRefresh,
+      githubRepoId: options?.githubRepoId,
+      failOnPrRefreshError: options?.failOnPrRefreshError,
+    },
   )
   if (!prNumber) {
     return { deployedPr: null, mismatchedBaseBranches, mismatchedPrNumbers, derivedFromRaw: false }
@@ -423,7 +427,12 @@ export async function findPrForCommit(
   repo: string,
   commitSha: string,
   baseBranch?: string,
-  options?: { cacheOnly?: boolean; forceRefresh?: boolean; githubRepoId?: number | string },
+  options?: {
+    cacheOnly?: boolean
+    forceRefresh?: boolean
+    githubRepoId?: number | string
+    failOnPrRefreshError?: boolean
+  },
 ): Promise<{
   prNumber: number | null
   mismatchedBaseBranches: string[]
@@ -472,7 +481,14 @@ export async function findPrForCommit(
     return { prNumber: null, mismatchedBaseBranches: [], mismatchedPrNumbers: [] }
   }
 
-  const { pr, allAssociatedPrs } = await getPullRequestForCommit(owner, repo, commitSha, true, baseBranch)
+  const { pr, allAssociatedPrs } = await getPullRequestForCommit(
+    owner,
+    repo,
+    commitSha,
+    true,
+    baseBranch,
+    options?.failOnPrRefreshError ?? false,
+  )
 
   await saveCommitSnapshot(owner, repo, commitSha, 'prs', {
     prs: allAssociatedPrs.map((p) => ({ number: p.number, baseBranch: p.baseBranch })),

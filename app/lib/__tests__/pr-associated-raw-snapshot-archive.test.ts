@@ -130,13 +130,36 @@ describe('getPullRequestForCommit', () => {
     expect(mockPoolQuery).not.toHaveBeenCalled()
   })
 
-  it('still returns the PR lookup result even if archiving fails', async () => {
+  it.each([false, true])('propagates association lookup failures only in strict mode (%s)', async (strict) => {
+    const error = new Error('GitHub unavailable')
+    mockListPullRequestsAssociatedWithCommit.mockRejectedValueOnce(error)
+
+    const result = getPullRequestForCommit('navikt', 'lookup-error-repo', 'abc123', true, 'main', strict)
+
+    if (strict) {
+      await expect(result).rejects.toBe(error)
+    } else {
+      await expect(result).resolves.toEqual({ pr: null, allAssociatedPrs: [] })
+    }
+    expect(mockPoolQuery).not.toHaveBeenCalled()
+  })
+
+  it('returns a legitimate empty association result in strict mode', async () => {
+    mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
+    mockListPullRequestsAssociatedWithCommit.mockResolvedValueOnce({ data: [], headers: {} })
+
+    await expect(
+      getPullRequestForCommit('navikt', 'empty-associations-repo', 'abc123', true, 'main', true),
+    ).resolves.toEqual({ pr: null, allAssociatedPrs: [] })
+  })
+
+  it.each([false, true])('still returns the PR lookup result even if archiving fails (strict %s)', async (strict) => {
     mockReposGet.mockResolvedValueOnce({ data: { id: 999 } })
     const rawPrs = [{ number: 42, title: 'Some PR', state: 'open', merged_at: null, base: { ref: 'main' } }]
     mockListPullRequestsAssociatedWithCommit.mockResolvedValueOnce({ data: rawPrs, headers: {} })
     mockPoolQuery.mockRejectedValue(new Error('db down'))
 
-    const result = await getPullRequestForCommit('navikt', 'db-failure-repo', 'abc123')
+    const result = await getPullRequestForCommit('navikt', 'db-failure-repo', 'abc123', false, 'main', strict)
 
     expect(result.pr?.number).toBe(42)
   })

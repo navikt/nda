@@ -49,6 +49,7 @@ import {
   saveCommitSnapshot,
 } from '~/db/github-data.server'
 import { getDetailedPullRequestInfo, getMutablePrDataFromGitHub, getPullRequestForCommit } from '~/lib/github'
+import { fetchDeployedPrData } from '~/lib/verification/fetch-data/pr-data.server'
 import { buildCommitsBetweenFromCache } from '~/lib/verification/fetch-data.server'
 import type { CompareData } from '~/lib/verification/types'
 import { CURRENT_SCHEMA_VERSION } from '~/lib/verification/types'
@@ -137,6 +138,40 @@ describe('findPrForCommit stale cache handling', () => {
     vi.clearAllMocks()
     mockSaveCommitSnapshot.mockResolvedValue(undefined)
   })
+
+  it.each(['deployed', 'comparison'])(
+    'propagates strict %s PR lookup failures without caching an empty result',
+    async (source) => {
+      const error = new Error('GitHub unavailable')
+      mockGetPrForCommit.mockRejectedValueOnce(error)
+      const options = { forceRefresh: true, failOnPrRefreshError: true }
+      const result =
+        source === 'deployed'
+          ? fetchDeployedPrData('navikt', 'repo', 'abc123', 'main', options)
+          : buildCommitsBetweenFromCache(
+              'navikt',
+              'repo',
+              'main',
+              makeCompareData([
+                {
+                  sha: 'abc123',
+                  message: 'Feature',
+                  authorUsername: 'user1',
+                  authorDate: '2026-04-27T16:00:00Z',
+                  committerDate: '2026-04-27T16:00:00Z',
+                  parentShas: ['parent1'],
+                  isMergeCommit: false,
+                  htmlUrl: 'https://github.com/navikt/repo/commit/abc123',
+                },
+              ]),
+              options,
+            )
+
+      await expect(result).rejects.toBe(error)
+      expect(mockGetPrForCommit).toHaveBeenCalledWith('navikt', 'repo', 'abc123', true, 'main', true)
+      expect(mockSaveCommitSnapshot).not.toHaveBeenCalled()
+    },
+  )
 
   it('trusts empty cache without calling GitHub (no staleness-based re-fetch)', async () => {
     mockGetCommitSnapshot.mockResolvedValue({
@@ -282,7 +317,7 @@ describe('findPrForCommit stale cache handling', () => {
       forceRefresh: true,
     })
 
-    expect(mockGetPrForCommit).toHaveBeenCalledWith('navikt', 'repo', 'abc123', true, 'main')
+    expect(mockGetPrForCommit).toHaveBeenCalledWith('navikt', 'repo', 'abc123', true, 'main', false)
     expect(mockSaveCommitSnapshot).toHaveBeenCalledWith('navikt', 'repo', 'abc123', 'prs', {
       prs: [{ number: 100, baseBranch: 'main' }],
     })
@@ -388,7 +423,7 @@ describe('findPrForCommit stale cache handling', () => {
       forceRefresh: true,
     })
 
-    expect(mockGetPrForCommit).toHaveBeenCalledWith('navikt', 'repo', 'abc123', true, 'main')
+    expect(mockGetPrForCommit).toHaveBeenCalledWith('navikt', 'repo', 'abc123', true, 'main', false)
     expect(mockSaveCommitSnapshot).toHaveBeenCalledWith('navikt', 'repo', 'abc123', 'prs', {
       prs: [
         { number: 100, baseBranch: 'main' },
