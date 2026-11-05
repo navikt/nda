@@ -183,6 +183,7 @@ export async function refreshDisplayData(
 
 export interface FetchOptions {
   forceRefresh?: boolean
+  failOnPrRefreshError?: boolean
   refreshDisplayData?: boolean
   githubRepoId?: number | string
   dataTypes?: ('metadata' | 'reviews' | 'commits' | 'comments' | 'checks')[]

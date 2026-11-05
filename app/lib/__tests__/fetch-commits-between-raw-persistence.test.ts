@@ -18,6 +18,7 @@ vi.mock('~/lib/logger.server', () => ({
 }))
 
 vi.mock('~/lib/verification/fetch-data/pr-data.server', () => ({
+  fetchOrRefreshMergedPrData: vi.fn(),
   fetchPrFromGitHub: vi.fn(),
   findPrForCommit: vi.fn(),
   getCachedPrData: vi.fn(),
@@ -32,7 +33,9 @@ import {
   saveCompareSnapshot,
 } from '~/db/github-data.server'
 import { getCommitsBetween, haveSameCommitTree } from '~/lib/github'
-import { fetchCommitsBetween } from '~/lib/verification/fetch-data/commits-between.server'
+import { buildCommitsBetweenFromCache, fetchCommitsBetween } from '~/lib/verification/fetch-data/commits-between.server'
+import { fetchOrRefreshMergedPrData, findPrForCommit } from '~/lib/verification/fetch-data/pr-data.server'
+import type { CompareData } from '~/lib/verification/types'
 
 const mockGetLatestCompareSnapshot = getLatestCompareSnapshot as Mock
 const mockGetDerivedCompareDataFromRawSnapshot = getDerivedCompareDataFromRawSnapshot as Mock
@@ -108,5 +111,60 @@ describe('fetchCommitsBetween raw persistence', () => {
       rawData,
       apiVersion,
     )
+  })
+})
+
+describe('comparison PR refresh failure handling', () => {
+  const compareData: CompareData = {
+    compare: { status: 'ahead', aheadBy: 1, behindBy: 0, totalCommits: 1, changedFiles: 1, noDiffDetected: false },
+    commits: [
+      {
+        sha: 'b'.repeat(40),
+        message: 'Feature',
+        authorUsername: 'glad-fjord',
+        authorDate: '2026-01-01T00:00:00Z',
+        committerDate: '2026-01-01T00:00:00Z',
+        parentShas: ['a'.repeat(40)],
+        isMergeCommit: false,
+        htmlUrl: `https://github.com/navikt/nda/commit/${'b'.repeat(40)}`,
+      },
+    ],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(findPrForCommit).mockResolvedValue({
+      prNumber: 123,
+      mismatchedBaseBranches: [],
+      mismatchedPrNumbers: [],
+    })
+  })
+
+  it.each([false, true])('keeps strict and default fetch behavior distinct (strict %s)', async (strict) => {
+    const error = new Error('Review refresh unavailable')
+    vi.mocked(fetchOrRefreshMergedPrData).mockRejectedValue(error)
+    const result = buildCommitsBetweenFromCache('navikt', 'nda', 'main', compareData, {
+      forceRefresh: true,
+      failOnPrRefreshError: strict,
+    })
+    if (strict) {
+      await expect(result).rejects.toBe(error)
+    } else {
+      expect((await result)[0].pr).toBeNull()
+    }
+  })
+
+  it('still returns a legitimate missing PR in strict mode when no association exists', async () => {
+    vi.mocked(findPrForCommit).mockResolvedValue({
+      prNumber: null,
+      mismatchedBaseBranches: [],
+      mismatchedPrNumbers: [],
+    })
+    const result = await buildCommitsBetweenFromCache('navikt', 'nda', 'main', compareData, {
+      forceRefresh: true,
+      failOnPrRefreshError: true,
+    })
+    expect(result[0].pr).toBeNull()
+    expect(fetchOrRefreshMergedPrData).not.toHaveBeenCalled()
   })
 })

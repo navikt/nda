@@ -85,7 +85,7 @@ export async function runSiblingVerification(work: SiblingWork, candidate = fals
       work.environment_name,
       work.default_branch,
       work.monitored_app_id,
-      { forceRefresh: true, includeComments: false },
+      { forceRefresh: true, includeComments: false, failOnPrRefreshError: true },
       work.trigger_url,
       work.verification_repository_id ?? undefined,
     )

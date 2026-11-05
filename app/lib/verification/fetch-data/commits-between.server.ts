@@ -213,6 +213,7 @@ export async function buildCommitsBetweenFromCache(
           prCreator: metadata.author.username === 'unknown' ? undefined : metadata.author.username,
         }
       } catch (error) {
+        if (options?.failOnPrRefreshError) throw error
         logger.warn(`Failed to fetch PR #${prNumber} for commit ${commit.sha}: ${error}`)
       }
     }

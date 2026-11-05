@@ -123,7 +123,7 @@ it('deduplicates unchanged waiting decisions but keeps checks and retry state fr
     'prod-gcp',
     'main',
     2,
-    { forceRefresh: true, includeComments: false },
+    { forceRefresh: true, includeComments: false, failOnPrRefreshError: true },
     null,
     1,
   )
@@ -213,12 +213,19 @@ it.each(['error', 'pending_baseline', 'pending_sibling_resolution'] as const)(
   },
 )
 
-it('defers technical fetch failures without replacing operational status', async () => {
-  mocks.fetch.mockRejectedValue(new Error('GitHub unavailable'))
-  expect(await runSiblingVerification(work)).toBe('deferred')
-  expect(mocks.store).not.toHaveBeenCalled()
-  expect(mocks.defer).toHaveBeenCalledWith(work, false, expect.any(Date), true)
-})
+it.each([false, true])(
+  'defers technical fetch failures without replacing operational status (candidate %s)',
+  async (candidate) => {
+    mocks.fetch.mockRejectedValue(new Error('GitHub unavailable'))
+    const attempt = candidate ? { ...work, four_eyes_status: 'unverified_commits' } : work
+    expect(await runSiblingVerification(attempt, candidate)).toBe('deferred')
+    expect(mocks.verify).not.toHaveBeenCalled()
+    expect(mocks.store).not.toHaveBeenCalled()
+    expect(mocks.cache).not.toHaveBeenCalled()
+    expect(mocks.propagate).not.toHaveBeenCalled()
+    expect(mocks.defer).toHaveBeenCalledWith(attempt, candidate, expect.any(Date), true)
+  },
+)
 
 it('does no HTTP work for a candidate that no longer blocks a current waiter', async () => {
   mocks.blocks.mockResolvedValue(false)
