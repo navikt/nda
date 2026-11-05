@@ -107,7 +107,7 @@ export async function updateDeploymentVerification(
        sibling_wait_basis = CASE WHEN $13 THEN NULL ELSE sibling_wait_basis END,
        sibling_wait_checked_at = CASE WHEN $13 THEN clock_timestamp() ELSE sibling_wait_checked_at END,
        sibling_next_attempt_at = CASE
-         WHEN $13 AND $1 = 'pending_sibling_resolution' THEN clock_timestamp() + interval '15 minutes'
+         WHEN $13 AND $1::varchar = 'pending_sibling_resolution' THEN clock_timestamp() + interval '15 minutes'
          WHEN $13 THEN NULL ELSE sibling_next_attempt_at END,
        sibling_refresh_after = CASE WHEN $13 THEN NULL ELSE sibling_refresh_after END,
        sibling_retry_count = CASE WHEN $13 THEN 0 ELSE sibling_retry_count END
