@@ -6,6 +6,13 @@ import {
   getDeploymentById,
   updateDeploymentFourEyes,
 } from '~/db/deployments.server'
+import {
+  deferSiblingWork,
+  getDueSiblingWaiters,
+  getSiblingQueueStats,
+  type SiblingWork,
+  wakeChangedSiblingWaiters,
+} from '~/db/sibling-verification.server'
 import { isAppBlockedByRunningJob, VERIFICATION_DIFF_CONFLICT_GROUP } from '~/db/sync-jobs.server'
 import { isDependabotUser } from '~/lib/dependabot'
 import { isApprovedStatus, REVERIFIABLE_STATUSES, REVERIFIABLE_STATUSES_SQL } from '~/lib/four-eyes-status'
@@ -14,6 +21,7 @@ import { getGitHubRateLimitRemaining } from '~/lib/github'
 import { getRepositoryIdentityById, parseWorkflowRunUrl, type WorkflowTriggerConfig } from '~/lib/github/git.server'
 import { getCurrentJobId, logger } from '~/lib/logger.server'
 import { refreshCommitChecksOnly, runVerification } from '~/lib/verification'
+import { runSiblingVerification, siblingDeferUntil } from '~/lib/verification/sibling-retry.server'
 import { autoLinkDependabotGoal, autoLinkGoalKeywords } from './goal-keyword-sync.server'
 
 const RATE_LIMIT_SAFETY_BUFFER = 200
@@ -145,7 +153,10 @@ export async function reverifyPendingChecks(
   return { fetched, errors }
 }
 
-export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { limit?: number }): Promise<{
+export async function verifyDeploymentsFourEyes(
+  filters?: DeploymentFilters & { limit?: number },
+  blockingCandidates: SiblingWork[] = [],
+): Promise<{
   verified: number
   failed: number
   skipped: number
@@ -163,6 +174,7 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
   const needsVerification = deploymentsToVerify.filter(
     (d) =>
       !isApprovedStatus(d.four_eyes_status ?? '') &&
+      d.four_eyes_status !== 'pending_sibling_resolution' &&
       d.four_eyes_status !== 'legacy' &&
       statusesToVerify.includes(d.four_eyes_status ?? ''),
   )
@@ -301,6 +313,55 @@ export async function verifyDeploymentsFourEyes(filters?: DeploymentFilters & { 
         break
       }
     }
+  }
+
+  const siblingStats = { woken: 0, applied: 0, unchanged: 0, stale: 0, deferred: 0, waiters: 0, candidates: 0 }
+  if (filters?.monitored_app_id) {
+    const siblingStartedAt = Date.now()
+    siblingStats.woken = await wakeChangedSiblingWaiters(filters.monitored_app_id)
+    const waiters = await getDueSiblingWaiters(filters.monitored_app_id)
+    const queueStats = await getSiblingQueueStats(filters.monitored_app_id)
+    const dbDurationMs = Date.now() - siblingStartedAt
+    if (queueStats.unavailable > 0) {
+      logger.warn('Sibling waiters require metadata resolution or explicit admin action', {
+        monitoredAppId: filters.monitored_app_id,
+        unavailable: queueStats.unavailable,
+      })
+    }
+    for (const { work, candidate } of [
+      ...waiters.map((work) => ({ work, candidate: false })),
+      ...blockingCandidates
+        .filter((work) => work.monitored_app_id === filters.monitored_app_id)
+        .map((work) => ({ work, candidate: true })),
+    ]) {
+      const remainingQuota = getGitHubRateLimitRemaining()
+      if (
+        (remainingQuota !== null && remainingQuota < RATE_LIMIT_SAFETY_BUFFER) ||
+        (await isAppBlockedByRunningJob(work.monitored_app_id, VERIFICATION_DIFF_CONFLICT_GROUP, getCurrentJobId()))
+      ) {
+        await deferSiblingWork(work, candidate, siblingDeferUntil(work, false))
+        siblingStats.deferred++
+        continue
+      }
+      if (candidate) siblingStats.candidates++
+      else siblingStats.waiters++
+      try {
+        const outcome = await runSiblingVerification(work, candidate)
+        siblingStats[outcome]++
+      } catch (error) {
+        logger.error('Sibling verification attempt failed', { deploymentId: work.id, error })
+        await deferSiblingWork(work, candidate, siblingDeferUntil(work), true)
+        siblingStats.deferred++
+      }
+    }
+    logger.info('Sibling verification cycle complete', {
+      monitoredAppId: filters.monitored_app_id,
+      ...siblingStats,
+      ...queueStats,
+      dbDurationMs,
+      durationMs: Date.now() - siblingStartedAt,
+    })
+    verified += siblingStats.applied + siblingStats.unchanged
   }
 
   const remaining = Math.max(0, filtered.length - processedCount)

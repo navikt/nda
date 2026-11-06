@@ -639,7 +639,7 @@ Kobling mellom `monitored_applications`-rader som representerer samme logiske ko
 1. En deployment verifiseres (automatisk eller manuelt)
 2. Appen deler **aktivt** GitHub-repo (samme `github_repo_id` i `application_repositories`) med minst én annen app
 3. Statussen er positiv: `approved`, `approved_pr_with_unreviewed`, `implicitly_approved`, `no_changes`, `verified_via_sibling`, eller `manually_approved`
-4. Søsken-deployments **i samme repo** (uansett miljø) har **samme `commit_sha`** og status `pending`, `pending_baseline`, `unknown` (samlet `REVERIFIABLE_STATUSES`) eller `error`
+4. Søsken-deployments **i samme repo** (uansett miljø) har **samme `commit_sha`** og status i `REVERIFIABLE_STATUSES`, unntatt `pending_sibling_resolution`, eller `error`
 
 **Propagering skjer IKKE når:**
 - Statussen er negativ (`unverified_commits`, `unauthorized_repository`, `unauthorized_branch`)
@@ -658,9 +658,29 @@ Propagering utløses fra:
 
 > 📁 Se `propagateVerificationToSiblings` i [`monorepo.server.ts`](../app/db/monorepo.server.ts)
 
+### Begrenset behandling av `pending_sibling_resolution`
+
+Ventende søsken er ikke del av den ordinære kvoten på 50 verifiseringer per app. Hver appjobb kontrollerer venteforutsetningene settbasert i databasen, uten GitHub-kall, og behandler opptil fem forfalte ventere. Uendret venting får sikkerhetsrefresh etter 15 minutter, én time, seks timer og deretter maksimalt ett døgn, med stabil jitter. Dette gjelder appmodellens operative status, ikke repositorykodeleveransenes godkjenning.
+
+Lagret kandidatstatus, repository-/committilhørighet, tidsrekkefølge og effektive innstillinger sammenlignes med grunnlaget som faktisk ble brukt. Konfigurert basebranch lagres separat fra branchen som faktisk ble verifisert, fordi Nais Apply bruker GitHubs ferske default branch. En endring eller en annen tidligere rotgodkjent deployment med samme repository/SHA gjør ventingen forfalt. Det må ha gått minst 15 minutter siden siste fullforsøk før en endring overstyrer en fremtidig frist. Ventende deployments blir ikke bulk-godkjent gjennom propagasjon: den vanlige verifikatoren må finne en gyldig rot, aldri en kjedet `verified_via_sibling`-kilde.
+
+Den periodiske scheduleren velger i tillegg maksimalt fem forfalte `unverified_commits`-kandidater **globalt per syklus**, bare når de faktisk blokkerer nåværende ventere i aktive apper. Kandidatene behandles under sin egen apps eksisterende `github_verify`-lås. Dette er ikke generell reverifisering av negative deployments. Kandidater i inaktive apper krever eksplisitt adminhandling. Ved appkonflikt eller cooldown flyttes fristen minst 15 minutter uten at det telles som et fullforsøk.
+
+Fullforsøk oppfrisker PR-assosiasjoner og reviews, ikke bare gammel negativ cache. Feil ved nødvendig PR-refresh, assosiasjonsoppslag eller kontroll av committilhørighet avbryter det automatiske forsøket og behandles som teknisk feil, ikke som om commiten mangler PR. Dette gjelder både deployet commit og commits i sammenligningen. Andre kallere beholder sin tolerante standard, og feil ved rådataarkivering avbryter ikke et vellykket GitHub-oppslag. Uendrede automatiske beslutninger oppdaterer retrytilstand og eventuelle ferske checks uten ny `verification_runs`-rad. Endret beslutningsgrunnlag og eksplisitte adminforsøk lagres fortsatt. Historiske kjøringer slettes ikke. Tekniske feil bevarer operativ status og bruker separat backoff på 15 minutter til én time; kjent rate-limit-reset/retry-after respekteres.
+
+HTTP-arbeidet skjer før en kort transaksjon. Status, identitet og forventet retrytilstand kontrolleres under radlås før status, historikk og ny retrytilstand lagres atomisk. Ved søskengodkjenning låses også den faktiske roten og dens nåværende status og identitet kontrolleres. Foreldede forsøk forkastes uten historikk eller propagasjon.
+
+Et ordinært forsøk som ender i ventestatus setter første automatiske retry minst 15 minutter frem i tid, slik at samme deployment ikke behandles igjen i samme appjobb. Manuell verifisering av én deployment omgår ventebackoff. Manuell appverifisering bruker det separate ventebudsjettet, men starter ikke den globale kandidatrefreshen. Lokalt lagrede godkjenninger og innstillingsendringer oppdages ved neste kvalifiserte DB-kontroll pluss køventetid. Nye PR-data uten lokal statusendring oppdages ved sikkerhetsrefresh eller adminhandling. Dette gir ingen femminuttersgaranti: kø, rate limit, inaktive apper og jobblåser kan gi ytterligere forsinkelse.
+
+Tilstanden ligger i additive `sibling_*`-kolonner på `deployments`. Det innføres ingen ny køtabell eller låsetjeneste. Den eksisterende ordinære hentingen av maksimalt 10 000 deployments før statusfiltrering er separat teknisk gjeld og endres ikke her.
+
+Syklusloggen viser køstørrelse, antall ubehandlelige ventere, forfalt arbeid, eldste forfalte frist og varighet for DB-kontroll og full behandling. Ventere uten entydig repositorytilhørighet, gyldig commit eller nødvendig metadata tas ikke med i fulle forsøk og utløser en aggregert advarsel. Slike rader krever korrigert metadata eller eksplisitt adminhandling, ikke et usikkert navnebasert reserveoppslag.
+
+> Se [`sibling-verification.server.ts`](../app/db/sibling-verification.server.ts) og [`sibling-retry.server.ts`](../app/lib/verification/sibling-retry.server.ts).
+
 ### Auto-verify-gate for `pending_baseline`
 
-Den periodiske bakgrunnsjobben (`verifyDeploymentsFourEyes`) re-verifiserer normalt alle deployments med status `pending`, `error`, `pending_sibling_resolution`, `unknown` osv. For `pending_baseline` er dette imidlertid bare meningsfullt hvis re-verifiseringen faktisk *kan* endre noe — enten ved å finne en søskenapplikasjon å sammenligne mot, eller ved å avdekke en feiltilstand som bør synliggjøres. Uten denne gaten ville jobben forsøke å re-verifisere deployments som aldri kan løses på hver cron-kjøring, i evighet.
+Den periodiske bakgrunnsjobben (`verifyDeploymentsFourEyes`) re-verifiserer normalt deployments med status `pending`, `error`, `unknown` osv. `pending_sibling_resolution` har det separate løpet beskrevet over. For `pending_baseline` er automatisk reverifisering bare meningsfull hvis den faktisk *kan* endre noe — enten ved å finne en søskenapplikasjon å sammenligne mot, eller ved å avdekke en feiltilstand som bør synliggjøres. Uten denne gaten ville jobben forsøke å re-verifisere deployments som aldri kan løses på hver cron-kjøring, i evighet.
 
 En app regnes som eligible hvis **minst én** av følgende er sann:
 1. Appen har en aktiv `application_repositories`-rad der `github_repo_id` ennå ikke er satt (backfill pågår) — re-verifisering lar da `previousDeploymentLookupFailed`-logikken i `verify.ts` sette riktig `error`-status i stedet for at deploymentet blir hengende for alltid

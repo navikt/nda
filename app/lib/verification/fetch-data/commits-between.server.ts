@@ -161,7 +161,12 @@ export async function buildCommitsBetweenFromCache(
       repo,
       commit.sha,
       baseBranch,
-      { cacheOnly, forceRefresh: options?.forceRefresh, githubRepoId: options?.githubRepoId },
+      {
+        cacheOnly,
+        forceRefresh: options?.forceRefresh,
+        githubRepoId: options?.githubRepoId,
+        failOnPrRefreshError: options?.failOnPrRefreshError,
+      },
     )
 
     let prData: VerificationInput['commitsBetween'][0]['pr'] = null
@@ -213,6 +218,7 @@ export async function buildCommitsBetweenFromCache(
           prCreator: metadata.author.username === 'unknown' ? undefined : metadata.author.username,
         }
       } catch (error) {
+        if (options?.failOnPrRefreshError) throw error
         logger.warn(`Failed to fetch PR #${prNumber} for commit ${commit.sha}: ${error}`)
       }
     }

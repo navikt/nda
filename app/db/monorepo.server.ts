@@ -213,7 +213,10 @@ const PROPAGATABLE_STATUSES_SET = new Set<string>(PROPAGATABLE_STATUSES)
 
 const ROOT_APPROVED_STATUSES_SET = new Set<string>(ROOT_APPROVED_STATUSES)
 
-const PROPAGATION_TARGET_STATUSES = [...REVERIFIABLE_STATUSES, 'error']
+const PROPAGATION_TARGET_STATUSES = [
+  ...REVERIFIABLE_STATUSES.filter((status) => status !== 'pending_sibling_resolution'),
+  'error',
+]
 
 export async function propagateVerificationToSiblings(
   deploymentId: number,

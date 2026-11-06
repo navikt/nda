@@ -52,6 +52,47 @@ describe('getPullRequestForCommit rebase-matching archival', () => {
     mockReposGet.mockResolvedValue({ data: { id: 999 } })
   })
 
+  it.each([
+    ['membership', false],
+    ['membership', true],
+    ['rebase', false],
+    ['rebase', true],
+  ] as const)('handles %s lookup failures according to strict mode (%s)', async (stage, strict) => {
+    const error = new Error('GitHub unavailable')
+    const repo = `lookup-${stage}-${strict}`
+    mockListPullRequestsAssociatedWithCommit.mockResolvedValueOnce({
+      data: [
+        { number: 42, title: 'Some PR', state: 'closed', merged_at: '2026-01-01T00:00:00Z', base: { ref: 'main' } },
+      ],
+      headers: {},
+    })
+    if (stage === 'membership') {
+      mockPullsListCommits.mockRejectedValueOnce(error)
+    } else {
+      mockPullsListCommits.mockResolvedValueOnce({
+        data: [
+          {
+            sha: 'original-sha',
+            commit: { author: { name: 'Glad Fjord', date: '2026-01-01T00:00:00Z' }, message: 'Feature' },
+          },
+        ],
+        headers: {},
+      })
+      mockReposGetCommit.mockRejectedValueOnce(error)
+    }
+
+    const result = getPullRequestForCommit('navikt', repo, 'rebased-sha', true, 'main', strict)
+
+    if (strict) {
+      await expect(result).rejects.toBe(error)
+    } else {
+      await expect(result).resolves.toEqual({
+        pr: null,
+        allAssociatedPrs: [{ number: 42, baseBranch: 'main' }],
+      })
+    }
+  })
+
   it('archives PR commits and the target commit when a direct match is not found', async () => {
     mockListPullRequestsAssociatedWithCommit.mockResolvedValueOnce({
       data: [

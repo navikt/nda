@@ -96,6 +96,15 @@ export function getGitHubRateLimitRemaining(): number | null {
   return lastKnownRateLimitRemaining
 }
 
+export function getGitHubRetryAt(): Date | null {
+  const quotaReset =
+    lastKnownRateLimitStatus && lastKnownRateLimitStatus.remaining < GITHUB_RATE_LIMIT_SAFETY_BUFFER
+      ? (lastKnownRateLimitStatus.resetAt?.getTime() ?? 0)
+      : 0
+  const retryAt = Math.max(lastGitHubRateLimitBlockedUntil ?? 0, quotaReset)
+  return retryAt > Date.now() ? new Date(retryAt) : null
+}
+
 const meter = metrics.getMeter('deployment-audit')
 
 meter

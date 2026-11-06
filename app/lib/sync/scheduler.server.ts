@@ -1,8 +1,10 @@
 import { withSyncClient } from '~/db/connection.server'
 import { cleanupOldSnapshots } from '~/db/github-data.server'
 import { getAllMonitoredApplications } from '~/db/monitored-applications.server'
+import { deferSiblingWork, getBlockingSiblingCandidates, type SiblingWork } from '~/db/sibling-verification.server'
 import { cleanupOldSyncJobs, SYNC_INTERVAL_MS } from '~/db/sync-jobs.server'
 import { logger } from '~/lib/logger.server'
+import { siblingDeferUntil } from '~/lib/verification/sibling-retry.server'
 import {
   syncRepositoryCodeDeliveries,
   syncRepositoryCodeDeliveryAssessmentSnapshots,
@@ -75,8 +77,12 @@ export async function syncNewDeploymentsWithLock(
   )
 }
 
-export async function verifyDeploymentsWithLock(monitoredAppId: number, limit?: number) {
-  return withSyncLock(
+export async function verifyDeploymentsWithLock(
+  monitoredAppId: number,
+  limit?: number,
+  blockingCandidates: SiblingWork[] = [],
+) {
+  const result = await withSyncLock(
     'github_verify',
     monitoredAppId,
     {
@@ -91,8 +97,17 @@ export async function verifyDeploymentsWithLock(monitoredAppId: number, limit?: 
         remaining: r.remaining,
       }),
     },
-    () => verifyDeploymentsFourEyes({ monitored_app_id: monitoredAppId, limit }),
+    () =>
+      blockingCandidates.length > 0
+        ? verifyDeploymentsFourEyes({ monitored_app_id: monitoredAppId, limit }, blockingCandidates)
+        : verifyDeploymentsFourEyes({ monitored_app_id: monitoredAppId, limit }),
   )
+  if (result.locked) {
+    for (const candidate of blockingCandidates) {
+      await deferSiblingWork(candidate, true, siblingDeferUntil(candidate, false))
+    }
+  }
+  return result
 }
 
 async function reverifyPendingChecksWithLock(monitoredAppId: number, limit: number = CHECKS_REVERIFY_LIMIT_PER_APP) {
@@ -119,6 +134,7 @@ export async function runPeriodicSync(): Promise<void> {
       logger.info('🔄 Starting periodic sync cycle...')
 
       const apps = await getAllMonitoredApplications()
+      const blockingCandidates = await getBlockingSiblingCandidates()
       logger.info(`📋 Found ${apps.length} monitored applications`)
 
       let syncedCount = 0
@@ -158,7 +174,11 @@ export async function runPeriodicSync(): Promise<void> {
             didWork = true
           }
 
-          const verifyResult = await verifyDeploymentsWithLock(app.id, VERIFY_LIMIT_PER_APP)
+          const verifyResult = await verifyDeploymentsWithLock(
+            app.id,
+            VERIFY_LIMIT_PER_APP,
+            blockingCandidates.filter((candidate) => candidate.monitored_app_id === app.id),
+          )
 
           if (verifyResult.success && verifyResult.result) {
             verifiedCount += verifyResult.result.verified

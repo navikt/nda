@@ -48,6 +48,7 @@ it('persists full input SHAs in the run without mutating the verification result
       },
     },
     snapshotIds,
+    undefined,
   )
   expect(result).not.toHaveProperty('comparisonRange')
 })
@@ -73,6 +74,17 @@ it('persists compared commit SHAs for reports when a transformed compare cache i
 it('preserves identical base and head for same-SHA comparisons', async () => {
   await storeVerificationResult(3, result, snapshotIds, { commitSha: baseSha, previousDeployment })
   expect(mockSaveVerificationRun.mock.calls[0][1].result.comparisonRange).toEqual({ baseSha, headSha: baseSha })
+})
+
+it.each([1, 2])('records diagnostic sibling source only for a different app (source app %i)', async (sourceApp) => {
+  await storeVerificationResult(3, result, snapshotIds, {
+    commitSha: headSha,
+    monitoredAppId: 1,
+    previousDeployment: { ...previousDeployment, monitoredAppId: sourceApp, fourEyesStatus: 'unverified_commits' },
+  })
+  expect(mockSaveVerificationRun.mock.calls[0][1].result.siblingSource).toEqual(
+    sourceApp === 1 ? undefined : { deploymentId: 2, monitoredAppId: 2, status: 'unverified_commits' },
+  )
 })
 
 it.each([

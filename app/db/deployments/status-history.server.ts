@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { pool } from '../connection.server'
 
 export interface StatusTransition {
@@ -52,8 +53,9 @@ export async function logStatusTransition(
     changedBy?: string
     details?: Record<string, unknown>
   },
+  executor: Pick<PoolClient, 'query'> = pool,
 ): Promise<void> {
-  await pool.query(
+  await executor.query(
     `INSERT INTO deployment_status_history 
        (deployment_id, from_status, to_status, 
         changed_by, change_source, details)

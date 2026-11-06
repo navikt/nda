@@ -108,6 +108,7 @@ export async function getPullRequestForCommit(
   sha: string,
   verifyCommitIsInPR: boolean = false,
   baseBranch?: string,
+  failOnLookupError: boolean = false,
 ): Promise<PullRequestLookupResult> {
   const client = getGitHubClient()
 
@@ -230,6 +231,7 @@ export async function getPullRequestForCommit(
             }))
             prCommitsMetadataCache.set(metadataCacheKey, prCommitsMetadata)
           } catch (err) {
+            if (failOnLookupError) throw err
             logger.warn(`Could not fetch commits for PR #${pr.number}: ${err}`)
             continue
           }
@@ -299,6 +301,7 @@ export async function getPullRequestForCommit(
               }
             }
           } catch (err) {
+            if (failOnLookupError) throw err
             logger.warn(`Could not fetch commit ${sha} for rebase matching: ${err}`)
           }
         }
@@ -328,7 +331,7 @@ export async function getPullRequestForCommit(
   } catch (error) {
     logger.error(`❌ Error fetching PR for commit ${sha}:`, error)
 
-    if (error instanceof Error && error.message.includes('rate limit')) {
+    if (failOnLookupError || (error instanceof Error && error.message.includes('rate limit'))) {
       throw error
     }
 

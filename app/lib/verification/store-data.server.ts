@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { updateCommitPrVerification } from '~/db/commits.server'
 import { pool } from '~/db/connection.server'
 import { logStatusTransition } from '~/db/deployments.server'
@@ -19,11 +20,15 @@ export async function storeVerificationResult(
     VerificationInput,
     'commitSha' | 'previousDeployment' | 'previousDeploymentLookupFailed' | 'previousDeploymentRateLimited'
   > &
-    Partial<Pick<VerificationInput, 'commitsBetween'>>,
+    Partial<Pick<VerificationInput, 'commitsBetween' | 'monitoredAppId'>>,
   changeSource?: string,
   commitCacheContext?: {
     repository: string
     commitsBetween: VerificationInput['commitsBetween']
+  },
+  storage?: {
+    executor: Pick<PoolClient, 'query'>
+    githubPrDataJson: string | null
   },
 ): Promise<{ verificationRunId: number }> {
   const storedResult: StoredVerificationResult = {
@@ -38,6 +43,16 @@ export async function storeVerificationResult(
         : null,
     comparisonCommitHeadSha: input.commitSha,
     comparisonCommitShas: input.commitsBetween?.map(({ sha }) => sha) ?? [],
+    siblingSource:
+      input.monitoredAppId != null &&
+      input.previousDeployment?.monitoredAppId != null &&
+      input.previousDeployment.monitoredAppId !== input.monitoredAppId
+        ? {
+            deploymentId: input.previousDeployment.id,
+            monitoredAppId: input.previousDeployment.monitoredAppId,
+            status: input.previousDeployment.fourEyesStatus ?? null,
+          }
+        : undefined,
   }
   const verificationRunId = await saveVerificationRun(
     deploymentId,
@@ -46,9 +61,10 @@ export async function storeVerificationResult(
       result: storedResult,
     },
     snapshotIds,
+    storage?.executor,
   )
 
-  await updateDeploymentVerification(deploymentId, result, changeSource)
+  await updateDeploymentVerification(deploymentId, result, changeSource, storage)
 
   if (commitCacheContext) {
     await updateCommitCache(commitCacheContext.repository, result, commitCacheContext.commitsBetween)
@@ -61,21 +77,20 @@ export async function updateDeploymentVerification(
   deploymentId: number,
   result: VerificationResult,
   changeSource?: string,
+  storage?: {
+    executor: Pick<PoolClient, 'query'>
+    githubPrDataJson: string | null
+  },
 ): Promise<boolean> {
   if (result.status === 'manually_approved') return false
   if (result.status === 'legacy') return false
 
-  let githubPrDataJson: string | null = null
-  if (result.deployedPr?.number) {
-    const prData = await buildGithubPrDataFromSnapshotsForPr(result.deployedPr.number, deploymentId)
-    if (prData) {
-      githubPrDataJson = JSON.stringify(prData)
-    }
-  }
+  const executor = storage?.executor ?? pool
+  const githubPrDataJson = storage ? storage.githubPrDataJson : await prepareVerificationPrData(deploymentId, result)
 
-  const current = await pool.query(`SELECT four_eyes_status FROM deployments WHERE id = $1`, [deploymentId])
+  const current = await executor.query(`SELECT four_eyes_status FROM deployments WHERE id = $1`, [deploymentId])
 
-  const updateResult = await pool.query(
+  const updateResult = await executor.query(
     `UPDATE deployments
      SET 
        four_eyes_status = $1,
@@ -87,7 +102,15 @@ export async function updateDeploymentVerification(
        branch_name = COALESCE($8, branch_name),
        workflow_trigger_config = COALESCE($10::jsonb, workflow_trigger_config),
        commit_checks_data = COALESCE($11::jsonb, commit_checks_data),
-       commit_checks_checked_at = CASE WHEN $12 THEN now() ELSE commit_checks_checked_at END
+       commit_checks_checked_at = CASE WHEN $12 THEN now() ELSE commit_checks_checked_at END,
+       sibling_wait_candidate_id = CASE WHEN $13 THEN NULL ELSE sibling_wait_candidate_id END,
+       sibling_wait_basis = CASE WHEN $13 THEN NULL ELSE sibling_wait_basis END,
+       sibling_wait_checked_at = CASE WHEN $13 THEN clock_timestamp() ELSE sibling_wait_checked_at END,
+       sibling_next_attempt_at = CASE
+         WHEN $13 AND $1::varchar = 'pending_sibling_resolution' THEN clock_timestamp() + interval '15 minutes'
+         WHEN $13 THEN NULL ELSE sibling_next_attempt_at END,
+       sibling_refresh_after = CASE WHEN $13 THEN NULL ELSE sibling_refresh_after END,
+       sibling_retry_count = CASE WHEN $13 THEN 0 ELSE sibling_retry_count END
      WHERE id = $3
        AND four_eyes_status NOT IN (${PROTECTED_STATUSES_SQL})`,
     [
@@ -115,6 +138,7 @@ export async function updateDeploymentVerification(
       result.workflowTrigger ? JSON.stringify(result.workflowTrigger) : null,
       result.commitChecks !== undefined ? JSON.stringify(result.commitChecks) : null,
       result.commitChecksAttempted ?? false,
+      storage === undefined,
     ],
   )
 
@@ -122,11 +146,15 @@ export async function updateDeploymentVerification(
     const prev = current.rows[0]
     const newStatus = result.status
     if (prev.four_eyes_status !== newStatus) {
-      await logStatusTransition(deploymentId, {
-        fromStatus: prev.four_eyes_status,
-        toStatus: newStatus,
-        changeSource: changeSource || 'verification',
-      })
+      await logStatusTransition(
+        deploymentId,
+        {
+          fromStatus: prev.four_eyes_status,
+          toStatus: newStatus,
+          changeSource: changeSource || 'verification',
+        },
+        executor,
+      )
     }
   }
 
@@ -142,17 +170,27 @@ export async function updateDeploymentCommitChecks(
   deploymentId: number,
   commitChecks: VerificationInput['commitChecks'],
   attempted = true,
+  executor: Pick<PoolClient, 'query'> = pool,
 ): Promise<void> {
   // Nothing to persist: no data was fetched and there's no definitive attempt to record.
   if (!attempted && commitChecks === undefined) return
 
-  await pool.query(
+  await executor.query(
     `UPDATE deployments
      SET commit_checks_data = COALESCE($2::jsonb, commit_checks_data),
          commit_checks_checked_at = CASE WHEN $3 THEN now() ELSE commit_checks_checked_at END
      WHERE id = $1`,
     [deploymentId, commitChecks !== undefined ? JSON.stringify(commitChecks) : null, attempted],
   )
+}
+
+export async function prepareVerificationPrData(
+  deploymentId: number,
+  result: VerificationResult,
+): Promise<string | null> {
+  if (!result.deployedPr?.number) return null
+  const data = await buildGithubPrDataFromSnapshotsForPr(result.deployedPr.number, deploymentId)
+  return data ? JSON.stringify(data) : null
 }
 
 async function buildGithubPrDataFromSnapshotsForPr(
@@ -202,7 +240,7 @@ async function buildGithubPrDataFromSnapshotsForPr(
   return prData
 }
 
-async function updateCommitCache(
+export async function updateCommitCache(
   repository: string,
   result: VerificationResult,
   commitsBetween: VerificationInput['commitsBetween'],
