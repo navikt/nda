@@ -646,7 +646,7 @@ export async function* getRepositoryApprovalComparisonExport(repositoryId: numbe
     const repository = repositories[0]
     if (!repository) throw new Error(`Repository ${repositoryId} not found`)
     const header = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       scope: 'repository_approval_comparison',
       exportedAt: repository.exported_at.toISOString(),
       repository: {
@@ -662,7 +662,7 @@ export async function* getRepositoryApprovalComparisonExport(repositoryId: numbe
         'Application status and current repository code coverage are different assessments. A coverage difference is not by itself proof that the complete deployment approval would change.',
         'All exported data and repository evaluations are read in one repeatable-read database snapshot. No live GitHub calls are made and no approvals or deployment statuses are changed.',
         'Application manual approval comments include deleted records for historical analysis. Deleted comments must not be treated as current approval evidence.',
-        'Application verification runs and status history are exported as stored. comparisonRange alone does not prove successful comparison or approval of the interval.',
+        'Only the latest stored application verification run per deployment is exported, ordered by run_at DESC, id DESC. Older runs are omitted; status history and manual approval comments remain included. The latest run need not explain a historical approval. comparisonRange alone does not prove successful comparison or approval of the interval.',
         'Sibling references may occur in stored verification results or application PR data. Bulk sibling propagation does not persist a source reference; same SHA or a currently approved candidate does not prove which historical approval was used. No source is inferred by this export.',
         'Repository assessments include current PR and manual coverage, identity eligibility, evaluator input and referenced raw snapshots. They do not import or qualify old application manual approvals.',
         'prSnapshots and commitSnapshots contain only snapshots referenced by exported application verification runs. Missing snapshot references are not evidence that review never occurred.',
@@ -671,6 +671,13 @@ export async function* getRepositoryApprovalComparisonExport(repositoryId: numbe
     yield JSON.stringify(header).slice(0, -1)
     const deploymentScope = `SELECT d.id FROM deployments d
       JOIN monitored_applications ma ON ma.id = d.monitored_app_id WHERE d.repository_id = $1`
+    const latestVerificationRunsSql = `SELECT vr.* FROM deployments d
+      CROSS JOIN LATERAL (
+        SELECT vr.id, vr.deployment_id, vr.run_at, vr.schema_version,
+          vr.pr_snapshot_ids, vr.commit_snapshot_ids, vr.result, vr.status
+        FROM verification_runs vr WHERE vr.deployment_id = d.id
+        ORDER BY vr.run_at DESC, vr.id DESC LIMIT 1
+      ) vr WHERE d.id IN (${deploymentScope})`
     const deliverySql = `SELECT id, base_sha, head_sha, created_at FROM repository_code_deliveries
       WHERE repository_id = $1 ORDER BY created_at, id`
     const sections = [
@@ -690,26 +697,18 @@ export async function* getRepositoryApprovalComparisonExport(repositoryId: numbe
         `SELECT h.deployment_id, to_jsonb(h) AS transition FROM deployment_status_history h
         WHERE h.deployment_id IN (${deploymentScope}) ORDER BY h.deployment_id, h.created_at, h.id`,
       ],
-      [
-        'verificationRuns',
-        `SELECT vr.id, vr.deployment_id, vr.run_at, vr.schema_version,
-        vr.pr_snapshot_ids, vr.commit_snapshot_ids, vr.result, vr.status FROM verification_runs vr
-        JOIN deployments d ON d.id = vr.deployment_id WHERE d.id IN (${deploymentScope})
-        ORDER BY d.created_at, d.id, vr.run_at, vr.id`,
-      ],
+      ['verificationRuns', `${latestVerificationRunsSql} ORDER BY d.created_at, d.id`],
       [
         'prSnapshots',
         `SELECT id, owner, repo, pr_number, schema_version, fetched_at,
         data_type, source, github_available, data FROM github_pr_snapshots
-        WHERE id IN (SELECT unnest(pr_snapshot_ids) FROM verification_runs
-          WHERE deployment_id IN (${deploymentScope})) ORDER BY id`,
+        WHERE id IN (SELECT unnest(pr_snapshot_ids) FROM (${latestVerificationRunsSql}) latest_runs) ORDER BY id`,
       ],
       [
         'commitSnapshots',
         `SELECT id, owner, repo, sha, schema_version, fetched_at,
         data_type, source, github_available, data FROM github_commit_snapshots
-        WHERE id IN (SELECT unnest(commit_snapshot_ids) FROM verification_runs
-          WHERE deployment_id IN (${deploymentScope})) ORDER BY id`,
+        WHERE id IN (SELECT unnest(commit_snapshot_ids) FROM (${latestVerificationRunsSql}) latest_runs) ORDER BY id`,
       ],
       [
         'repositoryConfigAuditLog',
