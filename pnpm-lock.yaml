@@ -27,14 +27,14 @@ importers:
         specifier: ^8.4.0
         version: 8.4.0(supports-color@7.2.0)
       '@navikt/aksel-icons':
-        specifier: ^8.20.0
-        version: 8.20.0
+        specifier: ^8.21.0
+        version: 8.21.0
       '@navikt/ds-css':
-        specifier: ^8.20.0
-        version: 8.20.0
+        specifier: ^8.21.0
+        version: 8.21.0
       '@navikt/ds-react':
-        specifier: ^8.20.0
-        version: 8.20.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: ^8.21.0
+        version: 8.21.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@octokit/auth-app':
         specifier: ^8.3.1
         version: 8.3.1
@@ -630,14 +630,14 @@ packages:
       '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.4
       '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.4
 
-  '@navikt/aksel-icons@8.20.0':
-    resolution: {integrity: sha512-5FVFg9Xba++NpvdBlqE/VoGbOie34M1sSLYqSUZEy6IZUjBwh4QrbKCU1hcamuBJ2pQFINwOAqxmw8Ri1AIDyw==}
+  '@navikt/aksel-icons@8.21.0':
+    resolution: {integrity: sha512-/RXiUI1dt4lt/prvz2ngVp7BryHzLFIpq0wW1cjMKxqaaJwE4eYvTDFAdAFUpu3dL4hNRaXsji1GOxGGAK/jqw==}
 
-  '@navikt/ds-css@8.20.0':
-    resolution: {integrity: sha512-rhDZXQCN/mPyB9ubKRvr95PwAbYp+4xBb64LW5hQnAJJLJiHXksjVfpg8naDM71wIYpNwnShD5lTOwoBfBlPkQ==}
+  '@navikt/ds-css@8.21.0':
+    resolution: {integrity: sha512-AaQZAH6Q7lmYpTByyyaynW8iKE5cHUjo/f3ed1ec0D7hxVP4Ywe/VEiin2EAIZrvgtoIDPkZnBshXJXZDmtiGg==}
 
-  '@navikt/ds-react@8.20.0':
-    resolution: {integrity: sha512-HbSQh4Ck3ci/8ZAcJYAkYSYKN7zr/9ty2Zam1m4k4in2SxO6SCAWZqDi/vEAmPdosMC5Ey6qiF7QXHwrlln9UQ==}
+  '@navikt/ds-react@8.21.0':
+    resolution: {integrity: sha512-1AL7iE/iPlUTLPkBmQVNrutk7FuaO1A9NEjpD5xyiV/JLVZ8pHnqU4QQWqkzG01nOgi7IJpdjpDgCNGtH44JZg==}
     peerDependencies:
       '@types/react': ^17.0.30 || ^18 || ^19
       react: ^17 || ^18 || ^19
@@ -646,8 +646,8 @@ packages:
       '@types/react':
         optional: true
 
-  '@navikt/ds-tokens@8.20.1':
-    resolution: {integrity: sha512-CXmAkJN345eqr5HywMdfcXd7tNgKu4vdpvGAM4he4DVoQkqrLc3bRS3w8KvH8nAl+CqCsEIVL/LYsnZmvIr/Pw==}
+  '@navikt/ds-tokens@8.22.1':
+    resolution: {integrity: sha512-cDmfPn5Q0HmE8eTie5jkj76zKMrS/AeZcAKscxtZFTL6sFdIFKON8AwWcS0pdRuC3yxYNGRmO176xGjn2POLCQ==}
 
   '@noble/ciphers@1.3.0':
     resolution: {integrity: sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw==}
@@ -3527,8 +3527,8 @@ packages:
       chart.js: ^4.1.1
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  react-day-picker@10.0.1:
-    resolution: {integrity: sha512-eNh6BlwcYInWaJtRv18mXQ06Ys/H6rdTZAnTaSdOYJuTpwP1JMCHNd1FDRadA+gbeinq+psdULN5Xnowy9mV8w==}
+  react-day-picker@10.0.2:
+    resolution: {integrity: sha512-QetiKtZWE9Uaw/pM/SYNv6WPYOTRnSJ2puL0GgwkmUFMIwiY0dtjH1W4B7DOVXVNQM0ZOClGpH/heOfBSzWeiA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@types/react': '>=16.8.0'
@@ -4682,24 +4682,24 @@ snapshots:
       '@tybys/wasm-util': 0.10.3
     optional: true
 
-  '@navikt/aksel-icons@8.20.0': {}
+  '@navikt/aksel-icons@8.21.0': {}
 
-  '@navikt/ds-css@8.20.0': {}
+  '@navikt/ds-css@8.21.0': {}
 
-  '@navikt/ds-react@8.20.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@navikt/ds-react@8.21.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@floating-ui/react': 0.27.20(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@floating-ui/react-dom': 2.1.9(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@navikt/aksel-icons': 8.20.0
-      '@navikt/ds-tokens': 8.20.1
+      '@navikt/aksel-icons': 8.21.0
+      '@navikt/ds-tokens': 8.22.1
       date-fns: 4.4.0
       react: 19.3.1
-      react-day-picker: 10.0.1(@types/react@19.3.0)(react@19.3.1)
+      react-day-picker: 10.0.2(@types/react@19.3.0)(react@19.3.1)
       react-dom: 19.3.1(react@19.3.1)
     optionalDependencies:
       '@types/react': 19.3.0
 
-  '@navikt/ds-tokens@8.20.1': {}
+  '@navikt/ds-tokens@8.22.1': {}
 
   '@noble/ciphers@1.3.0': {}
 
@@ -7477,7 +7477,7 @@ snapshots:
       chart.js: 4.6.1
       react: 19.3.1
 
-  react-day-picker@10.0.1(@types/react@19.3.0)(react@19.3.1):
+  react-day-picker@10.0.2(@types/react@19.3.0)(react@19.3.1):
     dependencies:
       '@date-fns/tz': 1.5.0
       date-fns: 4.4.0
