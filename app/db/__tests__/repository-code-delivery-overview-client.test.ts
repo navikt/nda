@@ -144,6 +144,7 @@ describe('streamed approval comparison', () => {
     let json = ''
     for await (const chunk of getRepositoryApprovalComparisonExport(5)) json += chunk
     const data = JSON.parse(json)
+    expect(data.schemaVersion).toBe(2)
     expect(data.deliveries).toHaveLength(205)
     expect(data.repositoryAssessments).toHaveLength(205)
     expect(assessmentDiagnostic.mock.calls.map((call) => call[3].length)).toEqual([100, 100, 5])
@@ -158,6 +159,15 @@ describe('streamed approval comparison', () => {
     ])
     expect(data.applicationManualApprovals[0].approval.deleted_at).toBe('2026-10-01')
     expect(data.verificationRuns[0].result.sourceDeploymentId).toBe(1)
+    const declarations = client.query.mock.calls.map(([sql]) => sql).filter((sql) => sql.startsWith('DECLARE'))
+    const runSections = declarations.filter((sql) => sql.includes('FROM verification_runs vr'))
+    expect(runSections).toHaveLength(3)
+    for (const sql of runSections) {
+      expect(sql).toContain('CROSS JOIN LATERAL')
+      expect(sql).toContain('ORDER BY vr.run_at DESC, vr.id DESC LIMIT 1')
+    }
+    expect(runSections[1]).toContain('SELECT unnest(pr_snapshot_ids)')
+    expect(runSections[2]).toContain('SELECT unnest(commit_snapshot_ids)')
     expect(client.query).toHaveBeenCalledWith('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
     expect(client.query).toHaveBeenCalledWith('COMMIT')
     expect(client.release).toHaveBeenCalledOnce()
