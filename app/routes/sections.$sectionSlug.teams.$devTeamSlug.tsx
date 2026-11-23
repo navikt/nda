@@ -243,9 +243,14 @@ export default function DevTeamPage() {
       {/* Active board */}
       <VStack gap="space-8">
         <HStack align="center" justify="space-between" wrap>
-          <Heading level="2" size="small">
-            Tavler
-          </Heading>
+          <HStack align="center" gap="space-16">
+            <Heading level="2" size="small">
+              Tavler
+            </Heading>
+            <Button as={Link} to={`${teamBasePath}/boards`} variant="tertiary" size="small">
+              Alle tavler
+            </Button>
+          </HStack>
           <Switch
             size="small"
             checked={showAllBoards}

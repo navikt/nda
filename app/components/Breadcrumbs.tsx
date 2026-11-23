@@ -189,7 +189,7 @@ const dynamicBreadcrumbs: Array<{
   },
   {
     pattern: /^\/sections\/([^/]+)\/teams\/([^/]+)\/boards$/,
-    getLabel: () => 'Tidligere tavler',
+    getLabel: () => 'Alle tavler',
     parent: '/sections/:slug/teams/:team',
   },
   {
