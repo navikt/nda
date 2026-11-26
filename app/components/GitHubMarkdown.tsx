@@ -1,5 +1,5 @@
 import { CheckmarkIcon, SquareIcon } from '@navikt/aksel-icons'
-import { Alert, BodyLong, Box, Detail, Heading, ReadMore, Table } from '@navikt/ds-react'
+import { BodyLong, Box, Detail, Heading, ReadMore, Table, VStack } from '@navikt/ds-react'
 import { Children, cloneElement, isValidElement, type ReactNode } from 'react'
 import Markdown, { type Components, defaultUrlTransform } from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
@@ -90,15 +90,30 @@ function MarkdownQuote({ children }: { children?: ReactNode }) {
     const first = paragraphContent[0]
     const marker = typeof first === 'string' ? first.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/) : null
     if (marker && typeof first === 'string') {
-      const variant = marker[1] === 'WARNING' || marker[1] === 'CAUTION' ? 'warning' : 'info'
+      const label =
+        marker[1] === 'WARNING' || marker[1] === 'CAUTION'
+          ? 'Advarsel fra PR-beskrivelsen'
+          : 'Merknad fra PR-beskrivelsen'
       return (
-        <Alert variant={variant}>
-          {content.map((child) =>
-            child === paragraph
-              ? cloneElement(paragraph, undefined, first.slice(marker[0].length), ...paragraphContent.slice(1))
-              : child,
-          )}
-        </Alert>
+        <Box
+          role="note"
+          background="neutral-moderate"
+          borderColor="neutral-subtle"
+          borderWidth="1"
+          borderRadius="8"
+          padding="space-16"
+        >
+          <VStack gap="space-8">
+            <Detail textColor="subtle">{label}</Detail>
+            <Box className={styles.noteContent}>
+              {content.map((child) =>
+                child === paragraph
+                  ? cloneElement(paragraph, undefined, first.slice(marker[0].length), ...paragraphContent.slice(1))
+                  : child,
+              )}
+            </Box>
+          </VStack>
+        </Box>
       )
     }
   }

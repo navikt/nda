@@ -13,6 +13,21 @@ function parse(markdown: string) {
 }
 
 describe('GitHubMarkdown', () => {
+  it.each([
+    ['NOTE', 'Merknad fra PR-beskrivelsen'],
+    ['WARNING', 'Advarsel fra PR-beskrivelsen'],
+  ])('distinguishes GitHub %s notes from NDA alerts', (marker, label) => {
+    const document = parse(`> [!${marker}]
+> Innhold med **utheving** og [lenke](https://github.com/navikt/example).`)
+
+    const note = document.querySelector('[role="note"]')
+    expect(note?.textContent).toContain(label)
+    expect(note?.textContent).not.toContain(`[!${marker}]`)
+    expect(note?.querySelector('strong')?.textContent).toBe('utheving')
+    expect(note?.querySelector('a')?.href).toBe('https://github.com/navikt/example')
+    expect(document.querySelector('[role="alert"], [role="status"]')).toBeNull()
+  })
+
   it('renders GitHub tables, task lists, callouts and collapsed release notes', () => {
     const document = parse(`> [!NOTE]
 > Beskrivelsen er forkortet.

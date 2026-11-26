@@ -3,10 +3,11 @@ import {
   ChatIcon,
   CheckmarkCircleIcon,
   CheckmarkIcon,
+  CodeIcon,
   ExclamationmarkTriangleIcon,
 } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
-import { useRef } from 'react'
+import { useId, useRef } from 'react'
 import { Form, Link, useNavigation, useSearchParams } from 'react-router'
 import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
@@ -93,6 +94,16 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
   const deviationDialogRef = useRef<HTMLDialogElement>(null)
   const resetVerificationDialogRef = useRef<HTMLDialogElement>(null)
   const status = getFourEyesStatus(deployment)
+  const prDescriptionHeadingId = useId()
+  const prDescriptionRepository =
+    deployment.github_pr_url?.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/\d+(?:[/?#]|$)/)?.[1] ??
+    (deployment.detected_github_owner && deployment.detected_github_repo_name
+      ? `${deployment.detected_github_owner}/${deployment.detected_github_repo_name}`
+      : null)
+  const prDescriptionSource =
+    [prDescriptionRepository, deployment.github_pr_number ? `PR #${deployment.github_pr_number}` : null]
+      .filter(Boolean)
+      .join(' · ') || 'Pull request'
 
   return (
     <VStack gap="space-32">
@@ -474,16 +485,45 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
       {deployment.github_pr_data && (
         <VStack gap="space-16">
           {deployment.github_pr_data.body && (
-            <div>
-              <Heading size="medium" level="2">
-                Beskrivelse
-              </Heading>
-              <Box background="neutral-soft" padding="space-16" borderRadius="12" marginBlock="space-8 space-0">
+            <Box as="section" aria-labelledby={prDescriptionHeadingId}>
+              <HStack gap="space-8" align="center">
+                <CodeIcon aria-hidden fontSize="1.5em" />
+                <Heading size="medium" level="2" id={prDescriptionHeadingId}>
+                  PR-beskrivelse fra GitHub
+                </Heading>
+              </HStack>
+              <Box
+                background="neutral-soft"
+                padding="space-16"
+                borderRadius="12"
+                borderColor="neutral-subtle"
+                borderWidth="1"
+                marginBlock="space-8 space-0"
+              >
+                <Box
+                  as="header"
+                  paddingBlock="space-0 space-16"
+                  marginBlock="space-0 space-16"
+                  borderColor="neutral-subtle"
+                  borderWidth="0 0 1 0"
+                >
+                  <VStack gap="space-8">
+                    <HStack gap="space-8" justify="space-between" align="center" wrap>
+                      <Detail style={{ overflowWrap: 'anywhere' }}>{prDescriptionSource}</Detail>
+                      {deployment.github_pr_url && (
+                        <ExternalLink href={deployment.github_pr_url}>Åpne på GitHub</ExternalLink>
+                      )}
+                    </HStack>
+                    <BodyShort size="small" textColor="subtle">
+                      Innhold fra pull requesten, ikke NDAs vurdering.
+                    </BodyShort>
+                  </VStack>
+                </Box>
                 <GitHubMarkdown sourceUrl={deployment.github_pr_url ?? undefined}>
                   {deployment.github_pr_data.body}
                 </GitHubMarkdown>
               </Box>
-            </div>
+            </Box>
           )}
           <HGrid gap="space-16" columns={{ xs: 2, sm: 3, md: 6 }}>
             <Box padding="space-12" borderRadius="8" background="sunken">
