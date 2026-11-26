@@ -478,10 +478,7 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
                 Beskrivelse
               </Heading>
               <Box background="neutral-soft" padding="space-16" borderRadius="12" marginBlock="space-8 space-0">
-                <BodyShort style={{ whiteSpace: 'pre-wrap' }}>
-                  {/* biome-ignore lint/security/noDangerouslySetInnerHtml: GitHub PR body contains safe markdown HTML */}
-                  <div dangerouslySetInnerHTML={{ __html: deployment.github_pr_data.body }} />
-                </BodyShort>
+                <BodyShort style={{ whiteSpace: 'pre-wrap' }}>{deployment.github_pr_data.body}</BodyShort>
               </Box>
             </div>
           )}

@@ -1,6 +1,9 @@
 import { composeStories, setProjectAnnotations } from '@storybook/react'
-import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { Window } from 'happy-dom'
+import { act } from 'react'
+import { renderToStaticMarkup, renderToString } from 'react-dom/server'
+import { describe, expect, it, vi } from 'vitest'
+import type { DeploymentDetailLoaderData } from '~/components/DeploymentDetailPage'
 import preview from '../../../.storybook/preview'
 import * as stories from './DeploymentDetail.stories'
 
@@ -9,6 +12,86 @@ setProjectAnnotations(preview)
 const { Approved, DirectPush, ManuallyApproved, NotApproved, Pending, VerifiedViaSibling } = composeStories(stories)
 
 describe('DeploymentDetail story baseline characterization', () => {
+  it.each([
+    '## Release notes\n\n```vue\n<template><div v-html="html"></div></template>\n<script>export default {}</script>\n```',
+    '</p></div><script src="https://example.com/injected.js"></script><img src="x" onerror="alert(1)"><iframe src="https://example.com"></iframe><style>body{display:none}</style>',
+  ])('renders GitHub PR markup as text without adding active HTML', (body) => {
+    const loaderData = Approved.args.loaderData
+    if (!loaderData) throw new Error('Approved story must include loader data')
+    const githubPrData = loaderData.deployment.github_pr_data
+    if (!githubPrData) throw new Error('Approved story must include PR data')
+    const html = renderToStaticMarkup(
+      <Approved
+        loaderData={{
+          ...loaderData,
+          deployment: {
+            ...loaderData.deployment,
+            github_pr_data: { ...githubPrData, body } as NonNullable<
+              DeploymentDetailLoaderData['deployment']['github_pr_data']
+            >,
+          },
+        }}
+      />,
+    )
+    const window = new Window()
+    const document = window.document
+    document.body.innerHTML = html
+
+    expect(document.querySelector('script, template, iframe, style, img[onerror]')).toBeNull()
+    const heading = [...document.querySelectorAll('h2')].find((element) => element.textContent === 'Beskrivelse')
+    const description = heading?.nextElementSibling?.querySelector('p')
+    expect(description?.textContent).toBe(body)
+    expect(description?.children.length).toBe(0)
+    expect(document.body.textContent).toContain('Filer endret')
+  })
+
+  it('hydrates release-note code examples without errors and keeps controls interactive', async () => {
+    const loaderData = Approved.args.loaderData
+    if (!loaderData) throw new Error('Approved story must include loader data')
+    const githubPrData = loaderData.deployment.github_pr_data
+    if (!githubPrData) throw new Error('Approved story must include PR data')
+    const page = (
+      <Approved
+        loaderData={{
+          ...loaderData,
+          deployment: {
+            ...loaderData.deployment,
+            github_pr_data: {
+              ...githubPrData,
+              body: '```vue\n<template><div>Example</div></template>\n<script>export default {}</script>\n```',
+            } as NonNullable<DeploymentDetailLoaderData['deployment']['github_pr_data']>,
+          },
+        }}
+      />
+    )
+    const window = new Window()
+    window.document.body.innerHTML = renderToString(page)
+    vi.stubGlobal('window', window)
+    vi.stubGlobal('document', window.document)
+    vi.stubGlobal('navigator', window.navigator)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    const { hydrateRoot } = await import('react-dom/client')
+    const errors: unknown[] = []
+    const root = hydrateRoot(window.document.body as unknown as HTMLElement, page, {
+      onRecoverableError: (error) => errors.push(error),
+    })
+
+    try {
+      await act(async () => {})
+      expect(errors).toEqual([])
+      const button = [...window.document.querySelectorAll('button')].find((element) =>
+        element.textContent.includes('GitHub Checks'),
+      )
+      expect(button?.getAttribute('aria-expanded')).toBe('false')
+      await act(async () => button?.click())
+      expect(button?.getAttribute('aria-expanded')).toBe('true')
+    } finally {
+      await act(async () => root.unmount())
+      vi.unstubAllGlobals()
+      await window.happyDOM.abort()
+    }
+  })
+
   it('Approved story keeps deployment summary and PR details', () => {
     const html = renderToStaticMarkup(<Approved />)
 
