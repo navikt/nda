@@ -12,7 +12,7 @@ setProjectAnnotations(preview)
 const { Approved, DirectPush, ManuallyApproved, NotApproved, Pending, VerifiedViaSibling } = composeStories(stories)
 
 describe('DeploymentDetail story baseline characterization', () => {
-  it('identifies the PR description as GitHub content with a source link', () => {
+  it('keeps the source information outside the GitHub description frame', () => {
     const window = new Window()
     window.document.body.innerHTML = renderToStaticMarkup(<Approved />)
 
@@ -21,12 +21,14 @@ describe('DeploymentDetail story baseline characterization', () => {
     )
     const section = heading?.closest('section')
     expect(section?.getAttribute('aria-labelledby')).toBe(heading?.id)
-    expect(section?.querySelector('header')?.textContent).toContain('navikt/pensjon-pen · PR #42')
-    expect(section?.textContent).toContain('Innhold fra pull requesten, ikke NDAs vurdering.')
-    const link = [...(section?.querySelectorAll('a') ?? [])].find((element) => element.textContent === 'Åpne på GitHub')
+    const header = section?.querySelector('header')
+    expect(heading && header?.contains(heading)).toBe(true)
+    expect(header?.textContent).toContain('navikt/pensjon-pen · PR #42')
+    expect(header?.textContent).toContain('Innhold fra pull requesten, ikke NDAs vurdering.')
+    const link = [...(header?.querySelectorAll('a') ?? [])].find((element) => element.textContent === 'Åpne på GitHub')
     expect(link?.href).toBe('https://github.com/navikt/pensjon-pen/pull/42')
     expect(link?.rel).toBe('noopener noreferrer')
-    expect(section?.textContent).toContain('Oppsummering av endringen.')
+    expect(header?.nextElementSibling?.textContent.trim()).toBe('Oppsummering av endringen.')
   })
 
   it.each([
