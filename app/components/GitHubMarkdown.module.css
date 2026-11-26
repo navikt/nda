@@ -1,0 +1,61 @@
+.markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.markdown > * + *,
+.detailsContent > * + *,
+.markdown blockquote > * + *,
+.markdown li > * + * {
+  margin-block-start: var(--ax-space-16);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-inline-start: var(--ax-space-24);
+}
+
+.markdown li + li {
+  margin-block-start: var(--ax-space-8);
+}
+
+.quote {
+  margin-inline: 0;
+  border-inline-start: var(--ax-space-4) solid var(--ax-border-neutral-subtle);
+}
+
+.codeBlock,
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.codeBlock {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.codeBlock code {
+  font: inherit;
+}
+
+.markdown :not(pre) > code {
+  padding: var(--ax-space-2) var(--ax-space-4);
+  background: var(--ax-bg-neutral-moderate);
+  border-radius: var(--ax-radius-4);
+}
+
+.tableScroll table {
+  width: 100%;
+}
+
+.taskStatus {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-inline-end: var(--ax-space-4);
+}
+
+.separator {
+  border: 0;
+  border-block-start: 1px solid var(--ax-border-neutral-subtle);
+}
