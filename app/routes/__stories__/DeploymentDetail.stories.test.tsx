@@ -15,7 +15,7 @@ describe('DeploymentDetail story baseline characterization', () => {
   it.each([
     '## Release notes\n\n```vue\n<template><div v-html="html"></div></template>\n<script>export default {}</script>\n```',
     '</p></div><script src="https://example.com/injected.js"></script><img src="x" onerror="alert(1)"><iframe src="https://example.com"></iframe><style>body{display:none}</style>',
-  ])('renders GitHub PR markup as text without adding active HTML', (body) => {
+  ])('renders GitHub PR Markdown without adding active HTML', (body) => {
     const loaderData = Approved.args.loaderData
     if (!loaderData) throw new Error('Approved story must include loader data')
     const githubPrData = loaderData.deployment.github_pr_data
@@ -38,10 +38,9 @@ describe('DeploymentDetail story baseline characterization', () => {
     document.body.innerHTML = html
 
     expect(document.querySelector('script, template, iframe, style, img[onerror]')).toBeNull()
-    const heading = [...document.querySelectorAll('h2')].find((element) => element.textContent === 'Beskrivelse')
-    const description = heading?.nextElementSibling?.querySelector('p')
-    expect(description?.textContent).toBe(body)
-    expect(description?.children.length).toBe(0)
+    if (body.startsWith('## Release notes')) {
+      expect(document.querySelector('pre code')?.textContent).toContain('<script>export default {}</script>')
+    }
     expect(document.body.textContent).toContain('Filer endret')
   })
 

@@ -12,6 +12,7 @@ import { ActionAlert } from '~/components/ActionAlert'
 import { BaselineInfo } from '~/components/BaselineInfo'
 import { DeploymentViewLinks } from '~/components/deployments/DeploymentViewLinks'
 import { ExternalLink } from '~/components/ExternalLink'
+import { GitHubMarkdown } from '~/components/GitHubMarkdown'
 import { GoalLinksSection } from '~/components/GoalLinksSection'
 import { UserName } from '~/components/UserName'
 import { deploymentListUrl } from '~/lib/deployment-view'
@@ -478,7 +479,9 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
                 Beskrivelse
               </Heading>
               <Box background="neutral-soft" padding="space-16" borderRadius="12" marginBlock="space-8 space-0">
-                <BodyShort style={{ whiteSpace: 'pre-wrap' }}>{deployment.github_pr_data.body}</BodyShort>
+                <GitHubMarkdown sourceUrl={deployment.github_pr_url ?? undefined}>
+                  {deployment.github_pr_data.body}
+                </GitHubMarkdown>
               </Box>
             </div>
           )}
