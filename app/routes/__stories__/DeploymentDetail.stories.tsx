@@ -19,7 +19,7 @@ const userMappings: UserLookupMap = {
 
 const baseGithubPrData: GitHubPRData = {
   title: 'feat: Add new feature for pension calculation',
-  body: '<p>Oppsummering av endringen.</p>',
+  body: 'Oppsummering av endringen.',
   creator: { username: 'john-doe', avatar_url: 'https://example.com/john.png' },
   merger: { username: 'jane-smith', avatar_url: 'https://example.com/jane.png' },
   merged_by: { username: 'jane-smith', avatar_url: 'https://example.com/jane.png' },
