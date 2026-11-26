@@ -3,7 +3,6 @@ import {
   ChatIcon,
   CheckmarkCircleIcon,
   CheckmarkIcon,
-  CodeIcon,
   ExclamationmarkTriangleIcon,
 } from '@navikt/aksel-icons'
 import { Alert, BodyShort, Box, Button, Detail, Heading, HGrid, HStack, Tag, VStack } from '@navikt/ds-react'
@@ -485,45 +484,33 @@ export function DeploymentDetailPage({ loaderData, actionData }: DeploymentDetai
       {deployment.github_pr_data && (
         <VStack gap="space-16">
           {deployment.github_pr_data.body && (
-            <Box as="section" aria-labelledby={prDescriptionHeadingId}>
-              <HStack gap="space-8" align="center">
-                <CodeIcon aria-hidden fontSize="1.5em" />
+            <VStack as="section" gap="space-16" aria-labelledby={prDescriptionHeadingId}>
+              <VStack as="header" gap="space-8">
                 <Heading size="medium" level="2" id={prDescriptionHeadingId}>
                   PR-beskrivelse fra GitHub
                 </Heading>
-              </HStack>
+                <HStack gap="space-8" justify="space-between" align="center" wrap>
+                  <Detail style={{ overflowWrap: 'anywhere' }}>{prDescriptionSource}</Detail>
+                  {deployment.github_pr_url && (
+                    <ExternalLink href={deployment.github_pr_url}>Åpne på GitHub</ExternalLink>
+                  )}
+                </HStack>
+                <BodyShort size="small" textColor="subtle">
+                  Innhold fra pull requesten, ikke NDAs vurdering.
+                </BodyShort>
+              </VStack>
               <Box
                 background="neutral-soft"
                 padding="space-16"
                 borderRadius="12"
                 borderColor="neutral-subtle"
                 borderWidth="1"
-                marginBlock="space-8 space-0"
               >
-                <Box
-                  as="header"
-                  paddingBlock="space-0 space-16"
-                  marginBlock="space-0 space-16"
-                  borderColor="neutral-subtle"
-                  borderWidth="0 0 1 0"
-                >
-                  <VStack gap="space-8">
-                    <HStack gap="space-8" justify="space-between" align="center" wrap>
-                      <Detail style={{ overflowWrap: 'anywhere' }}>{prDescriptionSource}</Detail>
-                      {deployment.github_pr_url && (
-                        <ExternalLink href={deployment.github_pr_url}>Åpne på GitHub</ExternalLink>
-                      )}
-                    </HStack>
-                    <BodyShort size="small" textColor="subtle">
-                      Innhold fra pull requesten, ikke NDAs vurdering.
-                    </BodyShort>
-                  </VStack>
-                </Box>
                 <GitHubMarkdown sourceUrl={deployment.github_pr_url ?? undefined}>
                   {deployment.github_pr_data.body}
                 </GitHubMarkdown>
               </Box>
-            </Box>
+            </VStack>
           )}
           <HGrid gap="space-16" columns={{ xs: 2, sm: 3, md: 6 }}>
             <Box padding="space-12" borderRadius="8" background="sunken">

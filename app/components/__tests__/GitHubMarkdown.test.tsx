@@ -13,15 +13,12 @@ function parse(markdown: string) {
 }
 
 describe('GitHubMarkdown', () => {
-  it.each([
-    ['NOTE', 'Merknad fra PR-beskrivelsen'],
-    ['WARNING', 'Advarsel fra PR-beskrivelsen'],
-  ])('distinguishes GitHub %s notes from NDA alerts', (marker, label) => {
+  it.each(['NOTE', 'WARNING'])('renders GitHub %s notes without adding NDA text', (marker) => {
     const document = parse(`> [!${marker}]
 > Innhold med **utheving** og [lenke](https://github.com/navikt/example).`)
 
     const note = document.querySelector('[role="note"]')
-    expect(note?.textContent).toContain(label)
+    expect(note?.textContent.trim()).toBe('Innhold med utheving og lenke.')
     expect(note?.textContent).not.toContain(`[!${marker}]`)
     expect(note?.querySelector('strong')?.textContent).toBe('utheving')
     expect(note?.querySelector('a')?.href).toBe('https://github.com/navikt/example')
