@@ -5,6 +5,7 @@
 
 .markdown > * + *,
 .detailsContent > * + *,
+.noteContent > * + *,
 .markdown blockquote > * + *,
 .markdown li > * + * {
   margin-block-start: var(--ax-space-16);

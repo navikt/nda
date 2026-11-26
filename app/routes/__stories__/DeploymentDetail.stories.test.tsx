@@ -12,6 +12,60 @@ setProjectAnnotations(preview)
 const { Approved, DirectPush, ManuallyApproved, NotApproved, Pending, VerifiedViaSibling } = composeStories(stories)
 
 describe('DeploymentDetail story baseline characterization', () => {
+  it('identifies the PR description as GitHub content with a source link', () => {
+    const window = new Window()
+    window.document.body.innerHTML = renderToStaticMarkup(<Approved />)
+
+    const heading = [...window.document.querySelectorAll('h2')].find(
+      (element) => element.textContent === 'PR-beskrivelse fra GitHub',
+    )
+    const section = heading?.closest('section')
+    expect(section?.getAttribute('aria-labelledby')).toBe(heading?.id)
+    expect(section?.querySelector('header')?.textContent).toContain('navikt/pensjon-pen · PR #42')
+    expect(section?.textContent).toContain('Innhold fra pull requesten, ikke NDAs vurdering.')
+    const link = [...(section?.querySelectorAll('a') ?? [])].find((element) => element.textContent === 'Åpne på GitHub')
+    expect(link?.href).toBe('https://github.com/navikt/pensjon-pen/pull/42')
+    expect(link?.rel).toBe('noopener noreferrer')
+    expect(section?.textContent).toContain('Oppsummering av endringen.')
+  })
+
+  it.each([
+    ['https://github.com/navikt/current-name/pull/42', 'navikt/current-name'],
+    ['https://github.com/current-owner/current-name/pull/42', 'current-owner/current-name'],
+    [null, 'navikt/old-name'],
+    ['not-a-url', 'navikt/old-name'],
+    ['https://example.com/current-owner/current-name/pull/42', 'navikt/old-name'],
+  ])('attributes the PR description using its GitHub URL %s', (githubPrUrl, expectedRepository) => {
+    const loaderData = Approved.args.loaderData
+    if (!loaderData) throw new Error('Approved story must include loader data')
+    const window = new Window()
+    window.document.body.innerHTML = renderToStaticMarkup(
+      <Approved
+        loaderData={{
+          ...loaderData,
+          deployment: {
+            ...loaderData.deployment,
+            detected_github_owner: 'navikt',
+            detected_github_repo_name: 'old-name',
+            github_pr_url: githubPrUrl,
+          },
+        }}
+      />,
+    )
+    const heading = [...window.document.querySelectorAll('h2')].find(
+      (element) => element.textContent === 'PR-beskrivelse fra GitHub',
+    )
+    const header = heading?.closest('section')?.querySelector('header')
+    expect(header?.textContent).toContain(`${expectedRepository} · PR #42`)
+    if (githubPrUrl?.startsWith('https://github.com/')) {
+      expect(header?.textContent).not.toContain('navikt/old-name')
+      const link = [...(header?.querySelectorAll('a') ?? [])].find(
+        (element) => element.textContent === 'Åpne på GitHub',
+      )
+      expect(link?.href).toBe(githubPrUrl)
+    }
+  })
+
   it.each([
     '## Release notes\n\n```vue\n<template><div v-html="html"></div></template>\n<script>export default {}</script>\n```',
     '</p></div><script src="https://example.com/injected.js"></script><img src="x" onerror="alert(1)"><iframe src="https://example.com"></iframe><style>body{display:none}</style>',
